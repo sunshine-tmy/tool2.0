@@ -1,0 +1,41 @@
+[
+  {
+    "id": "rIp_Dobk4Isq",
+    "originalName": "华强北手机1.wav",
+    "storedName": "rIp_Dobk4Isq.wav",
+    "mimeType": "audio/wav",
+    "extension": "wav",
+    "size": 1511468,
+    "category": "audio",
+    "createdAt": "2026-07-06T06:23:41.479Z",
+    "expiresAt": "2026-07-13T06:23:41.479Z",
+    "downloadCount": 1,
+    "previewable": true
+  },
+  {
+    "id": "F58c5Yp_3JQM",
+    "originalName": "测试.mp3",
+    "storedName": "F58c5Yp_3JQM.mp3",
+    "mimeType": "audio/mpeg",
+    "extension": "mp3",
+    "size": 243698,
+    "category": "audio",
+    "createdAt": "2026-07-06T05:38:57.298Z",
+    "expiresAt": "2026-07-13T05:38:57.298Z",
+    "downloadCount": 0,
+    "previewable": true
+  },
+  {
+    "id": "XZRbHUeNJV8T",
+    "originalName": "Snipaste_2026-07-06_12-56-51 (1).jpg",
+    "storedName": "XZRbHUeNJV8T.jpg",
+    "mimeType": "image/jpeg",
+    "extension": "jpg",
+    "size": 36276,
+    "category": "image",
+    "createdAt": "2026-07-06T05:38:50.346Z",
+    "expiresAt": "2026-07-13T05:38:50.346Z",
+    "downloadCount": 0,
+    "previewable": true
+  }
+]

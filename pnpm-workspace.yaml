@@ -1,0 +1,11 @@
+packages:
+  - frontend
+  - backend
+  - packages/*
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+allowBuilds:
+  esbuild: true
+  sharp: true
