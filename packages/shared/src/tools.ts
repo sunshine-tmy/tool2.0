@@ -53,7 +53,7 @@ const tools: ToolDefinition[] = [
     title: "视频文本解析",
     description: "从商品讲解、直播切片和素材视频中提取文本内容。",
     category: "video",
-    status: "planned",
+    status: "ready",
     requiresAuth: false,
     acceptedTypes: ["video/mp4", "video/webm", "video/quicktime"],
     routePath: "/tools/video-text",

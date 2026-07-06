@@ -8,6 +8,7 @@ import { getConfig } from "./config";
 import { registerFormatConvertRoutes } from "./modules/format-convert/routes";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
+import { registerVideoTextRoutes } from "./modules/video-text";
 import { createTaskStore } from "./tasks/task-store";
 
 export async function createApp() {
@@ -36,11 +37,18 @@ export async function createApp() {
   await fs.mkdir(config.outputDir, { recursive: true });
   await fs.mkdir(config.tempDir, { recursive: true });
   await fs.mkdir(config.lanTransferFilesDir, { recursive: true });
+  await fs.mkdir(config.videoTextUploadsDir, { recursive: true });
+  await fs.mkdir(config.videoTextAudioDir, { recursive: true });
+  await fs.mkdir(config.videoTextResultsDir, { recursive: true });
 
   app.get("/api/health", async () => {
     return ok({
       status: "ok",
-      name: "toolbox-api"
+      name: "toolbox-api",
+      videoText: {
+        audioExtractorConfigured: Boolean(config.videoTextAudioExtractCommand),
+        transcriberConfigured: Boolean(config.videoTextTranscribeCommand)
+      }
     });
   });
 
@@ -79,6 +87,7 @@ export async function createApp() {
   registerImageCompressRoutes(app, config, taskStore);
   registerFormatConvertRoutes(app, config, taskStore);
   await registerLanTransferRoutes({ app, config });
+  await registerVideoTextRoutes({ app, config, taskStore });
 
   return app;
 }

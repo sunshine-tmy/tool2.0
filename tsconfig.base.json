@@ -13,7 +13,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@toolbox/shared": ["packages/shared/src/index.ts"]
+      "@toolbox/shared": ["packages/shared/src/index.ts"],
+      "@toolbox/shared/video-text": ["packages/shared/src/video-text.ts"]
     }
   }
 }

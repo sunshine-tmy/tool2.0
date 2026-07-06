@@ -87,6 +87,10 @@ importers:
         version: 3.3.6(typescript@5.9.3)
 
   packages/shared:
+    dependencies:
+      opencc-js:
+        specifier: ^1.4.0
+        version: 1.4.0
     devDependencies:
       vitest:
         specifier: ^3.2.4
@@ -1134,6 +1138,9 @@ packages:
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
     engines: {node: '>=14.0.0'}
+
+  opencc-js@1.4.0:
+    resolution: {integrity: sha512-SEb4huI5+lT4CFPA4sgs+NAOOgpcmdHZ+vYxhRLR1bQWIt6VRwpFPjWgTJAWAg1MviDcXTBe5zVoUOVxVxNK8w==}
 
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
@@ -2400,6 +2407,8 @@ snapshots:
   nanoid@5.1.16: {}
 
   on-exit-leak-free@2.1.2: {}
+
+  opencc-js@1.4.0: {}
 
   package-json-from-dist@1.0.1: {}
 
