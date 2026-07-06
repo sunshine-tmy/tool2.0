@@ -283,6 +283,152 @@ input {
   font-size: 13px;
 }
 
+.image-compress-main {
+  min-width: 0;
+}
+
+.image-compress-panel {
+  min-height: 620px;
+}
+
+.image-compress-dropzone {
+  gap: 8px;
+  min-height: 178px;
+  margin-bottom: 14px;
+  color: #2563eb;
+}
+
+.image-compress-dropzone strong,
+.image-compress-dropzone span {
+  display: block;
+}
+
+.image-compress-dropzone span {
+  color: #667085;
+  font-size: 13px;
+}
+
+.image-compress-dropzone.is-dragging {
+  background: #eff6ff;
+  border-color: #2563eb;
+}
+
+.image-compress-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.image-compress-summary div {
+  padding: 12px;
+  background: #fbfcfe;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+}
+
+.image-compress-summary span,
+.image-result-meta span {
+  display: block;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.image-compress-summary strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 16px;
+}
+
+.image-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.image-result-row {
+  display: grid;
+  grid-template-columns: 72px minmax(220px, 1fr) minmax(120px, 0.35fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  background: #fbfcfe;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+}
+
+.image-thumb {
+  width: 72px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #eef2f7;
+  border: 1px solid #e6eaf1;
+  border-radius: 8px;
+}
+
+.image-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-result-main {
+  min-width: 0;
+}
+
+.image-result-main strong {
+  display: block;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-result-main span,
+.image-result-main small {
+  display: block;
+  margin: 4px 0 8px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.image-result-main small {
+  color: #dc2626;
+}
+
+.image-result-meta {
+  min-width: 0;
+}
+
+.image-compress-settings {
+  position: sticky;
+  top: 88px;
+}
+
+.preset-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.preset-tabs button {
+  min-height: 34px;
+  color: #344054;
+  background: #f8fafc;
+  border: 1px solid #e6eaf1;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.preset-tabs button.is-active {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  font-weight: 700;
+}
+
 .lan-panel {
   min-height: 640px;
 }
@@ -671,6 +817,8 @@ input {
 
   .lan-filters,
   .file-row,
+  .image-compress-summary,
+  .image-result-row,
   .video-text-grid,
   .analysis-grid,
   .timeline-row {

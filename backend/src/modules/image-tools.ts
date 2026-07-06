@@ -53,10 +53,12 @@ async function processImageRequest(
     });
 
     const input = await file.toBuffer();
+    const originalSize = input.length;
     const outputName = `${task.id}.${options.outputFormat}`;
     const outputPath = path.join(config.outputDir, outputName);
 
     let pipeline = sharp(input).rotate();
+    const metadata = await sharp(input).metadata();
     if (options.width) {
       pipeline = pipeline.resize({ width: options.width, withoutEnlargement: true });
     }
@@ -70,6 +72,7 @@ async function processImageRequest(
     }
 
     await pipeline.toFile(outputPath);
+    const outputStat = await fs.stat(outputPath);
     const completed = taskStore.update(task.id, {
       status: "completed",
       progress: 100,
@@ -78,7 +81,16 @@ async function processImageRequest(
 
     return ok({
       task: completed,
-      downloadUrl: `/api/files/${outputName}`
+      downloadUrl: `/api/files/${outputName}`,
+      originalName: path.basename(file.filename || "image"),
+      outputName,
+      outputFormat: options.outputFormat,
+      originalSize,
+      outputSize: outputStat.size,
+      savedBytes: originalSize - outputStat.size,
+      compressionRatio: originalSize > 0 ? outputStat.size / originalSize : 1,
+      width: metadata.width,
+      height: metadata.height
     });
   } catch (error) {
     taskStore.update(task.id, {
