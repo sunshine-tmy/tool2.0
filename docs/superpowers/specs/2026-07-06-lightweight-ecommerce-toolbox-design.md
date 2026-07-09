@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a lightweight, no-login ecommerce utility toolbox. Users land on the home page and can immediately use tools for files, images, video text extraction, and format conversion.
+Build a lightweight, no-login ecommerce utility toolbox. Users land on the home page and can immediately use tools for files, images, and video text extraction.
 
 ## Product Scope
 
@@ -11,11 +11,10 @@ The first version focuses on a clean tool workspace instead of a SaaS account sy
 Initial modules:
 
 - Image compression
-- Image format conversion
 - LAN file transfer
 - Video text extraction
 
-Image compression and format conversion should be usable first. LAN transfer and video text extraction can start as structured modules with UI entries and backend boundaries.
+Image compression should be usable first. LAN transfer and video text extraction can start as structured modules with UI entries and backend boundaries.
 
 ## Architecture
 
@@ -75,7 +74,6 @@ Initial API routes:
 - `GET /api/health`
 - `GET /api/tools`
 - `POST /api/tools/image-compress`
-- `POST /api/tools/format-convert`
 - `GET /api/tasks/:taskId`
 
 ## Verification

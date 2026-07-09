@@ -133,6 +133,58 @@ if (mode === "extract") {
     );
   });
 
+  it("attaches optional transcriber quality metadata from sidecar output", async () => {
+    const helperPath = path.join(storageRoot, "video-text-quality-helper.cjs");
+    await fs.writeFile(
+      helperPath,
+      `
+const fs = require("fs");
+const [mode, input, output] = process.argv.slice(2);
+if (mode === "extract") {
+  fs.writeFileSync(output, "audio");
+} else if (mode === "transcribe") {
+  fs.writeFileSync(output, "1\\n00:00:00,000 --> 00:00:02,000\\n精准中文口播。\\n");
+  fs.writeFileSync(output + ".meta.json", JSON.stringify({
+    model: "large-v3-turbo",
+    language: "zh",
+    device: "cuda",
+    computeType: "int8_float16",
+    averageLogProbability: -0.18,
+    lowConfidenceSegments: [
+      { index: 1, startSeconds: 0, endSeconds: 2, text: "精准中文口播。", averageLogProbability: -0.92 }
+    ]
+  }));
+}
+`,
+      "utf8"
+    );
+    process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
+    process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
+
+    const app = await createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tools/video-text/tasks",
+      ...multipartPayload({
+        fileName: "quality.mp4",
+        mimeType: "video/mp4",
+        content: "fake-video"
+      })
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = response.json().data;
+    expect(data.task.status).toBe("completed");
+    expect(data.result.recognitionQuality).toMatchObject({
+      model: "large-v3-turbo",
+      language: "zh",
+      device: "cuda",
+      computeType: "int8_float16",
+      averageLogProbability: -0.18
+    });
+    expect(data.result.recognitionQuality.lowConfidenceSegments).toHaveLength(1);
+  });
+
   it("reports empty transcription separately from missing configuration", async () => {
     const helperPath = path.join(storageRoot, "video-text-empty-helper.cjs");
     await fs.writeFile(
@@ -220,6 +272,36 @@ if (mode === "extract") {
     expect(data.items[0].fileName).toBe("summer-demo.mp4");
     expect(data.items[0].textPreview).toContain("Summer dress");
     expect(Object.hasOwn(data.items[0], "keywords")).toBe(false);
+  });
+
+  it("ignores transcriber metadata sidecar files when listing analysis history", async () => {
+    const app = await createApp();
+    const created = await createVideoTextTask(app, {
+      fileName: "with-sidecar.mp4",
+      transcript: "Sidecar files should not appear in history."
+    });
+    const taskId = created.json().data.task.id;
+    await fs.writeFile(
+      path.join(storageRoot, "video-text", "results", `${taskId}.txt.meta.json`),
+      JSON.stringify({
+        model: "medium",
+        language: "zh",
+        device: "cpu",
+        computeType: "int8"
+      }),
+      "utf8"
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/tools/video-text/history?page=1&pageSize=5"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = response.json().data;
+    expect(data.total).toBe(1);
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].id).toBe(taskId);
   });
 
   it("deletes analysis history and stored result content", async () => {

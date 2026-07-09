@@ -27,17 +27,6 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/tools/image-compress"
   },
   {
-    id: "format-convert",
-    title: "格式转换",
-    description: "在 JPG、PNG、WebP 等常用图片格式之间快速转换。",
-    category: "image",
-    status: "ready",
-    requiresAuth: false,
-    acceptedTypes: ["image/jpeg", "image/png", "image/webp"],
-    routePath: "/tools/format-convert",
-    apiNamespace: "/api/tools/format-convert"
-  },
-  {
     id: "lan-transfer",
     title: "局域网文件传输",
     description: "局域网内双向收发文件，支持预览、筛选、下载和自动过期清理。",

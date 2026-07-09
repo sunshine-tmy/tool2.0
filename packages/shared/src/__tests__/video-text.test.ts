@@ -57,6 +57,29 @@ Click shop cart for discount today.`
     expect(Object.hasOwn(result.timeline[0], "keywords")).toBe(false);
   });
 
+  it("preserves optional recognition quality metadata on analyzed transcripts", () => {
+    const result = analyzeVideoText({
+      title: "quality.mp4",
+      transcript: "1\n00:00:00,000 --> 00:00:02,000\n精准中文口播。",
+      recognitionQuality: {
+        model: "large-v3-turbo",
+        language: "zh",
+        device: "cuda",
+        computeType: "int8_float16",
+        averageLogProbability: -0.18,
+        lowConfidenceSegments: []
+      }
+    });
+
+    expect(result.recognitionQuality).toMatchObject({
+      model: "large-v3-turbo",
+      language: "zh",
+      device: "cuda",
+      computeType: "int8_float16",
+      averageLogProbability: -0.18
+    });
+  });
+
   it("normalizes traditional Chinese transcript text to simplified Chinese", () => {
     const result = analyzeVideoText({
       title: "weather.mp4",

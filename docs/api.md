@@ -35,11 +35,6 @@ Multipart fields:
 - `outputFormat`: `jpeg`, `png`, or `webp`
 - `width`: optional positive number
 
-## Format Conversion
-
-`POST /api/tools/format-convert`
-
-Uses the same multipart shape as image compression.
 
 ## LAN File Transfer
 
@@ -80,6 +75,37 @@ Deletes the file and metadata entry.
 `POST /api/tools/lan-transfer/cleanup`
 
 Deletes expired files. Files expire after 7 days by default.
+
+## Video Text
+
+Canonical namespace: `/api/tools/video-text`
+
+`POST /api/tools/video-text/tasks`
+
+Multipart fields:
+
+- `file`: video file
+- `transcript`: optional pasted transcript, SRT, or VTT text
+
+When no transcript is supplied, the backend uses `VIDEO_TEXT_AUDIO_EXTRACT_COMMAND` followed by
+`VIDEO_TEXT_TRANSCRIBE_COMMAND`. The recommended local command calls
+`scripts/video-transcribe-faster-whisper.py` with `large-v3-turbo`, `--language zh`, CUDA, and
+`int8_float16`. If the large model cannot be loaded, the helper automatically tries `medium`,
+`small`, and `base`, then CPU `int8` fallbacks.
+
+Completed transcriber results may include `recognitionQuality`:
+
+- `requestedModel`, `model`, `language`, `device`, and `computeType`
+- `averageLogProbability`
+- `lowConfidenceSegments` for transcript fragments that should be manually reviewed
+
+`GET /api/tools/video-text/tasks/:taskId/result`
+
+Returns the completed analysis result.
+
+`GET /api/tools/video-text/tasks/:taskId/export?format=txt|srt|json`
+
+Exports the result. `txt` is the default.
 
 ## Download Output
 

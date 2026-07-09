@@ -5,7 +5,6 @@ import multipart from "@fastify/multipart";
 import fastify from "fastify";
 import { fail, listTools, ok } from "@toolbox/shared";
 import { getConfig } from "./config";
-import { registerFormatConvertRoutes } from "./modules/format-convert/routes";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
 import { registerVideoTextRoutes } from "./modules/video-text";
@@ -85,7 +84,6 @@ export async function createApp() {
   });
 
   registerImageCompressRoutes(app, config, taskStore);
-  registerFormatConvertRoutes(app, config, taskStore);
   await registerLanTransferRoutes({ app, config });
   await registerVideoTextRoutes({ app, config, taskStore });
 

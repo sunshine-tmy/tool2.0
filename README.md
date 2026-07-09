@@ -15,7 +15,6 @@
 ```text
 /                         工具总览
 /tools/image-compress      图片压缩
-/tools/format-convert      格式转换
 /tools/lan-transfer        局域网文件传输
 /tools/video-text          视频文本解析
 ```
@@ -59,6 +58,15 @@ pnpm dev:web
 - 文件默认保留：7 天
 - 元数据位置：`storage/lan-transfer/index.json`
 - 文件位置：`storage/lan-transfer/files/`
+
+## 视频文本解析
+
+- 前端页面：`/tools/video-text`
+- 后端接口：`/api/tools/video-text/*`
+- 默认本地识别链路：`ffmpeg` 提取 16k 单声道 WAV，再调用 `scripts/video-transcribe-faster-whisper.py`
+- 推荐识别参数：`large-v3-turbo`、`--language zh`、`--device cuda`、`--compute-type int8_float16`
+- 首次运行会下载模型；如果大模型内存不足或 CUDA 不可用，脚本会自动降级模型并回退到 CPU `int8`
+- 识别结果会在 JSON 中携带可选 `recognitionQuality`，用于展示模型、语言、运行设备和建议复核片段
 
 ## 验证
 

@@ -6,7 +6,11 @@ import { promisify } from "node:util";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import { fail, ok } from "@toolbox/shared";
-import { analyzeVideoText, type VideoTextAnalysis } from "@toolbox/shared/video-text";
+import {
+  analyzeVideoText,
+  type VideoTextAnalysis,
+  type VideoTextRecognitionQuality
+} from "@toolbox/shared/video-text";
 import type { AppConfig } from "../config";
 import type { Task, TaskStore } from "../tasks/task-store";
 
@@ -67,7 +71,10 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
       const formTranscript =
         getFieldText(fields, "transcript") || getFieldText(fields, "subtitle") || getFieldText(fields, "script");
       const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
-      const transcript = formTranscript || (await transcribeVideo(videoPath, task.id, config));
+      const transcribed = formTranscript
+        ? { transcript: formTranscript, recognitionQuality: undefined }
+        : await transcribeVideo(videoPath, task.id, config);
+      const transcript = transcribed.transcript;
 
       if (!transcript.trim()) {
         const failed = taskStore.update(task.id, {
@@ -88,7 +95,8 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
       taskStore.update(task.id, { progress: 70 });
       const analysis = analyzeVideoText({
         title: safeName,
-        transcript
+        transcript,
+        recognitionQuality: transcribed.recognitionQuality
       });
       const result: StoredVideoTextResult = {
         id: task.id,
@@ -237,11 +245,12 @@ function getFieldValue(field: unknown) {
 
 async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig) {
   if (!config.videoTextTranscribeCommand) {
-    return "";
+    return { transcript: "" };
   }
 
   const audioPath = await extractAudio(videoPath, taskId, config);
   const outputPath = path.join(config.videoTextResultsDir, `${taskId}.txt`);
+  const metadataPath = `${outputPath}.meta.json`;
   const { stdout } = await runCommand(
     renderCommand(config.videoTextTranscribeCommand, {
       input: audioPath,
@@ -252,11 +261,58 @@ async function transcribeVideo(videoPath: string, taskId: string, config: AppCon
     "视频语音识别失败：请检查 VIDEO_TEXT_TRANSCRIBE_COMMAND 配置。"
   );
 
+  const recognitionQuality = await readRecognitionQuality(metadataPath);
   try {
-    return await fsp.readFile(outputPath, "utf8");
+    return {
+      transcript: await fsp.readFile(outputPath, "utf8"),
+      recognitionQuality
+    };
   } catch {
-    return stdout;
+    return {
+      transcript: stdout,
+      recognitionQuality
+    };
   }
+}
+
+async function readRecognitionQuality(metadataPath: string): Promise<VideoTextRecognitionQuality | undefined> {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(metadataPath, "utf8")) as VideoTextRecognitionQuality;
+    return sanitizeRecognitionQuality(parsed);
+  } catch {
+    return undefined;
+  }
+}
+
+function sanitizeRecognitionQuality(value: VideoTextRecognitionQuality): VideoTextRecognitionQuality {
+  return {
+    requestedModel: stringOrUndefined(value.requestedModel),
+    model: stringOrUndefined(value.model),
+    language: stringOrUndefined(value.language),
+    detectedLanguage: stringOrUndefined(value.detectedLanguage),
+    languageProbability: numberOrUndefined(value.languageProbability),
+    device: stringOrUndefined(value.device),
+    computeType: stringOrUndefined(value.computeType),
+    averageLogProbability: numberOrUndefined(value.averageLogProbability),
+    lowConfidenceSegments: Array.isArray(value.lowConfidenceSegments)
+      ? value.lowConfidenceSegments.map((segment) => ({
+          index: Number(segment.index) || 0,
+          startSeconds: numberOrUndefined(segment.startSeconds),
+          endSeconds: numberOrUndefined(segment.endSeconds),
+          text: String(segment.text ?? ""),
+          averageLogProbability: numberOrUndefined(segment.averageLogProbability),
+          noSpeechProbability: numberOrUndefined(segment.noSpeechProbability)
+        }))
+      : []
+  };
+}
+
+function stringOrUndefined(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberOrUndefined(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 async function extractAudio(videoPath: string, taskId: string, config: AppConfig) {
@@ -310,6 +366,9 @@ async function loadResult(
     const result = sanitizeStoredResult(
       JSON.parse(await fsp.readFile(resultFilePath(config, taskId), "utf8")) as StoredVideoTextResult
     );
+    if (!isStoredVideoTextResult(result)) {
+      return null;
+    }
     cache.set(taskId, result);
     return result;
   } catch {
@@ -327,13 +386,17 @@ async function listHistoryResults(config: AppConfig, cache: Map<string, StoredVi
 
   const results = await Promise.all(
     files
-      .filter((file) => file.endsWith(".json"))
+      .filter(isResultJsonFile)
       .map((file) => loadResult(config, cache, path.basename(file, ".json")))
   );
 
   return results
     .filter((result): result is StoredVideoTextResult => Boolean(result))
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+function isResultJsonFile(file: string) {
+  return file.endsWith(".json") && !file.endsWith(".meta.json") && !file.includes(".txt.");
 }
 
 function toHistoryItem(result: StoredVideoTextResult): VideoTextHistoryItem {
@@ -376,6 +439,18 @@ function sanitizeStoredResult(result: StoredVideoTextResult) {
   return clean as StoredVideoTextResult;
 }
 
+function isStoredVideoTextResult(value: StoredVideoTextResult) {
+  return (
+    typeof value.id === "string" &&
+    typeof value.fileName === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.fullText === "string" &&
+    Array.isArray(value.summary) &&
+    value.stats !== undefined &&
+    typeof value.stats.characterCount === "number"
+  );
+}
+
 function compactPreview(text: string, maxLength: number) {
   const normalized = text.replace(/\s+/g, " ").trim();
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
@@ -393,6 +468,7 @@ async function deleteStoredResultFiles(config: AppConfig, taskId: string) {
   await Promise.all([
     fsp.rm(resultFilePath(config, taskId), { force: true }),
     fsp.rm(path.join(config.videoTextResultsDir, `${taskId}.txt`), { force: true }),
+    fsp.rm(path.join(config.videoTextResultsDir, `${taskId}.txt.meta.json`), { force: true }),
     fsp.rm(path.join(config.videoTextAudioDir, `${taskId}.wav`), { force: true }),
     deleteFilesByPrefix(config.videoTextUploadsDir, `${taskId}-`)
   ]);

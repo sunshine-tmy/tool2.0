@@ -8,13 +8,12 @@ This project is a lightweight ecommerce toolbox. It intentionally avoids login, 
 
 - Home workspace with search, categories, tool cards, and a selected-tool panel
 - Shared tool registry for frontend and backend
-- Fastify API with health, tools, tasks, image compression, and image format conversion routes
+- Fastify API with health, tools, tasks, and image compression routes
 - Local file output under `storage/outputs`
 
 ## Initial Tools
 
 - Image compression: ready
-- Format conversion: ready
 - LAN file transfer: planned module
 - Video text extraction: planned module
 

@@ -80,6 +80,10 @@
                 <span>字数</span>
                 <strong>{{ result.stats.characterCount }}</strong>
               </div>
+              <div v-for="row in recognitionQualityRows" :key="row.label">
+                <span>{{ row.label }}</span>
+                <strong>{{ row.value }}</strong>
+              </div>
             </div>
             <p v-if="currentTask?.error" class="status-error">{{ currentTask.error }}</p>
             <p v-else class="status-hint">已支持本地识别链路：视频会先提取音频，再调用后端配置的语音识别命令生成文案。</p>
@@ -176,6 +180,14 @@
             <strong>{{ segment.text }}</strong>
           </article>
         </div>
+
+        <div v-if="lowConfidenceSegments.length" class="timeline-list">
+          <h4>建议复核片段</h4>
+          <article v-for="segment in lowConfidenceSegments" :key="`${segment.index}-${segment.text}`" class="timeline-row">
+            <span>{{ formatSeconds(segment.startSeconds) }} - {{ formatSeconds(segment.endSeconds) }}</span>
+            <strong>{{ segment.text }}</strong>
+          </article>
+        </div>
       </section>
     </section>
   </ToolLayout>
@@ -188,6 +200,7 @@ import { FileText, FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
+import { describeRecognitionQuality } from "./quality";
 import type { VideoTextHistoryItem, VideoTextResult } from "./types";
 import type { ToolTask } from "../../types";
 import { shouldShowPagination } from "../lan-transfer/pagination";
@@ -229,6 +242,8 @@ const sourceLabel = computed(() => {
   if (!result.value) return "未生成";
   return result.value.source === "transcriber" ? "本地语音识别" : "字幕/文案输入";
 });
+const recognitionQualityRows = computed(() => describeRecognitionQuality(result.value));
+const lowConfidenceSegments = computed(() => result.value?.recognitionQuality?.lowConfidenceSegments ?? []);
 
 function onVideoChange(event: Event) {
   const target = event.target as HTMLInputElement;

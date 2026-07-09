@@ -15,11 +15,6 @@ export const router = createRouter({
       component: () => import("../modules/image-compress/page.vue")
     },
     {
-      path: "/tools/format-convert",
-      name: "format-convert",
-      component: () => import("../modules/format-convert/page.vue")
-    },
-    {
       path: "/tools/lan-transfer",
       name: "lan-transfer",
       component: () => import("../modules/lan-transfer/page.vue")

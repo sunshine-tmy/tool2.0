@@ -12,24 +12,19 @@ type RegisterImageToolRoutesOptions = {
   taskStore: TaskStore;
 };
 
-export async function registerImageToolRoutes({ app, config, taskStore }: RegisterImageToolRoutesOptions) {
-  registerSingleImageToolRoute({ app, config, taskStore, toolId: "image-compress" });
-  registerSingleImageToolRoute({ app, config, taskStore, toolId: "format-convert" });
-}
-
 export function registerSingleImageToolRoute({
   app,
   config,
   taskStore,
   toolId
-}: RegisterImageToolRoutesOptions & { toolId: "image-compress" | "format-convert" }) {
+}: RegisterImageToolRoutesOptions & { toolId: "image-compress" }) {
   app.post(`/api/tools/${toolId}`, async (request, reply) => {
     return processImageRequest(toolId, request, reply, config, taskStore);
   });
 }
 
 async function processImageRequest(
-  toolId: "image-compress" | "format-convert",
+  toolId: "image-compress",
   request: FastifyRequest,
   reply: FastifyReply,
   config: AppConfig,

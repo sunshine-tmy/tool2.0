@@ -13,7 +13,7 @@ describe("task store", () => {
 
   it("updates task progress and output path", () => {
     const store = createTaskStore();
-    const task = store.create("format-convert");
+    const task = store.create("image-compress");
 
     store.update(task.id, {
       status: "completed",

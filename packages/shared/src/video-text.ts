@@ -24,6 +24,27 @@ export type VideoTextChapter = {
 
 export type VideoTextTimelineItem = TranscriptCue;
 
+export type VideoTextLowConfidenceSegment = {
+  index: number;
+  startSeconds?: number;
+  endSeconds?: number;
+  text: string;
+  averageLogProbability?: number;
+  noSpeechProbability?: number;
+};
+
+export type VideoTextRecognitionQuality = {
+  requestedModel?: string;
+  model?: string;
+  language?: string;
+  detectedLanguage?: string;
+  languageProbability?: number;
+  device?: string;
+  computeType?: string;
+  averageLogProbability?: number;
+  lowConfidenceSegments?: VideoTextLowConfidenceSegment[];
+};
+
 export type VideoTextAnalysis = {
   title: string;
   fullText: string;
@@ -32,11 +53,13 @@ export type VideoTextAnalysis = {
   stats: VideoTextStats;
   summary: string[];
   chapters: VideoTextChapter[];
+  recognitionQuality?: VideoTextRecognitionQuality;
 };
 
 export type AnalyzeVideoTextInput = {
   title?: string;
   transcript: string;
+  recognitionQuality?: VideoTextRecognitionQuality;
 };
 
 const traditionalToSimplified = Converter({ from: "t", to: "cn" });
@@ -119,7 +142,8 @@ export function analyzeVideoText(input: AnalyzeVideoTextInput): VideoTextAnalysi
     timeline,
     stats: buildStats(fullText, cues.length),
     summary: buildSummary(fullText),
-    chapters: buildChapters(cues)
+    chapters: buildChapters(cues),
+    recognitionQuality: input.recognitionQuality
   };
 }
 

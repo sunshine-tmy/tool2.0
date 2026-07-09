@@ -23,36 +23,92 @@ function Test-CommandExists {
 
 function Test-PortBusy {
   param([int]$Port)
-  return $null -ne (Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue | Select-Object -First 1)
+  return $null -ne (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
 
-function Get-PowerShellPath {
-  $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
-  if ($pwsh) {
-    return $pwsh.Source
+function Get-PortListenerProcessIds {
+  param([int]$Port)
+
+  return @(
+    Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+      Select-Object -ExpandProperty OwningProcess -Unique |
+      Where-Object { $_ -and $_ -ne $PID }
+  )
+}
+
+function Wait-PortFree {
+  param(
+    [int]$Port,
+    [int]$TimeoutSeconds = 10
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if (-not (Test-PortBusy $Port)) {
+      return $true
+    }
+    Start-Sleep -Milliseconds 500
   }
 
-  return "powershell.exe"
+  return -not (Test-PortBusy $Port)
 }
 
-function Start-ServiceWindow {
+function Restart-Port {
   param(
-    [string]$Title,
-    [string]$Command
+    [int]$Port,
+    [string]$ServiceName
   )
 
-  $powerShellPath = Get-PowerShellPath
-  $escapedRoot = $Root.Path.Replace("'", "''")
-  $fullCommand = "Set-Location -LiteralPath '$escapedRoot'; `$Host.UI.RawUI.WindowTitle = '$Title'; $Command"
+  $processIds = Get-PortListenerProcessIds $Port
+  if ($processIds.Count -eq 0) {
+    return $true
+  }
 
-  Start-Process -FilePath $powerShellPath -ArgumentList @(
-    "-NoExit",
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    $fullCommand
+  Write-Host "Port $Port is already in use; restarting $ServiceName port." -ForegroundColor Yellow
+  foreach ($processId in $processIds) {
+    try {
+      $process = Get-Process -Id $processId -ErrorAction Stop
+      Write-Host "Stopping PID $processId ($($process.ProcessName)) on port $Port"
+      Stop-Process -Id $processId -Force -ErrorAction Stop
+    } catch {
+      Write-Host "Could not stop PID $processId on port ${Port}: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+  }
+
+  if (Wait-PortFree $Port) {
+    Write-Host "Port $Port is free." -ForegroundColor Green
+    return $true
+  }
+
+  Write-Host "Port $Port is still in use; $ServiceName startup skipped." -ForegroundColor Red
+  return $false
+}
+
+function Test-HttpOk {
+  param([string]$Url)
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3
+    return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+  } catch {
+    return $false
+  }
+}
+
+function Wait-HttpOk {
+  param(
+    [string]$Url,
+    [int]$TimeoutSeconds = 30
   )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-HttpOk $Url) {
+      return $true
+    }
+    Start-Sleep -Seconds 1
+  }
+
+  return Test-HttpOk $Url
 }
 
 Set-Location -LiteralPath $Root
@@ -81,29 +137,48 @@ if (-not $NoInstall) {
   }
 }
 
-Write-Step "Starting backend"
+Write-Step "Preparing backend port"
 if (Test-PortBusy 3100) {
-  Write-Host "Port 3100 is already in use; backend startup skipped." -ForegroundColor Yellow
-} else {
-  Start-ServiceWindow "Toolbox API :3100" "pnpm --filter backend dev"
+  Restart-Port 3100 "backend" | Out-Null
 }
 
-Write-Step "Starting frontend"
+Write-Step "Preparing frontend port"
 if (Test-PortBusy 5173) {
-  Write-Host "Port 5173 is already in use; frontend startup skipped." -ForegroundColor Yellow
-} else {
-  Start-ServiceWindow "Toolbox Web :5173" "pnpm --filter frontend dev"
+  Restart-Port 5173 "frontend" | Out-Null
 }
-
-Write-Step "Waiting for services"
-Start-Sleep -Seconds 3
-
-Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
-Write-Host "Backend health: $BackendUrl" -ForegroundColor Green
 
 if (-not $NoBrowser) {
-  Start-Process $FrontendUrl
+  Start-Job -ArgumentList $FrontendUrl, $BackendUrl -ScriptBlock {
+    param([string]$FrontendUrl, [string]$BackendUrl)
+
+    function Test-HttpOk {
+      param([string]$Url)
+      try {
+        $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3
+        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+      } catch {
+        return $false
+      }
+    }
+
+    $deadline = (Get-Date).AddSeconds(45)
+    while ((Get-Date) -lt $deadline) {
+      if ((Test-HttpOk $FrontendUrl) -and (Test-HttpOk $BackendUrl)) {
+        Start-Process $FrontendUrl
+        return
+      }
+      Start-Sleep -Seconds 1
+    }
+  } | Out-Null
+
+  Write-Host "Browser will open when frontend and backend are ready." -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "Startup finished. Close the frontend/backend terminal windows to stop services." -ForegroundColor Green
+Write-Step "Starting frontend and backend in this terminal"
+Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
+Write-Host "Backend health: $BackendUrl" -ForegroundColor Green
+Write-Host "Press Ctrl+C in this terminal to stop both services." -ForegroundColor Green
+Write-Host ""
+
+pnpm --parallel --filter frontend --filter backend dev

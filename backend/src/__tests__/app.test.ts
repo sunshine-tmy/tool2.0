@@ -28,7 +28,6 @@ describe("api app", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data.map((tool: { id: string }) => tool.id)).toEqual([
       "image-compress",
-      "format-convert",
       "lan-transfer",
       "video-text"
     ]);

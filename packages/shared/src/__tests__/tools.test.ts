@@ -7,7 +7,6 @@ describe("tool registry", () => {
 
     expect(tools.map((tool) => tool.id)).toEqual([
       "image-compress",
-      "format-convert",
       "lan-transfer",
       "video-text"
     ]);
@@ -23,13 +22,13 @@ describe("tool registry", () => {
       routePath: "/tools/image-compress",
       apiNamespace: "/api/tools/image-compress"
     });
-    expect(getToolById("format-convert")).toMatchObject({
-      routePath: "/tools/format-convert",
-      apiNamespace: "/api/tools/format-convert"
-    });
     expect(getToolById("lan-transfer")).toMatchObject({
       routePath: "/tools/lan-transfer",
       apiNamespace: "/api/tools/lan-transfer"
+    });
+    expect(getToolById("video-text")).toMatchObject({
+      routePath: "/tools/video-text",
+      apiNamespace: "/api/tools/video-text"
     });
   });
 });
