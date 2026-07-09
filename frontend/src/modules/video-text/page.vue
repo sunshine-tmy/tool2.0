@@ -4,7 +4,7 @@
       <div class="section-title">
         <div>
           <h2>视频文本解析</h2>
-          <p>上传视频并提取文案，支持字幕/文案辅助输入、时间轴、摘要和结果导出。</p>
+          <p>上传视频并调用本地语音识别提取文案，支持时间轴、摘要和结果导出。</p>
         </div>
       </div>
 
@@ -22,28 +22,12 @@
               <input hidden type="file" accept="video/mp4,video/webm,video/quicktime" @change="onVideoChange" />
               <UploadCloud :size="28" />
               <strong>{{ selectedVideo ? selectedVideo.name : "点击或拖拽上传视频" }}</strong>
-              <span>支持 MP4、WebM、MOV。已配置本地识别时可直接转写，字幕/文案可作为备用输入。</span>
+              <span>支持 MP4、WebM、MOV。上传后将调用后端配置的本地语音识别命令生成文案。</span>
             </label>
 
             <div v-if="videoPreviewUrl" class="video-preview-box">
               <video :src="videoPreviewUrl" controls />
             </div>
-
-            <div class="subtitle-row">
-              <label class="subtitle-upload">
-                <input hidden type="file" accept=".srt,.vtt,.txt" @change="onSubtitleChange" />
-                <FileText :size="16" />
-                <span>{{ subtitleFileName || "上传字幕/文案文件" }}</span>
-              </label>
-              <n-tag v-if="selectedVideo" round>{{ formatBytes(selectedVideo.size) }}</n-tag>
-            </div>
-
-            <n-input
-              v-model:value="transcriptText"
-              type="textarea"
-              :autosize="{ minRows: 8, maxRows: 14 }"
-              placeholder="可选：粘贴 SRT/VTT 字幕、直播口播稿或视频文案。未配置本地语音识别命令时，需要提供这部分内容。"
-            />
 
             <n-button type="primary" :loading="submitting" :disabled="!selectedVideo" @click="submit">
               <template #icon>
@@ -106,9 +90,34 @@
           </div>
         </div>
 
+        <div class="batch-toolbar">
+          <n-checkbox
+            :checked="historyPageSelection.checked"
+            :indeterminate="historyPageSelection.indeterminate"
+            :disabled="!historyItems.length"
+            @update:checked="toggleAllHistoryItems"
+          >
+            全选本页
+          </n-checkbox>
+          <n-button
+            tertiary
+            type="error"
+            size="small"
+            :disabled="!selectedHistoryIds.length"
+            :loading="batchDeletingHistory"
+            @click="deleteSelectedHistory"
+          >
+            批量删除 {{ selectedHistoryIds.length || "" }}
+          </n-button>
+        </div>
+
         <div class="file-list">
           <article v-for="item in historyItems" :key="item.id" class="file-row">
             <div class="file-main">
+              <n-checkbox
+                :checked="selectedHistoryIds.includes(item.id)"
+                @update:checked="(checked) => toggleHistoryItem(item.id, checked)"
+              />
               <FileVideo :size="20" />
               <div>
                 <strong>{{ item.fileName }}</strong>
@@ -195,8 +204,8 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { NButton, NEmpty, NInput, NPagination, NProgress, NTag, useMessage } from "naive-ui";
-import { FileText, FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
+import { NButton, NCheckbox, NEmpty, NInput, NPagination, NProgress, useMessage } from "naive-ui";
+import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
@@ -204,12 +213,16 @@ import { describeRecognitionQuality } from "./quality";
 import type { VideoTextHistoryItem, VideoTextResult } from "./types";
 import type { ToolTask } from "../../types";
 import { shouldShowPagination } from "../lan-transfer/pagination";
+import {
+  getPageSelectionState,
+  pruneSelectedIds,
+  togglePageSelection,
+  toggleSelectedId
+} from "../../utils/batch-selection";
 
 const message = useMessage();
 const selectedVideo = ref<File | null>(null);
 const videoPreviewUrl = ref("");
-const transcriptText = ref("");
-const subtitleFileName = ref("");
 const submitting = ref(false);
 const isDragging = ref(false);
 const uploadProgress = ref(0);
@@ -226,6 +239,8 @@ const historyItems = ref<VideoTextHistoryItem[]>([]);
 const historyLoading = ref(false);
 const openingHistoryId = ref("");
 const deletingHistoryId = ref("");
+const selectedHistoryIds = ref<string[]>([]);
+const batchDeletingHistory = ref(false);
 
 const statusLabel = computed(() => {
   if (!currentTask.value) return "等待上传";
@@ -240,10 +255,12 @@ const statusLabel = computed(() => {
 
 const sourceLabel = computed(() => {
   if (!result.value) return "未生成";
-  return result.value.source === "transcriber" ? "本地语音识别" : "字幕/文案输入";
+  return result.value.source === "transcriber" ? "本地语音识别" : "历史结果";
 });
 const recognitionQualityRows = computed(() => describeRecognitionQuality(result.value));
 const lowConfidenceSegments = computed(() => result.value?.recognitionQuality?.lowConfidenceSegments ?? []);
+const historyPageIds = computed(() => historyItems.value.map((item) => item.id));
+const historyPageSelection = computed(() => getPageSelectionState(selectedHistoryIds.value, historyPageIds.value));
 
 function onVideoChange(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -268,14 +285,6 @@ function setVideo(file: File | null) {
   videoPreviewUrl.value = URL.createObjectURL(file);
 }
 
-async function onSubtitleChange(event: Event) {
-  const target = event.target as HTMLInputElement;
-  const file = target.files?.[0];
-  if (!file) return;
-  subtitleFileName.value = file.name;
-  transcriptText.value = await file.text();
-}
-
 async function submit() {
   if (!selectedVideo.value) {
     message.warning("请先选择视频文件");
@@ -286,9 +295,6 @@ async function submit() {
   uploadProgress.value = 5;
   const form = new FormData();
   form.append("file", selectedVideo.value);
-  if (transcriptText.value.trim()) {
-    form.append("transcript", transcriptText.value.trim());
-  }
 
   try {
     const response = await videoTextApi.createTask(form, (event) => {
@@ -303,8 +309,6 @@ async function submit() {
     if (response.task.status === "completed") {
       message.success("视频文案解析完成");
       await loadHistory(1);
-    } else if (response.needsTranscript) {
-      message.warning("当前未配置本地语音识别命令，请配置后重试，或上传字幕文件/粘贴文案");
     } else {
       message.error(response.task.error || "视频文案解析失败");
     }
@@ -329,6 +333,7 @@ async function loadHistory(page = historyPagination.page) {
     historyPagination.page = response.page;
     historyPagination.pageSize = response.pageSize;
     historyPagination.pageCount = response.pageCount;
+    selectedHistoryIds.value = pruneSelectedIds(selectedHistoryIds.value, historyPageIds.value);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "获取解析历史失败");
   } finally {
@@ -392,6 +397,42 @@ async function deleteHistory(item: VideoTextHistoryItem) {
   }
 }
 
+function toggleHistoryItem(id: string, checked: boolean) {
+  selectedHistoryIds.value = toggleSelectedId(selectedHistoryIds.value, id, checked);
+}
+
+function toggleAllHistoryItems(checked: boolean) {
+  selectedHistoryIds.value = togglePageSelection(selectedHistoryIds.value, historyPageIds.value, checked);
+}
+
+async function deleteSelectedHistory() {
+  if (!selectedHistoryIds.value.length) return;
+  if (!window.confirm(`删除选中的 ${selectedHistoryIds.value.length} 条解析历史？`)) {
+    return;
+  }
+
+  batchDeletingHistory.value = true;
+  try {
+    const ids = [...selectedHistoryIds.value];
+    await Promise.all(ids.map((id) => videoTextApi.deleteHistory(id)));
+    if (result.value && ids.includes(result.value.id)) {
+      result.value = null;
+      currentTask.value = null;
+      uploadProgress.value = 0;
+    }
+    selectedHistoryIds.value = [];
+    if (historyItems.value.length === ids.length && historyPagination.page > 1) {
+      historyPagination.page -= 1;
+    }
+    await loadHistory(historyPagination.page);
+    message.success("已批量删除解析历史");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "批量删除解析历史失败");
+  } finally {
+    batchDeletingHistory.value = false;
+  }
+}
+
 async function copyFullText() {
   if (!result.value?.fullText) return;
   try {
@@ -410,7 +451,7 @@ function exportUrl(format: "txt" | "srt" | "json") {
 }
 
 function sourceName(source: VideoTextResult["source"]) {
-  return source === "transcriber" ? "本地识别" : "文案输入";
+  return source === "transcriber" ? "本地识别" : "历史结果";
 }
 
 function formatDateTime(value: string) {

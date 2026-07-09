@@ -85,9 +85,8 @@ Canonical namespace: `/api/tools/video-text`
 Multipart fields:
 
 - `file`: video file
-- `transcript`: optional pasted transcript, SRT, or VTT text
 
-When no transcript is supplied, the backend uses `VIDEO_TEXT_AUDIO_EXTRACT_COMMAND` followed by
+The backend uses `VIDEO_TEXT_AUDIO_EXTRACT_COMMAND` followed by
 `VIDEO_TEXT_TRANSCRIBE_COMMAND`. The recommended local command calls
 `scripts/video-transcribe-faster-whisper.py` with `large-v3-turbo`, `--language zh`, CUDA, and
 `int8_float16`. If the large model cannot be loaded, the helper automatically tries `medium`,

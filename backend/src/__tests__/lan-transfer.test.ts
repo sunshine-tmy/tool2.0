@@ -170,6 +170,57 @@ describe("lan transfer api", () => {
     expect(list.json().data.files).toHaveLength(0);
   });
 
+  it("serializes concurrent file deletes without corrupting the LAN index", async () => {
+    const app = await createApp();
+    const ids: string[] = [];
+    for (const name of ["one.txt", "two.txt", "three.txt"]) {
+      const upload = await app.inject({
+        method: "POST",
+        url: "/api/tools/lan-transfer/files",
+        ...multipartPayload("file", name, "text/plain", name)
+      });
+      ids.push(upload.json().data.file.id);
+    }
+
+    const deletes = await Promise.all(
+      ids.slice(0, 2).map((id) =>
+        app.inject({
+          method: "DELETE",
+          url: `/api/tools/lan-transfer/files/${id}`
+        })
+      )
+    );
+
+    expect(deletes.map((response) => response.statusCode)).toEqual([200, 200]);
+    const rawIndex = await fs.readFile(path.join(storageRoot, "lan-transfer", "index.json"), "utf8");
+    expect(() => JSON.parse(rawIndex)).not.toThrow();
+
+    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/files" });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().data.files).toHaveLength(1);
+  });
+
+  it("recovers a LAN index with trailing duplicate JSON after a failed concurrent write", async () => {
+    const app = await createApp();
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/tools/lan-transfer/files",
+      ...multipartPayload("file", "recover.txt", "text/plain", "recover")
+    });
+    const file = upload.json().data.file;
+    const indexPath = path.join(storageRoot, "lan-transfer", "index.json");
+    const validIndex = await fs.readFile(indexPath, "utf8");
+    await fs.writeFile(indexPath, `${validIndex}  }\n]`, "utf8");
+
+    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/files" });
+
+    expect(list.statusCode).toBe(200);
+    expect(list.json().data.files).toHaveLength(1);
+    expect(list.json().data.files[0].id).toBe(file.id);
+    const recoveredIndex = await fs.readFile(indexPath, "utf8");
+    expect(() => JSON.parse(recoveredIndex)).not.toThrow();
+  });
+
   it("cleans expired files from metadata and disk", async () => {
     const app = await createApp();
     const upload = await app.inject({

@@ -21,7 +21,24 @@ afterEach(async () => {
 });
 
 describe("video text api", () => {
-  it("creates a completed analysis task from uploaded video and transcript text", async () => {
+  it("ignores submitted transcript text and uses the configured local transcriber", async () => {
+    const helperPath = path.join(storageRoot, "video-text-ignore-transcript-helper.cjs");
+    await fs.writeFile(
+      helperPath,
+      `
+const fs = require("fs");
+const [mode, input, output] = process.argv.slice(2);
+if (mode === "extract") {
+  fs.writeFileSync(output, "audio");
+} else if (mode === "transcribe") {
+  fs.writeFileSync(output, "Transcribed speech from video only.");
+}
+`,
+      "utf8"
+    );
+    process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
+    process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
+
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
@@ -33,11 +50,7 @@ describe("video text api", () => {
         fields: {
           transcript: `1
 00:00:01,000 --> 00:00:03,000
-Summer dress fabric is soft.
-
-2
-00:00:04,000 --> 00:00:06,000
-Click shop cart for discount.`
+Injected text should be ignored.`
         }
       })
     });
@@ -45,13 +58,14 @@ Click shop cart for discount.`
     expect(response.statusCode).toBe(200);
     const data = response.json().data;
     expect(data.task.status).toBe("completed");
-    expect(data.result.fullText).toContain("Summer dress fabric");
-    expect(data.result.segments).toHaveLength(2);
+    expect(data.result.fullText).toContain("Transcribed speech from video only");
+    expect(data.result.fullText).not.toContain("Injected text should be ignored");
+    expect(data.result.source).toBe("transcriber");
     expect(Object.hasOwn(data.result, "keywords")).toBe(false);
     expect(Object.hasOwn(data.result, "suggestions")).toBe(false);
   });
 
-  it("reports a clear failure when no transcript source is available", async () => {
+  it("reports a clear failure when local transcription is not configured", async () => {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
@@ -66,10 +80,28 @@ Click shop cart for discount.`
     expect(response.statusCode).toBe(200);
     const data = response.json().data;
     expect(data.task.status).toBe("failed");
-    expect(data.task.error).toContain("未配置");
+    expect(data.needsTranscript).toBeUndefined();
+    expect(data.result).toBeNull();
   });
 
   it("recreates upload directories before saving video files", async () => {
+    const helperPath = path.join(storageRoot, "video-text-recovered-upload-helper.cjs");
+    await fs.writeFile(
+      helperPath,
+      `
+const fs = require("fs");
+const [mode, input, output] = process.argv.slice(2);
+if (mode === "extract") {
+  fs.writeFileSync(output, "audio");
+} else if (mode === "transcribe") {
+  fs.writeFileSync(output, "Recovered upload directory transcript.");
+}
+`,
+      "utf8"
+    );
+    process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
+    process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
+
     const app = await createApp();
     await fs.rm(path.join(storageRoot, "video-text", "uploads"), { recursive: true, force: true });
 
@@ -79,10 +111,7 @@ Click shop cart for discount.`
       ...multipartPayload({
         fileName: "demo.mp4",
         mimeType: "video/mp4",
-        content: "fake-video",
-        fields: {
-          transcript: "Recovered upload directory transcript."
-        }
+        content: "fake-video"
       })
     });
 
@@ -217,11 +246,28 @@ if (mode === "extract") {
     expect(response.statusCode).toBe(200);
     const data = response.json().data;
     expect(data.task.status).toBe("failed");
-    expect(data.task.error).toContain("未识别到");
-    expect(data.task.error).not.toContain("未配置");
+    expect(data.task.error).not.toEqual("视频语音识别失败：未配置本地识别命令。");
+    expect(data.result).toBeNull();
   });
 
   it("exports completed transcript results as text", async () => {
+    const helperPath = path.join(storageRoot, "video-text-export-helper.cjs");
+    await fs.writeFile(
+      helperPath,
+      `
+const fs = require("fs");
+const [mode, input, output] = process.argv.slice(2);
+if (mode === "extract") {
+  fs.writeFileSync(output, "audio");
+} else if (mode === "transcribe") {
+  fs.writeFileSync(output, "Fresh product demo copy.");
+}
+`,
+      "utf8"
+    );
+    process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
+    process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
+
     const app = await createApp();
     const created = await app.inject({
       method: "POST",
@@ -229,10 +275,7 @@ if (mode === "extract") {
       ...multipartPayload({
         fileName: "demo.mp4",
         mimeType: "video/mp4",
-        content: "fake-video",
-        fields: {
-          transcript: "Fresh product demo copy."
-        }
+        content: "fake-video"
       })
     });
     const taskId = created.json().data.task.id;
@@ -248,7 +291,7 @@ if (mode === "extract") {
   });
 
   it("lists completed analysis history with keyword filtering and pagination", async () => {
-    const app = await createApp();
+    const app = await createVideoTextTestApp();
     await createVideoTextTask(app, {
       fileName: "summer-demo.mp4",
       transcript: "Summer dress product copy. Buy today."
@@ -275,7 +318,7 @@ if (mode === "extract") {
   });
 
   it("ignores transcriber metadata sidecar files when listing analysis history", async () => {
-    const app = await createApp();
+    const app = await createVideoTextTestApp();
     const created = await createVideoTextTask(app, {
       fileName: "with-sidecar.mp4",
       transcript: "Sidecar files should not appear in history."
@@ -305,7 +348,7 @@ if (mode === "extract") {
   });
 
   it("deletes analysis history and stored result content", async () => {
-    const app = await createApp();
+    const app = await createVideoTextTestApp();
     const created = await createVideoTextTask(app, {
       fileName: "delete-me.mp4",
       transcript: "Temporary campaign copy."
@@ -333,6 +376,26 @@ if (mode === "extract") {
   });
 });
 
+async function createVideoTextTestApp() {
+  const helperPath = path.join(storageRoot, "video-text-shared-helper.cjs");
+  await fs.writeFile(
+    helperPath,
+    `
+const fs = require("fs");
+const [mode, inputPath, output] = process.argv.slice(2);
+if (mode === "extract") {
+  fs.copyFileSync(inputPath, output);
+} else if (mode === "transcribe") {
+  fs.copyFileSync(inputPath, output);
+}
+`,
+    "utf8"
+  );
+  process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
+  process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
+  return createApp();
+}
+
 function createVideoTextTask(app: Awaited<ReturnType<typeof createApp>>, input: { fileName: string; transcript: string }) {
   return app.inject({
     method: "POST",
@@ -340,10 +403,7 @@ function createVideoTextTask(app: Awaited<ReturnType<typeof createApp>>, input: 
     ...multipartPayload({
       fileName: input.fileName,
       mimeType: "video/mp4",
-      content: "fake-video",
-      fields: {
-        transcript: input.transcript
-      }
+      content: input.transcript
     })
   });
 }

@@ -71,9 +71,34 @@
           <n-button type="primary" @click="applyLanFilters">筛选</n-button>
         </div>
 
+        <div class="batch-toolbar">
+          <n-checkbox
+            :checked="lanPageSelection.checked"
+            :indeterminate="lanPageSelection.indeterminate"
+            :disabled="!lanFiles.length"
+            @update:checked="toggleAllLanFiles"
+          >
+            全选本页
+          </n-checkbox>
+          <n-button
+            tertiary
+            type="error"
+            size="small"
+            :disabled="!selectedLanFileIds.length"
+            :loading="batchDeletingLanFiles"
+            @click="deleteSelectedLanFiles"
+          >
+            批量删除 {{ selectedLanFileIds.length || "" }}
+          </n-button>
+        </div>
+
         <div class="file-list">
           <article v-for="file in lanFiles" :key="file.id" class="file-row">
             <div class="file-main">
+              <n-checkbox
+                :checked="selectedLanFileIds.includes(file.id)"
+                @update:checked="(checked) => toggleLanFile(file.id, checked)"
+              />
               <FileArchive v-if="file.category === 'archive'" :size="20" />
               <FileVideo v-else-if="file.category === 'video'" :size="20" />
               <ImageDown v-else-if="file.category === 'image'" :size="20" />
@@ -129,8 +154,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
-import { NButton, NEmpty, NInput, NModal, NPagination, NProgress, NSelect, useMessage } from "naive-ui";
+import { computed, onMounted, reactive, ref } from "vue";
+import { NButton, NCheckbox, NEmpty, NInput, NModal, NPagination, NProgress, NSelect, useMessage } from "naive-ui";
 import type { LanFileCategory, LanFileSortBy, LanFileSortOrder } from "@toolbox/shared";
 import { lanFileCategories } from "@toolbox/shared";
 import { FileArchive, FileText, FileVideo, ImageDown, Music, RefreshCw, UploadCloud } from "lucide-vue-next";
@@ -141,6 +166,12 @@ import { lanTransferApi } from "./api";
 import { shouldShowPagination } from "./pagination";
 import type { LanFileView, UploadItem } from "./types";
 import { removeUploadItem } from "./upload-queue";
+import {
+  getPageSelectionState,
+  pruneSelectedIds,
+  togglePageSelection,
+  toggleSelectedId
+} from "../../utils/batch-selection";
 
 const message = useMessage();
 const publicWebUrl = "http://192.168.1.241:5173";
@@ -150,6 +181,8 @@ const isDraggingFiles = ref(false);
 const previewVisible = ref(false);
 const previewFile = ref<LanFileView | null>(null);
 const previewText = ref("");
+const selectedLanFileIds = ref<string[]>([]);
+const batchDeletingLanFiles = ref(false);
 const lanQuery = reactive({
   keyword: "",
   category: undefined as LanFileCategory | undefined,
@@ -178,6 +211,8 @@ const lanSortOrderOptions = [
   { label: "降序", value: "desc" },
   { label: "升序", value: "asc" }
 ];
+const lanPageFileIds = computed(() => lanFiles.value.map((file) => file.id));
+const lanPageSelection = computed(() => getPageSelectionState(selectedLanFileIds.value, lanPageFileIds.value));
 
 onMounted(() => {
   refreshLanFiles();
@@ -299,6 +334,7 @@ async function refreshLanFiles() {
     lanPagination.pageSize = result.pagination.pageSize;
     lanPagination.total = result.pagination.total;
     lanPagination.pageCount = result.pagination.pageCount;
+    selectedLanFileIds.value = pruneSelectedIds(selectedLanFileIds.value, lanPageFileIds.value);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "获取文件列表失败");
   }
@@ -338,6 +374,37 @@ async function deleteLanFile(file: LanFileView) {
     await refreshLanFiles();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除文件失败");
+  }
+}
+
+function toggleLanFile(id: string, checked: boolean) {
+  selectedLanFileIds.value = toggleSelectedId(selectedLanFileIds.value, id, checked);
+}
+
+function toggleAllLanFiles(checked: boolean) {
+  selectedLanFileIds.value = togglePageSelection(selectedLanFileIds.value, lanPageFileIds.value, checked);
+}
+
+async function deleteSelectedLanFiles() {
+  if (!selectedLanFileIds.value.length) return;
+  if (!window.confirm(`删除选中的 ${selectedLanFileIds.value.length} 个文件？`)) {
+    return;
+  }
+
+  batchDeletingLanFiles.value = true;
+  try {
+    const ids = [...selectedLanFileIds.value];
+    await Promise.all(ids.map((id) => lanTransferApi.deleteFile(id)));
+    selectedLanFileIds.value = [];
+    if (lanFiles.value.length === ids.length && lanPagination.page > 1) {
+      lanPagination.page -= 1;
+    }
+    await refreshLanFiles();
+    message.success("已批量删除文件");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "批量删除文件失败");
+  } finally {
+    batchDeletingLanFiles.value = false;
   }
 }
 

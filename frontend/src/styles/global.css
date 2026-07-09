@@ -68,8 +68,7 @@ a {
 .tool-link:focus-visible,
 .category-link:focus-visible,
 .preset-tabs button:focus-visible,
-.dropzone:focus-within,
-.subtitle-upload:focus-within {
+.dropzone:focus-within {
   outline: 3px solid rgba(37, 99, 235, 0.22);
   outline-offset: 2px;
 }
@@ -744,6 +743,15 @@ a {
   margin-bottom: 16px;
 }
 
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  margin-bottom: 12px;
+}
+
 .file-list {
   display: grid;
   gap: 10px;
@@ -851,7 +859,7 @@ a {
 }
 
 .video-text-panel {
-  min-height: 420px;
+  min-height: 270px;
 }
 
 .video-text-grid {
@@ -890,26 +898,12 @@ a {
   border-radius: 8px;
 }
 
-.subtitle-row,
 .result-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-}
-
-.subtitle-upload {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
-  color: #344054;
-  background: #f8fafc;
-  border: 1px solid #e4e9f2;
-  border-radius: 8px;
-  cursor: pointer;
 }
 
 .video-status-panel {
@@ -1162,7 +1156,6 @@ a {
   }
 
   .result-actions,
-  .subtitle-row,
   .pagination-row,
   .share-strip {
     align-items: stretch;

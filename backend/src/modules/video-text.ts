@@ -67,13 +67,8 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
       await pipeline(file.file, fs.createWriteStream(videoPath));
       taskStore.update(task.id, { progress: 35 });
 
-      const fields = file.fields as Record<string, unknown>;
-      const formTranscript =
-        getFieldText(fields, "transcript") || getFieldText(fields, "subtitle") || getFieldText(fields, "script");
       const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
-      const transcribed = formTranscript
-        ? { transcript: formTranscript, recognitionQuality: undefined }
-        : await transcribeVideo(videoPath, task.id, config);
+      const transcribed = await transcribeVideo(videoPath, task.id, config);
       const transcript = transcribed.transcript;
 
       if (!transcript.trim()) {
@@ -81,14 +76,13 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
           status: "failed",
           progress: 100,
           error: hasTranscriber
-            ? "未识别到视频语音文案，请确认视频包含清晰人声，或上传字幕文件/粘贴文案后再分析。"
-            : "未配置视频语音识别命令，请上传字幕文件或填写文案后再分析。"
+            ? "未识别到视频语音文案，请确认视频包含清晰人声后再重试。"
+            : "未配置视频语音识别命令，请配置本地识别后再分析。"
         }) as Task;
 
         return ok({
           task: failed,
-          result: null,
-          needsTranscript: !hasTranscriber
+          result: null
         });
       }
 
@@ -103,7 +97,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
         fileName: safeName,
         fileSize: (await fsp.stat(videoPath)).size,
         mimeType: file.mimetype,
-        source: formTranscript ? "form-text" : "transcriber",
+        source: "transcriber",
         createdAt: new Date().toISOString(),
         ...analysis
       };
@@ -226,21 +220,6 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
     await deleteStoredResultFiles(config, taskId);
     return ok({ removed: true });
   });
-}
-
-function getFieldText(fields: Record<string, unknown>, name: string) {
-  const field = fields[name];
-  if (Array.isArray(field)) {
-    return getFieldValue(field[0]);
-  }
-  return getFieldValue(field);
-}
-
-function getFieldValue(field: unknown) {
-  if (field && typeof field === "object" && "value" in field) {
-    return String((field as { value?: unknown }).value ?? "").trim();
-  }
-  return "";
 }
 
 async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig) {

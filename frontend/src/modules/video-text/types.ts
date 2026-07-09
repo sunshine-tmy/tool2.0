@@ -4,7 +4,6 @@ import type { ToolTask } from "../../types";
 export type VideoTextTaskResponse = {
   task: ToolTask;
   result: VideoTextResult | null;
-  needsTranscript?: boolean;
 };
 
 export type VideoTextTaskStatus = {

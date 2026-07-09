@@ -9,6 +9,7 @@ import {
   fail,
   getLanFileExtension,
   isLanFilePreviewable,
+  lanFileCategories,
   normalizeLanFileQuery,
   ok,
   type LanFileRecord
@@ -347,6 +348,17 @@ function registerLanTransferNamespace(
 }
 
 function createLanFileStore(config: AppConfig) {
+  let queue = Promise.resolve();
+
+  function runExclusive<T>(operation: () => Promise<T>) {
+    const current = queue.then(operation, operation);
+    queue = current.then(
+      () => undefined,
+      () => undefined
+    );
+    return current;
+  }
+
   async function ensure() {
     await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
     try {
@@ -359,66 +371,158 @@ function createLanFileStore(config: AppConfig) {
   async function read(): Promise<LanFileRecord[]> {
     await ensure();
     const raw = await fsp.readFile(config.lanTransferIndexPath, "utf8");
-    return JSON.parse(raw) as LanFileRecord[];
+    const parsed = parseLanFileIndex(raw);
+    if (parsed.repaired) {
+      await write(parsed.records);
+    }
+    return parsed.records;
   }
 
   async function write(records: LanFileRecord[]) {
-    await fsp.writeFile(config.lanTransferIndexPath, JSON.stringify(records, null, 2));
+    const temporaryPath = `${config.lanTransferIndexPath}.${process.pid}.${nanoid(6)}.tmp`;
+    await fsp.writeFile(temporaryPath, JSON.stringify(records, null, 2));
+    await fsp.rm(config.lanTransferIndexPath, { force: true });
+    await fsp.rename(temporaryPath, config.lanTransferIndexPath);
   }
 
   return {
     ensure,
     async add(record: LanFileRecord) {
-      const records = await read();
-      records.unshift(record);
-      await write(records);
-      return record;
+      return runExclusive(async () => {
+        const records = await read();
+        records.unshift(record);
+        await write(records);
+        return record;
+      });
     },
     async get(id: string) {
-      return (await read()).find((record) => record.id === id);
+      return runExclusive(async () => (await read()).find((record) => record.id === id));
     },
     async list(query = normalizeLanFileQuery({})) {
-      const keyword = query.keyword.toLowerCase();
-      const records = (await read()).filter((record) => {
-        const matchesKeyword =
-          !keyword ||
-          record.originalName.toLowerCase().includes(keyword) ||
-          record.extension.toLowerCase().includes(keyword);
-        const matchesCategory = !query.category || record.category === query.category;
-        const matchesExtension = !query.extension || record.extension === query.extension;
-        return matchesKeyword && matchesCategory && matchesExtension;
-      });
+      return runExclusive(async () => {
+        const keyword = query.keyword.toLowerCase();
+        const records = (await read()).filter((record) => {
+          const matchesKeyword =
+            !keyword ||
+            record.originalName.toLowerCase().includes(keyword) ||
+            record.extension.toLowerCase().includes(keyword);
+          const matchesCategory = !query.category || record.category === query.category;
+          const matchesExtension = !query.extension || record.extension === query.extension;
+          return matchesKeyword && matchesCategory && matchesExtension;
+        });
 
-      return records.sort((left, right) => compareLanFiles(left, right, query.sortBy, query.sortOrder));
+        return records.sort((left, right) => compareLanFiles(left, right, query.sortBy, query.sortOrder));
+      });
     },
     async incrementDownloadCount(id: string) {
-      const records = await read();
-      const next = records.map((record) =>
-        record.id === id ? { ...record, downloadCount: record.downloadCount + 1 } : record
-      );
-      await write(next);
+      return runExclusive(async () => {
+        const records = await read();
+        const next = records.map((record) =>
+          record.id === id ? { ...record, downloadCount: record.downloadCount + 1 } : record
+        );
+        await write(next);
+      });
     },
     async remove(id: string) {
-      const records = await read();
-      const target = records.find((record) => record.id === id);
-      if (!target) {
-        return false;
-      }
-      await fsp.rm(path.join(config.lanTransferFilesDir, target.storedName), { force: true });
-      await write(records.filter((record) => record.id !== id));
-      return true;
+      return runExclusive(async () => {
+        const records = await read();
+        const target = records.find((record) => record.id === id);
+        if (!target) {
+          return false;
+        }
+        await fsp.rm(path.join(config.lanTransferFilesDir, target.storedName), { force: true });
+        await write(records.filter((record) => record.id !== id));
+        return true;
+      });
     },
     async cleanupExpired() {
-      const now = Date.now();
-      const records = await read();
-      const expired = records.filter((record) => Date.parse(record.expiresAt) <= now);
-      await Promise.all(
-        expired.map((record) => fsp.rm(path.join(config.lanTransferFilesDir, record.storedName), { force: true }))
-      );
-      await write(records.filter((record) => Date.parse(record.expiresAt) > now));
-      return { removed: expired.length };
+      return runExclusive(async () => {
+        const now = Date.now();
+        const records = await read();
+        const expired = records.filter((record) => Date.parse(record.expiresAt) <= now);
+        await Promise.all(
+          expired.map((record) => fsp.rm(path.join(config.lanTransferFilesDir, record.storedName), { force: true }))
+        );
+        await write(records.filter((record) => Date.parse(record.expiresAt) > now));
+        return { removed: expired.length };
+      });
     }
   };
+}
+
+function parseLanFileIndex(raw: string) {
+  try {
+    return {
+      records: sanitizeLanFileRecords(JSON.parse(raw)),
+      repaired: false
+    };
+  } catch (error) {
+    const recovered = extractFirstJsonArray(raw);
+    if (!recovered) {
+      throw error;
+    }
+    return {
+      records: sanitizeLanFileRecords(JSON.parse(recovered)),
+      repaired: true
+    };
+  }
+}
+
+function extractFirstJsonArray(raw: string) {
+  const start = raw.indexOf("[");
+  if (start < 0) return undefined;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < raw.length; index += 1) {
+    const char = raw[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+    } else if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, index + 1);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function sanitizeLanFileRecords(value: unknown): LanFileRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isLanFileRecord);
+}
+
+function isLanFileRecord(value: unknown): value is LanFileRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.originalName === "string" &&
+    typeof value.storedName === "string" &&
+    typeof value.mimeType === "string" &&
+    typeof value.extension === "string" &&
+    typeof value.size === "number" &&
+    lanFileCategories.includes(value.category as LanFileRecord["category"]) &&
+    typeof value.createdAt === "string" &&
+    typeof value.expiresAt === "string" &&
+    typeof value.downloadCount === "number" &&
+    typeof value.previewable === "boolean"
+  );
 }
 
 function createLanUploadStore(config: AppConfig) {
