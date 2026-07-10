@@ -1,0 +1,67 @@
+import { describe, expect, it } from "vitest";
+import { detectShortVideoPlatform, extractFirstUrl, normalizeShortVideoProviderResult } from "../short-video";
+
+describe("short video helpers", () => {
+  it("extracts the first url from shared text", () => {
+    expect(extractFirstUrl("复制这段话 https://v.douyin.com/abc123/ 打开看看")).toBe(
+      "https://v.douyin.com/abc123/"
+    );
+  });
+
+  it("detects supported platforms from public share urls", () => {
+    expect(detectShortVideoPlatform("https://v.douyin.com/abc123/")).toBe("douyin");
+    expect(detectShortVideoPlatform("https://www.xiaohongshu.com/explore/abc")).toBe("xiaohongshu");
+    expect(detectShortVideoPlatform("https://example.com/watch/1")).toBe("unknown");
+  });
+
+  it("normalizes provider video and image media into a stable result shape", () => {
+    const result = normalizeShortVideoProviderResult(
+      {
+        code: 200,
+        msg: "ok",
+        platform: "xiaohongshu",
+        data: {
+          type: "video",
+          title: "",
+          desc: "A public note",
+          author: { name: "creator", id: "u1", avatar: "https://cdn.test/a.jpg" },
+          cover: "https://cdn.test/cover.jpg",
+          url: "https://cdn.test/video.mp4",
+          images: ["https://cdn.test/image.jpg"],
+          video_backup: [
+            {
+              label: "720p",
+              quality: "720p",
+              url: "https://cdn.test/video-720.mp4",
+              width: 720,
+              height: 1280,
+              bit_rate: 900000
+            }
+          ]
+        }
+      },
+      {
+        sourceUrl: "https://www.xiaohongshu.com/explore/abc",
+        requestedPlatform: "auto"
+      }
+    );
+
+    expect(result).toMatchObject({
+      platform: "xiaohongshu",
+      sourceUrl: "https://www.xiaohongshu.com/explore/abc",
+      type: "video",
+      title: "A public note",
+      author: {
+        name: "creator",
+        id: "u1",
+        avatarUrl: "https://cdn.test/a.jpg"
+      },
+      coverUrl: "https://cdn.test/cover.jpg"
+    });
+    expect(result.media).toEqual([
+      expect.objectContaining({ type: "video", url: "https://cdn.test/video.mp4", label: "默认视频" }),
+      expect.objectContaining({ type: "image", url: "https://cdn.test/image.jpg", label: "图片 1" }),
+      expect.objectContaining({ type: "video", url: "https://cdn.test/video-720.mp4", quality: "720p" })
+    ]);
+  });
+});

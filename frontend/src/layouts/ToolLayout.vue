@@ -63,7 +63,7 @@ import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { NInput, NTag } from "naive-ui";
 import { listTools } from "@toolbox/shared";
-import { Boxes, FileArchive, FileVideo, ImageDown, Search, Wrench } from "lucide-vue-next";
+import { Boxes, Clapperboard, FileArchive, FileVideo, ImageDown, Search, Wrench } from "lucide-vue-next";
 
 const route = useRoute();
 const keyword = ref("");
@@ -73,7 +73,8 @@ const readyCount = tools.filter((tool) => tool.status === "ready").length;
 const iconByTool: Record<string, unknown> = {
   "image-compress": ImageDown,
   "lan-transfer": FileArchive,
-  "video-text": FileVideo
+  "video-text": FileVideo,
+  "short-video": Clapperboard
 };
 
 const filteredTools = computed(() => {

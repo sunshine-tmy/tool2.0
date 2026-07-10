@@ -23,6 +23,11 @@ export const router = createRouter({
       path: "/tools/video-text",
       name: "video-text",
       component: () => import("../modules/video-text/page.vue")
+    },
+    {
+      path: "/tools/short-video",
+      name: "short-video",
+      component: () => import("../modules/short-video/page.vue")
     }
   ]
 });

@@ -7,6 +7,7 @@ import { fail, listTools, ok } from "@toolbox/shared";
 import { getConfig } from "./config";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
+import { registerShortVideoRoutes } from "./modules/short-video";
 import { registerVideoTextRoutes } from "./modules/video-text";
 import { createTaskStore } from "./tasks/task-store";
 
@@ -47,6 +48,9 @@ export async function createApp() {
       videoText: {
         audioExtractorConfigured: Boolean(config.videoTextAudioExtractCommand),
         transcriberConfigured: Boolean(config.videoTextTranscribeCommand)
+      },
+      shortVideo: {
+        providerConfigured: Boolean(config.shortVideoParseApiUrl)
       }
     });
   });
@@ -86,6 +90,7 @@ export async function createApp() {
   registerImageCompressRoutes(app, config, taskStore);
   await registerLanTransferRoutes({ app, config });
   await registerVideoTextRoutes({ app, config, taskStore });
+  await registerShortVideoRoutes({ app, config });
 
   return app;
 }

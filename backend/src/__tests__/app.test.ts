@@ -29,7 +29,8 @@ describe("api app", () => {
     expect(response.json().data.map((tool: { id: string }) => tool.id)).toEqual([
       "image-compress",
       "lan-transfer",
-      "video-text"
+      "video-text",
+      "short-video"
     ]);
   });
 

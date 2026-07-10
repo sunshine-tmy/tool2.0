@@ -1,9 +1,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 
+const originalFetch = globalThis.fetch;
 let storageRoot: string;
 
 beforeEach(async () => {
@@ -14,9 +15,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  globalThis.fetch = originalFetch;
   delete process.env.STORAGE_ROOT;
   delete process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND;
   delete process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND;
+  vi.restoreAllMocks();
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
 
@@ -159,6 +162,84 @@ if (mode === "extract") {
     expect(data.result.fullText).toContain("Voice script from local transcriber");
     await expect(fs.readdir(path.join(storageRoot, "video-text", "audio"))).resolves.toEqual(
       expect.arrayContaining([expect.stringMatching(/\.wav$/)])
+    );
+  });
+
+  it("downloads a remote video url and creates a video text task", async () => {
+    const helperPath = path.join(storageRoot, "video-text-remote-url-helper.cjs");
+    await fs.writeFile(
+      helperPath,
+      `
+const fs = require("fs");
+const [mode, input, output] = process.argv.slice(2);
+if (mode === "extract") {
+  fs.writeFileSync(output, "audio from " + fs.readFileSync(input, "utf8"));
+} else if (mode === "transcribe") {
+  fs.writeFileSync(output, "Remote short video transcript. " + fs.readFileSync(input, "utf8"));
+}
+`,
+      "utf8"
+    );
+    process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
+    process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("remote-video", {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": "12" }
+      })
+    );
+    globalThis.fetch = fetchMock;
+
+    const app = await createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tools/video-text/tasks/from-url",
+      payload: {
+        url: "https://cdn.test/creator-video.mp4",
+        fileName: "达人视频.mp4"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    const data = response.json().data;
+    expect(data.task.status).toBe("completed");
+    expect(data.result.fileName).toBe("达人视频.mp4");
+    expect(data.result.fullText).toContain("Remote short video transcript");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.test/creator-video.mp4",
+      expect.objectContaining({
+        headers: expect.objectContaining({ accept: "video/*,*/*" })
+      })
+    );
+  });
+
+  it("proxies a remote video url for browser preview", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("remote-video", {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": "12" }
+      })
+    );
+    globalThis.fetch = fetchMock;
+
+    const app = await createApp();
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/tools/video-text/remote-video?url=${encodeURIComponent("https://cdn.test/video.mp4")}`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("video/mp4");
+    expect(response.headers["content-length"]).toBe("12");
+    expect(response.body).toBe("remote-video");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.test/video.mp4",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          accept: "video/*,*/*",
+          referer: "https://cdn.test/"
+        })
+      })
     );
   });
 

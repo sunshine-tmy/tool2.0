@@ -21,15 +21,21 @@
             >
               <input hidden type="file" accept="video/mp4,video/webm,video/quicktime" @change="onVideoChange" />
               <UploadCloud :size="28" />
-              <strong>{{ selectedVideo ? selectedVideo.name : "点击或拖拽上传视频" }}</strong>
-              <span>支持 MP4、WebM、MOV。上传后将调用后端配置的本地语音识别命令生成文案。</span>
+              <strong>{{ selectedVideo ? selectedVideo.name : remoteVideo?.fileName || "点击或拖拽上传视频" }}</strong>
+              <span>
+                {{
+                  remoteVideo
+                    ? "已从短视频解析带入视频，点击开始解析后将提取文案。"
+                    : "支持 MP4、WebM、MOV。上传后将调用后端配置的本地语音识别命令生成文案。"
+                }}
+              </span>
             </label>
 
             <div v-if="videoPreviewUrl" class="video-preview-box">
               <video :src="videoPreviewUrl" controls />
             </div>
 
-            <n-button type="primary" :loading="submitting" :disabled="!selectedVideo" @click="submit">
+            <n-button type="primary" :loading="submitting" :disabled="!selectedVideo && !remoteVideo" @click="submit">
               <template #icon>
                 <Wand2 :size="16" />
               </template>
@@ -203,13 +209,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NProgress, useMessage } from "naive-ui";
 import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
 import { describeRecognitionQuality } from "./quality";
+import { createRemoteVideoPreviewUrl, getRemoteVideoSourceFromQuery, type RemoteVideoSource } from "./remote-source";
 import type { VideoTextHistoryItem, VideoTextResult } from "./types";
 import type { ToolTask } from "../../types";
 import { shouldShowPagination } from "../lan-transfer/pagination";
@@ -221,7 +229,9 @@ import {
 } from "../../utils/batch-selection";
 
 const message = useMessage();
+const route = useRoute();
 const selectedVideo = ref<File | null>(null);
+const remoteVideo = ref<RemoteVideoSource | null>(null);
 const videoPreviewUrl = ref("");
 const submitting = ref(false);
 const isDragging = ref(false);
@@ -238,6 +248,7 @@ const historyPagination = reactive({
 const historyItems = ref<VideoTextHistoryItem[]>([]);
 const historyLoading = ref(false);
 const openingHistoryId = ref("");
+const openingTaskId = ref("");
 const deletingHistoryId = ref("");
 const selectedHistoryIds = ref<string[]>([]);
 const batchDeletingHistory = ref(false);
@@ -254,6 +265,7 @@ const statusLabel = computed(() => {
 });
 
 const sourceLabel = computed(() => {
+  if (remoteVideo.value && !result.value) return "短视频解析";
   if (!result.value) return "未生成";
   return result.value.source === "transcriber" ? "本地语音识别" : "历史结果";
 });
@@ -276,32 +288,27 @@ function onVideoDrop(event: DragEvent) {
 function setVideo(file: File | null) {
   if (!file) return;
   selectedVideo.value = file;
+  remoteVideo.value = null;
   currentTask.value = null;
   result.value = null;
   uploadProgress.value = 0;
-  if (videoPreviewUrl.value) {
-    URL.revokeObjectURL(videoPreviewUrl.value);
-  }
+  revokeLocalPreviewUrl();
   videoPreviewUrl.value = URL.createObjectURL(file);
 }
 
 async function submit() {
-  if (!selectedVideo.value) {
+  if (!selectedVideo.value && !remoteVideo.value) {
     message.warning("请先选择视频文件");
     return;
   }
 
   submitting.value = true;
   uploadProgress.value = 5;
-  const form = new FormData();
-  form.append("file", selectedVideo.value);
 
   try {
-    const response = await videoTextApi.createTask(form, (event) => {
-      if (event.total) {
-        uploadProgress.value = Math.min(80, Math.round((event.loaded / event.total) * 80));
-      }
-    });
+    const response = remoteVideo.value
+      ? await videoTextApi.createTaskFromUrl(remoteVideo.value)
+      : await createUploadTask();
     currentTask.value = response.task;
     result.value = response.result;
     uploadProgress.value = response.task.status === "completed" ? 100 : response.task.progress;
@@ -317,6 +324,30 @@ async function submit() {
   } finally {
     submitting.value = false;
   }
+}
+
+function createUploadTask() {
+  if (!selectedVideo.value) {
+    throw new Error("请先选择视频文件");
+  }
+
+  const form = new FormData();
+  form.append("file", selectedVideo.value);
+  return videoTextApi.createTask(form, (event) => {
+    if (event.total) {
+      uploadProgress.value = Math.min(80, Math.round((event.loaded / event.total) * 80));
+    }
+  });
+}
+
+function setRemoteVideo(source: RemoteVideoSource) {
+  selectedVideo.value = null;
+  remoteVideo.value = source;
+  currentTask.value = null;
+  result.value = null;
+  uploadProgress.value = 0;
+  revokeLocalPreviewUrl();
+  videoPreviewUrl.value = createRemoteVideoPreviewUrl(source.url);
 }
 
 async function loadHistory(page = historyPagination.page) {
@@ -368,6 +399,25 @@ async function openHistory(taskId: string) {
     message.error(error instanceof Error ? error.message : "获取历史解析结果失败");
   } finally {
     openingHistoryId.value = "";
+  }
+}
+
+async function openTaskResult(taskId: string) {
+  openingTaskId.value = taskId;
+  try {
+    const response = await videoTextApi.getTask(taskId);
+    currentTask.value = response.task;
+    result.value = response.result;
+    uploadProgress.value = response.task.progress;
+    if (response.task.status === "completed") {
+      message.success("已打开视频文案解析结果");
+    } else if (response.task.status === "failed") {
+      message.error(response.task.error || "视频文案解析失败");
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "获取视频文案解析结果失败");
+  } finally {
+    openingTaskId.value = "";
   }
 }
 
@@ -482,12 +532,40 @@ function formatSeconds(seconds?: number) {
 }
 
 onBeforeUnmount(() => {
-  if (videoPreviewUrl.value) {
-    URL.revokeObjectURL(videoPreviewUrl.value);
-  }
+  revokeLocalPreviewUrl();
 });
 
-onMounted(() => {
-  void loadHistory();
+onMounted(async () => {
+  const remoteSource = getRemoteVideoSourceFromQuery(route.query);
+  if (remoteSource) {
+    setRemoteVideo(remoteSource);
+  }
+  const taskId = typeof route.query.taskId === "string" ? route.query.taskId : "";
+  if (!remoteSource && taskId) {
+    await openTaskResult(taskId);
+  }
+  await loadHistory();
 });
+
+watch(
+  () => [route.query.remoteUrl, route.query.fileName, route.query.taskId],
+  async () => {
+    const remoteSource = getRemoteVideoSourceFromQuery(route.query);
+    if (remoteSource) {
+      setRemoteVideo(remoteSource);
+      return;
+    }
+
+    const taskId = typeof route.query.taskId === "string" ? route.query.taskId : "";
+    if (taskId && taskId !== openingTaskId.value) {
+      await openTaskResult(taskId);
+    }
+  }
+);
+
+function revokeLocalPreviewUrl() {
+  if (videoPreviewUrl.value.startsWith("blob:")) {
+    URL.revokeObjectURL(videoPreviewUrl.value);
+  }
+}
 </script>

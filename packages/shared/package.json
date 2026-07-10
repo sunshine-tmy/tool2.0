@@ -13,6 +13,10 @@
     "./video-text": {
       "types": "./dist/video-text.d.ts",
       "import": "./dist/video-text.js"
+    },
+    "./short-video": {
+      "types": "./dist/short-video.d.ts",
+      "import": "./dist/short-video.js"
     }
   },
   "scripts": {

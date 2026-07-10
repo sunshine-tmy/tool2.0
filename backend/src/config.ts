@@ -20,6 +20,8 @@ export type AppConfig = {
   videoTextResultsDir: string;
   videoTextAudioExtractCommand: string;
   videoTextTranscribeCommand?: string;
+  shortVideoParseApiUrl: string;
+  shortVideoParseTimeoutMs: number;
 };
 
 export function getConfig(): AppConfig {
@@ -46,7 +48,10 @@ export function getConfig(): AppConfig {
     videoTextAudioExtractCommand:
       getEnv("VIDEO_TEXT_AUDIO_EXTRACT_COMMAND", fileEnv)?.trim() ||
       "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}",
-    videoTextTranscribeCommand: getEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND", fileEnv)?.trim() || undefined
+    videoTextTranscribeCommand: getEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND", fileEnv)?.trim() || undefined,
+    shortVideoParseApiUrl:
+      getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv)?.trim() || "https://api.bugpk.com/api/short_videos",
+    shortVideoParseTimeoutMs: Number(getEnv("SHORT_VIDEO_PARSE_TIMEOUT_MS", fileEnv) ?? 20000)
   };
 }
 

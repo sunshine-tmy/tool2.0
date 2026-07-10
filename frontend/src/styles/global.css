@@ -912,6 +912,121 @@ a {
   border-radius: 8px;
 }
 
+.short-video-panel {
+  min-height: 220px;
+}
+
+.short-video-form {
+  display: grid;
+  gap: 14px;
+}
+
+.short-video-controls,
+.platform-switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.short-video-controls {
+  justify-content: space-between;
+}
+
+.short-video-result-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 280px) 1fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.short-video-cover {
+  overflow: hidden;
+  min-height: 220px;
+  background: #f8fafc;
+  border: 1px solid #e4e9f2;
+  border-radius: 8px;
+}
+
+.short-video-cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 220px;
+  object-fit: cover;
+}
+
+.empty-cover {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: #64748b;
+}
+
+.short-video-desc {
+  margin: 16px 0 0;
+  color: #475467;
+  line-height: 1.7;
+}
+
+.media-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.media-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e4e9f2;
+  border-radius: 8px;
+}
+
+.media-row strong,
+.media-row span {
+  display: block;
+}
+
+.media-row span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.short-video-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+.short-video-download-button {
+  --n-color: #eff6ff !important;
+  --n-color-hover: #dbeafe !important;
+  --n-color-pressed: #bfdbfe !important;
+  --n-color-focus: #eff6ff !important;
+  --n-border: 1px solid #bfdbfe !important;
+  --n-border-hover: 1px solid #93c5fd !important;
+  --n-border-pressed: 1px solid #60a5fa !important;
+  --n-border-focus: 1px solid #93c5fd !important;
+  --n-text-color: #1d4ed8 !important;
+  --n-text-color-hover: #1d4ed8 !important;
+  --n-text-color-pressed: #1e40af !important;
+  --n-text-color-focus: #1d4ed8 !important;
+  min-width: 72px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.short-video-download-button:hover {
+  box-shadow: none;
+}
+
+.short-video-download-button .n-button__icon {
+  margin-right: 4px;
+}
+
 .video-status-panel h3 {
   margin: 0 0 12px;
   font-size: 15px;

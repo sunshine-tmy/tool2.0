@@ -47,6 +47,17 @@ const tools: ToolDefinition[] = [
     acceptedTypes: ["video/mp4", "video/webm", "video/quicktime"],
     routePath: "/tools/video-text",
     apiNamespace: "/api/tools/video-text"
+  },
+  {
+    id: "short-video",
+    title: "短视频解析",
+    description: "解析抖音、小红书分享链接，提取公开视频、图集、封面和作者信息。",
+    category: "video",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["text/plain"],
+    routePath: "/tools/short-video",
+    apiNamespace: "/api/tools/short-video"
   }
 ];
 

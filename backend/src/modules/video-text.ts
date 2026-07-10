@@ -4,6 +4,8 @@ import path from "node:path";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { FastifyInstance } from "fastify";
 import { fail, ok } from "@toolbox/shared";
 import {
@@ -40,6 +42,13 @@ type VideoTextHistoryItem = Pick<
   characterCount: number;
 };
 
+type VideoTextTaskSource = {
+  stream: NodeJS.ReadableStream;
+  fileName: string;
+  mimeType: string;
+  fileSize?: number;
+};
+
 export async function registerVideoTextRoutes({ app, config, taskStore }: RegisterVideoTextRoutesOptions) {
   const results = new Map<string, StoredVideoTextResult>();
   await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
@@ -56,75 +65,78 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
       return reply.code(400).send(fail("VIDEO_REQUIRED", "Please upload a supported video file"));
     }
 
-    const task = taskStore.create("video-text");
-    taskStore.update(task.id, { status: "running", progress: 10 });
+    return ok(
+      await createVideoTextTaskFromSource(
+        {
+          stream: file.file,
+          fileName: file.filename || "video.mp4",
+          mimeType: file.mimetype
+        },
+        { config, taskStore, results }
+      )
+    );
+  });
 
-    const safeName = path.basename(file.filename || "video.mp4");
-    const videoPath = path.join(config.videoTextUploadsDir, `${task.id}-${safeName}`);
+  app.post("/api/tools/video-text/tasks/from-url", async (request, reply) => {
+    const body = request.body as { url?: string; fileName?: string } | undefined;
+    const sourceUrl = typeof body?.url === "string" ? body.url.trim() : "";
+
+    if (!isHttpUrl(sourceUrl)) {
+      return reply.code(400).send(fail("INVALID_VIDEO_URL", "请输入有效的视频地址"));
+    }
 
     try {
-      await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
-      await pipeline(file.file, fs.createWriteStream(videoPath));
-      taskStore.update(task.id, { progress: 35 });
+      const response = await fetchRemoteVideo(sourceUrl);
 
-      const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
-      const transcribed = await transcribeVideo(videoPath, task.id, config);
-      const transcript = transcribed.transcript;
-
-      if (!transcript.trim()) {
-        const failed = taskStore.update(task.id, {
-          status: "failed",
-          progress: 100,
-          error: hasTranscriber
-            ? "未识别到视频语音文案，请确认视频包含清晰人声后再重试。"
-            : "未配置视频语音识别命令，请配置本地识别后再分析。"
-        }) as Task;
-
-        return ok({
-          task: failed,
-          result: null
-        });
+      if (!response.ok || !response.body) {
+        return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
       }
 
-      taskStore.update(task.id, { progress: 70 });
-      const analysis = analyzeVideoText({
-        title: safeName,
-        transcript,
-        recognitionQuality: transcribed.recognitionQuality
-      });
-      const result: StoredVideoTextResult = {
-        id: task.id,
-        fileName: safeName,
-        fileSize: (await fsp.stat(videoPath)).size,
-        mimeType: file.mimetype,
-        source: "transcriber",
-        createdAt: new Date().toISOString(),
-        ...analysis
-      };
+      const mimeType = normalizeVideoMimeType(response.headers.get("content-type"));
+      const fileName = body?.fileName || fileNameFromUrl(sourceUrl);
 
-      results.set(task.id, result);
-      const resultPath = resultFilePath(config, task.id);
-      await fsp.writeFile(resultPath, JSON.stringify(result, null, 2), "utf8");
-      const completed = taskStore.update(task.id, {
-        status: "completed",
-        progress: 100,
-        outputPath: resultPath
-      }) as Task;
-
-      return ok({
-        task: completed,
-        result
-      });
+      return ok(
+        await createVideoTextTaskFromSource(
+          {
+            stream: Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+            fileName,
+            mimeType,
+            fileSize: parseContentLength(response.headers.get("content-length"))
+          },
+          { config, taskStore, results }
+        )
+      );
     } catch (error) {
-      const failed = taskStore.update(task.id, {
-        status: "failed",
-        progress: 100,
-        error: error instanceof Error ? error.message : "视频文本解析失败"
-      }) as Task;
-      return ok({
-        task: failed,
-        result: null
-      });
+      return reply
+        .code(502)
+        .send(fail("VIDEO_DOWNLOAD_FAILED", error instanceof Error ? error.message : "视频下载失败"));
+    }
+  });
+
+  app.get("/api/tools/video-text/remote-video", async (request, reply) => {
+    const query = request.query as { url?: string };
+    const sourceUrl = typeof query.url === "string" ? query.url.trim() : "";
+
+    if (!isHttpUrl(sourceUrl)) {
+      return reply.code(400).send(fail("INVALID_VIDEO_URL", "请输入有效的视频地址"));
+    }
+
+    try {
+      const response = await fetchRemoteVideo(sourceUrl, request.headers.range);
+      if (!response.ok || !response.body) {
+        return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
+      }
+
+      reply.code(response.status === 206 ? 206 : 200);
+      reply.header("content-type", normalizeVideoMimeType(response.headers.get("content-type")));
+      copyHeader(response, reply, "content-length");
+      copyHeader(response, reply, "content-range");
+      copyHeader(response, reply, "accept-ranges");
+      return reply.send(Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>));
+    } catch (error) {
+      return reply
+        .code(502)
+        .send(fail("VIDEO_DOWNLOAD_FAILED", error instanceof Error ? error.message : "视频下载失败"));
     }
   });
 
@@ -220,6 +232,87 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
     await deleteStoredResultFiles(config, taskId);
     return ok({ removed: true });
   });
+}
+
+async function createVideoTextTaskFromSource(
+  source: VideoTextTaskSource,
+  context: {
+    config: AppConfig;
+    taskStore: TaskStore;
+    results: Map<string, StoredVideoTextResult>;
+  }
+) {
+  const { config, taskStore, results } = context;
+  const task = taskStore.create("video-text");
+  taskStore.update(task.id, { status: "running", progress: 10 });
+
+  const safeName = path.basename(source.fileName || "video.mp4");
+  const videoPath = path.join(config.videoTextUploadsDir, `${task.id}-${safeName}`);
+
+  try {
+    await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
+    await pipeline(source.stream, fs.createWriteStream(videoPath));
+    taskStore.update(task.id, { progress: 35 });
+
+    const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
+    const transcribed = await transcribeVideo(videoPath, task.id, config);
+    const transcript = transcribed.transcript;
+
+    if (!transcript.trim()) {
+      const failed = taskStore.update(task.id, {
+        status: "failed",
+        progress: 100,
+        error: hasTranscriber
+          ? "未识别到视频语音文案，请确认视频包含清晰人声后再重试。"
+          : "未配置视频语音识别命令，请配置本地识别后再分析。"
+      }) as Task;
+
+      return {
+        task: failed,
+        result: null
+      };
+    }
+
+    taskStore.update(task.id, { progress: 70 });
+    const analysis = analyzeVideoText({
+      title: safeName,
+      transcript,
+      recognitionQuality: transcribed.recognitionQuality
+    });
+    const result: StoredVideoTextResult = {
+      id: task.id,
+      fileName: safeName,
+      fileSize: source.fileSize ?? (await fsp.stat(videoPath)).size,
+      mimeType: source.mimeType,
+      source: "transcriber",
+      createdAt: new Date().toISOString(),
+      ...analysis
+    };
+
+    results.set(task.id, result);
+    const resultPath = resultFilePath(config, task.id);
+    await fsp.writeFile(resultPath, JSON.stringify(result, null, 2), "utf8");
+    const completed = taskStore.update(task.id, {
+      status: "completed",
+      progress: 100,
+      outputPath: resultPath
+    }) as Task;
+
+    return {
+      task: completed,
+      result
+    };
+  } catch (error) {
+    const failed = taskStore.update(task.id, {
+      status: "failed",
+      progress: 100,
+      error: error instanceof Error ? error.message : "视频文本解析失败"
+    }) as Task;
+    return {
+      task: failed,
+      result: null
+    };
+  }
 }
 
 async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig) {
@@ -441,6 +534,73 @@ function parsePositiveInteger(value: string | undefined, fallback: number) {
     return fallback;
   }
   return parsed;
+}
+
+function fetchRemoteVideo(sourceUrl: string, range?: string) {
+  const headers: Record<string, string> = {
+    accept: "video/*,*/*",
+    referer: refererFromUrl(sourceUrl),
+    "user-agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+  };
+
+  if (range) {
+    headers.range = range;
+  }
+
+  return fetch(sourceUrl, { headers });
+}
+
+function refererFromUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (hostname.includes("douyin") || hostname.includes("zjcdn.com") || hostname.includes("amemv.com")) {
+      return "https://www.douyin.com/";
+    }
+    if (hostname.includes("xiaohongshu") || hostname.includes("xhscdn.com") || hostname.includes("xhslink.com")) {
+      return "https://www.xiaohongshu.com/";
+    }
+    return `${url.protocol}//${url.hostname}/`;
+  } catch {
+    return "https://www.douyin.com/";
+  }
+}
+
+function copyHeader(response: Response, reply: { header: (name: string, value: string) => unknown }, name: string) {
+  const value = response.headers.get(name);
+  if (value) {
+    reply.header(name, value);
+  }
+}
+
+function isHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function fileNameFromUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    const baseName = path.basename(decodeURIComponent(parsed.pathname));
+    return baseName && baseName.includes(".") ? baseName : "remote-video.mp4";
+  } catch {
+    return "remote-video.mp4";
+  }
+}
+
+function normalizeVideoMimeType(value: string | null) {
+  const mimeType = value?.split(";")[0]?.trim().toLowerCase();
+  return mimeType?.startsWith("video/") ? mimeType : "video/mp4";
+}
+
+function parseContentLength(value: string | null) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
 async function deleteStoredResultFiles(config: AppConfig, taskId: string) {

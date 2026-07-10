@@ -14,7 +14,8 @@
     "baseUrl": ".",
     "paths": {
       "@toolbox/shared": ["packages/shared/src/index.ts"],
-      "@toolbox/shared/video-text": ["packages/shared/src/video-text.ts"]
+      "@toolbox/shared/video-text": ["packages/shared/src/video-text.ts"],
+      "@toolbox/shared/short-video": ["packages/shared/src/short-video.ts"]
     }
   }
 }

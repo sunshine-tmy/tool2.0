@@ -19,6 +19,13 @@ class VideoTextApi {
     });
   }
 
+  @ApiRequest("视频文本解析失败")
+  async createTaskFromUrl(input: { url: string; fileName?: string }) {
+    return httpClient.post<VideoTextTaskResponse>("/tools/video-text/tasks/from-url", input, {
+      timeout: VIDEO_TEXT_REQUEST_TIMEOUT_MS
+    });
+  }
+
   @ApiRequest("获取视频文本任务失败")
   async getTask(taskId: string) {
     return httpClient.get<VideoTextTaskStatus>(`/tools/video-text/tasks/${taskId}`);

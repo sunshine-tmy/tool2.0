@@ -106,6 +106,27 @@ Returns the completed analysis result.
 
 Exports the result. `txt` is the default.
 
+## Short Video
+
+Canonical namespace: `/api/tools/short-video`
+
+`POST /api/tools/short-video/parse`
+
+JSON body:
+
+- `input`: required share text or direct URL
+- `platform`: optional `auto`, `douyin`, or `xiaohongshu`
+
+The backend extracts the first URL, rejects unsupported hosts, and calls the configured
+`SHORT_VIDEO_PARSE_API_URL`. The default provider is `https://api.bugpk.com/api/short_videos`.
+If the provider rejects Node's HTTP client with a 5xx response on Windows, the backend retries
+the same request through PowerShell `Invoke-WebRequest`.
+Successful responses are normalized into:
+
+- `platform`, `title`, `description`, `author`, and `coverUrl`
+- `media`: video and image URLs returned by the provider
+- `warnings`: non-fatal parser notes, for example when no media URL is returned
+
 ## Download Output
 
 `GET /api/files/:fileName`
