@@ -35,6 +35,46 @@ Multipart fields:
 - `outputFormat`: `jpeg`, `png`, or `webp`
 - `width`: optional positive number
 
+## AI Image Processing
+
+Canonical namespace: `/api/tools/image-ai`.
+
+`GET /api/tools/image-ai/health`
+
+Returns local Worker availability plus model name, version, license, SHA-256, device, and deployment usage.
+
+`POST /api/tools/image-ai/watermark/suggestions`
+
+Multipart field `file` contains one JPEG, PNG, or WebP image. The response contains normalized OCR polygons and confidence values; recognized text is never returned or logged.
+
+`POST /api/tools/image-ai/tasks`
+
+Multipart fields:
+
+- `operation`: `watermark_remove`, `enhance`, or `background_remove`
+- `files`: one image for watermark removal, up to ten for the other operations
+- `mask`: required same-size PNG for watermark removal
+- `scale`: `2` or `4` for enhancement
+
+Returns `202` with a persistent asynchronous task. A maximum of 20 pending/running tasks is accepted.
+
+`GET /api/tools/image-ai/tasks/:taskId`
+
+Returns queue position, progress, results, actual provider/model, warnings, and expiry time.
+
+`DELETE /api/tools/image-ai/tasks/:taskId`
+
+Cancels a pending task or stops a running batch after its current image.
+
+`GET /api/tools/image-ai/tasks/:taskId/files/:resultId`
+
+Returns one sanitized PNG result for inline comparison. Add `?download=1` to return
+`Content-Disposition: attachment` so a single button click downloads the file directly.
+
+`GET /api/tools/image-ai/tasks/:taskId/download.zip`
+
+Downloads every successful result in the task as a ZIP archive.
+
 
 ## LAN File Transfer
 

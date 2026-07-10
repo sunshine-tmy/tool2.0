@@ -1,0 +1,314 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import type { ImageAiOperation, ImageAiResult, ImageAiTask } from "@toolbox/shared";
+import sharp from "sharp";
+import type { AppConfig } from "../../config";
+import { createImageAiWorkerClient } from "./worker-client";
+
+export type StoredInput = {
+  path: string;
+  originalName: string;
+  mimetype: string;
+  size: number;
+  width: number;
+  height: number;
+};
+
+type StoredResult = ImageAiResult & { outputPath: string };
+
+type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
+  inputs: StoredInput[];
+  maskPath?: string;
+  results: StoredResult[];
+  cancelRequested?: boolean;
+};
+
+export type ImageAiTaskManager = ReturnType<typeof createImageAiTaskManager>;
+
+export function createImageAiTaskManager(config: AppConfig) {
+  const worker = createImageAiWorkerClient(config);
+  const tasks = new Map<string, StoredImageAiTask>();
+  const queue: string[] = [];
+  let processing = false;
+  let cleanupTimer: NodeJS.Timeout | undefined;
+
+  async function initialize() {
+    await Promise.all([
+      fs.mkdir(config.imageAiInputsDir, { recursive: true }),
+      fs.mkdir(config.imageAiOutputsDir, { recursive: true }),
+      fs.mkdir(config.imageAiTasksDir, { recursive: true })
+    ]);
+    await loadTasks();
+    await cleanupExpired();
+    cleanupTimer = setInterval(() => void cleanupExpired(), 60 * 60 * 1000);
+    cleanupTimer.unref();
+    scheduleDrain();
+  }
+
+  async function close() {
+    if (cleanupTimer) clearInterval(cleanupTimer);
+  }
+
+  function activeCount() {
+    return Array.from(tasks.values()).filter((task) => task.status === "pending" || task.status === "running").length;
+  }
+
+  async function create(input: {
+    id: string;
+    operation: ImageAiOperation;
+    files: StoredInput[];
+    maskPath?: string;
+    scale?: 2 | 4;
+  }) {
+    const now = new Date();
+    const task: StoredImageAiTask = {
+      id: input.id,
+      operation: input.operation,
+      status: "pending",
+      progress: 0,
+      queuePosition: queue.length + 1,
+      scale: input.scale,
+      results: [],
+      warnings: [],
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + config.imageAiRetentionHours * 60 * 60 * 1000).toISOString(),
+      inputs: input.files,
+      maskPath: input.maskPath
+    };
+    tasks.set(task.id, task);
+    queue.push(task.id);
+    refreshQueuePositions();
+    await persist(task);
+    scheduleDrain();
+    return toPublicTask(task);
+  }
+
+  function get(taskId: string) {
+    const task = tasks.get(taskId);
+    return task ? toPublicTask(task) : undefined;
+  }
+
+  function getStored(taskId: string) {
+    return tasks.get(taskId);
+  }
+
+  async function cancel(taskId: string) {
+    const task = tasks.get(taskId);
+    if (!task) return undefined;
+    if (task.status === "pending") {
+      const index = queue.indexOf(taskId);
+      if (index >= 0) queue.splice(index, 1);
+      patchTask(task, { status: "canceled", progress: 100, queuePosition: null });
+      refreshQueuePositions();
+      await persist(task);
+    } else if (task.status === "running") {
+      task.cancelRequested = true;
+      task.warnings = unique([...task.warnings, "已请求取消，将在当前图片处理完成后停止"]);
+      touch(task);
+      await persist(task);
+    }
+    return toPublicTask(task);
+  }
+
+  async function cleanupExpired(now = Date.now()) {
+    for (const task of Array.from(tasks.values())) {
+      if (Date.parse(task.expiresAt) > now || task.status === "running") continue;
+      const queueIndex = queue.indexOf(task.id);
+      if (queueIndex >= 0) queue.splice(queueIndex, 1);
+      tasks.delete(task.id);
+      await Promise.all([
+        fs.rm(path.join(config.imageAiInputsDir, task.id), { recursive: true, force: true }),
+        fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true }),
+        fs.rm(manifestPath(task.id), { force: true })
+      ]);
+    }
+    refreshQueuePositions();
+  }
+
+  function scheduleDrain() {
+    queueMicrotask(() => void drain());
+  }
+
+  async function drain() {
+    if (processing) return;
+    processing = true;
+    try {
+      while (queue.length) {
+        const taskId = queue.shift()!;
+        refreshQueuePositions();
+        const task = tasks.get(taskId);
+        if (!task || task.status !== "pending") continue;
+        await processTask(task);
+      }
+    } finally {
+      processing = false;
+    }
+  }
+
+  async function processTask(task: StoredImageAiTask) {
+    patchTask(task, { status: "running", progress: 5, queuePosition: null });
+    await persist(task);
+    const outputDir = path.join(config.imageAiOutputsDir, task.id);
+    await fs.mkdir(outputDir, { recursive: true });
+    let failures = 0;
+
+    for (let index = 0; index < task.inputs.length; index += 1) {
+      if (task.cancelRequested) break;
+      const input = task.inputs[index];
+      const outputName = outputFileName(input.originalName, task.operation, index);
+      const outputPath = path.join(outputDir, outputName);
+
+      try {
+        const inference = await worker.process({
+          operation: task.operation,
+          inputPath: input.path,
+          outputPath,
+          maskPath: task.maskPath,
+          scale: task.scale
+        });
+        await sanitizePng(outputPath);
+        const metadata = await sharp(outputPath).metadata();
+        if (!metadata.width || !metadata.height) throw new Error("AI 输出图片尺寸无效");
+        task.results.push({
+          id: `${task.id}-${index + 1}`,
+          originalName: input.originalName,
+          outputName,
+          outputPath,
+          downloadUrl: `/api/tools/image-ai/tasks/${task.id}/files/${task.id}-${index + 1}`,
+          width: metadata.width,
+          height: metadata.height,
+          provider: inference.provider,
+          model: inference.model,
+          warnings: inference.warnings ?? []
+        });
+        task.warnings = unique([...task.warnings, ...(inference.warnings ?? [])]);
+      } catch (error) {
+        failures += 1;
+        task.warnings = unique([
+          ...task.warnings,
+          `${input.originalName}：${error instanceof Error ? error.message : "处理失败"}`
+        ]);
+      }
+
+      patchTask(task, {
+        progress: Math.min(95, Math.round(10 + ((index + 1) / task.inputs.length) * 85))
+      });
+      await persist(task);
+    }
+
+    if (task.cancelRequested) {
+      patchTask(task, { status: "canceled", progress: 100 });
+    } else if (failures === task.inputs.length) {
+      patchTask(task, {
+        status: "failed",
+        progress: 100,
+        error: "所有图片均处理失败，请检查本地模型与推理服务状态"
+      });
+    } else {
+      if (failures > 0) task.warnings = unique([...task.warnings, `${failures} 张图片处理失败`]);
+      patchTask(task, { status: "completed", progress: 100 });
+    }
+    await persist(task);
+  }
+
+  async function loadTasks() {
+    const files = await fs.readdir(config.imageAiTasksDir).catch(() => [] as string[]);
+    for (const file of files.filter((name) => name.endsWith(".json"))) {
+      try {
+        const task = JSON.parse(await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")) as StoredImageAiTask;
+        if (!task.id || !task.operation) continue;
+        if (task.status === "running") {
+          patchTask(task, {
+            status: "failed",
+            progress: 100,
+            error: "服务重启导致任务中断，请重新提交"
+          });
+          await persist(task);
+        }
+        tasks.set(task.id, task);
+        if (task.status === "pending") queue.push(task.id);
+      } catch {
+        // Ignore corrupt manifests; uploaded images remain isolated and will be cleaned manually.
+      }
+    }
+    refreshQueuePositions();
+  }
+
+  function refreshQueuePositions() {
+    queue.forEach((taskId, index) => {
+      const task = tasks.get(taskId);
+      if (task) task.queuePosition = index + 1;
+    });
+  }
+
+  async function persist(task: StoredImageAiTask) {
+    const destination = manifestPath(task.id);
+    const temporary = `${destination}.tmp`;
+    await fs.writeFile(temporary, JSON.stringify(task, null, 2), "utf8");
+    await fs.rename(temporary, destination);
+  }
+
+  function manifestPath(taskId: string) {
+    return path.join(config.imageAiTasksDir, `${taskId}.json`);
+  }
+
+  return {
+    initialize,
+    close,
+    activeCount,
+    create,
+    get,
+    getStored,
+    cancel,
+    cleanupExpired
+  };
+}
+
+function toPublicTask(task: StoredImageAiTask): ImageAiTask {
+  return {
+    id: task.id,
+    operation: task.operation,
+    status: task.status,
+    progress: task.progress,
+    queuePosition: task.queuePosition,
+    scale: task.scale,
+    results: task.results.map(({ outputPath: _outputPath, ...result }) => result),
+    warnings: [...task.warnings],
+    error: task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    expiresAt: task.expiresAt
+  };
+}
+
+function patchTask(task: StoredImageAiTask, patch: Partial<StoredImageAiTask>) {
+  Object.assign(task, patch);
+  touch(task);
+}
+
+function touch(task: StoredImageAiTask) {
+  task.updatedAt = new Date().toISOString();
+}
+
+function unique(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function outputFileName(originalName: string, operation: ImageAiOperation, index: number) {
+  const stem = path.parse(path.basename(originalName)).name.replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(0, 80) || `image-${index + 1}`;
+  const suffix: Record<ImageAiOperation, string> = {
+    watermark_remove: "clean",
+    enhance: "enhanced",
+    background_remove: "cutout"
+  };
+  return `${stem}-${suffix[operation]}.png`;
+}
+
+async function sanitizePng(outputPath: string) {
+  const temporary = `${outputPath}.sanitized.png`;
+  await sharp(outputPath, { limitInputPixels: 100_000_000 }).rotate().png({ compressionLevel: 9 }).toFile(temporary);
+  await fs.rm(outputPath, { force: true });
+  await fs.rename(temporary, outputPath);
+}
+

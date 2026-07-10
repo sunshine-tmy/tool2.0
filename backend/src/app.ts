@@ -6,6 +6,7 @@ import fastify from "fastify";
 import { fail, listTools, ok } from "@toolbox/shared";
 import { getConfig } from "./config";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
+import { registerImageAiRoutes } from "./modules/image-ai/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
 import { registerShortVideoRoutes } from "./modules/short-video";
 import { registerVideoTextRoutes } from "./modules/video-text";
@@ -14,7 +15,7 @@ import { createTaskStore } from "./tasks/task-store";
 export async function createApp() {
   const app = fastify({
     logger: false,
-    bodyLimit: 100 * 1024 * 1024
+    bodyLimit: 220 * 1024 * 1024
   });
   const config = getConfig();
   const taskStore = createTaskStore();
@@ -40,6 +41,9 @@ export async function createApp() {
   await fs.mkdir(config.videoTextUploadsDir, { recursive: true });
   await fs.mkdir(config.videoTextAudioDir, { recursive: true });
   await fs.mkdir(config.videoTextResultsDir, { recursive: true });
+  await fs.mkdir(config.imageAiInputsDir, { recursive: true });
+  await fs.mkdir(config.imageAiOutputsDir, { recursive: true });
+  await fs.mkdir(config.imageAiTasksDir, { recursive: true });
 
   app.get("/api/health", async () => {
     return ok({
@@ -51,6 +55,10 @@ export async function createApp() {
       },
       shortVideo: {
         providerConfigured: Boolean(config.shortVideoParseApiUrl)
+      },
+      imageAi: {
+        workerUrl: config.imageAiWorkerUrl,
+        deploymentUsage: config.deploymentUsage
       }
     });
   });
@@ -88,6 +96,7 @@ export async function createApp() {
   });
 
   registerImageCompressRoutes(app, config, taskStore);
+  await registerImageAiRoutes(app, config);
   await registerLanTransferRoutes({ app, config });
   await registerVideoTextRoutes({ app, config, taskStore });
   await registerShortVideoRoutes({ app, config });

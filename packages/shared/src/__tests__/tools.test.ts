@@ -7,6 +7,7 @@ describe("tool registry", () => {
 
     expect(tools.map((tool) => tool.id)).toEqual([
       "image-compress",
+      "image-ai",
       "lan-transfer",
       "video-text",
       "short-video"
@@ -22,6 +23,10 @@ describe("tool registry", () => {
     expect(getToolById("image-compress")).toMatchObject({
       routePath: "/tools/image-compress",
       apiNamespace: "/api/tools/image-compress"
+    });
+    expect(getToolById("image-ai")).toMatchObject({
+      routePath: "/tools/image-ai",
+      apiNamespace: "/api/tools/image-ai"
     });
     expect(getToolById("lan-transfer")).toMatchObject({
       routePath: "/tools/lan-transfer",

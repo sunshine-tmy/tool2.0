@@ -22,11 +22,23 @@ export type AppConfig = {
   videoTextTranscribeCommand?: string;
   shortVideoParseApiUrl: string;
   shortVideoParseTimeoutMs: number;
+  imageAiDir: string;
+  imageAiInputsDir: string;
+  imageAiOutputsDir: string;
+  imageAiTasksDir: string;
+  imageAiWorkerUrl: string;
+  imageAiWorkerTimeoutMs: number;
+  imageAiRetentionHours: number;
+  imageAiQueueLimit: number;
+  deploymentUsage: "internal-noncommercial" | "commercial";
 };
 
 export function getConfig(): AppConfig {
   const fileEnv = loadDotEnv();
   const storageRoot = path.resolve(getEnv("STORAGE_ROOT", fileEnv) ?? "storage");
+
+  const imageAiDir = path.join(storageRoot, "image-ai");
+  const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv)?.trim();
 
   return {
     host: getEnv("API_HOST", fileEnv) ?? "0.0.0.0",
@@ -51,7 +63,16 @@ export function getConfig(): AppConfig {
     videoTextTranscribeCommand: getEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND", fileEnv)?.trim() || undefined,
     shortVideoParseApiUrl:
       getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv)?.trim() || "https://api.bugpk.com/api/short_videos",
-    shortVideoParseTimeoutMs: Number(getEnv("SHORT_VIDEO_PARSE_TIMEOUT_MS", fileEnv) ?? 20000)
+    shortVideoParseTimeoutMs: Number(getEnv("SHORT_VIDEO_PARSE_TIMEOUT_MS", fileEnv) ?? 20000),
+    imageAiDir,
+    imageAiInputsDir: path.join(imageAiDir, "inputs"),
+    imageAiOutputsDir: path.join(imageAiDir, "outputs"),
+    imageAiTasksDir: path.join(imageAiDir, "tasks"),
+    imageAiWorkerUrl: getEnv("IMAGE_AI_WORKER_URL", fileEnv)?.trim() || "http://127.0.0.1:3210",
+    imageAiWorkerTimeoutMs: Number(getEnv("IMAGE_AI_WORKER_TIMEOUT_MS", fileEnv) ?? 5 * 60 * 1000),
+    imageAiRetentionHours: Number(getEnv("IMAGE_AI_RETENTION_HOURS", fileEnv) ?? 24),
+    imageAiQueueLimit: Number(getEnv("IMAGE_AI_QUEUE_LIMIT", fileEnv) ?? 20),
+    deploymentUsage: configuredUsage === "internal-noncommercial" ? "internal-noncommercial" : "commercial"
   };
 }
 

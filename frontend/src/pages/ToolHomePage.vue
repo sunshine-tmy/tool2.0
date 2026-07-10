@@ -58,7 +58,7 @@
 import { computed } from "vue";
 import { NTag } from "naive-ui";
 import { listTools } from "@toolbox/shared";
-import { Clapperboard, FileArchive, FileVideo, ImageDown, Wrench } from "lucide-vue-next";
+import { Clapperboard, FileArchive, FileVideo, ImageDown, ScanLine, Wrench } from "lucide-vue-next";
 import ToolLayout from "../layouts/ToolLayout.vue";
 
 const tools = listTools();
@@ -66,6 +66,7 @@ const readyTools = computed(() => tools.filter((tool) => tool.status === "ready"
 
 const iconByTool: Record<string, unknown> = {
   "image-compress": ImageDown,
+  "image-ai": ScanLine,
   "lan-transfer": FileArchive,
   "video-text": FileVideo,
   "short-video": Clapperboard

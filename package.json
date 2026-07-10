@@ -7,9 +7,10 @@
     "dev": "pnpm --parallel --filter frontend --filter backend dev",
     "dev:web": "pnpm --filter frontend dev",
     "dev:api": "pnpm --filter backend dev",
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "dev:ai": ".venv-image-ai\\Scripts\\python.exe scripts\\image-ai-worker.py",
+    "build": "pnpm --workspace-concurrency=1 -r build",
+    "test": "pnpm --workspace-concurrency=1 -r test",
+    "typecheck": "pnpm --workspace-concurrency=1 -r typecheck"
   },
   "devDependencies": {
     "@types/node": "^24.0.10",

@@ -27,6 +27,17 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/tools/image-compress"
   },
   {
+    id: "image-ai",
+    title: "AI 图片处理",
+    description: "本地完成去水印、变清晰和商品图抠图，图片无需上传第三方平台。",
+    category: "image",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["image/jpeg", "image/png", "image/webp"],
+    routePath: "/tools/image-ai",
+    apiNamespace: "/api/tools/image-ai"
+  },
+  {
     id: "lan-transfer",
     title: "局域网文件传输",
     description: "局域网内双向收发文件，支持预览、筛选、下载和自动过期清理。",

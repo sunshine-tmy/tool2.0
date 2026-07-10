@@ -15,6 +15,7 @@
 ```text
 /                         工具总览
 /tools/image-compress      图片压缩
+/tools/image-ai            AI 图片处理（去水印、变清晰、抠图）
 /tools/lan-transfer        局域网文件传输
 /tools/video-text          视频文本解析
 ```
@@ -67,6 +68,16 @@ pnpm dev:web
 - 推荐识别参数：`large-v3-turbo`、`--language zh`、`--device cuda`、`--compute-type int8_float16`
 - 首次运行会下载模型；如果大模型内存不足或 CUDA 不可用，脚本会自动降级模型并回退到 CPU `int8`
 - 识别结果会在 JSON 中携带可选 `recognitionQuality`，用于展示模型、语言、运行设备和建议复核片段
+
+## AI 图片处理
+
+- 前端页面：`/tools/image-ai`
+- 后端接口：`/api/tools/image-ai/*`
+- 本地 Worker：`scripts/image-ai-worker.py`，仅监听 `127.0.0.1:3210`
+- 首次使用前安装 Python 3.11，并以 PowerShell 运行 `scripts/setup-image-ai.ps1`；如系统默认 Python 不是 3.11，使用 `-Python C:\path\to\python.exe`
+- `DEPLOYMENT_USAGE=internal-noncommercial` 时允许 BRIA RMBG 2.0；其他情况强制使用 BiRefNet
+- BRIA 权重需要单独接受其非商用许可并放入 `models/image-ai/RMBG-2.0`，安装脚本不会自动下载
+- 输入、蒙版、任务和结果保存在 `storage/image-ai`，默认 24 小时自动清理
 
 ## 验证
 
