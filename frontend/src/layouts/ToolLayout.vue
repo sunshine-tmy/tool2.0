@@ -12,7 +12,7 @@
       </router-link>
 
       <div class="search-wrap">
-        <n-input v-model:value="keyword" clearable placeholder="搜索工具、图片、视频、文件">
+        <n-input v-model:value="keyword" clearable aria-label="搜索工具" placeholder="搜索工具、图片、视频、文件">
           <template #prefix>
             <Search :size="16" />
           </template>

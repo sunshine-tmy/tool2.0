@@ -77,10 +77,10 @@ describe("image ai api", () => {
     const createResponse = await app.inject({
       method: "POST",
       url: "/api/tools/image-ai/tasks",
-      ...multipartPayload(
-        [{ field: "files", fileName: "product.png", mimeType: "image/png", content: image }],
-        { operation: "enhance", scale: "2" }
-      )
+      ...multipartPayload([{ field: "files", fileName: "product.png", mimeType: "image/png", content: image }], {
+        operation: "enhance",
+        scale: "2"
+      })
     });
 
     expect(createResponse.statusCode).toBe(202);
@@ -106,7 +106,7 @@ describe("image ai api", () => {
     });
     expect(downloadResponse.statusCode).toBe(200);
     expect(downloadResponse.headers["content-disposition"]).toContain("attachment");
-    expect(downloadResponse.headers["content-disposition"]).toContain("product-enhanced.png");
+    expect(downloadResponse.headers["content-disposition"]).toContain("product-1-enhanced.png");
 
     const zipResponse = await app.inject({
       method: "GET",
@@ -122,7 +122,9 @@ describe("image ai api", () => {
     const image = await testImage(80, 60);
     const wrongMask = await sharp({
       create: { width: 40, height: 30, channels: 4, background: "white" }
-    }).png().toBuffer();
+    })
+      .png()
+      .toBuffer();
 
     const response = await app.inject({
       method: "POST",
@@ -146,10 +148,9 @@ describe("image ai api", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/image-ai/tasks",
-      ...multipartPayload(
-        [{ field: "files", fileName: "payload.txt", mimeType: "image/png", content: image }],
-        { operation: "background_remove" }
-      )
+      ...multipartPayload([{ field: "files", fileName: "payload.txt", mimeType: "image/png", content: image }], {
+        operation: "background_remove"
+      })
     });
 
     expect(response.statusCode).toBe(400);
@@ -162,31 +163,60 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
     response.setHeader("content-type", "application/json");
     if (request.url === "/health") {
       if (options.healthDelayMs) await new Promise((resolve) => setTimeout(resolve, options.healthDelayMs));
-      response.end(JSON.stringify({
-        success: true,
-        data: {
-          available: true,
-          deploymentUsage: "internal-noncommercial",
-          workerUrl,
-          models: [{ provider: "lama", model: "big-lama", version: "test", license: "Apache-2.0", device: "cpu", available: true }]
-        }
-      }));
+      response.end(
+        JSON.stringify({
+          success: true,
+          data: {
+            available: true,
+            deploymentUsage: "internal-noncommercial",
+            workerUrl,
+            models: [
+              {
+                provider: "lama",
+                model: "big-lama",
+                version: "test",
+                license: "Apache-2.0",
+                device: "cpu",
+                available: true
+              }
+            ]
+          }
+        })
+      );
       return;
     }
 
-    const body = JSON.parse(await readBody(request)) as Record<string, any>;
+    const body = JSON.parse(await readBody(request)) as {
+      input_path: string;
+      output_path: string;
+      operation?: string;
+      scale?: number | string;
+      deployment_usage?: string;
+    };
     if (request.url === "/watermark/suggestions") {
-      response.end(JSON.stringify({
-        success: true,
-        data: {
-          width: 80,
-          height: 60,
-          suggestions: [{ polygon: [{ x: 0.1, y: 0.1 }, { x: 0.4, y: 0.1 }, { x: 0.4, y: 0.2 }, { x: 0.1, y: 0.2 }], confidence: 0.9 }],
-          provider: "paddleocr",
-          model: "PP-OCRv5",
-          warnings: []
-        }
-      }));
+      response.end(
+        JSON.stringify({
+          success: true,
+          data: {
+            width: 80,
+            height: 60,
+            suggestions: [
+              {
+                polygon: [
+                  { x: 0.1, y: 0.1 },
+                  { x: 0.4, y: 0.1 },
+                  { x: 0.4, y: 0.2 },
+                  { x: 0.1, y: 0.2 }
+                ],
+                confidence: 0.9
+              }
+            ],
+            provider: "paddleocr",
+            model: "PP-OCRv5",
+            warnings: []
+          }
+        })
+      );
       return;
     }
 
@@ -197,14 +227,21 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
         .resize({ width: (metadata.width || 1) * scale, height: (metadata.height || 1) * scale })
         .png()
         .toFile(body.output_path);
-      response.end(JSON.stringify({
-        success: true,
-        data: {
-          provider: body.operation === "enhance" ? "real-esrgan" : body.operation === "watermark_remove" ? "lama" : "birefnet-general",
-          model: body.operation === "enhance" ? `RealESRGAN_x${scale}plus` : "test-model",
-          warnings: []
-        }
-      }));
+      response.end(
+        JSON.stringify({
+          success: true,
+          data: {
+            provider:
+              body.operation === "enhance"
+                ? "real-esrgan"
+                : body.operation === "watermark_remove"
+                  ? "lama"
+                  : "birefnet-general",
+            model: body.operation === "enhance" ? `RealESRGAN_x${scale}plus` : "test-model",
+            warnings: []
+          }
+        })
+      );
       return;
     }
 
@@ -230,7 +267,9 @@ async function waitForTask(instance: FastifyInstance, taskId: string) {
 }
 
 function testImage(width: number, height: number) {
-  return sharp({ create: { width, height, channels: 3, background: "#2563eb" } }).png().toBuffer();
+  return sharp({ create: { width, height, channels: 3, background: "#2563eb" } })
+    .png()
+    .toBuffer();
 }
 
 function multipartPayload(
@@ -244,7 +283,9 @@ function multipartPayload(
   }
   for (const file of files) {
     chunks.push(
-      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${file.fileName}"\r\nContent-Type: ${file.mimeType}\r\n\r\n`),
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${file.field}"; filename="${file.fileName}"\r\nContent-Type: ${file.mimeType}\r\n\r\n`
+      ),
       file.content,
       Buffer.from("\r\n")
     );

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  classifyLanFile,
-  isLanFilePreviewable,
-  normalizeLanFileQuery
-} from "../lan-file";
+import { classifyLanFile, isLanFilePreviewable, normalizeLanFileQuery } from "../lan-file";
 import { getToolById } from "../tools";
 
 describe("lan file contracts", () => {

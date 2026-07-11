@@ -1,13 +1,4 @@
-export const lanFileCategories = [
-  "image",
-  "video",
-  "audio",
-  "text",
-  "pdf",
-  "archive",
-  "document",
-  "other"
-] as const;
+export const lanFileCategories = ["image", "video", "audio", "text", "pdf", "archive", "document", "other"] as const;
 
 export type LanFileCategory = (typeof lanFileCategories)[number];
 
@@ -77,7 +68,9 @@ export function classifyLanFile(fileName: string, mimeType = ""): LanFileCategor
 }
 
 export function isLanFilePreviewable(category: LanFileCategory): boolean {
-  return category === "image" || category === "video" || category === "audio" || category === "text" || category === "pdf";
+  return (
+    category === "image" || category === "video" || category === "audio" || category === "text" || category === "pdf"
+  );
 }
 
 export function normalizeLanFileQuery(raw: RawLanFileQuery): LanFileQuery {
@@ -90,7 +83,10 @@ export function normalizeLanFileQuery(raw: RawLanFileQuery): LanFileQuery {
   return {
     keyword: String(raw.keyword ?? "").trim(),
     category: lanFileCategories.includes(category as LanFileCategory) ? (category as LanFileCategory) : undefined,
-    extension: String(raw.extension ?? "").trim().replace(/^\./, "").toLowerCase(),
+    extension: String(raw.extension ?? "")
+      .trim()
+      .replace(/^\./, "")
+      .toLowerCase(),
     sortBy: isLanFileSortBy(sortBy) ? sortBy : "createdAt",
     sortOrder: sortOrder === "asc" ? "asc" : "desc",
     page,

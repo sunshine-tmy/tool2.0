@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 
 const originalFetch = globalThis.fetch;
+const publicTestResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 let storageRoot: string;
 
 beforeEach(async () => {
@@ -42,7 +43,7 @@ if (mode === "extract") {
     process.env.VIDEO_TEXT_AUDIO_EXTRACT_COMMAND = `"${process.execPath}" "${helperPath}" extract {input} {output}`;
     process.env.VIDEO_TEXT_TRANSCRIBE_COMMAND = `"${process.execPath}" "${helperPath}" transcribe {input} {output}`;
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/video-text/tasks",
@@ -69,7 +70,7 @@ Injected text should be ignored.`
   });
 
   it("reports a clear failure when local transcription is not configured", async () => {
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/video-text/tasks",
@@ -85,6 +86,21 @@ Injected text should be ignored.`
     expect(data.task.status).toBe("failed");
     expect(data.needsTranscript).toBeUndefined();
     expect(data.result).toBeNull();
+  });
+
+  it("rejects task ids that could escape the video-text storage directories", async () => {
+    const sentinelPath = path.join(storageRoot, "sentinel.json");
+    await fs.writeFile(sentinelPath, "do-not-delete", "utf8");
+    const app = await createApp();
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/tools/video-text/tasks/..%5C..%5Csentinel"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_TASK_ID");
+    await expect(fs.readFile(sentinelPath, "utf8")).resolves.toBe("do-not-delete");
   });
 
   it("recreates upload directories before saving video files", async () => {
@@ -120,9 +136,7 @@ if (mode === "extract") {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data.task.status).toBe("completed");
-    await expect(fs.readdir(path.join(storageRoot, "video-text", "uploads"))).resolves.toEqual(
-      expect.arrayContaining([expect.stringMatching(/demo\.mp4$/)])
-    );
+    await expect(fs.readdir(path.join(storageRoot, "video-text", "uploads"))).resolves.toEqual([]);
   });
 
   it("extracts audio and transcribes uploaded video when local commands are configured", async () => {
@@ -160,9 +174,7 @@ if (mode === "extract") {
     expect(data.task.status).toBe("completed");
     expect(data.result.source).toBe("transcriber");
     expect(data.result.fullText).toContain("Voice script from local transcriber");
-    await expect(fs.readdir(path.join(storageRoot, "video-text", "audio"))).resolves.toEqual(
-      expect.arrayContaining([expect.stringMatching(/\.wav$/)])
-    );
+    await expect(fs.readdir(path.join(storageRoot, "video-text", "audio"))).resolves.toEqual([]);
   });
 
   it("downloads a remote video url and creates a video text task", async () => {
@@ -190,7 +202,7 @@ if (mode === "extract") {
     );
     globalThis.fetch = fetchMock;
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/video-text/tasks/from-url",
@@ -222,7 +234,7 @@ if (mode === "extract") {
     );
     globalThis.fetch = fetchMock;
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "GET",
       url: `/api/tools/video-text/remote-video?url=${encodeURIComponent("https://cdn.test/video.mp4")}`
@@ -477,7 +489,10 @@ if (mode === "extract") {
   return createApp();
 }
 
-function createVideoTextTask(app: Awaited<ReturnType<typeof createApp>>, input: { fileName: string; transcript: string }) {
+function createVideoTextTask(
+  app: Awaited<ReturnType<typeof createApp>>,
+  input: { fileName: string; transcript: string }
+) {
   return app.inject({
     method: "POST",
     url: "/api/tools/video-text/tasks",
@@ -499,9 +514,7 @@ function multipartPayload(input: {
   const chunks: string[] = [];
 
   for (const [name, value] of Object.entries(input.fields ?? {})) {
-    chunks.push(
-      `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
-    );
+    chunks.push(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
   }
 
   chunks.push(

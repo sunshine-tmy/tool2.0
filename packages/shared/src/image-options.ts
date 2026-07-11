@@ -25,9 +25,7 @@ export function normalizeImageOptions(options: RawImageOptions): ImageOptions {
   const quality = Math.min(95, Math.max(30, Math.round(rawQuality)));
 
   const width =
-    Number.isFinite(options.width) && Number(options.width) > 0
-      ? Math.round(Number(options.width))
-      : undefined;
+    Number.isFinite(options.width) && Number(options.width) > 0 ? Math.round(Number(options.width)) : undefined;
 
   return {
     quality,

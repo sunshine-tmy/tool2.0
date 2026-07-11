@@ -55,14 +55,15 @@
         <div class="image-result-list">
           <article v-for="item in items" :key="item.id" class="image-result-row">
             <div class="image-thumb">
-              <img :src="item.previewUrl" :alt="item.file.name" />
+              <img :src="item.previewUrl" :alt="item.file.name" loading="lazy" decoding="async" />
             </div>
             <div class="image-result-main">
               <strong>{{ item.file.name }}</strong>
               <span>
                 {{ formatBytes(item.file.size) }}
                 <template v-if="item.result">
-                  → {{ formatBytes(item.result.outputSize) }} · {{ savedPercentLabel(item.result.originalSize, item.result.outputSize) }}
+                  → {{ formatBytes(item.result.outputSize) }} ·
+                  {{ savedPercentLabel(item.result.originalSize, item.result.outputSize) }}
                 </template>
               </span>
               <n-progress
@@ -79,10 +80,17 @@
               <span>{{ statusName(item.status) }}</span>
             </div>
             <div class="file-actions">
-              <n-button v-if="item.result" secondary size="small" tag="a" :href="absoluteDownloadUrl(item.result.downloadUrl)" target="_blank">
+              <n-button
+                v-if="item.result"
+                secondary
+                size="small"
+                tag="a"
+                :href="absoluteDownloadUrl(item.result.downloadUrl)"
+                target="_blank"
+              >
                 下载
               </n-button>
-              <n-button tertiary size="small" type="error" :disabled="item.status === 'processing'" @click="removeItem(item.id)">
+              <n-button tertiary size="small" type="error" :disabled="submitting" @click="removeItem(item.id)">
                 删除
               </n-button>
             </div>
@@ -113,13 +121,20 @@
 
         <n-form label-placement="top">
           <n-form-item label="输出格式">
-            <n-select v-model:value="outputFormat" :options="formatOptions" />
+            <n-select v-model:value="outputFormat" :options="formatOptions" :disabled="submitting" />
           </n-form-item>
           <n-form-item label="图片质量">
-            <n-slider v-model:value="quality" :min="30" :max="95" :step="1" />
+            <n-slider v-model:value="quality" :min="30" :max="95" :step="1" :disabled="submitting" />
           </n-form-item>
           <n-form-item label="宽度限制">
-            <n-input-number v-model:value="width" clearable :min="120" :max="6000" placeholder="不填则保持原宽度" />
+            <n-input-number
+              v-model:value="width"
+              clearable
+              :min="120"
+              :max="6000"
+              :disabled="submitting"
+              placeholder="不填则保持原宽度"
+            />
           </n-form-item>
         </n-form>
 
@@ -150,6 +165,7 @@ import {
 } from "naive-ui";
 import { Download, ImageDown, Trash2, UploadCloud } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import { resolveBackendUrl } from "../../config/runtime";
 import { imageCompressApi, type ImageToolResponse } from "./api";
 import { createImageItemId } from "./image-id";
 
@@ -188,9 +204,11 @@ const formatOptions = [
   { label: "PNG", value: "png" }
 ];
 
-const pendingItems = computed(() => items.value.filter((item) => item.status === "pending" || item.status === "failed"));
+const pendingItems = computed(() =>
+  items.value.filter((item) => item.status === "pending" || item.status === "failed")
+);
 const completedItems = computed(() => items.value.filter((item) => item.result));
-const totalOriginalSize = computed(() => items.value.reduce((sum, item) => sum + item.file.size, 0));
+const totalOriginalSize = computed(() => completedItems.value.reduce((sum, item) => sum + item.file.size, 0));
 const totalOutputSize = computed(() =>
   completedItems.value.reduce((sum, item) => sum + (item.result?.outputSize ?? 0), 0)
 );
@@ -213,7 +231,7 @@ function addFiles(files: File[]) {
     return;
   }
 
-  items.value = [
+  const nextItems = [
     ...images.map((file) => ({
       id: createImageItemId(),
       file,
@@ -222,32 +240,43 @@ function addFiles(files: File[]) {
       status: "pending" as ImageStatus
     })),
     ...items.value
-  ].slice(0, 30);
+  ];
+  nextItems.slice(30).forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  items.value = nextItems.slice(0, 30);
 }
 
 async function compressAll() {
   submitting.value = true;
   try {
-    for (const item of pendingItems.value) {
-      await compressItem(item);
+    const batch = [...pendingItems.value];
+    const settings = { quality: quality.value, outputFormat: outputFormat.value, width: width.value };
+    let succeeded = 0;
+    for (const item of batch) {
+      if (!items.value.some((current) => current.id === item.id)) continue;
+      if (await compressItem(item, settings)) succeeded += 1;
     }
-    message.success("图片压缩完成");
+    if (succeeded === batch.length) message.success(`已完成 ${succeeded} 张图片压缩`);
+    else if (succeeded > 0) message.warning(`压缩完成：成功 ${succeeded} 张，失败 ${batch.length - succeeded} 张`);
+    else message.error("图片压缩失败，请检查文件后重试");
   } finally {
     submitting.value = false;
   }
 }
 
-async function compressItem(item: ImageItem) {
+async function compressItem(
+  item: ImageItem,
+  settings: { quality: number; outputFormat: OutputFormat; width: number | null }
+) {
   item.status = "processing";
   item.progress = 5;
   item.error = undefined;
 
   const form = new FormData();
   form.append("file", item.file);
-  form.append("quality", String(quality.value));
-  form.append("outputFormat", outputFormat.value);
-  if (width.value) {
-    form.append("width", String(width.value));
+  form.append("quality", String(settings.quality));
+  form.append("outputFormat", settings.outputFormat);
+  if (settings.width) {
+    form.append("width", String(settings.width));
   }
 
   try {
@@ -258,10 +287,12 @@ async function compressItem(item: ImageItem) {
     });
     item.status = "done";
     item.progress = 100;
+    return true;
   } catch (error) {
     item.status = "failed";
     item.progress = 100;
     item.error = error instanceof Error ? error.message : "压缩失败";
+    return false;
   }
 }
 
@@ -294,8 +325,7 @@ function downloadAll() {
 }
 
 function absoluteDownloadUrl(downloadUrl: string) {
-  if (downloadUrl.startsWith("http")) return downloadUrl;
-  return `${window.location.protocol}//${window.location.hostname}:3100${downloadUrl}`;
+  return resolveBackendUrl(downloadUrl);
 }
 
 function savedPercentLabel(originalSize: number, outputSize: number) {

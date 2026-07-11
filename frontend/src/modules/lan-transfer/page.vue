@@ -47,8 +47,16 @@
               indicator-placement="inside"
             />
             <div class="upload-actions">
-              <n-button v-if="item.status === 'uploading'" tertiary size="small" @click="item.uploader?.pause()">暂停</n-button>
-              <n-button v-if="item.status === 'paused' || item.status === 'failed'" secondary size="small" @click="item.uploader?.resume()">继续</n-button>
+              <n-button v-if="item.status === 'uploading'" tertiary size="small" @click="item.uploader?.pause()"
+                >暂停</n-button
+              >
+              <n-button
+                v-if="item.status === 'paused' || item.status === 'failed'"
+                secondary
+                size="small"
+                @click="item.uploader?.resume()"
+                >继续</n-button
+              >
               <n-button
                 v-if="item.status === 'uploading' || item.status === 'paused' || item.status === 'failed'"
                 tertiary
@@ -63,7 +71,12 @@
         </div>
 
         <div class="lan-filters">
-          <n-input v-model:value="lanQuery.keyword" clearable placeholder="搜索文件名或扩展名" @keyup.enter="applyLanFilters" />
+          <n-input
+            v-model:value="lanQuery.keyword"
+            clearable
+            placeholder="搜索文件名或扩展名"
+            @keyup.enter="applyLanFilters"
+          />
           <n-select v-model:value="lanQuery.category" clearable :options="lanCategoryOptions" placeholder="文件类型" />
           <n-input v-model:value="lanQuery.extension" clearable placeholder="扩展名，例如 pdf" />
           <n-select v-model:value="lanQuery.sortBy" :options="lanSortOptions" />
@@ -106,7 +119,10 @@
               <FileText v-else :size="20" />
               <div>
                 <strong>{{ file.originalName }}</strong>
-                <span>{{ categoryName(file.category) }} · {{ formatBytes(file.size) }} · {{ file.extension || "无扩展名" }}</span>
+                <span
+                  >{{ categoryName(file.category) }} · {{ formatBytes(file.size) }} ·
+                  {{ file.extension || "无扩展名" }}</span
+                >
               </div>
             </div>
             <div class="file-meta">
@@ -139,10 +155,20 @@
 
     <n-modal v-model:show="previewVisible" preset="card" :title="previewFile?.originalName" class="preview-modal">
       <div v-if="previewFile" class="preview-body">
-        <img v-if="previewFile.category === 'image'" :src="previewFile.previewUrl" :alt="previewFile.originalName" />
+        <img
+          v-if="previewFile.category === 'image'"
+          :src="previewFile.previewUrl"
+          :alt="previewFile.originalName"
+          decoding="async"
+        />
         <video v-else-if="previewFile.category === 'video'" :src="previewFile.previewUrl" controls />
         <audio v-else-if="previewFile.category === 'audio'" :src="previewFile.previewUrl" controls />
-        <iframe v-else-if="previewFile.category === 'pdf'" :src="previewFile.previewUrl" title="PDF preview" />
+        <iframe
+          v-else-if="previewFile.category === 'pdf'"
+          :src="previewFile.previewUrl"
+          sandbox=""
+          title="PDF preview"
+        />
         <pre v-else-if="previewFile.category === 'text'">{{ previewText }}</pre>
         <n-empty v-else description="该文件类型不支持预览，请下载查看。" />
       </div>
@@ -160,6 +186,7 @@ import type { LanFileCategory, LanFileSortBy, LanFileSortOrder } from "@toolbox/
 import { lanFileCategories } from "@toolbox/shared";
 import { FileArchive, FileText, FileVideo, ImageDown, Music, RefreshCw, UploadCloud } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import { currentWebUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { ConcurrentChunkUploader } from "./chunk-uploader";
 import { lanTransferApi } from "./api";
@@ -174,7 +201,7 @@ import {
 } from "../../utils/batch-selection";
 
 const message = useMessage();
-const publicWebUrl = "http://192.168.1.241:5173";
+const publicWebUrl = currentWebUrl();
 const lanFiles = ref<LanFileView[]>([]);
 const uploadQueue = ref<UploadItem[]>([]);
 const isDraggingFiles = ref(false);

@@ -68,4 +68,3 @@ export type ImageAiHealth = {
 export function isImageAiOperation(value: unknown): value is ImageAiOperation {
   return typeof value === "string" && imageAiOperations.includes(value as ImageAiOperation);
 }
-

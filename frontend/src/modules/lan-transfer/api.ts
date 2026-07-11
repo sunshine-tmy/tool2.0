@@ -1,5 +1,5 @@
 import type { AxiosProgressEvent } from "axios";
-import { ApiRequest, httpClient } from "../../services/http";
+import { httpClient, withApiError } from "../../services/http";
 import type {
   CreateLanUploadSessionInput,
   LanFileListParams,
@@ -10,27 +10,30 @@ import type {
 } from "./types";
 
 class LanTransferApi {
-  @ApiRequest("上传文件失败")
   async uploadFile(file: File, onUploadProgress?: (event: AxiosProgressEvent) => void) {
     const form = new FormData();
     form.append("file", file);
 
-    return httpClient.post<LanUploadResponse>("/tools/lan-transfer/files", form, {
-      onUploadProgress
-    });
+    return withApiError(
+      () => httpClient.post<LanUploadResponse>("/tools/lan-transfer/files", form, { onUploadProgress }),
+      "上传文件失败"
+    );
   }
 
-  @ApiRequest("创建上传会话失败")
   async createUploadSession(input: CreateLanUploadSessionInput) {
-    return httpClient.post<LanUploadStatus>("/tools/lan-transfer/uploads", input);
+    return withApiError(
+      () => httpClient.post<LanUploadStatus>("/tools/lan-transfer/uploads", input),
+      "创建上传会话失败"
+    );
   }
 
-  @ApiRequest("获取上传状态失败")
   async getUploadStatus(uploadId: string) {
-    return httpClient.get<LanUploadStatus>(`/tools/lan-transfer/uploads/${uploadId}`);
+    return withApiError(
+      () => httpClient.get<LanUploadStatus>(`/tools/lan-transfer/uploads/${uploadId}`),
+      "获取上传状态失败"
+    );
   }
 
-  @ApiRequest("上传分片失败")
   async uploadChunk(
     uploadId: string,
     index: number,
@@ -40,38 +43,48 @@ class LanTransferApi {
     const form = new FormData();
     form.append("chunk", chunk, `chunk-${index}`);
 
-    return httpClient.put<LanUploadStatus>(`/tools/lan-transfer/uploads/${uploadId}/chunks/${index}`, form, {
-      onUploadProgress
-    });
+    return withApiError(
+      () =>
+        httpClient.put<LanUploadStatus>(`/tools/lan-transfer/uploads/${uploadId}/chunks/${index}`, form, {
+          onUploadProgress
+        }),
+      "上传分片失败"
+    );
   }
 
-  @ApiRequest("合并文件失败")
   async completeUpload(uploadId: string) {
-    return httpClient.post<LanUploadResponse>(`/tools/lan-transfer/uploads/${uploadId}/complete`);
+    return withApiError(
+      () => httpClient.post<LanUploadResponse>(`/tools/lan-transfer/uploads/${uploadId}/complete`),
+      "合并文件失败"
+    );
   }
 
-  @ApiRequest("取消上传失败")
   async cancelUpload(uploadId: string) {
-    return httpClient.delete<{ removed: boolean }>(`/tools/lan-transfer/uploads/${uploadId}`);
+    return withApiError(
+      () => httpClient.delete<{ removed: boolean }>(`/tools/lan-transfer/uploads/${uploadId}`),
+      "取消上传失败"
+    );
   }
 
-  @ApiRequest("获取文件列表失败")
   async listFiles(params: LanFileListParams) {
-    return httpClient.get<{ files: LanFileView[]; pagination: LanFilePagination }>("/tools/lan-transfer/files", {
-      params
-    });
+    return withApiError(
+      () =>
+        httpClient.get<{ files: LanFileView[]; pagination: LanFilePagination }>("/tools/lan-transfer/files", {
+          params
+        }),
+      "获取文件列表失败"
+    );
   }
 
-  @ApiRequest("获取预览失败")
   async getTextPreview(previewUrl: string) {
-    return httpClient.get<string>(previewUrl, {
-      responseType: "text"
-    });
+    return withApiError(() => httpClient.get<string>(previewUrl, { responseType: "text" }), "获取预览失败");
   }
 
-  @ApiRequest("删除文件失败")
   async deleteFile(id: string) {
-    return httpClient.delete<{ removed: boolean }>(`/tools/lan-transfer/files/${id}`);
+    return withApiError(
+      () => httpClient.delete<{ removed: boolean }>(`/tools/lan-transfer/files/${id}`),
+      "删除文件失败"
+    );
   }
 }
 

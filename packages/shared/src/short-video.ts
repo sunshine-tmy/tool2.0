@@ -82,17 +82,21 @@ export function extractFirstUrl(text: string) {
 
 export function detectShortVideoPlatform(url: string): ShortVideoPlatform {
   try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.endsWith("douyin.com") || hostname.endsWith("iesdouyin.com")) {
+    const hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+    if (matchesDomain(hostname, "douyin.com") || matchesDomain(hostname, "iesdouyin.com")) {
       return "douyin";
     }
-    if (hostname.endsWith("xiaohongshu.com") || hostname.endsWith("xhslink.com")) {
+    if (matchesDomain(hostname, "xiaohongshu.com") || matchesDomain(hostname, "xhslink.com")) {
       return "xiaohongshu";
     }
     return "unknown";
   } catch {
     return "unknown";
   }
+}
+
+function matchesDomain(hostname: string, domain: string) {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
 }
 
 export function isSupportedShortVideoUrl(url: string) {

@@ -1,4 +1,4 @@
-export type PageSelectionState = {
+type PageSelectionState = {
   checked: boolean;
   indeterminate: boolean;
 };

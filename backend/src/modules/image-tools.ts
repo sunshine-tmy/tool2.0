@@ -12,6 +12,10 @@ type RegisterImageToolRoutesOptions = {
   taskStore: TaskStore;
 };
 
+const IMAGE_COMPRESS_MAX_FILE_BYTES = 20 * 1024 * 1024;
+const IMAGE_COMPRESS_MAX_PIXELS = 40_000_000;
+const supportedImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 export function registerSingleImageToolRoute({
   app,
   config,
@@ -30,9 +34,13 @@ async function processImageRequest(
   config: AppConfig,
   taskStore: TaskStore
 ) {
-  const file = await request.file();
+  const file = await request.file({ limits: { fileSize: IMAGE_COMPRESS_MAX_FILE_BYTES } });
   if (!file) {
     return reply.code(400).send(fail("FILE_REQUIRED", "Please upload an image file"));
+  }
+  if (!supportedImageMimeTypes.has(file.mimetype)) {
+    file.file.resume();
+    return reply.code(415).send(fail("UNSUPPORTED_IMAGE_TYPE", "Only JPEG, PNG and WebP images are supported"));
   }
 
   const task = taskStore.create(toolId);
@@ -48,12 +56,20 @@ async function processImageRequest(
     });
 
     const input = await file.toBuffer();
+    if (file.file.truncated || input.length > IMAGE_COMPRESS_MAX_FILE_BYTES) {
+      taskStore.update(task.id, { status: "failed", progress: 100, error: "Image exceeds the 20MB limit" });
+      return reply.code(413).send(fail("IMAGE_TOO_LARGE", "Image exceeds the 20MB limit"));
+    }
     const originalSize = input.length;
     const outputName = `${task.id}.${options.outputFormat}`;
     const outputPath = path.join(config.outputDir, outputName);
 
-    let pipeline = sharp(input).rotate();
-    const metadata = await sharp(input).metadata();
+    const image = sharp(input, { limitInputPixels: IMAGE_COMPRESS_MAX_PIXELS }).rotate();
+    const metadata = await image.metadata();
+    let pipeline = image.clone();
+    if (!metadata.width || !metadata.height || !supportedImageMimeTypes.has(`image/${metadata.format}`)) {
+      throw new Error("Invalid or unsupported image content");
+    }
     if (options.width) {
       pipeline = pipeline.resize({ width: options.width, withoutEnlargement: true });
     }
@@ -71,7 +87,7 @@ async function processImageRequest(
     const completed = taskStore.update(task.id, {
       status: "completed",
       progress: 100,
-      outputPath
+      outputPath: outputName
     });
 
     return ok({

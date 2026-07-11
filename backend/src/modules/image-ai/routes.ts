@@ -70,7 +70,8 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
   });
 
   app.post("/api/tools/image-ai/tasks", async (request, reply) => {
-    if (manager.activeCount() >= config.imageAiQueueLimit) {
+    const releaseReservation = manager.tryReserveSlot();
+    if (!releaseReservation) {
       return reply.code(429).send(fail("IMAGE_AI_QUEUE_FULL", "AI 任务队列已满，请稍后再试"));
     }
 
@@ -78,9 +79,9 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
     const inputDir = path.join(config.imageAiInputsDir, taskId);
     const uploaded: UploadedPart[] = [];
     const fields: Record<string, string> = {};
-    await fs.mkdir(inputDir, { recursive: true });
 
     try {
+      await fs.mkdir(inputDir, { recursive: true });
       let fileIndex = 0;
       for await (const part of request.parts()) {
         if (part.type === "field") {
@@ -147,6 +148,8 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
     } catch (error) {
       await fs.rm(inputDir, { recursive: true, force: true });
       return sendRouteError(reply, error);
+    } finally {
+      releaseReservation();
     }
   });
 
@@ -214,7 +217,8 @@ async function storeStream(stream: NodeJS.ReadableStream, destination: string, l
 
 function sendRouteError(reply: { code: (status: number) => { send: (payload: unknown) => unknown } }, error: unknown) {
   const workerError = error instanceof ImageAiWorkerError ? error : undefined;
-  const code = workerError?.code || (error instanceof Error && "code" in error ? String(error.code) : "IMAGE_AI_REQUEST_FAILED");
+  const code =
+    workerError?.code || (error instanceof Error && "code" in error ? String(error.code) : "IMAGE_AI_REQUEST_FAILED");
   const message = error instanceof Error ? error.message : "图片处理请求失败";
   const status = workerError
     ? workerError.status && workerError.status >= 400 && workerError.status < 500

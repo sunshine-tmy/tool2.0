@@ -1,20 +1,47 @@
 {
   "name": "toolbox-monorepo",
   "private": true,
+  "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@11.7.0",
+  "engines": {
+    "node": ">=20 <25",
+    "pnpm": ">=10 <12"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter frontend --filter backend dev",
     "dev:web": "pnpm --filter frontend dev",
     "dev:api": "pnpm --filter backend dev",
     "dev:ai": ".venv-image-ai\\Scripts\\python.exe scripts\\image-ai-worker.py",
-    "build": "pnpm --workspace-concurrency=1 -r build",
+    "build": "pnpm build:shared && pnpm build:backend && pnpm build:web && pnpm smoke",
+    "build:shared": "pnpm --filter @toolbox/shared build",
+    "build:backend": "pnpm --filter backend build",
+    "build:web": "pnpm --filter frontend build",
+    "clean": "node scripts/clean.mjs",
+    "smoke": "node scripts/smoke-build.mjs",
+    "start": "pnpm --filter backend start",
+    "preview:web": "pnpm --filter frontend preview",
     "test": "pnpm --workspace-concurrency=1 -r test",
-    "typecheck": "pnpm --workspace-concurrency=1 -r typecheck"
+    "test:python": "python scripts/video-transcribe-faster-whisper.test.py",
+    "test:all": "pnpm test && pnpm test:python",
+    "typecheck": "pnpm --workspace-concurrency=1 -r typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "deadcode": "knip",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm format:check && pnpm lint && pnpm deadcode && pnpm typecheck && pnpm test:all && pnpm build"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/node": "^24.0.10",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.9.2",
+    "globals": "^16.5.0",
+    "knip": "^5.88.1",
+    "prettier": "^3.9.5",
+    "tsup": "^8.5.1",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.4"
+    "typescript-eslint": "^8.63.0"
   }
 }

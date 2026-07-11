@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.venv-*/
+models/
+storage/
+pnpm-lock.yaml
+frontend/src/styles/global.css
+docs/superpowers/

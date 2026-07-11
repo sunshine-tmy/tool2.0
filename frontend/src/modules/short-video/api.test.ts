@@ -6,7 +6,7 @@ const httpMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../../services/http", () => ({
-  ApiRequest: () => (_target: object, _propertyKey: string | symbol, descriptor: PropertyDescriptor) => descriptor,
+  withApiError: (operation: () => Promise<unknown>) => operation(),
   httpClient: httpMock
 }));
 

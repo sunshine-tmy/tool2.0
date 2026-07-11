@@ -3,15 +3,15 @@ import sharp from "sharp";
 
 export const IMAGE_AI_MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const IMAGE_AI_MAX_MASK_BYTES = 10 * 1024 * 1024;
-export const IMAGE_AI_MAX_PIXELS = 40_000_000;
-export const IMAGE_AI_MAX_EDGE = 8192;
-export const IMAGE_AI_MAX_OUTPUT_PIXELS = 100_000_000;
-export const IMAGE_AI_MAX_OUTPUT_EDGE = 16384;
+const IMAGE_AI_MAX_PIXELS = 40_000_000;
+const IMAGE_AI_MAX_EDGE = 8192;
+const IMAGE_AI_MAX_OUTPUT_PIXELS = 100_000_000;
+const IMAGE_AI_MAX_OUTPUT_EDGE = 16384;
 
 const allowedMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const allowedExtensions = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 
-export type ValidatedImage = {
+type ValidatedImage = {
   width: number;
   height: number;
   format: "jpeg" | "png" | "webp";
@@ -97,4 +97,3 @@ export function validateEnhanceOutput(width: number, height: number, scale: 2 | 
 export function validationError(code: string, message: string) {
   return Object.assign(new Error(message), { code });
 }
-

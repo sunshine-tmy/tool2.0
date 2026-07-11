@@ -1,6 +1,6 @@
 import type { VideoTextResult } from "./types";
 
-export type RecognitionQualityRow = {
+type RecognitionQualityRow = {
   label: string;
   value: string;
 };

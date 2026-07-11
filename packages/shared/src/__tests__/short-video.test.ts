@@ -3,15 +3,19 @@ import { detectShortVideoPlatform, extractFirstUrl, normalizeShortVideoProviderR
 
 describe("short video helpers", () => {
   it("extracts the first url from shared text", () => {
-    expect(extractFirstUrl("复制这段话 https://v.douyin.com/abc123/ 打开看看")).toBe(
-      "https://v.douyin.com/abc123/"
-    );
+    expect(extractFirstUrl("复制这段话 https://v.douyin.com/abc123/ 打开看看")).toBe("https://v.douyin.com/abc123/");
   });
 
   it("detects supported platforms from public share urls", () => {
     expect(detectShortVideoPlatform("https://v.douyin.com/abc123/")).toBe("douyin");
     expect(detectShortVideoPlatform("https://www.xiaohongshu.com/explore/abc")).toBe("xiaohongshu");
     expect(detectShortVideoPlatform("https://example.com/watch/1")).toBe("unknown");
+  });
+
+  it("does not accept lookalike platform domains", () => {
+    expect(detectShortVideoPlatform("https://evildouyin.com/video/1")).toBe("unknown");
+    expect(detectShortVideoPlatform("https://douyin.com.attacker.test/video/1")).toBe("unknown");
+    expect(detectShortVideoPlatform("https://evilxiaohongshu.com/explore/1")).toBe("unknown");
   });
 
   it("normalizes provider video and image media into a stable result shape", () => {

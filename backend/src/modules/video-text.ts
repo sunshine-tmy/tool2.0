@@ -1,27 +1,23 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { exec } from "node:child_process";
+import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pipeline } from "node:stream/promises";
-import { Readable } from "node:stream";
-import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { FastifyInstance } from "fastify";
 import { fail, ok } from "@toolbox/shared";
-import {
-  analyzeVideoText,
-  type VideoTextAnalysis,
-  type VideoTextRecognitionQuality
-} from "@toolbox/shared/video-text";
+import { analyzeVideoText, type VideoTextAnalysis, type VideoTextRecognitionQuality } from "@toolbox/shared/video-text";
 import type { AppConfig } from "../config";
 import type { Task, TaskStore } from "../tasks/task-store";
+import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../security/remote-fetch";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 type RegisterVideoTextRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
   taskStore: TaskStore;
+  remoteFetch: RemoteFetch;
 };
 
 type StoredVideoTextResult = VideoTextAnalysis & {
@@ -49,7 +45,7 @@ type VideoTextTaskSource = {
   fileSize?: number;
 };
 
-export async function registerVideoTextRoutes({ app, config, taskStore }: RegisterVideoTextRoutesOptions) {
+export async function registerVideoTextRoutes({ app, config, taskStore, remoteFetch }: RegisterVideoTextRoutesOptions) {
   const results = new Map<string, StoredVideoTextResult>();
   await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
@@ -86,11 +82,12 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
     }
 
     try {
-      const response = await fetchRemoteVideo(sourceUrl);
+      const response = await fetchRemoteVideo(sourceUrl, remoteFetch, config);
 
       if (!response.ok || !response.body) {
         return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
       }
+      assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
 
       const mimeType = normalizeVideoMimeType(response.headers.get("content-type"));
       const fileName = body?.fileName || fileNameFromUrl(sourceUrl);
@@ -98,7 +95,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
       return ok(
         await createVideoTextTaskFromSource(
           {
-            stream: Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+            stream: limitedResponseStream(response, config.remoteMediaMaxBytes),
             fileName,
             mimeType,
             fileSize: parseContentLength(response.headers.get("content-length"))
@@ -122,17 +119,18 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
     }
 
     try {
-      const response = await fetchRemoteVideo(sourceUrl, request.headers.range);
+      const response = await fetchRemoteVideo(sourceUrl, remoteFetch, config, request.headers.range);
       if (!response.ok || !response.body) {
         return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
       }
+      assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
 
       reply.code(response.status === 206 ? 206 : 200);
       reply.header("content-type", normalizeVideoMimeType(response.headers.get("content-type")));
       copyHeader(response, reply, "content-length");
       copyHeader(response, reply, "content-range");
       copyHeader(response, reply, "accept-ranges");
-      return reply.send(Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>));
+      return reply.send(limitedResponseStream(response, config.remoteMediaMaxBytes));
     } catch (error) {
       return reply
         .code(502)
@@ -164,6 +162,9 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
 
   app.get("/api/tools/video-text/history/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
+    if (!isValidTaskId(taskId)) {
+      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+    }
     const result = await loadResult(config, results, taskId);
     if (!result) {
       return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
@@ -173,18 +174,25 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
 
   app.delete("/api/tools/video-text/history/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
+    if (!isValidTaskId(taskId)) {
+      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+    }
     const existed = Boolean(await loadResult(config, results, taskId));
     if (!existed) {
       return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
     }
 
     results.delete(taskId);
+    taskStore.remove(taskId);
     await deleteStoredResultFiles(config, taskId);
     return ok({ removed: true });
   });
 
   app.get("/api/tools/video-text/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
+    if (!isValidTaskId(taskId)) {
+      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+    }
     const task = taskStore.get(taskId);
     if (!task || task.toolId !== "video-text") {
       return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
@@ -198,6 +206,9 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
 
   app.get("/api/tools/video-text/tasks/:taskId/result", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
+    if (!isValidTaskId(taskId)) {
+      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+    }
     const result = await loadResult(config, results, taskId);
     if (!result) {
       return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
@@ -207,6 +218,9 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
 
   app.get("/api/tools/video-text/tasks/:taskId/export", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
+    if (!isValidTaskId(taskId)) {
+      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+    }
     const { format = "txt" } = request.query as { format?: string };
     const result = await loadResult(config, results, taskId);
     if (!result) {
@@ -228,7 +242,16 @@ export async function registerVideoTextRoutes({ app, config, taskStore }: Regist
 
   app.delete("/api/tools/video-text/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
+    if (!isValidTaskId(taskId)) {
+      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+    }
+    const task = taskStore.get(taskId);
+    const result = await loadResult(config, results, taskId);
+    if ((!task || task.toolId !== "video-text") && !result) {
+      return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+    }
     results.delete(taskId);
+    taskStore.remove(taskId);
     await deleteStoredResultFiles(config, taskId);
     return ok({ removed: true });
   });
@@ -246,8 +269,13 @@ async function createVideoTextTaskFromSource(
   const task = taskStore.create("video-text");
   taskStore.update(task.id, { status: "running", progress: 10 });
 
-  const safeName = path.basename(source.fileName || "video.mp4");
-  const videoPath = path.join(config.videoTextUploadsDir, `${task.id}-${safeName}`);
+  const safeName = sanitizeDisplayFileName(source.fileName || "video.mp4");
+  const extension = path
+    .extname(safeName)
+    .toLowerCase()
+    .replace(/[^.a-z0-9]/g, "")
+    .slice(0, 12);
+  const videoPath = path.join(config.videoTextUploadsDir, `${task.id}${extension}`);
 
   try {
     await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
@@ -282,7 +310,7 @@ async function createVideoTextTaskFromSource(
     const result: StoredVideoTextResult = {
       id: task.id,
       fileName: safeName,
-      fileSize: source.fileSize ?? (await fsp.stat(videoPath)).size,
+      fileSize: (await fsp.stat(videoPath)).size,
       mimeType: source.mimeType,
       source: "transcriber",
       createdAt: new Date().toISOString(),
@@ -295,7 +323,7 @@ async function createVideoTextTaskFromSource(
     const completed = taskStore.update(task.id, {
       status: "completed",
       progress: 100,
-      outputPath: resultPath
+      outputPath: path.basename(resultPath)
     }) as Task;
 
     return {
@@ -312,6 +340,13 @@ async function createVideoTextTaskFromSource(
       task: failed,
       result: null
     };
+  } finally {
+    await Promise.all([
+      fsp.rm(videoPath, { force: true }),
+      fsp.rm(path.join(config.videoTextAudioDir, `${task.id}.wav`), { force: true }),
+      fsp.rm(path.join(config.videoTextResultsDir, `${task.id}.txt`), { force: true }),
+      fsp.rm(path.join(config.videoTextResultsDir, `${task.id}.txt.meta.json`), { force: true })
+    ]);
   }
 }
 
@@ -324,12 +359,13 @@ async function transcribeVideo(videoPath: string, taskId: string, config: AppCon
   const outputPath = path.join(config.videoTextResultsDir, `${taskId}.txt`);
   const metadataPath = `${outputPath}.meta.json`;
   const { stdout } = await runCommand(
-    renderCommand(config.videoTextTranscribeCommand, {
+    config.videoTextTranscribeCommand,
+    {
       input: audioPath,
       audio: audioPath,
       video: videoPath,
       output: outputPath
-    }),
+    },
     "视频语音识别失败：请检查 VIDEO_TEXT_TRANSCRIBE_COMMAND 配置。"
   );
 
@@ -391,39 +427,87 @@ async function extractAudio(videoPath: string, taskId: string, config: AppConfig
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
   const audioPath = path.join(config.videoTextAudioDir, `${taskId}.wav`);
   await runCommand(
-    renderCommand(config.videoTextAudioExtractCommand, {
+    config.videoTextAudioExtractCommand,
+    {
       input: videoPath,
       video: videoPath,
       output: audioPath,
       audio: audioPath
-    }),
+    },
     "音频提取失败：请确认已安装 ffmpeg，或配置 VIDEO_TEXT_AUDIO_EXTRACT_COMMAND。"
   );
   return audioPath;
 }
 
-async function runCommand(command: string, fallbackMessage: string) {
+async function runCommand(template: string, values: Record<string, string>, fallbackMessage: string) {
   try {
-    return await execAsync(command, {
+    const command = parseCommandTemplate(template).map((argument) => replaceCommandPlaceholders(argument, values));
+    const [executable, ...args] = command;
+    if (!executable) throw new Error("Command is empty");
+    return await execFileAsync(executable, args, {
       timeout: 30 * 60 * 1000,
-      maxBuffer: 20 * 1024 * 1024
+      maxBuffer: 20 * 1024 * 1024,
+      windowsHide: true
     });
-  } catch (error) {
-    const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
-    throw new Error(`${fallbackMessage}${detail}`);
+  } catch {
+    throw new Error(fallbackMessage);
   }
 }
 
-function renderCommand(template: string, values: Record<string, string>) {
-  let command = template;
+function replaceCommandPlaceholders(argument: string, values: Record<string, string>) {
+  let rendered = argument;
   for (const [key, value] of Object.entries(values)) {
-    const quoted = quoteForCommand(value);
-    command = command
-      .replaceAll(`"{${key}}"`, quoted)
-      .replaceAll(`'{${key}}'`, quoted)
-      .replaceAll(`{${key}}`, quoted);
+    rendered = rendered.replaceAll(`{${key}}`, value);
   }
-  return command;
+  if (/\{[A-Za-z][A-Za-z0-9_-]*\}/.test(rendered)) {
+    throw new Error("Command contains an unknown placeholder");
+  }
+  return rendered;
+}
+
+function parseCommandTemplate(template: string) {
+  const args: string[] = [];
+  let current = "";
+  let quote: '"' | "'" | null = null;
+
+  for (let index = 0; index < template.length; index += 1) {
+    const character = template[index];
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      } else if (character === "\\" && template[index + 1] === quote) {
+        current += quote;
+        index += 1;
+      } else {
+        current += character;
+      }
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    } else if (/\s/.test(character)) {
+      if (current) {
+        args.push(current);
+        current = "";
+      }
+    } else {
+      current += character;
+    }
+  }
+
+  if (quote) throw new Error("Command contains an unterminated quote");
+  if (current) args.push(current);
+  return args;
+}
+
+function sanitizeDisplayFileName(value: string) {
+  const name = Array.from(path.basename(value))
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 32 && codePoint !== 127;
+    })
+    .join("")
+    .trim()
+    .slice(0, 255);
+  return name || "video.mp4";
 }
 
 async function loadResult(
@@ -431,6 +515,7 @@ async function loadResult(
   cache: Map<string, StoredVideoTextResult>,
   taskId: string
 ): Promise<StoredVideoTextResult | null> {
+  if (!isValidTaskId(taskId)) return null;
   const cached = cache.get(taskId);
   if (cached) return cached;
 
@@ -457,9 +542,7 @@ async function listHistoryResults(config: AppConfig, cache: Map<string, StoredVi
   }
 
   const results = await Promise.all(
-    files
-      .filter(isResultJsonFile)
-      .map((file) => loadResult(config, cache, path.basename(file, ".json")))
+    files.filter(isResultJsonFile).map((file) => loadResult(config, cache, path.basename(file, ".json")))
   );
 
   return results
@@ -486,13 +569,7 @@ function toHistoryItem(result: StoredVideoTextResult): VideoTextHistoryItem {
 }
 
 function matchHistoryKeyword(result: StoredVideoTextResult, keyword: string) {
-  const haystack = [
-    result.fileName,
-    result.fullText,
-    ...result.summary
-  ]
-    .join(" ")
-    .toLowerCase();
+  const haystack = [result.fileName, result.fullText, ...result.summary].join(" ").toLowerCase();
   return haystack.includes(keyword);
 }
 
@@ -536,7 +613,7 @@ function parsePositiveInteger(value: string | undefined, fallback: number) {
   return parsed;
 }
 
-function fetchRemoteVideo(sourceUrl: string, range?: string) {
+function fetchRemoteVideo(sourceUrl: string, remoteFetch: RemoteFetch, config: AppConfig, range?: string) {
   const headers: Record<string, string> = {
     accept: "video/*,*/*",
     referer: refererFromUrl(sourceUrl),
@@ -548,7 +625,10 @@ function fetchRemoteVideo(sourceUrl: string, range?: string) {
     headers.range = range;
   }
 
-  return fetch(sourceUrl, { headers });
+  return remoteFetch(sourceUrl, {
+    headers,
+    signal: AbortSignal.timeout(config.remoteFetchTimeoutMs)
+  });
 }
 
 function refererFromUrl(value: string) {
@@ -604,6 +684,9 @@ function parseContentLength(value: string | null) {
 }
 
 async function deleteStoredResultFiles(config: AppConfig, taskId: string) {
+  if (!isValidTaskId(taskId)) {
+    throw new Error("Invalid task id");
+  }
   await Promise.all([
     fsp.rm(resultFilePath(config, taskId), { force: true }),
     fsp.rm(path.join(config.videoTextResultsDir, `${taskId}.txt`), { force: true }),
@@ -622,14 +705,29 @@ async function deleteFilesByPrefix(dir: string, prefix: string) {
   }
 
   await Promise.all(
-    files
-      .filter((file) => file.startsWith(prefix))
-      .map((file) => fsp.rm(path.join(dir, file), { force: true }))
+    files.filter((file) => file.startsWith(prefix)).map((file) => fsp.rm(path.join(dir, file), { force: true }))
   );
 }
 
 function resultFilePath(config: AppConfig, taskId: string) {
-  return path.join(config.videoTextResultsDir, `${taskId}.json`);
+  if (!isValidTaskId(taskId)) {
+    throw new Error("Invalid task id");
+  }
+  return resolvePathWithin(config.videoTextResultsDir, `${taskId}.json`);
+}
+
+function isValidTaskId(value: string) {
+  return /^[A-Za-z0-9_-]{1,64}$/.test(value);
+}
+
+function resolvePathWithin(directory: string, fileName: string) {
+  const root = path.resolve(directory);
+  const target = path.resolve(root, fileName);
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error("Resolved path escapes its storage directory");
+  }
+  return target;
 }
 
 function formatResult(result: StoredVideoTextResult, format: "txt" | "srt" | "json") {
@@ -660,8 +758,4 @@ function toSrtTime(seconds: number) {
     2,
     "0"
   )},${String(milliseconds).padStart(3, "0")}`;
-}
-
-function quoteForCommand(value: string) {
-  return `"${value.replaceAll('"', '\\"')}"`;
 }

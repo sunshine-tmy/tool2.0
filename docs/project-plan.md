@@ -1,4 +1,6 @@
-# Project Plan
+# Project Plan (Historical Archive)
+
+> This document records the original plan and is not a live status tracker. See the root `README.md` for current features and operations.
 
 ## Direction
 

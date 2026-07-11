@@ -1,10 +1,10 @@
 import { lanTransferApi } from "./api";
 import type { LanUploadResponse, LanUploadStatus } from "./types";
 
-export const DEFAULT_LAN_CHUNK_SIZE = 8 * 1024 * 1024;
+const DEFAULT_LAN_CHUNK_SIZE = 8 * 1024 * 1024;
 export const DEFAULT_LAN_UPLOAD_CONCURRENCY = 3;
-export const DEFAULT_LAN_CHUNK_MAX_RETRIES = 3;
-export const DEFAULT_LAN_CHUNK_RETRY_DELAY_MS = 800;
+const DEFAULT_LAN_CHUNK_MAX_RETRIES = 3;
+const DEFAULT_LAN_CHUNK_RETRY_DELAY_MS = 800;
 
 export type ChunkUploadApi = {
   createUploadSession(input: {
@@ -25,7 +25,7 @@ export type ChunkUploadApi = {
   cancelUpload(uploadId: string): Promise<{ removed: boolean }>;
 };
 
-export type ChunkUploadSnapshot = {
+type ChunkUploadSnapshot = {
   uploadId?: string;
   fileName: string;
   progress: number;
@@ -34,7 +34,7 @@ export type ChunkUploadSnapshot = {
   totalChunks: number;
 };
 
-export type ChunkUploadResult = {
+type ChunkUploadResult = {
   status: ChunkUploadSnapshot["status"];
   response?: LanUploadResponse;
 };
@@ -153,7 +153,9 @@ export class ConcurrentChunkUploader {
   }
 
   private createMissingChunkQueue() {
-    return Array.from({ length: this.totalChunks }, (_, index) => index).filter((index) => !this.uploadedChunks.has(index));
+    return Array.from({ length: this.totalChunks }, (_, index) => index).filter(
+      (index) => !this.uploadedChunks.has(index)
+    );
   }
 
   private runQueue(queue: number[]) {
@@ -267,7 +269,10 @@ export class ConcurrentChunkUploader {
   }
 
   private snapshot(status: ChunkUploadSnapshot["status"]): ChunkUploadSnapshot {
-    const confirmedBytes = Array.from(this.uploadedChunks).reduce((total, index) => total + this.getChunkSize(index), 0);
+    const confirmedBytes = Array.from(this.uploadedChunks).reduce(
+      (total, index) => total + this.getChunkSize(index),
+      0
+    );
     const inFlightBytes = Array.from(this.inFlightBytes.values()).reduce((total, value) => total + value, 0);
     const loadedBytes = Math.min(this.file.size, confirmedBytes + inFlightBytes);
 

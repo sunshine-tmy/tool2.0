@@ -369,7 +369,12 @@ describe("lan transfer api", () => {
         app.inject({
           method: "PUT",
           url: `/api/lan/uploads/${uploadId}/chunks/${index}`,
-          ...multipartPayload("chunk", `chunk-${index}`, "application/octet-stream", content.slice(index * 2, index * 2 + 2))
+          ...multipartPayload(
+            "chunk",
+            `chunk-${index}`,
+            "application/octet-stream",
+            content.slice(index * 2, index * 2 + 2)
+          )
         })
       )
     );

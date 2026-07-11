@@ -1,4 +1,5 @@
 import type { ShortVideoMedia } from "@toolbox/shared";
+import { apiBaseUrl } from "../../config/runtime";
 
 const fallbackExtensions: Record<ShortVideoMedia["type"], string> = {
   image: "jpg",
@@ -24,7 +25,7 @@ export function createShortVideoDownloadName(media: ShortVideoMedia) {
   return `${baseName}.${extension}`;
 }
 
-export function createShortVideoDownloadUrl(media: ShortVideoMedia, apiBase = defaultApiBase()) {
+export function createShortVideoDownloadUrl(media: ShortVideoMedia, apiBase = apiBaseUrl) {
   const params = new URLSearchParams({
     url: media.url,
     filename: createShortVideoDownloadName(media)
@@ -36,11 +37,6 @@ export function triggerShortVideoDownload(media: ShortVideoMedia, options: Short
   const deps = options.deps ?? browserDownloadDeps();
   const frame = deps.startFrameDownload(createShortVideoDownloadUrl(media, options.apiBase));
   deps.scheduleCleanup(() => deps.removeFrameDownload(frame));
-}
-
-function defaultApiBase() {
-  if (typeof window === "undefined") return "/api";
-  return import.meta.env.VITE_API_BASE ?? `${window.location.protocol}//${window.location.hostname}:3100/api`;
 }
 
 function browserDownloadDeps(): ShortVideoDownloadDeps {

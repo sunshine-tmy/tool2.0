@@ -31,12 +31,7 @@
       </div>
 
       <div class="tool-grid">
-        <router-link
-          v-for="tool in tools"
-          :key="tool.id"
-          class="tool-card tool-link"
-          :to="tool.routePath"
-        >
+        <router-link v-for="tool in tools" :key="tool.id" class="tool-card tool-link" :to="tool.routePath">
           <div class="tool-card-header">
             <div class="tool-icon">
               <component :is="iconByTool[tool.id] ?? Wrench" :size="22" />

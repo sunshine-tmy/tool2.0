@@ -13,27 +13,35 @@
       </n-button-group>
       <label class="mask-range">
         <span>画笔 {{ brushSize }}px</span>
-        <n-slider v-model:value="brushSize" :min="8" :max="240" :step="2" />
+        <n-slider v-model:value="brushSize" :min="8" :max="240" :step="2" aria-label="画笔大小" />
       </label>
-      <n-button size="small" secondary :disabled="historyIndex <= 0" @click="undo">
+      <n-button size="small" secondary aria-label="撤销蒙版操作" :disabled="historyIndex <= 0" @click="undo">
         <template #icon><Undo2 :size="15" /></template>
       </n-button>
-      <n-button size="small" secondary :disabled="historyIndex >= history.length - 1" @click="redo">
+      <n-button
+        size="small"
+        secondary
+        aria-label="重做蒙版操作"
+        :disabled="historyIndex >= history.length - 1"
+        @click="redo"
+      >
         <template #icon><Redo2 :size="15" /></template>
       </n-button>
       <n-button size="small" secondary @click="clearMask">清空蒙版</n-button>
       <label class="mask-range zoom-control">
         <span>缩放 {{ Math.round(zoom * 100) }}%</span>
-        <n-slider v-model:value="zoom" :min="0.5" :max="2.5" :step="0.1" />
+        <n-slider v-model:value="zoom" :min="0.5" :max="2.5" :step="0.1" aria-label="画布缩放" />
       </label>
     </div>
 
     <div ref="viewport" class="mask-viewport">
       <div class="mask-canvas-stack" :style="{ width: `${zoom * 100}%` }">
-        <img :src="imageUrl" alt="待处理图片" @load="initialize" />
+        <img :src="imageUrl" alt="待处理图片" decoding="async" @load="initialize" />
         <canvas
           ref="maskCanvas"
           class="mask-layer"
+          aria-label="水印蒙版绘制区域"
+          role="img"
           @pointerdown="startStroke"
           @pointermove="continueStroke"
           @pointerup="endStroke"
@@ -65,7 +73,7 @@ import { NButton, NButtonGroup, NSlider } from "naive-ui";
 import { Eraser, Paintbrush, Redo2, Undo2 } from "lucide-vue-next";
 import type { WatermarkSuggestion } from "@toolbox/shared";
 
-const props = defineProps<{ imageUrl: string }>();
+defineProps<{ imageUrl: string }>();
 const emit = defineEmits<{ ready: [dimensions: { width: number; height: number }] }>();
 
 const maskCanvas = ref<HTMLCanvasElement>();
@@ -195,9 +203,17 @@ function saveHistory() {
   const canvas = maskCanvas.value;
   const context = canvas?.getContext("2d");
   if (!canvas || !context) return;
+  const snapshotBytes = canvas.width * canvas.height * 4;
+  const historyBudgetBytes = 128 * 1024 * 1024;
+  if (snapshotBytes > historyBudgetBytes) {
+    history.value = [];
+    historyIndex.value = -1;
+    return;
+  }
+  const maxSnapshots = Math.max(1, Math.min(20, Math.floor(historyBudgetBytes / snapshotBytes)));
   const next = history.value.slice(0, historyIndex.value + 1);
   next.push(context.getImageData(0, 0, canvas.width, canvas.height));
-  history.value = next.slice(-20);
+  history.value = next.slice(-maxSnapshots);
   historyIndex.value = history.value.length - 1;
 }
 

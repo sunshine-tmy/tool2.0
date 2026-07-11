@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 
 const originalFetch = globalThis.fetch;
+const publicTestResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 let storageRoot: string;
 
 beforeEach(async () => {
@@ -46,7 +47,7 @@ describe("short video api", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/short-video/parse",
@@ -64,9 +65,7 @@ describe("short video api", () => {
       sourceUrl: "https://v.douyin.com/abc123/",
       provider: "bugpk"
     });
-    expect(body.data.media).toEqual([
-      expect.objectContaining({ type: "video", url: "https://cdn.test/video.mp4" })
-    ]);
+    expect(body.data.media).toEqual([expect.objectContaining({ type: "video", url: "https://cdn.test/video.mp4" })]);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://provider.test/api/short_videos?url=https%3A%2F%2Fv.douyin.com%2Fabc123%2F",
       expect.objectContaining({ signal: expect.any(AbortSignal) })
@@ -77,7 +76,7 @@ describe("short video api", () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock;
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/short-video/parse",
@@ -99,7 +98,7 @@ describe("short video api", () => {
       })
     );
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
       url: "/api/tools/short-video/parse",
@@ -125,7 +124,7 @@ describe("short video api", () => {
     );
     globalThis.fetch = fetchMock;
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "GET",
       url: `/api/tools/short-video/download?url=${encodeURIComponent(
@@ -154,7 +153,7 @@ describe("short video api", () => {
       })
     );
 
-    const app = await createApp();
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "GET",
       url: `/api/tools/short-video/download?url=${encodeURIComponent(
@@ -164,7 +163,9 @@ describe("short video api", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-disposition"]).toContain('filename="video.mp4"');
-    expect(response.headers["content-disposition"]).toContain("filename*=UTF-8''%E9%BB%98%E8%AE%A4%E8%A7%86%E9%A2%91.mp4");
+    expect(response.headers["content-disposition"]).toContain(
+      "filename*=UTF-8''%E9%BB%98%E8%AE%A4%E8%A7%86%E9%A2%91.mp4"
+    );
     expect(response.body).toBe("video-bytes");
   });
 });

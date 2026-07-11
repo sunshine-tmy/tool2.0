@@ -23,13 +23,12 @@ type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
   cancelRequested?: boolean;
 };
 
-export type ImageAiTaskManager = ReturnType<typeof createImageAiTaskManager>;
-
 export function createImageAiTaskManager(config: AppConfig) {
   const worker = createImageAiWorkerClient(config);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
   let processing = false;
+  let reservations = 0;
   let cleanupTimer: NodeJS.Timeout | undefined;
 
   async function initialize() {
@@ -40,7 +39,7 @@ export function createImageAiTaskManager(config: AppConfig) {
     ]);
     await loadTasks();
     await cleanupExpired();
-    cleanupTimer = setInterval(() => void cleanupExpired(), 60 * 60 * 1000);
+    cleanupTimer = setInterval(() => void cleanupExpired().catch(() => undefined), 60 * 60 * 1000);
     cleanupTimer.unref();
     scheduleDrain();
   }
@@ -51,6 +50,17 @@ export function createImageAiTaskManager(config: AppConfig) {
 
   function activeCount() {
     return Array.from(tasks.values()).filter((task) => task.status === "pending" || task.status === "running").length;
+  }
+
+  function tryReserveSlot() {
+    if (activeCount() + reservations >= config.imageAiQueueLimit) return undefined;
+    reservations += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      reservations = Math.max(0, reservations - 1);
+    };
   }
 
   async function create(input: {
@@ -79,7 +89,15 @@ export function createImageAiTaskManager(config: AppConfig) {
     tasks.set(task.id, task);
     queue.push(task.id);
     refreshQueuePositions();
-    await persist(task);
+    try {
+      await persist(task);
+    } catch (error) {
+      tasks.delete(task.id);
+      const queueIndex = queue.indexOf(task.id);
+      if (queueIndex >= 0) queue.splice(queueIndex, 1);
+      refreshQueuePositions();
+      throw error;
+    }
     scheduleDrain();
     return toPublicTask(task);
   }
@@ -127,7 +145,13 @@ export function createImageAiTaskManager(config: AppConfig) {
   }
 
   function scheduleDrain() {
-    queueMicrotask(() => void drain());
+    queueMicrotask(() => {
+      void drain().catch(() => {
+        if (!queue.length) return;
+        const retry = setTimeout(scheduleDrain, 1000);
+        retry.unref();
+      });
+    });
   }
 
   async function drain() {
@@ -216,7 +240,9 @@ export function createImageAiTaskManager(config: AppConfig) {
     const files = await fs.readdir(config.imageAiTasksDir).catch(() => [] as string[]);
     for (const file of files.filter((name) => name.endsWith(".json"))) {
       try {
-        const task = JSON.parse(await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")) as StoredImageAiTask;
+        const task = JSON.parse(
+          await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")
+        ) as StoredImageAiTask;
         if (!task.id || !task.operation) continue;
         if (task.status === "running") {
           patchTask(task, {
@@ -257,6 +283,7 @@ export function createImageAiTaskManager(config: AppConfig) {
     initialize,
     close,
     activeCount,
+    tryReserveSlot,
     create,
     get,
     getStored,
@@ -296,13 +323,17 @@ function unique(values: string[]) {
 }
 
 function outputFileName(originalName: string, operation: ImageAiOperation, index: number) {
-  const stem = path.parse(path.basename(originalName)).name.replace(/[^\p{L}\p{N}._-]+/gu, "-").slice(0, 80) || `image-${index + 1}`;
+  const stem =
+    path
+      .parse(path.basename(originalName))
+      .name.replace(/[^\p{L}\p{N}._-]+/gu, "-")
+      .slice(0, 80) || `image-${index + 1}`;
   const suffix: Record<ImageAiOperation, string> = {
     watermark_remove: "clean",
     enhance: "enhanced",
     background_remove: "cutout"
   };
-  return `${stem}-${suffix[operation]}.png`;
+  return `${stem}-${index + 1}-${suffix[operation]}.png`;
 }
 
 async function sanitizePng(outputPath: string) {
@@ -311,4 +342,3 @@ async function sanitizePng(outputPath: string) {
   await fs.rm(outputPath, { force: true });
   await fs.rename(temporary, outputPath);
 }
-

@@ -91,7 +91,9 @@
                   <template #icon><Download :size="16" /></template>
                   下载 PNG
                 </n-button>
-                <n-button v-if="watermarkResultUrl" block secondary @click="resetWatermarkResult">重新编辑蒙版</n-button>
+                <n-button v-if="watermarkResultUrl" block secondary @click="resetWatermarkResult"
+                  >重新编辑蒙版</n-button
+                >
                 <TaskStatusCard :task="activeTask" @cancel="cancelActiveTask" />
               </aside>
             </div>
@@ -200,7 +202,7 @@ import {
   NTag,
   useMessage
 } from "naive-ui";
-import type { ImageAiHealth, ImageAiOperation, ImageAiTask } from "@toolbox/shared";
+import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 import {
   Download,
   Images,
@@ -216,14 +218,12 @@ import {
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import BeforeAfterCompare from "./BeforeAfterCompare.vue";
 import MaskEditor from "./MaskEditor.vue";
-import {
-  absoluteImageAiUrl,
-  imageAiApi,
-  resultDownloadUrl,
-  triggerImageAiDownload
-} from "./api";
+import { absoluteImageAiUrl, imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
 
-type MaskEditorExposed = { applySuggestions: (suggestions: any[]) => void; toMaskBlob: () => Promise<Blob> };
+type MaskEditorExposed = {
+  applySuggestions: (suggestions: WatermarkSuggestion[]) => void;
+  toMaskBlob: () => Promise<Blob>;
+};
 
 const message = useMessage();
 const activeTab = ref<"watermark" | "enhance" | "cutout">("watermark");
@@ -310,7 +310,8 @@ async function suggestWatermark() {
     const response = await imageAiApi.suggestions(watermarkFile.value);
     maskEditor.value?.applySuggestions(response.suggestions);
     response.warnings.forEach((warning) => message.warning(warning));
-    if (response.suggestions.length) message.success(`已标记 ${response.suggestions.length} 个疑似文字区域，请检查蒙版`);
+    if (response.suggestions.length)
+      message.success(`已标记 ${response.suggestions.length} 个疑似文字区域，请检查蒙版`);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "智能框选失败");
   } finally {
@@ -394,7 +395,9 @@ function validateClientFile(file: File) {
 }
 
 function operationAvailable(operation: ImageAiOperation) {
-  const readyProviders = new Set(health.value?.models.filter((model) => model.available).map((model) => model.provider));
+  const readyProviders = new Set(
+    health.value?.models.filter((model) => model.available).map((model) => model.provider)
+  );
   if (operation === "watermark_remove") return readyProviders.has("lama");
   if (operation === "enhance") return readyProviders.has("real-esrgan");
   return readyProviders.has("bria-rmbg-2.0") || readyProviders.has("birefnet-general");
@@ -421,27 +424,54 @@ const BatchPicker = defineComponent({
     onBeforeUnmount(() => previews.value.forEach((item) => URL.revokeObjectURL(item.url)));
     const select = (event: Event) => {
       const input = event.target as HTMLInputElement;
-      const next = Array.from(input.files ?? []).filter(validateClientFile).slice(0, 10);
+      const next = Array.from(input.files ?? [])
+        .filter(validateClientFile)
+        .slice(0, 10);
       input.value = "";
       emit("change", next);
     };
-    const remove = (index: number) => emit("change", props.files.filter((_file, current) => current !== index));
+    const remove = (index: number) =>
+      emit(
+        "change",
+        props.files.filter((_file, current) => current !== index)
+      );
     return () =>
       h("div", { class: "image-ai-stage" }, [
         h("label", { class: "dropzone image-ai-dropzone compact" }, [
-          h("input", { hidden: true, multiple: true, type: "file", accept: "image/jpeg,image/png,image/webp", disabled: props.disabled, onChange: select }),
+          h("input", {
+            hidden: true,
+            multiple: true,
+            type: "file",
+            accept: "image/jpeg,image/png,image/webp",
+            disabled: props.disabled,
+            onChange: select
+          }),
           h(Images, { size: 30 }),
           h("strong", props.title),
           h("span", props.hint)
         ]),
         previews.value.length
-          ? h("div", { class: "batch-preview-grid" }, previews.value.map((item, index) =>
-              h("article", { class: ["batch-preview-card", props.checkerboard && "checkerboard"] }, [
-                h("img", { src: item.url, alt: item.file.name }),
-                h("div", [h("strong", item.file.name), h("span", formatBytes(item.file.size))]),
-                h(NButton, { circle: true, size: "tiny", tertiary: true, disabled: props.disabled, onClick: () => remove(index) }, { icon: () => h(X, { size: 14 }) })
-              ])
-            ))
+          ? h(
+              "div",
+              { class: "batch-preview-grid" },
+              previews.value.map((item, index) =>
+                h("article", { class: ["batch-preview-card", props.checkerboard && "checkerboard"] }, [
+                  h("img", { src: item.url, alt: item.file.name }),
+                  h("div", [h("strong", item.file.name), h("span", formatBytes(item.file.size))]),
+                  h(
+                    NButton,
+                    {
+                      circle: true,
+                      size: "tiny",
+                      tertiary: true,
+                      disabled: props.disabled,
+                      onClick: () => remove(index)
+                    },
+                    { icon: () => h(X, { size: 14 }) }
+                  )
+                ])
+              )
+            )
           : h(NEmpty, { description: "暂无待处理图片", class: "batch-empty" })
       ]);
   }
@@ -460,10 +490,19 @@ const TaskStatusCard = defineComponent({
           h("strong", statusName(props.task.status)),
           props.task.queuePosition ? h("span", `队列第 ${props.task.queuePosition} 位`) : null
         ]),
-        h(NProgress, { percentage: props.task.progress, status: props.task.status === "failed" ? "error" : props.task.status === "completed" ? "success" : "default" }),
+        h(NProgress, {
+          percentage: props.task.progress,
+          status: props.task.status === "failed" ? "error" : props.task.status === "completed" ? "success" : "default"
+        }),
         props.task.error ? h("p", { class: "status-error" }, props.task.error) : null,
         ...props.task.warnings.slice(-3).map((warning) => h("p", { class: "status-hint" }, warning)),
-        running ? h(NButton, { block: true, size: "small", secondary: true, type: "error", onClick: () => emit("cancel") }, { default: () => "取消任务", icon: () => h(Trash2, { size: 15 }) }) : null
+        running
+          ? h(
+              NButton,
+              { block: true, size: "small", secondary: true, type: "error", onClick: () => emit("cancel") },
+              { default: () => "取消任务", icon: () => h(Trash2, { size: 15 }) }
+            )
+          : null
       ]);
     };
   }
@@ -497,38 +536,63 @@ const ResultGallery = defineComponent({
       triggerImageAiDownload(`/api/tools/image-ai/tasks/${props.task.id}/download.zip`);
     }
 
-    return () => props.task.results.length
-      ? h("section", { class: "result-panel image-ai-results" }, [
-          h("div", { class: "panel-heading" }, [
-            h("div", [h("h3", "处理结果"), h("p", `${props.task.results.length} 张图片将在 24 小时后自动清理`)]),
-            props.task.results.length > 1
-              ? h(NButton, { type: "primary", secondary: true, onClick: downloadAll }, { default: () => "下载 ZIP", icon: () => h(Download, { size: 15 }) })
-              : null
-          ]),
-          h("div", { class: "result-gallery-grid" }, props.task.results.map((result) => {
-            const sourceUrl = sourceUrlForResult(result.id);
-            return h("article", { class: "result-gallery-card" }, [
-              sourceUrl
-                ? h(BeforeAfterCompare, {
-                    beforeUrl: sourceUrl,
-                    afterUrl: absoluteImageAiUrl(result.downloadUrl),
-                    checkerboard: props.checkerboard,
-                    compact: true
-                  })
-                : h("img", { src: absoluteImageAiUrl(result.downloadUrl), alt: result.outputName }),
-              h("div", { class: "result-gallery-meta" }, [
-                h("strong", result.outputName),
-                h("span", `${result.width} × ${result.height} · ${result.model}`),
-                h(NButton, { size: "small", secondary: true, onClick: () => triggerImageAiDownload(resultDownloadUrl(result.downloadUrl)) }, { default: () => "下载", icon: () => h(Download, { size: 14 }) })
-              ])
-            ]);
-          }))
-        ])
-      : null;
+    return () =>
+      props.task.results.length
+        ? h("section", { class: "result-panel image-ai-results" }, [
+            h("div", { class: "panel-heading" }, [
+              h("div", [h("h3", "处理结果"), h("p", `${props.task.results.length} 张图片将在 24 小时后自动清理`)]),
+              props.task.results.length > 1
+                ? h(
+                    NButton,
+                    { type: "primary", secondary: true, onClick: downloadAll },
+                    { default: () => "下载 ZIP", icon: () => h(Download, { size: 15 }) }
+                  )
+                : null
+            ]),
+            h(
+              "div",
+              { class: "result-gallery-grid" },
+              props.task.results.map((result) => {
+                const sourceUrl = sourceUrlForResult(result.id);
+                return h("article", { class: "result-gallery-card" }, [
+                  sourceUrl
+                    ? h(BeforeAfterCompare, {
+                        beforeUrl: sourceUrl,
+                        afterUrl: absoluteImageAiUrl(result.downloadUrl),
+                        checkerboard: props.checkerboard,
+                        compact: true
+                      })
+                    : h("img", { src: absoluteImageAiUrl(result.downloadUrl), alt: result.outputName }),
+                  h("div", { class: "result-gallery-meta" }, [
+                    h("strong", result.outputName),
+                    h("span", `${result.width} × ${result.height} · ${result.model}`),
+                    h(
+                      NButton,
+                      {
+                        size: "small",
+                        secondary: true,
+                        onClick: () => triggerImageAiDownload(resultDownloadUrl(result.downloadUrl))
+                      },
+                      { default: () => "下载", icon: () => h(Download, { size: 14 }) }
+                    )
+                  ])
+                ]);
+              })
+            )
+          ])
+        : null;
   }
 });
 
 function statusName(status: ImageAiTask["status"]) {
-  return ({ pending: "等待处理", running: "AI 处理中", completed: "处理完成", failed: "处理失败", canceled: "已取消" } as const)[status];
+  return (
+    {
+      pending: "等待处理",
+      running: "AI 处理中",
+      completed: "处理完成",
+      failed: "处理失败",
+      canceled: "已取消"
+    } as const
+  )[status];
 }
 </script>

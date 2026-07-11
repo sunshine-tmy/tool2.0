@@ -46,12 +46,13 @@ type LanChunkUploadSession = {
 export async function registerLanTransferRoutes({ app, config }: RegisterLanTransferRoutesOptions) {
   const store = createLanFileStore(config);
   const uploadStore = createLanUploadStore(config);
+  const finalizingUploads = new Set<string>();
   await store.ensure();
   await uploadStore.ensure();
   await store.cleanupExpired();
 
   for (const basePath of ["/api/tools/lan-transfer", "/api/lan"]) {
-    registerLanTransferNamespace(app, config, store, uploadStore, basePath);
+    registerLanTransferNamespace(app, config, store, uploadStore, finalizingUploads, basePath);
   }
 }
 
@@ -60,6 +61,7 @@ function registerLanTransferNamespace(
   config: AppConfig,
   store: ReturnType<typeof createLanFileStore>,
   uploadStore: ReturnType<typeof createLanUploadStore>,
+  finalizingUploads: Set<string>,
   basePath: string
 ) {
   app.post(`${basePath}/files`, async (request, reply) => {
@@ -89,11 +91,11 @@ function registerLanTransferNamespace(
         return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
       }
 
-      const category = classifyLanFile(originalName, file.mimetype);
+      const classifiedCategory = classifyLanFile(originalName, file.mimetype);
+      const category =
+        classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
       const createdAt = new Date().toISOString();
-      const expiresAt = new Date(
-        Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000
-      ).toISOString();
+      const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
       const record: LanFileRecord = {
         id,
         originalName,
@@ -199,6 +201,9 @@ function registerLanTransferNamespace(
 
   app.put(`${basePath}/uploads/:uploadId/chunks/:index`, async (request, reply) => {
     const { uploadId, index } = request.params as { uploadId: string; index: string };
+    if (finalizingUploads.has(uploadId)) {
+      return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
+    }
     const session = await uploadStore.get(uploadId);
     if (!session) {
       return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
@@ -259,85 +264,97 @@ function registerLanTransferNamespace(
 
   app.post(`${basePath}/uploads/:uploadId/complete`, async (request, reply) => {
     const { uploadId } = request.params as { uploadId: string };
-    const session = await uploadStore.get(uploadId);
-    if (!session) {
-      return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
+    if (finalizingUploads.has(uploadId)) {
+      return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is already being finalized"));
     }
-
-    const missingChunks = getMissingChunks(session);
-    if (missingChunks.length) {
-      return reply.code(409).send(fail("UPLOAD_INCOMPLETE", "Upload has missing chunks", { missingChunks }));
-    }
-
-    const extension = getLanFileExtension(session.originalName);
-    const id = nanoid(12);
-    const storedName = extension ? `${id}.${extension}` : id;
-    const targetPath = path.join(config.lanTransferFilesDir, storedName);
+    finalizingUploads.add(uploadId);
 
     try {
-      await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-      const storageCheck = await checkMergeHeadroom(path.dirname(targetPath), session);
-      if (!storageCheck.ok) {
-        return reply.code(507).send(
-          fail("INSUFFICIENT_STORAGE", "Not enough free disk space to merge uploaded chunks", {
-            requiredBytes: storageCheck.requiredBytes,
-            availableBytes: storageCheck.availableBytes
-          })
-        );
+      const session = await uploadStore.get(uploadId);
+      if (!session) {
+        return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
       }
 
-      await mergeChunks(session, uploadStore, targetPath);
-      const stat = await fsp.stat(targetPath);
+      const missingChunks = getMissingChunks(session);
+      if (missingChunks.length) {
+        return reply.code(409).send(fail("UPLOAD_INCOMPLETE", "Upload has missing chunks", { missingChunks }));
+      }
 
-      if (stat.size !== session.size || stat.size > config.lanTransferMaxFileBytes) {
+      const extension = getLanFileExtension(session.originalName);
+      const id = nanoid(12);
+      const storedName = extension ? `${id}.${extension}` : id;
+      const targetPath = path.join(config.lanTransferFilesDir, storedName);
+
+      try {
+        await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
+        const storageCheck = await checkMergeHeadroom(path.dirname(targetPath), session);
+        if (!storageCheck.ok) {
+          return reply.code(507).send(
+            fail("INSUFFICIENT_STORAGE", "Not enough free disk space to merge uploaded chunks", {
+              requiredBytes: storageCheck.requiredBytes,
+              availableBytes: storageCheck.availableBytes
+            })
+          );
+        }
+
+        await mergeChunks(session, uploadStore, targetPath);
+        const stat = await fsp.stat(targetPath);
+
+        if (stat.size !== session.size || stat.size > config.lanTransferMaxFileBytes) {
+          await fsp.rm(targetPath, { force: true });
+          return reply.code(500).send(
+            fail("MERGE_FAILED", "Merged file size does not match the upload session", {
+              expectedSize: session.size,
+              actualSize: stat.size
+            })
+          );
+        }
+
+        const classifiedCategory = classifyLanFile(session.originalName, session.mimeType);
+        const category =
+          classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
+        const createdAt = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
+        const record: LanFileRecord = {
+          id,
+          originalName: session.originalName,
+          storedName,
+          mimeType: session.mimeType,
+          extension,
+          size: stat.size,
+          category,
+          createdAt,
+          expiresAt,
+          downloadCount: 0,
+          previewable: isLanFilePreviewable(category)
+        };
+
+        await store.add(record);
+        await uploadStore.remove(uploadId);
+
+        return ok({
+          file: record,
+          previewUrl: `${basePath}/files/${record.id}/preview`,
+          downloadUrl: `${basePath}/files/${record.id}/download`
+        });
+      } catch (error) {
         await fsp.rm(targetPath, { force: true });
-        return reply.code(500).send(
-          fail("MERGE_FAILED", "Merged file size does not match the upload session", {
-            expectedSize: session.size,
-            actualSize: stat.size
-          })
-        );
+        const message = error instanceof Error ? error.message : "Chunk merge failed";
+        if (isNoSpaceError(error)) {
+          return reply.code(507).send(fail("INSUFFICIENT_STORAGE", message));
+        }
+        return reply.code(500).send(fail("MERGE_FAILED", message));
       }
-
-      const category = classifyLanFile(session.originalName, session.mimeType);
-      const createdAt = new Date().toISOString();
-      const expiresAt = new Date(
-        Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000
-      ).toISOString();
-      const record: LanFileRecord = {
-        id,
-        originalName: session.originalName,
-        storedName,
-        mimeType: session.mimeType,
-        extension,
-        size: stat.size,
-        category,
-        createdAt,
-        expiresAt,
-        downloadCount: 0,
-        previewable: isLanFilePreviewable(category)
-      };
-
-      await store.add(record);
-      await uploadStore.remove(uploadId);
-
-      return ok({
-        file: record,
-        previewUrl: `${basePath}/files/${record.id}/preview`,
-        downloadUrl: `${basePath}/files/${record.id}/download`
-      });
-    } catch (error) {
-      await fsp.rm(targetPath, { force: true });
-      const message = error instanceof Error ? error.message : "Chunk merge failed";
-      if (isNoSpaceError(error)) {
-        return reply.code(507).send(fail("INSUFFICIENT_STORAGE", message));
-      }
-      return reply.code(500).send(fail("MERGE_FAILED", message));
+    } finally {
+      finalizingUploads.delete(uploadId);
     }
   });
 
   app.delete(`${basePath}/uploads/:uploadId`, async (request, reply) => {
     const { uploadId } = request.params as { uploadId: string };
+    if (finalizingUploads.has(uploadId)) {
+      return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
+    }
     const removed = await uploadStore.remove(uploadId);
     if (!removed) {
       return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
@@ -482,13 +499,13 @@ function extractFirstJsonArray(raw: string) {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (char === "\"") {
+      } else if (char === '"') {
         inString = false;
       }
       continue;
     }
 
-    if (char === "\"") {
+    if (char === '"') {
       inString = true;
     } else if (char === "[") {
       depth += 1;
@@ -664,8 +681,15 @@ async function sendFile(
   const stat = await fsp.stat(filePath);
   const encodedName = encodeURIComponent(file.originalName);
   reply.header("accept-ranges", "bytes");
-  reply.header("content-type", file.mimeType || "application/octet-stream");
-  reply.header("content-disposition", `${disposition}; filename*=UTF-8''${encodedName}; filename="${fallbackFileName(file.originalName)}"`);
+  reply.header("x-content-type-options", "nosniff");
+  if (disposition === "inline") {
+    reply.header("content-security-policy", "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'");
+  }
+  reply.header("content-type", safeResponseContentType(file, disposition));
+  reply.header(
+    "content-disposition",
+    `${disposition}; filename*=UTF-8''${encodedName}; filename="${fallbackFileName(file.originalName)}"`
+  );
 
   if (rangeHeader) {
     const range = parseRange(rangeHeader, stat.size);
@@ -681,6 +705,29 @@ async function sendFile(
 
   reply.header("content-length", String(stat.size));
   return reply.send(fs.createReadStream(filePath));
+}
+
+function safeResponseContentType(file: LanFileRecord, disposition: "inline" | "attachment") {
+  if (disposition === "attachment") {
+    return file.mimeType || "application/octet-stream";
+  }
+  if (file.category === "pdf") return "application/pdf";
+  if (file.category === "text") return "text/plain; charset=utf-8";
+  if (file.category === "image" && file.mimeType.startsWith("image/")) return file.mimeType;
+  if (file.category === "video" && file.mimeType.startsWith("video/")) return file.mimeType;
+  if (file.category === "audio" && file.mimeType.startsWith("audio/")) return file.mimeType;
+  return "application/octet-stream";
+}
+
+async function hasPdfSignature(filePath: string) {
+  const handle = await fsp.open(filePath, "r");
+  try {
+    const header = Buffer.alloc(5);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return bytesRead === header.length && header.toString("ascii") === "%PDF-";
+  } finally {
+    await handle.close();
+  }
 }
 
 function parseRange(rangeHeader: string, size: number) {
@@ -789,13 +836,31 @@ async function mergeChunks(
   uploadStore: ReturnType<typeof createLanUploadStore>,
   targetPath: string
 ) {
-  await fsp.rm(targetPath, { force: true });
-  await fsp.rename(uploadStore.chunkPath(session.uploadId, 0), targetPath);
+  const temporaryPath = `${targetPath}.partial-${nanoid(6)}`;
+  try {
+    for (let index = 0; index < session.totalChunks; index += 1) {
+      const chunkPath = uploadStore.chunkPath(session.uploadId, index);
+      await pipeline(
+        fs.createReadStream(chunkPath),
+        fs.createWriteStream(temporaryPath, { flags: index === 0 ? "wx" : "a" })
+      );
+    }
 
-  for (let index = 1; index < session.totalChunks; index += 1) {
-    const chunkPath = uploadStore.chunkPath(session.uploadId, index);
-    await pipeline(fs.createReadStream(chunkPath), fs.createWriteStream(targetPath, { flags: "a" }));
-    await fsp.rm(chunkPath, { force: true });
+    const stat = await fsp.stat(temporaryPath);
+    if (stat.size !== session.size) {
+      throw new Error(`Merged file size mismatch: expected ${session.size}, received ${stat.size}`);
+    }
+
+    const handle = await fsp.open(temporaryPath, "r+");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fsp.rename(temporaryPath, targetPath);
+  } catch (error) {
+    await fsp.rm(temporaryPath, { force: true });
+    throw error;
   }
 }
 

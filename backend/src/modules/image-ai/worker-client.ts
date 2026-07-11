@@ -1,9 +1,4 @@
-import type {
-  ImageAiHealth,
-  ImageAiOperation,
-  ImageAiProvider,
-  WatermarkSuggestionResponse
-} from "@toolbox/shared";
+import type { ImageAiHealth, ImageAiOperation, ImageAiProvider, WatermarkSuggestionResponse } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 
 type WorkerProcessResult = {
@@ -77,9 +72,12 @@ async function requestWorker<T>(
       ...init,
       signal: controller.signal
     });
-    const payload = (await response.json().catch(() => null)) as
-      | { success?: boolean; data?: T; error?: { code?: string; message?: string }; detail?: string }
-      | null;
+    const payload = (await response.json().catch(() => null)) as {
+      success?: boolean;
+      data?: T;
+      error?: { code?: string; message?: string };
+      detail?: string;
+    } | null;
 
     if (!response.ok) {
       throw new ImageAiWorkerError(
@@ -98,10 +96,7 @@ async function requestWorker<T>(
     if (error instanceof Error && error.name === "AbortError") {
       throw new ImageAiWorkerError("IMAGE_AI_WORKER_TIMEOUT", "AI 推理超时，请缩小图片或稍后重试");
     }
-    throw new ImageAiWorkerError(
-      "IMAGE_AI_WORKER_UNAVAILABLE",
-      "AI 推理服务未启动，请先启动本地 image-ai worker"
-    );
+    throw new ImageAiWorkerError("IMAGE_AI_WORKER_UNAVAILABLE", "AI 推理服务未启动，请先启动本地 image-ai worker");
   } finally {
     clearTimeout(timeout);
   }

@@ -1,5 +1,5 @@
 import type { AxiosProgressEvent } from "axios";
-import { ApiRequest, httpClient } from "../../services/http";
+import { httpClient, withApiError } from "../../services/http";
 import type { ToolTask } from "../../types";
 
 export type ImageToolResponse = {
@@ -17,11 +17,11 @@ export type ImageToolResponse = {
 };
 
 class ImageCompressApi {
-  @ApiRequest("图片压缩失败")
   async upload(form: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void) {
-    return httpClient.post<ImageToolResponse>("/tools/image-compress", form, {
-      onUploadProgress
-    });
+    return withApiError(
+      () => httpClient.post<ImageToolResponse>("/tools/image-compress", form, { onUploadProgress }),
+      "图片压缩失败"
+    );
   }
 }
 

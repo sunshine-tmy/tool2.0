@@ -16,9 +16,7 @@ describe("video text recognition quality display", () => {
         device: "cuda",
         computeType: "int8_float16",
         averageLogProbability: -0.18,
-        lowConfidenceSegments: [
-          { index: 1, text: "可能需要复核", averageLogProbability: -0.92 }
-        ]
+        lowConfidenceSegments: [{ index: 1, text: "可能需要复核", averageLogProbability: -0.92 }]
       }
     } as VideoTextResult);
 

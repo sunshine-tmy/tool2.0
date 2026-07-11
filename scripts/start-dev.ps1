@@ -1,14 +1,13 @@
 param(
   [switch]$NoInstall,
   [switch]$NoBrowser,
-  [switch]$CheckOnly
+  [switch]$CheckOnly,
+  [switch]$ForceRestart,
+  [string]$LanHost = ""
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$LanHost = "192.168.1.241"
-$FrontendUrl = "http://${LanHost}:5173"
-$BackendUrl = "http://${LanHost}:3100/api/health"
 
 function Write-Step {
   param([string]$Message)
@@ -19,6 +18,28 @@ function Write-Step {
 function Test-CommandExists {
   param([string]$Command)
   return $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
+}
+
+function Find-LanHost {
+  if ($LanHost) {
+    return $LanHost
+  }
+  try {
+    $address = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object {
+        $_.IPAddress -ne "127.0.0.1" -and
+        -not $_.IPAddress.StartsWith("169.254.") -and
+        $_.AddressState -eq "Preferred"
+      } |
+      Sort-Object -Property InterfaceMetric, SkipAsSource |
+      Select-Object -First 1 -ExpandProperty IPAddress
+    if ($address) {
+      return $address
+    }
+  } catch {
+    Write-Host "LAN address detection failed; using loopback." -ForegroundColor Yellow
+  }
+  return "127.0.0.1"
 }
 
 function Test-PortBusy {
@@ -112,6 +133,9 @@ function Wait-HttpOk {
 }
 
 Set-Location -LiteralPath $Root
+$LanHost = Find-LanHost
+$FrontendUrl = "http://${LanHost}:5173"
+$BackendUrl = "http://127.0.0.1:3100/api/health"
 
 Write-Host "Ecommerce Toolbox launcher" -ForegroundColor Green
 Write-Host "Project root: $Root"
@@ -129,22 +153,29 @@ if ($CheckOnly) {
 }
 
 if (-not $NoInstall) {
-  if (-not (Test-Path "node_modules")) {
-    Write-Step "Installing dependencies"
-    pnpm install
-  } else {
-    Write-Step "node_modules exists; skipping install"
+  Write-Step "Verifying dependencies from the lockfile"
+  pnpm install --frozen-lockfile --prefer-offline
+  if ($LASTEXITCODE -ne 0) {
+    throw "Dependency installation failed with exit code $LASTEXITCODE"
   }
 }
 
 Write-Step "Preparing backend port"
 if (Test-PortBusy 3100) {
-  Restart-Port 3100 "backend" | Out-Null
+  if ($ForceRestart) {
+    Restart-Port 3100 "backend" | Out-Null
+  } else {
+    throw "Port 3100 is already occupied. Stop that service or rerun with -ForceRestart."
+  }
 }
 
 Write-Step "Preparing frontend port"
 if (Test-PortBusy 5173) {
-  Restart-Port 5173 "frontend" | Out-Null
+  if ($ForceRestart) {
+    Restart-Port 5173 "frontend" | Out-Null
+  } else {
+    throw "Port 5173 is already occupied. Stop that service or rerun with -ForceRestart."
+  }
 }
 
 $ImageAiWorker = $null
@@ -155,9 +186,13 @@ $ImageAiLogDir = Join-Path $Root ".logs"
 $ImageAiOutputLog = Join-Path $ImageAiLogDir "image-ai-worker.log"
 $ImageAiErrorLog = Join-Path $ImageAiLogDir "image-ai-worker.error.log"
 
-if ((Test-Path $ImageAiPython) -and (Test-PortBusy 3210)) {
-  Write-Step "Preparing image AI worker port"
-  Restart-Port 3210 "image AI worker" | Out-Null
+if ((Test-Path $ImageAiPython) -and (Test-PortBusy 3210) -and -not (Test-HttpOk $ImageAiHealthUrl)) {
+  if ($ForceRestart) {
+    Write-Step "Preparing image AI worker port"
+    Restart-Port 3210 "image AI worker" | Out-Null
+  } else {
+    Write-Host "Port 3210 is occupied by an unhealthy service; image AI startup is skipped." -ForegroundColor Yellow
+  }
 }
 
 if ((Test-Path $ImageAiPython) -and -not (Test-PortBusy 3210)) {
@@ -184,6 +219,10 @@ if ((Test-Path $ImageAiPython) -and -not (Test-PortBusy 3210)) {
   }
 } elseif (-not (Test-Path $ImageAiPython)) {
   Write-Host "Image AI runtime is not installed; run scripts\setup-image-ai.ps1 when AI tools are needed." -ForegroundColor Yellow
+}
+
+if ((Test-PortBusy 3210) -and (Test-HttpOk $ImageAiHealthUrl)) {
+  Write-Host "Using the existing healthy image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
 }
 
 if (-not $NoBrowser) {

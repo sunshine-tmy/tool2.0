@@ -18,18 +18,13 @@ export function getRemoteVideoSourceFromQuery(query: {
   };
 }
 
-export function createRemoteVideoPreviewUrl(url: string, apiBase = defaultApiBase()) {
+export function createRemoteVideoPreviewUrl(url: string, apiBase = apiBaseUrl) {
   const params = new URLSearchParams({ url });
   return `${apiBase.replace(/\/$/, "")}/tools/video-text/remote-video?${params.toString()}`;
 }
 
-function defaultApiBase() {
-  if (typeof window === "undefined") return "/api";
-  return import.meta.env.VITE_API_BASE ?? `${window.location.protocol}//${window.location.hostname}:3100/api`;
-}
-
 function firstQueryValue(value: RouteQueryValue) {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
 
 function isHttpUrl(value: string) {
@@ -50,3 +45,4 @@ function fileNameFromUrl(value: string) {
     return "remote-video.mp4";
   }
 }
+import { apiBaseUrl } from "../../config/runtime";

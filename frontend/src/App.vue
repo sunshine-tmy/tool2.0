@@ -23,8 +23,7 @@ const themeOverrides: GlobalThemeOverrides = {
     bodyColor: "#f5f7fb",
     borderColor: "#e4e9f2",
     borderRadius: "8px",
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
   },
   Button: {
     borderRadiusMedium: "8px",

@@ -46,7 +46,9 @@
               v-if="submitting || currentTask"
               type="line"
               :percentage="uploadProgress"
-              :status="currentTask?.status === 'failed' ? 'error' : currentTask?.status === 'completed' ? 'success' : 'default'"
+              :status="
+                currentTask?.status === 'failed' ? 'error' : currentTask?.status === 'completed' ? 'success' : 'default'
+              "
               indicator-placement="inside"
             />
           </div>
@@ -76,7 +78,9 @@
               </div>
             </div>
             <p v-if="currentTask?.error" class="status-error">{{ currentTask.error }}</p>
-            <p v-else class="status-hint">已支持本地识别链路：视频会先提取音频，再调用后端配置的语音识别命令生成文案。</p>
+            <p v-else class="status-hint">
+              已支持本地识别链路：视频会先提取音频，再调用后端配置的语音识别命令生成文案。
+            </p>
           </aside>
         </div>
       </section>
@@ -140,7 +144,13 @@
               <n-button secondary size="small" :loading="openingHistoryId === item.id" @click="openHistory(item.id)">
                 查看
               </n-button>
-              <n-button tertiary type="error" size="small" :loading="deletingHistoryId === item.id" @click="deleteHistory(item)">
+              <n-button
+                tertiary
+                type="error"
+                size="small"
+                :loading="deletingHistoryId === item.id"
+                @click="deleteHistory(item)"
+              >
                 删除
               </n-button>
             </div>
@@ -185,7 +195,6 @@
               <li v-for="item in result.summary" :key="item">{{ item }}</li>
             </ul>
           </div>
-
         </div>
 
         <div class="timeline-list">
@@ -198,7 +207,11 @@
 
         <div v-if="lowConfidenceSegments.length" class="timeline-list">
           <h4>建议复核片段</h4>
-          <article v-for="segment in lowConfidenceSegments" :key="`${segment.index}-${segment.text}`" class="timeline-row">
+          <article
+            v-for="segment in lowConfidenceSegments"
+            :key="`${segment.index}-${segment.text}`"
+            class="timeline-row"
+          >
             <span>{{ formatSeconds(segment.startSeconds) }} - {{ formatSeconds(segment.endSeconds) }}</span>
             <strong>{{ segment.text }}</strong>
           </article>
@@ -214,6 +227,7 @@ import { useRoute } from "vue-router";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NProgress, useMessage } from "naive-ui";
 import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import { resolveApiUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
 import { describeRecognitionQuality } from "./quality";
@@ -496,8 +510,7 @@ async function copyFullText() {
 function exportUrl(format: "txt" | "srt" | "json") {
   const taskId = result.value?.id ?? currentTask.value?.id;
   if (!taskId) return "";
-  const origin = `${window.location.protocol}//${window.location.hostname}:3100`;
-  return `${origin}/api/tools/video-text/tasks/${taskId}/export?format=${format}`;
+  return resolveApiUrl(`/tools/video-text/tasks/${taskId}/export?format=${format}`);
 }
 
 function sourceName(source: VideoTextResult["source"]) {

@@ -1,4 +1,4 @@
-import { Converter } from "opencc-js";
+import { Converter } from "opencc-js/t2cn";
 
 export type TranscriptCue = {
   index: number;
@@ -73,11 +73,17 @@ export function parseTranscriptCues(transcript: string): TranscriptCue[] {
     .trim();
   if (!normalized) return [];
 
-  const blocks = normalized.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  const blocks = normalized
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
   const cues: TranscriptCue[] = [];
 
   for (const block of blocks) {
-    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    const lines = block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
     if (!lines.length) continue;
 
     let index = cues.length + 1;
@@ -92,7 +98,10 @@ export function parseTranscriptCues(transcript: string): TranscriptCue[] {
 
     const timestamp = parseTimestampRange(lines[cursor] ?? "");
     if (timestamp) {
-      const text = lines.slice(cursor + 1).join(" ").trim();
+      const text = lines
+        .slice(cursor + 1)
+        .join(" ")
+        .trim();
       if (text) {
         cues.push({
           index,
@@ -159,9 +168,7 @@ export function formatSeconds(seconds?: number) {
 }
 
 function parseTimestampRange(value: string) {
-  const match = value.match(
-    /(\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}\s*-->\s*(\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}/
-  );
+  const match = value.match(/(\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}\s*-->\s*(\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}/);
   if (!match) return undefined;
   const [start, end] = value.split(/\s*-->\s*/);
   return {

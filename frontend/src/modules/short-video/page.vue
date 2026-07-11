@@ -47,7 +47,7 @@
 
         <div class="short-video-result-grid">
           <div class="short-video-cover">
-            <img v-if="result.coverUrl" :src="result.coverUrl" alt="封面" />
+            <img v-if="result.coverUrl" :src="result.coverUrl" alt="封面" loading="lazy" decoding="async" />
             <div v-else class="empty-cover">
               <Clapperboard :size="32" />
             </div>
@@ -82,12 +82,7 @@
               <span>{{ item.type === "video" ? "视频" : "图片" }} {{ mediaMeta(item) }}</span>
             </div>
             <div class="file-actions short-video-actions">
-              <n-button
-                v-if="item.type === 'video'"
-                secondary
-                size="small"
-                @click="extractCopywriting(item)"
-              >
+              <n-button v-if="item.type === 'video'" secondary size="small" @click="extractCopywriting(item)">
                 <template #icon>
                   <FileText :size="14" />
                 </template>

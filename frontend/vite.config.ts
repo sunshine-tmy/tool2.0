@@ -1,30 +1,32 @@
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
-export default defineConfig({
-  plugins: [vue()],
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vue: ["vue", "vue-router", "pinia"],
-          naive: ["naive-ui"],
-          icons: ["lucide-vue-next"]
-        }
+const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, repositoryRoot, "VITE_");
+  const apiProxy = {
+    "/api": {
+      target: env.VITE_API_PROXY_TARGET?.trim() || "http://127.0.0.1:3100",
+      changeOrigin: true
+    }
+  };
+  return {
+    envDir: repositoryRoot,
+    plugins: [vue()],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
+        "@toolbox/shared/video-text": fileURLToPath(new URL("../packages/shared/src/video-text.ts", import.meta.url)),
+        "@toolbox/shared": fileURLToPath(new URL("../packages/shared/src/index.ts", import.meta.url))
       }
+    },
+    server: {
+      proxy: apiProxy
+    },
+    preview: {
+      proxy: apiProxy
     }
-  },
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-      "@toolbox/shared/video-text": fileURLToPath(new URL("../packages/shared/src/video-text.ts", import.meta.url)),
-      "@toolbox/shared": fileURLToPath(new URL("../packages/shared/src/index.ts", import.meta.url))
-    }
-  },
-  server: {
-    proxy: {
-      "/api": "http://192.168.1.241:3100"
-    }
-  }
+  };
 });

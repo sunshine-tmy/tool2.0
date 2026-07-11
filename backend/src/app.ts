@@ -1,4 +1,5 @@
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
@@ -11,17 +12,21 @@ import { registerLanTransferRoutes } from "./modules/lan-transfer";
 import { registerShortVideoRoutes } from "./modules/short-video";
 import { registerVideoTextRoutes } from "./modules/video-text";
 import { createTaskStore } from "./tasks/task-store";
+import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
 
-export async function createApp() {
+export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
     logger: false,
     bodyLimit: 220 * 1024 * 1024
   });
   const config = getConfig();
   const taskStore = createTaskStore();
+  const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
 
   await app.register(cors, {
-    origin: true,
+    origin(origin, callback) {
+      callback(null, !origin || config.corsOrigins.includes(origin));
+    },
     methods: ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Range"],
     exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"]
@@ -34,16 +39,16 @@ export async function createApp() {
     throwFileSizeLimit: false
   });
 
-  await fs.mkdir(config.uploadDir, { recursive: true });
-  await fs.mkdir(config.outputDir, { recursive: true });
-  await fs.mkdir(config.tempDir, { recursive: true });
-  await fs.mkdir(config.lanTransferFilesDir, { recursive: true });
-  await fs.mkdir(config.videoTextUploadsDir, { recursive: true });
-  await fs.mkdir(config.videoTextAudioDir, { recursive: true });
-  await fs.mkdir(config.videoTextResultsDir, { recursive: true });
-  await fs.mkdir(config.imageAiInputsDir, { recursive: true });
-  await fs.mkdir(config.imageAiOutputsDir, { recursive: true });
-  await fs.mkdir(config.imageAiTasksDir, { recursive: true });
+  await fsp.mkdir(config.uploadDir, { recursive: true });
+  await fsp.mkdir(config.outputDir, { recursive: true });
+  await fsp.mkdir(config.tempDir, { recursive: true });
+  await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
+  await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
+  await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
+  await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
+  await fsp.mkdir(config.imageAiInputsDir, { recursive: true });
+  await fsp.mkdir(config.imageAiOutputsDir, { recursive: true });
+  await fsp.mkdir(config.imageAiTasksDir, { recursive: true });
 
   app.get("/api/health", async () => {
     return ok({
@@ -88,8 +93,13 @@ export async function createApp() {
     const filePath = path.join(config.outputDir, safeName);
 
     try {
-      await fs.access(filePath);
-      return reply.send(await fs.readFile(filePath));
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile()) throw new Error("Not a file");
+      reply.header("content-length", String(stat.size));
+      reply.header("content-type", outputContentType(path.extname(safeName)));
+      reply.header("content-disposition", `attachment; filename="${safeName.replaceAll('"', "")}"`);
+      reply.header("x-content-type-options", "nosniff");
+      return reply.send(fs.createReadStream(filePath));
     } catch {
       return reply.code(404).send(fail("FILE_NOT_FOUND", "File not found"));
     }
@@ -98,8 +108,15 @@ export async function createApp() {
   registerImageCompressRoutes(app, config, taskStore);
   await registerImageAiRoutes(app, config);
   await registerLanTransferRoutes({ app, config });
-  await registerVideoTextRoutes({ app, config, taskStore });
-  await registerShortVideoRoutes({ app, config });
+  await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
+  await registerShortVideoRoutes({ app, config, remoteFetch });
 
   return app;
+}
+
+function outputContentType(extension: string) {
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".png") return "image/png";
+  if (extension === ".webp") return "image/webp";
+  return "application/octet-stream";
 }

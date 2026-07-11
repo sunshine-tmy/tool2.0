@@ -1,13 +1,13 @@
 <template>
   <div class="compare-panel" :class="{ 'is-compact': compact }">
     <div class="compare-stage" :class="{ 'is-compact': compact }">
-      <img class="compare-before-image" :src="beforeUrl" :alt="beforeLabel" />
+      <img class="compare-before-image" :src="beforeUrl" :alt="beforeLabel" decoding="async" />
       <div
         class="compare-after-layer"
         :class="{ checkerboard }"
         :style="{ clipPath: `inset(0 ${100 - position}% 0 0)` }"
       >
-        <img :src="afterUrl" :alt="afterLabel" />
+        <img :src="afterUrl" :alt="afterLabel" decoding="async" />
       </div>
       <div class="compare-divider" :style="{ left: `${position}%` }">
         <span>↔</span>
@@ -46,4 +46,3 @@ withDefaults(
 
 const position = ref(50);
 </script>
-

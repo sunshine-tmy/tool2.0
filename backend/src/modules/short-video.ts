@@ -1,7 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import { execFile } from "node:child_process";
-import { Readable } from "node:stream";
-import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { promisify } from "node:util";
 import {
   detectShortVideoPlatform,
@@ -14,12 +12,14 @@ import {
   type ShortVideoPlatform
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
+import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../security/remote-fetch";
 
 const execFileAsync = promisify(execFile);
 
 type RegisterShortVideoRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
+  remoteFetch: RemoteFetch;
 };
 
 type ProviderResponse = {
@@ -36,7 +36,7 @@ const platformParam: Record<Exclude<ShortVideoPlatform, "unknown">, string | und
   xiaohongshu: "xiaohongshu"
 };
 
-export async function registerShortVideoRoutes({ app, config }: RegisterShortVideoRoutesOptions) {
+export async function registerShortVideoRoutes({ app, config, remoteFetch }: RegisterShortVideoRoutesOptions) {
   app.post("/api/tools/short-video/parse", async (request, reply) => {
     const body = request.body as Partial<ShortVideoParseInput> | undefined;
     const rawInput = typeof body?.input === "string" ? body.input.trim() : "";
@@ -52,9 +52,7 @@ export async function registerShortVideoRoutes({ app, config }: RegisterShortVid
     }
 
     if (!isSupportedShortVideoUrl(sourceUrl)) {
-      return reply
-        .code(400)
-        .send(fail("UNSUPPORTED_SHORT_VIDEO_URL", "当前仅支持抖音和小红书公开分享链接"));
+      return reply.code(400).send(fail("UNSUPPORTED_SHORT_VIDEO_URL", "当前仅支持抖音和小红书公开分享链接"));
     }
 
     try {
@@ -87,7 +85,8 @@ export async function registerShortVideoRoutes({ app, config }: RegisterShortVid
     }
 
     try {
-      const response = await fetch(mediaUrl, {
+      const response = await remoteFetch(mediaUrl, {
+        signal: AbortSignal.timeout(config.remoteFetchTimeoutMs),
         headers: {
           accept: "*/*",
           "user-agent":
@@ -98,6 +97,7 @@ export async function registerShortVideoRoutes({ app, config }: RegisterShortVid
       if (!response.ok || !response.body) {
         return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", `媒体下载失败：${response.status}`));
       }
+      assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
 
       const contentType = response.headers.get("content-type") || "application/octet-stream";
       const contentLength = response.headers.get("content-length");
@@ -107,7 +107,7 @@ export async function registerShortVideoRoutes({ app, config }: RegisterShortVid
         reply.header("content-length", contentLength);
       }
 
-      return reply.send(Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>));
+      return reply.send(limitedResponseStream(response, config.remoteMediaMaxBytes));
     } catch (error) {
       const message = error instanceof Error ? error.message : "媒体下载失败";
       return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", message));
@@ -115,7 +115,11 @@ export async function registerShortVideoRoutes({ app, config }: RegisterShortVid
   });
 }
 
-async function requestProvider(config: AppConfig, sourceUrl: string, requestedPlatform: Exclude<ShortVideoPlatform, "unknown">) {
+async function requestProvider(
+  config: AppConfig,
+  sourceUrl: string,
+  requestedPlatform: Exclude<ShortVideoPlatform, "unknown">
+) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.shortVideoParseTimeoutMs);
   const apiUrl = new URL(config.shortVideoParseApiUrl);
@@ -171,15 +175,11 @@ async function requestProviderWithPowerShell(providerUrl: string, timeoutMs: num
   ].join("; ");
 
   try {
-    const { stdout } = await execFileAsync(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-Command", script],
-      {
-        timeout: timeoutMs + 1000,
-        encoding: "utf8",
-        maxBuffer: 5 * 1024 * 1024
-      }
-    );
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      timeout: timeoutMs + 1000,
+      encoding: "utf8",
+      maxBuffer: 5 * 1024 * 1024
+    });
     return JSON.parse(stdout) as ProviderResponse;
   } catch {
     return null;
@@ -208,7 +208,10 @@ function isHttpUrl(value: string) {
 }
 
 function sanitizeDownloadFilename(value: string) {
-  const filename = value.trim().replace(/[\\/:*?"<>|]+/g, "").slice(0, 160);
+  const filename = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "")
+    .slice(0, 160);
   return filename || "short-video-media";
 }
 

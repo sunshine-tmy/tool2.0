@@ -33,4 +33,3 @@ describe("image ai downloads", () => {
     expect(anchor.remove).toHaveBeenCalledOnce();
   });
 });
-
