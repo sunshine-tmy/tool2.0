@@ -31,7 +31,20 @@ function Find-LanHost {
         -not $_.IPAddress.StartsWith("169.254.") -and
         $_.AddressState -eq "Preferred"
       } |
-      Sort-Object -Property InterfaceMetric, SkipAsSource |
+      ForEach-Object {
+        $networkInterface = Get-NetIPInterface `
+          -InterfaceIndex $_.InterfaceIndex `
+          -AddressFamily IPv4 `
+          -ErrorAction SilentlyContinue |
+          Select-Object -First 1
+        [PSCustomObject]@{
+          IPAddress = $_.IPAddress
+          InterfaceMetric = if ($networkInterface) { $networkInterface.InterfaceMetric } else { [int]::MaxValue }
+          SkipAsSource = $_.SkipAsSource
+          VirtualPenalty = if ($_.InterfaceAlias -match "VMware|VirtualBox|vEthernet|Hyper-V|WSL|Loopback") { 1 } else { 0 }
+        }
+      } |
+      Sort-Object -Property VirtualPenalty, InterfaceMetric, SkipAsSource |
       Select-Object -First 1 -ExpandProperty IPAddress
     if ($address) {
       return $address
@@ -55,6 +68,108 @@ function Get-PortListenerProcessIds {
       Select-Object -ExpandProperty OwningProcess -Unique |
       Where-Object { $_ -and $_ -ne $PID }
   )
+}
+
+function Get-ProcessSnapshot {
+  return @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+}
+
+function ConvertTo-NormalizedCommandLine {
+  param([string]$CommandLine)
+
+  if (-not $CommandLine) {
+    return ""
+  }
+
+  try {
+    $CommandLine = [Uri]::UnescapeDataString($CommandLine)
+  } catch {
+    # Keep the original command line if it contains malformed escape sequences.
+  }
+
+  return $CommandLine.Replace("\", "/").ToLowerInvariant()
+}
+
+function Test-ProjectProcess {
+  param(
+    [int]$ProcessId,
+    [object[]]$Processes = $(Get-ProcessSnapshot)
+  )
+
+  $process = $Processes | Where-Object { $_.ProcessId -eq $ProcessId } | Select-Object -First 1
+  if (-not $process) {
+    return $false
+  }
+
+  $rootText = ("$Root").Replace("\", "/").ToLowerInvariant()
+  $commandText = ConvertTo-NormalizedCommandLine $process.CommandLine
+  return $commandText.Contains($rootText)
+}
+
+function Get-ProjectTreeRootProcessId {
+  param(
+    [int]$ProcessId,
+    [object[]]$Processes
+  )
+
+  $candidateId = $null
+  $currentId = $ProcessId
+  $visited = @{}
+
+  while ($currentId -and -not $visited.ContainsKey($currentId)) {
+    $visited[$currentId] = $true
+    $process = $Processes | Where-Object { $_.ProcessId -eq $currentId } | Select-Object -First 1
+    if (-not $process) {
+      break
+    }
+
+    if (Test-ProjectProcess $currentId $Processes) {
+      $candidateId = $currentId
+    }
+
+    $currentId = $process.ParentProcessId
+  }
+
+  return $candidateId
+}
+
+function Stop-ProcessTree {
+  param(
+    [int]$RootProcessId,
+    [object[]]$Processes = $(Get-ProcessSnapshot)
+  )
+
+  $processIds = [System.Collections.Generic.List[int]]::new()
+
+  function Add-ProcessTreeChild {
+    param([int]$ParentId)
+
+    foreach ($child in @($Processes | Where-Object { $_.ParentProcessId -eq $ParentId })) {
+      Add-ProcessTreeChild $child.ProcessId
+    }
+    if ($ParentId -ne $PID) {
+      $processIds.Add($ParentId) | Out-Null
+    }
+  }
+
+  Add-ProcessTreeChild $RootProcessId
+  foreach ($processId in $processIds) {
+    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Write-PortOwner {
+  param([int]$Port)
+
+  $processes = Get-ProcessSnapshot
+  foreach ($processId in @(Get-PortListenerProcessIds $Port)) {
+    $process = $processes | Where-Object { $_.ProcessId -eq $processId } | Select-Object -First 1
+    if ($process) {
+      Write-Host "  PID $processId ($($process.Name)): $($process.CommandLine)" -ForegroundColor Yellow
+    } else {
+      Write-Host "  PID $processId" -ForegroundColor Yellow
+    }
+  }
 }
 
 function Wait-PortFree {
@@ -105,6 +220,52 @@ function Restart-Port {
   return $false
 }
 
+function Clear-PortForStartup {
+  param(
+    [int]$Port,
+    [string]$ServiceName
+  )
+
+  if (-not (Test-PortBusy $Port)) {
+    return
+  }
+
+  $processes = Get-ProcessSnapshot
+  $listenerIds = @(Get-PortListenerProcessIds $Port)
+  $projectOwned = $listenerIds.Count -gt 0
+  foreach ($processId in $listenerIds) {
+    if (-not (Test-ProjectProcess $processId $processes)) {
+      $projectOwned = $false
+      break
+    }
+  }
+
+  if ($projectOwned) {
+    Write-Host "Found a previous Ecommerce Toolbox $ServiceName process on port $Port; stopping it automatically." -ForegroundColor Yellow
+    $treeRoots = @(
+      $listenerIds |
+        ForEach-Object { Get-ProjectTreeRootProcessId $_ $processes } |
+        Where-Object { $_ } |
+        Select-Object -Unique
+    )
+    foreach ($treeRoot in $treeRoots) {
+      Stop-ProcessTree $treeRoot $processes
+    }
+  } elseif ($ForceRestart) {
+    Restart-Port $Port $ServiceName | Out-Null
+  } else {
+    Write-Host "Port $Port is occupied by another program:" -ForegroundColor Red
+    Write-PortOwner $Port
+    throw "Cannot start $ServiceName safely. Close the program above, or rerun with -ForceRestart if you intend to stop it."
+  }
+
+  if (-not (Wait-PortFree $Port 10)) {
+    throw "Port $Port did not become available after stopping the previous $ServiceName process."
+  }
+
+  Write-Host "Port $Port is ready." -ForegroundColor Green
+}
+
 function Test-HttpOk {
   param([string]$Url)
   try {
@@ -135,7 +296,12 @@ function Wait-HttpOk {
 Set-Location -LiteralPath $Root
 $LanHost = Find-LanHost
 $FrontendUrl = "http://${LanHost}:5173"
+$FrontendHealthUrl = "http://127.0.0.1:5173"
 $BackendUrl = "http://127.0.0.1:3100/api/health"
+$ImageAiHealthUrl = "http://127.0.0.1:3210/health"
+$ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
+$ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"
+$ChatterboxScript = Join-Path $Root "scripts\chatterbox-worker.py"
 
 Write-Host "Ecommerce Toolbox launcher" -ForegroundColor Green
 Write-Host "Project root: $Root"
@@ -152,6 +318,38 @@ if ($CheckOnly) {
   exit 0
 }
 
+Write-Step "Checking for an existing Ecommerce Toolbox instance"
+$processes = Get-ProcessSnapshot
+$backendListeners = @(Get-PortListenerProcessIds 3100)
+$frontendListeners = @(Get-PortListenerProcessIds 5173)
+$existingInstanceIsOwned =
+  $backendListeners.Count -gt 0 -and
+  $frontendListeners.Count -gt 0 -and
+  @($backendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0 -and
+  @($frontendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0
+
+$ChatterboxInstalled = (Test-Path $ChatterboxPython) -and (Test-Path $ChatterboxScript)
+if (
+  $existingInstanceIsOwned -and
+  (Test-HttpOk $BackendUrl) -and
+  (Test-HttpOk $FrontendHealthUrl) -and
+  ((-not $ChatterboxInstalled) -or (Test-HttpOk $ChatterboxHealthUrl))
+) {
+  Write-Host "Ecommerce Toolbox is already running; reusing the existing instance." -ForegroundColor Green
+  Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
+  Write-Host "Backend health: $BackendUrl" -ForegroundColor Green
+  if (Test-HttpOk $ImageAiHealthUrl) {
+    Write-Host "Image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
+  }
+  if (Test-HttpOk $ChatterboxHealthUrl) {
+    Write-Host "Chatterbox V3 worker: $ChatterboxHealthUrl" -ForegroundColor Green
+  }
+  if (-not $NoBrowser) {
+    Start-Process $FrontendUrl
+  }
+  exit 0
+}
+
 if (-not $NoInstall) {
   Write-Step "Verifying dependencies from the lockfile"
   pnpm install --frozen-lockfile --prefer-offline
@@ -160,28 +358,41 @@ if (-not $NoInstall) {
   }
 }
 
-Write-Step "Preparing backend port"
-if (Test-PortBusy 3100) {
-  if ($ForceRestart) {
-    Restart-Port 3100 "backend" | Out-Null
-  } else {
-    throw "Port 3100 is already occupied. Stop that service or rerun with -ForceRestart."
+$EdgeTtsPython = Join-Path $Root ".venv-edge-tts\Scripts\python.exe"
+$EdgeTtsScript = Join-Path $Root "scripts\edge-tts-generate.py"
+$EdgeTtsSetup = Join-Path $Root "scripts\setup-edge-tts.ps1"
+$EdgeTtsReady = $false
+
+if ((Test-Path $EdgeTtsPython) -and (Test-Path $EdgeTtsScript)) {
+  & $EdgeTtsPython $EdgeTtsScript check | Out-Null
+  $EdgeTtsReady = $LASTEXITCODE -eq 0
+}
+
+if (-not $EdgeTtsReady -and -not $NoInstall -and (Test-CommandExists "python")) {
+  Write-Step "Installing the optional Edge-TTS runtime"
+  try {
+    & $EdgeTtsSetup -Python "python"
+    $EdgeTtsReady = $LASTEXITCODE -eq 0
+  } catch {
+    Write-Host "Edge-TTS setup did not complete: $($_.Exception.Message)" -ForegroundColor Yellow
   }
 }
 
-Write-Step "Preparing frontend port"
-if (Test-PortBusy 5173) {
-  if ($ForceRestart) {
-    Restart-Port 5173 "frontend" | Out-Null
-  } else {
-    throw "Port 5173 is already occupied. Stop that service or rerun with -ForceRestart."
-  }
+if ($EdgeTtsReady) {
+  Write-Host "Edge-TTS runtime ready: $EdgeTtsPython" -ForegroundColor Green
+} else {
+  Write-Host "Edge-TTS runtime is unavailable; run scripts\setup-edge-tts.ps1 to enable speech generation." -ForegroundColor Yellow
 }
+
+Write-Step "Preparing backend port"
+Clear-PortForStartup 3100 "backend"
+
+Write-Step "Preparing frontend port"
+Clear-PortForStartup 5173 "frontend"
 
 $ImageAiWorker = $null
 $ImageAiPython = Join-Path $Root ".venv-image-ai\Scripts\python.exe"
 $ImageAiScript = Join-Path $Root "scripts\image-ai-worker.py"
-$ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ImageAiLogDir = Join-Path $Root ".logs"
 $ImageAiOutputLog = Join-Path $ImageAiLogDir "image-ai-worker.log"
 $ImageAiErrorLog = Join-Path $ImageAiLogDir "image-ai-worker.error.log"
@@ -225,6 +436,50 @@ if ((Test-PortBusy 3210) -and (Test-HttpOk $ImageAiHealthUrl)) {
   Write-Host "Using the existing healthy image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
 }
 
+$ChatterboxWorker = $null
+$ChatterboxLogDir = Join-Path $Root ".logs"
+$ChatterboxOutputLog = Join-Path $ChatterboxLogDir "chatterbox-worker.log"
+$ChatterboxErrorLog = Join-Path $ChatterboxLogDir "chatterbox-worker.error.log"
+
+if ($ChatterboxInstalled -and (Test-PortBusy 3220) -and -not (Test-HttpOk $ChatterboxHealthUrl)) {
+  if ($ForceRestart) {
+    Write-Step "Preparing Chatterbox worker port"
+    Restart-Port 3220 "Chatterbox worker" | Out-Null
+  } else {
+    Write-Host "Port 3220 is occupied by an unhealthy service; Chatterbox startup is skipped." -ForegroundColor Yellow
+  }
+}
+
+if ($ChatterboxInstalled -and -not (Test-PortBusy 3220)) {
+  Write-Step "Starting local Chatterbox Multilingual V3 worker"
+  New-Item -ItemType Directory -Path $ChatterboxLogDir -Force | Out-Null
+  $ChatterboxWorker = Start-Process `
+    -FilePath $ChatterboxPython `
+    -ArgumentList @("`"$ChatterboxScript`"", "--host", "127.0.0.1", "--port", "3220") `
+    -WorkingDirectory $Root `
+    -WindowStyle Hidden `
+    -RedirectStandardOutput $ChatterboxOutputLog `
+    -RedirectStandardError $ChatterboxErrorLog `
+    -PassThru
+  Write-Host "Chatterbox worker PID: $($ChatterboxWorker.Id)" -ForegroundColor Green
+
+  if (Wait-HttpOk $ChatterboxHealthUrl 60) {
+    Write-Host "Chatterbox V3 worker ready: $ChatterboxHealthUrl" -ForegroundColor Green
+  } else {
+    Write-Host "Chatterbox worker did not become ready. See $ChatterboxErrorLog" -ForegroundColor Red
+    if (-not $ChatterboxWorker.HasExited) {
+      Stop-Process -Id $ChatterboxWorker.Id -Force -ErrorAction SilentlyContinue
+    }
+    $ChatterboxWorker = $null
+  }
+} elseif (-not $ChatterboxInstalled) {
+  Write-Host "Chatterbox runtime is not installed; run scripts\setup-chatterbox.ps1 -DownloadModel to enable voice cloning." -ForegroundColor Yellow
+}
+
+if ((Test-PortBusy 3220) -and (Test-HttpOk $ChatterboxHealthUrl)) {
+  Write-Host "Using the existing healthy Chatterbox worker: $ChatterboxHealthUrl" -ForegroundColor Green
+}
+
 if (-not $NoBrowser) {
   Start-Job -ArgumentList $FrontendUrl, $BackendUrl -ScriptBlock {
     param([string]$FrontendUrl, [string]$BackendUrl)
@@ -257,7 +512,8 @@ Write-Step "Starting frontend and backend in this terminal"
 Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
 Write-Host "Backend health: $BackendUrl" -ForegroundColor Green
 Write-Host "Image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
-Write-Host "Press Ctrl+C in this terminal to stop frontend, backend, and the image AI worker." -ForegroundColor Green
+Write-Host "Chatterbox V3 worker: $ChatterboxHealthUrl" -ForegroundColor Green
+Write-Host "Press Ctrl+C in this terminal to stop frontend, backend, and local AI workers." -ForegroundColor Green
 Write-Host ""
 
 try {
@@ -267,5 +523,10 @@ try {
     Write-Step "Stopping local image AI worker"
     Stop-Process -Id $ImageAiWorker.Id -Force -ErrorAction SilentlyContinue
     Wait-PortFree 3210 10 | Out-Null
+  }
+  if ($ChatterboxWorker -and -not $ChatterboxWorker.HasExited) {
+    Write-Step "Stopping local Chatterbox worker"
+    Stop-Process -Id $ChatterboxWorker.Id -Force -ErrorAction SilentlyContinue
+    Wait-PortFree 3220 10 | Out-Null
   }
 }

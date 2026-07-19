@@ -7,6 +7,32 @@ export type ResolvedAddress = { address: string; family: number };
 export type AddressResolver = (hostname: string) => Promise<ResolvedAddress[]>;
 export type RemoteFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+/**
+ * Limits only the time spent establishing a remote request and receiving its
+ * response headers.  Do not leave the abort signal attached to a response body:
+ * that would terminate a valid long-running media download after the timeout.
+ */
+export async function fetchRemoteResponse(
+  remoteFetch: RemoteFetch,
+  url: string,
+  init: Omit<RequestInit, "signal">,
+  timeoutMs: number
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await remoteFetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Remote request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function createRemoteFetch(
   options: {
     resolver?: AddressResolver;
@@ -71,6 +97,7 @@ export function assertRemoteResponseSize(response: Response, maxBytes: number) {
 export function limitedResponseStream(response: Response, maxBytes: number) {
   if (!response.body) throw new Error("Remote response did not include a body");
   let received = 0;
+  const source = Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>);
   const limiter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       received += chunk.length;
@@ -81,7 +108,11 @@ export function limitedResponseStream(response: Response, maxBytes: number) {
       callback(null, chunk);
     }
   });
-  return Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>).pipe(limiter);
+  // Errors from the Web-stream source are not forwarded by Node's .pipe().
+  // Forward them to the stream handed to Fastify so they can be handled by the
+  // request lifecycle instead of becoming an unhandled process-level error.
+  source.once("error", (error) => limiter.destroy(error));
+  return source.pipe(limiter);
 }
 
 async function resolveAllAddresses(hostname: string) {

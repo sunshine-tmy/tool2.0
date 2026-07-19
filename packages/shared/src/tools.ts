@@ -1,4 +1,4 @@
-export type ToolCategory = "file" | "image" | "video" | "text" | "table";
+export type ToolCategory = "file" | "image" | "video" | "audio" | "text" | "table";
 
 export type ToolStatus = "ready" | "planned";
 
@@ -40,7 +40,7 @@ const tools: ToolDefinition[] = [
   {
     id: "lan-transfer",
     title: "局域网文件传输",
-    description: "局域网内双向收发文件，支持预览、筛选、下载和自动过期清理。",
+    description: "局域网内双向收发文件和图文便签，支持预览、复制、下载和自动过期清理。",
     category: "file",
     status: "ready",
     requiresAuth: false,
@@ -60,15 +60,37 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/tools/video-text"
   },
   {
+    id: "edge-tts",
+    title: "马来语 / 英语配音",
+    description: "支持 Edge-TTS 在线自然音色，以及上传已授权参考音频的 Chatterbox V3 本机声音克隆。",
+    category: "audio",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["text/plain"],
+    routePath: "/tools/edge-tts",
+    apiNamespace: "/api/tools/edge-tts"
+  },
+  {
     id: "short-video",
     title: "短视频解析",
-    description: "解析抖音、小红书分享链接，提取公开视频、图集、封面和作者信息。",
+    description: "解析抖音、小红书、TikTok 分享链接，提取公开视频、图集、封面和作者信息。",
     category: "video",
     status: "ready",
     requiresAuth: false,
     acceptedTypes: ["text/plain"],
     routePath: "/tools/short-video",
     apiNamespace: "/api/tools/short-video"
+  },
+  {
+    id: "video-insights",
+    title: "竞品拆解",
+    description: "本地保存短视频竞品卡片，自动提取钩子、结构、话术与选题线索。",
+    category: "video",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["text/plain"],
+    routePath: "/tools/video-insights",
+    apiNamespace: "/api/tools/video-insights"
   }
 ];
 

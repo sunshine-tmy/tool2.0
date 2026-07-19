@@ -1,8 +1,24 @@
-import type { LanFileCategory, LanFileRecord, LanFileSortBy, LanFileSortOrder } from "@toolbox/shared";
+import type {
+  LanFileCategory,
+  LanFileRecord,
+  LanFileSortBy,
+  LanFileSortOrder,
+  LanNoteImageRecord,
+  LanNoteRecord
+} from "@toolbox/shared";
 
 export type LanFileView = LanFileRecord & {
   previewUrl: string;
   downloadUrl: string;
+};
+
+export type LanNoteImageView = LanNoteImageRecord & {
+  previewUrl: string;
+  downloadUrl: string;
+};
+
+export type LanNoteView = Omit<LanNoteRecord, "images"> & {
+  images: LanNoteImageView[];
 };
 
 export type LanFileListParams = {
@@ -50,7 +66,9 @@ export type CreateLanUploadSessionInput = {
 };
 
 export type UploadItem = {
+  id: string;
   name: string;
+  size: number;
   progress: number;
   status: "uploading" | "paused" | "done" | "failed" | "canceled";
   uploader?: {
@@ -58,4 +76,27 @@ export type UploadItem = {
     resume: () => Promise<void>;
     cancel: () => Promise<void>;
   };
+};
+
+export type LanTransferInfo = {
+  lanUrls: string[];
+  retentionDays: number;
+  maxFileBytes: number;
+  maxStorageBytes: number;
+  usedBytes: number;
+  noteCount: number;
+  reservedUploadBytes: number;
+  pinRequired: boolean;
+  guestMode: "full" | "upload-only" | "download-only" | "disabled";
+  authenticated: boolean;
+};
+
+export type PendingLanUpload = {
+  uploadId: string;
+  fingerprint: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  lastModified: number;
+  updatedAt: string;
 };

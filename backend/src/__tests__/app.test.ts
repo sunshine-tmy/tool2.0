@@ -31,7 +31,9 @@ describe("api app", () => {
       "image-ai",
       "lan-transfer",
       "video-text",
-      "short-video"
+      "edge-tts",
+      "short-video",
+      "video-insights"
     ]);
   });
 

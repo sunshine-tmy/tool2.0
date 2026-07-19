@@ -11,7 +11,8 @@ beforeEach(async () => {
   storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-lan-"));
   process.env.STORAGE_ROOT = storageRoot;
   process.env.LAN_TRANSFER_MAX_FILE_BYTES = String(20 * 1024 * 1024 * 1024);
-  process.env.LAN_TRANSFER_RETENTION_DAYS = "7";
+  process.env.LAN_TRANSFER_RETENTION_DAYS = "3";
+  process.env.LAN_TRANSFER_MAX_STORAGE_BYTES = String(100 * 1024 * 1024 * 1024);
   process.env.LAN_PUBLIC_BASE_URL = "http://192.168.1.241:3100";
 });
 
@@ -19,11 +20,28 @@ afterEach(async () => {
   delete process.env.STORAGE_ROOT;
   delete process.env.LAN_TRANSFER_MAX_FILE_BYTES;
   delete process.env.LAN_TRANSFER_RETENTION_DAYS;
+  delete process.env.LAN_TRANSFER_MAX_STORAGE_BYTES;
+  delete process.env.LAN_TRANSFER_PIN;
+  delete process.env.LAN_TRANSFER_GUEST_MODE;
+  delete process.env.LAN_TRANSFER_UPLOAD_RETENTION_HOURS;
   delete process.env.LAN_PUBLIC_BASE_URL;
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
 
 describe("lan transfer api", () => {
+  it("reports usable LAN sharing information", async () => {
+    const app = await createApp();
+    const response = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/info" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      retentionDays: 3,
+      pinRequired: false,
+      authenticated: true
+    });
+    expect(response.json().data.lanUrls.every((url: string) => url.endsWith("/tools/lan-transfer"))).toBe(true);
+  });
+
   it("supports the canonical tools namespace for LAN file APIs", async () => {
     const app = await createApp();
     const upload = await app.inject({
@@ -97,6 +115,88 @@ describe("lan transfer api", () => {
     expect(afterDownload.json().data.files[0].downloadCount).toBe(1);
   });
 
+  it("publishes, lists, previews, extends and deletes LAN text-image notes", async () => {
+    const app = await createApp();
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("test-image")
+    ]);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/tools/lan-transfer/notes",
+      ...noteMultipartPayload({ title: "设备验证码", content: "验证码 246810\nhttps://example.com/order/1" }, [
+        { fieldName: "images", fileName: "proof.png", mimeType: "image/png", content: png }
+      ])
+    });
+
+    expect(created.statusCode).toBe(200);
+    const note = created.json().data;
+    expect(note).toMatchObject({
+      title: "设备验证码",
+      content: "验证码 246810\nhttps://example.com/order/1",
+      images: [
+        expect.objectContaining({
+          originalName: "proof.png",
+          mimeType: "image/png",
+          previewUrl: expect.stringContaining("/preview"),
+          downloadUrl: expect.stringContaining("/download")
+        })
+      ]
+    });
+    expect(Date.parse(note.expiresAt)).toBeGreaterThan(Date.now() + 2 * 24 * 60 * 60 * 1000);
+
+    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/notes" });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().data.notes).toHaveLength(1);
+    expect(list.json().data.pagination.total).toBe(1);
+
+    const preview = await app.inject({ method: "GET", url: note.images[0].previewUrl });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers["content-type"]).toContain("image/png");
+    expect(preview.rawPayload.subarray(0, 8)).toEqual(png.subarray(0, 8));
+
+    const info = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/info" });
+    expect(info.json().data.noteCount).toBe(1);
+    expect(info.json().data.usedBytes).toBe(png.length);
+
+    const expiry = await app.inject({
+      method: "PATCH",
+      url: `/api/tools/lan-transfer/notes/${note.id}/expiry`,
+      payload: { days: 30 }
+    });
+    expect(expiry.statusCode).toBe(200);
+    expect(Date.parse(expiry.json().data.expiresAt)).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/api/tools/lan-transfer/notes/${note.id}`
+    });
+    expect(removed.statusCode).toBe(200);
+    const empty = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/notes" });
+    expect(empty.json().data.notes).toHaveLength(0);
+  });
+
+  it("accepts text-only notes and rejects spoofed image content", async () => {
+    const app = await createApp();
+    const textOnly = await app.inject({
+      method: "POST",
+      url: "/api/lan/notes",
+      ...noteMultipartPayload({ content: "从手机复制到电脑的一段文字" }, [])
+    });
+    expect(textOnly.statusCode).toBe(200);
+    expect(textOnly.json().data).toMatchObject({ content: "从手机复制到电脑的一段文字", images: [] });
+
+    const spoofed = await app.inject({
+      method: "POST",
+      url: "/api/lan/notes",
+      ...noteMultipartPayload({ content: "伪造图片" }, [
+        { fieldName: "images", fileName: "fake.png", mimeType: "image/png", content: Buffer.from("<html>") }
+      ])
+    });
+    expect(spoofed.statusCode).toBe(415);
+    expect(spoofed.json().error.code).toBe("LAN_NOTE_IMAGE_INVALID");
+  });
+
   it("paginates LAN file lists", async () => {
     const app = await createApp();
     for (const name of ["one.txt", "two.txt", "three.txt", "four.txt", "five.txt"]) {
@@ -143,6 +243,104 @@ describe("lan transfer api", () => {
     expect(preview.statusCode).toBe(206);
     expect(preview.headers["content-range"]).toBe("bytes 2-5/10");
     expect(preview.body).toBe("2345");
+  });
+
+  it("supports suffix byte ranges", async () => {
+    const app = await createApp();
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/lan/files",
+      ...multipartPayload("file", "suffix.txt", "text/plain", "hello lan")
+    });
+    const id = upload.json().data.file.id;
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/lan/files/${id}/preview`,
+      headers: { range: "bytes=-3" }
+    });
+
+    expect(response.statusCode).toBe(206);
+    expect(response.headers["content-range"]).toBe("bytes 6-8/9");
+    expect(response.body).toBe("lan");
+  });
+
+  it("uses a PIN to unlock management while preserving upload-only guest access", async () => {
+    process.env.LAN_TRANSFER_PIN = "2468";
+    process.env.LAN_TRANSFER_GUEST_MODE = "upload-only";
+    const app = await createApp();
+
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/lan/files",
+      ...multipartPayload("file", "guest.txt", "text/plain", "guest upload")
+    });
+    expect(upload.statusCode).toBe(200);
+    const id = upload.json().data.file.id;
+
+    const deniedList = await app.inject({ method: "GET", url: "/api/lan/files" });
+    expect(deniedList.statusCode).toBe(401);
+
+    const login = await app.inject({ method: "POST", url: "/api/lan/access", payload: { pin: "2468" } });
+    expect(login.statusCode).toBe(200);
+    const cookie = String(login.headers["set-cookie"]).split(";")[0];
+
+    const removed = await app.inject({ method: "DELETE", url: `/api/lan/files/${id}`, headers: { cookie } });
+    expect(removed.statusCode).toBe(200);
+  });
+
+  it("enforces the configured storage quota", async () => {
+    process.env.LAN_TRANSFER_MAX_STORAGE_BYTES = "4";
+    const app = await createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/lan/files",
+      ...multipartPayload("file", "too-large.txt", "text/plain", "12345")
+    });
+    expect(response.statusCode).toBe(507);
+    expect(response.json().error.code).toBe("LAN_STORAGE_QUOTA_EXCEEDED");
+  });
+
+  it("extends retention and supports batch ZIP download and deletion", async () => {
+    const app = await createApp();
+    const ids: string[] = [];
+    for (const [name, content] of [
+      ["one.txt", "one"],
+      ["two.txt", "two"]
+    ]) {
+      const upload = await app.inject({
+        method: "POST",
+        url: "/api/lan/files",
+        ...multipartPayload("file", name, "text/plain", content)
+      });
+      ids.push(upload.json().data.file.id);
+    }
+
+    const expiry = await app.inject({
+      method: "PATCH",
+      url: `/api/lan/files/${ids[0]}/expiry`,
+      payload: { days: 30 }
+    });
+    expect(expiry.statusCode).toBe(200);
+    expect(Date.parse(expiry.json().data.expiresAt)).toBeGreaterThan(Date.now() + 29 * 24 * 60 * 60 * 1000);
+
+    const archive = await app.inject({
+      method: "POST",
+      url: "/api/lan/files/batch-download",
+      payload: { ids }
+    });
+    expect(archive.statusCode).toBe(200);
+    expect(archive.headers["content-type"]).toContain("application/zip");
+    expect(archive.rawPayload.subarray(0, 2).toString()).toBe("PK");
+
+    const removed = await app.inject({
+      method: "POST",
+      url: "/api/lan/files/batch-delete",
+      payload: { ids }
+    });
+    expect(removed.json().data.removed).toEqual(expect.arrayContaining(ids));
+    const list = await app.inject({ method: "GET", url: "/api/lan/files" });
+    expect(list.json().data.files).toHaveLength(0);
   });
 
   it("returns 415 for unsupported preview categories and supports delete", async () => {
@@ -242,6 +440,31 @@ describe("lan transfer api", () => {
     expect(cleanup.statusCode).toBe(200);
     expect(cleanup.json().data.removed).toBe(1);
     await expect(fs.access(path.join(storageRoot, "lan-transfer", "files", file.storedName))).rejects.toThrow();
+  });
+
+  it("cleans expired text-image notes and their stored images", async () => {
+    const app = await createApp();
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("expired")]);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/lan/notes",
+      ...noteMultipartPayload({ content: "过期图文" }, [
+        { fieldName: "images", fileName: "expired.png", mimeType: "image/png", content: png }
+      ])
+    });
+    const image = created.json().data.images[0];
+    const notesIndex = path.join(storageRoot, "lan-transfer", "notes", "index.json");
+    const notes = JSON.parse(await fs.readFile(notesIndex, "utf8"));
+    notes[0].expiresAt = new Date(Date.now() - 1000).toISOString();
+    await fs.writeFile(notesIndex, JSON.stringify(notes, null, 2));
+
+    const cleanup = await app.inject({ method: "POST", url: "/api/lan/cleanup" });
+
+    expect(cleanup.statusCode).toBe(200);
+    expect(cleanup.json().data).toMatchObject({ removed: 1, filesRemoved: 0, notesRemoved: 1 });
+    await expect(
+      fs.access(path.join(storageRoot, "lan-transfer", "notes", "images", image.storedName))
+    ).rejects.toThrow();
   });
 
   it("returns a clear error when the uploaded file exceeds the configured limit", async () => {
@@ -401,7 +624,7 @@ describe("lan transfer api", () => {
     await expect(fs.access(path.join(storageRoot, "lan-transfer", "uploads", uploadId))).rejects.toThrow();
   });
 
-  it("returns 507 before merging when disk space cannot hold the next chunk append", async () => {
+  it("returns 507 before merging when disk space cannot hold the complete merged file", async () => {
     const app = await createApp();
     const session = await app.inject({
       method: "POST",
@@ -429,7 +652,7 @@ describe("lan transfer api", () => {
     }
 
     const statfsSpy = vi.spyOn(fs, "statfs").mockResolvedValue({
-      bavail: 1,
+      bavail: 5,
       bfree: 1,
       blocks: 1,
       bsize: 1,
@@ -493,6 +716,36 @@ describe("lan transfer api", () => {
     });
     expect(status.statusCode).toBe(404);
   });
+
+  it("removes abandoned upload sessions during startup cleanup", async () => {
+    process.env.LAN_TRANSFER_UPLOAD_RETENTION_HOURS = "1";
+    const uploadsDir = path.join(storageRoot, "lan-transfer", "uploads");
+    const sessionDir = path.join(uploadsDir, "stale-upload", "chunks");
+    await fs.mkdir(sessionDir, { recursive: true });
+    await fs.writeFile(path.join(sessionDir, "0.part"), "old");
+    await fs.writeFile(
+      path.join(uploadsDir, "index.json"),
+      JSON.stringify([
+        {
+          uploadId: "stale-upload",
+          originalName: "old.txt",
+          mimeType: "text/plain",
+          size: 3,
+          chunkSize: 3,
+          totalChunks: 1,
+          uploadedChunks: [0],
+          createdAt: "2020-01-01T00:00:00.000Z",
+          updatedAt: "2020-01-01T00:00:00.000Z"
+        }
+      ])
+    );
+
+    const app = await createApp();
+    const status = await app.inject({ method: "GET", url: "/api/lan/uploads/stale-upload" });
+
+    expect(status.statusCode).toBe(404);
+    await expect(fs.access(path.join(uploadsDir, "stale-upload"))).rejects.toThrow();
+  });
 });
 
 function multipartPayload(fieldName: string, fileName: string, mimeType: string, content: string) {
@@ -507,6 +760,39 @@ function multipartPayload(fieldName: string, fileName: string, mimeType: string,
     Buffer.from(`\r\n--${boundary}--\r\n`)
   ]);
 
+  return {
+    headers: {
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+      "content-length": String(body.length)
+    },
+    payload: body
+  };
+}
+
+function noteMultipartPayload(
+  fields: Record<string, string>,
+  files: Array<{ fieldName: string; fileName: string; mimeType: string; content: Buffer }>
+) {
+  const boundary = `----toolbox-note-${Math.random().toString(16).slice(2)}`;
+  const chunks: Buffer[] = [];
+  for (const [name, value] of Object.entries(fields)) {
+    chunks.push(
+      Buffer.from(`--${boundary}\r\n` + `Content-Disposition: form-data; name="${name}"\r\n\r\n` + `${value}\r\n`)
+    );
+  }
+  for (const file of files) {
+    chunks.push(
+      Buffer.from(
+        `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="${file.fieldName}"; filename="${file.fileName}"\r\n` +
+          `Content-Type: ${file.mimeType}\r\n\r\n`
+      ),
+      file.content,
+      Buffer.from("\r\n")
+    );
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
+  const body = Buffer.concat(chunks);
   return {
     headers: {
       "content-type": `multipart/form-data; boundary=${boundary}`,

@@ -30,9 +30,19 @@ export const router = createRouter({
       component: () => import("../modules/video-text/page.vue")
     },
     {
+      path: "/tools/edge-tts",
+      name: "edge-tts",
+      component: () => import("../modules/edge-tts/page.vue")
+    },
+    {
       path: "/tools/short-video",
       name: "short-video",
       component: () => import("../modules/short-video/page.vue")
+    },
+    {
+      path: "/tools/video-insights",
+      name: "video-insights",
+      component: () => import("../modules/video-insights/page.vue")
     }
   ]
 });

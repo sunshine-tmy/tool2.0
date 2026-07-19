@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { assertPublicRemoteUrl, createRemoteFetch } from "../security/remote-fetch";
+import {
+  assertPublicRemoteUrl,
+  createRemoteFetch,
+  fetchRemoteResponse,
+  limitedResponseStream
+} from "../security/remote-fetch";
+import { pipeline } from "node:stream/promises";
+import { Writable } from "node:stream";
 
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 
@@ -34,5 +41,43 @@ describe("safe remote fetch", () => {
 
     await expect(remoteFetch("https://media.example/video.mp4")).rejects.toThrow(/private|local/i);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the timeout only until remote response headers arrive", async () => {
+    let requestSignal: AbortSignal | undefined;
+    const response = await fetchRemoteResponse(
+      async (_url, init) => {
+        requestSignal = init?.signal ?? undefined;
+        return new Response("media");
+      },
+      "https://media.example/video.mp4",
+      {},
+      10
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(requestSignal?.aborted).toBe(false);
+    await expect(response.text()).resolves.toBe("media");
+  });
+
+  it("forwards aborted remote body errors to the capped stream", async () => {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode("partial"));
+          queueMicrotask(() => controller.error(new DOMException("The operation timed out", "TimeoutError")));
+        }
+      })
+    );
+    await expect(
+      pipeline(
+        limitedResponseStream(response, 1024),
+        new Writable({
+          write(_chunk, _encoding, callback) {
+            callback();
+          }
+        })
+      )
+    ).rejects.toMatchObject({ name: "TimeoutError" });
   });
 });

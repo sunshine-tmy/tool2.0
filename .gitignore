@@ -13,6 +13,7 @@ coverage/
 .venv-image-ai/
 .venv-*/
 models/image-ai/
+models/chatterbox/
 scripts/__pycache__/
 **/__pycache__/
 *.py[cod]
@@ -32,10 +33,16 @@ storage/outputs/*
 storage/temp/*
 storage/lan-transfer/files/*
 storage/lan-transfer/uploads/*
+storage/lan-transfer/notes/**
 storage/lan-transfer/index.json
+storage/lan-transfer/*.bak
+storage/lan-transfer/*.jsonl
 storage/image-ai/**
 backend/storage/**
 storage/video-text/**
+storage/video-insights/**
+storage/edge-tts/**
+storage/chatterbox/**
 
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep

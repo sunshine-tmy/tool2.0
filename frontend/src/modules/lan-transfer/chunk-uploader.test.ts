@@ -3,6 +3,28 @@ import { ConcurrentChunkUploader, DEFAULT_LAN_UPLOAD_CONCURRENCY, type ChunkUplo
 import type { LanUploadStatus } from "./types";
 
 describe("ConcurrentChunkUploader", () => {
+  it("reconnects to a persisted upload session", async () => {
+    let requestedUploadId = "";
+    const uploadedIndexes: number[] = [];
+    const api = createFakeChunkApi({
+      getUploadStatus: async (uploadId) => {
+        requestedUploadId = uploadId;
+        return uploadStatus({ uploadId, uploadedChunks: [0] });
+      },
+      uploadChunk: async (_uploadId, index) => {
+        uploadedIndexes.push(index);
+        return uploadStatus({ uploadedChunks: [0, ...uploadedIndexes] });
+      }
+    });
+    const file = new File(["abcdef"], "persisted.txt", { type: "text/plain" });
+    const uploader = new ConcurrentChunkUploader(file, api, { chunkSize: 2, uploadId: "saved-upload" });
+
+    await uploader.start();
+
+    expect(requestedUploadId).toBe("saved-upload");
+    expect(uploadedIndexes).toEqual([1, 2]);
+  });
+
   it("skips chunks already reported by the resume status", async () => {
     const uploadedIndexes: number[] = [];
     const api = createFakeChunkApi({
@@ -156,7 +178,10 @@ function createFakeChunkApi(overrides: Partial<ChunkUploadApi> & { uploadedChunk
     async createUploadSession() {
       return uploadStatus({ uploadedChunks: overrides.uploadedChunks ?? [] });
     },
-    async getUploadStatus() {
+    async getUploadStatus(uploadId) {
+      if (overrides.getUploadStatus) {
+        return overrides.getUploadStatus(uploadId);
+      }
       return uploadStatus({ uploadedChunks: overrides.uploadedChunks ?? [] });
     },
     async uploadChunk(uploadId, index, chunk, onUploadProgress) {

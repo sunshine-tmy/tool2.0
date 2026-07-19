@@ -22,7 +22,8 @@ export class ApiRequestError extends Error {
 
 const api = axios.create({
   baseURL: apiBaseUrl,
-  timeout: 120000
+  timeout: 120000,
+  withCredentials: true
 });
 
 export async function withApiError<T>(operation: () => Promise<T>, fallbackMessage = "请求失败") {
@@ -69,8 +70,21 @@ function createHttpClient(instance: AxiosInstance = api) {
       return unwrapResponse<T>(response.data);
     },
 
+    async postBlob(url: string, data?: unknown, config?: AxiosRequestConfig) {
+      const response = await instance.post<Blob>(url, data, { ...config, responseType: "blob" });
+      return {
+        blob: response.data,
+        contentDisposition: response.headers["content-disposition"] as string | undefined
+      };
+    },
+
     async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
       const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, config);
+      return unwrapResponse<T>(response.data);
+    },
+
+    async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+      const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, config);
       return unwrapResponse<T>(response.data);
     },
 

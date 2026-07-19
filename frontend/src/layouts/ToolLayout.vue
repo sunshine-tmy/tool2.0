@@ -63,7 +63,18 @@ import { computed, ref } from "vue";
 import { useRoute } from "vue-router";
 import { NInput, NTag } from "naive-ui";
 import { listTools } from "@toolbox/shared";
-import { Boxes, Clapperboard, FileArchive, FileVideo, ImageDown, ScanLine, Search, Wrench } from "lucide-vue-next";
+import {
+  AudioLines,
+  Boxes,
+  ChartNoAxesCombined,
+  Clapperboard,
+  FileArchive,
+  FileVideo,
+  ImageDown,
+  ScanLine,
+  Search,
+  Wrench
+} from "lucide-vue-next";
 
 const route = useRoute();
 const keyword = ref("");
@@ -75,7 +86,9 @@ const iconByTool: Record<string, unknown> = {
   "image-ai": ScanLine,
   "lan-transfer": FileArchive,
   "video-text": FileVideo,
-  "short-video": Clapperboard
+  "edge-tts": AudioLines,
+  "short-video": Clapperboard,
+  "video-insights": ChartNoAxesCombined
 };
 
 const filteredTools = computed(() => {

@@ -10,7 +10,9 @@ describe("tool registry", () => {
       "image-ai",
       "lan-transfer",
       "video-text",
-      "short-video"
+      "edge-tts",
+      "short-video",
+      "video-insights"
     ]);
     expect(tools.every((tool) => tool.requiresAuth === false)).toBe(true);
   });
@@ -36,9 +38,17 @@ describe("tool registry", () => {
       routePath: "/tools/video-text",
       apiNamespace: "/api/tools/video-text"
     });
+    expect(getToolById("edge-tts")).toMatchObject({
+      routePath: "/tools/edge-tts",
+      apiNamespace: "/api/tools/edge-tts"
+    });
     expect(getToolById("short-video")).toMatchObject({
       routePath: "/tools/short-video",
       apiNamespace: "/api/tools/short-video"
+    });
+    expect(getToolById("video-insights")).toMatchObject({
+      routePath: "/tools/video-insights",
+      apiNamespace: "/api/tools/video-insights"
     });
   });
 });

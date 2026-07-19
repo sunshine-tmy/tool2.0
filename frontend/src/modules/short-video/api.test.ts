@@ -28,4 +28,18 @@ describe("short video api", () => {
       platform: "douyin"
     });
   });
+
+  it("submits TikTok parse requests", async () => {
+    httpMock.post.mockResolvedValue({ title: "TikTok demo", media: [] });
+
+    await shortVideoApi.parse({
+      input: "https://www.tiktok.com/@creator/video/123456789",
+      platform: "tiktok"
+    });
+
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/short-video/parse", {
+      input: "https://www.tiktok.com/@creator/video/123456789",
+      platform: "tiktok"
+    });
+  });
 });

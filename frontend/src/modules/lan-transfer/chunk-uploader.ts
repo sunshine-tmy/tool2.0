@@ -19,13 +19,14 @@ export type ChunkUploadApi = {
     uploadId: string,
     index: number,
     chunk: Blob,
-    onUploadProgress?: (event: { loaded: number; total?: number }) => void
+    onUploadProgress?: (event: { loaded: number; total?: number }) => void,
+    signal?: AbortSignal
   ): Promise<LanUploadStatus>;
   completeUpload(uploadId: string): Promise<LanUploadResponse>;
   cancelUpload(uploadId: string): Promise<{ removed: boolean }>;
 };
 
-type ChunkUploadSnapshot = {
+export type ChunkUploadSnapshot = {
   uploadId?: string;
   fileName: string;
   progress: number;
@@ -44,6 +45,7 @@ type ChunkUploaderOptions = {
   concurrency?: number;
   maxRetries?: number;
   retryDelayMs?: number;
+  uploadId?: string;
 };
 
 type ProgressListener = (snapshot: ChunkUploadSnapshot) => void;
@@ -61,6 +63,7 @@ export class ConcurrentChunkUploader {
   private readonly maxRetries: number;
   private readonly retryDelayMs: number;
   private activeRun?: Promise<ChunkUploadResult>;
+  private abortControllers = new Map<number, AbortController>();
 
   constructor(
     private readonly file: File,
@@ -71,6 +74,7 @@ export class ConcurrentChunkUploader {
     this.concurrency = Math.max(1, options.concurrency ?? DEFAULT_LAN_UPLOAD_CONCURRENCY);
     this.maxRetries = Math.max(0, options.maxRetries ?? DEFAULT_LAN_CHUNK_MAX_RETRIES);
     this.retryDelayMs = Math.max(0, options.retryDelayMs ?? DEFAULT_LAN_CHUNK_RETRY_DELAY_MS);
+    this.uploadId = options.uploadId;
     this.totalChunks = Math.ceil(file.size / this.chunkSize);
   }
 
@@ -86,6 +90,7 @@ export class ConcurrentChunkUploader {
       return;
     }
     this.paused = true;
+    this.abortInFlight();
     this.emit("paused");
   }
 
@@ -97,6 +102,7 @@ export class ConcurrentChunkUploader {
   async cancel() {
     this.canceled = true;
     this.paused = false;
+    this.abortInFlight();
     if (this.uploadId) {
       await this.api.cancelUpload(this.uploadId);
     }
@@ -138,18 +144,31 @@ export class ConcurrentChunkUploader {
   }
 
   private async ensureSession() {
-    const status = this.uploadId
-      ? await this.api.getUploadStatus(this.uploadId)
-      : await this.api.createUploadSession({
-          originalName: this.file.name,
-          mimeType: this.file.type || "application/octet-stream",
-          size: this.file.size,
-          chunkSize: this.chunkSize,
-          totalChunks: this.totalChunks
-        });
+    let status: LanUploadStatus;
+    if (this.uploadId) {
+      try {
+        status = await this.api.getUploadStatus(this.uploadId);
+      } catch (error) {
+        if (!isUploadNotFoundError(error)) throw error;
+        this.uploadId = undefined;
+        status = await this.createSession();
+      }
+    } else {
+      status = await this.createSession();
+    }
 
     this.uploadId = status.uploadId;
     this.syncUploadedChunks(status.uploadedChunks);
+  }
+
+  private createSession() {
+    return this.api.createUploadSession({
+      originalName: this.file.name,
+      mimeType: this.file.type || "application/octet-stream",
+      size: this.file.size,
+      chunkSize: this.chunkSize,
+      totalChunks: this.totalChunks
+    });
   }
 
   private createMissingChunkQueue() {
@@ -232,12 +251,22 @@ export class ConcurrentChunkUploader {
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       try {
-        status = await this.api.uploadChunk(this.uploadId!, index, chunk, (event) => {
-          this.inFlightBytes.set(index, event.loaded);
-          this.emit("uploading");
-        });
+        const controller = new AbortController();
+        this.abortControllers.set(index, controller);
+        status = await this.api.uploadChunk(
+          this.uploadId!,
+          index,
+          chunk,
+          (event) => {
+            this.inFlightBytes.set(index, event.loaded);
+            this.emit("uploading");
+          },
+          controller.signal
+        );
+        this.abortControllers.delete(index);
         break;
       } catch (error) {
+        this.abortControllers.delete(index);
         this.inFlightBytes.delete(index);
         if (this.paused || this.canceled || attempt >= this.maxRetries) {
           throw error;
@@ -292,8 +321,17 @@ export class ConcurrentChunkUploader {
     }
     return this.chunkSize;
   }
+
+  private abortInFlight() {
+    for (const controller of this.abortControllers.values()) controller.abort();
+    this.abortControllers.clear();
+  }
 }
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isUploadNotFoundError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "UPLOAD_NOT_FOUND";
 }

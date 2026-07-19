@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import archiver from "archiver";
 import { nanoid } from "nanoid";
 import {
   classifyLanFile,
@@ -10,9 +13,12 @@ import {
   getLanFileExtension,
   isLanFilePreviewable,
   lanFileCategories,
+  lanNoteLimits,
   normalizeLanFileQuery,
   ok,
-  type LanFileRecord
+  type LanFileRecord,
+  type LanNoteImageRecord,
+  type LanNoteRecord
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 
@@ -43,28 +49,269 @@ type LanChunkUploadSession = {
   updatedAt: string;
 };
 
+type LanAccessAction = "read" | "upload" | "manage";
+
+type LanAccessController = ReturnType<typeof createLanAccessController>;
+
+class LanNoteInputError extends Error {
+  constructor(
+    readonly code: string,
+    readonly statusCode: number,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
 export async function registerLanTransferRoutes({ app, config }: RegisterLanTransferRoutesOptions) {
   const store = createLanFileStore(config);
+  const noteStore = createLanNoteStore(config);
   const uploadStore = createLanUploadStore(config);
   const finalizingUploads = new Set<string>();
+  const access = createLanAccessController(config);
+  const audit = createLanAuditLog(path.join(config.lanTransferDir, "audit.jsonl"));
   await store.ensure();
+  await noteStore.ensure();
   await uploadStore.ensure();
   await store.cleanupExpired();
+  await noteStore.cleanupExpired();
+  await uploadStore.cleanupStale(config.lanTransferUploadRetentionHours);
 
   for (const basePath of ["/api/tools/lan-transfer", "/api/lan"]) {
-    registerLanTransferNamespace(app, config, store, uploadStore, finalizingUploads, basePath);
+    registerLanTransferNamespace(
+      app,
+      config,
+      store,
+      noteStore,
+      uploadStore,
+      finalizingUploads,
+      access,
+      audit,
+      basePath
+    );
   }
+
+  const cleanupTimer = setInterval(
+    () => {
+      Promise.all([
+        store.cleanupExpired(),
+        noteStore.cleanupExpired(),
+        uploadStore.cleanupStale(config.lanTransferUploadRetentionHours, finalizingUploads)
+      ]).catch(() => undefined);
+    },
+    config.lanTransferCleanupIntervalMinutes * 60 * 1000
+  );
+  cleanupTimer.unref();
+  app.addHook("onClose", async () => clearInterval(cleanupTimer));
 }
 
 function registerLanTransferNamespace(
   app: FastifyInstance,
   config: AppConfig,
   store: ReturnType<typeof createLanFileStore>,
+  noteStore: ReturnType<typeof createLanNoteStore>,
   uploadStore: ReturnType<typeof createLanUploadStore>,
   finalizingUploads: Set<string>,
+  access: LanAccessController,
+  audit: ReturnType<typeof createLanAuditLog>,
   basePath: string
 ) {
+  app.get(`${basePath}/info`, async (request) => {
+    const fileBytes = await store.totalSize();
+    const noteBytes = await noteStore.totalSize();
+    const reservedUploadBytes = await uploadStore.totalDeclaredSize();
+    return ok({
+      lanUrls: getLanWebUrls(config.lanTransferWebPort),
+      retentionDays: config.lanTransferRetentionDays,
+      maxFileBytes: config.lanTransferMaxFileBytes,
+      maxStorageBytes: config.lanTransferMaxStorageBytes,
+      usedBytes: fileBytes + noteBytes,
+      noteCount: await noteStore.count(),
+      reservedUploadBytes,
+      pinRequired: Boolean(config.lanTransferPin),
+      guestMode: config.lanTransferGuestMode,
+      authenticated: access.isAuthenticated(request)
+    });
+  });
+
+  app.post(`${basePath}/access`, async (request, reply) => {
+    const pin = isRecord(request.body) ? String(request.body.pin ?? "") : "";
+    const token = access.login(pin);
+    if (!token) {
+      await audit.write("access.denied", request);
+      return reply.code(401).send(fail("INVALID_LAN_PIN", "访问 PIN 不正确"));
+    }
+    await audit.write("access.granted", request);
+    reply.header("set-cookie", access.sessionCookie(token));
+    return ok({ authenticated: true });
+  });
+
+  app.delete(`${basePath}/access`, async (request, reply) => {
+    access.logout(request);
+    reply.header("set-cookie", access.expiredSessionCookie());
+    return ok({ authenticated: false });
+  });
+
+  app.post(`${basePath}/notes`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
+    const noteId = nanoid(12);
+    const writtenNames: string[] = [];
+    const images: LanNoteImageRecord[] = [];
+    let title = "";
+    let content = "";
+
+    try {
+      await noteStore.ensure();
+      const parts = request.parts({
+        limits: {
+          files: lanNoteLimits.maxImages,
+          fields: 4,
+          fileSize: lanNoteLimits.maxImageBytes
+        }
+      });
+      for await (const part of parts) {
+        if (part.type === "field") {
+          if (part.fieldname === "title") title = String(part.value ?? "").trim();
+          if (part.fieldname === "content") content = String(part.value ?? "").trim();
+          continue;
+        }
+
+        if (part.fieldname !== "images") {
+          part.file.resume();
+          continue;
+        }
+        if (!isAllowedLanNoteImageMime(part.mimetype)) {
+          part.file.resume();
+          throw new LanNoteInputError(
+            "LAN_NOTE_IMAGE_TYPE_UNSUPPORTED",
+            415,
+            "仅支持 JPG、PNG、GIF、WebP 和 AVIF 图片"
+          );
+        }
+        const imageId = nanoid(10);
+        const extension = extensionForLanNoteImage(part.mimetype);
+        const storedName = `${noteId}-${imageId}.${extension}`;
+        const targetPath = noteStore.imagePath(storedName);
+        writtenNames.push(storedName);
+        await pipeline(part.file, fs.createWriteStream(targetPath));
+        const stat = await fsp.stat(targetPath);
+        if (part.file.truncated || stat.size > lanNoteLimits.maxImageBytes) {
+          throw new LanNoteInputError("LAN_NOTE_IMAGE_TOO_LARGE", 413, "单张图片不能超过 10 MB");
+        }
+        if (!(await hasLanNoteImageSignature(targetPath, part.mimetype))) {
+          throw new LanNoteInputError("LAN_NOTE_IMAGE_INVALID", 415, "图片内容与文件类型不匹配");
+        }
+        images.push({
+          id: imageId,
+          originalName: path.basename(part.filename || `image.${extension}`),
+          storedName,
+          mimeType: part.mimetype,
+          extension,
+          size: stat.size
+        });
+      }
+
+      if (title.length > lanNoteLimits.titleCharacters) {
+        throw new LanNoteInputError("LAN_NOTE_TITLE_TOO_LONG", 400, "标题不能超过 100 个字符");
+      }
+      if (content.length > lanNoteLimits.contentCharacters) {
+        throw new LanNoteInputError("LAN_NOTE_CONTENT_TOO_LONG", 400, "文字不能超过 20,000 个字符");
+      }
+      if (!content && !images.length) {
+        throw new LanNoteInputError("LAN_NOTE_CONTENT_REQUIRED", 400, "请输入文字或至少选择一张图片");
+      }
+      const imageBytes = images.reduce((total, image) => total + image.size, 0);
+      if (imageBytes > lanNoteLimits.maxTotalImageBytes) {
+        throw new LanNoteInputError("LAN_NOTE_IMAGES_TOO_LARGE", 413, "图文中的图片总大小不能超过 30 MB");
+      }
+      const reservedBytes =
+        (await store.totalSize()) + (await noteStore.totalSize()) + (await uploadStore.totalDeclaredSize());
+      if (reservedBytes + imageBytes > config.lanTransferMaxStorageBytes) {
+        throw new LanNoteInputError("LAN_STORAGE_QUOTA_EXCEEDED", 507, "局域网存储配额不足");
+      }
+
+      const now = new Date();
+      const note: LanNoteRecord = {
+        id: noteId,
+        title: title || undefined,
+        content,
+        images,
+        createdAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString()
+      };
+      await noteStore.add(note);
+      await audit.write("note.created", request, {
+        noteId,
+        characters: content.length,
+        imageCount: images.length,
+        imageBytes
+      });
+      return ok(withNoteUrls(note, basePath));
+    } catch (error) {
+      await Promise.all(writtenNames.map((storedName) => fsp.rm(noteStore.imagePath(storedName), { force: true })));
+      if (error instanceof LanNoteInputError) {
+        return reply.code(error.statusCode).send(fail(error.code, error.message));
+      }
+      const multipartError = lanNoteMultipartError(error);
+      if (multipartError) {
+        return reply.code(multipartError.statusCode).send(fail(multipartError.code, multipartError.message));
+      }
+      const message = error instanceof Error ? error.message : "图文发布失败";
+      return reply.code(500).send(fail("LAN_NOTE_CREATE_FAILED", message));
+    }
+  });
+
+  app.get(`${basePath}/notes`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
+    const query = request.query as { page?: string; pageSize?: string };
+    const pageSize = Math.min(Math.max(Number(query.pageSize) || 20, 1), 100);
+    const requestedPage = Math.max(Number(query.page) || 1, 1);
+    const notes = await noteStore.list();
+    const total = notes.length;
+    const pageCount = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, pageCount);
+    const start = (page - 1) * pageSize;
+    return ok({
+      notes: notes.slice(start, start + pageSize).map((note) => withNoteUrls(note, basePath)),
+      pagination: { page, pageSize, total, pageCount }
+    });
+  });
+
+  app.get(`${basePath}/notes/:id/images/:imageId/preview`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
+    return sendLanNoteImage(noteStore, request, reply, "inline");
+  });
+
+  app.get(`${basePath}/notes/:id/images/:imageId/download`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
+    return sendLanNoteImage(noteStore, request, reply, "attachment");
+  });
+
+  app.patch(`${basePath}/notes/:id/expiry`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
+    const { id } = request.params as { id: string };
+    const days = isRecord(request.body) ? Number(request.body.days) : Number.NaN;
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      return reply.code(400).send(fail("INVALID_RETENTION_DAYS", "保留天数必须是 1 到 3650 的整数"));
+    }
+    const updated = await noteStore.updateExpiry(id, days);
+    if (!updated) return reply.code(404).send(fail("LAN_NOTE_NOT_FOUND", "图文不存在或已过期"));
+    await audit.write("note.expiry-updated", request, { noteId: id, days });
+    return ok(withNoteUrls(updated, basePath));
+  });
+
+  app.delete(`${basePath}/notes/:id`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
+    const { id } = request.params as { id: string };
+    if (!(await noteStore.remove(id))) {
+      return reply.code(404).send(fail("LAN_NOTE_NOT_FOUND", "图文不存在或已过期"));
+    }
+    await audit.write("note.deleted", request, { noteId: id });
+    return ok({ removed: true });
+  });
+
   app.post(`${basePath}/files`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
     const file = await request.file({
       limits: {
         fileSize: config.lanTransferMaxFileBytes
@@ -90,6 +337,16 @@ function registerLanTransferNamespace(
         await fsp.rm(targetPath, { force: true });
         return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
       }
+      if (
+        (await store.totalSize()) +
+          (await noteStore.totalSize()) +
+          (await uploadStore.totalDeclaredSize()) +
+          stat.size >
+        config.lanTransferMaxStorageBytes
+      ) {
+        await fsp.rm(targetPath, { force: true });
+        return reply.code(507).send(fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足"));
+      }
 
       const classifiedCategory = classifyLanFile(originalName, file.mimetype);
       const category =
@@ -111,6 +368,7 @@ function registerLanTransferNamespace(
       };
 
       await store.add(record);
+      await audit.write("file.uploaded", request, { fileId: record.id, name: record.originalName, size: record.size });
 
       return ok({
         file: record,
@@ -124,7 +382,8 @@ function registerLanTransferNamespace(
     }
   });
 
-  app.get(`${basePath}/files`, async (request) => {
+  app.get(`${basePath}/files`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
     const query = normalizeLanFileQuery(request.query as Record<string, unknown>);
     const files = await store.list(query);
     const total = files.length;
@@ -143,7 +402,44 @@ function registerLanTransferNamespace(
     });
   });
 
+  app.post(`${basePath}/files/batch-download`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
+    const ids = parseLanFileIds(request.body);
+    if (!ids.length) {
+      return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+    }
+    const files = await store.getMany(ids);
+    if (!files.length) {
+      return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+    }
+    await store.incrementDownloadCounts(files.map((file) => file.id));
+    await audit.write("files.batch-downloaded", request, { fileIds: files.map((file) => file.id) });
+    const archive = archiver("zip", { zlib: { level: 1 } });
+    const usedNames = new Set<string>();
+    for (const file of files) {
+      archive.file(path.join(config.lanTransferFilesDir, file.storedName), {
+        name: uniqueArchiveName(file.originalName, usedNames)
+      });
+    }
+    reply.header("content-type", "application/zip");
+    reply.header("content-disposition", `attachment; filename="lan-files-${Date.now()}.zip"`);
+    void archive.finalize();
+    return reply.send(archive);
+  });
+
+  app.post(`${basePath}/files/batch-delete`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
+    const ids = parseLanFileIds(request.body);
+    if (!ids.length) {
+      return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+    }
+    const result = await store.removeMany(ids);
+    await audit.write("files.batch-deleted", request, result);
+    return ok(result);
+  });
+
   app.get(`${basePath}/files/:id/preview`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
     const file = await getFileOr404(store, request, reply);
     if (!file) return reply;
 
@@ -155,27 +451,51 @@ function registerLanTransferNamespace(
   });
 
   app.get(`${basePath}/files/:id/download`, async (request, reply) => {
+    if (!access.authorize(request, reply, "read")) return reply;
     const file = await getFileOr404(store, request, reply);
     if (!file) return reply;
 
-    await store.incrementDownloadCount(file.id);
+    if (!request.headers.range || /^bytes=0-/i.test(request.headers.range)) {
+      await store.incrementDownloadCount(file.id);
+    }
     return sendFile(reply, config, file, "attachment", request.headers.range);
   });
 
   app.delete(`${basePath}/files/:id`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
     const { id } = request.params as { id: string };
     const removed = await store.remove(id);
     if (!removed) {
       return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
     }
+    await audit.write("file.deleted", request, { fileId: id });
     return ok({ removed: true });
   });
 
-  app.post(`${basePath}/cleanup`, async () => {
-    return ok(await store.cleanupExpired());
+  app.patch(`${basePath}/files/:id/expiry`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
+    const { id } = request.params as { id: string };
+    const days = isRecord(request.body) ? Number(request.body.days) : Number.NaN;
+    if (!Number.isInteger(days) || days < 1 || days > 3650) {
+      return reply.code(400).send(fail("INVALID_RETENTION_DAYS", "保留天数必须是 1 到 3650 的整数"));
+    }
+    const updated = await store.updateExpiry(id, days);
+    if (!updated) {
+      return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+    }
+    await audit.write("file.expiry-updated", request, { fileId: id, days });
+    return ok(withUrls(updated, basePath));
+  });
+
+  app.post(`${basePath}/cleanup`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
+    // Kept for backwards compatibility; scheduled cleanup runs automatically.
+    const [files, notes] = await Promise.all([store.cleanupExpired(), noteStore.cleanupExpired()]);
+    return ok({ removed: files.removed + notes.removed, filesRemoved: files.removed, notesRemoved: notes.removed });
   });
 
   app.post(`${basePath}/uploads`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
     const parsed = parseUploadSessionBody(request.body);
     if (!parsed.ok) {
       return reply.code(400).send(fail(parsed.code, parsed.message));
@@ -185,11 +505,24 @@ function registerLanTransferNamespace(
       return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
     }
 
+    const reservedBytes =
+      (await store.totalSize()) + (await noteStore.totalSize()) + (await uploadStore.totalDeclaredSize());
+    if (reservedBytes + parsed.value.size > config.lanTransferMaxStorageBytes) {
+      return reply.code(507).send(
+        fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足", {
+          maxStorageBytes: config.lanTransferMaxStorageBytes,
+          reservedBytes,
+          requestedBytes: parsed.value.size
+        })
+      );
+    }
+
     const session = await uploadStore.create(parsed.value);
     return ok(toUploadStatus(session));
   });
 
   app.get(`${basePath}/uploads/:uploadId`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
     const { uploadId } = request.params as { uploadId: string };
     const session = await uploadStore.get(uploadId);
     if (!session) {
@@ -200,6 +533,7 @@ function registerLanTransferNamespace(
   });
 
   app.put(`${basePath}/uploads/:uploadId/chunks/:index`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
     const { uploadId, index } = request.params as { uploadId: string; index: string };
     if (finalizingUploads.has(uploadId)) {
       return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
@@ -263,6 +597,7 @@ function registerLanTransferNamespace(
   });
 
   app.post(`${basePath}/uploads/:uploadId/complete`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
     const { uploadId } = request.params as { uploadId: string };
     if (finalizingUploads.has(uploadId)) {
       return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is already being finalized"));
@@ -331,6 +666,11 @@ function registerLanTransferNamespace(
 
         await store.add(record);
         await uploadStore.remove(uploadId);
+        await audit.write("file.uploaded", request, {
+          fileId: record.id,
+          name: record.originalName,
+          size: record.size
+        });
 
         return ok({
           file: record,
@@ -351,6 +691,7 @@ function registerLanTransferNamespace(
   });
 
   app.delete(`${basePath}/uploads/:uploadId`, async (request, reply) => {
+    if (!access.authorize(request, reply, "upload")) return reply;
     const { uploadId } = request.params as { uploadId: string };
     if (finalizingUploads.has(uploadId)) {
       return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
@@ -378,17 +719,18 @@ function createLanFileStore(config: AppConfig) {
 
   async function ensure() {
     await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-    try {
-      await fsp.access(config.lanTransferIndexPath);
-    } catch {
-      await fsp.writeFile(config.lanTransferIndexPath, "[]");
-    }
+    await ensureJsonIndex(config.lanTransferIndexPath);
   }
 
   async function read(): Promise<LanFileRecord[]> {
     await ensure();
-    const raw = await fsp.readFile(config.lanTransferIndexPath, "utf8");
-    const parsed = parseLanFileIndex(raw);
+    let parsed;
+    try {
+      parsed = parseLanFileIndex(await readJsonIndex(config.lanTransferIndexPath));
+    } catch {
+      parsed = parseLanFileIndex(await fsp.readFile(`${config.lanTransferIndexPath}.bak`, "utf8"));
+      parsed.repaired = true;
+    }
     if (parsed.repaired) {
       await write(parsed.records);
     }
@@ -396,10 +738,7 @@ function createLanFileStore(config: AppConfig) {
   }
 
   async function write(records: LanFileRecord[]) {
-    const temporaryPath = `${config.lanTransferIndexPath}.${process.pid}.${nanoid(6)}.tmp`;
-    await fsp.writeFile(temporaryPath, JSON.stringify(records, null, 2));
-    await fsp.rm(config.lanTransferIndexPath, { force: true });
-    await fsp.rename(temporaryPath, config.lanTransferIndexPath);
+    await writeJsonIndex(config.lanTransferIndexPath, records);
   }
 
   return {
@@ -414,6 +753,12 @@ function createLanFileStore(config: AppConfig) {
     },
     async get(id: string) {
       return runExclusive(async () => (await read()).find((record) => record.id === id));
+    },
+    async getMany(ids: string[]) {
+      return runExclusive(async () => {
+        const wanted = new Set(ids);
+        return (await read()).filter((record) => wanted.has(record.id));
+      });
     },
     async list(query = normalizeLanFileQuery({})) {
       return runExclusive(async () => {
@@ -431,6 +776,9 @@ function createLanFileStore(config: AppConfig) {
         return records.sort((left, right) => compareLanFiles(left, right, query.sortBy, query.sortOrder));
       });
     },
+    async totalSize() {
+      return runExclusive(async () => (await read()).reduce((total, record) => total + record.size, 0));
+    },
     async incrementDownloadCount(id: string) {
       return runExclusive(async () => {
         const records = await read();
@@ -438,6 +786,16 @@ function createLanFileStore(config: AppConfig) {
           record.id === id ? { ...record, downloadCount: record.downloadCount + 1 } : record
         );
         await write(next);
+      });
+    },
+    async incrementDownloadCounts(ids: string[]) {
+      return runExclusive(async () => {
+        const wanted = new Set(ids);
+        const records = await read();
+        for (const record of records) {
+          if (wanted.has(record.id)) record.downloadCount += 1;
+        }
+        await write(records);
       });
     },
     async remove(id: string) {
@@ -452,6 +810,31 @@ function createLanFileStore(config: AppConfig) {
         return true;
       });
     },
+    async removeMany(ids: string[]) {
+      return runExclusive(async () => {
+        const wanted = new Set(ids);
+        const records = await read();
+        const targets = records.filter((record) => wanted.has(record.id));
+        await Promise.all(
+          targets.map((record) => fsp.rm(path.join(config.lanTransferFilesDir, record.storedName), { force: true }))
+        );
+        await write(records.filter((record) => !wanted.has(record.id)));
+        return {
+          removed: targets.map((record) => record.id),
+          missing: ids.filter((id) => !targets.some((file) => file.id === id))
+        };
+      });
+    },
+    async updateExpiry(id: string, days: number) {
+      return runExclusive(async () => {
+        const records = await read();
+        const target = records.find((record) => record.id === id);
+        if (!target) return undefined;
+        target.expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+        await write(records);
+        return target;
+      });
+    },
     async cleanupExpired() {
       return runExclusive(async () => {
         const now = Date.now();
@@ -460,11 +843,168 @@ function createLanFileStore(config: AppConfig) {
         await Promise.all(
           expired.map((record) => fsp.rm(path.join(config.lanTransferFilesDir, record.storedName), { force: true }))
         );
-        await write(records.filter((record) => Date.parse(record.expiresAt) > now));
+        if (expired.length) {
+          await write(records.filter((record) => Date.parse(record.expiresAt) > now));
+        }
         return { removed: expired.length };
       });
     }
   };
+}
+
+function createLanNoteStore(config: AppConfig) {
+  const notesDir = path.join(config.lanTransferDir, "notes");
+  const imagesDir = path.join(notesDir, "images");
+  const indexPath = path.join(notesDir, "index.json");
+  let queue = Promise.resolve();
+
+  function runExclusive<T>(operation: () => Promise<T>) {
+    const current = queue.then(operation, operation);
+    queue = current.then(
+      () => undefined,
+      () => undefined
+    );
+    return current;
+  }
+
+  async function ensure() {
+    await fsp.mkdir(imagesDir, { recursive: true });
+    await ensureJsonIndex(indexPath);
+  }
+
+  async function read(): Promise<LanNoteRecord[]> {
+    await ensure();
+    let parsed;
+    try {
+      parsed = parseLanNoteIndex(await readJsonIndex(indexPath));
+    } catch {
+      parsed = parseLanNoteIndex(await fsp.readFile(`${indexPath}.bak`, "utf8"));
+      parsed.repaired = true;
+    }
+    if (parsed.repaired) await write(parsed.records);
+    return parsed.records;
+  }
+
+  async function write(records: LanNoteRecord[]) {
+    await writeJsonIndex(indexPath, records);
+  }
+
+  async function removeImages(note: LanNoteRecord) {
+    await Promise.all(note.images.map((image) => fsp.rm(path.join(imagesDir, image.storedName), { force: true })));
+  }
+
+  return {
+    ensure,
+    imagePath(storedName: string) {
+      return path.join(imagesDir, path.basename(storedName));
+    },
+    async add(note: LanNoteRecord) {
+      return runExclusive(async () => {
+        const notes = await read();
+        notes.unshift(note);
+        await write(notes);
+        return note;
+      });
+    },
+    async list() {
+      return runExclusive(async () => {
+        const now = Date.now();
+        return (await read())
+          .filter((note) => Date.parse(note.expiresAt) > now)
+          .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+      });
+    },
+    async get(id: string) {
+      return runExclusive(async () =>
+        (await read()).find((note) => note.id === id && Date.parse(note.expiresAt) > Date.now())
+      );
+    },
+    async count() {
+      return runExclusive(async () => {
+        const now = Date.now();
+        return (await read()).filter((note) => Date.parse(note.expiresAt) > now).length;
+      });
+    },
+    async totalSize() {
+      return runExclusive(async () =>
+        (await read()).reduce(
+          (total, note) => total + note.images.reduce((imageTotal, image) => imageTotal + image.size, 0),
+          0
+        )
+      );
+    },
+    async updateExpiry(id: string, days: number) {
+      return runExclusive(async () => {
+        const notes = await read();
+        const target = notes.find((note) => note.id === id);
+        if (!target) return undefined;
+        target.expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+        await write(notes);
+        return target;
+      });
+    },
+    async remove(id: string) {
+      return runExclusive(async () => {
+        const notes = await read();
+        const target = notes.find((note) => note.id === id);
+        if (!target) return false;
+        await removeImages(target);
+        await write(notes.filter((note) => note.id !== id));
+        return true;
+      });
+    },
+    async cleanupExpired() {
+      return runExclusive(async () => {
+        const now = Date.now();
+        const notes = await read();
+        const expired = notes.filter((note) => Date.parse(note.expiresAt) <= now);
+        await Promise.all(expired.map(removeImages));
+        if (expired.length) {
+          await write(notes.filter((note) => Date.parse(note.expiresAt) > now));
+        }
+        return { removed: expired.length };
+      });
+    }
+  };
+}
+
+function parseLanNoteIndex(raw: string) {
+  try {
+    return { records: sanitizeLanNoteRecords(JSON.parse(raw)), repaired: false };
+  } catch (error) {
+    const recovered = extractFirstJsonArray(raw);
+    if (!recovered) throw error;
+    return { records: sanitizeLanNoteRecords(JSON.parse(recovered)), repaired: true };
+  }
+}
+
+function sanitizeLanNoteRecords(value: unknown): LanNoteRecord[] {
+  return Array.isArray(value) ? value.filter(isLanNoteRecord) : [];
+}
+
+function isLanNoteRecord(value: unknown): value is LanNoteRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    (value.title === undefined || typeof value.title === "string") &&
+    typeof value.content === "string" &&
+    Array.isArray(value.images) &&
+    value.images.every(isLanNoteImageRecord) &&
+    typeof value.createdAt === "string" &&
+    typeof value.expiresAt === "string"
+  );
+}
+
+function isLanNoteImageRecord(value: unknown): value is LanNoteImageRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.originalName === "string" &&
+    typeof value.storedName === "string" &&
+    typeof value.mimeType === "string" &&
+    typeof value.extension === "string" &&
+    typeof value.size === "number"
+  );
 }
 
 function parseLanFileIndex(raw: string) {
@@ -558,24 +1098,22 @@ function createLanUploadStore(config: AppConfig) {
 
   async function ensure() {
     await fsp.mkdir(uploadsDir, { recursive: true });
-    try {
-      await fsp.access(uploadIndexPath);
-    } catch {
-      await fsp.writeFile(uploadIndexPath, "[]");
-    }
+    await ensureJsonIndex(uploadIndexPath);
   }
 
   async function read(): Promise<LanChunkUploadSession[]> {
     await ensure();
-    const raw = await fsp.readFile(uploadIndexPath, "utf8");
-    return JSON.parse(raw) as LanChunkUploadSession[];
+    let value: unknown;
+    try {
+      value = JSON.parse(await readJsonIndex(uploadIndexPath)) as unknown;
+    } catch {
+      value = JSON.parse(await fsp.readFile(`${uploadIndexPath}.bak`, "utf8")) as unknown;
+    }
+    return Array.isArray(value) ? (value.filter(isLanUploadSession) as LanChunkUploadSession[]) : [];
   }
 
   async function write(sessions: LanChunkUploadSession[]) {
-    const temporaryPath = `${uploadIndexPath}.${process.pid}.${nanoid(6)}.tmp`;
-    await fsp.writeFile(temporaryPath, JSON.stringify(sessions, null, 2));
-    await fsp.rm(uploadIndexPath, { force: true });
-    await fsp.rename(temporaryPath, uploadIndexPath);
+    await writeJsonIndex(uploadIndexPath, sessions);
   }
 
   function sessionDir(uploadId: string) {
@@ -613,6 +1151,9 @@ function createLanUploadStore(config: AppConfig) {
     async get(uploadId: string) {
       return runExclusive(async () => (await read()).find((session) => session.uploadId === uploadId));
     },
+    async totalDeclaredSize() {
+      return runExclusive(async () => (await read()).reduce((total, session) => total + session.size, 0));
+    },
     async markChunkUploaded(uploadId: string, chunkIndex: number) {
       return runExclusive(async () => {
         const sessions = await read();
@@ -636,6 +1177,23 @@ function createLanUploadStore(config: AppConfig) {
         await fsp.rm(sessionDir(uploadId), { recursive: true, force: true });
         await write(sessions.filter((session) => session.uploadId !== uploadId));
         return true;
+      });
+    },
+    async cleanupStale(retentionHours: number, excludedIds = new Set<string>()) {
+      return runExclusive(async () => {
+        const sessions = await read();
+        const cutoff = Date.now() - retentionHours * 60 * 60 * 1000;
+        const stale = sessions.filter(
+          (session) => Date.parse(session.updatedAt) <= cutoff && !excludedIds.has(session.uploadId)
+        );
+        await Promise.all(
+          stale.map((session) => fsp.rm(sessionDir(session.uploadId), { recursive: true, force: true }))
+        );
+        if (stale.length) {
+          const staleIds = new Set(stale.map((session) => session.uploadId));
+          await write(sessions.filter((session) => !staleIds.has(session.uploadId)));
+        }
+        return { removed: stale.length };
       });
     }
   };
@@ -678,7 +1236,12 @@ async function sendFile(
   rangeHeader?: string
 ) {
   const filePath = path.join(config.lanTransferFilesDir, file.storedName);
-  const stat = await fsp.stat(filePath);
+  let stat;
+  try {
+    stat = await fsp.stat(filePath);
+  } catch {
+    return reply.code(404).send(fail("LAN_FILE_MISSING", "文件元数据存在，但磁盘文件已丢失"));
+  }
   const encodedName = encodeURIComponent(file.originalName);
   reply.header("accept-ranges", "bytes");
   reply.header("x-content-type-options", "nosniff");
@@ -730,13 +1293,77 @@ async function hasPdfSignature(filePath: string) {
   }
 }
 
+const lanNoteImageExtensions: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/avif": "avif"
+};
+
+function isAllowedLanNoteImageMime(mimeType: string) {
+  return mimeType in lanNoteImageExtensions;
+}
+
+function extensionForLanNoteImage(mimeType: string) {
+  return lanNoteImageExtensions[mimeType] ?? "img";
+}
+
+async function hasLanNoteImageSignature(filePath: string, mimeType: string) {
+  const handle = await fsp.open(filePath, "r");
+  try {
+    const header = Buffer.alloc(16);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    const value = header.subarray(0, bytesRead);
+    if (mimeType === "image/jpeg") {
+      return value.length >= 3 && value[0] === 0xff && value[1] === 0xd8 && value[2] === 0xff;
+    }
+    if (mimeType === "image/png") {
+      return (
+        value.length >= 8 && value.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+      );
+    }
+    if (mimeType === "image/gif") {
+      const signature = value.subarray(0, 6).toString("ascii");
+      return signature === "GIF87a" || signature === "GIF89a";
+    }
+    if (mimeType === "image/webp") {
+      return (
+        value.length >= 12 &&
+        value.subarray(0, 4).toString("ascii") === "RIFF" &&
+        value.subarray(8, 12).toString("ascii") === "WEBP"
+      );
+    }
+    if (mimeType === "image/avif") {
+      const brand = value.subarray(8, 12).toString("ascii");
+      return (
+        value.length >= 12 &&
+        value.subarray(4, 8).toString("ascii") === "ftyp" &&
+        (brand === "avif" || brand === "avis")
+      );
+    }
+    return false;
+  } finally {
+    await handle.close();
+  }
+}
+
 function parseRange(rangeHeader: string, size: number) {
   const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
-  if (!match) {
+  if (!match || (!match[1] && !match[2])) {
     return undefined;
   }
 
-  const start = match[1] ? Number(match[1]) : 0;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return undefined;
+    return {
+      start: Math.max(0, size - suffixLength),
+      end: size - 1
+    };
+  }
+
+  const start = Number(match[1]);
   const end = match[2] ? Number(match[2]) : size - 1;
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) {
     return undefined;
@@ -758,6 +1385,69 @@ function withUrls(file: LanFileRecord, basePath: string) {
     previewUrl: `${basePath}/files/${file.id}/preview`,
     downloadUrl: `${basePath}/files/${file.id}/download`
   };
+}
+
+function withNoteUrls(note: LanNoteRecord, basePath: string) {
+  return {
+    ...note,
+    images: note.images.map((image) => ({
+      ...image,
+      previewUrl: `${basePath}/notes/${note.id}/images/${image.id}/preview`,
+      downloadUrl: `${basePath}/notes/${note.id}/images/${image.id}/download`
+    }))
+  };
+}
+
+async function sendLanNoteImage(
+  noteStore: ReturnType<typeof createLanNoteStore>,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  disposition: "inline" | "attachment"
+) {
+  const { id, imageId } = request.params as { id: string; imageId: string };
+  const note = await noteStore.get(id);
+  const image = note?.images.find((item) => item.id === imageId);
+  if (!note || !image) {
+    return reply.code(404).send(fail("LAN_NOTE_IMAGE_NOT_FOUND", "图片不存在或已过期"));
+  }
+  const imagePath = noteStore.imagePath(image.storedName);
+  let stat;
+  try {
+    stat = await fsp.stat(imagePath);
+  } catch {
+    return reply.code(404).send(fail("LAN_NOTE_IMAGE_MISSING", "图片元数据存在，但磁盘文件已丢失"));
+  }
+  reply.header("x-content-type-options", "nosniff");
+  reply.header("content-type", image.mimeType);
+  reply.header("content-length", String(stat.size));
+  if (disposition === "inline") {
+    reply.header("content-security-policy", "sandbox; default-src 'none'; img-src 'self' data:");
+  }
+  reply.header(
+    "content-disposition",
+    `${disposition}; filename*=UTF-8''${encodeURIComponent(image.originalName)}; filename="${fallbackFileName(image.originalName)}"`
+  );
+  return reply.send(fs.createReadStream(imagePath));
+}
+
+function parseLanFileIds(body: unknown) {
+  if (!isRecord(body) || !Array.isArray(body.ids)) return [];
+  return Array.from(
+    new Set(body.ids.filter((value): value is string => typeof value === "string" && value.length > 0).slice(0, 100))
+  );
+}
+
+function uniqueArchiveName(originalName: string, usedNames: Set<string>) {
+  let candidate = originalName || "file";
+  let counter = 2;
+  const extension = path.extname(candidate);
+  const stem = extension ? candidate.slice(0, -extension.length) : candidate;
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${stem} (${counter})${extension}`;
+    counter += 1;
+  }
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
 }
 
 function parseUploadSessionBody(body: unknown):
@@ -884,19 +1574,196 @@ async function checkMergeHeadroom(directory: string, session: LanChunkUploadSess
 }
 
 function getMergeHeadroomBytes(session: LanChunkUploadSession) {
-  if (session.totalChunks <= 1) {
-    return 0;
-  }
-
-  return Math.max(
-    ...Array.from({ length: session.totalChunks - 1 }, (_, index) => getExpectedChunkSize(session, index + 1))
-  );
+  // Chunks remain available for retry until the merged file is safely fsynced and renamed.
+  return session.size;
 }
 
 function isNoSpaceError(error: unknown) {
   return isRecord(error) && error.code === "ENOSPC";
 }
 
+function createLanAccessController(config: AppConfig) {
+  const cookieName = "toolbox_lan_session";
+  const sessionLifetimeSeconds = 12 * 60 * 60;
+  const sessions = new Map<string, number>();
+
+  function readToken(request: FastifyRequest) {
+    const cookieHeader = request.headers.cookie ?? "";
+    const token = cookieHeader
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(`${cookieName}=`))
+      ?.slice(cookieName.length + 1);
+    return token ? decodeURIComponent(token) : undefined;
+  }
+
+  function isAuthenticated(request: FastifyRequest) {
+    if (!config.lanTransferPin) return true;
+    const token = readToken(request);
+    if (!token) return false;
+    const expiresAt = sessions.get(token);
+    if (!expiresAt || expiresAt <= Date.now()) {
+      sessions.delete(token);
+      return false;
+    }
+    return true;
+  }
+
+  function can(request: FastifyRequest, action: LanAccessAction) {
+    if (!config.lanTransferPin || isAuthenticated(request) || config.lanTransferGuestMode === "full") return true;
+    if (config.lanTransferGuestMode === "upload-only") return action === "upload";
+    if (config.lanTransferGuestMode === "download-only") return action === "read";
+    return false;
+  }
+
+  return {
+    isAuthenticated,
+    can,
+    authorize(request: FastifyRequest, reply: FastifyReply, action: LanAccessAction) {
+      if (can(request, action)) return true;
+      const status = config.lanTransferPin ? 401 : 403;
+      reply
+        .code(status)
+        .send(fail(config.lanTransferPin ? "LAN_PIN_REQUIRED" : "LAN_ACCESS_DENIED", "需要管理 PIN 才能执行此操作"));
+      return false;
+    },
+    login(pin: string) {
+      if (!config.lanTransferPin || safeStringEquals(pin, config.lanTransferPin)) {
+        const token = randomBytes(24).toString("base64url");
+        sessions.set(token, Date.now() + sessionLifetimeSeconds * 1000);
+        return token;
+      }
+      return undefined;
+    },
+    logout(request: FastifyRequest) {
+      const token = readToken(request);
+      if (token) sessions.delete(token);
+    },
+    sessionCookie(token: string) {
+      return `${cookieName}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=${sessionLifetimeSeconds}`;
+    },
+    expiredSessionCookie() {
+      return `${cookieName}=; HttpOnly; SameSite=Strict; Path=/api; Max-Age=0`;
+    }
+  };
+}
+
+function createLanAuditLog(logPath: string) {
+  let queue = Promise.resolve();
+  return {
+    write(event: string, request: FastifyRequest, details: unknown = undefined) {
+      const entry = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        event,
+        remoteAddress: request.ip,
+        details
+      });
+      const operation = queue.then(async () => {
+        await fsp.mkdir(path.dirname(logPath), { recursive: true });
+        await fsp.appendFile(logPath, `${entry}\n`, "utf8");
+      });
+      queue = operation.catch(() => undefined);
+      return operation.catch(() => undefined);
+    }
+  };
+}
+
+function safeStringEquals(left: string, right: string) {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getLanWebUrls(port: number) {
+  const addresses = Object.values(os.networkInterfaces())
+    .flatMap((items) => items ?? [])
+    .filter((item) => item.family === "IPv4" && !item.internal && !item.address.startsWith("169.254."))
+    .map((item) => item.address);
+  return Array.from(new Set(addresses)).map((address) => `http://${address}:${port}/tools/lan-transfer`);
+}
+
+async function ensureJsonIndex(indexPath: string) {
+  const backupPath = `${indexPath}.bak`;
+  try {
+    await fsp.access(indexPath);
+    return;
+  } catch {
+    try {
+      await fsp.copyFile(backupPath, indexPath);
+      return;
+    } catch {
+      await fsp.writeFile(indexPath, "[]");
+    }
+  }
+}
+
+async function readJsonIndex(indexPath: string) {
+  await ensureJsonIndex(indexPath);
+  return fsp.readFile(indexPath, "utf8");
+}
+
+async function writeJsonIndex(indexPath: string, value: unknown) {
+  const temporaryPath = `${indexPath}.${process.pid}.${nanoid(6)}.tmp`;
+  const backupPath = `${indexPath}.bak`;
+  const handle = await fsp.open(temporaryPath, "wx");
+  try {
+    await handle.writeFile(JSON.stringify(value, null, 2));
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+
+  await fsp.rm(backupPath, { force: true });
+  try {
+    await fsp.rename(indexPath, backupPath);
+  } catch (error) {
+    if (!isRecord(error) || error.code !== "ENOENT") throw error;
+  }
+
+  try {
+    await fsp.rename(temporaryPath, indexPath);
+  } catch (error) {
+    await fsp.rm(temporaryPath, { force: true });
+    try {
+      await fsp.rename(backupPath, indexPath);
+    } catch {
+      // The original error is more actionable; startup recovery will retry the backup.
+    }
+    throw error;
+  }
+}
+
+function isLanUploadSession(value: unknown): value is LanChunkUploadSession {
+  return (
+    isRecord(value) &&
+    typeof value.uploadId === "string" &&
+    typeof value.originalName === "string" &&
+    typeof value.mimeType === "string" &&
+    Number.isSafeInteger(value.size) &&
+    Number.isSafeInteger(value.chunkSize) &&
+    Number.isSafeInteger(value.totalChunks) &&
+    Array.isArray(value.uploadedChunks) &&
+    value.uploadedChunks.every((item) => Number.isSafeInteger(item)) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function lanNoteMultipartError(error: unknown) {
+  if (!isRecord(error)) return undefined;
+  const code = String(error.code ?? "");
+  if (code.includes("FILES_LIMIT")) {
+    return new LanNoteInputError("LAN_NOTE_TOO_MANY_IMAGES", 413, `每条图文最多上传 ${lanNoteLimits.maxImages} 张图片`);
+  }
+  if (code.includes("FILE_TOO_LARGE")) {
+    return new LanNoteInputError("LAN_NOTE_IMAGE_TOO_LARGE", 413, "单张图片不能超过 10 MB");
+  }
+  if (code.includes("FIELDS_LIMIT") || code.includes("PARTS_LIMIT")) {
+    return new LanNoteInputError("LAN_NOTE_MULTIPART_INVALID", 400, "图文表单字段过多");
+  }
+  return undefined;
 }

@@ -1,4 +1,4 @@
-export type ShortVideoPlatform = "auto" | "douyin" | "xiaohongshu" | "unknown";
+export type ShortVideoPlatform = "auto" | "douyin" | "xiaohongshu" | "tiktok" | "unknown";
 
 export type ShortVideoMedia = {
   type: "video" | "image";
@@ -34,7 +34,8 @@ export type ShortVideoParseResult = {
   coverUrl?: string;
   media: ShortVideoMedia[];
   music?: ShortVideoMusic;
-  provider: "bugpk";
+  provider: "bugpk" | "tiktok-oembed";
+  embedUrl?: string;
   providerMessage?: string;
   cacheStatus?: string;
   warnings: string[];
@@ -82,12 +83,17 @@ export function extractFirstUrl(text: string) {
 
 export function detectShortVideoPlatform(url: string): ShortVideoPlatform {
   try {
-    const hostname = new URL(url).hostname.toLowerCase().replace(/\.$/, "");
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return "unknown";
+    const hostname = parsedUrl.hostname.toLowerCase().replace(/\.$/, "");
     if (matchesDomain(hostname, "douyin.com") || matchesDomain(hostname, "iesdouyin.com")) {
       return "douyin";
     }
     if (matchesDomain(hostname, "xiaohongshu.com") || matchesDomain(hostname, "xhslink.com")) {
       return "xiaohongshu";
+    }
+    if (matchesDomain(hostname, "tiktok.com")) {
+      return "tiktok";
     }
     return "unknown";
   } catch {
@@ -177,6 +183,7 @@ export function normalizeShortVideoProviderResult(
 function normalizePlatform(value: string): ShortVideoPlatform {
   if (value === "douyin") return "douyin";
   if (value === "xiaohongshu" || value === "xhs") return "xiaohongshu";
+  if (value === "tiktok") return "tiktok";
   if (value === "auto") return "auto";
   return "unknown";
 }

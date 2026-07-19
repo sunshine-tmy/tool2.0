@@ -4,7 +4,7 @@
       <div class="section-title">
         <div>
           <h2>短视频解析</h2>
-          <p>粘贴抖音或小红书公开分享链接，提取视频、图集、封面和作者信息。</p>
+          <p>粘贴抖音、小红书或 TikTok 公开分享链接，提取视频、图集、封面和作者信息。</p>
         </div>
       </div>
 
@@ -14,7 +14,7 @@
             v-model:value="inputText"
             type="textarea"
             :autosize="{ minRows: 5, maxRows: 8 }"
-            placeholder="粘贴分享文案或链接，例如 https://v.douyin.com/... 或 https://www.xiaohongshu.com/explore/..."
+            placeholder="粘贴分享文案或链接，例如 https://v.douyin.com/...、https://www.xiaohongshu.com/explore/... 或 https://www.tiktok.com/@user/video/..."
           />
 
           <div class="short-video-controls">
@@ -47,7 +47,17 @@
 
         <div class="short-video-result-grid">
           <div class="short-video-cover">
-            <img v-if="result.coverUrl" :src="result.coverUrl" alt="封面" loading="lazy" decoding="async" />
+            <iframe
+              v-if="result.embedUrl"
+              class="short-video-embed"
+              :src="result.embedUrl"
+              title="TikTok 官方视频预览"
+              loading="lazy"
+              allow="fullscreen; autoplay; encrypted-media; picture-in-picture"
+              allowfullscreen
+              referrerpolicy="strict-origin-when-cross-origin"
+            />
+            <img v-else-if="result.coverUrl" :src="result.coverUrl" alt="封面" loading="lazy" decoding="async" />
             <div v-else class="empty-cover">
               <Clapperboard :size="32" />
             </div>
@@ -141,7 +151,8 @@ const downloadingUrls = ref<string[]>([]);
 const platformOptions: PlatformOption[] = [
   { label: "自动识别", value: "auto" },
   { label: "抖音", value: "douyin" },
-  { label: "小红书", value: "xiaohongshu" }
+  { label: "小红书", value: "xiaohongshu" },
+  { label: "TikTok", value: "tiktok" }
 ];
 
 async function parse() {
@@ -200,6 +211,7 @@ async function extractCopywriting(item: ShortVideoMedia) {
 function platformName(value: ShortVideoResult["platform"]) {
   if (value === "douyin") return "抖音";
   if (value === "xiaohongshu") return "小红书";
+  if (value === "tiktok") return "TikTok";
   return "未知平台";
 }
 

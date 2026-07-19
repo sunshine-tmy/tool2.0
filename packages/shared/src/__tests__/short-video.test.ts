@@ -9,6 +9,9 @@ describe("short video helpers", () => {
   it("detects supported platforms from public share urls", () => {
     expect(detectShortVideoPlatform("https://v.douyin.com/abc123/")).toBe("douyin");
     expect(detectShortVideoPlatform("https://www.xiaohongshu.com/explore/abc")).toBe("xiaohongshu");
+    expect(detectShortVideoPlatform("https://www.tiktok.com/@creator/video/123456789")).toBe("tiktok");
+    expect(detectShortVideoPlatform("https://vm.tiktok.com/abc123/")).toBe("tiktok");
+    expect(detectShortVideoPlatform("https://vt.tiktok.com/abc123/")).toBe("tiktok");
     expect(detectShortVideoPlatform("https://example.com/watch/1")).toBe("unknown");
   });
 
@@ -16,6 +19,37 @@ describe("short video helpers", () => {
     expect(detectShortVideoPlatform("https://evildouyin.com/video/1")).toBe("unknown");
     expect(detectShortVideoPlatform("https://douyin.com.attacker.test/video/1")).toBe("unknown");
     expect(detectShortVideoPlatform("https://evilxiaohongshu.com/explore/1")).toBe("unknown");
+    expect(detectShortVideoPlatform("https://eviltiktok.com/video/1")).toBe("unknown");
+    expect(detectShortVideoPlatform("https://tiktok.com.attacker.test/video/1")).toBe("unknown");
+    expect(detectShortVideoPlatform("ftp://tiktok.com/video/1")).toBe("unknown");
+  });
+
+  it("normalizes TikTok provider responses", () => {
+    const result = normalizeShortVideoProviderResult(
+      {
+        code: 200,
+        platform: "tiktok",
+        data: {
+          type: "video",
+          title: "TikTok demo",
+          author: { name: "creator", id: "creator-id", avatar: "https://cdn.test/avatar.jpeg" },
+          cover: "https://cdn.test/cover.webp",
+          url: "https://cdn.test/video.mp4"
+        }
+      },
+      {
+        sourceUrl: "https://www.tiktok.com/@creator/video/123456789",
+        requestedPlatform: "auto"
+      }
+    );
+
+    expect(result).toMatchObject({
+      platform: "tiktok",
+      title: "TikTok demo",
+      author: { name: "creator", id: "creator-id" },
+      coverUrl: "https://cdn.test/cover.webp",
+      media: [{ type: "video", url: "https://cdn.test/video.mp4" }]
+    });
   });
 
   it("normalizes provider video and image media into a stable result shape", () => {
