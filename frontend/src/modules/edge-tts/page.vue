@@ -1,17 +1,18 @@
 <template>
   <ToolLayout>
     <section class="edge-tts-page">
-      <div class="page-heading edge-tts-heading">
-        <div>
-          <p class="eyebrow">EDGE ONLINE SPEECH</p>
-          <h2>多国语言配音</h2>
-          <p>在线自然音色和参考音色克隆均支持马来语、英语和巴西葡萄牙语。</p>
-        </div>
-        <n-tag v-if="engine === 'edge'" :type="health?.available ? 'success' : 'error'" round>
-          {{ health?.available ? `Edge-TTS ${health.version || "已就绪"}` : "运行环境未安装" }}
-        </n-tag>
-        <n-tag v-else type="info" round>Chatterbox Multilingual V3</n-tag>
-      </div>
+      <ToolPageHeader
+        title="多国语言配音"
+        description="在线自然音色和参考音色克隆均支持马来语、英语和巴西葡萄牙语。"
+        kicker="MULTILINGUAL SPEECH"
+      >
+        <template #actions>
+          <n-tag v-if="engine === 'edge'" :type="health?.available ? 'success' : 'error'" round>
+            {{ health?.available ? `Edge-TTS ${health.version || "已就绪"}` : "运行环境未安装" }}
+          </n-tag>
+          <n-tag v-else type="info" round>Chatterbox Multilingual V3</n-tag>
+        </template>
+      </ToolPageHeader>
 
       <div v-if="engine === 'edge'" class="edge-tts-privacy">
         <Cloud :size="18" />
@@ -19,10 +20,22 @@
       </div>
 
       <div class="edge-tts-engine-tabs" role="tablist" aria-label="配音引擎">
-        <button type="button" :class="{ active: engine === 'edge' }" role="tab" @click="engine = 'edge'">
+        <button
+          type="button"
+          :class="{ active: engine === 'edge' }"
+          role="tab"
+          :aria-selected="engine === 'edge'"
+          @click="engine = 'edge'"
+        >
           <Cloud :size="18" /><span><strong>在线自然音色</strong><small>Edge-TTS · 免参考音频</small></span>
         </button>
-        <button type="button" :class="{ active: engine === 'chatterbox' }" role="tab" @click="engine = 'chatterbox'">
+        <button
+          type="button"
+          :class="{ active: engine === 'chatterbox' }"
+          role="tab"
+          :aria-selected="engine === 'chatterbox'"
+          @click="engine = 'chatterbox'"
+        >
           <Mic2 :size="18" /><span><strong>参考音色克隆</strong><small>Chatterbox V3 · 本机 GPU</small></span>
         </button>
       </div>
@@ -251,6 +264,7 @@ import {
   type EdgeTtsVoice
 } from "@toolbox/shared";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { resolveBackendUrl } from "../../config/runtime";
 import { edgeTtsApi } from "./api";

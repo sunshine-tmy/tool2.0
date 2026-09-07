@@ -1,12 +1,11 @@
 <template>
   <ToolLayout>
     <section class="main-column short-video-main">
-      <div class="section-title">
-        <div>
-          <h2>短视频解析</h2>
-          <p>粘贴抖音、小红书或 TikTok 公开分享链接，提取视频、图集、封面和作者信息。</p>
-        </div>
-      </div>
+      <ToolPageHeader
+        title="短视频解析"
+        description="粘贴抖音、小红书或 TikTok 公开分享链接，提取视频、图集、封面和作者信息。"
+        kicker="SOCIAL MEDIA PARSER"
+      />
 
       <section class="workspace-panel short-video-panel">
         <div class="short-video-form">
@@ -130,6 +129,7 @@ import { useRouter } from "vue-router";
 import { NButton, NInput, NTag, useMessage } from "naive-ui";
 import { Clapperboard, Download, FileText, Link2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { shortVideoApi } from "./api";
 import { createShortVideoDownloadName, triggerShortVideoDownload } from "./download";

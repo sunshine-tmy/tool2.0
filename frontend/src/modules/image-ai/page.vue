@@ -1,21 +1,22 @@
 <template>
   <ToolLayout>
     <section class="main-column image-ai-main">
-      <div class="section-title image-ai-title">
-        <div>
-          <span class="eyebrow">Local AI · 图片不出网</span>
-          <h2>AI 图片处理</h2>
-          <p>去水印、变清晰和商品图抠图统一在本机完成，处理结果 24 小时后自动清理。</p>
-        </div>
-        <div class="image-ai-health" :class="{ 'is-ready': health?.available }">
-          <span class="status-dot" />
-          <div>
-            <strong>{{ health?.available ? "推理服务可用" : "推理服务未就绪" }}</strong>
-            <small>{{ healthLabel }}</small>
+      <ToolPageHeader
+        title="AI 图片处理"
+        description="去水印、变清晰和商品图抠图统一在本机完成，处理结果 24 小时后自动清理。"
+        kicker="LOCAL AI · 图片不出网"
+      >
+        <template #actions>
+          <div class="image-ai-health" :class="{ 'is-ready': health?.available }">
+            <span class="status-dot" />
+            <div>
+              <strong>{{ health?.available ? "推理服务可用" : "推理服务未就绪" }}</strong>
+              <small>{{ healthLabel }}</small>
+            </div>
+            <n-button size="small" tertiary :loading="loadingHealth" @click="loadHealth">刷新</n-button>
           </div>
-          <n-button size="small" tertiary :loading="loadingHealth" @click="loadHealth">刷新</n-button>
-        </div>
-      </div>
+        </template>
+      </ToolPageHeader>
 
       <n-alert type="warning" :bordered="false" class="rights-alert">
         仅处理你拥有合法使用权的图片。OCR 框选只是水印区域建议，必须由你确认后才会执行修复。
@@ -216,6 +217,7 @@ import {
   X
 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import BeforeAfterCompare from "./BeforeAfterCompare.vue";
 import MaskEditor from "./MaskEditor.vue";
 import { absoluteImageAiUrl, imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";

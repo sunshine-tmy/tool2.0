@@ -1,12 +1,12 @@
 <template>
   <ToolLayout>
     <section class="main-column image-compress-main">
-      <div class="section-title">
-        <div>
-          <h2>图片压缩</h2>
-          <p>批量压缩商品图、详情页素材和社媒图片，压缩后保留清晰度与下载记录。</p>
-        </div>
-        <div class="result-actions">
+      <ToolPageHeader
+        title="图片压缩"
+        description="批量压缩商品图、详情页素材和社媒图片，压缩后保留清晰度与下载记录。"
+        kicker="IMAGE OPTIMIZER"
+      >
+        <template #actions>
           <n-button secondary :loading="downloading" :disabled="!completedItems.length" @click="downloadAll">
             <template #icon>
               <Download :size="16" />
@@ -19,8 +19,8 @@
             </template>
             清空
           </n-button>
-        </div>
-      </div>
+        </template>
+      </ToolPageHeader>
 
       <section class="workspace-panel image-compress-panel">
         <label
@@ -165,6 +165,7 @@ import {
 } from "naive-ui";
 import { Download, ImageDown, Trash2, UploadCloud } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { resolveBackendUrl } from "../../config/runtime";
 import { imageCompressApi, type ImageToolResponse } from "./api";
 import { createImageItemId } from "./image-id";

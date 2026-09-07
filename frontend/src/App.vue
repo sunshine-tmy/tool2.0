@@ -2,7 +2,14 @@
   <n-config-provider :theme-overrides="themeOverrides">
     <n-message-provider>
       <n-dialog-provider>
-        <router-view />
+        <UiErrorBoundary>
+          <router-view v-slot="{ Component }">
+            <Suspense>
+              <component :is="Component" />
+              <template #fallback><RouteLoading /></template>
+            </Suspense>
+          </router-view>
+        </UiErrorBoundary>
       </n-dialog-provider>
     </n-message-provider>
   </n-config-provider>
@@ -10,6 +17,8 @@
 
 <script setup lang="ts">
 import { NConfigProvider, NDialogProvider, NMessageProvider, type GlobalThemeOverrides } from "naive-ui";
+import UiErrorBoundary from "./components/UiErrorBoundary.vue";
+import RouteLoading from "./components/RouteLoading.vue";
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {
@@ -22,27 +31,29 @@ const themeOverrides: GlobalThemeOverrides = {
     warningColor: "#d97706",
     errorColor: "#dc2626",
     textColorBase: "#172033",
-    bodyColor: "#f5f7fb",
-    borderColor: "#e4e9f2",
+    bodyColor: "#f6f8fc",
+    borderColor: "#e2e8f0",
     borderRadius: "8px",
-    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+    fontFamily:
+      'Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
   },
   Button: {
     borderRadiusMedium: "8px",
-    heightMedium: "38px"
+    heightMedium: "40px",
+    heightLarge: "44px"
   },
   Card: {
-    borderRadius: "8px"
+    borderRadius: "12px"
   },
   Input: {
     borderRadius: "8px",
-    heightMedium: "38px"
+    heightMedium: "40px"
   },
   Select: {
     peers: {
       InternalSelection: {
         borderRadius: "8px",
-        heightMedium: "38px"
+        heightMedium: "40px"
       }
     }
   }

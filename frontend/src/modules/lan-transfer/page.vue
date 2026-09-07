@@ -1,18 +1,20 @@
 <template>
   <ToolLayout>
     <section class="main-column lan-main">
-      <div class="section-title">
-        <div>
-          <h2>局域网文件传输</h2>
-          <p>同一局域网内收发文件和图文便签，支持复制、预览、筛选、下载和删除。</p>
-        </div>
-        <n-button secondary @click="refreshLanTransfer">
-          <template #icon>
-            <RefreshCw :size="16" />
-          </template>
-          刷新列表
-        </n-button>
-      </div>
+      <ToolPageHeader
+        title="局域网文件传输"
+        description="同一局域网内收发文件和图文便签，支持复制、预览、筛选、下载和删除。"
+        kicker="LOCAL FILE SHARING"
+      >
+        <template #actions>
+          <n-button secondary @click="refreshLanTransfer">
+            <template #icon>
+              <RefreshCw :size="16" />
+            </template>
+            刷新列表
+          </n-button>
+        </template>
+      </ToolPageHeader>
 
       <section class="workspace-panel lan-panel">
         <div class="lan-share-card">
@@ -417,6 +419,7 @@ import { lanFileCategories, lanNoteLimits } from "@toolbox/shared";
 import { FileArchive, FileText, FileVideo, ImageDown, Music, RefreshCw, UploadCloud } from "lucide-vue-next";
 import QRCode from "qrcode";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { currentWebUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";

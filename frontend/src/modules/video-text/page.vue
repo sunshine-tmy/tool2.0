@@ -1,12 +1,11 @@
 <template>
   <ToolLayout>
     <section class="main-column video-text-main">
-      <div class="section-title">
-        <div>
-          <h2>视频文本解析</h2>
-          <p>上传视频并调用本地语音识别提取文案，支持时间轴、摘要和结果导出。</p>
-        </div>
-      </div>
+      <ToolPageHeader
+        title="视频文本解析"
+        description="上传视频并调用本地语音识别提取文案，支持时间轴、摘要和结果导出。"
+        kicker="VIDEO TRANSCRIPTION"
+      />
 
       <section class="workspace-panel video-text-panel">
         <div class="video-text-grid">
@@ -227,6 +226,7 @@ import { useRoute } from "vue-router";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NProgress, useMessage } from "naive-ui";
 import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { resolveApiUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
