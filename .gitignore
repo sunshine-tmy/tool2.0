@@ -8,6 +8,7 @@ dist/
 *.tsbuildinfo
 coverage/
 .logs/
+.package/
 **/.vite/
 **/.cache/
 .venv-image-ai/
@@ -40,7 +41,6 @@ storage/lan-transfer/*.jsonl
 storage/image-ai/**
 backend/storage/**
 storage/video-text/**
-storage/video-insights/**
 storage/edge-tts/**
 storage/chatterbox/**
 

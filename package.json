@@ -18,6 +18,7 @@
     "build:backend": "pnpm --filter backend build",
     "build:web": "pnpm --filter frontend build",
     "clean": "node scripts/clean.mjs",
+    "clear:generated": "node scripts/clear-generated.mjs",
     "smoke": "node scripts/smoke-build.mjs",
     "start": "pnpm --filter backend start",
     "preview:web": "pnpm --filter frontend preview",

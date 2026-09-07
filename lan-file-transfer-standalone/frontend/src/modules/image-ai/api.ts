@@ -1,0 +1,70 @@
+import type { ImageAiHealth, ImageAiInstallation, ImageAiTask, WatermarkSuggestionResponse } from "@toolbox/shared";
+import { httpClient, withApiError } from "../../services/http";
+import { resolveBackendUrl } from "../../config/runtime";
+
+class ImageAiApi {
+  async health() {
+    return withApiError(() => httpClient.get<ImageAiHealth>("/tools/image-ai/health"), "无法读取 AI 模型状态");
+  }
+
+  async install() {
+    return withApiError(
+      () => httpClient.post<ImageAiInstallation>("/tools/image-ai/install"),
+      "无法启动 AI 环境安装"
+    );
+  }
+
+  async startWorker() {
+    return withApiError(
+      () => httpClient.post<ImageAiInstallation>("/tools/image-ai/worker/start"),
+      "无法启动 AI 推理服务"
+    );
+  }
+
+  async suggestions(file: File) {
+    const form = new FormData();
+    form.append("file", file);
+    return withApiError(
+      () => httpClient.post<WatermarkSuggestionResponse>("/tools/image-ai/watermark/suggestions", form),
+      "水印智能提示失败"
+    );
+  }
+
+  async createTask(form: FormData) {
+    return withApiError(
+      () => httpClient.post<ImageAiTask>("/tools/image-ai/tasks", form, { timeout: 220000 }),
+      "创建图片处理任务失败"
+    );
+  }
+
+  async getTask(taskId: string) {
+    return withApiError(() => httpClient.get<ImageAiTask>(`/tools/image-ai/tasks/${taskId}`), "读取图片处理任务失败");
+  }
+
+  async cancelTask(taskId: string) {
+    return withApiError(
+      () => httpClient.delete<ImageAiTask>(`/tools/image-ai/tasks/${taskId}`),
+      "取消图片处理任务失败"
+    );
+  }
+}
+
+export const imageAiApi = new ImageAiApi();
+
+export function absoluteImageAiUrl(url: string) {
+  return resolveBackendUrl(url);
+}
+
+export function resultDownloadUrl(url: string) {
+  const separator = url.includes("?") ? "&" : "?";
+  return absoluteImageAiUrl(`${url}${separator}download=1`);
+}
+
+export function triggerImageAiDownload(url: string) {
+  const anchor = document.createElement("a");
+  anchor.href = absoluteImageAiUrl(url);
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}

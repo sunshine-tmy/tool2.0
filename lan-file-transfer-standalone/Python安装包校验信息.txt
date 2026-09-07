@@ -1,0 +1,22 @@
+Python 3.11.9 官方安装包
+========================
+
+来源页面：
+https://www.python.org/downloads/release/python-3119/
+
+Windows 10/11 64 位：
+文件：python-3.11.9-amd64.exe
+大小：26216840 字节
+SHA-256：5EE42C4EEE1E6B4464BB23722F90B45303F79442DF63083F05322F1785F5FDDE
+签名：Python Software Foundation Authenticode 签名，有效
+官方地址：https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+
+Apple Silicon Mac：
+文件：python-3.11.9-macos11.pkg
+类型：macOS 64-bit Universal2（包含 ARM64）
+大小：44860848 字节
+SHA-256：B6CFDEE2571CA56EE895043CA1E7110FB78A878CEE3EB0C21ACCB2DE34D24B55
+官方地址：https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg
+
+随附的同名 .sigstore 文件来自 Python 官方下载目录。
+上面两个 SHA-256 已与各自 Sigstore messageDigest 核对一致。

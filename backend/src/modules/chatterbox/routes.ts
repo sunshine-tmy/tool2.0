@@ -24,6 +24,7 @@ import {
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { registerChatterboxBatchRoutes } from "./batch-routes";
 import { ChatterboxWorkerError, createChatterboxWorkerClient } from "./worker-client";
 
 const execFileAsync = promisify(execFile);
@@ -71,6 +72,13 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
   };
 
   const queue = new ChatterboxQueue({ config, store, worker, media });
+  const batchQueue = await registerChatterboxBatchRoutes({
+    app,
+    config,
+    worker,
+    media,
+    externalQueueStats: () => queue.stats()
+  });
   for (const task of store.list()) {
     if (task.status === "queued") queue.enqueue(task.id);
   }
@@ -82,7 +90,12 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
     } catch {
       status = undefined;
     }
-    const stats = queue.stats();
+    const legacyStats = queue.stats();
+    const batchStats = batchQueue.stats();
+    const stats = {
+      active: legacyStats.active + batchStats.active,
+      queued: legacyStats.queued + batchStats.queued
+    };
     const data: ChatterboxHealth = {
       available: status?.available === true,
       workerAvailable: status?.available === true,
@@ -111,7 +124,11 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
   });
 
   app.post("/api/tools/edge-tts/chatterbox/tasks", async (request, reply) => {
-    if (queue.stats().active + queue.stats().queued >= config.chatterboxQueueLimit) {
+    const batchStats = batchQueue.stats();
+    if (
+      queue.stats().active + queue.stats().queued + batchStats.active + batchStats.queued >=
+      config.chatterboxQueueLimit
+    ) {
       return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
     }
     try {
@@ -421,6 +438,39 @@ class ChatterboxMediaTools {
     await fsp.rename(tempPath, outputPath);
   }
 
+  async concatMp3(inputPaths: string[], outputPath: string) {
+    if (!inputPaths.length) throw new Error("没有可合并的 Chatterbox 音频");
+    const tempPath = `${outputPath}.tmp.mp3`;
+    if (inputPaths.length === 1) {
+      await fsp.copyFile(inputPaths[0], tempPath);
+    } else {
+      const inputs = inputPaths.flatMap((inputPath) => ["-i", inputPath]);
+      const streams = inputPaths.map((_, index) => `[${index}:a:0]`).join("");
+      await execFileAsync(
+        this.config.chatterboxFfmpegPath,
+        [
+          "-y",
+          "-v",
+          "error",
+          ...inputs,
+          "-filter_complex",
+          `${streams}concat=n=${inputPaths.length}:v=0:a=1[out]`,
+          "-map",
+          "[out]",
+          "-codec:a",
+          "libmp3lame",
+          "-b:a",
+          "192k",
+          tempPath
+        ],
+        { timeout: 300_000, windowsHide: true, maxBuffer: 1024 * 1024 }
+      );
+    }
+    const stat = await fsp.stat(tempPath);
+    if (stat.size <= 0 || !(await isMp3File(tempPath))) throw new Error("Chatterbox 合并 MP3 输出无效");
+    await replaceFile(tempPath, outputPath);
+  }
+
   async duration(filePath: string) {
     try {
       const result = await execFileAsync(
@@ -499,7 +549,7 @@ function parseFields(
   if (text.length > CHATTERBOX_MAX_TEXT_LENGTH) {
     return invalid("CHATTERBOX_TEXT_TOO_LONG", `声音克隆文案不能超过 ${CHATTERBOX_MAX_TEXT_LENGTH} 个字符`, 413);
   }
-  if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语或英语");
+  if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语");
   if (!isAuthorization(fields.authorization)) return invalid("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源");
   if (fields.consentConfirmed !== "true") {
     return invalid("CHATTERBOX_CONSENT_REQUIRED", "必须确认已获得参考声音的合法授权");
@@ -848,6 +898,23 @@ async function isMp3File(filePath: string) {
     );
   } finally {
     await handle.close();
+  }
+}
+
+async function replaceFile(source: string, target: string) {
+  const backup = `${target}.backup`;
+  await fsp.rm(backup, { force: true });
+  const targetExists = await fsp.stat(target).then(
+    (stat) => stat.isFile(),
+    () => false
+  );
+  if (targetExists) await fsp.rename(target, backup);
+  try {
+    await fsp.rename(source, target);
+    await fsp.rm(backup, { force: true });
+  } catch (error) {
+    if (targetExists) await fsp.rename(backup, target);
+    throw error;
   }
 }
 

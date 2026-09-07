@@ -63,294 +63,310 @@
           <n-button size="small" tertiary @click="clearPendingUploadRecords">清除失效记录</n-button>
         </div>
 
-        <label
-          v-if="canUploadFiles"
-          class="dropzone lan-dropzone"
-          :class="{ 'is-dragging': isDraggingFiles }"
-          tabindex="0"
-          @keydown.enter.prevent="lanFileInput?.click()"
-          @keydown.space.prevent="lanFileInput?.click()"
-          @dragenter.prevent="isDraggingFiles = true"
-          @dragover.prevent="isDraggingFiles = true"
-          @dragleave.prevent="isDraggingFiles = false"
-          @drop.prevent="onLanFilesDrop"
-        >
-          <input ref="lanFileInput" hidden multiple type="file" @change="onLanFilesChange" />
-          <UploadCloud :size="28" />
-          <span>点击选择文件上传，支持图片、视频、音频、文本、PDF、压缩包和文档</span>
-          <small
-            >单文件上限 {{ formatBytes(lanInfo?.maxFileBytes ?? 20 * 1024 ** 3) }}，默认保留
-            {{ lanInfo?.retentionDays ?? 3 }} 天</small
-          >
-        </label>
+        <n-tabs v-model:value="activeLanTab" class="lan-workspace-tabs" type="line" animated>
+          <n-tab-pane name="files" tab="文件传输" display-directive="show">
+            <label
+              v-if="canUploadFiles"
+              class="dropzone lan-dropzone"
+              :class="{ 'is-dragging': isDraggingFiles }"
+              tabindex="0"
+              @keydown.enter.prevent="lanFileInput?.click()"
+              @keydown.space.prevent="lanFileInput?.click()"
+              @dragenter.prevent="isDraggingFiles = true"
+              @dragover.prevent="isDraggingFiles = true"
+              @dragleave.prevent="isDraggingFiles = false"
+              @drop.prevent="onLanFilesDrop"
+            >
+              <input ref="lanFileInput" hidden multiple type="file" @change="onLanFilesChange" />
+              <UploadCloud :size="28" />
+              <span>点击选择、拖拽或粘贴文件，支持图片、视频、音频、文本、PDF、压缩包和文档</span>
+              <small
+                >在此页面按 Ctrl+V（macOS 按 Command+V）即可上传 · 单文件上限
+                {{ formatBytes(lanInfo?.maxFileBytes ?? 20 * 1024 ** 3) }}，默认保留
+                {{ lanInfo?.retentionDays ?? 3 }} 天</small
+              >
+            </label>
 
-        <div v-if="uploadQueue.length" class="upload-list">
-          <div v-for="item in uploadQueue" :key="item.id" class="task-row">
-            <strong>{{ item.name }} · {{ formatBytes(item.size) }}</strong>
-            <n-progress
-              type="line"
-              :percentage="item.progress"
-              :status="item.status === 'failed' ? 'error' : item.status === 'done' ? 'success' : 'default'"
-              indicator-placement="inside"
-            />
-            <div class="upload-actions">
-              <n-button v-if="item.status === 'uploading'" tertiary size="small" @click="item.uploader?.pause()"
-                >暂停</n-button
-              >
-              <n-button
-                v-if="item.status === 'paused' || item.status === 'failed'"
-                secondary
-                size="small"
-                @click="item.uploader?.resume()"
-                >继续</n-button
-              >
-              <n-button
-                v-if="item.status === 'uploading' || item.status === 'paused' || item.status === 'failed'"
-                tertiary
-                size="small"
-                type="error"
-                @click="item.uploader?.cancel()"
-              >
-                取消
-              </n-button>
-            </div>
-          </div>
-        </div>
-
-        <section class="lan-note-section">
-          <div class="lan-note-heading">
-            <div>
-              <h3>图文快传</h3>
-              <p>发送文字、链接、验证码或图文内容，局域网内其他设备可直接复制和查看。</p>
-            </div>
-            <span v-if="lanInfo">{{ lanInfo.noteCount ?? 0 }} 条 · 默认保留 {{ lanInfo.retentionDays }} 天</span>
-          </div>
-
-          <div v-if="canUploadFiles" class="lan-note-composer" @paste="onNotePaste">
-            <n-input
-              v-model:value="noteTitle"
-              clearable
-              :maxlength="lanNoteLimits.titleCharacters"
-              placeholder="标题（可选）"
-            />
-            <n-input
-              v-model:value="noteContent"
-              type="textarea"
-              :autosize="{ minRows: 3, maxRows: 10 }"
-              :maxlength="lanNoteLimits.contentCharacters"
-              show-count
-              placeholder="输入要传输的文字、链接、地址或说明……"
-            />
-            <div class="lan-note-picker">
-              <input
-                ref="noteImageInput"
-                hidden
-                multiple
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
-                @change="onNoteImagesChange"
-              />
-              <n-button
-                secondary
-                :disabled="noteImages.length >= lanNoteLimits.maxImages"
-                @click="noteImageInput?.click()"
-              >
-                添加图片 {{ noteImages.length }}/{{ lanNoteLimits.maxImages }}
-              </n-button>
-              <span>单张不超过 10 MB，合计不超过 30 MB；支持直接粘贴剪贴板截图</span>
-            </div>
-            <div v-if="noteImages.length" class="lan-note-draft-images">
-              <figure v-for="(image, index) in noteImages" :key="image.id">
-                <img :src="image.previewUrl" :alt="image.file.name" />
-                <figcaption>
-                  <span>{{ image.file.name }}</span>
-                  <n-button tertiary size="tiny" type="error" @click="removeNoteImage(index)">移除</n-button>
-                </figcaption>
-              </figure>
-            </div>
-            <div class="lan-note-publish-actions">
-              <span
-                >{{ noteContent.length.toLocaleString() }} /
-                {{ lanNoteLimits.contentCharacters.toLocaleString() }} 字</span
-              >
-              <n-button type="primary" :loading="publishingNote" @click="publishNote">发布图文</n-button>
-            </div>
-          </div>
-
-          <div v-if="canReadFiles" class="lan-note-list">
-            <article v-for="note in lanNotes" :key="note.id" class="lan-note-card">
-              <header>
-                <div>
-                  <strong>{{ note.title || "图文快传" }}</strong>
-                  <span>发布 {{ formatDate(note.createdAt) }} · 过期 {{ formatDate(note.expiresAt) }}</span>
+            <div v-if="uploadQueue.length" class="upload-list">
+              <div v-for="item in uploadQueue" :key="item.id" class="task-row">
+                <strong>{{ item.name }} · {{ formatBytes(item.size) }}</strong>
+                <n-progress
+                  type="line"
+                  :percentage="item.progress"
+                  :status="item.status === 'failed' ? 'error' : item.status === 'done' ? 'success' : 'default'"
+                  indicator-placement="inside"
+                />
+                <div class="upload-actions">
+                  <n-button v-if="item.status === 'uploading'" tertiary size="small" @click="item.uploader?.pause()"
+                    >暂停</n-button
+                  >
+                  <n-button
+                    v-if="item.status === 'paused' || item.status === 'failed'"
+                    secondary
+                    size="small"
+                    @click="item.uploader?.resume()"
+                    >继续</n-button
+                  >
+                  <n-button
+                    v-if="item.status === 'uploading' || item.status === 'paused' || item.status === 'failed'"
+                    tertiary
+                    size="small"
+                    type="error"
+                    @click="item.uploader?.cancel()"
+                  >
+                    取消
+                  </n-button>
                 </div>
-                <div class="lan-note-actions">
-                  <n-button v-if="note.content" secondary size="small" @click="copyNoteContent(note)"
-                    >复制文字</n-button
-                  >
-                  <n-button v-if="canManageFiles" tertiary size="small" @click="extendNoteExpiry(note)"
-                    >保留30天</n-button
-                  >
-                  <n-button v-if="canManageFiles" tertiary size="small" type="error" @click="deleteLanNote(note)"
-                    >删除</n-button
-                  >
-                </div>
-              </header>
-              <pre v-if="note.content">{{ note.content }}</pre>
-              <div v-if="note.images.length" class="lan-note-images">
-                <figure v-for="image in note.images" :key="image.id">
-                  <a :href="image.previewUrl" target="_blank" rel="noreferrer">
-                    <img :src="image.previewUrl" :alt="image.originalName" loading="lazy" decoding="async" />
-                  </a>
-                  <figcaption>
-                    <span>{{ image.originalName }} · {{ formatBytes(image.size) }}</span>
-                    <span>
-                      <a :href="image.downloadUrl">下载</a>
-                      <button type="button" @click="copyNoteImageLink(image.previewUrl)">复制链接</button>
-                    </span>
-                  </figcaption>
-                </figure>
               </div>
-            </article>
-            <n-empty v-if="!lanNotes.length" description="暂无图文，发送一段文字或几张图片试试" />
-            <n-pagination
-              v-if="notePagination.total > notePagination.pageSize"
-              v-model:page="notePagination.page"
-              :page-size="notePagination.pageSize"
-              :item-count="notePagination.total"
-              @update:page="refreshLanNotes"
+            </div>
+          </n-tab-pane>
+
+          <n-tab-pane name="notes" tab="图文快传" display-directive="show">
+            <section class="lan-note-section">
+              <div class="lan-note-heading">
+                <div>
+                  <h3>图文快传</h3>
+                  <p>发送文字、链接、验证码或图文内容，局域网内其他设备可直接复制和查看。</p>
+                </div>
+                <span v-if="lanInfo">{{ lanInfo.noteCount ?? 0 }} 条 · 默认保留 {{ lanInfo.retentionDays }} 天</span>
+              </div>
+
+              <div v-if="canUploadFiles" class="lan-note-composer" @paste="onNotePaste">
+                <n-input
+                  v-model:value="noteTitle"
+                  clearable
+                  :maxlength="lanNoteLimits.titleCharacters"
+                  placeholder="标题（可选）"
+                />
+                <n-input
+                  v-model:value="noteContent"
+                  type="textarea"
+                  :autosize="{ minRows: 3, maxRows: 10 }"
+                  :maxlength="lanNoteLimits.contentCharacters"
+                  show-count
+                  placeholder="输入要传输的文字、链接、地址或说明……"
+                />
+                <div class="lan-note-picker">
+                  <input
+                    ref="noteImageInput"
+                    hidden
+                    multiple
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
+                    @change="onNoteImagesChange"
+                  />
+                  <n-button
+                    secondary
+                    :disabled="noteImages.length >= lanNoteLimits.maxImages"
+                    @click="noteImageInput?.click()"
+                  >
+                    添加图片 {{ noteImages.length }}/{{ lanNoteLimits.maxImages }}
+                  </n-button>
+                  <span>单张不超过 10 MB，合计不超过 30 MB；支持直接粘贴剪贴板截图</span>
+                </div>
+                <div v-if="noteImages.length" class="lan-note-draft-images">
+                  <figure v-for="(image, index) in noteImages" :key="image.id">
+                    <img :src="image.previewUrl" :alt="image.file.name" />
+                    <figcaption>
+                      <span>{{ image.file.name }}</span>
+                      <n-button tertiary size="tiny" type="error" @click="removeNoteImage(index)">移除</n-button>
+                    </figcaption>
+                  </figure>
+                </div>
+                <div class="lan-note-publish-actions">
+                  <span
+                    >{{ noteContent.length.toLocaleString() }} /
+                    {{ lanNoteLimits.contentCharacters.toLocaleString() }} 字</span
+                  >
+                  <n-button type="primary" :loading="publishingNote" @click="publishNote">发布图文</n-button>
+                </div>
+              </div>
+
+              <div v-if="canReadFiles" class="lan-note-list">
+                <article v-for="note in lanNotes" :key="note.id" class="lan-note-card">
+                  <header>
+                    <div>
+                      <strong>{{ note.title || "图文快传" }}</strong>
+                      <span>发布 {{ formatDate(note.createdAt) }} · 过期 {{ formatDate(note.expiresAt) }}</span>
+                    </div>
+                    <div class="lan-note-actions">
+                      <n-button v-if="note.content" secondary size="small" @click="copyNoteContent(note)"
+                        >复制文字</n-button
+                      >
+                      <n-button v-if="canManageFiles" tertiary size="small" @click="extendNoteExpiry(note)"
+                        >保留30天</n-button
+                      >
+                      <n-button v-if="canManageFiles" tertiary size="small" type="error" @click="deleteLanNote(note)"
+                        >删除</n-button
+                      >
+                    </div>
+                  </header>
+                  <pre v-if="note.content">{{ note.content }}</pre>
+                  <div v-if="note.images.length" class="lan-note-images">
+                    <figure v-for="image in note.images" :key="image.id">
+                      <a :href="image.previewUrl" target="_blank" rel="noreferrer">
+                        <img :src="image.previewUrl" :alt="image.originalName" loading="lazy" decoding="async" />
+                      </a>
+                      <figcaption>
+                        <span>{{ image.originalName }} · {{ formatBytes(image.size) }}</span>
+                        <span>
+                          <a :href="image.downloadUrl">下载</a>
+                          <n-button text type="primary" size="tiny" @click="copyNoteImageLink(image.previewUrl)">
+                            复制链接
+                          </n-button>
+                        </span>
+                      </figcaption>
+                    </figure>
+                  </div>
+                </article>
+                <n-empty v-if="!lanNotes.length" description="暂无图文，发送一段文字或几张图片试试" />
+                <n-pagination
+                  v-if="notePagination.total > notePagination.pageSize"
+                  v-model:page="notePagination.page"
+                  :page-size="notePagination.pageSize"
+                  :item-count="notePagination.total"
+                  @update:page="refreshLanNotes"
+                />
+              </div>
+            </section>
+          </n-tab-pane>
+        </n-tabs>
+
+        <div v-show="activeLanTab === 'files'" class="lan-files-workspace">
+          <div v-if="canReadFiles" class="lan-filters">
+            <n-input
+              v-model:value="lanQuery.keyword"
+              clearable
+              placeholder="搜索文件名或扩展名"
+              @keyup.enter="applyLanFilters"
             />
+            <n-select
+              v-model:value="lanQuery.category"
+              clearable
+              :options="lanCategoryOptions"
+              placeholder="文件类型"
+            />
+            <n-input v-model:value="lanQuery.extension" clearable placeholder="扩展名，例如 pdf" />
+            <n-select v-model:value="lanQuery.sortBy" :options="lanSortOptions" />
+            <n-select v-model:value="lanQuery.sortOrder" :options="lanSortOrderOptions" />
+            <n-button type="primary" @click="applyLanFilters">筛选</n-button>
+            <n-button secondary @click="resetLanFilters">重置</n-button>
           </div>
-        </section>
 
-        <div v-if="canReadFiles" class="lan-filters">
-          <n-input
-            v-model:value="lanQuery.keyword"
-            clearable
-            placeholder="搜索文件名或扩展名"
-            @keyup.enter="applyLanFilters"
-          />
-          <n-select v-model:value="lanQuery.category" clearable :options="lanCategoryOptions" placeholder="文件类型" />
-          <n-input v-model:value="lanQuery.extension" clearable placeholder="扩展名，例如 pdf" />
-          <n-select v-model:value="lanQuery.sortBy" :options="lanSortOptions" />
-          <n-select v-model:value="lanQuery.sortOrder" :options="lanSortOrderOptions" />
-          <n-button type="primary" @click="applyLanFilters">筛选</n-button>
-          <n-button secondary @click="resetLanFilters">重置</n-button>
-        </div>
-
-        <div v-if="canReadFiles" class="batch-toolbar">
-          <n-checkbox
-            :checked="lanPageSelection.checked"
-            :indeterminate="lanPageSelection.indeterminate"
-            :disabled="!lanFiles.length"
-            @update:checked="toggleAllLanFiles"
-          >
-            全选本页
-          </n-checkbox>
-          <div class="batch-actions">
-            <n-button
-              secondary
-              size="small"
-              :disabled="!selectedLanFileIds.length"
-              :loading="batchDownloadingLanFiles"
-              @click="downloadSelectedLanFiles"
-              >批量下载 {{ selectedLanFileIds.length || "" }}</n-button
+          <div v-if="canReadFiles" class="batch-toolbar">
+            <n-checkbox
+              :checked="lanPageSelection.checked"
+              :indeterminate="lanPageSelection.indeterminate"
+              :disabled="!lanFiles.length"
+              @update:checked="toggleAllLanFiles"
             >
-            <n-button
-              v-if="canManageFiles"
-              tertiary
-              type="error"
-              size="small"
-              :disabled="!selectedLanFileIds.length"
-              :loading="batchDeletingLanFiles"
-              @click="deleteSelectedLanFiles"
-              >批量删除 {{ selectedLanFileIds.length || "" }}</n-button
-            >
+              全选本页
+            </n-checkbox>
+            <div class="batch-actions">
+              <n-button
+                secondary
+                size="small"
+                :disabled="!selectedLanFileIds.length"
+                :loading="batchDownloadingLanFiles"
+                @click="downloadSelectedLanFiles"
+                >批量下载 {{ selectedLanFileIds.length || "" }}</n-button
+              >
+              <n-button
+                v-if="canManageFiles"
+                tertiary
+                type="error"
+                size="small"
+                :disabled="!selectedLanFileIds.length"
+                :loading="batchDeletingLanFiles"
+                @click="deleteSelectedLanFiles"
+                >批量删除 {{ selectedLanFileIds.length || "" }}</n-button
+              >
+            </div>
           </div>
-        </div>
 
-        <div v-if="canReadFiles" class="file-list">
-          <article v-for="file in lanFiles" :key="file.id" class="file-row">
-            <div class="file-main">
-              <n-checkbox
-                :checked="selectedLanFileIds.includes(file.id)"
-                :aria-label="`选择 ${file.originalName}`"
-                @update:checked="(checked) => toggleLanFile(file.id, checked)"
-              />
-              <FileArchive v-if="file.category === 'archive'" :size="20" />
-              <FileVideo v-else-if="file.category === 'video'" :size="20" />
-              <ImageDown v-else-if="file.category === 'image'" :size="20" />
-              <Music v-else-if="file.category === 'audio'" :size="20" />
-              <FileText v-else :size="20" />
-              <div>
-                <strong>{{ file.originalName }}</strong>
-                <span
-                  >{{ categoryName(file.category) }} · {{ formatBytes(file.size) }} ·
-                  {{ file.extension || "无扩展名" }}</span
+          <div v-if="canReadFiles" class="file-list">
+            <article v-for="file in lanFiles" :key="file.id" class="file-row">
+              <div class="file-main">
+                <n-checkbox
+                  :checked="selectedLanFileIds.includes(file.id)"
+                  :aria-label="`选择 ${file.originalName}`"
+                  @update:checked="(checked) => toggleLanFile(file.id, checked)"
+                />
+                <FileArchive v-if="file.category === 'archive'" :size="20" />
+                <FileVideo v-else-if="file.category === 'video'" :size="20" />
+                <ImageDown v-else-if="file.category === 'image'" :size="20" />
+                <Music v-else-if="file.category === 'audio'" :size="20" />
+                <FileText v-else :size="20" />
+                <div>
+                  <strong>{{ file.originalName }}</strong>
+                  <span
+                    >{{ categoryName(file.category) }} · {{ formatBytes(file.size) }} ·
+                    {{ file.extension || "无扩展名" }}</span
+                  >
+                </div>
+              </div>
+              <div class="file-meta">
+                <span>上传 {{ formatDate(file.createdAt) }}</span>
+                <span>过期 {{ formatDate(file.expiresAt) }}</span>
+                <span>下载 {{ file.downloadCount }}</span>
+              </div>
+              <div class="file-actions">
+                <n-button
+                  secondary
+                  size="small"
+                  :disabled="!file.previewable"
+                  :aria-label="`预览 ${file.originalName}`"
+                  @click="openPreview(file)"
+                  >预览</n-button
+                >
+                <n-button
+                  secondary
+                  size="small"
+                  tag="a"
+                  :href="file.downloadUrl"
+                  :aria-label="`下载 ${file.originalName}`"
+                  >下载</n-button
+                >
+                <n-button
+                  tertiary
+                  size="small"
+                  :aria-label="`复制 ${file.originalName} 的下载链接`"
+                  @click="copyFileLink(file)"
+                  >复制链接</n-button
+                >
+                <n-button
+                  v-if="canManageFiles"
+                  tertiary
+                  size="small"
+                  :aria-label="`将 ${file.originalName} 保留 30 天`"
+                  @click="extendFileExpiry(file)"
+                  >保留30天</n-button
+                >
+                <n-button
+                  v-if="canManageFiles"
+                  tertiary
+                  size="small"
+                  type="error"
+                  :aria-label="`删除 ${file.originalName}`"
+                  @click="deleteLanFile(file)"
+                  >删除</n-button
                 >
               </div>
-            </div>
-            <div class="file-meta">
-              <span>上传 {{ formatDate(file.createdAt) }}</span>
-              <span>过期 {{ formatDate(file.expiresAt) }}</span>
-              <span>下载 {{ file.downloadCount }}</span>
-            </div>
-            <div class="file-actions">
-              <n-button
-                secondary
-                size="small"
-                :disabled="!file.previewable"
-                :aria-label="`预览 ${file.originalName}`"
-                @click="openPreview(file)"
-                >预览</n-button
-              >
-              <n-button
-                secondary
-                size="small"
-                tag="a"
-                :href="file.downloadUrl"
-                :aria-label="`下载 ${file.originalName}`"
-                >下载</n-button
-              >
-              <n-button
-                tertiary
-                size="small"
-                :aria-label="`复制 ${file.originalName} 的下载链接`"
-                @click="copyFileLink(file)"
-                >复制链接</n-button
-              >
-              <n-button
-                v-if="canManageFiles"
-                tertiary
-                size="small"
-                :aria-label="`将 ${file.originalName} 保留 30 天`"
-                @click="extendFileExpiry(file)"
-                >保留30天</n-button
-              >
-              <n-button
-                v-if="canManageFiles"
-                tertiary
-                size="small"
-                type="error"
-                :aria-label="`删除 ${file.originalName}`"
-                @click="deleteLanFile(file)"
-                >删除</n-button
-              >
-            </div>
-          </article>
-          <n-empty v-if="!lanFiles.length" description="暂无文件" />
-        </div>
-        <div v-if="canReadFiles && shouldShowPagination(lanPagination.total)" class="pagination-row">
-          <span class="pagination-total">共 {{ lanPagination.total }} 个文件</span>
-          <n-pagination
-            v-model:page="lanPagination.page"
-            v-model:page-size="lanPagination.pageSize"
-            :item-count="lanPagination.total"
-            :page-sizes="[10, 20, 50, 100]"
-            show-size-picker
-            @update:page="refreshLanFiles"
-            @update:page-size="onLanPageSizeChange"
-          />
+            </article>
+            <n-empty v-if="!lanFiles.length" description="暂无文件" />
+          </div>
+          <div v-if="canReadFiles && shouldShowPagination(lanPagination.total)" class="pagination-row">
+            <span class="pagination-total">共 {{ lanPagination.total }} 个文件</span>
+            <n-pagination
+              v-model:page="lanPagination.page"
+              v-model:page-size="lanPagination.pageSize"
+              :item-count="lanPagination.total"
+              :page-sizes="[10, 20, 50, 100]"
+              show-size-picker
+              @update:page="refreshLanFiles"
+              @update:page-size="onLanPageSizeChange"
+            />
+          </div>
         </div>
       </section>
     </section>
@@ -383,17 +399,31 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import { NButton, NCheckbox, NEmpty, NInput, NModal, NPagination, NProgress, NSelect, useMessage } from "naive-ui";
+import {
+  NButton,
+  NCheckbox,
+  NEmpty,
+  NInput,
+  NModal,
+  NPagination,
+  NProgress,
+  NSelect,
+  NTabPane,
+  NTabs,
+  useMessage
+} from "naive-ui";
 import type { LanFileCategory, LanFileSortBy, LanFileSortOrder } from "@toolbox/shared";
 import { lanFileCategories, lanNoteLimits } from "@toolbox/shared";
 import { FileArchive, FileText, FileVideo, ImageDown, Music, RefreshCw, UploadCloud } from "lucide-vue-next";
 import QRCode from "qrcode";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { currentWebUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { ConcurrentChunkUploader } from "./chunk-uploader";
 import { lanTransferApi } from "./api";
 import { shouldShowPagination } from "./pagination";
+import { filesFromClipboard, isEditablePasteTarget } from "./paste-upload";
 import type { LanFileView, LanNoteView, LanTransferInfo, PendingLanUpload, UploadItem } from "./types";
 import { removeUploadItem } from "./upload-queue";
 import {
@@ -411,6 +441,8 @@ import {
 } from "../../utils/batch-selection";
 
 const message = useMessage();
+const confirmAction = useConfirmDialog();
+const activeLanTab = ref<"files" | "notes">("files");
 const currentTransferUrl = new URL("/tools/lan-transfer", currentWebUrl()).toString();
 const lanInfo = ref<LanTransferInfo | null>(null);
 const selectedShareUrl = ref(currentTransferUrl);
@@ -500,11 +532,15 @@ watch(
 );
 
 onMounted(async () => {
+  document.addEventListener("paste", onLanFilesPaste);
   await refreshLanInfo();
   await Promise.all([refreshLanFiles(), refreshLanNotes()]);
 });
 
-onUnmounted(() => clearNoteImages());
+onUnmounted(() => {
+  document.removeEventListener("paste", onLanFilesPaste);
+  clearNoteImages();
+});
 
 async function refreshLanInfo() {
   try {
@@ -660,7 +696,7 @@ async function extendNoteExpiry(note: LanNoteView) {
 }
 
 async function deleteLanNote(note: LanNoteView) {
-  if (!window.confirm(`删除“${note.title || "图文快传"}”？`)) return;
+  if (!(await confirmAction(`删除“${note.title || "图文快传"}”？`, { title: "删除图文" }))) return;
   try {
     await lanTransferApi.deleteNote(note.id);
     if (lanNotes.value.length === 1 && notePagination.page > 1) notePagination.page -= 1;
@@ -703,6 +739,15 @@ async function onLanFilesChange(event: Event) {
 async function onLanFilesDrop(event: DragEvent) {
   isDraggingFiles.value = false;
   await uploadLanFiles(Array.from(event.dataTransfer?.files ?? []));
+}
+
+function onLanFilesPaste(event: ClipboardEvent) {
+  if (activeLanTab.value !== "files" || !canUploadFiles.value || isEditablePasteTarget(event.target)) return;
+  const files = filesFromClipboard(event.clipboardData);
+  if (!files.length) return;
+  event.preventDefault();
+  message.info(files.length > 1 ? `已粘贴 ${files.length} 个文件，开始上传` : `已粘贴 ${files[0].name}，开始上传`);
+  void uploadLanFiles(files);
 }
 
 async function uploadLanFiles(files: File[]) {
@@ -864,7 +909,7 @@ async function openPreview(file: LanFileView) {
 }
 
 async function deleteLanFile(file: LanFileView) {
-  if (!window.confirm(`删除 ${file.originalName}？`)) {
+  if (!(await confirmAction(`删除 ${file.originalName}？`, { title: "删除文件" }))) {
     return;
   }
   try {
@@ -901,7 +946,7 @@ function toggleAllLanFiles(checked: boolean) {
 
 async function deleteSelectedLanFiles() {
   if (!selectedLanFileIds.value.length) return;
-  if (!window.confirm(`删除选中的 ${selectedLanFileIds.value.length} 个文件？`)) {
+  if (!(await confirmAction(`删除选中的 ${selectedLanFileIds.value.length} 个文件？`, { title: "批量删除文件" }))) {
     return;
   }
 

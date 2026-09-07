@@ -61,8 +61,8 @@ const tools: ToolDefinition[] = [
   },
   {
     id: "edge-tts",
-    title: "马来语 / 英语配音",
-    description: "支持 Edge-TTS 在线自然音色，以及上传已授权参考音频的 Chatterbox V3 本机声音克隆。",
+    title: "多国语言配音",
+    description: "支持马来语、英语和巴西葡萄牙语的在线配音，以及 Chatterbox V3 本机参考音色克隆。",
     category: "audio",
     status: "ready",
     requiresAuth: false,
@@ -80,17 +80,6 @@ const tools: ToolDefinition[] = [
     acceptedTypes: ["text/plain"],
     routePath: "/tools/short-video",
     apiNamespace: "/api/tools/short-video"
-  },
-  {
-    id: "video-insights",
-    title: "竞品拆解",
-    description: "本地保存短视频竞品卡片，自动提取钩子、结构、话术与选题线索。",
-    category: "video",
-    status: "ready",
-    requiresAuth: false,
-    acceptedTypes: ["text/plain"],
-    routePath: "/tools/video-insights",
-    apiNamespace: "/api/tools/video-insights"
   }
 ];
 

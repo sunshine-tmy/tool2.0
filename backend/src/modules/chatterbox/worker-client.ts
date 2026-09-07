@@ -20,6 +20,8 @@ type WorkerGenerateResult = {
   watermarked: true;
 };
 
+let generationTail: Promise<void> = Promise.resolve();
+
 export class ChatterboxWorkerError extends Error {
   constructor(
     readonly code: string,
@@ -48,28 +50,42 @@ export function createChatterboxWorkerClient(config: AppConfig) {
       seed: number;
       signal?: AbortSignal;
     }) {
-      return requestWorker<WorkerGenerateResult>(
-        config,
-        "/generate",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            text: input.text,
-            language: input.language,
-            reference_path: input.referencePath,
-            output_path: input.outputPath,
-            exaggeration: input.exaggeration,
-            cfg_weight: input.cfgWeight,
-            temperature: input.temperature,
-            seed: input.seed
-          }),
-          signal: input.signal
-        },
-        config.chatterboxWorkerTimeoutMs
-      );
+      return serializeGeneration(() => {
+        if (input.signal?.aborted) {
+          throw new ChatterboxWorkerError("CHATTERBOX_TASK_CANCELLED", "声音克隆任务已取消");
+        }
+        return requestWorker<WorkerGenerateResult>(
+          config,
+          "/generate",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              text: input.text,
+              language: input.language,
+              reference_path: input.referencePath,
+              output_path: input.outputPath,
+              exaggeration: input.exaggeration,
+              cfg_weight: input.cfgWeight,
+              temperature: input.temperature,
+              seed: input.seed
+            }),
+            signal: input.signal
+          },
+          config.chatterboxWorkerTimeoutMs
+        );
+      });
     }
   };
+}
+
+function serializeGeneration<T>(work: () => Promise<T>) {
+  const result = generationTail.then(work, work);
+  generationTail = result.then(
+    () => undefined,
+    () => undefined
+  );
+  return result;
 }
 
 async function requestWorker<T>(config: AppConfig, pathname: string, init: RequestInit, timeoutMs: number): Promise<T> {

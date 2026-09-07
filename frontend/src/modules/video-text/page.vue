@@ -227,6 +227,7 @@ import { useRoute } from "vue-router";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NProgress, useMessage } from "naive-ui";
 import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { resolveApiUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
@@ -243,6 +244,7 @@ import {
 } from "../../utils/batch-selection";
 
 const message = useMessage();
+const confirmAction = useConfirmDialog();
 const route = useRoute();
 const selectedVideo = ref<File | null>(null);
 const remoteVideo = ref<RemoteVideoSource | null>(null);
@@ -436,7 +438,7 @@ async function openTaskResult(taskId: string) {
 }
 
 async function deleteHistory(item: VideoTextHistoryItem) {
-  if (!window.confirm(`删除 ${item.fileName} 的解析历史？`)) {
+  if (!(await confirmAction(`删除 ${item.fileName} 的解析历史？`, { title: "删除解析历史" }))) {
     return;
   }
 
@@ -471,7 +473,9 @@ function toggleAllHistoryItems(checked: boolean) {
 
 async function deleteSelectedHistory() {
   if (!selectedHistoryIds.value.length) return;
-  if (!window.confirm(`删除选中的 ${selectedHistoryIds.value.length} 条解析历史？`)) {
+  if (
+    !(await confirmAction(`删除选中的 ${selectedHistoryIds.value.length} 条解析历史？`, { title: "批量删除解析历史" }))
+  ) {
     return;
   }
 

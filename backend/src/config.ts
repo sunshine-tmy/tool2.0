@@ -26,12 +26,6 @@ export type AppConfig = {
   videoTextUploadsDir: string;
   videoTextAudioDir: string;
   videoTextResultsDir: string;
-  videoInsightsDir: string;
-  videoInsightsCardsDir: string;
-  videoInsightsModelBaseUrl?: string;
-  videoInsightsModelApiKey?: string;
-  videoInsightsModelName?: string;
-  videoInsightsModelTimeoutMs: number;
   videoTextAudioExtractCommand: string;
   videoTextTranscribeCommand?: string;
   shortVideoParseApiUrl: string;
@@ -75,7 +69,6 @@ export function getConfig(): AppConfig {
   const imageAiDir = path.join(storageRoot, "image-ai");
   const edgeTtsDir = path.join(storageRoot, "edge-tts");
   const chatterboxDir = path.join(storageRoot, "chatterbox");
-  const videoInsightsDir = path.join(storageRoot, "video-insights");
   const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv)?.trim();
 
   return {
@@ -128,18 +121,6 @@ export function getConfig(): AppConfig {
     videoTextUploadsDir: path.join(storageRoot, "video-text", "uploads"),
     videoTextAudioDir: path.join(storageRoot, "video-text", "audio"),
     videoTextResultsDir: path.join(storageRoot, "video-text", "results"),
-    videoInsightsDir,
-    videoInsightsCardsDir: path.join(videoInsightsDir, "cards"),
-    videoInsightsModelBaseUrl: normalizeOptionalHttpUrl(getEnv("VIDEO_INSIGHTS_MODEL_BASE_URL", fileEnv)),
-    videoInsightsModelApiKey: getEnv("VIDEO_INSIGHTS_MODEL_API_KEY", fileEnv)?.trim() || undefined,
-    videoInsightsModelName: getEnv("VIDEO_INSIGHTS_MODEL_NAME", fileEnv)?.trim() || undefined,
-    videoInsightsModelTimeoutMs: readInteger(
-      "VIDEO_INSIGHTS_MODEL_TIMEOUT_MS",
-      getEnv("VIDEO_INSIGHTS_MODEL_TIMEOUT_MS", fileEnv),
-      30000,
-      1000,
-      120000
-    ),
     videoTextAudioExtractCommand:
       getEnv("VIDEO_TEXT_AUDIO_EXTRACT_COMMAND", fileEnv)?.trim() ||
       "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}",
@@ -237,7 +218,7 @@ export function getConfig(): AppConfig {
       1,
       365
     ),
-    chatterboxQueueLimit: readInteger("CHATTERBOX_QUEUE_LIMIT", getEnv("CHATTERBOX_QUEUE_LIMIT", fileEnv), 10, 1, 100),
+    chatterboxQueueLimit: readInteger("CHATTERBOX_QUEUE_LIMIT", getEnv("CHATTERBOX_QUEUE_LIMIT", fileEnv), 50, 1, 100),
     chatterboxFfmpegPath: getEnv("CHATTERBOX_FFMPEG_PATH", fileEnv)?.trim() || "ffmpeg",
     chatterboxFfprobePath: getEnv("CHATTERBOX_FFPROBE_PATH", fileEnv)?.trim() || "ffprobe",
     deploymentUsage: configuredUsage === "internal-noncommercial" ? "internal-noncommercial" : "commercial"
@@ -336,21 +317,6 @@ function normalizeOrigin(value: string) {
   } catch {
     return "";
   }
-}
-
-function normalizeOptionalHttpUrl(value: string | undefined) {
-  const trimmed = value?.trim();
-  if (!trimmed) return undefined;
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    throw new Error("VIDEO_INSIGHTS_MODEL_BASE_URL must be a valid HTTP(S) URL");
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("VIDEO_INSIGHTS_MODEL_BASE_URL must use HTTP(S)");
-  }
-  return url.toString().replace(/\/$/, "");
 }
 
 function unquoteEnvValue(value: string) {

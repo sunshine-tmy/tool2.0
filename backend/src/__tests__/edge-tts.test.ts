@@ -42,16 +42,18 @@ describe("edge tts module", () => {
     await app.close();
   });
 
-  it("generates, persists, serves and deletes MP3 and SRT files", async () => {
+  it.each([
+    { language: "ms-MY", voice: "ms-MY-YasminNeural", text: "Selamat datang ke kedai kami." },
+    { language: "pt-BR", voice: "pt-BR-FranciscaNeural", text: "Olá! Confira nossas promoções e novidades." },
+    { language: "pt-BR", voice: "pt-BR-AntonioNeural", text: "Bem-vindo à nossa loja. Obrigado pela preferência!" }
+  ])("generates, persists, serves and deletes MP3 and SRT files for $voice", async (sample) => {
     const app = await createApp();
     await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=ms-MY" });
     const created = await app.inject({
       method: "POST",
       url: "/api/tools/edge-tts/tasks",
       payload: {
-        text: "Selamat datang ke kedai kami.",
-        language: "ms-MY",
-        voice: "ms-MY-YasminNeural",
+        ...sample,
         rate: 10,
         volume: 5,
         pitch: 0,
@@ -71,7 +73,7 @@ describe("edge tts module", () => {
     expect(audio.statusCode).toBe(200);
     expect(audio.headers["content-type"]).toContain("audio/mpeg");
     expect(download.headers["content-disposition"]).toContain("produk-baharu.mp3");
-    expect(subtitle.body).toContain("Selamat datang");
+    expect(subtitle.body).toContain(sample.text);
 
     const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/tasks" });
     expect(list.json().data.tasks[0]).toMatchObject({ id: taskId, status: "completed" });
@@ -80,7 +82,7 @@ describe("edge tts module", () => {
 
     const restarted = await createApp();
     const restored = await restarted.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}` });
-    expect(restored.json().data).toMatchObject({ id: taskId, status: "completed" });
+    expect(restored.json().data).toMatchObject({ id: taskId, status: "completed", ...sample });
     const removed = await restarted.inject({ method: "DELETE", url: `/api/tools/edge-tts/tasks/${taskId}` });
     expect(removed.json().data).toEqual({ removed: true });
     expect(
@@ -108,6 +110,33 @@ describe("edge tts module", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("EDGE_TTS_VOICE_INVALID");
     await app.close();
+  });
+
+  it("filters Brazilian voices and rejects a voice from another locale", async () => {
+    const app = await createApp();
+    try {
+      const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=pt-BR" });
+      expect(voices.statusCode).toBe(200);
+      expect(voices.json().data.voices).toHaveLength(2);
+      expect(voices.json().data.voices.every((voice: { locale: string }) => voice.locale === "pt-BR")).toBe(true);
+      const result = await app.inject({
+        method: "POST",
+        url: "/api/tools/edge-tts/tasks",
+        payload: {
+          text: "Olá!",
+          language: "pt-BR",
+          voice: "en-US-JennyNeural",
+          rate: 0,
+          volume: 0,
+          pitch: 0,
+          includeSubtitles: true
+        }
+      });
+      expect(result.statusCode).toBe(400);
+      expect(result.json().error.code).toBe("EDGE_TTS_VOICE_INVALID");
+    } finally {
+      await app.close();
+    }
   });
 
   it("cancels the Python process before deleting an active task directory", async () => {
@@ -156,7 +185,9 @@ if (command === "check") {
 } else if (command === "voices") {
   process.stdout.write(JSON.stringify({ voices: [
     { name: "Yasmin", shortName: "ms-MY-YasminNeural", locale: "ms-MY", gender: "Female" },
-    { name: "Jenny", shortName: "en-US-JennyNeural", locale: "en-US", gender: "Female" }
+    { name: "Jenny", shortName: "en-US-JennyNeural", locale: "en-US", gender: "Female" },
+    { name: "Francisca", shortName: "pt-BR-FranciscaNeural", locale: "pt-BR", gender: "Female" },
+    { name: "Antonio", shortName: "pt-BR-AntonioNeural", locale: "pt-BR", gender: "Male" }
   ] }));
 } else if (command === "generate") {
   const value = (name) => process.argv[process.argv.indexOf(name) + 1];

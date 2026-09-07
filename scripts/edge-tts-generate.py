@@ -14,7 +14,7 @@ from typing import Any
 import edge_tts
 
 
-SUPPORTED_LOCALES = {"ms-MY", "en-US", "en-GB"}
+SUPPORTED_LOCALES = {"ms-MY", "en-US", "en-GB", "pt-BR"}
 MAX_TEXT_LENGTH = 20_000
 
 

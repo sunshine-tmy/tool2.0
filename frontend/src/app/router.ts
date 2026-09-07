@@ -38,11 +38,6 @@ export const router = createRouter({
       path: "/tools/short-video",
       name: "short-video",
       component: () => import("../modules/short-video/page.vue")
-    },
-    {
-      path: "/tools/video-insights",
-      name: "video-insights",
-      component: () => import("../modules/video-insights/page.vue")
     }
   ]
 });

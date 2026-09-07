@@ -171,11 +171,38 @@ describe("ConcurrentChunkUploader", () => {
     expect(uploadedIndexes).toEqual([]);
     expect(api.completedUploadId).toBe("upload-1");
   });
+
+  it("creates a zero-chunk session for an empty file and completes it", async () => {
+    let sessionInput: Parameters<ChunkUploadApi["createUploadSession"]>[0] | undefined;
+    const uploadedIndexes: number[] = [];
+    const api = createFakeChunkApi({
+      createUploadSession: async (input) => {
+        sessionInput = input;
+        return uploadStatus({ size: 0, totalChunks: 0, uploadedChunks: [] });
+      },
+      uploadChunk: async (_uploadId, index) => {
+        uploadedIndexes.push(index);
+        return uploadStatus({ size: 0, totalChunks: 0, uploadedChunks: [] });
+      }
+    });
+    const file = new File([], "empty.txt", { type: "text/plain" });
+    const uploader = new ConcurrentChunkUploader(file, api, { chunkSize: 4 });
+
+    const result = await uploader.start();
+
+    expect(result.status).toBe("done");
+    expect(sessionInput).toMatchObject({ size: 0, chunkSize: 4, totalChunks: 0 });
+    expect(uploadedIndexes).toEqual([]);
+    expect(api.completedUploadId).toBe("upload-1");
+  });
 });
 
 function createFakeChunkApi(overrides: Partial<ChunkUploadApi> & { uploadedChunks?: number[] } = {}) {
   const api: ChunkUploadApi & { completedUploadId?: string } = {
-    async createUploadSession() {
+    async createUploadSession(input) {
+      if (overrides.createUploadSession) {
+        return overrides.createUploadSession(input);
+      }
       return uploadStatus({ uploadedChunks: overrides.uploadedChunks ?? [] });
     },
     async getUploadStatus(uploadId) {

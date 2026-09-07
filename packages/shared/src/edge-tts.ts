@@ -1,6 +1,6 @@
 export const EDGE_TTS_MAX_TEXT_LENGTH = 20_000;
 
-export const EDGE_TTS_LANGUAGES = ["ms-MY", "en-US", "en-GB"] as const;
+export const EDGE_TTS_LANGUAGES = ["ms-MY", "en-US", "en-GB", "pt-BR"] as const;
 
 export type EdgeTtsLanguage = (typeof EDGE_TTS_LANGUAGES)[number];
 
@@ -109,6 +109,20 @@ export const EDGE_TTS_RECOMMENDED_VOICES: EdgeTtsVoice[] = [
     name: "Microsoft Ryan Online (Natural) - English (United Kingdom)",
     shortName: "en-GB-RyanNeural",
     locale: "en-GB",
+    gender: "Male",
+    suggested: true
+  },
+  {
+    name: "Microsoft Francisca Online (Natural) - Portuguese (Brazil)",
+    shortName: "pt-BR-FranciscaNeural",
+    locale: "pt-BR",
+    gender: "Female",
+    suggested: true
+  },
+  {
+    name: "Microsoft Antonio Online (Natural) - Portuguese (Brazil)",
+    shortName: "pt-BR-AntonioNeural",
+    locale: "pt-BR",
     gender: "Male",
     suggested: true
   }

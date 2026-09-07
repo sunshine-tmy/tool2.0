@@ -1,0 +1,31 @@
+{
+  "name": "lan-transfer-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "typecheck": "vue-tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@toolbox/shared": "*",
+    "axios": "^1.13.2",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "lucide-vue-next": "^0.555.0",
+    "naive-ui": "^2.43.4",
+    "qrcode": "^1.5.4",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.3"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.4",
+    "vue-tsc": "^3.1.5"
+  }
+}

@@ -26,10 +26,6 @@
     "./short-video": {
       "types": "./dist/short-video.d.ts",
       "import": "./dist/short-video.js"
-    },
-    "./video-insights": {
-      "types": "./dist/video-insights.d.ts",
-      "import": "./dist/video-insights.js"
     }
   },
   "scripts": {

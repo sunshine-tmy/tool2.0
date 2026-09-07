@@ -4,8 +4,8 @@
       <div class="page-heading edge-tts-heading">
         <div>
           <p class="eyebrow">EDGE ONLINE SPEECH</p>
-          <h2>马来语 / 英语配音</h2>
-          <p>可使用在线自然音色，也可上传已授权的参考音频，在本机克隆马来语或英语声音。</p>
+          <h2>多国语言配音</h2>
+          <p>在线自然音色和参考音色克隆均支持马来语、英语和巴西葡萄牙语。</p>
         </div>
         <n-tag v-if="engine === 'edge'" :type="health?.available ? 'success' : 'error'" round>
           {{ health?.available ? `Edge-TTS ${health.version || "已就绪"}` : "运行环境未安装" }}
@@ -92,7 +92,8 @@
 
             <div class="control-section">
               <div class="control-label-row">
-                <label>参数预设</label><button type="button" @click="resetControls">恢复默认</button>
+                <label>参数预设</label
+                ><n-button text type="primary" size="tiny" @click="resetControls">恢复默认</n-button>
               </div>
               <div class="edge-tts-presets">
                 <button v-for="preset in presets" :key="preset.name" type="button" @click="applyPreset(preset)">
@@ -103,25 +104,23 @@
                 <span
                   >语速 <strong>{{ signed(rate) }}%</strong></span
                 >
-                <input v-model.number="rate" type="range" min="-50" max="100" step="5" />
+                <n-slider v-model:value="rate" :min="-50" :max="100" :step="5" :tooltip="false" />
               </label>
               <label class="range-control">
                 <span
                   >音量 <strong>{{ signed(volume) }}%</strong></span
                 >
-                <input v-model.number="volume" type="range" min="-50" max="50" step="5" />
+                <n-slider v-model:value="volume" :min="-50" :max="50" :step="5" :tooltip="false" />
               </label>
               <label class="range-control">
                 <span
                   >音调 <strong>{{ signed(pitch) }}Hz</strong></span
                 >
-                <input v-model.number="pitch" type="range" min="-50" max="50" step="5" />
+                <n-slider v-model:value="pitch" :min="-50" :max="50" :step="5" :tooltip="false" />
               </label>
             </div>
 
-            <label class="edge-tts-checkbox"
-              ><input v-model="includeSubtitles" type="checkbox" /> 同时生成 SRT 字幕</label
-            >
+            <n-checkbox v-model:checked="includeSubtitles">同时生成 SRT 字幕</n-checkbox>
             <n-button
               type="primary"
               size="large"
@@ -195,10 +194,12 @@
                 <a v-if="task.downloadUrl" :href="mediaUrl(task.downloadUrl)" title="下载 MP3"
                   ><Download :size="17"
                 /></a>
-                <button type="button" title="重新使用文案" @click="loadTaskForReuse(task.id)">
+                <n-button circle quaternary size="small" title="重新使用文案" @click="loadTaskForReuse(task.id)">
                   <RotateCcw :size="17" />
-                </button>
-                <button type="button" title="删除" @click="removeTask(task.id)"><Trash2 :size="17" /></button>
+                </n-button>
+                <n-button circle quaternary size="small" type="error" title="删除" @click="removeTask(task.id)"
+                  ><Trash2 :size="17"
+                /></n-button>
               </div>
             </article>
           </div>
@@ -227,7 +228,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NButton, NEmpty, NInput, NTag, useMessage } from "naive-ui";
+import { NButton, NCheckbox, NEmpty, NInput, NSlider, NTag, useMessage } from "naive-ui";
 import {
   AudioLines,
   Captions,
@@ -250,11 +251,13 @@ import {
   type EdgeTtsVoice
 } from "@toolbox/shared";
 import ToolLayout from "../../layouts/ToolLayout.vue";
+import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { resolveBackendUrl } from "../../config/runtime";
 import { edgeTtsApi } from "./api";
 import ChatterboxPanel from "./ChatterboxPanel.vue";
 
 const message = useMessage();
+const confirmAction = useConfirmDialog();
 const engine = ref<"edge" | "chatterbox">("edge");
 const maxTextLength = EDGE_TTS_MAX_TEXT_LENGTH;
 const health = ref<EdgeTtsHealth>();
@@ -282,7 +285,8 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined;
 const languages: Array<{ value: EdgeTtsLanguage; title: string; description: string }> = [
   { value: "ms-MY", title: "Bahasa Melayu", description: "马来西亚马来语" },
   { value: "en-US", title: "English US", description: "美式英语" },
-  { value: "en-GB", title: "English UK", description: "英式英语" }
+  { value: "en-GB", title: "English UK", description: "英式英语" },
+  { value: "pt-BR", title: "Português BR", description: "巴西葡萄牙语" }
 ];
 const presets = [
   { name: "自然讲解", rate: 0, volume: 0, pitch: 0 },
@@ -415,7 +419,7 @@ function reuseTask(task: EdgeTtsTask) {
 }
 
 async function removeTask(id: string) {
-  if (!window.confirm("删除这条语音记录和生成文件？")) return;
+  if (!(await confirmAction("删除这条语音记录和生成文件？", { title: "删除语音记录" }))) return;
   try {
     await edgeTtsApi.remove(id);
     if (currentTask.value?.id === id) currentTask.value = undefined;

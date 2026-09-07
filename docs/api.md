@@ -76,10 +76,10 @@
 
 合并在同盘 `.partial-*` 文件中完成，大小校验和 `fsync` 后才原子重命名；失败保留原分片供续传。
 
-## Edge-TTS 马来语 / 英语配音
+## Edge-TTS 多国语言配音
 
 - `GET /api/tools/edge-tts/health`：Python 运行环境、版本、队列、保留期和文本上限。
-- `GET /api/tools/edge-tts/voices?language=ms-MY|en-US|en-GB`：读取并缓存在线音色；网络异常时返回内置推荐音色。
+- `GET /api/tools/edge-tts/voices?language=ms-MY|en-US|en-GB|pt-BR`：读取并缓存在线音色；网络异常时返回内置推荐音色。`pt-BR` 为巴西葡萄牙语，推荐 `pt-BR-FranciscaNeural` 和 `pt-BR-AntonioNeural`。
 - `POST /api/tools/edge-tts/tasks`：JSON `{ text, language, voice, rate, volume, pitch, includeSubtitles, fileName? }`，成功返回 `202`。
 - `GET /api/tools/edge-tts/tasks?page=1&pageSize=10`：分页历史，不返回完整文案。
 - `GET /api/tools/edge-tts/tasks/:taskId`：任务详情、完整文案和生成结果地址。
@@ -100,8 +100,34 @@
 - `GET /tasks/:taskId`：任务详情、完整文案和结果地址。
 - `GET /tasks/:taskId/audio|download|subtitle`：试听或下载 MP3 / SRT。
 - `DELETE /tasks/:taskId`：删除等待任务或已完成记录；GPU 正在推理时需等待当前任务结束。
+- `GET /voices`：列出永久保存的参考音色。
+- `POST /voices`：multipart 字段 `reference`、`name`、`language`、`authorization`、`consentConfirmed=true`，标准化后永久保存。
+- `GET /voices/:voiceId/audio`：试听永久参考音色。
+- `DELETE /voices/:voiceId`：永久删除参考音色；已生成音频和批次副本不受影响。
+- `POST /batches`：`multipart/form-data` 创建多段批次；`segments` 为有序的 `{ text, fileName? }[]` JSON。
+- `GET /batches`、`GET /batches/:batchId`：分页批次历史与包含全部文案段的详情。
+- `GET /batches/:batchId/items/:itemId/audio|download`：试听或下载单段 MP3。
+- `GET /batches/:batchId/combined-audio`：两个及以上文案段完成后，下载按当前顺序拼接的总 MP3。
+- `GET /batches/:batchId/subtitle`：所有文案段完成后下载原文 SRT。
+- `GET /batches/:batchId/subtitle.zh-CN`：填写过中文翻译时，下载单独的中文 SRT。
+- `GET /batches/:batchId/subtitle.bilingual`：两个及以上文案段完成且填写过中文翻译时，下载原文在上、中文在下的双语 SRT。
 
-创建字段：`reference` 音频文件、`text`、`language=ms|en`、`authorization=self|authorized`、`consentConfirmed=true`、`exaggeration=0.25..1.5`、`cfgWeight=0..1`、`temperature=0.1..1.5`、`seed=0..2147483647`、`includeSubtitles`、`fileName?`。文本最多 1,200 字符；参考音频最大 20 MB、5–30 秒，服务端通过 ffprobe 校验并转为 24 kHz 单声道 PCM。SRT 以完整句子作为字幕块，使用 Worker 返回的真实生成片段时间进行对齐；长句只在同一个字幕块内换行，不拆成多个时间段。旧版结构不正确的字幕会在下载时按音频总时长重建。参考音频在成功或失败后立即删除，输出保留 Chatterbox 内置 PerTh AI 水印。
+字幕文件名使用同一批次随机 ID 的前 8 位作为稳定哈希。原文文件名为 `马来语|英语|巴西葡语-<hash>.srt`，中文文件名为 `中文字幕-<hash>.srt`。
+
+- `GET /batches/:batchId/download.zip`：下载有序单段 MP3、总 MP3、原文/中文/双语 SRT 和 `manifest.txt`。
+- `POST /batches/:batchId/items/:itemId/regenerate`：可修改文案、文件名、种子并安全重新生成；参考音色已删除时需重新上传 `reference`。
+- `PATCH /batches/:batchId/order`：通过完整的 `{ itemIds }` 调整顺序并重建总 SRT。
+- `DELETE /batches/:batchId/items/:itemId`、`DELETE /batches/:batchId`：删除单段或整个批次。
+- `POST /batches/:batchId/cancel`：取消尚未开始的文案段。
+- `DELETE /batches/:batchId/reference`：提前删除已保留的标准化参考音色。
+
+创建字段：`reference` 音频文件、`text`、`language=ms|en|pt-BR`、`authorization=self|authorized`、`consentConfirmed=true`、`exaggeration=0.25..1.5`、`cfgWeight=0..1`、`temperature=0.1..1.5`、`seed=0..2147483647`、`includeSubtitles`、`fileName?`。文本最多 1,200 字符；参考音频最大 20 MB、5–30 秒，服务端通过 ffprobe 校验并转为 24 kHz 单声道 PCM。SRT 以完整句子作为字幕块，使用 Worker 返回的真实生成片段时间进行对齐；长句只在同一个字幕块内换行，不拆成多个时间段。旧版结构不正确的字幕会在下载时按音频总时长重建。参考音频在成功或失败后立即删除，输出保留 Chatterbox 内置 PerTh AI 水印。
+
+批量生成和永久音色库同样支持 `ms|en|pt-BR`。`pt-BR` 在任务、历史及音色信息中保留不变，仅在 Worker 调用通用多语言模型时映射为 `pt`；建议使用巴西葡语参考录音引导地域口音。批量分段的 `referenceTranslation` 不会发送给语音模型，而是用于单独的中文字幕和双语字幕；原文字幕保持不变。按句分段且原文与中文句数不同时，该文案段的中文及双语字幕会回退为一个完整字幕块。
+
+批次最多 30 段，每段最多 1,200 字符、总计最多 20,000 字符。额外字段包括 `name?`、`referenceRetained` 和 `subtitleMode=sentences|segments`。创建批次时可以上传 `reference`，也可以通过 `voiceId` 使用永久音色库。每段使用最终 MP3 的实际时长，字幕按顺序累计偏移；总音频按相同顺序拼接。重新生成、删除或重排会自动重建总音频和字幕时间轴。单段重新生成支持覆盖 `exaggeration`、`cfgWeight`、`temperature` 和 `seed`，也可以上传新参考音频或传入永久音色 `voiceId`。重新生成先写入候选文件，成功后才替换旧音频，失败时保留原结果。永久音色只在明确调用删除接口时移除；批次临时参考音色默认在批次结束后删除，仅在 `referenceRetained=true` 时保留到批次过期或用户主动删除。
+
+每个 `segments` 项可包含最多 2,000 字符的 `referenceTranslation?`。该字段作为中文参考元数据保存，不发送给 Worker，也不参与音频生成或列表摘要；它会用于生成独立中文 SRT 和双语 SRT。单段重新生成接口也可传入该字段并同步重建字幕。
 
 ## 视频文本解析
 
@@ -143,19 +169,5 @@
 | `VIDEO_DOWNLOAD_FAILED`                   | 远程地址被拒绝、超时或响应异常 |
 | `SHORT_VIDEO_PROVIDER_UNAVAILABLE`        | 第三方解析服务不可用           |
 | `SHORT_VIDEO_PLATFORM_MISMATCH`           | 选择的平台与分享链接不匹配     |
-
-## 竞品拆解
-
-- `POST /api/tools/video-insights`：JSON `{ input, platform?: "auto"|"douyin"|"xiaohongshu"|"tiktok" }`，解析公开链接、尝试本地转写并创建本地卡片。
-- `POST /api/tools/video-insights/upload`：multipart 字段 `file`，仅接受 `video/*`。必须配置本地转写；服务端完成转写和拆解后立即删除原视频及全部临时产物，只保存卡片 JSON。
-- `GET /api/tools/video-insights`：支持 `page`、`pageSize`、`keyword`、`platform`、`tag`、`favorite`、`archived`、`createdFrom`、`createdTo` 和 `sort`（`newest`/`oldest`/`updated`）。返回分页卡片和不含密钥的模型配置状态。
-- `GET /api/tools/video-insights/:id`：获取完整卡片、转写、规则拆解和人工内容。
-- `PATCH /api/tools/video-insights/:id`：可更新 `title`、`tags`、`notes`、`scriptDraft`、`favorite`、`archived`。
-- `DELETE /api/tools/video-insights/:id`：仅删除本地卡片 JSON，不删除或复制原始视频。
-- `POST /api/tools/video-insights/:id/analyze`：JSON `{ mode: "rules"|"model" }`。`model` 模式需要 `.env` 中的模型地址和名称；API 响应永不包含模型密钥。
-
-规则分析结果当前为 `version: 3`，包含 `quality`、`brief`、`hookAnalysis`、`keyPoints`、`sellingPointChains`、`scriptBlueprint`、`missingElements`、`improvements`、`finalOutput` 和 `changeLog`。关键点及卖点链均附带原文证据、时间定位、规则信号和证据充分度；最终稿只重排已有事实，缺少证据时使用明确占位符，不会自动补造。
-
-常见错误：`VIDEO_INSIGHT_DUPLICATE`（链接已存在）、`VIDEO_INSIGHT_NOT_FOUND`、`VIDEO_TRANSCRIBER_NOT_CONFIGURED`、`VIDEO_INSIGHT_UPLOAD_TOO_LARGE`、`VIDEO_INSIGHT_TRANSCRIPT_EMPTY`、`MODEL_NOT_CONFIGURED`、`MODEL_REQUEST_FAILED`。
 
 HTTP `413/415/429/507` 分别表示过大、不支持媒体类型、队列满和磁盘不足。

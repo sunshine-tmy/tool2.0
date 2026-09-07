@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chatterboxApi } from "./chatterbox-api";
 
-const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }));
+const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
 
 vi.mock("../../services/http", () => ({
   withApiError: (operation: () => Promise<unknown>) => operation(),
@@ -11,14 +11,14 @@ vi.mock("../../services/http", () => ({
 describe("chatterbox api", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("sends the reference file, authorization and generation controls as multipart data", async () => {
+  it.each(["ms", "pt-BR"] as const)("sends reference audio and generation controls in %s", async (language) => {
     httpMock.post.mockResolvedValue({ id: "clone-1" });
     const reference = new File([new Uint8Array([1, 2, 3])], "voice.wav", { type: "audio/wav" });
 
     await chatterboxApi.create({
       reference,
       text: "Selamat datang",
-      language: "ms",
+      language,
       authorization: "self",
       consentConfirmed: true,
       exaggeration: 0.5,
@@ -34,7 +34,7 @@ describe("chatterbox api", () => {
     expect(form.get("reference")).toMatchObject({ name: "voice.wav", size: 3, type: "audio/wav" });
     expect(form.get("authorization")).toBe("self");
     expect(form.get("consentConfirmed")).toBe("true");
-    expect(form.get("language")).toBe("ms");
+    expect(form.get("language")).toBe(language);
     expect(config).toEqual({ timeout: 120_000 });
   });
 
@@ -44,5 +44,74 @@ describe("chatterbox api", () => {
     expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/tasks", {
       params: { page: 2, pageSize: 8 }
     });
+  });
+
+  it.each(["ms", "pt-BR"] as const)("creates an ordered multipart batch in %s", async (language) => {
+    httpMock.post.mockResolvedValue({ id: "batch-1" });
+    const reference = new File([new Uint8Array([1, 2, 3])], "voice.wav", { type: "audio/wav" });
+    await chatterboxApi.createBatch({
+      reference,
+      segments: [
+        { text: "Bahagian pertama.", referenceTranslation: "第一部分。", fileName: "one" },
+        { text: "Bahagian kedua.", fileName: "two" }
+      ],
+      name: "demo-batch",
+      language,
+      authorization: "self",
+      consentConfirmed: true,
+      exaggeration: 0.5,
+      cfgWeight: 0.5,
+      temperature: 0.8,
+      seed: 7,
+      includeSubtitles: true,
+      subtitleMode: "sentences",
+      referenceRetained: true
+    });
+
+    const [url, form] = httpMock.post.mock.calls[0] as [string, FormData];
+    expect(url).toBe("/tools/edge-tts/chatterbox/batches");
+    const segments = JSON.parse(String(form.get("segments")));
+    expect(segments).toHaveLength(2);
+    expect(segments[0].referenceTranslation).toBe("第一部分。");
+    expect(form.get("subtitleMode")).toBe("sentences");
+    expect(form.get("referenceRetained")).toBe("true");
+    expect(form.get("language")).toBe(language);
+  });
+
+  it("reuses a permanent voice and sends per-item regeneration parameters", async () => {
+    httpMock.post.mockResolvedValue({ id: "batch-1" });
+    await chatterboxApi.createBatch({
+      voiceId: "voice-1",
+      segments: [{ text: "Saved voice text." }],
+      language: "en",
+      authorization: "self",
+      consentConfirmed: true,
+      exaggeration: 0.5,
+      cfgWeight: 0.5,
+      temperature: 0.8,
+      seed: 0,
+      includeSubtitles: true,
+      subtitleMode: "sentences",
+      referenceRetained: false
+    });
+    let [, form] = httpMock.post.mock.calls[0] as [string, FormData];
+    expect(form.get("voiceId")).toBe("voice-1");
+    expect(form.get("reference")).toBeNull();
+
+    await chatterboxApi.regenerate("batch-1", "item-1", {
+      text: "Regenerated.",
+      referenceTranslation: "重新生成的参考翻译。",
+      seed: 12,
+      exaggeration: 0.9,
+      cfgWeight: 0.7,
+      temperature: 0.4,
+      voiceId: "voice-1"
+    });
+    [, form] = httpMock.post.mock.calls[1] as [string, FormData];
+    expect(form.get("exaggeration")).toBe("0.9");
+    expect(form.get("referenceTranslation")).toBe("重新生成的参考翻译。");
+    expect(form.get("cfgWeight")).toBe("0.7");
+    expect(form.get("temperature")).toBe("0.4");
+    expect(form.get("voiceId")).toBe("voice-1");
   });
 });

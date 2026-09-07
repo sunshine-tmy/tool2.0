@@ -6,8 +6,7 @@ export default defineConfig({
     "edge-tts": "src/edge-tts.ts",
     chatterbox: "src/chatterbox.ts",
     "short-video": "src/short-video.ts",
-    "video-text": "src/video-text.ts",
-    "video-insights": "src/video-insights.ts"
+    "video-text": "src/video-text.ts"
   },
   outDir: "dist",
   format: ["esm"],

@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
+import { Readable } from "node:stream";
+import { setTimeout as delay } from "node:timers/promises";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app";
@@ -18,6 +21,47 @@ afterEach(async () => {
 });
 
 describe("image tools api", () => {
+  it.each(["jpeg", "png", "webp"] as const)("honors %s output when settings follow the file", async (format) => {
+    const app = await createApp();
+    try {
+      // Exceed the multipart stream buffer so trailing fields cannot be parsed early.
+      const image = await sharp(randomBytes(240 * 180 * 3), {
+        raw: { width: 240, height: 180, channels: 3 }
+      })
+        .png()
+        .toBuffer();
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/tools/image-compress",
+        ...multipartPayload({
+          fileName: "demo.png",
+          mimeType: "image/png",
+          content: image,
+          fileFirst: true,
+          fields: { quality: "60", outputFormat: format, width: "120" }
+        })
+      });
+      expect(response.statusCode).toBe(200);
+      const data = response.json().data;
+      expect(data.outputFormat).toBe(format);
+      expect(data.outputName).toMatch(new RegExp(`\\.${format}$`));
+      const download = await app.inject({ method: "GET", url: data.downloadUrl });
+      expect(download.statusCode).toBe(200);
+      const metadata = await sharp(download.rawPayload).metadata();
+      expect(metadata.format).toBe(format);
+      expect(metadata.width).toBe(120);
+      expect(metadata.height).toBe(90);
+      const expected = await sharp(image)
+        .rotate()
+        .resize({ width: 120, withoutEnlargement: true })
+        .toFormat(format, { quality: 60 })
+        .toBuffer();
+      expect(download.rawPayload.equals(expected)).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns compression metadata for uploaded images", async () => {
     const app = await createApp();
     const image = await sharp({
@@ -58,6 +102,49 @@ describe("image tools api", () => {
     expect(data.width).toBe(80);
     expect(data.height).toBe(60);
   });
+
+  it("downloads all completed compression results in one zip", async () => {
+    const app = await createApp();
+    try {
+      const image = await sharp({
+        create: { width: 80, height: 60, channels: 3, background: "#2563eb" }
+      })
+        .png()
+        .toBuffer();
+      const taskIds: string[] = [];
+      for (let index = 0; index < 2; index += 1) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/tools/image-compress",
+          ...multipartPayload({
+            fileName: `demo-${index}.png`,
+            mimeType: "image/png",
+            content: image,
+            fields: { outputFormat: "jpeg" }
+          })
+        });
+        expect(response.statusCode).toBe(200);
+        taskIds.push(response.json().data.task.id);
+      }
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/tools/image-compress/download.zip",
+        payload: {
+          files: taskIds.map((taskId) => ({ taskId, fileName: "商品图.jpg" }))
+        }
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("application/zip");
+      expect(response.rawPayload.subarray(0, 2).toString()).toBe("PK");
+      const zipIndex = response.rawPayload.toString("utf8");
+      expect(zipIndex).toContain("商品图.jpeg");
+      expect(zipIndex).toContain("商品图 (2).jpeg");
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 function multipartPayload(input: {
@@ -65,26 +152,39 @@ function multipartPayload(input: {
   mimeType: string;
   content: Buffer;
   fields?: Record<string, string>;
+  fileFirst?: boolean;
 }) {
   const boundary = `----toolbox-${Math.random().toString(16).slice(2)}`;
   const chunks: Buffer[] = [];
 
-  for (const [name, value] of Object.entries(input.fields ?? {})) {
-    chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`));
-  }
+  const fieldChunks = Object.entries(input.fields ?? {}).map(([name, value]) =>
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`)
+  );
+  if (!input.fileFirst) chunks.push(...fieldChunks);
 
   chunks.push(
     Buffer.from(
       `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${input.fileName}"\r\nContent-Type: ${input.mimeType}\r\n\r\n`
     ),
     input.content,
-    Buffer.from(`\r\n--${boundary}--\r\n`)
+    Buffer.from("\r\n")
   );
+  if (input.fileFirst) chunks.push(...fieldChunks);
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
 
   return {
     headers: {
       "content-type": `multipart/form-data; boundary=${boundary}`
     },
-    payload: Buffer.concat(chunks)
+    payload: input.fileFirst
+      ? Readable.from(
+          (async function* () {
+            for (const chunk of chunks) {
+              yield chunk;
+              await delay(25);
+            }
+          })()
+        )
+      : Buffer.concat(chunks)
   };
 }

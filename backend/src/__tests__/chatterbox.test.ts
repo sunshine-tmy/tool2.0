@@ -8,8 +8,10 @@ import { createApp } from "../app";
 let testRoot = "";
 let workerServer: Server | undefined;
 let workerUrl = "";
+let generateRequests: Array<Record<string, unknown>> = [];
 
 beforeEach(async () => {
+  generateRequests = [];
   testRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "toolbox-chatterbox-"));
   workerServer = createServer(async (request, response) => {
     response.setHeader("content-type", "application/json");
@@ -31,7 +33,12 @@ beforeEach(async () => {
       return;
     }
     if (request.url === "/generate" && request.method === "POST") {
-      const input = JSON.parse((await readRequest(request)) || "{}") as { output_path: string; text: string };
+      const input = JSON.parse((await readRequest(request)) || "{}") as {
+        output_path: string;
+        text: string;
+        [key: string]: unknown;
+      };
+      generateRequests.push(input);
       const parts = input.text
         .match(/[^.!?]+[.!?]?/g)
         ?.map((value) => value.trim())
@@ -82,12 +89,234 @@ afterEach(async () => {
 });
 
 describe("Chatterbox voice cloning module", () => {
-  it("reports local V3 worker, generates MP3/SRT and removes the reference audio", async () => {
+  it.each(["ms", "pt-BR"])("generates ordered batch audio and supports item regeneration in %s", async (language) => {
     const app = await createApp();
-    const subtitleSentences = [
-      "Selamat datang ke kedai kami.",
-      "Hari ini kami memperkenalkan produk baharu yang berkualiti tinggi untuk semua pelanggan di seluruh Malaysia."
+    const segments = [
+      {
+        text: language === "pt-BR" ? "Confira nossas promoções." : "Ini ialah bahagian pertama.",
+        referenceTranslation: "这是第一部分。",
+        fileName: "bahagian-satu"
+      },
+      {
+        text: language === "pt-BR" ? "Aproveite as ofertas de hoje." : "This is the second complete sentence.",
+        referenceTranslation: "这是完整的第二句。",
+        fileName: "part-two"
+      }
     ];
+    const request = multipartRequest(createPcmWav(6), {
+      segments: JSON.stringify(segments),
+      name: "batch-demo",
+      language,
+      authorization: "self",
+      consentConfirmed: "true",
+      exaggeration: "0.5",
+      cfgWeight: "0.5",
+      temperature: "0.8",
+      seed: "9",
+      includeSubtitles: "true",
+      subtitleMode: "sentences",
+      referenceRetained: "true"
+    });
+    const created = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/batches", ...request });
+    expect(created.statusCode).toBe(202);
+    const batchId = created.json().data.id as string;
+    let batch = await waitForBatch(app, batchId);
+    expect(batch).toMatchObject({
+      status: "completed",
+      completedItems: 2,
+      failedItems: 0,
+      totalAudioDurationSeconds: 2,
+      referenceAvailable: true,
+      combinedAudioUrl: expect.any(String),
+      subtitleUrl: expect.any(String),
+      translationSubtitleUrl: expect.any(String),
+      bilingualSubtitleUrl: expect.any(String)
+    });
+    expect(batch.items).toHaveLength(2);
+    expect(batch.items.map((item: { referenceTranslation?: string }) => item.referenceTranslation)).toEqual(
+      segments.map((item) => item.referenceTranslation)
+    );
+    expect(JSON.stringify(generateRequests)).not.toContain("这是第一部分");
+    const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/batches" });
+    expect(list.json().data.batches[0].itemPreviews[0].referenceTranslation).toBeUndefined();
+
+    const firstAudio = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/items/${batch.items[0].id}/download`
+    });
+    expect(firstAudio.statusCode).toBe(200);
+    expect(firstAudio.headers["content-disposition"]).toContain("001-bahagian-satu.mp3");
+
+    const combinedAudio = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/combined-audio`
+    });
+    expect(combinedAudio.statusCode).toBe(200);
+    expect(combinedAudio.headers["content-disposition"]).toContain(
+      encodeURIComponent(`总音频-${batchId.slice(0, 8)}.mp3`)
+    );
+    expect(combinedAudio.rawPayload.subarray(0, 3).toString("ascii")).toBe("ID3");
+
+    await fsp.writeFile(
+      path.join(testRoot, "storage", "chatterbox", "batches", batchId, "subtitle.srt"),
+      "1\n00:00:00,000 --> 00:00:01,000\n旧版字幕没有中文\n",
+      "utf8"
+    );
+    await fsp.rm(path.join(testRoot, "storage", "chatterbox", "batches", batchId, "subtitle.zh-CN.srt"), {
+      force: true
+    });
+    const subtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+    });
+    const sourceLanguageName = language === "pt-BR" ? "巴西葡语" : "马来语";
+    expect(subtitle.headers["content-disposition"]).toContain(
+      encodeURIComponent(`${sourceLanguageName}-${batchId.slice(0, 8)}.srt`)
+    );
+    expect(readSrtCueTexts(subtitle.body)).toEqual(segments.map((item) => item.text));
+    expect(subtitle.body).not.toContain(segments[0].referenceTranslation);
+    expect(subtitle.body).toContain("00:00:01,000 --> 00:00:02,000");
+
+    const translationSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+    });
+    expect(translationSubtitle.statusCode).toBe(200);
+    expect(translationSubtitle.headers["content-disposition"]).toContain(
+      encodeURIComponent(`中文字幕-${batchId.slice(0, 8)}.srt`)
+    );
+    expect(readSrtCueTexts(translationSubtitle.body)).toEqual(segments.map((item) => item.referenceTranslation));
+
+    const bilingualSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+    });
+    expect(bilingualSubtitle.statusCode).toBe(200);
+    expect(bilingualSubtitle.headers["content-disposition"]).toContain(
+      encodeURIComponent(`双语字幕-${batchId.slice(0, 8)}.srt`)
+    );
+    expect(readSrtCueTexts(bilingualSubtitle.body)).toEqual(
+      segments.map((item) => `${item.text} ${item.referenceTranslation}`)
+    );
+    expect(bilingualSubtitle.body).toContain(`${segments[0].text}\n${segments[0].referenceTranslation}`);
+
+    const archive = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/download.zip`
+    });
+    expect(archive.statusCode).toBe(200);
+    expect(archive.headers["content-type"]).toContain("application/zip");
+    expect(archive.rawPayload.subarray(0, 2).toString()).toBe("PK");
+    expect(archive.rawPayload.toString("utf8")).toContain(`${sourceLanguageName}-${batchId.slice(0, 8)}.srt`);
+    expect(archive.rawPayload.toString("utf8")).toContain(`中文字幕-${batchId.slice(0, 8)}.srt`);
+    expect(archive.rawPayload.toString("utf8")).toContain(`双语字幕-${batchId.slice(0, 8)}.srt`);
+    expect(archive.rawPayload.toString("utf8")).toContain(`总音频-${batchId.slice(0, 8)}.mp3`);
+
+    const reversedIds = [...batch.items].reverse().map((item: { id: string }) => item.id);
+    const reordered = await app.inject({
+      method: "PATCH",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/order`,
+      payload: { itemIds: reversedIds }
+    });
+    expect(reordered.statusCode).toBe(200);
+    const reorderedSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+    });
+    expect(readSrtCueTexts(reorderedSubtitle.body)).toEqual([...segments].reverse().map((item) => item.text));
+    const reorderedTranslationSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+    });
+    expect(readSrtCueTexts(reorderedTranslationSubtitle.body)).toEqual(
+      [...segments].reverse().map((item) => item.referenceTranslation)
+    );
+    const reorderedBilingualSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+    });
+    expect(readSrtCueTexts(reorderedBilingualSubtitle.body)).toEqual(
+      [...segments].reverse().map((item) => `${item.text} ${item.referenceTranslation}`)
+    );
+
+    batch = reordered.json().data;
+    const itemId = batch.items[0].id as string;
+    const regeneratedText =
+      language === "pt-BR"
+        ? "Esta frase substitui o áudio anterior."
+        : "This regenerated sentence replaces the previous audio.";
+    const regeneratedTranslation = "这是重新生成后的中文参考翻译。";
+    const regenerate = multipartRequest(createPcmWav(6), {
+      text: regeneratedText,
+      referenceTranslation: regeneratedTranslation,
+      fileName: "regenerated",
+      seed: "17",
+      exaggeration: "0.9",
+      cfgWeight: "0.7",
+      temperature: "0.4"
+    });
+    const regeneration = await app.inject({
+      method: "POST",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}/regenerate`,
+      ...regenerate
+    });
+    expect(regeneration.statusCode, regeneration.body).toBe(202);
+    batch = await waitForBatch(app, batchId);
+    expect(batch.items.find((item: { id: string }) => item.id === itemId)).toMatchObject({
+      status: "completed",
+      text: regeneratedText,
+      referenceTranslation: regeneratedTranslation,
+      fileName: "regenerated",
+      seed: 17,
+      exaggeration: 0.9,
+      cfgWeight: 0.7,
+      temperature: 0.4,
+      attempt: 2
+    });
+    expect(generateRequests.at(-1)).toMatchObject({
+      language,
+      text: regeneratedText,
+      seed: 17,
+      exaggeration: 0.9,
+      cfg_weight: 0.7,
+      temperature: 0.4
+    });
+    expect(JSON.stringify(generateRequests.at(-1))).not.toContain(regeneratedTranslation);
+    const regeneratedSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+    });
+    expect(readSrtCueTexts(regeneratedSubtitle.body)[0]).toBe(regeneratedText);
+    const regeneratedTranslationSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+    });
+    expect(readSrtCueTexts(regeneratedTranslationSubtitle.body)[0]).toBe(regeneratedTranslation);
+    const regeneratedBilingualSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+    });
+    expect(readSrtCueTexts(regeneratedBilingualSubtitle.body)[0]).toBe(`${regeneratedText} ${regeneratedTranslation}`);
+
+    const removeReference = await app.inject({
+      method: "DELETE",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/reference`
+    });
+    expect(removeReference.statusCode).toBe(200);
+    const detail = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/batches/${batchId}` });
+    expect(detail.json().data.referenceAvailable).toBe(false);
+    await app.close();
+  });
+
+  it.each(["ms", "pt-BR"])("generates MP3/SRT and removes the reference audio in %s", async (language) => {
+    const app = await createApp();
+    const subtitleSentences =
+      language === "pt-BR"
+        ? ["Olá, bem-vindo à nossa loja.", "Aproveite as promoções de hoje!"]
+        : [
+            "Selamat datang ke kedai kami.",
+            "Hari ini kami memperkenalkan produk baharu yang berkualiti tinggi untuk semua pelanggan di seluruh Malaysia."
+          ];
     const health = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/health" });
     expect(health.json().data).toMatchObject({
       available: true,
@@ -99,7 +328,7 @@ describe("Chatterbox voice cloning module", () => {
 
     const request = multipartRequest(createPcmWav(6), {
       text: subtitleSentences.join(" "),
-      language: "ms",
+      language,
       authorization: "self",
       consentConfirmed: "true",
       exaggeration: "0.5",
@@ -115,7 +344,7 @@ describe("Chatterbox voice cloning module", () => {
     const task = await waitForTask(app, taskId);
     expect(task).toMatchObject({
       status: "completed",
-      language: "ms",
+      language,
       referenceDurationSeconds: 6,
       audioDurationSeconds: 1
     });
@@ -154,7 +383,119 @@ describe("Chatterbox voice cloning module", () => {
 
     const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/tasks" });
     expect(list.json().data.tasks[0].text).toBeUndefined();
-    expect(list.json().data.tasks[0].textPreview).toContain("Selamat");
+    expect(list.json().data.tasks[0].textPreview).toContain(subtitleSentences[0]);
+    expect(generateRequests.at(-1)).toMatchObject({ language });
+    await app.close();
+  });
+
+  it("deletes unretained batch references and requires a new upload for regeneration", async () => {
+    const app = await createApp();
+    const text = "First sentence. Second sentence.";
+    const request = multipartRequest(createPcmWav(6), {
+      segments: JSON.stringify([
+        { text, referenceTranslation: "这是两句原文的合并翻译。" },
+        { text: "Third sentence.", referenceTranslation: "这是第三句。" }
+      ]),
+      language: "en",
+      authorization: "self",
+      consentConfirmed: "true",
+      exaggeration: "0.5",
+      cfgWeight: "0.5",
+      temperature: "0.8",
+      seed: "0",
+      includeSubtitles: "true",
+      subtitleMode: "sentences",
+      referenceRetained: "false"
+    });
+    const created = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/batches", ...request });
+    const batchId = created.json().data.id as string;
+    const batch = await waitForBatch(app, batchId);
+    expect(batch).toMatchObject({ status: "completed", referenceAvailable: false });
+    const subtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+    });
+    expect(subtitle.headers["content-disposition"]).toContain(encodeURIComponent(`英语-${batchId.slice(0, 8)}.srt`));
+    expect(readSrtCueTexts(subtitle.body)).toEqual(["First sentence.", "Second sentence.", "Third sentence."]);
+    const translationSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+    });
+    expect(translationSubtitle.headers["content-disposition"]).toContain(
+      encodeURIComponent(`中文字幕-${batchId.slice(0, 8)}.srt`)
+    );
+    expect(readSrtCueTexts(translationSubtitle.body)).toEqual(["这是两句原文的合并翻译。", "这是第三句。"]);
+    const bilingualSubtitle = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+    });
+    expect(readSrtCueTexts(bilingualSubtitle.body)).toEqual([
+      `${text} 这是两句原文的合并翻译。`,
+      "Third sentence. 这是第三句。"
+    ]);
+
+    const regenerate = multipartFieldsRequest({ text });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/items/${batch.items[0].id}/regenerate`,
+      ...regenerate
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("CHATTERBOX_REFERENCE_REQUIRED");
+    await app.close();
+  });
+
+  it.each(["ms", "pt-BR"])("saves, previews, reuses and deletes a reference voice in %s", async (language) => {
+    const app = await createApp();
+    const saveRequest = multipartRequest(createPcmWav(6), {
+      name: "Suara Kekal",
+      language,
+      authorization: "self",
+      consentConfirmed: "true"
+    });
+    const saved = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/voices", ...saveRequest });
+    expect(saved.statusCode).toBe(201);
+    const voiceId = saved.json().data.id as string;
+    expect(saved.json().data).toMatchObject({ name: "Suara Kekal", language, durationSeconds: 6 });
+
+    const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/voices" });
+    expect(voices.json().data.voices).toHaveLength(1);
+    const preview = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/voices/${voiceId}/audio` });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers["content-type"]).toContain("audio/wav");
+
+    const createRequest = multipartFieldsRequest({
+      voiceId,
+      segments: JSON.stringify([{ text: "Ayat menggunakan suara yang disimpan." }]),
+      language,
+      authorization: "self",
+      consentConfirmed: "true",
+      exaggeration: "0.5",
+      cfgWeight: "0.5",
+      temperature: "0.8",
+      seed: "0",
+      includeSubtitles: "true",
+      subtitleMode: "sentences",
+      referenceRetained: "false"
+    });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/tools/edge-tts/chatterbox/batches",
+      ...createRequest
+    });
+    expect(created.statusCode, created.body).toBe(202);
+    const batch = await waitForBatch(app, created.json().data.id);
+    expect(batch.status).toBe("completed");
+
+    const removed = await app.inject({ method: "DELETE", url: `/api/tools/edge-tts/chatterbox/voices/${voiceId}` });
+    expect(removed.statusCode).toBe(200);
+    const emptyList = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/voices" });
+    expect(emptyList.json().data.voices).toHaveLength(0);
+    const batchAudio = await app.inject({
+      method: "GET",
+      url: `/api/tools/edge-tts/chatterbox/batches/${batch.id}/items/${batch.items[0].id}/download`
+    });
+    expect(batchAudio.statusCode).toBe(200);
     await app.close();
   });
 
@@ -188,6 +529,16 @@ async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, taskId: s
   throw new Error("Timed out waiting for Chatterbox task");
 }
 
+async function waitForBatch(app: Awaited<ReturnType<typeof createApp>>, batchId: string) {
+  for (let index = 0; index < 150; index += 1) {
+    const response = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/batches/${batchId}` });
+    const batch = response.json().data;
+    if (!["queued", "processing"].includes(batch.status)) return batch;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Timed out waiting for Chatterbox batch");
+}
+
 function multipartRequest(file: Buffer, fields: Record<string, string>) {
   const boundary = `----toolbox-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const chunks: Buffer[] = [];
@@ -200,6 +551,15 @@ function multipartRequest(file: Buffer, fields: Record<string, string>) {
     )
   );
   chunks.push(file, Buffer.from(`\r\n--${boundary}--\r\n`));
+  return { headers: { "content-type": `multipart/form-data; boundary=${boundary}` }, payload: Buffer.concat(chunks) };
+}
+
+function multipartFieldsRequest(fields: Record<string, string>) {
+  const boundary = `----toolbox-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const chunks = Object.entries(fields).map(([name, value]) =>
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`)
+  );
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
   return { headers: { "content-type": `multipart/form-data; boundary=${boundary}` }, payload: Buffer.concat(chunks) };
 }
 

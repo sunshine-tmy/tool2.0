@@ -63,7 +63,7 @@ class WorkerFailure(RuntimeError):
 
 class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
-    language: Literal["ms", "en"]
+    language: Literal["ms", "en", "pt-BR"]
     reference_path: str
     output_path: str
     exaggeration: float = Field(default=0.5, ge=0.25, le=1.5)
@@ -164,7 +164,9 @@ class ModelManager:
             for chunk in chunks:
                 wav = model.generate(
                     chunk,
-                    language_id=payload.language,
+                    # The installed multilingual model accepts Portuguese as "pt".
+                    # Brazilian pronunciation is guided by the reference recording.
+                    language_id="pt" if payload.language == "pt-BR" else payload.language,
                     exaggeration=payload.exaggeration,
                     cfg_weight=payload.cfg_weight,
                     temperature=payload.temperature,

@@ -1,0 +1,30 @@
+通过微信、浏览器、网盘等方式收到压缩包后，macOS 会给解压出的脚本添加“隔离”标记。
+因此首次直接双击 macOS一键启动.command，可能提示“来自身份不明的开发者”。
+
+首次运行请按下面步骤操作一次：
+
+1. 打开 macOS 自带的“终端”。
+2. 输入 cd 和一个空格：
+
+   cd 
+
+3. 把解压后的 lan-file-transfer-standalone 文件夹拖进终端窗口，然后按回车。
+4. 复制下面整行命令到终端并按回车：
+
+   xattr -dr com.apple.quarantine . && chmod +x ./*.command ./scripts/*.sh && ./macOS一键启动.command
+
+首次成功启动后，以后可以直接双击：
+
+- macOS一键启动.command
+- macOS一键停止.command
+
+请只对确认由可信朋友发送的压缩包执行上述解除隔离命令。
+运行环境需要：
+
+- Apple M 系列 ARM64 芯片
+- Node.js 20、22 或 24，推荐 Node.js 22 LTS
+
+文件传输和图片压缩不需要 Python。
+只有使用 AI 图片处理时才需要 Python 3.11 ARM64；进入 AI 页面点击一键安装后，系统会自动打开根目录中的官方 Universal2 安装包。
+
+首次启动只安装前后端 Node.js 依赖，不会自动安装 AI 环境。

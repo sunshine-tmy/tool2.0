@@ -18,7 +18,7 @@ describe.skipIf(!live)("edge tts live service", () => {
     await fsp.rm(storageRoot, { recursive: true, force: true });
   });
 
-  it("generates real Malay and English audio with subtitles", async () => {
+  it("generates real Malay, English and Brazilian Portuguese audio with subtitles", async () => {
     const app = await createApp();
     try {
       const health = await app.inject({ method: "GET", url: "/api/tools/edge-tts/health" });
@@ -37,6 +37,16 @@ describe.skipIf(!live)("edge tts live service", () => {
           text: "Welcome to our store. Thank you for choosing this product.",
           language: "en-US",
           voice: "en-US-JennyNeural"
+        },
+        {
+          text: "Olá! Bem-vindo à nossa loja. Confira nossas promoções.",
+          language: "pt-BR",
+          voice: "pt-BR-FranciscaNeural"
+        },
+        {
+          text: "Obrigado pela preferência. Aproveite as novidades!",
+          language: "pt-BR",
+          voice: "pt-BR-AntonioNeural"
         }
       ] as const) {
         const created = await app.inject({

@@ -7,7 +7,7 @@
           <p>批量压缩商品图、详情页素材和社媒图片，压缩后保留清晰度与下载记录。</p>
         </div>
         <div class="result-actions">
-          <n-button secondary :disabled="!completedItems.length" @click="downloadAll">
+          <n-button secondary :loading="downloading" :disabled="!completedItems.length" @click="downloadAll">
             <template #icon>
               <Download :size="16" />
             </template>
@@ -187,6 +187,7 @@ const message = useMessage();
 const items = ref<ImageItem[]>([]);
 const isDragging = ref(false);
 const submitting = ref(false);
+const downloading = ref(false);
 const quality = ref(78);
 const width = ref<number | null>(null);
 const outputFormat = ref<OutputFormat>("webp");
@@ -317,11 +318,46 @@ function clearItems() {
   items.value = [];
 }
 
-function downloadAll() {
-  for (const item of completedItems.value) {
-    if (!item.result) continue;
-    window.open(absoluteDownloadUrl(item.result.downloadUrl), "_blank");
+async function downloadAll() {
+  downloading.value = true;
+  try {
+    const files = completedItems.value.flatMap((item) =>
+      item.result
+        ? [
+            {
+              taskId: item.result.task.id,
+              fileName: batchOutputName(item.result)
+            }
+          ]
+        : []
+    );
+    const { blob, contentDisposition } = await imageCompressApi.downloadAll(files);
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = decodeDownloadFileName(contentDisposition) ?? `图片压缩结果-${Date.now()}.zip`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "批量下载失败");
+  } finally {
+    downloading.value = false;
   }
+}
+
+function batchOutputName(result: ImageToolResponse) {
+  const baseName = result.originalName.replace(/\.[^.]+$/, "") || "image";
+  const extension = result.outputFormat === "jpeg" ? "jpg" : result.outputFormat;
+  return `${baseName}.${extension}`;
+}
+
+function decodeDownloadFileName(contentDisposition?: string) {
+  if (!contentDisposition) return undefined;
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition)?.[1];
+  if (encoded) return decodeURIComponent(encoded);
+  return /filename="?([^";]+)"?/i.exec(contentDisposition)?.[1];
 }
 
 function absoluteDownloadUrl(downloadUrl: string) {

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*/dist/
+packages/*/dist/
+.runtime/
+.env
+storage/lan-transfer/*
+!storage/lan-transfer/files/
+storage/lan-transfer/files/*
+!storage/lan-transfer/files/.gitkeep
+.venv-image-ai/
+models/image-ai/
+storage/image-ai/
+storage/outputs/
+storage/uploads/
+storage/temp/

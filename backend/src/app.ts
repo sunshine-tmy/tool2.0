@@ -12,7 +12,6 @@ import { registerEdgeTtsRoutes } from "./modules/edge-tts";
 import { registerChatterboxRoutes } from "./modules/chatterbox/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
 import { registerShortVideoRoutes } from "./modules/short-video";
-import { registerVideoInsightRoutes } from "./modules/video-insights";
 import { registerVideoTextRoutes } from "./modules/video-text";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
@@ -50,7 +49,6 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
   await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
-  await fsp.mkdir(config.videoInsightsCardsDir, { recursive: true });
   await fsp.mkdir(config.imageAiInputsDir, { recursive: true });
   await fsp.mkdir(config.imageAiOutputsDir, { recursive: true });
   await fsp.mkdir(config.imageAiTasksDir, { recursive: true });
@@ -67,10 +65,6 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       },
       shortVideo: {
         providerConfigured: Boolean(config.shortVideoParseApiUrl)
-      },
-      videoInsights: {
-        modelConfigured: Boolean(config.videoInsightsModelBaseUrl && config.videoInsightsModelName),
-        model: config.videoInsightsModelName
       },
       imageAi: {
         workerUrl: config.imageAiWorkerUrl,
@@ -131,7 +125,6 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await registerLanTransferRoutes({ app, config });
   await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
   await registerShortVideoRoutes({ app, config, remoteFetch });
-  await registerVideoInsightRoutes({ app, config, remoteFetch });
 
   return app;
 }

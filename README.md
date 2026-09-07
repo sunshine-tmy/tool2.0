@@ -7,23 +7,16 @@
 
 ## 功能矩阵
 
-| 模块            | 前端路由                | API 命名空间                  | 能力                                                 |
-| --------------- | ----------------------- | ----------------------------- | ---------------------------------------------------- |
-| 图片压缩        | `/tools/image-compress` | `/api/tools/image-compress`   | JPEG/PNG/WebP 批量压缩、缩放和格式转换               |
-| AI 图片处理     | `/tools/image-ai`       | `/api/tools/image-ai/*`       | 去水印、清晰度增强、商品图抠图，本地模型推理         |
-| 局域网文件传输  | `/tools/lan-transfer`   | `/api/tools/lan-transfer/*`   | 文件断点续传、图文快传、预览、下载、筛选和过期清理   |
-| 视频文本解析    | `/tools/video-text`     | `/api/tools/video-text/*`     | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出 |
-| 马来语/英语配音 | `/tools/edge-tts`       | `/api/tools/edge-tts/*`       | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆       |
-| 短视频解析      | `/tools/short-video`    | `/api/tools/short-video/*`    | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理    |
-| 竞品拆解        | `/tools/video-insights` | `/api/tools/video-insights/*` | 本地竞品卡片、规则拆解、可编辑话术与模型增强         |
+| 模块           | 前端路由                | API 命名空间                | 能力                                                   |
+| -------------- | ----------------------- | --------------------------- | ------------------------------------------------------ |
+| 图片压缩       | `/tools/image-compress` | `/api/tools/image-compress` | JPEG/PNG/WebP 批量压缩、缩放和格式转换                 |
+| AI 图片处理    | `/tools/image-ai`       | `/api/tools/image-ai/*`     | 去水印、清晰度增强、商品图抠图，本地模型推理           |
+| 局域网文件传输 | `/tools/lan-transfer`   | `/api/tools/lan-transfer/*` | 文件断点续传、剪贴板粘贴上传、图文快传、预览和过期清理 |
+| 视频文本解析   | `/tools/video-text`     | `/api/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出   |
+| 多国语言配音   | `/tools/edge-tts`       | `/api/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆         |
+| 短视频解析     | `/tools/short-video`    | `/api/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理      |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
-
-竞品拆解默认将卡片和转写结论保存在 `storage/video-insights/`，不会复制原始视频。未配置模型时，仍会基于标题、文案和可用的本地转写生成钩子、结构、关键词、话术与风险提示；只有配置模型服务后，才会将用户选择的文本与必要元数据发送给该服务。
-
-除分享链接外，工作台也支持直接上传本地视频。上传分析依赖 `VIDEO_TEXT_TRANSCRIBE_COMMAND`；视频只作为转写过程中的临时输入，分析完成或失败后都会删除原视频、提取音频和临时转写文件，卡片仅保存文件元数据、转写和拆解结果。
-
-规则引擎 v3 采用“证据优先”策略：每个脚本关键点都会关联原文、时间位置、判定信号和证据充分度。引擎会区分带货转化、观点共鸣、知识讲解和故事叙事；除拆解钩子、观点、冲突、卖点证据链和脚本骨架外，还会输出按优先级排列的具体修改建议、规则优化终稿和完整改动清单。每条建议包含当前问题、具体动作、改写示例、预期影响和可用原文证据。最终稿只允许重排或压缩已有证据；缺少证明、报价或事实时使用明确占位符，不会自动编造。
 
 ## 技术架构
 
@@ -74,6 +67,30 @@ Copy-Item .env.example .env
 
 启动器会校验 lockfile、自动探测当前局域网 IPv4、首次安装轻量 Edge-TTS 环境、启动前后端，并启动已经安装的图片 AI 与 Chatterbox 本地 Worker。Chatterbox 体积较大，不会在普通一键启动时自动安装。重复点击时，如果服务已经健康运行，会直接复用并打开页面；如果检测到本项目遗留的部分进程，会自动清理后重新启动。端口被其他程序占用时仍会安全退出并显示进程信息；只有显式运行 `scripts/start-dev.ps1 -ForceRestart` 才会清理陌生进程。
 
+需要完全关闭项目并释放前端、后端和本地 AI Worker 占用的 CPU、内存及显存时，双击或运行：
+
+```powershell
+.\stop.bat
+```
+
+关闭脚本会识别本项目的进程树并释放 `3100`、`5173`、`3210`、`3220` 端口，不会结束恰好占用这些端口的其他程序。
+
+如需清空缓存、构建产物、日志和工具运行期间生成的本地数据，可双击：
+
+```powershell
+.\一键清理缓存和运行数据.bat
+```
+
+该操作会删除 `storage/`、`backend/storage/`、`.logs/`、`.tmp/`、`.package/` 及构建/缓存文件；不会删除 `node_modules`、Python 虚拟环境、模型或 `.env` 配置。也可在命令行运行 `pnpm clear:generated`。
+
+需要把源码交付给其他人时，双击：
+
+```powershell
+.\package-source.bat
+```
+
+脚本会在 `.package/ecommerce-toolbox-source.zip` 生成干净的源码包，不修改当前工作目录。源码包包含当前已提交及尚未提交但未被 Git 忽略的项目文件，并自动排除本机 `.env`、依赖、Python 虚拟环境、AI 模型、构建产物、日志、缓存和所有运行数据。接收方解压后运行 `start.bat` 即可按需重新安装运行环境。
+
 ### 通用命令行启动
 
 ```bash
@@ -114,16 +131,13 @@ pnpm dev
 | `SHORT_VIDEO_CACHE_TTL_MS`              | `300000`                | 解析结果本地短缓存时间；`0` 表示关闭                 |
 | `SHORT_VIDEO_PARSE_RETRIES`             | `1`                     | 网络、限流或 5xx 的额外重试次数                      |
 | `SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK`    | `true`                  | 主解析失败时启用 TikTok 官方预览降级                 |
-| `VIDEO_INSIGHTS_MODEL_BASE_URL`         | 空                      | 可选 OpenAI 兼容或本地 HTTP 模型服务地址             |
-| `VIDEO_INSIGHTS_MODEL_NAME`             | 空                      | 可选模型名称；未配置时仅使用规则引擎                 |
-| `VIDEO_INSIGHTS_MODEL_API_KEY`          | 空                      | 服务端密钥，只应写入 `.env`，不会返回到前端          |
 | `EDGE_TTS_RETENTION_DAYS`               | `3`                     | 生成语音、字幕和任务记录的保留天数                   |
 | `EDGE_TTS_QUEUE_LIMIT`                  | `20`                    | 等待和执行中的语音任务总上限                         |
 | `EDGE_TTS_CONCURRENCY`                  | `2`                     | 同时生成的语音任务数量                               |
 | `CHATTERBOX_WORKER_URL`                 | `http://127.0.0.1:3220` | 本机 Chatterbox Worker，保持 loopback                |
 | `CHATTERBOX_WORKER_TIMEOUT_MS`          | `1200000`               | 单次本地声音克隆超时                                 |
 | `CHATTERBOX_RETENTION_DAYS`             | `3`                     | 克隆结果与任务记录保留天数                           |
-| `CHATTERBOX_QUEUE_LIMIT`                | `10`                    | 等待和执行中的克隆任务总上限                         |
+| `CHATTERBOX_QUEUE_LIMIT`                | `50`                    | 等待和执行中的克隆文案段总上限                       |
 | `CHATTERBOX_DEVICE`                     | `auto`                  | 自动选择 CUDA，或显式设置 `cuda` / `cpu`             |
 | `CHATTERBOX_MODEL_IDLE_MINUTES`         | `10`                    | 空闲多久后卸载模型并释放显存；`0` 表示常驻           |
 | `IMAGE_AI_WORKER_URL`                   | `http://127.0.0.1:3210` | 本地 AI Worker，必须保持 loopback                    |
@@ -137,7 +151,9 @@ pnpm dev
 
 ## 可选能力安装
 
-### 马来语 / 英语配音
+### 多国语言配音
+
+在线自然音色支持马来语（`ms-MY`）、美式英语（`en-US`）、英式英语（`en-GB`）和巴西葡萄牙语（`pt-BR`）。巴西葡语推荐 Francisca 女声与 Antonio 男声，支持语速、音量、音调调整及 MP3/SRT 导出。请直接输入葡萄牙语文案，选择音色不会自动翻译文本。参考音色克隆也支持马来语、英语和巴西葡萄牙语。
 
 一键启动会在首次使用时自动创建 `.venv-edge-tts`。也可以手动安装：
 
@@ -155,7 +171,11 @@ Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服
 .\scripts\setup-chatterbox.ps1 -DownloadModel
 ```
 
-安装完成后重新执行 `start.bat`，启动器会在 `127.0.0.1:3220` 启动常驻 Worker，模型仅在首次生成时加载，并默认在空闲 10 分钟后卸载以释放显存。页面支持马来语与英语，参考录音限制 5–30 秒、20 MB，推荐使用 10–20 秒单人清晰录音。只有本人声音或已取得明确授权的声音才能使用；参考音频在任务完成或失败后立即删除，MP3、按完整句子分段并与生成音频对齐的可选 SRT 和元数据默认保留 3 天。长句只在同一个字幕块内换行，不会拆成多个时间段；旧版结构不正确的 SRT 会在再次下载时按音频总时长自动重建。生成音频保留 Chatterbox 内置的 PerTh AI 水印。
+安装完成后重新执行 `start.bat`，启动器会在 `127.0.0.1:3220` 启动常驻 Worker，模型仅在首次生成时加载，并默认在空闲 10 分钟后卸载以释放显存。页面支持马来语、英语与巴西葡萄牙语，参考录音限制 5–30 秒、20 MB，推荐使用 10–20 秒单人清晰录音。只有本人声音或已取得明确授权的声音才能使用。参考音色克隆支持最多 30 个有序文案段、每段独立 MP3、按顺序拼接的总 MP3、批量 ZIP、原文/中文/双语 SRT、详情管理及单段安全重新生成；单段最多 1,200 字符，批次总计最多 20,000 字符。字幕使用最终 MP3 的实际时长累计偏移，可选择段内按完整句子分段或每段一个字幕块。详情中的单段重生成可单独覆盖情绪强度、音色遵循、随机度和种子。上传的音频可以保存到永久音色库，支持跨批次选择、试听和手动删除，不参与 3 天过期清理；批次临时参考音色和生成结果仍默认 3 天后清理。生成音频保留 Chatterbox 内置的 PerTh AI 水印。
+
+巴西葡语克隆在接口和音色库中使用 `pt-BR`，Worker 会映射为当前通用多语言模型支持的 `pt`。请使用已获授权的巴西葡语参考录音并输入葡语文案，以引导巴西口音；语言选项不会自动翻译，也不能单独保证地域口音。
+
+每段文案可以额外保存最多 2,000 字符的中文翻译。该翻译不参与语音生成和文案字符统计，原文 SRT、中文 SRT 和原文在上中文在下的双语 SRT 分开提供下载，ZIP 内也会同时包含。字幕以批次随机 ID 的前 8 位作为稳定哈希后缀，例如 `马来语-aB12cd34.srt`、`中文字幕-aB12cd34.srt` 与 `双语字幕-aB12cd34.srt`；总音频命名为 `总音频-aB12cd34.mp3`。选择按句分段时，原文与中文句数相同会逐句对应；句数不同时，该文案段的中文字幕及双语字幕会合并为一个完整字幕块，避免遗漏或错配中文。
 
 ### 视频文本解析
 
@@ -188,19 +208,20 @@ pnpm dev:ai
 
 ## 开发与质量命令
 
-| 命令                                | 用途                                               |
-| ----------------------------------- | -------------------------------------------------- |
-| `pnpm dev`                          | 并行启动前端和 API                                 |
-| `pnpm dev:web` / `pnpm dev:api`     | 单独启动某一侧                                     |
-| `pnpm test`                         | 运行全部 TypeScript/Vue 测试                       |
-| `pnpm test:python`                  | 运行无需模型的 faster-whisper 单元测试             |
-| `pnpm lint`                         | ESLint（TypeScript + Vue）                         |
-| `pnpm deadcode`                     | Knip 未使用文件、依赖与导出检查                    |
-| `pnpm typecheck`                    | 全 workspace 严格类型检查                          |
-| `pnpm format` / `pnpm format:check` | Prettier 写入/校验                                 |
-| `pnpm build`                        | 顺序构建 shared、backend、frontend，并执行产物冒烟 |
-| `pnpm check`                        | CI 同款完整质量门禁                                |
-| `pnpm clean`                        | 删除构建与覆盖率产物                               |
+| 命令                                | 用途                                                 |
+| ----------------------------------- | ---------------------------------------------------- |
+| `pnpm dev`                          | 并行启动前端和 API                                   |
+| `pnpm dev:web` / `pnpm dev:api`     | 单独启动某一侧                                       |
+| `pnpm test`                         | 运行全部 TypeScript/Vue 测试                         |
+| `pnpm test:python`                  | 运行无需模型的 faster-whisper 单元测试               |
+| `pnpm lint`                         | ESLint（TypeScript + Vue）                           |
+| `pnpm deadcode`                     | Knip 未使用文件、依赖与导出检查                      |
+| `pnpm typecheck`                    | 全 workspace 严格类型检查                            |
+| `pnpm format` / `pnpm format:check` | Prettier 写入/校验                                   |
+| `pnpm build`                        | 顺序构建 shared、backend、frontend，并执行产物冒烟   |
+| `pnpm check`                        | CI 同款完整质量门禁                                  |
+| `pnpm clean`                        | 删除构建与覆盖率产物                                 |
+| `pnpm clear:generated`              | 清空缓存、构建产物、日志和运行时生成数据（保留依赖） |
 
 图片 AI 的可选环境测试：
 

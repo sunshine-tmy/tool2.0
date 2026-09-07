@@ -53,16 +53,7 @@
 import { computed } from "vue";
 import { NTag } from "naive-ui";
 import { listTools } from "@toolbox/shared";
-import {
-  AudioLines,
-  ChartNoAxesCombined,
-  Clapperboard,
-  FileArchive,
-  FileVideo,
-  ImageDown,
-  ScanLine,
-  Wrench
-} from "lucide-vue-next";
+import { AudioLines, Clapperboard, FileArchive, FileVideo, ImageDown, ScanLine, Wrench } from "lucide-vue-next";
 import ToolLayout from "../layouts/ToolLayout.vue";
 
 const tools = listTools();
@@ -74,7 +65,6 @@ const iconByTool: Record<string, unknown> = {
   "lan-transfer": FileArchive,
   "video-text": FileVideo,
   "edge-tts": AudioLines,
-  "short-video": Clapperboard,
-  "video-insights": ChartNoAxesCombined
+  "short-video": Clapperboard
 };
 </script>

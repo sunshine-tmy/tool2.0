@@ -1,0 +1,29 @@
+{
+  "name": "lan-file-transfer-standalone",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20 <25"
+  },
+  "scripts": {
+    "dev": "npm run build:shared && concurrently -k -n API,WEB -c blue,green \"npm run dev -w backend\" \"npm run dev -w frontend\"",
+    "build": "npm run build:shared && npm run build -w backend && npm run build -w frontend",
+    "build:shared": "npm run build -w @toolbox/shared",
+    "serve": "concurrently -k -n API,WEB -c blue,green \"npm run start -w backend\" \"npm run preview -w frontend\"",
+    "test": "npm run test -w frontend",
+    "typecheck": "npm run typecheck -w @toolbox/shared && npm run typecheck -w backend && npm run typecheck -w frontend"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.10",
+    "concurrently": "^9.2.1",
+    "rollup": "^4.62.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.8.3"
+  }
+}

@@ -568,6 +568,40 @@ describe("lan transfer api", () => {
     expect(preview.body).toBe("abcdefghij");
   });
 
+  it("uploads and downloads an empty text file", async () => {
+    const app = await createApp();
+    const session = await app.inject({
+      method: "POST",
+      url: "/api/lan/uploads",
+      headers: {
+        "content-type": "application/json"
+      },
+      payload: {
+        originalName: "empty.txt",
+        mimeType: "text/plain",
+        size: 0,
+        chunkSize: 4,
+        totalChunks: 0
+      }
+    });
+
+    expect(session.statusCode).toBe(200);
+    expect(session.json().data).toMatchObject({ size: 0, totalChunks: 0, uploadedChunks: [] });
+
+    const complete = await app.inject({
+      method: "POST",
+      url: `/api/lan/uploads/${session.json().data.uploadId}/complete`
+    });
+
+    expect(complete.statusCode).toBe(200);
+    const file = complete.json().data.file;
+    expect(file).toMatchObject({ originalName: "empty.txt", size: 0, category: "text", previewable: true });
+
+    const download = await app.inject({ method: "GET", url: `/api/lan/files/${file.id}/download` });
+    expect(download.statusCode).toBe(200);
+    expect(download.body).toBe("");
+  });
+
   it("records concurrently uploaded chunks without losing resume state", async () => {
     const app = await createApp();
     const content = Array.from({ length: 12 }, (_, index) => String(index).padStart(2, "0")).join("");
