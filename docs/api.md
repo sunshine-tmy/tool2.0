@@ -151,6 +151,28 @@
 
 分享链接只接受抖音、小红书、TikTok 主域或真实子域，并校验所选平台与链接域名一致。解析结果默认短缓存 5 分钟；TikTok 主解析失败时可降级到官方 oEmbed 预览。远程媒体统一限制为 HTTP(S) 80/443、无凭证、非私网地址、最多 3 次逐跳验证重定向、默认 120 秒与 2 GiB。
 
+## 小红书内容归档
+
+- `POST /api/tools/xhs-archive/items`：JSON `{ url }` 创建获取任务；`url` 可为链接或包含链接的分享文案。
+- `GET /api/tools/xhs-archive/tasks/:taskId`：读取环境安装、链接解析、媒体下载和写入存档进度。
+- `GET /api/tools/xhs-archive/items?keyword=&type=&page=&pageSize=`：搜索、筛选和分页读取存档。
+- `GET /api/tools/xhs-archive/items/:id`：读取完整正文、作者和媒体清单。
+- `POST /api/tools/xhs-archive/items/:id/refresh`：重新获取并原子更新相同笔记。
+- `DELETE /api/tools/xhs-archive/items/:id`：永久删除记录和本地媒体。
+- `GET /api/tools/xhs-archive/items/:id/media/:mediaId`：本地媒体预览；`?download=1` 强制下载，视频支持 Range。
+- `GET /api/tools/xhs-archive/items/:id/download.zip`：流式下载 `内容.txt`、`metadata.json` 和顺序编号媒体。
+- `GET /api/tools/xhs-archive/runtime`：读取固定版本解析环境及登录状态。
+- `POST /api/tools/xhs-archive/auth/start`、`GET /api/tools/xhs-archive/auth/:sessionId`：打开本机浏览器登录并读取结果。
+
+只接受 `xiaohongshu.com`、`xhslink.com` 和 `xhslink.cn`，媒体下载复用统一 SSRF、重定向、单文件大小和总配额限制。刷新期间先写 staging；任何媒体失败均保留旧存档。
+
+## 存储与清理
+
+- `GET /api/maintenance/cleanup`：返回白名单分类的文件数、占用、风险和停服建议。
+- `POST /api/maintenance/cleanup`：JSON `{ ids, dryRun? }` 清理选中的分类 ID，不接受文件路径。
+
+小红书永久存档为独立高风险分类且默认不选；依赖、模型、Python 环境、`.env` 和小红书登录态不属于任何可清理分类。
+
 ## 常见错误码
 
 | 错误码                                    | 含义                           |
@@ -169,5 +191,8 @@
 | `VIDEO_DOWNLOAD_FAILED`                   | 远程地址被拒绝、超时或响应异常 |
 | `SHORT_VIDEO_PROVIDER_UNAVAILABLE`        | 第三方解析服务不可用           |
 | `SHORT_VIDEO_PLATFORM_MISMATCH`           | 选择的平台与分享链接不匹配     |
+| `XHS_AUTH_REQUIRED`                       | 内容不完整，需要登录后重试     |
+| `XHS_MEDIA_DOWNLOAD_PARTIAL`              | 部分媒体失败，旧存档保持不变   |
+| `XHS_STORAGE_QUOTA_EXCEEDED`              | 小红书存档空间不足             |
 
 HTTP `413/415/429/507` 分别表示过大、不支持媒体类型、队列满和磁盘不足。

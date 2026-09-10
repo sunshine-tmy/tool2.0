@@ -32,8 +32,26 @@ describe("api app", () => {
       "lan-transfer",
       "video-text",
       "edge-tts",
-      "short-video"
+      "short-video",
+      "xhs-archive"
     ]);
+  });
+
+  it("exposes only whitelisted cleanup categories and rejects paths", async () => {
+    const app = await createApp();
+    const inspected = await app.inject({ method: "GET", url: "/api/maintenance/cleanup" });
+    expect(inspected.statusCode).toBe(200);
+    expect(inspected.json().data.some((item: { id: string }) => item.id === "xhs-archive")).toBe(true);
+    expect(inspected.json().data.some((item: { id: string }) => item.id === "build")).toBe(false);
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/maintenance/cleanup",
+      payload: { ids: ["../../outside"] }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error.code).toBe("CLEANUP_FAILED");
+    await app.close();
   });
 
   it("allows CORS preflight requests for chunk upload PUT requests", async () => {

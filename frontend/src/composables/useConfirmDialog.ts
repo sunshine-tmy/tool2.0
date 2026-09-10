@@ -25,7 +25,6 @@ export function useConfirmDialog() {
         positiveText: options.positiveText ?? "确认",
         negativeText: options.negativeText ?? "取消",
         positiveButtonProps: { type: options.danger === false ? "primary" : "error" },
-        negativeButtonProps: { secondary: true },
         closable: false,
         maskClosable: false,
         closeOnEsc: false,

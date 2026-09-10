@@ -47,6 +47,10 @@ backend/storage/**
 storage/video-text/**
 storage/edge-tts/**
 storage/chatterbox/**
+storage/xhs-archive/**
+.runtime/xhs-downloader/
+.runtime/xhs-browser-profile/
+.runtime/playwright-browsers/
 
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep

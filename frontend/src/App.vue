@@ -5,7 +5,9 @@
         <UiErrorBoundary>
           <router-view v-slot="{ Component }">
             <Suspense>
-              <component :is="Component" />
+              <div class="route-view">
+                <component :is="Component" />
+              </div>
               <template #fallback><RouteLoading /></template>
             </Suspense>
           </router-view>
@@ -59,3 +61,9 @@ const themeOverrides: GlobalThemeOverrides = {
   }
 };
 </script>
+
+<style scoped>
+.route-view {
+  display: contents;
+}
+</style>

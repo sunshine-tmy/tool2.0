@@ -14,7 +14,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node "%ROOT%scripts\clear-generated.mjs"
+node "%ROOT%scripts\clear-generated.mjs" --interactive
 if errorlevel 1 (
   echo.
   echo 清理未完成，请查看上方提示。

@@ -7,3 +7,5 @@ export * from "./lan-file";
 export * from "./lan-note";
 export * from "./tools";
 export * from "./short-video";
+export * from "./xhs-archive";
+export * from "./xhs-text";

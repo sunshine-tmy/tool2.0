@@ -11,7 +11,8 @@ describe("tool registry", () => {
       "lan-transfer",
       "video-text",
       "edge-tts",
-      "short-video"
+      "short-video",
+      "xhs-archive"
     ]);
     expect(tools.every((tool) => tool.requiresAuth === false)).toBe(true);
   });
@@ -44,6 +45,10 @@ describe("tool registry", () => {
     expect(getToolById("short-video")).toMatchObject({
       routePath: "/tools/short-video",
       apiNamespace: "/api/tools/short-video"
+    });
+    expect(getToolById("xhs-archive")).toMatchObject({
+      routePath: "/tools/xhs-archive",
+      apiNamespace: "/api/tools/xhs-archive"
     });
   });
 });

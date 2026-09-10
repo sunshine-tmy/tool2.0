@@ -80,6 +80,17 @@ const tools: ToolDefinition[] = [
     acceptedTypes: ["text/plain"],
     routePath: "/tools/short-video",
     apiNamespace: "/api/tools/short-video"
+  },
+  {
+    id: "xhs-archive",
+    title: "小红书内容归档",
+    description: "从小红书链接获取标题、正文、图片和视频，保存到本机并随时预览下载。",
+    category: "video",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["text/plain"],
+    routePath: "/tools/xhs-archive",
+    apiNamespace: "/api/tools/xhs-archive"
   }
 ];
 

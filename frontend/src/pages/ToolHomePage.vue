@@ -59,6 +59,7 @@ import {
   FileArchive,
   FileVideo,
   ImageDown,
+  LibraryBig,
   ScanLine,
   ShieldCheck,
   Wrench
@@ -78,7 +79,8 @@ const iconByTool: Record<string, unknown> = {
   "lan-transfer": FileArchive,
   "video-text": FileVideo,
   "edge-tts": AudioLines,
-  "short-video": Clapperboard
+  "short-video": Clapperboard,
+  "xhs-archive": LibraryBig
 };
 
 function categoryLabel(category: (typeof tools)[number]["category"]) {

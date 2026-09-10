@@ -33,6 +33,15 @@ export type AppConfig = {
   shortVideoCacheTtlMs: number;
   shortVideoParseRetries: number;
   shortVideoTikTokOembedFallback: boolean;
+  xhsArchiveDir: string;
+  xhsArchiveItemsDir: string;
+  xhsArchiveStagingDir: string;
+  xhsArchiveIndexPath: string;
+  xhsRuntimeDir: string;
+  xhsProviderUrl?: string;
+  xhsProviderPort: number;
+  xhsInstallTimeoutMs: number;
+  xhsArchiveMaxStorageBytes: number;
   remoteFetchTimeoutMs: number;
   remoteMediaMaxBytes: number;
   imageAiDir: string;
@@ -69,6 +78,7 @@ export function getConfig(): AppConfig {
   const imageAiDir = path.join(storageRoot, "image-ai");
   const edgeTtsDir = path.join(storageRoot, "edge-tts");
   const chatterboxDir = path.join(storageRoot, "chatterbox");
+  const xhsArchiveDir = path.join(storageRoot, "xhs-archive");
   const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv)?.trim();
 
   return {
@@ -152,6 +162,26 @@ export function getConfig(): AppConfig {
       "SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK",
       getEnv("SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK", fileEnv),
       true
+    ),
+    xhsArchiveDir,
+    xhsArchiveItemsDir: path.join(xhsArchiveDir, "items"),
+    xhsArchiveStagingDir: path.join(xhsArchiveDir, "staging"),
+    xhsArchiveIndexPath: path.join(xhsArchiveDir, "index.json"),
+    xhsRuntimeDir: resolveProjectPath(getEnv("XHS_RUNTIME_DIR", fileEnv)?.trim() || ".runtime/xhs-downloader"),
+    xhsProviderUrl: getEnv("XHS_PROVIDER_URL", fileEnv)?.trim() || undefined,
+    xhsProviderPort: readInteger("XHS_PROVIDER_PORT", getEnv("XHS_PROVIDER_PORT", fileEnv), 5556, 1, 65535),
+    xhsInstallTimeoutMs: readInteger(
+      "XHS_INSTALL_TIMEOUT_MS",
+      getEnv("XHS_INSTALL_TIMEOUT_MS", fileEnv),
+      20 * 60 * 1000,
+      30_000,
+      60 * 60 * 1000
+    ),
+    xhsArchiveMaxStorageBytes: readInteger(
+      "XHS_ARCHIVE_MAX_STORAGE_BYTES",
+      getEnv("XHS_ARCHIVE_MAX_STORAGE_BYTES", fileEnv),
+      100 * 1024 * 1024 * 1024,
+      1
     ),
     remoteFetchTimeoutMs: readInteger(
       "REMOTE_FETCH_TIMEOUT_MS",

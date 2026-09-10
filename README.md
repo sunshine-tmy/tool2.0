@@ -15,6 +15,7 @@
 | 视频文本解析   | `/tools/video-text`     | `/api/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出   |
 | 多国语言配音   | `/tools/edge-tts`       | `/api/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆         |
 | 短视频解析     | `/tools/short-video`    | `/api/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理      |
+| 小红书内容归档 | `/tools/xhs-archive`    | `/api/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地持久化归档与预览      |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
@@ -29,6 +30,7 @@ Browser
                  ├─ ffmpeg + faster-whisper：视频转写（可选）
                  ├─ Python AI Worker：抠图、增强、去水印（可选）
                  ├─ Chatterbox V3 Worker：参考音色克隆（可选）
+                 ├─ XHS-Downloader Worker：按首次使用安装的小红书解析适配器
                  └─ storage/：本地运行数据
 ```
 
@@ -81,7 +83,7 @@ Copy-Item .env.example .env
 .\一键清理缓存和运行数据.bat
 ```
 
-该操作会删除 `storage/`、`backend/storage/`、`.logs/`、`.tmp/`、`.package/` 及构建/缓存文件；不会删除 `node_modules`、Python 虚拟环境、模型或 `.env` 配置。也可在命令行运行 `pnpm clear:generated`。
+脚本会先按分类显示文件数量和预计释放空间，再让你用编号多选并二次确认。小红书永久存档属于高风险项且默认不选；`node_modules`、Python 环境、模型、`.env` 和小红书登录态始终保留。macOS 可双击 `macOS一键清理缓存和运行数据.command`，命令行也可运行 `pnpm clear:generated` 清理默认安全项。
 
 需要把源码交付给其他人时，双击：
 
@@ -131,6 +133,10 @@ pnpm dev
 | `SHORT_VIDEO_CACHE_TTL_MS`              | `300000`                | 解析结果本地短缓存时间；`0` 表示关闭                 |
 | `SHORT_VIDEO_PARSE_RETRIES`             | `1`                     | 网络、限流或 5xx 的额外重试次数                      |
 | `SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK`    | `true`                  | 主解析失败时启用 TikTok 官方预览降级                 |
+| `XHS_PROVIDER_URL`                      | 空                      | 可选的兼容解析适配器地址；留空使用隔离本机运行时     |
+| `XHS_PROVIDER_PORT`                     | `5556`                  | 本机小红书解析 Worker 端口，仅监听 `127.0.0.1`       |
+| `XHS_INSTALL_TIMEOUT_MS`                | `1200000`               | 首次安装小红书解析环境的最长等待时间                 |
+| `XHS_ARCHIVE_MAX_STORAGE_BYTES`         | `107374182400`          | 小红书永久存档配额，默认 100 GiB                     |
 | `EDGE_TTS_RETENTION_DAYS`               | `3`                     | 生成语音、字幕和任务记录的保留天数                   |
 | `EDGE_TTS_QUEUE_LIMIT`                  | `20`                    | 等待和执行中的语音任务总上限                         |
 | `EDGE_TTS_CONCURRENCY`                  | `2`                     | 同时生成的语音任务数量                               |
@@ -150,6 +156,12 @@ pnpm dev
 要启用局域网管理保护，请同时设置 `LAN_TRANSFER_PIN`，并把 `LAN_TRANSFER_GUEST_MODE` 设为 `upload-only`、`download-only` 或 `disabled`。保持 `full` 表示所有局域网设备仍拥有完整权限。
 
 ## 可选能力安装
+
+### 小红书内容归档
+
+首次点击“获取并存档”时，模块会优先复用 Python 3.12；若本机没有，则通过固定版本 uv 把受管 Python、虚拟环境和固定提交的 XHS-Downloader 2.7 安装到 `.runtime/xhs-downloader`。普通项目启动不会安装或等待该环境。解析 Worker 只监听回环地址，媒体获取完成后立即写入 `storage/xhs-archive`。
+
+遇到访问限制时，可在页面点击“登录小红书并重试”。登录窗口使用本机 Chrome 或 Edge，状态仅保存在 `.runtime/xhs-browser-profile`，不会进入日志、接口响应、源码包或 Git。模块不会绕过验证码。第三方来源和许可证信息见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
 
 ### 多国语言配音
 

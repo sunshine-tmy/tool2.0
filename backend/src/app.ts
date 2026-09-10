@@ -13,6 +13,8 @@ import { registerChatterboxRoutes } from "./modules/chatterbox/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
 import { registerShortVideoRoutes } from "./modules/short-video";
 import { registerVideoTextRoutes } from "./modules/video-text";
+import { registerXhsArchiveRoutes } from "./modules/xhs-archive/routes";
+import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
 
@@ -54,6 +56,8 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await fsp.mkdir(config.imageAiTasksDir, { recursive: true });
   await fsp.mkdir(config.edgeTtsTasksDir, { recursive: true });
   await fsp.mkdir(config.chatterboxTasksDir, { recursive: true });
+  await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });
+  await fsp.mkdir(config.xhsArchiveStagingDir, { recursive: true });
 
   app.get("/api/health", async () => {
     return ok({
@@ -65,6 +69,10 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       },
       shortVideo: {
         providerConfigured: Boolean(config.shortVideoParseApiUrl)
+      },
+      xhsArchive: {
+        providerConfigured: Boolean(config.xhsProviderUrl),
+        archiveDir: config.xhsArchiveDir
       },
       imageAi: {
         workerUrl: config.imageAiWorkerUrl,
@@ -125,6 +133,8 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await registerLanTransferRoutes({ app, config });
   await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
   await registerShortVideoRoutes({ app, config, remoteFetch });
+  await registerXhsArchiveRoutes({ app, config, remoteFetch });
+  registerMaintenanceRoutes(app);
 
   return app;
 }

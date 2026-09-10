@@ -1,99 +1,65 @@
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline/promises";
+import { stdin, stdout } from "node:process";
+import { cleanupDefinitions, executeCleanup, inspectCleanupCategories } from "./cleanup-engine.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const dryRun = process.argv.includes("--dry-run");
-const targets = new Set();
+const args = process.argv.slice(2);
 
-const fixedTargets = [
-  ".logs",
-  ".package",
-  ".tmp",
-  "backend/dist",
-  "backend/storage",
-  "coverage",
-  "frontend/dist",
-  "packages/shared/dist",
-  "storage"
-];
-
-const ignoredDirectories = new Set([".git", ".venv", "lan-file-transfer-standalone", "models", "node_modules", "venv"]);
-
-const cacheDirectoryNames = new Set([".cache", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".vite", "__pycache__"]);
-
-function isIgnoredDirectory(name) {
-  return ignoredDirectories.has(name) || name.startsWith(".venv-");
-}
-
-function relativePath(absolutePath) {
-  return path.relative(repoRoot, absolutePath) || ".";
-}
-
-function addTarget(relativeTarget) {
-  targets.add(path.resolve(repoRoot, relativeTarget));
-}
-
-async function findNestedCaches(directory) {
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (error && error.code === "ENOENT") return;
-    throw error;
-  }
-
-  await Promise.all(
-    entries.map(async (entry) => {
-      const entryPath = path.join(directory, entry.name);
-
-      if (entry.isDirectory()) {
-        if (isIgnoredDirectory(entry.name)) return;
-        if (cacheDirectoryNames.has(entry.name) || entry.name === "coverage") {
-          targets.add(entryPath);
-          return;
-        }
-        await findNestedCaches(entryPath);
-        return;
-      }
-
-      if (entry.isFile() && (entry.name.endsWith(".log") || entry.name.endsWith(".tsbuildinfo"))) {
-        targets.add(entryPath);
-      }
-    })
-  );
-}
-
-function removeNestedTargets(paths) {
-  return paths.filter(
-    (candidate) => !paths.some((parent) => parent !== candidate && candidate.startsWith(`${parent}${path.sep}`))
-  );
-}
-
-for (const target of fixedTargets) addTarget(target);
-await findNestedCaches(repoRoot);
-
-const cleanupTargets = removeNestedTargets([...targets]).sort((left, right) => left.localeCompare(right));
-
-console.log(dryRun ? "将清理以下生成内容：" : "正在清理以下生成内容：");
-for (const target of cleanupTargets) console.log(`- ${relativePath(target)}`);
-
-if (dryRun) {
-  console.log("演练完成：未删除任何文件。");
+if (args.includes("--json")) {
+  console.log(JSON.stringify(await inspectCleanupCategories()));
   process.exit(0);
 }
 
-await Promise.all(cleanupTargets.map((target) => rm(target, { recursive: true, force: true })));
-
-for (const relativeKeepFile of [
-  "storage/uploads/.gitkeep",
-  "storage/outputs/.gitkeep",
-  "storage/temp/.gitkeep",
-  "storage/lan-transfer/files/.gitkeep"
-]) {
-  const keepFile = path.join(repoRoot, relativeKeepFile);
-  await mkdir(path.dirname(keepFile), { recursive: true });
-  await writeFile(keepFile, "");
+const executeArg = args.find((arg) => arg.startsWith("--execute="));
+if (executeArg) {
+  const ids = executeArg.slice("--execute=".length).split(",").filter(Boolean);
+  console.log(JSON.stringify(await executeCleanup(ids, { dryRun: args.includes("--dry-run") })));
+  process.exit(0);
 }
 
-console.log("清理完成：依赖、Python 虚拟环境、模型和 .env 配置均已保留。");
+const categories = await inspectCleanupCategories();
+const interactive = args.includes("--interactive");
+let selected = cleanupDefinitions.filter((entry) => entry.defaults).map((entry) => entry.id);
+
+if (interactive) {
+  console.log("请选择要清理的分类（输入编号，多个用逗号分隔）：\n");
+  categories.forEach((entry, index) =>
+    console.log(
+      `${index + 1}. ${entry.label}  ${formatBytes(entry.bytes)} / ${entry.files} 个文件${entry.risk === "high" ? "  [高风险，默认不选]" : entry.requiresStop ? "  [建议先停止服务]" : ""}`
+    )
+  );
+  const reader = createInterface({ input: stdin, output: stdout });
+  const defaults = selected.map((id) => cleanupDefinitions.findIndex((entry) => entry.id === id) + 1).join(",");
+  const answer = await reader.question(`\n请输入编号（直接回车使用默认安全项：${defaults}）：`);
+  if (answer.trim())
+    selected = answer
+      .split(/[,，\s]+/)
+      .map(Number)
+      .filter((value) => Number.isInteger(value) && value > 0 && value <= categories.length)
+      .map((value) => cleanupDefinitions[value - 1].id);
+  const chosen = categories.filter((entry) => selected.includes(entry.id));
+  console.log("\n即将清理：");
+  chosen.forEach((entry) => console.log(`- ${entry.label}：${formatBytes(entry.bytes)} / ${entry.files} 个文件`));
+  const confirm = await reader.question(
+    `预计释放 ${formatBytes(chosen.reduce((sum, entry) => sum + entry.bytes, 0))}，确认执行？输入 YES：`
+  );
+  reader.close();
+  if (confirm.trim() !== "YES") {
+    console.log("已取消，未删除任何文件。");
+    process.exit(0);
+  }
+}
+
+const results = await executeCleanup(selected, { dryRun: args.includes("--dry-run") });
+results.forEach((entry) => console.log(`- ${entry.label}：${formatBytes(entry.bytes)} / ${entry.files} 个文件`));
+console.log(
+  args.includes("--dry-run")
+    ? "演练完成：未删除任何文件。"
+    : "清理完成：依赖、模型、Python 环境、.env 和小红书登录态均已保留。"
+);
+
+function formatBytes(value) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+  return `${(value / 1024 ** 3).toFixed(1)} GB`;
+}
