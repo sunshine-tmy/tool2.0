@@ -13,7 +13,7 @@
   "dependencies": {
     "@toolbox/shared": "workspace:*",
     "axios": "^1.13.2",
-    "lucide-vue-next": "^0.555.0",
+    "lucide-vue-next": "^1.0.0",
     "naive-ui": "^2.43.4",
     "qrcode": "^1.5.4",
     "vue": "^3.5.25",
