@@ -72,7 +72,9 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       },
       xhsArchive: {
         providerConfigured: Boolean(config.xhsProviderUrl),
-        archiveDir: config.xhsArchiveDir
+        archiveDir: config.xhsArchiveDir,
+        translationProviderConfigured: Boolean(config.xhsTranslationProviderUrl),
+        translationPort: config.xhsTranslationProviderPort
       },
       imageAi: {
         workerUrl: config.imageAiWorkerUrl,

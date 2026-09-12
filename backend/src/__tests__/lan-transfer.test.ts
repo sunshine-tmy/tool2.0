@@ -176,6 +176,45 @@ describe("lan transfer api", () => {
     expect(empty.json().data.notes).toHaveLength(0);
   });
 
+  it("batch deletes selected LAN notes and their stored images", async () => {
+    const app = await createApp();
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("batch-note-image")
+    ]);
+    const createdNotes = await Promise.all(
+      ["第一条", "第二条"].map(async (title, index) => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/tools/lan-transfer/notes",
+          ...noteMultipartPayload({ title, content: `批量内容 ${index + 1}` }, [
+            {
+              fieldName: "images",
+              fileName: `batch-${index + 1}.png`,
+              mimeType: "image/png",
+              content: png
+            }
+          ])
+        });
+        expect(response.statusCode).toBe(200);
+        return response.json().data;
+      })
+    );
+    const removed = await app.inject({
+      method: "POST",
+      url: "/api/tools/lan-transfer/notes/batch-delete",
+      payload: { ids: [createdNotes[0].id, createdNotes[1].id, "missing-note"] }
+    });
+
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().data.missing).toEqual(["missing-note"]);
+    expect(removed.json().data.removed).toHaveLength(2);
+    expect(removed.json().data.removed).toEqual(expect.arrayContaining(createdNotes.map((note) => note.id)));
+    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/notes" });
+    expect(list.json().data.notes).toHaveLength(0);
+    expect(await fs.readdir(path.join(storageRoot, "lan-transfer", "notes", "images"))).toHaveLength(0);
+  });
+
   it("accepts text-only notes and rejects spoofed image content", async () => {
     const app = await createApp();
     const textOnly = await app.inject({

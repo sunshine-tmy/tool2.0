@@ -277,6 +277,17 @@ function registerLanTransferNamespace(
     });
   });
 
+  app.post(`${basePath}/notes/batch-delete`, async (request, reply) => {
+    if (!access.authorize(request, reply, "manage")) return reply;
+    const ids = parseLanFileIds(request.body);
+    if (!ids.length) {
+      return reply.code(400).send(fail("NOTE_IDS_REQUIRED", "请至少选择一条图文"));
+    }
+    const result = await noteStore.removeMany(ids);
+    await audit.write("notes.batch-deleted", request, result);
+    return ok(result);
+  });
+
   app.get(`${basePath}/notes/:id/images/:imageId/preview`, async (request, reply) => {
     if (!access.authorize(request, reply, "read")) return reply;
     return sendLanNoteImage(noteStore, request, reply, "inline");
@@ -951,6 +962,18 @@ function createLanNoteStore(config: AppConfig) {
         await removeImages(target);
         await write(notes.filter((note) => note.id !== id));
         return true;
+      });
+    },
+    async removeMany(ids: string[]) {
+      return runExclusive(async () => {
+        const notes = await read();
+        const wanted = new Set(ids);
+        const targets = notes.filter((note) => wanted.has(note.id));
+        await Promise.all(targets.map(removeImages));
+        if (targets.length) await write(notes.filter((note) => !wanted.has(note.id)));
+        const removed = targets.map((note) => note.id);
+        const removedSet = new Set(removed);
+        return { removed, missing: ids.filter((id) => !removedSet.has(id)) };
       });
     },
     async cleanupExpired() {

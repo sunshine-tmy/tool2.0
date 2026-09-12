@@ -15,7 +15,7 @@
 | 视频文本解析   | `/tools/video-text`     | `/api/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出   |
 | 多国语言配音   | `/tools/edge-tts`       | `/api/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆         |
 | 短视频解析     | `/tools/short-video`    | `/api/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理      |
-| 小红书内容归档 | `/tools/xhs-archive`    | `/api/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地持久化归档与预览      |
+| 小红书内容归档 | `/tools/xhs-archive`    | `/api/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地归档、预览与中英翻译  |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
@@ -137,6 +137,8 @@ pnpm dev
 | `XHS_PROVIDER_PORT`                     | `5556`                  | 本机小红书解析 Worker 端口，仅监听 `127.0.0.1`       |
 | `XHS_INSTALL_TIMEOUT_MS`                | `1200000`               | 首次安装小红书解析环境的最长等待时间                 |
 | `XHS_ARCHIVE_MAX_STORAGE_BYTES`         | `107374182400`          | 小红书永久存档配额，默认 100 GiB                     |
+| `XHS_TRANSLATION_MODEL_URL`             | 固定 Release Asset      | 本地 OPUS-MT CTranslate2 INT8 模型地址               |
+| `XHS_TRANSLATION_PROVIDER_PORT`         | `5557`                  | 本地翻译 Worker 端口，仅监听 `127.0.0.1`             |
 | `EDGE_TTS_RETENTION_DAYS`               | `3`                     | 生成语音、字幕和任务记录的保留天数                   |
 | `EDGE_TTS_QUEUE_LIMIT`                  | `20`                    | 等待和执行中的语音任务总上限                         |
 | `EDGE_TTS_CONCURRENCY`                  | `2`                     | 同时生成的语音任务数量                               |
@@ -151,6 +153,8 @@ pnpm dev
 | `IMAGE_AI_RETENTION_HOURS`              | `24`                    | AI 输入、结果和任务保留时间                          |
 | `DEPLOYMENT_USAGE`                      | `commercial`            | `internal-noncommercial` 才允许使用 BRIA RMBG 2.0    |
 
+小红书翻译模型默认先尝试固定 Release Asset；当该资源不可用时，会自动切换到固定提交的 Hugging Face CTranslate2 预转换恢复源，并逐文件校验摘要。Windows 上如果 Node 无法继承系统代理或 PAC 设置，模型下载会自动改用系统网络通道。若自行设置 `XHS_TRANSLATION_MODEL_URL`，则只使用该地址，不会静默替换自定义配置。
+
 完整变量及注释见 [.env.example](./.env.example)。所有整数配置都会在 API 启动时校验，非法值会直接终止启动，避免带错误配置运行。
 
 要启用局域网管理保护，请同时设置 `LAN_TRANSFER_PIN`，并把 `LAN_TRANSFER_GUEST_MODE` 设为 `upload-only`、`download-only` 或 `disabled`。保持 `full` 表示所有局域网设备仍拥有完整权限。
@@ -162,6 +166,8 @@ pnpm dev
 首次点击“获取并存档”时，模块会优先复用 Python 3.12；若本机没有，则通过固定版本 uv 把受管 Python、虚拟环境和固定提交的 XHS-Downloader 2.7 安装到 `.runtime/xhs-downloader`。普通项目启动不会安装或等待该环境。解析 Worker 只监听回环地址，媒体获取完成后立即写入 `storage/xhs-archive`。
 
 遇到访问限制时，可在页面点击“登录小红书并重试”。登录窗口使用本机 Chrome 或 Edge，状态仅保存在 `.runtime/xhs-browser-profile`，不会进入日志、接口响应、源码包或 Git。模块不会绕过验证码。第三方来源和许可证信息见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+
+获取完成后会在后台使用固定版本的 `Helsinki-NLP/opus-mt-zh-en` 在本机 CPU 翻译标题、正文和话题。翻译运行时和模型只在首次生成英文时安装到 `.runtime/xhs-translate`，失败不会影响中文存档；历史存档可在内容存档页选择“补全未翻译内容”或“翻译所选”。英文支持人工修订，ZIP 会在英文就绪时增加 `Content-English.txt` 和 `内容-中英双语.txt`。模型构建可使用 `node scripts/prepare-xhs-translation-model.mjs`，模型产物不会提交 Git。
 
 ### 多国语言配音
 

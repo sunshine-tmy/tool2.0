@@ -12,12 +12,14 @@ beforeEach(async () => {
   storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-archive-"));
   process.env.STORAGE_ROOT = storageRoot;
   process.env.XHS_PROVIDER_URL = "https://provider.test";
+  process.env.XHS_TRANSLATION_PROVIDER_URL = "https://translation.test";
 });
 
 afterEach(async () => {
   globalThis.fetch = originalFetch;
   delete process.env.STORAGE_ROOT;
   delete process.env.XHS_PROVIDER_URL;
+  delete process.env.XHS_TRANSLATION_PROVIDER_URL;
   vi.restoreAllMocks();
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
@@ -25,7 +27,7 @@ afterEach(async () => {
 describe("xhs archive api", () => {
   it("downloads, persists, previews, refreshes and deletes an archive", async () => {
     const image = Buffer.from("a-local-image");
-    globalThis.fetch = vi.fn(async (input) => {
+    globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input);
       if (url === "https://provider.test/extract") {
         return new Response(
@@ -54,6 +56,13 @@ describe("xhs archive api", () => {
           headers: { "content-type": "image/jpeg", "content-length": String(image.length) }
         });
       }
+      if (url === "https://translation.test/translate") {
+        const body = JSON.parse(String(init?.body || "{}")) as { texts?: string[] };
+        return new Response(JSON.stringify({ translations: (body.texts ?? []).map((text) => `EN:${text}`) }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
       throw new Error(`Unexpected request: ${url}`);
     }) as typeof fetch;
 
@@ -79,6 +88,8 @@ describe("xhs archive api", () => {
       totalBytes: image.length
     });
     expect(detail.media).toHaveLength(1);
+    const translated = await waitForTranslation(app, detail.id);
+    expect(translated.translation).toMatchObject({ status: "ready", title: { machine: "EN:测试笔记" } });
 
     const preview = await app.inject({
       method: "GET",
@@ -131,4 +142,14 @@ async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, id: strin
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("XHS archive task timed out");
+}
+
+async function waitForTranslation(app: Awaited<ReturnType<typeof createApp>>, id: string) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await app.inject({ method: "GET", url: `/api/tools/xhs-archive/items/${id}` });
+    const item = response.json().data;
+    if (item.translation?.status === "ready" || item.translation?.status === "failed") return item;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("XHS translation task timed out");
 }

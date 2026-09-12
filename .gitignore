@@ -49,6 +49,8 @@ storage/edge-tts/**
 storage/chatterbox/**
 storage/xhs-archive/**
 .runtime/xhs-downloader/
+.runtime/xhs-translate/
+.runtime/xhs-translation-model-cache/
 .runtime/xhs-browser-profile/
 .runtime/playwright-browsers/
 

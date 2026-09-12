@@ -11,246 +11,222 @@
         仅用于个人本地归档。解析组件来自 XHS-Downloader 2.7（GPL-3.0），不绕过验证码或平台访问限制。
       </n-alert>
 
-      <n-tabs v-model:value="activeTab" type="line" animated justify-content="start" class="xhs-tabs">
-        <n-tab-pane name="fetch">
-          <template #tab>
-            <span class="xhs-tab-content">
-              <span class="xhs-tab-icon"><FileSearch :size="19" /></span>
-              <strong>获取内容</strong>
-            </span>
-          </template>
-          <section class="workspace-panel fetch-panel">
-            <div class="input-row">
-              <n-input
-                v-model:value="inputUrl"
-                size="large"
-                clearable
-                placeholder="直接按 Ctrl+V / Command+V 粘贴小红书链接或分享文案"
-                @keyup.enter="startFetch"
-              />
-              <n-button
-                size="large"
-                type="primary"
-                :loading="task?.status === 'running' || task?.status === 'pending'"
-                :disabled="!inputUrl.trim()"
-                @click="startFetch"
-                ><template #icon><Archive :size="16" /></template>获取并存档</n-button
-              >
-            </div>
+      <section class="workspace-panel fetch-panel">
+        <div class="input-row">
+          <n-input
+            v-model:value="inputUrl"
+            size="large"
+            clearable
+            placeholder="直接按 Ctrl+V / Command+V 粘贴小红书链接或分享文案"
+            @keyup.enter="startFetch"
+          />
+          <n-button
+            size="large"
+            type="primary"
+            :loading="task?.status === 'running' || task?.status === 'pending'"
+            :disabled="!inputUrl.trim()"
+            @click="startFetch"
+            ><template #icon><Archive :size="16" /></template>获取并存档</n-button
+          >
+        </div>
 
-            <div v-if="task" class="task-progress">
-              <div class="task-head">
-                <div class="task-status">
-                  <span
-                    class="task-status-dot"
-                    :class="{ failed: task.status === 'failed', completed: task.status === 'completed' }"
-                  />
-                  <div>
-                    <small>{{
-                      task.status === "failed" ? "处理失败" : task.status === "completed" ? "处理完成" : "正在处理"
-                    }}</small>
-                    <strong>{{ task.message }}</strong>
-                  </div>
-                </div>
-                <span class="task-percentage">{{ task.progress }}%</span>
-              </div>
-              <n-progress
-                type="line"
-                :percentage="task.progress"
-                :status="task.status === 'failed' ? 'error' : task.status === 'completed' ? 'success' : 'default'"
-                :show-indicator="false"
-                :height="8"
-                :border-radius="4"
-                rail-color="#e6ebf2"
+        <div v-if="task" class="task-progress">
+          <div class="task-head">
+            <div class="task-status">
+              <span
+                class="task-status-dot"
+                :class="{ failed: task.status === 'failed', completed: task.status === 'completed' }"
               />
-              <div class="stage-list">
-                <div v-for="stage in stages" :key="stage.key" class="stage-step" :class="stageClass(stage.key)">
-                  <span class="stage-marker">
-                    <Check v-if="stageClass(stage.key).complete" :size="16" :stroke-width="2.6" />
-                    <component :is="stage.icon" v-else :size="16" />
-                  </span>
-                  <span class="stage-label">{{ stage.label }}</span>
-                </div>
-              </div>
-              <div v-if="task.status === 'failed'" class="task-error">
-                <span>{{ task.error }}</span>
-                <n-button
-                  v-if="task.errorCode === 'XHS_AUTH_REQUIRED'"
-                  type="warning"
-                  size="small"
-                  :loading="authWaiting"
-                  @click="loginAndRetry"
-                  >登录小红书并重试</n-button
-                >
-                <n-button v-else size="small" @click="startFetch">重新尝试</n-button>
-              </div>
-            </div>
-          </section>
-
-          <section v-if="current" class="workspace-panel result-panel">
-            <div class="result-head">
               <div>
-                <n-tag :bordered="false" type="success">已存档</n-tag>
-                <h3>获取结果</h3>
-                <p>内容和媒体已保存到本机，可随时预览或下载。</p>
-              </div>
-              <div class="result-actions">
-                <n-button secondary @click="copyDescription"
-                  ><template #icon><Copy :size="15" /></template>复制正文</n-button
-                >
-                <n-button secondary tag="a" :href="current.canonicalUrl" target="_blank"
-                  ><template #icon><ExternalLink :size="15" /></template>原链接</n-button
-                >
-                <n-button secondary tag="a" :href="zipUrl(current.id)"
-                  ><template #icon><PackageOpen :size="15" /></template>下载全部 ZIP</n-button
-                >
-                <n-button secondary :loading="refreshing" @click="refreshItem(current.id)"
-                  ><template #icon><RefreshCw :size="15" /></template>重新获取</n-button
-                >
+                <small>{{
+                  task.status === "failed" ? "处理失败" : task.status === "completed" ? "处理完成" : "正在处理"
+                }}</small>
+                <strong>{{ task.message }}</strong>
               </div>
             </div>
-            <div class="result-detail-layout">
-              <MediaGallery :item="current" />
-              <div class="drawer-meta result-meta">
-                <section class="drawer-copy-section">
-                  <span class="drawer-field-label">标题</span>
-                  <h3 class="drawer-title">{{ normalizeXhsText(current.title) }}</h3>
-                </section>
-                <div class="drawer-facts">
-                  <p>
-                    <span>作者</span><strong>{{ current.author?.name || "未知" }}</strong>
-                  </p>
-                  <p>
-                    <span>存档时间</span><strong>{{ formatDate(current.updatedAt) }}</strong>
-                  </p>
-                </div>
-                <section class="drawer-copy-section">
-                  <span class="drawer-field-label">正文</span>
-                  <p class="full-copy drawer-description">
-                    <template v-if="current.description">
-                      <span
-                        v-for="(part, index) in descriptionParts(current.description)"
-                        :key="index"
-                        :class="{ 'topic-text': part.topic }"
-                        >{{ part.text }}</span
-                      >
-                    </template>
-                    <span v-else>该内容没有正文。</span>
-                  </p>
-                </section>
-              </div>
+            <span class="task-percentage">{{ task.progress }}%</span>
+          </div>
+          <n-progress
+            type="line"
+            :percentage="task.progress"
+            :status="task.status === 'failed' ? 'error' : task.status === 'completed' ? 'success' : 'default'"
+            :show-indicator="false"
+            :height="8"
+            :border-radius="4"
+            rail-color="#e6ebf2"
+          />
+          <div class="stage-list">
+            <div v-for="stage in stages" :key="stage.key" class="stage-step" :class="stageClass(stage.key)">
+              <span class="stage-marker">
+                <Check v-if="stageClass(stage.key).complete" :size="16" :stroke-width="2.6" />
+                <component :is="stage.icon" v-else :size="16" />
+              </span>
+              <span class="stage-label">{{ stage.label }}</span>
             </div>
-            <n-alert v-for="warning in current.warnings" :key="warning" type="warning" :bordered="false">{{
-              warning
-            }}</n-alert>
-          </section>
-        </n-tab-pane>
+          </div>
+          <div v-if="task.status === 'failed'" class="task-error">
+            <span>{{ task.error }}</span>
+            <n-button
+              v-if="task.errorCode === 'XHS_AUTH_REQUIRED'"
+              type="warning"
+              size="small"
+              :loading="authWaiting"
+              @click="loginAndRetry"
+              >登录小红书并重试</n-button
+            >
+            <n-button v-else size="small" @click="startFetch">重新尝试</n-button>
+          </div>
+        </div>
+      </section>
 
-        <n-tab-pane name="archive">
-          <template #tab>
-            <span class="xhs-tab-content">
-              <span class="xhs-tab-icon"><Archive :size="19" /></span>
-              <strong>内容存档</strong>
-            </span>
-          </template>
-          <section class="workspace-panel archive-panel">
-            <div class="archive-toolbar">
-              <n-input v-model:value="keyword" clearable placeholder="搜索标题、正文或作者" @keyup.enter="loadArchives"
-                ><template #prefix><Search :size="16" /></template
-              ></n-input>
-              <n-select v-model:value="typeFilter" :options="typeOptions" style="width: 150px" />
+      <section v-if="current" class="workspace-panel result-panel">
+        <div class="result-head">
+          <div>
+            <n-tag :bordered="false" type="success">已存档</n-tag>
+            <h3>获取结果</h3>
+            <p>内容和媒体已保存到本机，可随时预览或下载。</p>
+          </div>
+          <div class="result-actions">
+            <n-button secondary @click="copyDescription"
+              ><template #icon><Copy :size="15" /></template>复制正文</n-button
+            >
+            <n-button secondary @click="copyCurrent('zh')">复制中文</n-button>
+            <n-button secondary :disabled="!current.translation" @click="copyCurrent('en')">复制英文</n-button>
+            <n-button secondary @click="copyCurrent('both')">复制中英双语</n-button>
+            <n-button secondary tag="a" :href="current.canonicalUrl" target="_blank"
+              ><template #icon><ExternalLink :size="15" /></template>原链接</n-button
+            >
+            <n-button secondary tag="a" :href="zipUrl(current.id)"
+              ><template #icon><PackageOpen :size="15" /></template>下载全部 ZIP</n-button
+            >
+            <n-button secondary :loading="refreshing" @click="refreshItem(current.id)"
+              ><template #icon><RefreshCw :size="15" /></template>重新获取</n-button
+            >
+            <n-button secondary @click="translateCurrent"
+              ><template #icon><Languages :size="15" /></template
+              >{{ current.translation?.status === "ready" ? "重新翻译" : "生成英文" }}</n-button
+            >
+            <n-button secondary :disabled="!current.translation" @click="editTranslation(current)">编辑英文</n-button>
+            <n-button v-if="hasEdited(current)" secondary @click="resetTranslation(current)">恢复机器翻译</n-button>
+          </div>
+        </div>
+        <div class="result-detail-layout">
+          <MediaGallery :item="current" />
+          <div class="drawer-meta result-meta">
+            <div class="drawer-facts">
+              <p>
+                <span>作者</span><strong>{{ current.author?.name || "未知" }}</strong>
+              </p>
+              <p>
+                <span>存档时间</span><strong>{{ formatDate(current.updatedAt) }}</strong>
+              </p>
+            </div>
+            <BilingualContent :item="current" />
+          </div>
+        </div>
+        <n-alert v-for="warning in current.warnings" :key="warning" type="warning" :bordered="false">{{
+          warning
+        }}</n-alert>
+      </section>
+
+      <section class="workspace-panel archive-panel">
+        <div class="archive-toolbar">
+          <n-input v-model:value="keyword" clearable placeholder="搜索标题、正文或作者" @keyup.enter="loadArchives"
+            ><template #prefix><Search :size="16" /></template
+          ></n-input>
+          <n-select v-model:value="typeFilter" :options="typeOptions" style="width: 150px" />
+          <n-checkbox
+            class="archive-select-all"
+            :checked="allCurrentArchivesSelected"
+            :indeterminate="someCurrentArchivesSelected"
+            :disabled="!archives.items.length"
+            @update:checked="toggleSelectAllArchives"
+          >
+            全选
+          </n-checkbox>
+          <n-button secondary :loading="listLoading" @click="loadArchives">
+            <template #icon><RefreshCw :size="15" /></template>刷新
+          </n-button>
+          <n-button type="error" secondary :disabled="!selectedArchiveIds.length" @click="removeSelected">
+            删除所选 {{ selectedArchiveIds.length || "" }}
+          </n-button>
+          <n-button secondary @click="translateSelected"
+            ><template #icon><Languages :size="15" /></template
+            >{{ selectedArchiveIds.length ? `翻译所选 ${selectedArchiveIds.length} 条` : "补全未翻译内容" }}</n-button
+          >
+        </div>
+        <n-spin :show="listLoading">
+          <n-empty v-if="!archives.items.length" description="还没有内容存档，请在上方输入链接获取内容" />
+          <div v-else class="archive-grid">
+            <article
+              v-for="archive in archives.items"
+              :key="archive.id"
+              class="archive-card"
+              tabindex="0"
+              @click="openDetail(archive.id)"
+              @keyup.enter="openDetail(archive.id)"
+            >
               <n-checkbox
-                class="archive-select-all"
-                :checked="allCurrentArchivesSelected"
-                :indeterminate="someCurrentArchivesSelected"
-                :disabled="!archives.items.length"
-                @update:checked="toggleSelectAllArchives"
-              >
-                全选
-              </n-checkbox>
-              <n-button secondary :loading="listLoading" @click="loadArchives">
-                <template #icon><RefreshCw :size="15" /></template>刷新
-              </n-button>
-              <n-button type="error" secondary :disabled="!selectedArchiveIds.length" @click="removeSelected">
-                删除所选 {{ selectedArchiveIds.length || "" }}
-              </n-button>
-            </div>
-            <n-spin :show="listLoading">
-              <n-empty v-if="!archives.items.length" description="还没有内容存档"
-                ><template #extra
-                  ><n-button type="primary" @click="activeTab = 'fetch'">获取第一条内容</n-button></template
-                ></n-empty
-              >
-              <div v-else class="archive-grid">
-                <article
-                  v-for="archive in archives.items"
-                  :key="archive.id"
-                  class="archive-card"
-                  tabindex="0"
-                  @click="openDetail(archive.id)"
-                  @keyup.enter="openDetail(archive.id)"
-                >
-                  <n-checkbox
-                    class="card-selector"
-                    :checked="selectedArchiveIds.includes(archive.id)"
-                    :aria-label="`选择 ${normalizeXhsText(archive.title)}`"
-                    @click.stop
-                    @update:checked="toggleArchiveSelection(archive.id, $event)"
-                  />
-                  <div class="card-cover">
-                    <video
-                      v-if="archive.coverUrl && isVideoMedia(archive.coverKind)"
-                      :src="mediaUrl(archive.coverUrl)"
-                      muted
-                      playsinline
-                      preload="metadata"
-                      @loadedmetadata="showFirstVideoFrame"
-                    />
-                    <img
-                      v-else-if="archive.coverUrl"
-                      :src="mediaUrl(archive.coverUrl)"
-                      :alt="normalizeXhsText(archive.title)"
-                      loading="lazy"
-                    />
-                    <div v-else><FileImage :size="30" /></div>
-                    <span class="card-type-badge" :class="`type-${archive.type}`">
-                      <FileImage v-if="archive.type === 'image'" :size="13" />
-                      <Play v-else-if="archive.type === 'video'" :size="13" fill="currentColor" />
-                      <Sparkles v-else-if="archive.type === 'live-photo'" :size="13" />
-                      <FileImage v-else :size="13" />
-                      {{ typeName(archive.type) }}
-                    </span>
-                  </div>
-                  <div class="card-copy">
-                    <h3>{{ normalizeXhsText(archive.title) }}</h3>
-                    <p>{{ archive.author?.name || "未知作者" }}</p>
-                    <div>
-                      <span>{{ archive.mediaCount }} 个媒体</span><span>{{ formatBytes(archive.totalBytes) }}</span
-                      ><span>{{ formatDate(archive.updatedAt) }}</span>
-                    </div>
-                  </div>
-                </article>
+                class="card-selector"
+                :checked="selectedArchiveIds.includes(archive.id)"
+                :aria-label="`选择 ${normalizeXhsText(archive.title)}`"
+                @click.stop
+                @update:checked="toggleArchiveSelection(archive.id, $event)"
+              />
+              <div class="card-cover">
+                <video
+                  v-if="archive.coverUrl && isVideoMedia(archive.coverKind)"
+                  :src="mediaUrl(archive.coverUrl)"
+                  muted
+                  playsinline
+                  preload="metadata"
+                  @loadedmetadata="showFirstVideoFrame"
+                />
+                <img
+                  v-else-if="archive.coverUrl"
+                  :src="mediaUrl(archive.coverUrl)"
+                  :alt="normalizeXhsText(archive.title)"
+                  loading="lazy"
+                />
+                <div v-else><FileImage :size="30" /></div>
+                <span class="card-type-badge" :class="`type-${archive.type}`">
+                  <FileImage v-if="archive.type === 'image'" :size="13" />
+                  <Play v-else-if="archive.type === 'video'" :size="13" fill="currentColor" />
+                  <Sparkles v-else-if="archive.type === 'live-photo'" :size="13" />
+                  <FileImage v-else :size="13" />
+                  {{ typeName(archive.type) }}
+                </span>
               </div>
-            </n-spin>
-            <n-pagination
-              v-if="archives.total"
-              v-model:page="page"
-              :page-count="archives.pageCount"
-              @update:page="loadArchives"
-            />
-          </section>
-        </n-tab-pane>
-      </n-tabs>
+              <div class="card-copy">
+                <h3>{{ normalizeXhsText(archive.title) }}</h3>
+                <p>{{ archive.author?.name || "未知作者" }}</p>
+                <div>
+                  <span>{{ archive.mediaCount }} 个媒体</span><span>{{ formatBytes(archive.totalBytes) }}</span
+                  ><span>{{ formatDate(archive.updatedAt) }}</span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </n-spin>
+        <n-pagination
+          v-if="archives.total"
+          v-model:page="page"
+          :page-count="archives.pageCount"
+          @update:page="loadArchives"
+        />
+      </section>
 
-      <n-drawer v-model:show="drawerOpen" :width="drawerWidth" placement="right">
-        <n-drawer-content title="存档详情" closable>
+      <n-drawer v-model:show="drawerOpen" class="xhs-detail-drawer" :width="drawerWidth" placement="right">
+        <n-drawer-content
+          title="存档详情"
+          closable
+          body-class="xhs-detail-drawer-body"
+          body-content-class="xhs-detail-drawer-body-content"
+          footer-class="xhs-detail-drawer-footer"
+        >
           <template v-if="detail">
             <MediaGallery :item="detail" compact />
             <div class="drawer-meta">
-              <section class="drawer-copy-section">
-                <span class="drawer-field-label">标题</span>
-                <h3 class="drawer-title">{{ normalizeXhsText(detail.title) }}</h3>
-              </section>
               <div class="drawer-facts">
                 <p>
                   <span>作者</span><strong>{{ detail.author?.name || "未知" }}</strong>
@@ -259,31 +235,24 @@
                   <span>存档时间</span><strong>{{ formatDate(detail.updatedAt) }}</strong>
                 </p>
               </div>
-              <section class="drawer-copy-section">
-                <span class="drawer-field-label">正文</span>
-                <p class="full-copy drawer-description">
-                  <template v-if="detail.description">
-                    <span
-                      v-for="(part, index) in descriptionParts(detail.description)"
-                      :key="index"
-                      :class="{ 'topic-text': part.topic }"
-                      >{{ part.text }}</span
-                    >
-                  </template>
-                  <span v-else>该内容没有正文。</span>
-                </p>
-              </section>
+              <BilingualContent :item="detail" compact />
             </div>
           </template>
           <template #footer
             ><div class="drawer-actions">
               <n-button type="error" secondary @click="removeItem"
                 ><template #icon><Trash2 :size="15" /></template>删除存档</n-button
+              ><n-button v-if="detail" secondary @click="translateDetail"
+                ><template #icon><Languages :size="15" /></template>生成英文</n-button
+              ><n-button v-if="detail?.translation" secondary @click="editTranslation(detail)">编辑英文</n-button
+              ><n-button v-if="detail && hasEdited(detail)" secondary @click="resetTranslation(detail)"
+                >恢复机器翻译</n-button
               ><n-button v-if="detail" tag="a" :href="zipUrl(detail.id)" type="primary">下载全部 ZIP</n-button>
             </div></template
           >
         </n-drawer-content>
       </n-drawer>
+      <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
     </section>
   </ToolLayout>
 </template>
@@ -302,8 +271,6 @@ import {
   NProgress,
   NSelect,
   NSpin,
-  NTabPane,
-  NTabs,
   NTag,
   useMessage
 } from "naive-ui";
@@ -317,6 +284,7 @@ import {
   FileImage,
   FileSearch,
   HardDriveDownload,
+  Languages,
   PackageOpen,
   Play,
   RefreshCw,
@@ -326,6 +294,8 @@ import {
 } from "lucide-vue-next";
 import {
   normalizeXhsText,
+  parseXhsContentText,
+  resolveXhsTranslationField,
   type XhsArchiveItem,
   type XhsArchiveListResponse,
   type XhsArchiveTask,
@@ -334,6 +304,8 @@ import {
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import MediaGallery from "./MediaGallery.vue";
+import BilingualContent from "./BilingualContent.vue";
+import TranslationEditModal from "./TranslationEditModal.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { resolveBackendUrl } from "../../config/runtime";
@@ -341,7 +313,6 @@ import { xhsArchiveApi } from "./api";
 
 const message = useMessage();
 const confirm = useConfirmDialog();
-const activeTab = ref("fetch");
 const inputUrl = ref("");
 const task = ref<XhsArchiveTask>();
 const current = ref<XhsArchiveItem>();
@@ -363,7 +334,10 @@ const someCurrentArchivesSelected = computed(
 );
 const drawerOpen = ref(false);
 const detail = ref<XhsArchiveItem>();
+const editOpen = ref(false);
+const editTarget = ref<XhsArchiveItem>();
 const drawerWidth = computed(() => (typeof window !== "undefined" && window.innerWidth < 720 ? "100%" : 720));
+let disposed = false;
 const typeOptions = [
   { label: "全部类型", value: "all" },
   { label: "图文", value: "image" },
@@ -379,7 +353,6 @@ const stages: Array<{ key: XhsArchiveTaskStage; label: string; icon: unknown }> 
 const stageOrder: XhsArchiveTaskStage[] = ["installing", "parsing", "downloading", "archiving", "completed"];
 
 function handlePagePaste(event: ClipboardEvent) {
-  if (activeTab.value !== "fetch") return;
   const target = event.target;
   if (
     target instanceof HTMLInputElement ||
@@ -409,6 +382,9 @@ async function pollTask() {
   }
   if (task.value?.status === "completed" && task.value.archiveId) {
     current.value = await xhsArchiveApi.detail(task.value.archiveId);
+    if (current.value.translation?.taskId && current.value.translation.status !== "ready") {
+      void pollTranslation(current.value.translation.taskId, current.value.id, true);
+    }
     message.success(task.value.message);
     await loadArchives();
   }
@@ -461,6 +437,116 @@ async function loadArchives() {
 async function openDetail(id: string) {
   detail.value = await xhsArchiveApi.detail(id);
   drawerOpen.value = true;
+  if (detail.value.translation?.taskId && detail.value.translation.status !== "ready") {
+    void pollTranslation(detail.value.translation.taskId, detail.value.id, false);
+  }
+}
+async function translateCurrent() {
+  if (!current.value) return;
+  try {
+    const task = await xhsArchiveApi.translate(current.value.id, current.value.translation?.status === "ready");
+    if (task?.id) await pollTranslation(task.id, current.value.id, true);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "创建翻译任务失败");
+  }
+}
+async function translateDetail() {
+  if (!detail.value) return;
+  try {
+    const task = await xhsArchiveApi.translate(detail.value.id, detail.value.translation?.status === "ready");
+    if (task?.id) await pollTranslation(task.id, detail.value.id, false);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "创建翻译任务失败");
+  }
+}
+function editTranslation(item: XhsArchiveItem) {
+  editTarget.value = item;
+  editOpen.value = true;
+}
+function hasEdited(item: XhsArchiveItem) {
+  const translation = item.translation;
+  return Boolean(
+    translation &&
+    (translation.title.edited?.trim() ||
+      translation.description?.edited?.trim() ||
+      translation.topics.some((topic) => topic.edited?.trim()))
+  );
+}
+async function resetTranslation(item: XhsArchiveItem) {
+  const accepted = await confirm("将清除这条存档的英文人工修订并恢复机器翻译。", {
+    title: "恢复机器翻译",
+    positiveText: "确认恢复"
+  });
+  if (!accepted) return;
+  try {
+    await xhsArchiveApi.resetTranslation(item.id);
+    const updated = await xhsArchiveApi.detail(item.id);
+    if (current.value?.id === item.id) current.value = updated;
+    if (detail.value?.id === item.id) detail.value = updated;
+    message.success("已恢复机器翻译");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "恢复机器翻译失败");
+  }
+}
+async function saveTranslation(payload: {
+  sourceHash: string;
+  title: { edited: string };
+  description?: { edited: string };
+  topics: Array<{ topicId: string; edited: string }>;
+}) {
+  if (!editTarget.value) return;
+  try {
+    const updated = await xhsArchiveApi.editTranslation(editTarget.value.id, payload);
+    const refreshed = await xhsArchiveApi.detail(editTarget.value.id);
+    editTarget.value = refreshed;
+    if (current.value?.id === refreshed.id) current.value = refreshed;
+    if (detail.value?.id === refreshed.id) detail.value = refreshed;
+    editOpen.value = false;
+    void updated;
+    message.success("英文修订已保存");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "保存英文修订失败");
+  }
+}
+async function translateSelected() {
+  try {
+    const task = selectedArchiveIds.value.length
+      ? await xhsArchiveApi.translateBatch({ mode: "selected", itemIds: selectedArchiveIds.value })
+      : await xhsArchiveApi.translateBatch({ mode: "missing-or-stale" });
+    if (task?.id) await pollTranslation(task.id, undefined, false);
+    await loadArchives();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "创建批量翻译任务失败");
+  }
+}
+async function pollTranslation(taskId: string, itemId?: string, updateCurrent = false) {
+  try {
+    let state = await xhsArchiveApi.translationTask(taskId);
+    while (!disposed && !["completed", "failed"].includes(state.status)) {
+      await delay(1000);
+      state = await xhsArchiveApi.translationTask(taskId);
+    }
+    if (state.status === "failed") {
+      if (itemId) {
+        const updated = await xhsArchiveApi.detail(itemId).catch(() => undefined);
+        if (updated) {
+          if (updateCurrent && current.value?.id === itemId) current.value = updated;
+          if (detail.value?.id === itemId) detail.value = updated;
+        }
+      }
+      await loadArchives().catch(() => undefined);
+      message.error(state.error || state.message);
+      return;
+    }
+    if (itemId) {
+      const updated = await xhsArchiveApi.detail(itemId);
+      if (updateCurrent && current.value?.id === itemId) current.value = updated;
+      if (detail.value?.id === itemId) detail.value = updated;
+    }
+    message.success("英文翻译已完成");
+  } catch (error) {
+    if (!disposed) message.error(error instanceof Error ? error.message : "读取翻译进度失败");
+  }
 }
 async function removeItem() {
   if (!detail.value) return;
@@ -507,20 +593,31 @@ async function copyDescription() {
   await copyTextToClipboard(cleanDescription(current.value.description || ""));
   message.success("正文已复制");
 }
-
-function descriptionParts(value: string) {
-  const normalized = normalizeXhsText(value);
-  const parts: Array<{ text: string; topic: boolean }> = [];
-  const pattern = /#([^#\r\n]+?)\[话题\]#?/g;
-  let cursor = 0;
-  for (const match of normalized.matchAll(pattern)) {
-    const index = match.index ?? 0;
-    if (index > cursor) parts.push({ text: normalized.slice(cursor, index), topic: false });
-    parts.push({ text: `#${match[1].trim()}`, topic: true });
-    cursor = index + match[0].length;
-  }
-  if (cursor < normalized.length) parts.push({ text: normalized.slice(cursor), topic: false });
-  return parts.length ? parts : [{ text: normalized, topic: false }];
+async function copyCurrent(language: "zh" | "en" | "both") {
+  if (!current.value) return;
+  await copyItem(current.value, language);
+}
+async function copyItem(item: XhsArchiveItem, language: "zh" | "en" | "both") {
+  const parsed = parseXhsContentText(item.description);
+  const chinese = [
+    `标题：${item.title}`,
+    "",
+    parsed.body,
+    parsed.topics.length ? `\n话题：${parsed.topics.map((topic) => `#${topic.source}`).join(" ")}` : ""
+  ].join("\n");
+  const translation = item.translation;
+  const english = translation
+    ? [
+        `Title: ${resolveXhsTranslationField(translation.title)}`,
+        "",
+        resolveXhsTranslationField(translation.description),
+        translation.topics.length
+          ? `\nTopics: ${translation.topics.map((topic) => `#${resolveXhsTranslationField(topic)}`).join(" ")}`
+          : ""
+      ].join("\n")
+    : "";
+  await copyTextToClipboard(language === "zh" ? chinese : language === "en" ? english : `${chinese}\n\n${english}`);
+  message.success("内容已复制");
 }
 
 function cleanDescription(value: string) {
@@ -572,7 +669,10 @@ onMounted(() => {
   void loadArchives();
   window.addEventListener("paste", handlePagePaste);
 });
-onBeforeUnmount(() => window.removeEventListener("paste", handlePagePaste));
+onBeforeUnmount(() => {
+  disposed = true;
+  window.removeEventListener("paste", handlePagePaste);
+});
 </script>
 
 <style scoped>
@@ -583,58 +683,6 @@ onBeforeUnmount(() => window.removeEventListener("paste", handlePagePaste));
 }
 .license-note {
   margin-top: 0;
-}
-.xhs-tabs :deep(.n-tabs-nav) {
-  width: 100%;
-  margin: 0;
-  padding: 0 4px;
-  border-bottom: 1px solid #dfe5ed;
-  background: transparent;
-  box-shadow: none;
-}
-.xhs-tabs :deep(.n-tabs-tab) {
-  min-height: 48px;
-  padding: 0 18px 11px !important;
-  color: #657086;
-}
-.xhs-tabs :deep(.n-tabs-tab:hover) {
-  color: #2563eb;
-}
-.xhs-tabs :deep(.n-tabs-bar) {
-  height: 3px;
-  border-radius: 999px 999px 0 0;
-  background: #2563eb;
-}
-.xhs-tab-content {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.xhs-tab-icon {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: #6b778c;
-  border-radius: 7px;
-  background: #eef2f7;
-  transition: 0.2s ease;
-}
-.xhs-tab-content strong {
-  font-size: 14px;
-  font-weight: 650;
-}
-.xhs-tabs :deep(.n-tabs-tab--active) {
-  color: #1d4ed8 !important;
-}
-.xhs-tabs :deep(.n-tabs-tab--active .xhs-tab-icon) {
-  color: #2563eb;
-  background: #e8f0ff;
-  box-shadow: none;
-}
-.xhs-tabs :deep(.n-tabs-pane-wrapper) {
-  margin-top: 18px;
 }
 .fetch-panel,
 .archive-panel,
@@ -1005,8 +1053,32 @@ onBeforeUnmount(() => window.removeEventListener("paste", handlePagePaste));
   margin: 0;
 }
 .drawer-actions {
+  min-width: 0;
   width: 100%;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.drawer-actions > :last-child {
+  margin-left: auto;
+}
+:global(.xhs-detail-drawer),
+:global(.xhs-detail-drawer .n-drawer-content),
+:global(.xhs-detail-drawer-body),
+:global(.xhs-detail-drawer-body-content),
+:global(.xhs-detail-drawer-footer) {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+:global(.xhs-detail-drawer-body) {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  scrollbar-width: none;
+}
+:global(.xhs-detail-drawer-body::-webkit-scrollbar) {
+  display: none;
+  width: 0;
+  height: 0;
 }
 @media (max-width: 900px) {
   .archive-grid {
@@ -1030,14 +1102,6 @@ onBeforeUnmount(() => window.removeEventListener("paste", handlePagePaste));
   }
 }
 @media (max-width: 640px) {
-  .xhs-tabs :deep(.n-tabs-tab) {
-    min-height: 44px;
-    padding: 0 12px 9px !important;
-  }
-  .xhs-tab-icon {
-    width: 26px;
-    height: 26px;
-  }
   .input-row,
   .archive-toolbar {
     flex-wrap: wrap;

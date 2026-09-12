@@ -45,9 +45,13 @@ describe("LAN transfer text-image API", () => {
     await lanTransferApi.listNotes(2, 10);
     await lanTransferApi.updateNoteExpiry("note-1", 30);
     await lanTransferApi.deleteNote("note-1");
+    await lanTransferApi.deleteNotes(["note-1", "note-2"]);
 
     expect(httpMock.get).toHaveBeenCalledWith("/tools/lan-transfer/notes", { params: { page: 2, pageSize: 10 } });
     expect(httpMock.patch).toHaveBeenCalledWith("/tools/lan-transfer/notes/note-1/expiry", { days: 30 });
     expect(httpMock.delete).toHaveBeenCalledWith("/tools/lan-transfer/notes/note-1");
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/lan-transfer/notes/batch-delete", {
+      ids: ["note-1", "note-2"]
+    });
   });
 });

@@ -1,10 +1,15 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import type { XhsArchiveItem, XhsArchiveListItem, XhsArchiveListResponse } from "@toolbox/shared";
+import {
+  parseXhsContentText,
+  type XhsArchiveItem,
+  type XhsArchiveListItem,
+  type XhsArchiveListResponse
+} from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 
 type ArchiveIndex = {
-  version: 1;
+  version: 2;
   items: XhsArchiveItem[];
 };
 
@@ -23,7 +28,7 @@ export class XhsArchiveStore {
     ]);
     const loaded = await this.readIndex();
     if (loaded) {
-      loaded.items.forEach((item) => this.items.set(item.id, item));
+      loaded.items.forEach((item) => this.items.set(item.id, migrateItem(item)));
     } else {
       await this.rebuildFromManifests();
       await this.persistIndex();
@@ -43,7 +48,18 @@ export class XhsArchiveStore {
       .filter((item) => type === "all" || item.type === type)
       .filter((item) => {
         if (!keyword) return true;
-        return [item.title, item.description, item.author?.name, item.noteId]
+        return [
+          item.title,
+          item.description,
+          item.author?.name,
+          item.noteId,
+          ...item.topics.map((topic) => topic.source),
+          item.translation?.title.machine,
+          item.translation?.title.edited,
+          item.translation?.description?.machine,
+          item.translation?.description?.edited,
+          ...(item.translation?.topics.flatMap((topic) => [topic.machine, topic.edited]) ?? [])
+        ]
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(keyword));
       })
@@ -117,6 +133,34 @@ export class XhsArchiveStore {
     return true;
   }
 
+  async updateTranslation(id: string, updater: (item: XhsArchiveItem) => XhsArchiveItem) {
+    await this.initialize();
+    const current = this.items.get(id);
+    if (!current) return undefined;
+    const next = migrateItem(updater(cloneItem(current)!));
+    const directory = path.join(this.config.xhsArchiveItemsDir, safeId(id));
+    const manifest = path.join(directory, "manifest.json");
+    const temporary = `${manifest}.tmp`;
+    const backup = `${manifest}.bak`;
+    await fsp.writeFile(temporary, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    try {
+      await fsp.copyFile(manifest, backup).catch(() => undefined);
+      await fsp.rename(temporary, manifest);
+      this.items.set(id, cloneItem(next)!);
+      await this.persistIndex();
+      await fsp.rm(backup, { force: true });
+      return cloneItem(next);
+    } catch (error) {
+      await fsp.rm(temporary, { force: true }).catch(() => undefined);
+      if (await exists(backup)) {
+        await fsp.rm(manifest, { force: true }).catch(() => undefined);
+        await fsp.rename(backup, manifest).catch(() => undefined);
+      }
+      this.items.set(id, cloneItem(current)!);
+      throw error;
+    }
+  }
+
   async mediaPath(itemId: string, mediaId: string) {
     const item = await this.get(itemId);
     const media = item?.media.find((entry) => entry.id === mediaId);
@@ -135,8 +179,9 @@ export class XhsArchiveStore {
   private async readIndex(): Promise<ArchiveIndex | undefined> {
     for (const candidate of [this.config.xhsArchiveIndexPath, `${this.config.xhsArchiveIndexPath}.bak`]) {
       try {
-        const value = JSON.parse(await fsp.readFile(candidate, "utf8")) as Partial<ArchiveIndex>;
-        if (value.version === 1 && Array.isArray(value.items)) return value as ArchiveIndex;
+        const value = JSON.parse(await fsp.readFile(candidate, "utf8")) as { version?: number; items?: unknown };
+        if ((value.version === 1 || value.version === 2) && Array.isArray(value.items))
+          return { version: 2, items: value.items as XhsArchiveItem[] };
       } catch {
         // Try the backup and finally rebuild from per-item manifests.
       }
@@ -152,7 +197,7 @@ export class XhsArchiveStore {
         const item = JSON.parse(
           await fsp.readFile(path.join(this.config.xhsArchiveItemsDir, entry.name, "manifest.json"), "utf8")
         ) as XhsArchiveItem;
-        if (item.id && item.noteId && Array.isArray(item.media)) this.items.set(item.id, item);
+        if (item.id && item.noteId && Array.isArray(item.media)) this.items.set(item.id, migrateItem(item));
       } catch {
         // A broken item is ignored; its files remain available for manual recovery.
       }
@@ -161,7 +206,7 @@ export class XhsArchiveStore {
 
   private persistIndex() {
     this.writeQueue = this.writeQueue.then(async () => {
-      const payload: ArchiveIndex = { version: 1, items: [...this.items.values()] };
+      const payload: ArchiveIndex = { version: 2, items: [...this.items.values()] };
       const target = this.config.xhsArchiveIndexPath;
       const temporary = `${target}.tmp`;
       await fsp.mkdir(path.dirname(target), { recursive: true });
@@ -193,6 +238,8 @@ function toListItem(item: XhsArchiveItem): XhsArchiveListItem {
     coverMediaId: item.coverMediaId,
     status: item.status,
     warnings: item.warnings,
+    topics: item.topics,
+    translation: item.translation,
     totalBytes: item.totalBytes,
     mediaCount: item.media.length,
     coverUrl: cover?.previewUrl,
@@ -206,9 +253,29 @@ function cloneItem(item: XhsArchiveItem | undefined) {
         ...item,
         author: item.author ? { ...item.author } : undefined,
         media: item.media.map((media) => ({ ...media })),
-        warnings: [...item.warnings]
+        warnings: [...item.warnings],
+        topics: item.topics.map((topic) => ({ ...topic })),
+        translation: item.translation
+          ? {
+              ...item.translation,
+              title: { ...item.translation.title },
+              description: item.translation.description ? { ...item.translation.description } : undefined,
+              topics: item.translation.topics.map((topic) => ({ ...topic })),
+              error: item.translation.error ? { ...item.translation.error } : undefined
+            }
+          : undefined
       }
     : undefined;
+}
+
+function migrateItem(item: XhsArchiveItem): XhsArchiveItem {
+  const topics = Array.isArray(item.topics) ? item.topics : parseXhsContentText(item.description).topics;
+  return {
+    ...item,
+    topics,
+    warnings: Array.isArray(item.warnings) ? item.warnings : [],
+    media: Array.isArray(item.media) ? item.media : []
+  };
 }
 
 function safeId(value: string) {

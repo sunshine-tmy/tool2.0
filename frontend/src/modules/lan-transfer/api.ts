@@ -115,6 +115,14 @@ class LanTransferApi {
     );
   }
 
+  async deleteNotes(ids: string[]) {
+    return withApiError(
+      () =>
+        httpClient.post<{ removed: string[]; missing: string[] }>("/tools/lan-transfer/notes/batch-delete", { ids }),
+      "批量删除图文失败"
+    );
+  }
+
   async updateNoteExpiry(id: string, days: number) {
     return withApiError(
       () => httpClient.patch<LanNoteView>(`/tools/lan-transfer/notes/${id}/expiry`, { days }),

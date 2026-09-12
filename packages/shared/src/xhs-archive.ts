@@ -8,6 +8,72 @@ export type XhsArchiveAuthor = {
   avatarUrl?: string;
 };
 
+export type XhsArchiveTopic = {
+  id: string;
+  source: string;
+};
+
+export type XhsTranslationField = {
+  source: string;
+  machine: string;
+  edited?: string;
+  editedAt?: string;
+};
+
+export type XhsArchiveTranslation = {
+  status: "queued" | "installing" | "translating" | "ready" | "failed" | "stale";
+  sourceHash: string;
+  sourceLanguage: "zh-CN";
+  targetLanguage: "en";
+  provider: "opus-mt";
+  modelId: "Helsinki-NLP/opus-mt-zh-en";
+  modelRevision: string;
+  taskId?: string;
+  title: XhsTranslationField;
+  description?: XhsTranslationField;
+  topics: Array<XhsTranslationField & { topicId: string }>;
+  translatedAt?: string;
+  error?: { code: string; message: string };
+};
+
+export type XhsTranslationRuntimeStatus = {
+  status: "not-installed" | "installing" | "ready" | "failed";
+  version: string;
+  modelId: XhsArchiveTranslation["modelId"];
+  modelRevision: string;
+  providerUrl?: string;
+  message: string;
+  installProgress: number;
+};
+
+export type XhsTranslationTaskStage =
+  | "queued"
+  | "installing-runtime"
+  | "downloading-model"
+  | "loading-model"
+  | "translating-title"
+  | "translating-description"
+  | "translating-topics"
+  | "saving"
+  | "completed"
+  | "failed";
+
+export type XhsTranslationTask = {
+  id: string;
+  itemIds: string[];
+  status: "pending" | "running" | "completed" | "failed";
+  stage: XhsTranslationTaskStage;
+  progress: number;
+  completedItems: number;
+  totalItems: number;
+  currentItemId?: string;
+  message: string;
+  error?: string;
+  errorCode?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type XhsArchiveMedia = {
   id: string;
   kind: XhsArchiveMediaKind;
@@ -31,6 +97,8 @@ export type XhsArchiveItem = {
   type: XhsArchiveContentType;
   title: string;
   description?: string;
+  topics: XhsArchiveTopic[];
+  translation?: XhsArchiveTranslation;
   author?: XhsArchiveAuthor;
   publishedAt?: string;
   fetchedAt: string;

@@ -184,12 +184,41 @@
                 </div>
               </div>
 
+              <div v-if="canManageFiles" class="batch-toolbar lan-note-batch-toolbar">
+                <n-checkbox
+                  :checked="lanNotePageSelection.checked"
+                  :indeterminate="lanNotePageSelection.indeterminate"
+                  :disabled="!lanNotes.length"
+                  @update:checked="toggleAllLanNotes"
+                >
+                  全选本页
+                </n-checkbox>
+                <n-button
+                  tertiary
+                  type="error"
+                  size="small"
+                  :disabled="!selectedLanNoteIds.length"
+                  :loading="batchDeletingLanNotes"
+                  @click="deleteSelectedLanNotes"
+                >
+                  批量删除 {{ selectedLanNoteIds.length || "" }}
+                </n-button>
+              </div>
+
               <div v-if="canReadFiles" class="lan-note-list">
                 <article v-for="note in lanNotes" :key="note.id" class="lan-note-card">
                   <header>
-                    <div>
-                      <strong>{{ note.title || "图文快传" }}</strong>
-                      <span>发布 {{ formatDate(note.createdAt) }} · 过期 {{ formatDate(note.expiresAt) }}</span>
+                    <div class="lan-note-card-main">
+                      <n-checkbox
+                        v-if="canManageFiles"
+                        :checked="selectedLanNoteIds.includes(note.id)"
+                        :aria-label="`选择 ${note.title || '图文快传'}`"
+                        @update:checked="(checked) => toggleLanNote(note.id, checked)"
+                      />
+                      <div>
+                        <strong>{{ note.title || "图文快传" }}</strong>
+                        <span>发布 {{ formatDate(note.createdAt) }} · 过期 {{ formatDate(note.expiresAt) }}</span>
+                      </div>
                     </div>
                     <div class="lan-note-actions">
                       <n-button v-if="note.content" secondary size="small" @click="copyNoteContent(note)"
@@ -222,13 +251,18 @@
                   </div>
                 </article>
                 <n-empty v-if="!lanNotes.length" description="暂无图文，发送一段文字或几张图片试试" />
-                <n-pagination
-                  v-if="notePagination.total > notePagination.pageSize"
-                  v-model:page="notePagination.page"
-                  :page-size="notePagination.pageSize"
-                  :item-count="notePagination.total"
-                  @update:page="refreshLanNotes"
-                />
+                <div v-if="shouldShowPagination(notePagination.total)" class="pagination-row">
+                  <span class="pagination-total">共 {{ notePagination.total }} 条图文</span>
+                  <n-pagination
+                    v-model:page="notePagination.page"
+                    v-model:page-size="notePagination.pageSize"
+                    :item-count="notePagination.total"
+                    :page-sizes="[10, 20, 50, 100]"
+                    show-size-picker
+                    @update:page="refreshLanNotes"
+                    @update:page-size="onNotePageSizeChange"
+                  />
+                </div>
               </div>
             </section>
           </n-tab-pane>
@@ -469,6 +503,8 @@ const noteImageInput = ref<HTMLInputElement | null>(null);
 const noteImages = ref<Array<{ id: string; file: File; previewUrl: string }>>([]);
 const publishingNote = ref(false);
 const lanNotes = ref<LanNoteView[]>([]);
+const selectedLanNoteIds = ref<string[]>([]);
+const batchDeletingLanNotes = ref(false);
 const notePagination = reactive({ page: 1, pageSize: 20, total: 0, pageCount: 1 });
 const lanQuery = reactive({
   keyword: "",
@@ -500,6 +536,8 @@ const lanSortOrderOptions = [
 ];
 const lanPageFileIds = computed(() => lanFiles.value.map((file) => file.id));
 const lanPageSelection = computed(() => getPageSelectionState(selectedLanFileIds.value, lanPageFileIds.value));
+const lanNotePageIds = computed(() => lanNotes.value.map((note) => note.id));
+const lanNotePageSelection = computed(() => getPageSelectionState(selectedLanNoteIds.value, lanNotePageIds.value));
 const shareUrlOptions = computed(() =>
   Array.from(new Set([...(lanInfo.value?.lanUrls ?? []), currentTransferUrl])).map((url) => ({
     label: url,
@@ -575,6 +613,7 @@ async function refreshLanNotes() {
     notePagination.pageSize = result.pagination.pageSize;
     notePagination.total = result.pagination.total;
     notePagination.pageCount = result.pagination.pageCount;
+    selectedLanNoteIds.value = pruneSelectedIds(selectedLanNoteIds.value, lanNotePageIds.value);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "获取图文列表失败");
   }
@@ -708,6 +747,45 @@ async function deleteLanNote(note: LanNoteView) {
   } catch (error) {
     message.error(error instanceof Error ? error.message : "删除图文失败");
   }
+}
+
+function toggleLanNote(id: string, checked: boolean) {
+  selectedLanNoteIds.value = toggleSelectedId(selectedLanNoteIds.value, id, checked);
+}
+
+function toggleAllLanNotes(checked: boolean) {
+  selectedLanNoteIds.value = togglePageSelection(selectedLanNoteIds.value, lanNotePageIds.value, checked);
+}
+
+async function deleteSelectedLanNotes() {
+  if (!selectedLanNoteIds.value.length) return;
+  if (
+    !(await confirmAction(`删除选中的 ${selectedLanNoteIds.value.length} 条图文？`, {
+      title: "批量删除图文"
+    }))
+  ) {
+    return;
+  }
+
+  batchDeletingLanNotes.value = true;
+  try {
+    const ids = [...selectedLanNoteIds.value];
+    await lanTransferApi.deleteNotes(ids);
+    selectedLanNoteIds.value = [];
+    if (lanNotes.value.length === ids.length && notePagination.page > 1) notePagination.page -= 1;
+    await Promise.all([refreshLanInfo(), refreshLanNotes()]);
+    message.success("已批量删除图文");
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "批量删除图文失败");
+  } finally {
+    batchDeletingLanNotes.value = false;
+  }
+}
+
+async function onNotePageSizeChange(pageSize: number) {
+  notePagination.page = 1;
+  notePagination.pageSize = pageSize;
+  await refreshLanNotes();
 }
 
 async function clearPendingUploadRecords() {

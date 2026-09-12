@@ -42,6 +42,13 @@ export type AppConfig = {
   xhsProviderPort: number;
   xhsInstallTimeoutMs: number;
   xhsArchiveMaxStorageBytes: number;
+  xhsTranslationRuntimeDir: string;
+  xhsTranslationModelDir: string;
+  xhsTranslationProviderUrl?: string;
+  xhsTranslationProviderPort: number;
+  xhsTranslationInstallTimeoutMs: number;
+  xhsTranslationModelUrl: string;
+  xhsTranslationModelSha256?: string;
   remoteFetchTimeoutMs: number;
   remoteMediaMaxBytes: number;
   imageAiDir: string;
@@ -79,6 +86,9 @@ export function getConfig(): AppConfig {
   const edgeTtsDir = path.join(storageRoot, "edge-tts");
   const chatterboxDir = path.join(storageRoot, "chatterbox");
   const xhsArchiveDir = path.join(storageRoot, "xhs-archive");
+  const xhsTranslationRuntimeDir = resolveProjectPath(
+    getEnv("XHS_TRANSLATION_RUNTIME_DIR", fileEnv)?.trim() || ".runtime/xhs-translate"
+  );
   const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv)?.trim();
 
   return {
@@ -183,6 +193,29 @@ export function getConfig(): AppConfig {
       100 * 1024 * 1024 * 1024,
       1
     ),
+    xhsTranslationRuntimeDir,
+    xhsTranslationModelDir: resolveProjectPath(
+      getEnv("XHS_TRANSLATION_MODEL_DIR", fileEnv)?.trim() || path.join(xhsTranslationRuntimeDir, "model")
+    ),
+    xhsTranslationProviderUrl: getEnv("XHS_TRANSLATION_PROVIDER_URL", fileEnv)?.trim() || undefined,
+    xhsTranslationProviderPort: readInteger(
+      "XHS_TRANSLATION_PROVIDER_PORT",
+      getEnv("XHS_TRANSLATION_PROVIDER_PORT", fileEnv),
+      5557,
+      1,
+      65535
+    ),
+    xhsTranslationInstallTimeoutMs: readInteger(
+      "XHS_TRANSLATION_INSTALL_TIMEOUT_MS",
+      getEnv("XHS_TRANSLATION_INSTALL_TIMEOUT_MS", fileEnv),
+      20 * 60 * 1000,
+      30_000,
+      60 * 60 * 1000
+    ),
+    xhsTranslationModelUrl:
+      getEnv("XHS_TRANSLATION_MODEL_URL", fileEnv)?.trim() ||
+      "https://github.com/sunshine-tmy/tool2.0/releases/download/xhs-translation-v1/opus-mt-zh-en-ct2-int8-cf109095.tar.gz",
+    xhsTranslationModelSha256: getEnv("XHS_TRANSLATION_MODEL_SHA256", fileEnv)?.trim() || undefined,
     remoteFetchTimeoutMs: readInteger(
       "REMOTE_FETCH_TIMEOUT_MS",
       getEnv("REMOTE_FETCH_TIMEOUT_MS", fileEnv),

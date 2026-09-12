@@ -78,7 +78,7 @@ export const cleanupDefinitions = [
     risk: "low",
     requiresStop: false,
     defaults: true,
-    targets: ["storage/xhs-archive/staging", ".runtime/xhs-downloader/cache"]
+    targets: ["storage/xhs-archive/staging", ".runtime/xhs-downloader/cache", ".runtime/xhs-translation-model-cache"]
   },
   {
     id: "xhs-archive",
