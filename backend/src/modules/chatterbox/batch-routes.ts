@@ -1,16 +1,12 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { Transform } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import {
   CHATTERBOX_LANGUAGES,
-  CHATTERBOX_MAX_BATCH_SEGMENTS,
   CHATTERBOX_MAX_BATCH_TEXT_LENGTH,
-  CHATTERBOX_MAX_REFERENCE_BYTES,
   CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH,
   CHATTERBOX_MAX_TEXT_LENGTH,
   fail,
@@ -18,56 +14,23 @@ import {
   type ChatterboxBatch,
   type ChatterboxBatchItem,
   type ChatterboxBatchList,
-  type ChatterboxBatchStatus,
   type ChatterboxLanguage,
   type ChatterboxSavedVoice,
   type ChatterboxSavedVoiceList,
-  type ChatterboxSubtitleMode,
-  type ChatterboxTaskStatus,
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
-import type { Task, TaskStore } from "../../tasks/task-store";
+import type { TaskStore } from "../../tasks/task-store";
+import { parseBatchFields, receiveBatchMultipart } from "./batch-input";
+import { ChatterboxBatchQueue, type ChatterboxMediaTools as MediaTools } from "./batch-queue";
+import { BatchInputError, mapBatchError } from "./errors";
+import { ChatterboxBatchStore, ChatterboxVoiceStore, type StoredVoice } from "./stores";
 import type { createChatterboxWorkerClient } from "./worker-client";
 
 type WorkerClient = ReturnType<typeof createChatterboxWorkerClient>;
-type MediaTools = {
-  normalizeReference(inputPath: string, outputPath: string): Promise<number>;
-  toMp3(inputPath: string, outputPath: string): Promise<void>;
-  concatMp3(inputPaths: string[], outputPath: string): Promise<void>;
-  duration(filePath: string): Promise<number>;
-};
 
 type TimingSegment = { text: string; startSeconds: number; endSeconds: number };
-type BatchSegmentInput = { text: string; referenceTranslation?: string; fileName?: string };
-type BatchCreateInput = Pick<
-  ChatterboxBatch,
-  | "name"
-  | "language"
-  | "referenceFileName"
-  | "referenceDurationSeconds"
-  | "referenceRetained"
-  | "authorization"
-  | "consentConfirmed"
-  | "exaggeration"
-  | "cfgWeight"
-  | "temperature"
-  | "seed"
-  | "includeSubtitles"
-  | "subtitleMode"
-> & { segments: BatchSegmentInput[] };
-
-type BatchPaths = {
-  dir: string;
-  meta: string;
-  referenceUpload: string;
-  reference: string;
-  combinedAudio: string;
-  subtitle: string;
-  translationSubtitle: string;
-  bilingualSubtitle: string;
-};
 
 export async function registerChatterboxBatchRoutes(options: {
   app: FastifyInstance;
@@ -84,7 +47,14 @@ export async function registerChatterboxBatchRoutes(options: {
   await store.initialize();
   await voiceStore.initialize();
   await store.cleanupExpired();
-  const queue = new ChatterboxBatchQueue({ config, store, worker, media });
+  const queue = new ChatterboxBatchQueue({
+    config,
+    store,
+    worker,
+    media,
+    rebuildAudio: (batch) => rebuildBatchAudio(store, batch, media),
+    rebuildSubtitles: (batch) => rebuildBatchSubtitles(store, batch)
+  });
   const queueLoad = () => {
     const own = queue.stats();
     const external = options.externalQueueStats?.() || { active: 0, queued: 0 };
@@ -588,543 +558,6 @@ export async function registerChatterboxBatchRoutes(options: {
   return queue;
 }
 
-class ChatterboxBatchQueue {
-  private readonly pending: Array<{ batchId: string; itemId: string }> = [];
-  private active: { batchId: string; itemId: string } | undefined;
-
-  constructor(
-    private readonly options: {
-      config: AppConfig;
-      store: ChatterboxBatchStore;
-      worker: WorkerClient;
-      media: MediaTools;
-    }
-  ) {}
-
-  enqueue(batchId: string, itemId: string) {
-    if (
-      this.isActive(batchId, itemId) ||
-      this.pending.some((entry) => entry.batchId === batchId && entry.itemId === itemId)
-    ) {
-      return;
-    }
-    this.pending.push({ batchId, itemId });
-    this.pump();
-  }
-
-  stats() {
-    return { active: this.active ? 1 : 0, queued: this.pending.length };
-  }
-
-  isActive(batchId: string, itemId: string) {
-    return this.active?.batchId === batchId && this.active.itemId === itemId;
-  }
-
-  hasActiveBatch(batchId: string) {
-    return this.active?.batchId === batchId;
-  }
-
-  removePending(batchId: string, itemId: string) {
-    const index = this.pending.findIndex((entry) => entry.batchId === batchId && entry.itemId === itemId);
-    if (index >= 0) this.pending.splice(index, 1);
-  }
-
-  cancelPendingBatch(batchId: string) {
-    for (let index = this.pending.length - 1; index >= 0; index -= 1) {
-      if (this.pending[index].batchId === batchId) this.pending.splice(index, 1);
-    }
-  }
-
-  private pump() {
-    if (this.active || !this.pending.length) return;
-    const next = this.pending.shift();
-    if (!next) return;
-    this.active = next;
-    void this.process(next.batchId, next.itemId).then(
-      () => this.finish(next),
-      () => this.finish(next)
-    );
-  }
-
-  private finish(entry: { batchId: string; itemId: string }) {
-    if (this.active?.batchId === entry.batchId && this.active.itemId === entry.itemId) {
-      this.active = undefined;
-    }
-    void this.options.store.recalculate(entry.batchId).then(
-      () => this.pump(),
-      () => this.pump()
-    );
-  }
-
-  private async process(batchId: string, itemId: string) {
-    const batch = this.options.store.get(batchId);
-    const item = batch?.items.find((entry) => entry.id === itemId);
-    if (!batch || !item || item.status !== "queued") return;
-    const batchPaths = this.options.store.paths(batchId);
-    const itemPaths = this.options.store.itemPaths(batchId, itemId);
-    const hadAudio = Boolean(item.audioBytes && (await fileExists(itemPaths.audio)));
-    await fsp.mkdir(itemPaths.dir, { recursive: true });
-    await this.options.store.updateItem(batchId, itemId, { status: "processing", progress: 10, error: undefined });
-    try {
-      if (!(await fileExists(batchPaths.reference))) {
-        throw new BatchInputError("CHATTERBOX_REFERENCE_REQUIRED", "参考音色已删除，请重新上传后再生成", 409);
-      }
-      const result = await this.options.worker.generate({
-        text: item.text,
-        language: batch.language,
-        referencePath: batchPaths.reference,
-        outputPath: itemPaths.outputWav,
-        exaggeration: item.exaggeration ?? batch.exaggeration,
-        cfgWeight: item.cfgWeight ?? batch.cfgWeight,
-        temperature: item.temperature ?? batch.temperature,
-        seed: item.seed ?? batch.seed
-      });
-      await this.options.store.updateItem(batchId, itemId, { progress: 82 });
-      await this.options.media.toMp3(itemPaths.outputWav, itemPaths.candidateAudio);
-      const audioBytes = (await fsp.stat(itemPaths.candidateAudio)).size;
-      const audioDurationSeconds = await this.options.media.duration(itemPaths.candidateAudio);
-      await replaceFile(itemPaths.candidateAudio, itemPaths.audio);
-      await writeJsonAtomic(itemPaths.timing, result.segments);
-      const preparedBatch = await this.options.store.updateItem(batchId, itemId, {
-        status: "processing",
-        progress: 99,
-        audioBytes,
-        audioDurationSeconds,
-        error: undefined
-      });
-      const completedSnapshot = preparedBatch
-        ? {
-            ...preparedBatch,
-            items: preparedBatch.items.map((entry) =>
-              entry.id === itemId ? { ...entry, status: "completed" as const, progress: 100 } : entry
-            )
-          }
-        : undefined;
-      if (completedSnapshot?.items.every((entry) => entry.status === "completed")) {
-        if (completedSnapshot.items.length > 1) {
-          await rebuildBatchAudio(this.options.store, completedSnapshot, this.options.media);
-        }
-        if (completedSnapshot.includeSubtitles) {
-          await rebuildBatchSubtitles(this.options.store, completedSnapshot);
-        }
-      }
-      await this.options.store.updateItem(
-        batchId,
-        itemId,
-        { status: "completed", progress: 100 },
-        { deferTerminalStatus: true }
-      );
-    } catch (error) {
-      await this.options.store.updateItem(
-        batchId,
-        itemId,
-        hadAudio
-          ? { status: "completed", progress: 100, error: `重新生成失败：${readableError(error)}` }
-          : { status: "failed", progress: 100, error: readableError(error) },
-        { deferTerminalStatus: true }
-      );
-    } finally {
-      await Promise.all([
-        fsp.rm(itemPaths.outputWav, { force: true }),
-        fsp.rm(itemPaths.candidateAudio, { force: true })
-      ]);
-      const snapshot = this.options.store.get(batchId);
-      if (snapshot && !snapshot.items.some((entry) => entry.status === "queued" || entry.status === "processing")) {
-        if (!snapshot.referenceRetained) {
-          await fsp.rm(batchPaths.reference, { force: true });
-          await this.options.store.updateBatch(batchId, { referenceAvailable: false });
-        }
-      }
-    }
-  }
-}
-
-type StoredVoice = Omit<ChatterboxSavedVoice, "audioUrl">;
-
-class ChatterboxVoiceStore {
-  private readonly voices = new Map<string, StoredVoice>();
-
-  constructor(
-    private readonly root: string,
-    private readonly database: ToolboxDatabase
-  ) {}
-
-  async initialize() {
-    await fsp.mkdir(this.root, { recursive: true });
-    if (!this.database.isDomainInitialized("chatterbox-voice")) {
-      for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
-        if (!entry.isDirectory() || !isSafeId(entry.name)) continue;
-        try {
-          const voice = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as StoredVoice;
-          if (!isStoredVoice(voice) || voice.id !== entry.name || !(await fileExists(this.paths(entry.name).audio)))
-            continue;
-          this.persist(voice);
-        } catch {
-          // Invalid legacy metadata stays untouched for manual recovery.
-        }
-      }
-      this.database.markDomainInitialized("chatterbox-voice");
-    }
-    for (const entity of this.database.list("chatterbox-voice")) {
-      const voice = entity.payload as StoredVoice;
-      if (!isStoredVoice(voice) || !(await fileExists(this.paths(voice.id).audio))) continue;
-      this.voices.set(voice.id, voice);
-    }
-  }
-
-  async create(input: Omit<StoredVoice, "createdAt" | "updatedAt">) {
-    const now = new Date().toISOString();
-    const voice: StoredVoice = { ...input, createdAt: now, updatedAt: now };
-    this.persist(voice);
-    this.voices.set(voice.id, voice);
-    return { ...voice };
-  }
-
-  get(id: string) {
-    const voice = this.voices.get(id);
-    return voice ? { ...voice } : undefined;
-  }
-
-  list() {
-    return [...this.voices.values()]
-      .map((voice) => ({ ...voice }))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  async remove(id: string) {
-    if (!isSafeId(id)) return false;
-    this.voices.delete(id);
-    this.database.remove("chatterbox-voice", id);
-    await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-    return true;
-  }
-
-  paths(id: string) {
-    if (!isSafeId(id)) throw new Error("Invalid Chatterbox voice id");
-    const dir = path.join(this.root, id);
-    return {
-      dir,
-      meta: path.join(dir, "meta.json"),
-      upload: path.join(dir, "reference-upload"),
-      audio: path.join(dir, "reference.wav")
-    };
-  }
-
-  private persist(voice: StoredVoice) {
-    this.database.upsert({
-      id: voice.id,
-      kind: "chatterbox-voice",
-      payload: voice,
-      createdAt: voice.createdAt,
-      updatedAt: voice.updatedAt
-    });
-  }
-}
-
-class ChatterboxBatchStore {
-  private readonly batches = new Map<string, ChatterboxBatch>();
-
-  constructor(
-    private readonly root: string,
-    private readonly database: ToolboxDatabase,
-    private readonly taskStore: TaskStore
-  ) {}
-
-  async initialize() {
-    await fsp.mkdir(this.root, { recursive: true });
-    if (!this.database.isDomainInitialized("chatterbox-batch")) {
-      for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
-        if (!entry.isDirectory() || !isSafeId(entry.name)) continue;
-        try {
-          const batch = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxBatch;
-          if (!isStoredBatch(batch) || batch.id !== entry.name) continue;
-          await this.write(batch);
-        } catch {
-          // Invalid legacy metadata stays untouched for manual recovery.
-        }
-      }
-      this.database.markDomainInitialized("chatterbox-batch");
-      this.database.markDomainInitialized("chatterbox-item");
-    }
-    for (const entity of this.database.list("chatterbox-batch")) {
-      const batch = entity.payload as ChatterboxBatch;
-      if (!isStoredBatch(batch)) continue;
-      for (const item of batch.items) {
-        if (item.status === "queued" || item.status === "processing") {
-          item.status = "failed";
-          item.progress = 100;
-          item.error = "INTERRUPTED";
-          item.updatedAt = new Date().toISOString();
-        }
-      }
-      batch.referenceAvailable = await fileExists(this.paths(batch.id).reference);
-      this.applyAggregate(batch);
-      await this.write(batch);
-      this.batches.set(batch.id, batch);
-    }
-  }
-
-  async create(id: string, input: BatchCreateInput, retentionDays: number) {
-    const now = new Date();
-    const batch: ChatterboxBatch = {
-      id,
-      engine: "chatterbox-multilingual-v3",
-      status: "queued",
-      progress: 0,
-      name: input.name,
-      language: input.language,
-      referenceFileName: input.referenceFileName,
-      referenceDurationSeconds: input.referenceDurationSeconds,
-      referenceRetained: input.referenceRetained,
-      referenceAvailable: true,
-      authorization: input.authorization,
-      consentConfirmed: true,
-      exaggeration: input.exaggeration,
-      cfgWeight: input.cfgWeight,
-      temperature: input.temperature,
-      seed: input.seed,
-      includeSubtitles: input.includeSubtitles,
-      subtitleMode: input.subtitleMode,
-      items: input.segments.map((segment, index) => ({
-        id: nanoid(10),
-        order: index + 1,
-        text: segment.text,
-        referenceTranslation: segment.referenceTranslation,
-        fileName: segment.fileName,
-        status: "queued" as const,
-        progress: 0,
-        attempt: 1,
-        characterCount: segment.text.length,
-        createdAt: now.toISOString(),
-        updatedAt: now.toISOString()
-      })),
-      totalCharacters: input.segments.reduce((sum, segment) => sum + segment.text.length, 0),
-      completedItems: 0,
-      failedItems: 0,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + retentionDays * 86_400_000).toISOString()
-    };
-    await this.write(batch);
-    this.batches.set(id, batch);
-    return cloneBatch(batch);
-  }
-
-  get(id: string) {
-    const batch = this.batches.get(id);
-    return batch ? cloneBatch(batch) : undefined;
-  }
-
-  list() {
-    return [...this.batches.values()].map(cloneBatch).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  async updateItem(
-    batchId: string,
-    itemId: string,
-    patch: Partial<ChatterboxBatchItem>,
-    options: { deferTerminalStatus?: boolean } = {}
-  ) {
-    const batch = this.batches.get(batchId);
-    const index = batch?.items.findIndex((item) => item.id === itemId) ?? -1;
-    if (!batch || index < 0) return undefined;
-    const current = batch.items[index];
-    const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    if (patch.error === undefined && (patch.status === "processing" || patch.status === "completed")) delete next.error;
-    batch.items[index] = next;
-    this.applyAggregate(batch);
-    if (
-      options.deferTerminalStatus &&
-      !batch.items.some((item) => item.status === "queued" || item.status === "processing")
-    ) {
-      batch.status = "processing";
-      batch.progress = 99;
-    }
-    await this.write(batch);
-    return cloneBatch(batch);
-  }
-
-  async updateBatch(batchId: string, patch: Partial<ChatterboxBatch>) {
-    const batch = this.batches.get(batchId);
-    if (!batch) return undefined;
-    Object.assign(batch, patch, { updatedAt: new Date().toISOString() });
-    await this.write(batch);
-    return cloneBatch(batch);
-  }
-
-  async recalculate(batchId: string) {
-    const batch = this.batches.get(batchId);
-    if (!batch) return undefined;
-    this.applyAggregate(batch);
-    batch.updatedAt = new Date().toISOString();
-    await this.write(batch);
-    return cloneBatch(batch);
-  }
-
-  async reorder(batchId: string, itemIds: string[]) {
-    const batch = this.batches.get(batchId);
-    if (!batch) throw new Error("批次不存在");
-    if (itemIds.length !== batch.items.length || new Set(itemIds).size !== itemIds.length)
-      throw new Error("顺序不完整");
-    const byId = new Map(batch.items.map((item) => [item.id, item]));
-    if (itemIds.some((id) => !byId.has(id))) throw new Error("包含未知文案段");
-    batch.items = itemIds.map((id, index) => ({ ...byId.get(id)!, order: index + 1 }));
-    batch.updatedAt = new Date().toISOString();
-    await this.write(batch);
-    return cloneBatch(batch);
-  }
-
-  async removeItem(batchId: string, itemId: string) {
-    const batch = this.batches.get(batchId);
-    if (!batch) return undefined;
-    batch.items = batch.items
-      .filter((item) => item.id !== itemId)
-      .sort((a, b) => a.order - b.order)
-      .map((item, index) => ({ ...item, order: index + 1 }));
-    await fsp.rm(this.itemPaths(batchId, itemId).dir, { recursive: true, force: true });
-    this.applyAggregate(batch);
-    batch.updatedAt = new Date().toISOString();
-    await this.write(batch);
-    return cloneBatch(batch);
-  }
-
-  async extendExpiry(batchId: string, retentionDays: number) {
-    return this.updateBatch(batchId, { expiresAt: new Date(Date.now() + retentionDays * 86_400_000).toISOString() });
-  }
-
-  async remove(id: string) {
-    if (!isSafeId(id)) return false;
-    const batch = this.batches.get(id);
-    this.batches.delete(id);
-    this.database.transaction(() => {
-      for (const item of batch?.items ?? []) this.database.remove("chatterbox-item", item.id);
-      this.database.remove("chatterbox-batch", id);
-    });
-    this.taskStore.remove(id);
-    await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-    return true;
-  }
-
-  async cleanupExpired(isActive: (id: string) => boolean = () => false, now = Date.now()) {
-    const expired = [...this.batches.values()].filter(
-      (batch) => !isActive(batch.id) && Date.parse(batch.expiresAt) <= now
-    );
-    await Promise.all(expired.map((batch) => this.remove(batch.id)));
-    return expired.length;
-  }
-
-  paths(id: string): BatchPaths {
-    if (!isSafeId(id)) throw new Error("Invalid Chatterbox batch id");
-    const dir = path.join(this.root, id);
-    return {
-      dir,
-      meta: path.join(dir, "meta.json"),
-      referenceUpload: path.join(dir, "reference-upload"),
-      reference: path.join(dir, "reference.wav"),
-      combinedAudio: path.join(dir, "combined.mp3"),
-      subtitle: path.join(dir, "subtitle.srt"),
-      translationSubtitle: path.join(dir, "subtitle.zh-CN.srt"),
-      bilingualSubtitle: path.join(dir, "subtitle.bilingual.srt")
-    };
-  }
-
-  itemPaths(batchId: string, itemId: string) {
-    if (!isSafeId(itemId)) throw new Error("Invalid Chatterbox item id");
-    const dir = path.join(this.paths(batchId).dir, "items", itemId);
-    return {
-      dir,
-      outputWav: path.join(dir, "output.wav"),
-      candidateAudio: path.join(dir, "candidate.mp3"),
-      audio: path.join(dir, "audio.mp3"),
-      timing: path.join(dir, "timing.json")
-    };
-  }
-
-  private applyAggregate(batch: ChatterboxBatch) {
-    batch.completedItems = batch.items.filter((item) => item.status === "completed").length;
-    batch.failedItems = batch.items.filter((item) => item.status === "failed").length;
-    batch.totalCharacters = batch.items.reduce((sum, item) => sum + item.characterCount, 0);
-    batch.totalAudioBytes = batch.items.reduce((sum, item) => sum + (item.audioBytes || 0), 0) || undefined;
-    batch.totalAudioDurationSeconds =
-      batch.items.reduce((sum, item) => sum + (item.audioDurationSeconds || 0), 0) || undefined;
-    batch.progress = Math.round(
-      batch.items.reduce(
-        (sum, item) =>
-          sum +
-          (item.status === "completed" || item.status === "failed" || item.status === "cancelled"
-            ? 100
-            : item.progress),
-        0
-      ) / batch.items.length
-    );
-    batch.status = batchStatus(batch.items);
-  }
-
-  private async write(batch: ChatterboxBatch) {
-    this.database.transaction(() => {
-      this.database.upsert({
-        id: batch.id,
-        kind: "chatterbox-batch",
-        status: batch.status,
-        payload: batch,
-        createdAt: batch.createdAt,
-        updatedAt: batch.updatedAt
-      });
-      const itemIds = new Set(batch.items.map((item) => item.id));
-      for (const entity of this.database.list("chatterbox-item")) {
-        const payload = entity.payload as { batchId?: string };
-        if (payload.batchId === batch.id && !itemIds.has(entity.id)) this.database.remove("chatterbox-item", entity.id);
-      }
-      for (const item of batch.items) {
-        this.database.upsert({
-          id: item.id,
-          kind: "chatterbox-item",
-          status: item.status,
-          payload: { ...item, batchId: batch.id },
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt
-        });
-      }
-    });
-    this.taskStore.upsert(toUnifiedBatchTask(batch));
-  }
-}
-
-function toUnifiedBatchTask(batch: ChatterboxBatch): Task {
-  const status: Task["status"] =
-    batch.status === "queued"
-      ? "pending"
-      : batch.status === "processing"
-        ? "running"
-        : batch.status === "completed"
-          ? "completed"
-          : "failed";
-  return {
-    id: batch.id,
-    toolId: "chatterbox-batch",
-    status,
-    progress: batch.progress,
-    outputPath: batch.status === "completed" ? "combined.mp3" : undefined,
-    error:
-      batch.status === "cancelled"
-        ? "CANCELLED"
-        : batch.status === "partial_failed"
-          ? `${batch.failedItems} 个分段处理失败`
-          : undefined,
-    createdAt: batch.createdAt,
-    updatedAt: batch.updatedAt
-  };
-}
-
-function batchStatus(items: ChatterboxBatchItem[]): ChatterboxBatchStatus {
-  if (items.some((item) => item.status === "processing")) return "processing";
-  if (items.some((item) => item.status === "queued"))
-    return items.some((item) => item.status === "completed") ? "processing" : "queued";
-  if (items.every((item) => item.status === "completed")) return "completed";
-  if (items.some((item) => item.status === "failed")) return "partial_failed";
-  return "cancelled";
-}
-
 async function rebuildBatchAudio(store: ChatterboxBatchStore, batch: ChatterboxBatch, media: MediaTools) {
   const audioPaths = orderedItems(batch).map((item) => store.itemPaths(batch.id, item.id).audio);
   await media.concatMp3(audioPaths, store.paths(batch.id).combinedAudio);
@@ -1317,129 +750,6 @@ async function sendBatchAudio(
   }
 }
 
-async function receiveBatchMultipart(
-  parts: AsyncIterableIterator<import("@fastify/multipart").Multipart>,
-  targetPath: string,
-  requireFile: boolean
-) {
-  const fields: Record<string, string> = {};
-  let referenceFileName = "";
-  let receivedFile = false;
-  for await (const part of parts) {
-    if (part.type === "file") {
-      if (part.fieldname !== "reference" || receivedFile) {
-        part.file.resume();
-        throw new BatchInputError("CHATTERBOX_REFERENCE_REQUIRED", "请只上传一个参考音频", 400);
-      }
-      receivedFile = true;
-      referenceFileName = sanitizeDisplayName(part.filename || "reference-audio");
-      let bytes = 0;
-      const limiter = new Transform({
-        transform(chunk: Buffer, _encoding, callback) {
-          bytes += chunk.length;
-          callback(
-            bytes > CHATTERBOX_MAX_REFERENCE_BYTES
-              ? new BatchInputError("CHATTERBOX_REFERENCE_TOO_LARGE", "参考音频不能超过 20 MB", 413)
-              : null,
-            chunk
-          );
-        }
-      });
-      await pipeline(part.file, limiter, fs.createWriteStream(targetPath));
-      if (part.file.truncated) throw new BatchInputError("CHATTERBOX_REFERENCE_TOO_LARGE", "参考音频过大", 413);
-    } else if (
-      typeof part.value === "string" &&
-      part.value.length <=
-        CHATTERBOX_MAX_BATCH_TEXT_LENGTH +
-          CHATTERBOX_MAX_BATCH_SEGMENTS * CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH +
-          20_000
-    ) {
-      fields[part.fieldname] = part.value;
-    }
-  }
-  if (requireFile && !receivedFile) throw new BatchInputError("CHATTERBOX_REFERENCE_REQUIRED", "请上传参考音频", 400);
-  return { fields, referenceFileName, receivedFile };
-}
-
-function parseBatchFields(
-  fields: Record<string, string>,
-  referenceFileName: string
-):
-  | { success: true; value: Omit<BatchCreateInput, "referenceDurationSeconds"> }
-  | { success: false; statusCode: number; code: string; message: string } {
-  let rawSegments: unknown;
-  try {
-    rawSegments = JSON.parse(fields.segments || "[]");
-  } catch {
-    return invalid("CHATTERBOX_BATCH_SEGMENTS_INVALID", "多段文案格式无效");
-  }
-  if (!Array.isArray(rawSegments) || !rawSegments.length || rawSegments.length > CHATTERBOX_MAX_BATCH_SEGMENTS) {
-    return invalid("CHATTERBOX_BATCH_SEGMENTS_INVALID", `批次需要 1–${CHATTERBOX_MAX_BATCH_SEGMENTS} 段文案`);
-  }
-  const segments: BatchSegmentInput[] = [];
-  for (const raw of rawSegments) {
-    if (!isRecord(raw) || typeof raw.text !== "string")
-      return invalid("CHATTERBOX_BATCH_SEGMENTS_INVALID", "文案段格式无效");
-    const text = raw.text.trim();
-    if (!text || text.length > CHATTERBOX_MAX_TEXT_LENGTH) {
-      return invalid("CHATTERBOX_TEXT_TOO_LONG", `每段文案必须为 1–${CHATTERBOX_MAX_TEXT_LENGTH} 个字符`, 413);
-    }
-    if (raw.referenceTranslation !== undefined && typeof raw.referenceTranslation !== "string") {
-      return invalid("CHATTERBOX_BATCH_SEGMENTS_INVALID", "中文参考翻译格式无效");
-    }
-    const referenceTranslation =
-      typeof raw.referenceTranslation === "string" ? raw.referenceTranslation.trim() : undefined;
-    if (referenceTranslation && referenceTranslation.length > CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH) {
-      return invalid(
-        "CHATTERBOX_REFERENCE_TRANSLATION_TOO_LONG",
-        `中文参考翻译不能超过 ${CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH} 个字符`,
-        413
-      );
-    }
-    segments.push({
-      text,
-      referenceTranslation: referenceTranslation || undefined,
-      fileName: typeof raw.fileName === "string" && raw.fileName.trim() ? sanitizeFileName(raw.fileName) : undefined
-    });
-  }
-  if (segments.reduce((sum, segment) => sum + segment.text.length, 0) > CHATTERBOX_MAX_BATCH_TEXT_LENGTH) {
-    return invalid(
-      "CHATTERBOX_BATCH_TEXT_TOO_LONG",
-      `整个批次不能超过 ${CHATTERBOX_MAX_BATCH_TEXT_LENGTH} 个字符`,
-      413
-    );
-  }
-  if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语");
-  if (!isAuthorization(fields.authorization)) return invalid("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源");
-  if (fields.consentConfirmed !== "true")
-    return invalid("CHATTERBOX_CONSENT_REQUIRED", "必须确认已获得参考声音的合法授权");
-  const exaggeration = boundedNumber(fields.exaggeration, 0.25, 1.5);
-  const cfgWeight = boundedNumber(fields.cfgWeight, 0, 1);
-  const temperature = boundedNumber(fields.temperature, 0.1, 1.5);
-  const seed = boundedInteger(fields.seed, 0, 2_147_483_647);
-  if (exaggeration === undefined || cfgWeight === undefined || temperature === undefined || seed === undefined) {
-    return invalid("CHATTERBOX_PARAMETER_INVALID", "声音克隆参数超出允许范围");
-  }
-  return {
-    success: true,
-    value: {
-      segments,
-      name: fields.name ? sanitizeFileName(fields.name) : undefined,
-      language: fields.language,
-      referenceFileName,
-      referenceRetained: fields.referenceRetained === "true",
-      authorization: fields.authorization,
-      consentConfirmed: true,
-      exaggeration,
-      cfgWeight,
-      temperature,
-      seed,
-      includeSubtitles: fields.includeSubtitles === "true",
-      subtitleMode: isSubtitleMode(fields.subtitleMode) ? fields.subtitleMode : "sentences"
-    }
-  };
-}
-
 function toPublicBatch(batch: ChatterboxBatch): ChatterboxBatch {
   const result = cloneBatch(batch);
   result.items = result.items.map((item) => {
@@ -1605,52 +915,12 @@ async function fileExists(filePath: string) {
   );
 }
 
-async function writeJsonAtomic(filePath: string, value: unknown) {
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  const temp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fsp.writeFile(temp, JSON.stringify(value, null, 2), "utf8");
-  await fsp.rename(temp, filePath);
-}
-
 function cloneBatch(batch: ChatterboxBatch): ChatterboxBatch {
   return { ...batch, items: batch.items.map((item) => ({ ...item })) };
 }
 
-function isStoredBatch(value: unknown): value is ChatterboxBatch {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    value.engine === "chatterbox-multilingual-v3" &&
-    Array.isArray(value.items) &&
-    value.items.every(
-      (item) =>
-        isRecord(item) && typeof item.id === "string" && typeof item.text === "string" && isTaskStatus(item.status)
-    )
-  );
-}
-
-function isStoredVoice(value: unknown): value is StoredVoice {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    isLanguage(value.language) &&
-    typeof value.durationSeconds === "number" &&
-    typeof value.audioBytes === "number" &&
-    isAuthorization(value.authorization) &&
-    value.consentConfirmed === true &&
-    typeof value.createdAt === "string"
-  );
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function isTaskStatus(value: unknown): value is ChatterboxTaskStatus {
-  return (
-    value === "queued" || value === "processing" || value === "completed" || value === "failed" || value === "cancelled"
-  );
 }
 
 function isLanguage(value: unknown): value is ChatterboxLanguage {
@@ -1659,10 +929,6 @@ function isLanguage(value: unknown): value is ChatterboxLanguage {
 
 function isAuthorization(value: unknown): value is ChatterboxVoiceAuthorization {
   return value === "self" || value === "authorized";
-}
-
-function isSubtitleMode(value: unknown): value is ChatterboxSubtitleMode {
-  return value === "sentences" || value === "segments";
 }
 
 function boundedNumber(value: string | undefined, minimum: number, maximum: number) {
@@ -1680,10 +946,6 @@ function positiveInteger(value: string | undefined, fallback: number) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function invalid(code: string, message: string, statusCode = 400) {
-  return { success: false as const, code, message, statusCode };
-}
-
 function batchIdFrom(params: unknown) {
   return isRecord(params) && typeof params.batchId === "string" ? params.batchId : "";
 }
@@ -1697,19 +959,6 @@ function idsFrom(params: unknown) {
     batchId: batchIdFrom(params),
     itemId: isRecord(params) && typeof params.itemId === "string" ? params.itemId : ""
   };
-}
-
-function isSafeId(value: string) {
-  return /^[A-Za-z0-9_-]{6,64}$/.test(value);
-}
-
-function sanitizeDisplayName(value: string) {
-  return (
-    path
-      .basename(value)
-      .replace(/[\r\n]/g, " ")
-      .slice(0, 160) || "reference-audio"
-  );
 }
 
 function sanitizeFileName(value: string) {
@@ -1726,29 +975,4 @@ function sanitizeFileName(value: string) {
 function contentDisposition(fileName: string) {
   const ascii = fileName.replace(/[^\x20-\x7e]/g, "_").replaceAll('"', "");
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
-}
-
-function readableError(error: unknown) {
-  return error instanceof Error ? error.message : "声音克隆生成失败";
-}
-
-function mapBatchError(error: unknown) {
-  if (error instanceof BatchInputError) {
-    return { code: error.code, message: error.message, statusCode: error.statusCode };
-  }
-  return {
-    code: "CHATTERBOX_BATCH_FAILED",
-    message: error instanceof Error ? error.message : "声音克隆批次处理失败",
-    statusCode: 400
-  };
-}
-
-class BatchInputError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly statusCode: number
-  ) {
-    super(message);
-  }
 }
