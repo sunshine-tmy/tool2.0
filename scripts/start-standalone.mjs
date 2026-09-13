@@ -1,22 +1,37 @@
 import { spawn } from "node:child_process";
 
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const environment = {
   ...process.env,
   DEPLOYMENT_MODE: process.env.DEPLOYMENT_MODE || "local",
   API_HOST: process.env.API_HOST || "127.0.0.1"
 };
-const children = [
-  spawn(pnpm, ["--filter", "backend", "start"], { env: environment, stdio: "inherit" }),
-  spawn(pnpm, ["--filter", "frontend", "preview"], { env: environment, stdio: "inherit" })
-];
+const children = [spawnPnpm(["--filter", "backend", "start"]), spawnPnpm(["--filter", "frontend", "preview"])];
 
 let stopping = false;
 function stop(exitCode = 0) {
   if (stopping) return;
   stopping = true;
-  for (const child of children) child.kill("SIGTERM");
+  for (const child of children) terminateChild(child);
   setTimeout(() => process.exit(exitCode), 2_000).unref();
+}
+
+function spawnPnpm(args) {
+  const options = { env: environment, stdio: "inherit" };
+  return process.platform === "win32"
+    ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "pnpm.cmd", ...args], options)
+    : spawn("pnpm", args, options);
+}
+
+function terminateChild(child) {
+  if (!child.pid || child.exitCode !== null) return;
+  if (process.platform !== "win32") {
+    child.kill("SIGTERM");
+    return;
+  }
+  spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+    stdio: "ignore",
+    windowsHide: true
+  });
 }
 
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => stop());

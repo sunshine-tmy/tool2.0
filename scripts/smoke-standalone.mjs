@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const packageRoot = path.resolve(process.argv[2] || ".");
-const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const storageRoot = path.join(packageRoot, ".smoke-storage");
 const environment = {
   ...process.env,
@@ -15,12 +14,10 @@ const environment = {
 const children = [];
 
 try {
-  children.push(spawn(pnpm, ["--filter", "backend", "start"], { cwd: packageRoot, env: environment, stdio: "pipe" }));
+  children.push(spawnPnpm(["--filter", "backend", "start"]));
   await waitForUrl("http://127.0.0.1:3100/health/ready");
 
-  children.push(
-    spawn(pnpm, ["--filter", "frontend", "preview"], { cwd: packageRoot, env: environment, stdio: "pipe" })
-  );
+  children.push(spawnPnpm(["--filter", "frontend", "preview"]));
   await waitForUrl("http://127.0.0.1:4173/");
 
   const form = new FormData();
@@ -30,9 +27,10 @@ try {
     body: form
   });
   if (!uploaded.ok) throw new Error(`Upload smoke failed: ${uploaded.status} ${await uploaded.text()}`);
-  const record = (await uploaded.json()).data.file;
+  const uploadData = (await uploaded.json()).data;
+  const record = uploadData.file;
 
-  const downloaded = await fetch(`http://127.0.0.1:3100${record.downloadUrl}`);
+  const downloaded = await fetch(`http://127.0.0.1:3100${uploadData.downloadUrl}`);
   if (!downloaded.ok || (await downloaded.text()) !== "standalone smoke") {
     throw new Error("Download smoke returned unexpected content");
   }
@@ -42,8 +40,31 @@ try {
   if (!removed.ok) throw new Error(`Cleanup smoke failed: ${removed.status}`);
   console.log("Standalone smoke passed: install, build, API/UI startup, health, upload, download and cleanup.");
 } finally {
-  for (const child of children.reverse()) child.kill("SIGTERM");
+  await Promise.all(children.reverse().map(terminateChild));
   await fs.rm(storageRoot, { recursive: true, force: true }).catch(() => undefined);
+}
+
+function spawnPnpm(args) {
+  const options = { cwd: packageRoot, env: environment, stdio: "pipe" };
+  return process.platform === "win32"
+    ? spawn(process.env.ComSpec || "cmd.exe", ["/d", "/s", "/c", "pnpm.cmd", ...args], options)
+    : spawn("pnpm", args, options);
+}
+
+function terminateChild(child) {
+  if (!child.pid || child.exitCode !== null) return Promise.resolve();
+  if (process.platform !== "win32") {
+    child.kill("SIGTERM");
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const killer = spawn("taskkill.exe", ["/pid", String(child.pid), "/t", "/f"], {
+      stdio: "ignore",
+      windowsHide: true
+    });
+    killer.once("error", () => resolve());
+    killer.once("exit", () => resolve());
+  });
 }
 
 async function waitForUrl(url) {
