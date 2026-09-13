@@ -1,24 +1,12 @@
-import { WORKER_PROTOCOL_VERSION, type ChatterboxHealth, type ChatterboxLanguage } from "@toolbox/shared";
+import {
+  WORKER_PROTOCOL_VERSION,
+  isChatterboxWorkerGenerate,
+  isChatterboxWorkerHealth,
+  type ChatterboxLanguage,
+  type ChatterboxWorkerGenerate,
+  type ChatterboxWorkerHealth
+} from "@toolbox/shared";
 import type { AppConfig } from "../../config";
-
-type WorkerHealth = Pick<
-  ChatterboxHealth,
-  "protocolVersion" | "available" | "packageVersion" | "model" | "modelLoaded" | "device" | "gpuName" | "watermarked"
-> & { message?: string };
-
-type WorkerGenerateResult = {
-  sampleRate: number;
-  samples: number;
-  durationSeconds: number;
-  chunks: number;
-  segments: Array<{
-    text: string;
-    startSeconds: number;
-    endSeconds: number;
-  }>;
-  device: string;
-  watermarked: true;
-};
 
 let generationTail: Promise<void> = Promise.resolve();
 
@@ -36,7 +24,13 @@ export class ChatterboxWorkerError extends Error {
 export function createChatterboxWorkerClient(config: AppConfig) {
   return {
     async health() {
-      const health = await requestWorker<WorkerHealth>(config, "/health", { method: "GET" }, 10_000);
+      const health = await requestWorker<ChatterboxWorkerHealth>(
+        config,
+        "/health",
+        { method: "GET" },
+        10_000,
+        isChatterboxWorkerHealth
+      );
       if (health.protocolVersion !== WORKER_PROTOCOL_VERSION) {
         throw new ChatterboxWorkerError("WORKER_PROTOCOL_MISMATCH", "Chatterbox Worker 协议版本与主程序不兼容");
       }
@@ -58,7 +52,7 @@ export function createChatterboxWorkerClient(config: AppConfig) {
         if (input.signal?.aborted) {
           throw new ChatterboxWorkerError("CHATTERBOX_TASK_CANCELLED", "声音克隆任务已取消");
         }
-        return requestWorker<WorkerGenerateResult>(
+        return requestWorker<ChatterboxWorkerGenerate>(
           config,
           "/generate",
           {
@@ -76,7 +70,8 @@ export function createChatterboxWorkerClient(config: AppConfig) {
             }),
             signal: input.signal
           },
-          config.chatterboxWorkerTimeoutMs
+          config.chatterboxWorkerTimeoutMs,
+          isChatterboxWorkerGenerate
         );
       });
     }
@@ -92,7 +87,13 @@ function serializeGeneration<T>(work: () => Promise<T>) {
   return result;
 }
 
-async function requestWorker<T>(config: AppConfig, pathname: string, init: RequestInit, timeoutMs: number): Promise<T> {
+async function requestWorker<T>(
+  config: AppConfig,
+  pathname: string,
+  init: RequestInit,
+  timeoutMs: number,
+  validate: (value: unknown) => value is T
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const externalSignal = init.signal;
@@ -104,21 +105,17 @@ async function requestWorker<T>(config: AppConfig, pathname: string, init: Reque
       ...init,
       signal: controller.signal
     });
-    const payload = (await response.json().catch(() => null)) as {
-      success?: boolean;
-      data?: T;
-      error?: { code?: string; message?: string };
-      detail?: string;
-    } | null;
+    const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const failure = workerFailure(payload);
       throw new ChatterboxWorkerError(
-        payload?.error?.code || "CHATTERBOX_WORKER_FAILED",
-        payload?.error?.message || payload?.detail || `Chatterbox Worker 返回 ${response.status}`,
+        failure.code || "CHATTERBOX_WORKER_FAILED",
+        failure.message || `Chatterbox Worker 返回 ${response.status}`,
         response.status
       );
     }
-    if (payload?.success === true && payload.data !== undefined) return payload.data;
-    return payload as T;
+    if (isRecord(payload) && payload.success === true && validate(payload.data)) return payload.data;
+    throw new ChatterboxWorkerError("CHATTERBOX_WORKER_INVALID_RESPONSE", "Chatterbox Worker 返回了不兼容的数据", 502);
   } catch (error) {
     if (error instanceof ChatterboxWorkerError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
@@ -132,4 +129,19 @@ async function requestWorker<T>(config: AppConfig, pathname: string, init: Reque
     clearTimeout(timeout);
     externalSignal?.removeEventListener("abort", abortFromExternal);
   }
+}
+
+function workerFailure(payload: unknown): { code?: string; message?: string } {
+  if (!isRecord(payload)) return {};
+  if (isRecord(payload.error)) {
+    return {
+      code: typeof payload.error.code === "string" ? payload.error.code : undefined,
+      message: typeof payload.error.message === "string" ? payload.error.message : undefined
+    };
+  }
+  return { message: typeof payload.detail === "string" ? payload.detail : undefined };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

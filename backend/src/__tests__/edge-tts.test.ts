@@ -184,9 +184,9 @@ function helperSource() {
 const fs = require("node:fs");
 const command = process.argv[2];
 if (command === "check") {
-  process.stdout.write(JSON.stringify({ available: true, version: "test-1.0" }));
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, available: true, version: "test-1.0" }));
 } else if (command === "voices") {
-  process.stdout.write(JSON.stringify({ voices: [
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, voices: [
     { name: "Yasmin", shortName: "ms-MY-YasminNeural", locale: "ms-MY", gender: "Female" },
     { name: "Jenny", shortName: "en-US-JennyNeural", locale: "en-US", gender: "Female" },
     { name: "Francisca", shortName: "pt-BR-FranciscaNeural", locale: "pt-BR", gender: "Female" },
@@ -195,6 +195,10 @@ if (command === "check") {
 } else if (command === "generate") {
   const value = (name) => process.argv[process.argv.indexOf(name) + 1];
   const input = JSON.parse(fs.readFileSync(value("--input"), "utf8"));
+  if (input.protocolVersion !== 1) {
+    process.stderr.write("unsupported protocol version");
+    process.exit(2);
+  }
   if (input.text.includes("slow")) {
     const handle = fs.openSync(value("--audio"), "w");
     fs.writeSync(handle, Buffer.from("ID3"));
@@ -205,7 +209,7 @@ if (command === "check") {
   if (process.argv.includes("--subtitle")) {
     fs.writeFileSync(value("--subtitle"), "1\n00:00:00,000 --> 00:00:01,000\n" + input.text + "\n", "utf8");
   }
-  process.stdout.write(JSON.stringify({ audioBytes: 13 }));
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, audioBytes: 13 }));
 } else {
   process.stderr.write("unknown command");
   process.exit(1);

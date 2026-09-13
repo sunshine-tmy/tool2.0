@@ -1,17 +1,14 @@
 import {
   WORKER_PROTOCOL_VERSION,
-  type ImageAiHealth,
+  isImageWorkerHealth,
+  isImageWorkerProcess,
+  isImageWorkerSuggestion,
   type ImageAiOperation,
-  type ImageAiProvider,
-  type WatermarkSuggestionResponse
+  type ImageWorkerHealth,
+  type ImageWorkerProcess,
+  type ImageWorkerSuggestion
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
-
-type WorkerProcessResult = {
-  provider: ImageAiProvider;
-  model: string;
-  warnings?: string[];
-};
 
 export class ImageAiWorkerError extends Error {
   code: string;
@@ -27,22 +24,34 @@ export class ImageAiWorkerError extends Error {
 
 export function createImageAiWorkerClient(config: AppConfig) {
   return {
-    async health(): Promise<ImageAiHealth> {
+    async health(): Promise<ImageWorkerHealth> {
       // A cold worker may need a few seconds to inspect and fingerprint large local model files.
       // Keep this separate from inference timeouts so startup health checks do not report a false outage.
-      const health = await requestWorker<ImageAiHealth>(config, "/health", { method: "GET" }, 15000);
+      const health = await requestWorker<ImageWorkerHealth>(
+        config,
+        "/health",
+        { method: "GET" },
+        15000,
+        isImageWorkerHealth
+      );
       if (health.protocolVersion !== WORKER_PROTOCOL_VERSION) {
         throw new ImageAiWorkerError("WORKER_PROTOCOL_MISMATCH", "AI Worker 协议版本与主程序不兼容");
       }
       return health;
     },
 
-    async suggestions(inputPath: string): Promise<WatermarkSuggestionResponse> {
-      return requestWorker<WatermarkSuggestionResponse>(config, "/watermark/suggestions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ input_path: inputPath })
-      });
+    async suggestions(inputPath: string): Promise<ImageWorkerSuggestion> {
+      return requestWorker<ImageWorkerSuggestion>(
+        config,
+        "/watermark/suggestions",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ input_path: inputPath })
+        },
+        config.imageAiWorkerTimeoutMs,
+        isImageWorkerSuggestion
+      );
     },
 
     async process(input: {
@@ -51,19 +60,25 @@ export function createImageAiWorkerClient(config: AppConfig) {
       outputPath: string;
       maskPath?: string;
       scale?: 2 | 4;
-    }): Promise<WorkerProcessResult> {
-      return requestWorker<WorkerProcessResult>(config, "/process", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          operation: input.operation,
-          input_path: input.inputPath,
-          output_path: input.outputPath,
-          mask_path: input.maskPath,
-          scale: input.scale,
-          deployment_usage: config.deploymentUsage
-        })
-      });
+    }): Promise<ImageWorkerProcess> {
+      return requestWorker<ImageWorkerProcess>(
+        config,
+        "/process",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            operation: input.operation,
+            input_path: input.inputPath,
+            output_path: input.outputPath,
+            mask_path: input.maskPath,
+            scale: input.scale,
+            deployment_usage: config.deploymentUsage
+          })
+        },
+        config.imageAiWorkerTimeoutMs,
+        isImageWorkerProcess
+      );
     }
   };
 }
@@ -72,7 +87,8 @@ async function requestWorker<T>(
   config: AppConfig,
   pathname: string,
   init: RequestInit,
-  timeoutMs = config.imageAiWorkerTimeoutMs
+  timeoutMs: number,
+  validate: (value: unknown) => value is T
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -82,25 +98,19 @@ async function requestWorker<T>(
       ...init,
       signal: controller.signal
     });
-    const payload = (await response.json().catch(() => null)) as {
-      success?: boolean;
-      data?: T;
-      error?: { code?: string; message?: string };
-      detail?: string;
-    } | null;
+    const payload: unknown = await response.json().catch(() => null);
 
     if (!response.ok) {
+      const failure = workerFailure(payload);
       throw new ImageAiWorkerError(
-        payload?.error?.code || "IMAGE_AI_WORKER_FAILED",
-        payload?.error?.message || payload?.detail || `AI 推理服务返回 ${response.status}`,
+        failure.code || "IMAGE_AI_WORKER_FAILED",
+        failure.message || `AI 推理服务返回 ${response.status}`,
         response.status
       );
     }
 
-    if (payload && payload.success === true && payload.data !== undefined) {
-      return payload.data;
-    }
-    return payload as T;
+    if (isRecord(payload) && payload.success === true && validate(payload.data)) return payload.data;
+    throw new ImageAiWorkerError("IMAGE_AI_WORKER_INVALID_RESPONSE", "AI Worker 返回了不兼容的数据", 502);
   } catch (error) {
     if (error instanceof ImageAiWorkerError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
@@ -110,4 +120,19 @@ async function requestWorker<T>(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function workerFailure(payload: unknown): { code?: string; message?: string } {
+  if (!isRecord(payload)) return {};
+  if (isRecord(payload.error)) {
+    return {
+      code: typeof payload.error.code === "string" ? payload.error.code : undefined,
+      message: typeof payload.error.message === "string" ? payload.error.message : undefined
+    };
+  }
+  return { message: typeof payload.detail === "string" ? payload.detail : undefined };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

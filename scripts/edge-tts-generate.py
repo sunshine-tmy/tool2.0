@@ -15,9 +15,12 @@ import edge_tts
 
 SUPPORTED_LOCALES = {"ms-MY", "en-US", "en-GB", "pt-BR"}
 MAX_TEXT_LENGTH = 20_000
+PROTOCOL_VERSION = 1
 
 
 def emit(value: object) -> None:
+    if isinstance(value, dict):
+        value = {"protocolVersion": PROTOCOL_VERSION, **value}
     sys.stdout.write(json.dumps(value, ensure_ascii=False))
     sys.stdout.flush()
 
@@ -36,6 +39,8 @@ def integer(value: Any, name: str, minimum: int, maximum: int) -> int:
 
 
 def validate_request(value: dict[str, Any]) -> dict[str, Any]:
+    if value.get("protocolVersion") != PROTOCOL_VERSION:
+        raise ValueError("Worker protocol version mismatch")
     text = value.get("text")
     locale = value.get("language")
     voice = value.get("voice")

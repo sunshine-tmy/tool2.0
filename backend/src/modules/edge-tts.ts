@@ -9,6 +9,7 @@ import {
   EDGE_TTS_LANGUAGES,
   EDGE_TTS_MAX_TEXT_LENGTH,
   EDGE_TTS_RECOMMENDED_VOICES,
+  WORKER_PROTOCOL_VERSION,
   fail,
   ok,
   type EdgeTtsCreateTaskInput,
@@ -249,7 +250,7 @@ class EdgeTtsTaskStore {
     };
     const paths = this.paths(task.id);
     await fsp.mkdir(paths.dir, { recursive: true });
-    await writeJsonAtomic(paths.request, input);
+    await writeJsonAtomic(paths.request, { protocolVersion: WORKER_PROTOCOL_VERSION, ...input });
     await this.write(task);
     this.tasks.set(task.id, task);
     return cloneTask(task);
@@ -398,7 +399,12 @@ class EdgeTtsRunner {
     });
     const stdout = String(result.stdout).trim();
     if (!stdout) throw new Error("Edge-TTS returned an empty response");
-    return JSON.parse(stdout) as Record<string, unknown>;
+    const parsed: unknown = JSON.parse(stdout);
+    if (!isRecord(parsed)) throw new Error("Edge-TTS returned a non-object response");
+    if (parsed.protocolVersion !== WORKER_PROTOCOL_VERSION) {
+      throw new Error("Edge-TTS Worker protocol version mismatch");
+    }
+    return parsed;
   }
 }
 
