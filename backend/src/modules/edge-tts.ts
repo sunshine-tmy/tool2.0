@@ -6,10 +6,21 @@ import { promisify } from "node:util";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import {
+  ApiFailureSchema,
   EDGE_TTS_LANGUAGES,
   EDGE_TTS_MAX_TEXT_LENGTH,
   EDGE_TTS_RECOMMENDED_VOICES,
+  EdgeTtsCreateTaskInputSchema,
+  EdgeTtsHealthSchema,
+  EdgeTtsRemovalSchema,
+  EdgeTtsTaskListQuerySchema,
+  EdgeTtsTaskListSchema,
+  EdgeTtsTaskSchema,
+  EdgeTtsVoiceQuerySchema,
+  EdgeTtsVoicesSchema,
+  TaskIdParamsSchema,
   WORKER_PROTOCOL_VERSION,
+  apiSuccessSchema,
   fail,
   ok,
   type EdgeTtsCreateTaskInput,
@@ -91,90 +102,151 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
     queue.close();
   });
 
-  app.get("/api/v1/tools/edge-tts/health", async () => {
-    const runtime = await getRuntimeInfo();
-    const stats = queue.stats();
-    const data: EdgeTtsHealth = {
-      ...runtime,
-      queue: {
-        ...stats,
-        concurrency: config.edgeTtsConcurrency,
-        limit: config.edgeTtsQueueLimit
-      },
-      retentionDays: config.edgeTtsRetentionDays,
-      maxTextLength: EDGE_TTS_MAX_TEXT_LENGTH,
-      onlineService: true
-    };
-    return ok(data);
-  });
-
-  app.get("/api/v1/tools/edge-tts/voices", async (request, reply) => {
-    const query = request.query as { language?: string };
-    if (query.language && !isSupportedLanguage(query.language)) {
-      return reply.code(400).send(fail("EDGE_TTS_LANGUAGE_INVALID", "不支持该语言"));
+  app.get(
+    "/api/v1/tools/edge-tts/health",
+    { schema: { response: { 200: apiSuccessSchema(EdgeTtsHealthSchema) } } },
+    async () => {
+      const runtime = await getRuntimeInfo();
+      const stats = queue.stats();
+      const data: EdgeTtsHealth = {
+        ...runtime,
+        queue: {
+          ...stats,
+          concurrency: config.edgeTtsConcurrency,
+          limit: config.edgeTtsQueueLimit
+        },
+        retentionDays: config.edgeTtsRetentionDays,
+        maxTextLength: EDGE_TTS_MAX_TEXT_LENGTH,
+        onlineService: true
+      };
+      return ok(data);
     }
-    const voices = (await getVoices()).filter((voice) => !query.language || voice.locale === query.language);
-    return ok({ voices, source: voiceCache ? "live" : "fallback" });
-  });
+  );
 
-  app.post("/api/v1/tools/edge-tts/tasks", async (request, reply) => {
-    const parsed = parseCreateInput(request.body, allowedVoiceNames);
-    if (!parsed.success) return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
-
-    const runtime = await getRuntimeInfo();
-    if (!runtime.available) {
-      return reply.code(409).send(fail("EDGE_TTS_NOT_INSTALLED", runtime.message));
+  app.get(
+    "/api/v1/tools/edge-tts/voices",
+    {
+      schema: {
+        querystring: EdgeTtsVoiceQuerySchema,
+        response: { 200: apiSuccessSchema(EdgeTtsVoicesSchema), 400: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const query = request.query as { language?: string };
+      if (query.language && !isSupportedLanguage(query.language)) {
+        return reply.code(400).send(fail("EDGE_TTS_LANGUAGE_INVALID", "不支持该语言"));
+      }
+      const voices = (await getVoices()).filter((voice) => !query.language || voice.locale === query.language);
+      return ok({ voices, source: voiceCache ? "live" : "fallback" });
     }
-    if (queue.stats().active + queue.stats().queued >= config.edgeTtsQueueLimit) {
-      return reply.code(429).send(fail("EDGE_TTS_QUEUE_FULL", "语音生成队列已满，请稍后重试"));
+  );
+
+  app.post(
+    "/api/v1/tools/edge-tts/tasks",
+    {
+      schema: {
+        body: EdgeTtsCreateTaskInputSchema,
+        response: {
+          202: apiSuccessSchema(EdgeTtsTaskSchema),
+          400: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema,
+          429: ApiFailureSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const parsed = parseCreateInput(request.body, allowedVoiceNames);
+      if (!parsed.success) return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
+
+      const runtime = await getRuntimeInfo();
+      if (!runtime.available) {
+        return reply.code(409).send(fail("EDGE_TTS_NOT_INSTALLED", runtime.message));
+      }
+      if (queue.stats().active + queue.stats().queued >= config.edgeTtsQueueLimit) {
+        return reply.code(429).send(fail("EDGE_TTS_QUEUE_FULL", "语音生成队列已满，请稍后重试"));
+      }
+
+      const task = await store.create(parsed.value, config.edgeTtsRetentionDays);
+      queue.enqueue(task.id);
+      return reply.code(202).send(ok(toPublicTask(task)));
     }
+  );
 
-    const task = await store.create(parsed.value, config.edgeTtsRetentionDays);
-    queue.enqueue(task.id);
-    return reply.code(202).send(ok(toPublicTask(task)));
-  });
+  app.get(
+    "/api/v1/tools/edge-tts/tasks",
+    {
+      schema: {
+        querystring: EdgeTtsTaskListQuerySchema,
+        response: { 200: apiSuccessSchema(EdgeTtsTaskListSchema) }
+      }
+    },
+    async (request) => {
+      const query = request.query as { page?: string; pageSize?: string };
+      const page = positiveInteger(query.page, 1);
+      const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
+      const tasks = store.listInternal();
+      const total = tasks.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const safePage = Math.min(page, totalPages);
+      const start = (safePage - 1) * pageSize;
+      const data: EdgeTtsTaskList = {
+        tasks: tasks.slice(start, start + pageSize).map(toTaskSummary),
+        pagination: { page: safePage, pageSize, total, totalPages }
+      };
+      return ok(data);
+    }
+  );
 
-  app.get("/api/v1/tools/edge-tts/tasks", async (request) => {
-    const query = request.query as { page?: string; pageSize?: string };
-    const page = positiveInteger(query.page, 1);
-    const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
-    const tasks = store.listInternal();
-    const total = tasks.length;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    const safePage = Math.min(page, totalPages);
-    const start = (safePage - 1) * pageSize;
-    const data: EdgeTtsTaskList = {
-      tasks: tasks.slice(start, start + pageSize).map(toTaskSummary),
-      pagination: { page: safePage, pageSize, total, totalPages }
-    };
-    return ok(data);
-  });
+  app.get(
+    "/api/v1/tools/edge-tts/tasks/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(EdgeTtsTaskSchema), 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const task = store.get(taskIdFrom(request.params));
+      if (!task) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
+      return ok(toPublicTask(task));
+    }
+  );
 
-  app.get("/api/v1/tools/edge-tts/tasks/:taskId", async (request, reply) => {
-    const task = store.get(taskIdFrom(request.params));
-    if (!task) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
-    return ok(toPublicTask(task));
-  });
+  app.get(
+    "/api/v1/tools/edge-tts/tasks/:taskId/audio",
+    { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
+    async (request, reply) => sendTaskFile(store, taskIdFrom(request.params), "audio", reply, false)
+  );
 
-  app.get("/api/v1/tools/edge-tts/tasks/:taskId/audio", async (request, reply) => {
-    return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, false);
-  });
+  app.get(
+    "/api/v1/tools/edge-tts/tasks/:taskId/download",
+    { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
+    async (request, reply) => sendTaskFile(store, taskIdFrom(request.params), "audio", reply, true)
+  );
 
-  app.get("/api/v1/tools/edge-tts/tasks/:taskId/download", async (request, reply) => {
-    return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, true);
-  });
+  app.get(
+    "/api/v1/tools/edge-tts/tasks/:taskId/subtitle",
+    { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
+    async (request, reply) => sendTaskFile(store, taskIdFrom(request.params), "subtitle", reply, true)
+  );
 
-  app.get("/api/v1/tools/edge-tts/tasks/:taskId/subtitle", async (request, reply) => {
-    return sendTaskFile(store, taskIdFrom(request.params), "subtitle", reply, true);
-  });
-
-  app.delete("/api/v1/tools/edge-tts/tasks/:taskId", async (request, reply) => {
-    const taskId = taskIdFrom(request.params);
-    if (!store.get(taskId)) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
-    await queue.cancel(taskId);
-    await store.remove(taskId);
-    return ok({ removed: true });
-  });
+  app.delete(
+    "/api/v1/tools/edge-tts/tasks/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(EdgeTtsRemovalSchema), 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const taskId = taskIdFrom(request.params);
+      if (!store.get(taskId)) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
+      await queue.cancel(taskId);
+      await store.remove(taskId);
+      return ok({ removed: true as const });
+    }
+  );
 
   const cleanupTimer = setInterval(
     () => {
@@ -523,7 +595,7 @@ function parseCreateInput(
   allowedVoices: Set<string>
 ):
   | { success: true; value: EdgeTtsCreateTaskInput }
-  | { success: false; statusCode: number; code: string; message: string } {
+  | { success: false; statusCode: 400 | 413; code: string; message: string } {
   if (!isRecord(body)) return invalid("EDGE_TTS_INPUT_INVALID", "请求内容格式不正确");
   const text = typeof body.text === "string" ? body.text.trim() : "";
   const language = body.language;
@@ -621,7 +693,7 @@ function positiveInteger(value: string | undefined, fallback: number) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function invalid(code: string, message: string, statusCode = 400) {
+function invalid(code: string, message: string, statusCode: 400 | 413 = 400) {
   return { success: false as const, statusCode, code, message };
 }
 

@@ -115,6 +115,39 @@ describe("edge tts module", () => {
     await app.close();
   });
 
+  it("rejects requests that do not satisfy the public route schemas", async () => {
+    const app = await createApp();
+    try {
+      const invalidBody = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/edge-tts/tasks",
+        payload: {
+          text: "Hello",
+          language: "en-US",
+          voice: "en-US-JennyNeural",
+          rate: 0,
+          volume: 0,
+          pitch: 0
+        }
+      });
+      const invalidId = await app.inject({
+        method: "GET",
+        url: "/api/v1/tools/edge-tts/tasks/bad!"
+      });
+
+      expect(invalidBody.statusCode).toBe(400);
+      expect(invalidBody.json()).toMatchObject({
+        success: false,
+        error: { code: "REQUEST_INVALID" },
+        requestId: expect.any(String)
+      });
+      expect(invalidId.statusCode).toBe(400);
+      expect(invalidId.json().error.code).toBe("REQUEST_INVALID");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("filters Brazilian voices and rejects a voice from another locale", async () => {
     const app = await createApp();
     try {
