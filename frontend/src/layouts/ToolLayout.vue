@@ -140,6 +140,34 @@
             </p>
           </div>
         </div>
+        <section v-if="deploymentMode === 'lan'" class="admin-session-section">
+          <div class="admin-session-heading">
+            <div>
+              <strong>局域网管理员</strong>
+              <small>{{
+                adminAuthenticated ? "当前浏览器已获得管理写权限" : "删除、AI、翻译和配置操作需要管理员 PIN"
+              }}</small>
+            </div>
+            <n-button v-if="adminAuthenticated" text size="small" :loading="adminLoading" @click="logoutAdmin">
+              退出
+            </n-button>
+          </div>
+          <div v-if="!adminAuthenticated" class="admin-session-form">
+            <n-input
+              v-model:value="adminPin"
+              type="password"
+              show-password-on="mousedown"
+              autocomplete="current-password"
+              placeholder="输入 ADMIN_PIN"
+              :disabled="adminLoading"
+              @keyup.enter="loginAdmin"
+            />
+            <n-button type="primary" :loading="adminLoading" :disabled="adminPin.length < 4" @click="loginAdmin">
+              解锁管理操作
+            </n-button>
+          </div>
+          <n-alert v-if="adminError" type="error" :bordered="false">{{ adminError }}</n-alert>
+        </section>
         <div class="service-list">
           <div v-for="tool in tools" :key="tool.id" class="service-row">
             <span class="service-row-icon"><component :is="iconByTool[tool.id] ?? Wrench" :size="17" /></span>
@@ -220,6 +248,7 @@ import {
   Wrench
 } from "lucide-vue-next";
 import { httpClient } from "../services/http";
+import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "../services/admin-session";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
 
 const route = useRoute();
@@ -233,6 +262,12 @@ const mobileDrawerOpen = ref(false);
 const serviceDrawerOpen = ref(false);
 const apiState = ref<"checking" | "online" | "offline">("checking");
 const serviceCheckedAt = ref("");
+const deploymentMode = ref<"local" | "lan">("local");
+const adminAuthenticated = ref(false);
+const adminPin = ref("");
+const adminLoading = ref(false);
+const adminError = ref("");
+let sessionRestoreAttempted = false;
 type CleanupCategory = {
   id: string;
   label: string;
@@ -360,8 +395,18 @@ function formatBytes(value: number) {
 async function loadServiceStatus() {
   apiState.value = "checking";
   try {
-    await httpClient.get<{ status: string }>("/health");
+    const health = await httpClient.get<{ status: string; deploymentMode?: "local" | "lan" }>("/health");
+    deploymentMode.value = health.deploymentMode ?? "local";
     apiState.value = "online";
+    if (deploymentMode.value === "lan" && !sessionRestoreAttempted) {
+      sessionRestoreAttempted = true;
+      try {
+        await restoreAdminSession();
+        adminAuthenticated.value = true;
+      } catch {
+        adminAuthenticated.value = false;
+      }
+    }
   } catch {
     apiState.value = "offline";
   } finally {
@@ -370,6 +415,36 @@ async function loadServiceStatus() {
       minute: "2-digit",
       second: "2-digit"
     }).format(new Date());
+  }
+}
+
+async function loginAdmin() {
+  if (adminPin.value.length < 4) return;
+  adminLoading.value = true;
+  adminError.value = "";
+  try {
+    await authenticateAdmin(adminPin.value);
+    adminPin.value = "";
+    adminAuthenticated.value = true;
+    message.success("管理员权限已解锁");
+  } catch (error) {
+    adminAuthenticated.value = false;
+    adminError.value = error instanceof Error ? error.message : "管理员 PIN 验证失败";
+  } finally {
+    adminLoading.value = false;
+  }
+}
+
+async function logoutAdmin() {
+  adminLoading.value = true;
+  adminError.value = "";
+  try {
+    await signOutAdmin();
+    adminAuthenticated.value = false;
+  } catch (error) {
+    adminError.value = error instanceof Error ? error.message : "退出管理员会话失败";
+  } finally {
+    adminLoading.value = false;
   }
 }
 
@@ -419,6 +494,33 @@ watch(
   margin-top: 22px;
   padding-top: 20px;
   border-top: 1px solid var(--border-subtle, #e7ebf1);
+}
+.admin-session-section {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle, #e7ebf1);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.admin-session-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-session-heading > div {
+  display: grid;
+  gap: 3px;
+}
+.admin-session-heading small {
+  color: #657085;
+  line-height: 1.4;
+}
+.admin-session-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 .cleanup-heading {
   display: flex;

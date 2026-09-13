@@ -1,4 +1,10 @@
-import type { ImageAiHealth, ImageAiOperation, ImageAiProvider, WatermarkSuggestionResponse } from "@toolbox/shared";
+import {
+  WORKER_PROTOCOL_VERSION,
+  type ImageAiHealth,
+  type ImageAiOperation,
+  type ImageAiProvider,
+  type WatermarkSuggestionResponse
+} from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 
 type WorkerProcessResult = {
@@ -24,7 +30,11 @@ export function createImageAiWorkerClient(config: AppConfig) {
     async health(): Promise<ImageAiHealth> {
       // A cold worker may need a few seconds to inspect and fingerprint large local model files.
       // Keep this separate from inference timeouts so startup health checks do not report a false outage.
-      return requestWorker<ImageAiHealth>(config, "/health", { method: "GET" }, 15000);
+      const health = await requestWorker<ImageAiHealth>(config, "/health", { method: "GET" }, 15000);
+      if (health.protocolVersion !== WORKER_PROTOCOL_VERSION) {
+        throw new ImageAiWorkerError("WORKER_PROTOCOL_MISMATCH", "AI Worker 协议版本与主程序不兼容");
+      }
+      return health;
     },
 
     async suggestions(inputPath: string): Promise<WatermarkSuggestionResponse> {

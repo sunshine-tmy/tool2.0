@@ -49,7 +49,7 @@ class ProviderHttpError extends Error {
 class ProviderTimeoutError extends Error {}
 
 export async function registerShortVideoRoutes({ app, config, remoteFetch }: RegisterShortVideoRoutesOptions) {
-  app.post("/api/tools/short-video/parse", async (request, reply) => {
+  app.post("/api/v1/tools/short-video/parse", async (request, reply) => {
     const body = request.body as Partial<ShortVideoParseInput> | undefined;
     const rawInput = typeof body?.input === "string" ? body.input.trim() : "";
     const sourceUrl = extractFirstUrl(rawInput) ?? rawInput;
@@ -84,7 +84,7 @@ export async function registerShortVideoRoutes({ app, config, remoteFetch }: Reg
     }
   });
 
-  app.get("/api/tools/short-video/download", async (request, reply) => {
+  app.get("/api/v1/tools/short-video/download", async (request, reply) => {
     const query = request.query as { url?: string; filename?: string };
     const mediaUrl = typeof query.url === "string" ? query.url.trim() : "";
     const filename = sanitizeDownloadFilename(query.filename || "short-video-media");
@@ -126,21 +126,6 @@ export async function registerShortVideoRoutes({ app, config, remoteFetch }: Reg
       return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", message));
     }
   });
-}
-
-export async function parseShortVideo(config: AppConfig, input: Partial<ShortVideoParseInput>) {
-  const rawInput = typeof input.input === "string" ? input.input.trim() : "";
-  const sourceUrl = extractFirstUrl(rawInput) ?? rawInput;
-  const requestedPlatform = input.platform ?? "auto";
-
-  if (!sourceUrl) throw new Error("SHORT_VIDEO_URL_REQUIRED: A public short-video URL is required");
-  if (!isValidRequestedPlatform(requestedPlatform)) throw new Error("INVALID_SHORT_VIDEO_PLATFORM");
-  if (!isSupportedShortVideoUrl(sourceUrl)) throw new Error("UNSUPPORTED_SHORT_VIDEO_URL");
-  if (isPlatformMismatch(sourceUrl, requestedPlatform)) {
-    throw new Error("SHORT_VIDEO_PLATFORM_MISMATCH: 选择的平台与分享链接不匹配");
-  }
-
-  return resolveShortVideo(config, sourceUrl, requestedPlatform);
 }
 
 async function resolveShortVideo(

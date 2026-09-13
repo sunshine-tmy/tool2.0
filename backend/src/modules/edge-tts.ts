@@ -21,6 +21,7 @@ import {
   type EdgeTtsVoice
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
+import type { ToolboxDatabase } from "../database/toolbox-database";
 
 const execFileAsync = promisify(execFile);
 const VOICE_CACHE_MS = 24 * 60 * 60 * 1000;
@@ -29,6 +30,7 @@ const HEALTH_CACHE_MS = 60 * 1000;
 type RegisterEdgeTtsRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
+  database: ToolboxDatabase;
 };
 
 type RuntimeInfo = { available: boolean; version?: string; message: string };
@@ -44,8 +46,8 @@ type TaskPaths = {
   subtitleTemp: string;
 };
 
-export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRoutesOptions) {
-  const store = new EdgeTtsTaskStore(config.edgeTtsTasksDir);
+export async function registerEdgeTtsRoutes({ app, config, database }: RegisterEdgeTtsRoutesOptions) {
+  const store = new EdgeTtsTaskStore(config.edgeTtsTasksDir, database);
   const runner = new EdgeTtsRunner(config);
   await store.initialize();
   await store.cleanupExpired();
@@ -86,7 +88,7 @@ export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRout
     queue.close();
   });
 
-  app.get("/api/tools/edge-tts/health", async () => {
+  app.get("/api/v1/tools/edge-tts/health", async () => {
     const runtime = await getRuntimeInfo();
     const stats = queue.stats();
     const data: EdgeTtsHealth = {
@@ -103,7 +105,7 @@ export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRout
     return ok(data);
   });
 
-  app.get("/api/tools/edge-tts/voices", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/voices", async (request, reply) => {
     const query = request.query as { language?: string };
     if (query.language && !isSupportedLanguage(query.language)) {
       return reply.code(400).send(fail("EDGE_TTS_LANGUAGE_INVALID", "不支持该语言"));
@@ -112,7 +114,7 @@ export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRout
     return ok({ voices, source: voiceCache ? "live" : "fallback" });
   });
 
-  app.post("/api/tools/edge-tts/tasks", async (request, reply) => {
+  app.post("/api/v1/tools/edge-tts/tasks", async (request, reply) => {
     const parsed = parseCreateInput(request.body, allowedVoiceNames);
     if (!parsed.success) return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
 
@@ -129,7 +131,7 @@ export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRout
     return reply.code(202).send(ok(toPublicTask(task)));
   });
 
-  app.get("/api/tools/edge-tts/tasks", async (request) => {
+  app.get("/api/v1/tools/edge-tts/tasks", async (request) => {
     const query = request.query as { page?: string; pageSize?: string };
     const page = positiveInteger(query.page, 1);
     const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
@@ -145,25 +147,25 @@ export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRout
     return ok(data);
   });
 
-  app.get("/api/tools/edge-tts/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/tasks/:taskId", async (request, reply) => {
     const task = store.get(taskIdFrom(request.params));
     if (!task) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
     return ok(toPublicTask(task));
   });
 
-  app.get("/api/tools/edge-tts/tasks/:taskId/audio", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/tasks/:taskId/audio", async (request, reply) => {
     return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, false);
   });
 
-  app.get("/api/tools/edge-tts/tasks/:taskId/download", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/tasks/:taskId/download", async (request, reply) => {
     return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, true);
   });
 
-  app.get("/api/tools/edge-tts/tasks/:taskId/subtitle", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/tasks/:taskId/subtitle", async (request, reply) => {
     return sendTaskFile(store, taskIdFrom(request.params), "subtitle", reply, true);
   });
 
-  app.delete("/api/tools/edge-tts/tasks/:taskId", async (request, reply) => {
+  app.delete("/api/v1/tools/edge-tts/tasks/:taskId", async (request, reply) => {
     const taskId = taskIdFrom(request.params);
     if (!store.get(taskId)) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
     await queue.cancel(taskId);
@@ -184,10 +186,21 @@ export async function registerEdgeTtsRoutes({ app, config }: RegisterEdgeTtsRout
 class EdgeTtsTaskStore {
   private readonly tasks = new Map<string, EdgeTtsTask>();
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly database: ToolboxDatabase
+  ) {}
 
   async initialize() {
     await fsp.mkdir(this.root, { recursive: true });
+    const stored = this.database.list("edge-tts-task");
+    if (stored.length) {
+      for (const entity of stored) {
+        const task = entity.payload as EdgeTtsTask;
+        if (isStoredTask(task)) this.tasks.set(task.id, task);
+      }
+      return;
+    }
     const entries = await fsp.readdir(this.root, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory() || !isSafeTaskId(entry.name)) continue;
@@ -201,6 +214,7 @@ class EdgeTtsTaskStore {
           await this.write(task);
         }
         this.tasks.set(task.id, task);
+        await this.write(task);
       } catch {
         // Ignore incomplete or manually modified task folders.
       }
@@ -249,6 +263,7 @@ class EdgeTtsTaskStore {
   async remove(id: string) {
     if (!isSafeTaskId(id)) return false;
     this.tasks.delete(id);
+    this.database.remove("edge-tts-task", id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -275,6 +290,14 @@ class EdgeTtsTaskStore {
 
   private async write(task: EdgeTtsTask) {
     await writeJsonAtomic(this.paths(task.id).meta, task);
+    this.database.upsert({
+      id: task.id,
+      kind: "edge-tts-task",
+      status: task.status,
+      payload: task,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt
+    });
   }
 }
 
@@ -489,9 +512,9 @@ function parseCreateInput(
 function toPublicTask(task: EdgeTtsTask): EdgeTtsTask {
   const publicTask = cloneTask(task);
   if (task.status === "completed") {
-    publicTask.audioUrl = `/api/tools/edge-tts/tasks/${task.id}/audio`;
-    publicTask.downloadUrl = `/api/tools/edge-tts/tasks/${task.id}/download`;
-    if (task.includeSubtitles) publicTask.subtitleUrl = `/api/tools/edge-tts/tasks/${task.id}/subtitle`;
+    publicTask.audioUrl = `/api/v1/tools/edge-tts/tasks/${task.id}/audio`;
+    publicTask.downloadUrl = `/api/v1/tools/edge-tts/tasks/${task.id}/download`;
+    if (task.includeSubtitles) publicTask.subtitleUrl = `/api/v1/tools/edge-tts/tasks/${task.id}/subtitle`;
   }
   return publicTask;
 }

@@ -114,4 +114,43 @@ describe("chatterbox api", () => {
     expect(form.get("temperature")).toBe("0.4");
     expect(form.get("voiceId")).toBe("voice-1");
   });
+
+  it("delegates saved voice, batch, item, task, cancellation and deletion operations", async () => {
+    for (const method of Object.values(httpMock)) method.mockResolvedValue({});
+    const reference = new File(["voice"], "voice.wav", { type: "audio/wav" });
+
+    await chatterboxApi.health();
+    await chatterboxApi.voices();
+    await chatterboxApi.saveVoice({
+      reference,
+      name: "Narrator",
+      language: "en",
+      authorization: "self",
+      consentConfirmed: true
+    });
+    await chatterboxApi.removeVoice("voice-1");
+    await chatterboxApi.batch("batch-1");
+    await chatterboxApi.batches(2, 5);
+    await chatterboxApi.reorder("batch-1", ["item-2", "item-1"]);
+    await chatterboxApi.removeBatchItem("batch-1", "item-1");
+    await chatterboxApi.cancelBatch("batch-1");
+    await chatterboxApi.removeBatchReference("batch-1");
+    await chatterboxApi.removeBatch("batch-1");
+    await chatterboxApi.task("task-1");
+    await chatterboxApi.list(3, 4);
+    await chatterboxApi.remove("task-1");
+    await chatterboxApi.regenerate("batch-1", "item-1", {
+      text: "again",
+      fileName: "clip",
+      reference,
+      seed: 0
+    });
+
+    expect(httpMock.patch).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/batches/batch-1/order", {
+      itemIds: ["item-2", "item-1"]
+    });
+    expect(httpMock.delete).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/batches/batch-1");
+    const regeneration = httpMock.post.mock.calls.at(-1)?.[1] as FormData;
+    expect(regeneration.get("reference")).toMatchObject({ name: "voice.wav" });
+  });
 });

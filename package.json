@@ -5,8 +5,8 @@
   "version": "0.1.0",
   "packageManager": "pnpm@11.7.0",
   "engines": {
-    "node": ">=20 <25",
-    "pnpm": ">=10 <12"
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
   },
   "scripts": {
     "dev": "pnpm --parallel --filter frontend --filter backend dev",
@@ -16,14 +16,22 @@
     "build": "pnpm build:shared && pnpm build:backend && pnpm build:web && pnpm smoke",
     "build:shared": "pnpm --filter @toolbox/shared build",
     "build:backend": "pnpm --filter backend build",
-    "build:web": "pnpm --filter frontend build",
+    "build:web": "pnpm --filter frontend build && node scripts/check-bundle-budget.mjs",
     "clean": "node scripts/clean.mjs",
     "clear:generated": "node scripts/clear-generated.mjs",
     "smoke": "node scripts/smoke-build.mjs",
+    "smoke:standalone": "node scripts/smoke-standalone.mjs",
     "start": "pnpm --filter backend start",
     "preview:web": "pnpm --filter frontend preview",
+    "standalone:start": "node scripts/start-standalone.mjs",
+    "db:migrate": "pnpm --filter backend exec tsx src/database/cli.ts migrate",
+    "db:verify": "pnpm --filter backend exec tsx src/database/cli.ts verify",
+    "db:rollback": "pnpm --filter backend exec tsx src/database/cli.ts rollback",
     "test": "pnpm --workspace-concurrency=1 -r test",
-    "test:python": "python scripts/video-transcribe-faster-whisper.test.py",
+    "coverage": "pnpm --workspace-concurrency=1 -r coverage",
+    "prepare:xhs-model": "node scripts/prepare-xhs-translation-model.mjs",
+    "test:python": "python -m pytest",
+    "lint:python": "python -m ruff format --check scripts && python -m ruff check scripts && python -m mypy",
     "test:all": "pnpm test && pnpm test:python",
     "typecheck": "pnpm --workspace-concurrency=1 -r typecheck",
     "lint": "eslint . --max-warnings 0",
@@ -33,16 +41,17 @@
     "check": "pnpm format:check && pnpm lint && pnpm deadcode && pnpm typecheck && pnpm test:all && pnpm build"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@types/node": "^24.0.10",
-    "eslint": "^9.39.4",
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.13.4",
+    "@vitest/coverage-v8": "3.2.7",
+    "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
-    "eslint-plugin-vue": "^10.9.2",
+    "eslint-plugin-vue": "^10.11.0",
     "globals": "^16.5.0",
     "knip": "^5.88.1",
-    "prettier": "^3.9.5",
+    "prettier": "^3.9.6",
     "tsup": "^8.5.1",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.63.0"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0"
   }
 }

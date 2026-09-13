@@ -1,6 +1,6 @@
 const configuredApiBase = import.meta.env.VITE_API_BASE?.trim();
 
-export const apiBaseUrl = (configuredApiBase || "/api").replace(/\/$/, "");
+export const apiBaseUrl = (configuredApiBase || "/api/v1").replace(/\/$/, "");
 
 export function resolveApiUrl(path: string) {
   if (/^https?:\/\//i.test(path)) return path;

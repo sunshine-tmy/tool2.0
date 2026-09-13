@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 import { fail, normalizeImageOptions, ok } from "@toolbox/shared";
@@ -23,11 +23,11 @@ export function registerSingleImageToolRoute({
   taskStore,
   toolId
 }: RegisterImageToolRoutesOptions & { toolId: "image-compress" }) {
-  app.post(`/api/tools/${toolId}`, async (request, reply) => {
+  app.post(`/api/v1/tools/${toolId}`, async (request, reply) => {
     return processImageRequest(toolId, request, reply, config, taskStore);
   });
 
-  app.post(`/api/tools/${toolId}/download.zip`, async (request, reply) => {
+  app.post(`/api/v1/tools/${toolId}/download.zip`, async (request, reply) => {
     const requestedFiles = parseBatchDownloadFiles(request.body);
     if (!requestedFiles.length) {
       return reply.code(400).send(fail("FILES_REQUIRED", "Please select completed images to download"));
@@ -54,7 +54,7 @@ export function registerSingleImageToolRoute({
       });
     }
 
-    const archive = archiver("zip", { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     for (const file of archiveFiles) archive.file(file.filePath, { name: file.archiveName });
     void archive.finalize();
     reply.type("application/zip");
@@ -170,7 +170,7 @@ async function processImageRequest(
 
     return ok({
       task: completed,
-      downloadUrl: `/api/files/${outputName}`,
+      downloadUrl: `/api/v1/files/${outputName}`,
       originalName,
       outputName,
       outputFormat: options.outputFormat,

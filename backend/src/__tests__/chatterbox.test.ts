@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app";
+import { ToolboxDatabase } from "../database/toolbox-database";
 
 let testRoot = "";
 let workerServer: Server | undefined;
@@ -20,6 +21,7 @@ beforeEach(async () => {
         JSON.stringify({
           success: true,
           data: {
+            protocolVersion: 1,
             available: true,
             packageVersion: "0.1.7-test",
             model: "multilingual-v3",
@@ -75,12 +77,14 @@ beforeEach(async () => {
   if (!address || typeof address === "string") throw new Error("Failed to start mock Chatterbox worker");
   workerUrl = `http://127.0.0.1:${address.port}`;
   process.env.STORAGE_ROOT = path.join(testRoot, "storage");
+  process.env.DATABASE_PATH = path.join(testRoot, "storage", "toolbox.db");
   process.env.CHATTERBOX_WORKER_URL = workerUrl;
   process.env.CHATTERBOX_WORKER_TIMEOUT_MS = "10000";
 });
 
 afterEach(async () => {
   delete process.env.STORAGE_ROOT;
+  delete process.env.DATABASE_PATH;
   delete process.env.CHATTERBOX_WORKER_URL;
   delete process.env.CHATTERBOX_WORKER_TIMEOUT_MS;
   await new Promise<void>((resolve) => workerServer?.close(() => resolve()));
@@ -117,7 +121,7 @@ describe("Chatterbox voice cloning module", () => {
       subtitleMode: "sentences",
       referenceRetained: "true"
     });
-    const created = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/batches", ...request });
+    const created = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/batches", ...request });
     expect(created.statusCode).toBe(202);
     const batchId = created.json().data.id as string;
     let batch = await waitForBatch(app, batchId);
@@ -137,19 +141,19 @@ describe("Chatterbox voice cloning module", () => {
       segments.map((item) => item.referenceTranslation)
     );
     expect(JSON.stringify(generateRequests)).not.toContain("这是第一部分");
-    const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/batches" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/batches" });
     expect(list.json().data.batches[0].itemPreviews[0].referenceTranslation).toBeUndefined();
 
     const firstAudio = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/items/${batch.items[0].id}/download`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/items/${batch.items[0].id}/download`
     });
     expect(firstAudio.statusCode).toBe(200);
     expect(firstAudio.headers["content-disposition"]).toContain("001-bahagian-satu.mp3");
 
     const combinedAudio = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/combined-audio`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/combined-audio`
     });
     expect(combinedAudio.statusCode).toBe(200);
     expect(combinedAudio.headers["content-disposition"]).toContain(
@@ -167,7 +171,7 @@ describe("Chatterbox voice cloning module", () => {
     });
     const subtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
     });
     const sourceLanguageName = language === "pt-BR" ? "巴西葡语" : "马来语";
     expect(subtitle.headers["content-disposition"]).toContain(
@@ -179,7 +183,7 @@ describe("Chatterbox voice cloning module", () => {
 
     const translationSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
     });
     expect(translationSubtitle.statusCode).toBe(200);
     expect(translationSubtitle.headers["content-disposition"]).toContain(
@@ -189,7 +193,7 @@ describe("Chatterbox voice cloning module", () => {
 
     const bilingualSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
     });
     expect(bilingualSubtitle.statusCode).toBe(200);
     expect(bilingualSubtitle.headers["content-disposition"]).toContain(
@@ -202,7 +206,7 @@ describe("Chatterbox voice cloning module", () => {
 
     const archive = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/download.zip`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/download.zip`
     });
     expect(archive.statusCode).toBe(200);
     expect(archive.headers["content-type"]).toContain("application/zip");
@@ -215,25 +219,25 @@ describe("Chatterbox voice cloning module", () => {
     const reversedIds = [...batch.items].reverse().map((item: { id: string }) => item.id);
     const reordered = await app.inject({
       method: "PATCH",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/order`,
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/order`,
       payload: { itemIds: reversedIds }
     });
     expect(reordered.statusCode).toBe(200);
     const reorderedSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
     });
     expect(readSrtCueTexts(reorderedSubtitle.body)).toEqual([...segments].reverse().map((item) => item.text));
     const reorderedTranslationSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
     });
     expect(readSrtCueTexts(reorderedTranslationSubtitle.body)).toEqual(
       [...segments].reverse().map((item) => item.referenceTranslation)
     );
     const reorderedBilingualSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
     });
     expect(readSrtCueTexts(reorderedBilingualSubtitle.body)).toEqual(
       [...segments].reverse().map((item) => `${item.text} ${item.referenceTranslation}`)
@@ -257,7 +261,7 @@ describe("Chatterbox voice cloning module", () => {
     });
     const regeneration = await app.inject({
       method: "POST",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}/regenerate`,
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}/regenerate`,
       ...regenerate
     });
     expect(regeneration.statusCode, regeneration.body).toBe(202);
@@ -284,27 +288,33 @@ describe("Chatterbox voice cloning module", () => {
     expect(JSON.stringify(generateRequests.at(-1))).not.toContain(regeneratedTranslation);
     const regeneratedSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
     });
     expect(readSrtCueTexts(regeneratedSubtitle.body)[0]).toBe(regeneratedText);
     const regeneratedTranslationSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
     });
     expect(readSrtCueTexts(regeneratedTranslationSubtitle.body)[0]).toBe(regeneratedTranslation);
     const regeneratedBilingualSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
     });
     expect(readSrtCueTexts(regeneratedBilingualSubtitle.body)[0]).toBe(`${regeneratedText} ${regeneratedTranslation}`);
 
     const removeReference = await app.inject({
       method: "DELETE",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/reference`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/reference`
     });
     expect(removeReference.statusCode).toBe(200);
-    const detail = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/batches/${batchId}` });
+    const detail = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}` });
     expect(detail.json().data.referenceAvailable).toBe(false);
+    const database = new ToolboxDatabase(path.join(testRoot, "storage", "toolbox.db"));
+    const storedBatch = database.get("chatterbox-batch", batchId)?.payload;
+    const storedItems = database.list("chatterbox-item");
+    database.close();
+    expect(storedBatch).toMatchObject({ id: batchId, status: "completed" });
+    expect(storedItems).toHaveLength(2);
     await app.close();
   });
 
@@ -317,11 +327,12 @@ describe("Chatterbox voice cloning module", () => {
             "Selamat datang ke kedai kami.",
             "Hari ini kami memperkenalkan produk baharu yang berkualiti tinggi untuk semua pelanggan di seluruh Malaysia."
           ];
-    const health = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/health" });
+    const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/health" });
     expect(health.json().data).toMatchObject({
       available: true,
       model: "multilingual-v3",
       modelLoaded: true,
+      protocolVersion: 1,
       device: "cuda",
       watermarked: true
     });
@@ -338,7 +349,7 @@ describe("Chatterbox voice cloning module", () => {
       includeSubtitles: "true",
       fileName: "suara-demo"
     });
-    const created = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/tasks", ...request });
+    const created = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks", ...request });
     expect(created.statusCode).toBe(202);
     const taskId = created.json().data.id as string;
     const task = await waitForTask(app, taskId);
@@ -349,14 +360,14 @@ describe("Chatterbox voice cloning module", () => {
       audioDurationSeconds: 1
     });
 
-    const audio = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/tasks/${taskId}/audio` });
+    const audio = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/chatterbox/tasks/${taskId}/audio` });
     const download = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/tasks/${taskId}/download`
+      url: `/api/v1/tools/edge-tts/chatterbox/tasks/${taskId}/download`
     });
     const subtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/tasks/${taskId}/subtitle`
+      url: `/api/v1/tools/edge-tts/chatterbox/tasks/${taskId}/subtitle`
     });
     expect(audio.statusCode).toBe(200);
     expect(audio.headers["content-type"]).toContain("audio/mpeg");
@@ -376,12 +387,12 @@ describe("Chatterbox voice cloning module", () => {
     );
     const repairedSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/tasks/${taskId}/subtitle`
+      url: `/api/v1/tools/edge-tts/chatterbox/tasks/${taskId}/subtitle`
     });
     expect(readSrtCueTexts(repairedSubtitle.body)).toEqual(subtitleSentences);
     expect(repairedSubtitle.body).not.toContain("\n\n3\n");
 
-    const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/tasks" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/tasks" });
     expect(list.json().data.tasks[0].text).toBeUndefined();
     expect(list.json().data.tasks[0].textPreview).toContain(subtitleSentences[0]);
     expect(generateRequests.at(-1)).toMatchObject({ language });
@@ -407,19 +418,19 @@ describe("Chatterbox voice cloning module", () => {
       subtitleMode: "sentences",
       referenceRetained: "false"
     });
-    const created = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/batches", ...request });
+    const created = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/batches", ...request });
     const batchId = created.json().data.id as string;
     const batch = await waitForBatch(app, batchId);
     expect(batch).toMatchObject({ status: "completed", referenceAvailable: false });
     const subtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle`
     });
     expect(subtitle.headers["content-disposition"]).toContain(encodeURIComponent(`英语-${batchId.slice(0, 8)}.srt`));
     expect(readSrtCueTexts(subtitle.body)).toEqual(["First sentence.", "Second sentence.", "Third sentence."]);
     const translationSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.zh-CN`
     });
     expect(translationSubtitle.headers["content-disposition"]).toContain(
       encodeURIComponent(`中文字幕-${batchId.slice(0, 8)}.srt`)
@@ -427,7 +438,7 @@ describe("Chatterbox voice cloning module", () => {
     expect(readSrtCueTexts(translationSubtitle.body)).toEqual(["这是两句原文的合并翻译。", "这是第三句。"]);
     const bilingualSubtitle = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/subtitle.bilingual`
     });
     expect(readSrtCueTexts(bilingualSubtitle.body)).toEqual([
       `${text} 这是两句原文的合并翻译。`,
@@ -437,7 +448,7 @@ describe("Chatterbox voice cloning module", () => {
     const regenerate = multipartFieldsRequest({ text });
     const response = await app.inject({
       method: "POST",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batchId}/items/${batch.items[0].id}/regenerate`,
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/items/${batch.items[0].id}/regenerate`,
       ...regenerate
     });
     expect(response.statusCode).toBe(409);
@@ -453,14 +464,17 @@ describe("Chatterbox voice cloning module", () => {
       authorization: "self",
       consentConfirmed: "true"
     });
-    const saved = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/voices", ...saveRequest });
+    const saved = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/voices", ...saveRequest });
     expect(saved.statusCode).toBe(201);
     const voiceId = saved.json().data.id as string;
     expect(saved.json().data).toMatchObject({ name: "Suara Kekal", language, durationSeconds: 6 });
 
-    const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/voices" });
+    const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/voices" });
     expect(voices.json().data.voices).toHaveLength(1);
-    const preview = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/voices/${voiceId}/audio` });
+    const preview = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/edge-tts/chatterbox/voices/${voiceId}/audio`
+    });
     expect(preview.statusCode).toBe(200);
     expect(preview.headers["content-type"]).toContain("audio/wav");
 
@@ -480,20 +494,20 @@ describe("Chatterbox voice cloning module", () => {
     });
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/chatterbox/batches",
+      url: "/api/v1/tools/edge-tts/chatterbox/batches",
       ...createRequest
     });
     expect(created.statusCode, created.body).toBe(202);
     const batch = await waitForBatch(app, created.json().data.id);
     expect(batch.status).toBe("completed");
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/tools/edge-tts/chatterbox/voices/${voiceId}` });
+    const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/edge-tts/chatterbox/voices/${voiceId}` });
     expect(removed.statusCode).toBe(200);
-    const emptyList = await app.inject({ method: "GET", url: "/api/tools/edge-tts/chatterbox/voices" });
+    const emptyList = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/voices" });
     expect(emptyList.json().data.voices).toHaveLength(0);
     const batchAudio = await app.inject({
       method: "GET",
-      url: `/api/tools/edge-tts/chatterbox/batches/${batch.id}/items/${batch.items[0].id}/download`
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/items/${batch.items[0].id}/download`
     });
     expect(batchAudio.statusCode).toBe(200);
     await app.close();
@@ -512,7 +526,7 @@ describe("Chatterbox voice cloning module", () => {
       seed: "0",
       includeSubtitles: "false"
     });
-    const response = await app.inject({ method: "POST", url: "/api/tools/edge-tts/chatterbox/tasks", ...request });
+    const response = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks", ...request });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("CHATTERBOX_CONSENT_REQUIRED");
     await app.close();
@@ -521,7 +535,7 @@ describe("Chatterbox voice cloning module", () => {
 
 async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, taskId: string) {
   for (let index = 0; index < 100; index += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/tasks/${taskId}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/chatterbox/tasks/${taskId}` });
     const task = response.json().data;
     if (task.status === "completed" || task.status === "failed") return task;
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -531,7 +545,7 @@ async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, taskId: s
 
 async function waitForBatch(app: Awaited<ReturnType<typeof createApp>>, batchId: string) {
   for (let index = 0; index < 150; index += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/edge-tts/chatterbox/batches/${batchId}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}` });
     const batch = response.json().data;
     if (!["queued", "processing"].includes(batch.status)) return batch;
     await new Promise((resolve) => setTimeout(resolve, 50));

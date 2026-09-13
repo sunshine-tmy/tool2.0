@@ -1,18 +1,22 @@
 # API 参考
 
-基础路径：`/api`。除文件流与导出外，接口使用统一 `{ success, message, data | error }` 响应结构。
+基础路径：`/api/v1`。除文件流与导出外，接口使用统一 `{ success, message, data | error, requestId }` 响应结构。正式接口不保留旧 `/api` 路径兼容层。
 
 ## 系统
 
-- `GET /api/health`：服务、转写、短视频 Provider 和图片 AI 配置状态。
-- `GET /api/tools`：工具注册表。
-- `GET /api/tasks`：最近的内存任务，默认最多保留 1000 条。
-- `GET /api/tasks/:taskId`：读取一个内存任务。
-- `GET /api/files/:fileName`：流式下载 `storage/outputs` 内的处理结果。
+- `GET /api/v1/health`：服务、转写、短视频 Provider 和图片 AI 配置状态。
+- `GET /api/v1/tools`：工具注册表。
+- `GET /api/v1/tasks`：最近任务，SQLite 默认最多保留 1000 条。
+- `GET /api/v1/tasks/:taskId`：读取一个任务。
+- `GET /api/v1/tasks/:taskId/events`：SSE 任务进度；断线后客户端回退轮询。
+- `POST /api/v1/session`：`lan` 模式用 `{ pin }` 建立 HttpOnly 管理员会话并取得 CSRF token。
+- `GET /api/v1/session`：通过现有 Cookie 恢复 CSRF token。
+- `DELETE /api/v1/session`：退出管理员会话。
+- `GET /api/v1/files/:fileName`：流式下载 `storage/outputs` 内的处理结果。
 
 ## 图片压缩
 
-`POST /api/tools/image-compress` 使用 `multipart/form-data`：
+`POST /api/v1/tools/image-compress` 使用 `multipart/form-data`：
 
 - `file`：JPEG、PNG 或 WebP，最大 20 MiB、4000 万像素。
 - `quality`：30–95。
@@ -23,13 +27,13 @@
 
 ## AI 图片处理
 
-- `GET /api/tools/image-ai/health`：Worker、模型、设备、许可和摘要状态。
-- `POST /api/tools/image-ai/watermark/suggestions`：上传单图，返回归一化 OCR 多边形，不返回识别文字。
-- `POST /api/tools/image-ai/tasks`：创建异步任务，成功返回 `202`。
-- `GET /api/tools/image-ai/tasks/:taskId`：队列位置、进度、结果、警告和过期时间。
-- `DELETE /api/tools/image-ai/tasks/:taskId`：取消等待任务，或在当前图片完成后停止批次。
-- `GET /api/tools/image-ai/tasks/:taskId/files/:resultId`：读取清洗后的 PNG；`?download=1` 强制下载。
-- `GET /api/tools/image-ai/tasks/:taskId/download.zip`：下载任务中所有成功结果。
+- `GET /api/v1/tools/image-ai/health`：Worker、模型、设备、许可和摘要状态。
+- `POST /api/v1/tools/image-ai/watermark/suggestions`：上传单图，返回归一化 OCR 多边形，不返回识别文字。
+- `POST /api/v1/tools/image-ai/tasks`：创建异步任务，成功返回 `202`。
+- `GET /api/v1/tools/image-ai/tasks/:taskId`：队列位置、进度、结果、警告和过期时间。
+- `DELETE /api/v1/tools/image-ai/tasks/:taskId`：取消等待任务，或在当前图片完成后停止批次。
+- `GET /api/v1/tools/image-ai/tasks/:taskId/files/:resultId`：读取清洗后的 PNG；`?download=1` 强制下载。
+- `GET /api/v1/tools/image-ai/tasks/:taskId/download.zip`：下载任务中所有成功结果。
 
 创建任务字段：
 
@@ -40,7 +44,7 @@
 
 ## 局域网文件传输
 
-主命名空间：`/api/tools/lan-transfer`。兼容命名空间 `/api/lan` 提供相同接口。
+唯一正式命名空间：`/api/v1/tools/lan-transfer`。
 
 - `GET /info`：局域网访问地址、容量、保留期和访问模式。
 - `POST /access`：使用可选管理 PIN 解锁完整权限。
@@ -78,21 +82,21 @@
 
 ## Edge-TTS 多国语言配音
 
-- `GET /api/tools/edge-tts/health`：Python 运行环境、版本、队列、保留期和文本上限。
-- `GET /api/tools/edge-tts/voices?language=ms-MY|en-US|en-GB|pt-BR`：读取并缓存在线音色；网络异常时返回内置推荐音色。`pt-BR` 为巴西葡萄牙语，推荐 `pt-BR-FranciscaNeural` 和 `pt-BR-AntonioNeural`。
-- `POST /api/tools/edge-tts/tasks`：JSON `{ text, language, voice, rate, volume, pitch, includeSubtitles, fileName? }`，成功返回 `202`。
-- `GET /api/tools/edge-tts/tasks?page=1&pageSize=10`：分页历史，不返回完整文案。
-- `GET /api/tools/edge-tts/tasks/:taskId`：任务详情、完整文案和生成结果地址。
-- `GET /api/tools/edge-tts/tasks/:taskId/audio`：浏览器内试听 MP3。
-- `GET /api/tools/edge-tts/tasks/:taskId/download`：下载 MP3。
-- `GET /api/tools/edge-tts/tasks/:taskId/subtitle`：下载可选 SRT。
-- `DELETE /api/tools/edge-tts/tasks/:taskId`：取消任务并删除语音、字幕和元数据。
+- `GET /api/v1/tools/edge-tts/health`：Python 运行环境、版本、队列、保留期和文本上限。
+- `GET /api/v1/tools/edge-tts/voices?language=ms-MY|en-US|en-GB|pt-BR`：读取并缓存在线音色；网络异常时返回内置推荐音色。`pt-BR` 为巴西葡萄牙语，推荐 `pt-BR-FranciscaNeural` 和 `pt-BR-AntonioNeural`。
+- `POST /api/v1/tools/edge-tts/tasks`：JSON `{ text, language, voice, rate, volume, pitch, includeSubtitles, fileName? }`，成功返回 `202`。
+- `GET /api/v1/tools/edge-tts/tasks?page=1&pageSize=10`：分页历史，不返回完整文案。
+- `GET /api/v1/tools/edge-tts/tasks/:taskId`：任务详情、完整文案和生成结果地址。
+- `GET /api/v1/tools/edge-tts/tasks/:taskId/audio`：浏览器内试听 MP3。
+- `GET /api/v1/tools/edge-tts/tasks/:taskId/download`：下载 MP3。
+- `GET /api/v1/tools/edge-tts/tasks/:taskId/subtitle`：下载可选 SRT。
+- `DELETE /api/v1/tools/edge-tts/tasks/:taskId`：取消任务并删除语音、字幕和元数据。
 
 文本最多 20,000 字符；语速 `-50..100`、音量和音调 `-50..50`。音色必须来自服务端音色列表并与语言匹配。任务通过受控进程参数调用 Python，不经过 shell；同时生成数、排队总数、超时和保留期均可通过环境变量限制。文案会发送给微软在线语音服务。
 
 ### Chatterbox Multilingual V3 声音克隆
 
-命名空间：`/api/tools/edge-tts/chatterbox`。
+命名空间：`/api/v1/tools/edge-tts/chatterbox`。
 
 - `GET /health`：Worker、模型加载、CUDA 设备、队列、参考音频限制、水印和保留期。
 - `POST /tasks`：`multipart/form-data` 创建任务并返回 `202`。
@@ -131,45 +135,45 @@
 
 ## 视频文本解析
 
-- `POST /api/tools/video-text/tasks`：字段 `file`，上传视频并执行本地转写。
-- `POST /api/tools/video-text/tasks/from-url`：JSON `{ url, fileName? }`。
-- `GET /api/tools/video-text/remote-video?url=...`：为浏览器代理远程视频，支持 Range。
-- `GET /api/tools/video-text/tasks/:taskId`：任务及可选结果。
-- `GET /api/tools/video-text/tasks/:taskId/result`：结果详情。
-- `GET /api/tools/video-text/tasks/:taskId/export?format=txt|srt|json`：导出结果。
-- `DELETE /api/tools/video-text/tasks/:taskId`：删除任务和结果。
-- `GET /api/tools/video-text/history`：`keyword/page/pageSize` 历史查询。
-- `GET /api/tools/video-text/history/:taskId`：历史详情。
-- `DELETE /api/tools/video-text/history/:taskId`：删除历史和关联文件。
+- `POST /api/v1/tools/video-text/tasks`：字段 `file`，上传视频并执行本地转写。
+- `POST /api/v1/tools/video-text/tasks/from-url`：JSON `{ url, fileName? }`。
+- `GET /api/v1/tools/video-text/remote-video?url=...`：为浏览器代理远程视频，支持 Range。
+- `GET /api/v1/tools/video-text/tasks/:taskId`：任务及可选结果。
+- `GET /api/v1/tools/video-text/tasks/:taskId/result`：结果详情。
+- `GET /api/v1/tools/video-text/tasks/:taskId/export?format=txt|srt|json`：导出结果。
+- `DELETE /api/v1/tools/video-text/tasks/:taskId`：删除任务和结果。
+- `GET /api/v1/tools/video-text/history`：`keyword/page/pageSize` 历史查询。
+- `GET /api/v1/tools/video-text/history/:taskId`：历史详情。
+- `DELETE /api/v1/tools/video-text/history/:taskId`：删除历史和关联文件。
 
 任务 ID 只允许 1–64 位字母、数字、下划线和连字符。转写命令不经过 shell；上传视频、WAV 和转写中间文件在任务结束后删除。
 
 ## 短视频
 
-- `POST /api/tools/short-video/parse`：JSON `{ input, platform? }`，平台为 `auto | douyin | xiaohongshu | tiktok`。
-- `GET /api/tools/short-video/download?url=...&filename=...`：以附件形式代理媒体。
+- `POST /api/v1/tools/short-video/parse`：JSON `{ input, platform? }`，平台为 `auto | douyin | xiaohongshu | tiktok`。
+- `GET /api/v1/tools/short-video/download?url=...&filename=...`：以附件形式代理媒体。
 
 分享链接只接受抖音、小红书、TikTok 主域或真实子域，并校验所选平台与链接域名一致。解析结果默认短缓存 5 分钟；TikTok 主解析失败时可降级到官方 oEmbed 预览。远程媒体统一限制为 HTTP(S) 80/443、无凭证、非私网地址、最多 3 次逐跳验证重定向、默认 120 秒与 2 GiB。
 
 ## 小红书内容归档
 
-- `POST /api/tools/xhs-archive/items`：JSON `{ url }` 创建获取任务；`url` 可为链接或包含链接的分享文案。
-- `GET /api/tools/xhs-archive/tasks/:taskId`：读取环境安装、链接解析、媒体下载和写入存档进度。
-- `GET /api/tools/xhs-archive/items?keyword=&type=&page=&pageSize=`：搜索、筛选和分页读取存档。
-- `GET /api/tools/xhs-archive/items/:id`：读取完整正文、作者和媒体清单。
-- `POST /api/tools/xhs-archive/items/:id/refresh`：重新获取并原子更新相同笔记。
-- `DELETE /api/tools/xhs-archive/items/:id`：永久删除记录和本地媒体。
-- `GET /api/tools/xhs-archive/items/:id/media/:mediaId`：本地媒体预览；`?download=1` 强制下载，视频支持 Range。
-- `GET /api/tools/xhs-archive/items/:id/download.zip`：流式下载 `内容.txt`、`metadata.json` 和顺序编号媒体。
-- `GET /api/tools/xhs-archive/runtime`：读取固定版本解析环境及登录状态。
-- `POST /api/tools/xhs-archive/auth/start`、`GET /api/tools/xhs-archive/auth/:sessionId`：打开本机浏览器登录并读取结果。
+- `POST /api/v1/tools/xhs-archive/items`：JSON `{ url }` 创建获取任务；`url` 可为链接或包含链接的分享文案。
+- `GET /api/v1/tools/xhs-archive/tasks/:taskId`：读取环境安装、链接解析、媒体下载和写入存档进度。
+- `GET /api/v1/tools/xhs-archive/items?keyword=&type=&page=&pageSize=`：搜索、筛选和分页读取存档。
+- `GET /api/v1/tools/xhs-archive/items/:id`：读取完整正文、作者和媒体清单。
+- `POST /api/v1/tools/xhs-archive/items/:id/refresh`：重新获取并原子更新相同笔记。
+- `DELETE /api/v1/tools/xhs-archive/items/:id`：永久删除记录和本地媒体。
+- `GET /api/v1/tools/xhs-archive/items/:id/media/:mediaId`：本地媒体预览；`?download=1` 强制下载，视频支持 Range。
+- `GET /api/v1/tools/xhs-archive/items/:id/download.zip`：流式下载 `内容.txt`、`metadata.json` 和顺序编号媒体。
+- `GET /api/v1/tools/xhs-archive/runtime`：读取固定版本解析环境及登录状态。
+- `POST /api/v1/tools/xhs-archive/auth/start`、`GET /api/v1/tools/xhs-archive/auth/:sessionId`：打开本机浏览器登录并读取结果。
 
 只接受 `xiaohongshu.com`、`xhslink.com` 和 `xhslink.cn`，媒体下载复用统一 SSRF、重定向、单文件大小和总配额限制。刷新期间先写 staging；任何媒体失败均保留旧存档。
 
 ## 存储与清理
 
-- `GET /api/maintenance/cleanup`：返回白名单分类的文件数、占用、风险和停服建议。
-- `POST /api/maintenance/cleanup`：JSON `{ ids, dryRun? }` 清理选中的分类 ID，不接受文件路径。
+- `GET /api/v1/maintenance/cleanup`：返回白名单分类的文件数、占用、风险和停服建议。
+- `POST /api/v1/maintenance/cleanup`：JSON `{ ids, dryRun? }` 清理选中的分类 ID，不接受文件路径。
 
 小红书永久存档为独立高风险分类且默认不选；依赖、模型、Python 环境、`.env` 和小红书登录态不属于任何可清理分类。
 

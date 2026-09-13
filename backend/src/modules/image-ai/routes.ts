@@ -1,10 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import type { FastifyInstance } from "fastify";
 import { fail, isImageAiOperation, ok } from "@toolbox/shared";
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 import {
   IMAGE_AI_MAX_FILE_BYTES,
   IMAGE_AI_MAX_MASK_BYTES,
@@ -24,13 +25,13 @@ type UploadedPart = {
   fieldname: string;
 };
 
-export async function registerImageAiRoutes(app: FastifyInstance, config: AppConfig) {
-  const manager = createImageAiTaskManager(config);
+export async function registerImageAiRoutes(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
+  const manager = createImageAiTaskManager(config, database);
   const worker = createImageAiWorkerClient(config);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());
 
-  app.get("/api/tools/image-ai/health", async (_request, reply) => {
+  app.get("/api/v1/tools/image-ai/health", async (_request, reply) => {
     try {
       return ok(await worker.health());
     } catch (error) {
@@ -46,7 +47,7 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
     }
   });
 
-  app.post("/api/tools/image-ai/watermark/suggestions", async (request, reply) => {
+  app.post("/api/v1/tools/image-ai/watermark/suggestions", async (request, reply) => {
     const tempId = `suggestion-${nanoid(12)}`;
     const tempDir = path.join(config.imageAiInputsDir, tempId);
     await fs.mkdir(tempDir, { recursive: true });
@@ -69,7 +70,7 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
     }
   });
 
-  app.post("/api/tools/image-ai/tasks", async (request, reply) => {
+  app.post("/api/v1/tools/image-ai/tasks", async (request, reply) => {
     const releaseReservation = manager.tryReserveSlot();
     if (!releaseReservation) {
       return reply.code(429).send(fail("IMAGE_AI_QUEUE_FULL", "AI 任务队列已满，请稍后再试"));
@@ -153,19 +154,19 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
     }
   });
 
-  app.get("/api/tools/image-ai/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/image-ai/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     const task = manager.get(taskId);
     return task ? ok(task) : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
   });
 
-  app.delete("/api/tools/image-ai/tasks/:taskId", async (request, reply) => {
+  app.delete("/api/v1/tools/image-ai/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     const task = await manager.cancel(taskId);
     return task ? ok(task, "取消请求已提交") : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
   });
 
-  app.get("/api/tools/image-ai/tasks/:taskId/files/:resultId", async (request, reply) => {
+  app.get("/api/v1/tools/image-ai/tasks/:taskId/files/:resultId", async (request, reply) => {
     const { taskId, resultId } = request.params as { taskId: string; resultId: string };
     const { download } = request.query as { download?: string };
     const task = manager.getStored(taskId);
@@ -181,13 +182,13 @@ export async function registerImageAiRoutes(app: FastifyInstance, config: AppCon
     }
   });
 
-  app.get("/api/tools/image-ai/tasks/:taskId/download.zip", async (request, reply) => {
+  app.get("/api/v1/tools/image-ai/tasks/:taskId/download.zip", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     const task = manager.getStored(taskId);
     if (!task || !task.results.length) {
       return reply.code(404).send(fail("RESULT_NOT_FOUND", "当前任务没有可下载结果"));
     }
-    const archive = archiver("zip", { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     for (const result of task.results) archive.file(result.outputPath, { name: result.outputName });
     void archive.finalize();
     reply.type("application/zip");

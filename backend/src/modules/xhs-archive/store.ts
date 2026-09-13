@@ -7,6 +7,7 @@ import {
   type XhsArchiveListResponse
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 
 type ArchiveIndex = {
   version: 2;
@@ -18,7 +19,10 @@ export class XhsArchiveStore {
   private initialized = false;
   private writeQueue = Promise.resolve();
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(
+    private readonly config: AppConfig,
+    private readonly database: ToolboxDatabase
+  ) {}
 
   async initialize() {
     if (this.initialized) return;
@@ -26,11 +30,19 @@ export class XhsArchiveStore {
       fsp.mkdir(this.config.xhsArchiveItemsDir, { recursive: true }),
       fsp.mkdir(this.config.xhsArchiveStagingDir, { recursive: true })
     ]);
-    const loaded = await this.readIndex();
-    if (loaded) {
-      loaded.items.forEach((item) => this.items.set(item.id, migrateItem(item)));
+    const stored = this.database.list("xhs-archive");
+    if (stored.length) {
+      stored.forEach((entity) => {
+        const item = migrateItem(entity.payload as XhsArchiveItem);
+        this.items.set(item.id, item);
+      });
     } else {
-      await this.rebuildFromManifests();
+      const loaded = await this.readIndex();
+      if (loaded) {
+        loaded.items.forEach((item) => this.items.set(item.id, migrateItem(item)));
+      } else {
+        await this.rebuildFromManifests();
+      }
       await this.persistIndex();
     }
     this.initialized = true;
@@ -206,13 +218,22 @@ export class XhsArchiveStore {
 
   private persistIndex() {
     this.writeQueue = this.writeQueue.then(async () => {
-      const payload: ArchiveIndex = { version: 2, items: [...this.items.values()] };
-      const target = this.config.xhsArchiveIndexPath;
-      const temporary = `${target}.tmp`;
-      await fsp.mkdir(path.dirname(target), { recursive: true });
-      if (await exists(target)) await fsp.copyFile(target, `${target}.bak`).catch(() => undefined);
-      await fsp.writeFile(temporary, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-      await fsp.rename(temporary, target);
+      this.database.transaction(() => {
+        const activeIds = new Set(this.items.keys());
+        for (const entity of this.database.list("xhs-archive")) {
+          if (!activeIds.has(entity.id)) this.database.remove("xhs-archive", entity.id);
+        }
+        for (const item of this.items.values()) {
+          this.database.upsert({
+            id: item.id,
+            kind: "xhs-archive",
+            status: item.status,
+            payload: item,
+            createdAt: item.fetchedAt,
+            updatedAt: item.updatedAt
+          });
+        }
+      });
     });
     return this.writeQueue;
   }

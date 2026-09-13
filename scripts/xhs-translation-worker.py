@@ -3,13 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import List
 
 import ctranslate2
 import sentencepiece as spm
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-
 
 MODEL_DIR = Path(os.environ.get("XHS_TRANSLATION_MODEL_DIR", ".runtime/xhs-translate/model"))
 PORT = int(os.environ.get("XHS_TRANSLATION_PORT", "5557"))
@@ -21,11 +19,11 @@ lock = asyncio.Lock()
 
 
 class TranslateRequest(BaseModel):
-    texts: List[str] = Field(min_length=1, max_length=64)
+    texts: list[str] = Field(min_length=1, max_length=64)
 
 
 class TranslateResponse(BaseModel):
-    translations: List[str]
+    translations: list[str]
 
 
 def model_ready() -> bool:
@@ -76,10 +74,7 @@ async def translate(request: TranslateRequest) -> TranslateResponse:
             # Hugging Face tokenizer adds it automatically, while raw
             # SentencePiece encoding does not. Omitting it can make decoding
             # repeat short phrases until max_decoding_length is reached.
-            tokenized = [
-                [*current_source_processor.encode(text, out_type=str), "</s>"]
-                for text in request.texts
-            ]
+            tokenized = [[*current_source_processor.encode(text, out_type=str), "</s>"] for text in request.texts]
             results = current_translator.translate_batch(tokenized, beam_size=4, max_decoding_length=512)
             translations = [current_target_processor.decode(result.hypotheses[0]) for result in results]
             if len(translations) != len(request.texts):

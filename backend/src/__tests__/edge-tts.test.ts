@@ -30,8 +30,8 @@ afterEach(async () => {
 describe("edge tts module", () => {
   it("reports health and filters the live voice list", async () => {
     const app = await createApp();
-    const health = await app.inject({ method: "GET", url: "/api/tools/edge-tts/health" });
-    const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=ms-MY" });
+    const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/health" });
+    const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices?language=ms-MY" });
 
     expect(health.statusCode).toBe(200);
     expect(health.json().data).toMatchObject({ available: true, version: "test-1.0", retentionDays: 3 });
@@ -48,10 +48,10 @@ describe("edge tts module", () => {
     { language: "pt-BR", voice: "pt-BR-AntonioNeural", text: "Bem-vindo à nossa loja. Obrigado pela preferência!" }
   ])("generates, persists, serves and deletes MP3 and SRT files for $voice", async (sample) => {
     const app = await createApp();
-    await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=ms-MY" });
+    await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices?language=ms-MY" });
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/tasks",
+      url: "/api/v1/tools/edge-tts/tasks",
       payload: {
         ...sample,
         rate: 10,
@@ -67,23 +67,23 @@ describe("edge tts module", () => {
     const completed = await waitForTask(app, taskId);
     expect(completed).toMatchObject({ status: "completed", audioBytes: 13 });
 
-    const audio = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}/audio` });
-    const download = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}/download` });
-    const subtitle = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}/subtitle` });
+    const audio = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}/audio` });
+    const download = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}/download` });
+    const subtitle = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}/subtitle` });
     expect(audio.statusCode).toBe(200);
     expect(audio.headers["content-type"]).toContain("audio/mpeg");
     expect(download.headers["content-disposition"]).toContain("produk-baharu.mp3");
     expect(subtitle.body).toContain(sample.text);
 
-    const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/tasks" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/tasks" });
     expect(list.json().data.tasks[0]).toMatchObject({ id: taskId, status: "completed" });
     expect(list.json().data.tasks[0].text).toBeUndefined();
     await app.close();
 
     const restarted = await createApp();
-    const restored = await restarted.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const restored = await restarted.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     expect(restored.json().data).toMatchObject({ id: taskId, status: "completed", ...sample });
-    const removed = await restarted.inject({ method: "DELETE", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const removed = await restarted.inject({ method: "DELETE", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     expect(removed.json().data).toEqual({ removed: true });
     expect(
       await fsp.stat(path.join(process.env.STORAGE_ROOT!, "edge-tts", "tasks", taskId)).catch(() => undefined)
@@ -95,7 +95,7 @@ describe("edge tts module", () => {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/tasks",
+      url: "/api/v1/tools/edge-tts/tasks",
       payload: {
         text: "Hello",
         language: "en-US",
@@ -115,13 +115,13 @@ describe("edge tts module", () => {
   it("filters Brazilian voices and rejects a voice from another locale", async () => {
     const app = await createApp();
     try {
-      const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=pt-BR" });
+      const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices?language=pt-BR" });
       expect(voices.statusCode).toBe(200);
       expect(voices.json().data.voices).toHaveLength(2);
       expect(voices.json().data.voices.every((voice: { locale: string }) => voice.locale === "pt-BR")).toBe(true);
       const result = await app.inject({
         method: "POST",
-        url: "/api/tools/edge-tts/tasks",
+        url: "/api/v1/tools/edge-tts/tasks",
         payload: {
           text: "Olá!",
           language: "pt-BR",
@@ -143,7 +143,7 @@ describe("edge tts module", () => {
     const app = await createApp();
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/tasks",
+      url: "/api/v1/tools/edge-tts/tasks",
       payload: {
         text: "slow generation",
         language: "en-US",
@@ -156,7 +156,7 @@ describe("edge tts module", () => {
     });
     const taskId = created.json().data.id as string;
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
 
     expect(removed.statusCode).toBe(200);
     expect(
@@ -168,7 +168,7 @@ describe("edge tts module", () => {
 
 async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, taskId: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     const task = response.json().data;
     if (task.status === "completed" || task.status === "failed") return task;
     await new Promise((resolve) => setTimeout(resolve, 10));

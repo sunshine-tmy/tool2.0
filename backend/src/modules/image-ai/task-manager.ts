@@ -3,6 +3,7 @@ import path from "node:path";
 import type { ImageAiOperation, ImageAiResult, ImageAiTask } from "@toolbox/shared";
 import sharp from "sharp";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 import { createImageAiWorkerClient } from "./worker-client";
 
 export type StoredInput = {
@@ -23,7 +24,7 @@ type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
   cancelRequested?: boolean;
 };
 
-export function createImageAiTaskManager(config: AppConfig) {
+export function createImageAiTaskManager(config: AppConfig, database: ToolboxDatabase) {
   const worker = createImageAiWorkerClient(config);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
@@ -135,10 +136,10 @@ export function createImageAiTaskManager(config: AppConfig) {
       const queueIndex = queue.indexOf(task.id);
       if (queueIndex >= 0) queue.splice(queueIndex, 1);
       tasks.delete(task.id);
+      database.remove("image-ai-task", task.id);
       await Promise.all([
         fs.rm(path.join(config.imageAiInputsDir, task.id), { recursive: true, force: true }),
-        fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true }),
-        fs.rm(manifestPath(task.id), { force: true })
+        fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true })
       ]);
     }
     refreshQueuePositions();
@@ -199,7 +200,7 @@ export function createImageAiTaskManager(config: AppConfig) {
           originalName: input.originalName,
           outputName,
           outputPath,
-          downloadUrl: `/api/tools/image-ai/tasks/${task.id}/files/${task.id}-${index + 1}`,
+          downloadUrl: `/api/v1/tools/image-ai/tasks/${task.id}/files/${task.id}-${index + 1}`,
           width: metadata.width,
           height: metadata.height,
           provider: inference.provider,
@@ -237,26 +238,25 @@ export function createImageAiTaskManager(config: AppConfig) {
   }
 
   async function loadTasks() {
-    const files = await fs.readdir(config.imageAiTasksDir).catch(() => [] as string[]);
-    for (const file of files.filter((name) => name.endsWith(".json"))) {
-      try {
-        const task = JSON.parse(
-          await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")
-        ) as StoredImageAiTask;
-        if (!task.id || !task.operation) continue;
-        if (task.status === "running") {
-          patchTask(task, {
-            status: "failed",
-            progress: 100,
-            error: "服务重启导致任务中断，请重新提交"
-          });
-          await persist(task);
+    if (!database.isDomainInitialized("image-ai-task")) {
+      const files = await fs.readdir(config.imageAiTasksDir).catch(() => [] as string[]);
+      for (const file of files.filter((name) => name.endsWith(".json"))) {
+        try {
+          const task = JSON.parse(
+            await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")
+          ) as StoredImageAiTask;
+          if (!task.id || !task.operation) continue;
+          database.upsert(toEntity(task));
+        } catch {
+          // Invalid legacy manifests stay untouched for manual recovery.
         }
-        tasks.set(task.id, task);
-        if (task.status === "pending") queue.push(task.id);
-      } catch {
-        // Ignore corrupt manifests; uploaded images remain isolated and will be cleaned manually.
       }
+      database.markDomainInitialized("image-ai-task");
+    }
+    for (const entity of database.list("image-ai-task")) {
+      const task = entity.payload as StoredImageAiTask;
+      if (!task.id || !task.operation) continue;
+      tasks.set(task.id, task);
     }
     refreshQueuePositions();
   }
@@ -269,14 +269,7 @@ export function createImageAiTaskManager(config: AppConfig) {
   }
 
   async function persist(task: StoredImageAiTask) {
-    const destination = manifestPath(task.id);
-    const temporary = `${destination}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify(task, null, 2), "utf8");
-    await fs.rename(temporary, destination);
-  }
-
-  function manifestPath(taskId: string) {
-    return path.join(config.imageAiTasksDir, `${taskId}.json`);
+    database.upsert(toEntity(task));
   }
 
   return {
@@ -289,6 +282,17 @@ export function createImageAiTaskManager(config: AppConfig) {
     getStored,
     cancel,
     cleanupExpired
+  };
+}
+
+function toEntity(task: StoredImageAiTask) {
+  return {
+    id: task.id,
+    kind: "image-ai-task",
+    status: task.status,
+    payload: task,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
   };
 }
 

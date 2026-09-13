@@ -1,4 +1,6 @@
 export * from "./api-response";
+export * from "./api-schema";
+export * from "./worker-protocol";
 export * from "./image-options";
 export * from "./image-ai";
 export * from "./edge-tts";

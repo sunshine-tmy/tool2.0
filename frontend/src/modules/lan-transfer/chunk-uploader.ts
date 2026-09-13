@@ -26,7 +26,7 @@ export type ChunkUploadApi = {
   cancelUpload(uploadId: string): Promise<{ removed: boolean }>;
 };
 
-export type ChunkUploadSnapshot = {
+type ChunkUploadSnapshot = {
   uploadId?: string;
   fileName: string;
   progress: number;

@@ -2,7 +2,10 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import fastify from "fastify";
 import { fail, listTools, ok } from "@toolbox/shared";
 import { getConfig } from "./config";
@@ -17,23 +20,66 @@ import { registerXhsArchiveRoutes } from "./modules/xhs-archive/routes";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
+import { registerAdminSecurity } from "./security/admin-session";
+import { migrateLegacyMetadata } from "./database/legacy-migration";
+import { ToolboxDatabase } from "./database/toolbox-database";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
-    logger: false,
-    bodyLimit: 220 * 1024 * 1024
+    logger:
+      process.env.NODE_ENV === "test"
+        ? false
+        : {
+            level: process.env.LOG_LEVEL?.trim() || "info",
+            redact: {
+              paths: [
+                "req.headers.authorization",
+                "req.headers.cookie",
+                "req.headers.x-csrf-token",
+                "req.headers.x-lan-transfer-pin",
+                "pin",
+                "text",
+                "path"
+              ],
+              censor: "[REDACTED]"
+            }
+          },
+    bodyLimit: 1024 * 1024,
+    requestIdHeader: "x-request-id"
   });
   const config = getConfig();
-  const taskStore = createTaskStore();
+  const database = new ToolboxDatabase(config.databasePath);
+  await migrateLegacyMetadata(config, database);
+  const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
+
+  app.addHook("onClose", async () => database.close());
+
+  await app.register(cookie);
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute"
+  });
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        mediaSrc: ["'self'", "blob:"],
+        connectSrc: ["'self'"]
+      }
+    },
+    crossOriginResourcePolicy: { policy: "same-site" }
+  });
 
   await app.register(cors, {
     origin(origin, callback) {
       callback(null, !origin || config.corsOrigins.includes(origin));
     },
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Range", "X-Lan-Transfer-Pin"],
-    exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
+    allowedHeaders: ["Content-Type", "Authorization", "Range", "X-Lan-Transfer-Pin", "X-CSRF-Token", "X-Request-Id"],
+    exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges", "X-Request-Id"],
     credentials: true
   });
   await app.register(multipart, {
@@ -42,6 +88,39 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       files: 10
     },
     throwFileSizeLimit: false
+  });
+  await registerAdminSecurity(app, config, database);
+
+  app.addHook("onSend", async (request, reply, payload) => {
+    reply.header("x-request-id", request.id);
+    if (typeof payload !== "string" || !reply.getHeader("content-type")?.toString().includes("application/json")) {
+      return payload;
+    }
+    try {
+      const value = JSON.parse(payload) as Record<string, unknown>;
+      if (typeof value.success === "boolean" && typeof value.requestId !== "string") {
+        value.requestId = request.id;
+        return JSON.stringify(value);
+      }
+    } catch {
+      // Non-JSON payloads are returned unchanged.
+    }
+    return payload;
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error({ err: error, requestId: request.id }, "request failed");
+    const normalized = error instanceof Error ? error : new Error("Unknown request error");
+    const reportedStatus = (normalized as Error & { statusCode?: number }).statusCode;
+    const statusCode = reportedStatus && reportedStatus >= 400 ? reportedStatus : 500;
+    return reply
+      .code(statusCode)
+      .send(
+        fail(
+          statusCode >= 500 ? "INTERNAL_ERROR" : "REQUEST_INVALID",
+          statusCode >= 500 ? "Internal server error" : normalized.message
+        )
+      );
   });
 
   await fsp.mkdir(config.uploadDir, { recursive: true });
@@ -59,10 +138,29 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });
   await fsp.mkdir(config.xhsArchiveStagingDir, { recursive: true });
 
-  app.get("/api/health", async () => {
+  app.get("/health/live", async () => {
+    return ok({ status: "ok" });
+  });
+
+  app.get("/health/ready", async (_request, reply) => {
+    try {
+      database.ready();
+      await Promise.all(
+        [config.storageRoot, config.tempDir].map((directory) =>
+          fsp.access(directory, fs.constants.R_OK | fs.constants.W_OK)
+        )
+      );
+      return ok({ status: "ready", database: "ok", storage: "ok" });
+    } catch {
+      return reply.code(503).send(fail("NOT_READY", "Required storage is unavailable"));
+    }
+  });
+
+  app.get("/api/v1/health", async () => {
     return ok({
       status: "ok",
       name: "toolbox-api",
+      deploymentMode: config.deploymentMode,
       videoText: {
         audioExtractorConfigured: Boolean(config.videoTextAudioExtractCommand),
         transcriberConfigured: Boolean(config.videoTextTranscribeCommand)
@@ -72,34 +170,29 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       },
       xhsArchive: {
         providerConfigured: Boolean(config.xhsProviderUrl),
-        archiveDir: config.xhsArchiveDir,
-        translationProviderConfigured: Boolean(config.xhsTranslationProviderUrl),
-        translationPort: config.xhsTranslationProviderPort
+        translationProviderConfigured: Boolean(config.xhsTranslationProviderUrl)
       },
       imageAi: {
-        workerUrl: config.imageAiWorkerUrl,
         deploymentUsage: config.deploymentUsage
       },
       edgeTts: {
-        pythonPath: config.edgeTtsPythonPath,
         retentionDays: config.edgeTtsRetentionDays
       },
       chatterbox: {
-        workerUrl: config.chatterboxWorkerUrl,
         retentionDays: config.chatterboxRetentionDays
       }
     });
   });
 
-  app.get("/api/tools", async () => {
+  app.get("/api/v1/tools", async () => {
     return ok(listTools());
   });
 
-  app.get("/api/tasks", async () => {
+  app.get("/api/v1/tasks", async () => {
     return ok(taskStore.list());
   });
 
-  app.get("/api/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     const task = taskStore.get(taskId);
 
@@ -110,7 +203,31 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     return ok(task);
   });
 
-  app.get("/api/files/:fileName", async (request, reply) => {
+  app.get("/api/v1/tasks/:taskId/events", async (request, reply) => {
+    const { taskId } = request.params as { taskId: string };
+    const task = taskStore.get(taskId);
+    if (!task) return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no"
+    });
+    const send = (value: typeof task) => reply.raw.write(`event: task\ndata: ${JSON.stringify(value)}\n\n`);
+    send(task);
+    const unsubscribe = taskStore.subscribe(taskId, (value) => {
+      send(value);
+      if (value.status === "completed" || value.status === "failed") reply.raw.end();
+    });
+    const heartbeat = setInterval(() => reply.raw.write(": keep-alive\n\n"), 15_000);
+    reply.raw.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  });
+
+  app.get("/api/v1/files/:fileName", async (request, reply) => {
     const { fileName } = request.params as { fileName: string };
     const safeName = path.basename(fileName);
     const filePath = path.join(config.outputDir, safeName);
@@ -120,7 +237,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       if (!stat.isFile()) throw new Error("Not a file");
       reply.header("content-length", String(stat.size));
       reply.header("content-type", outputContentType(path.extname(safeName)));
-      reply.header("content-disposition", `attachment; filename="${safeName.replaceAll('"', "")}"`);
+      reply.header("content-disposition", contentDisposition(safeName));
       reply.header("x-content-type-options", "nosniff");
       return reply.send(fs.createReadStream(filePath));
     } catch {
@@ -129,13 +246,13 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
 
   registerImageCompressRoutes(app, config, taskStore);
-  await registerImageAiRoutes(app, config);
-  await registerEdgeTtsRoutes({ app, config });
-  await registerChatterboxRoutes(app, config);
-  await registerLanTransferRoutes({ app, config });
+  await registerImageAiRoutes(app, config, database);
+  await registerEdgeTtsRoutes({ app, config, database });
+  await registerChatterboxRoutes(app, config, database);
+  await registerLanTransferRoutes({ app, config, database });
   await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
   await registerShortVideoRoutes({ app, config, remoteFetch });
-  await registerXhsArchiveRoutes({ app, config, remoteFetch });
+  await registerXhsArchiveRoutes({ app, config, remoteFetch, database });
   registerMaintenanceRoutes(app);
 
   return app;
@@ -146,4 +263,10 @@ function outputContentType(extension: string) {
   if (extension === ".png") return "image/png";
   if (extension === ".webp") return "image/webp";
   return "application/octet-stream";
+}
+
+function contentDisposition(fileName: string) {
+  const normalized = fileName.replace(/[\r\n]/g, "").replace(/["\\]/g, "_");
+  const ascii = normalized.replace(/[^\x20-\x7e]/g, "_");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(normalized)}`;
 }

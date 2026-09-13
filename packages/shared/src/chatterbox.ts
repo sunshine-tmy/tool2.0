@@ -58,6 +58,7 @@ export type ChatterboxTaskList = {
 };
 
 export type ChatterboxHealth = {
+  protocolVersion: number;
   available: boolean;
   workerAvailable: boolean;
   packageVersion?: string;

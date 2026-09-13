@@ -24,31 +24,31 @@ describe("tool registry", () => {
   it("exposes frontend routes and api namespaces for each tool", () => {
     expect(getToolById("image-compress")).toMatchObject({
       routePath: "/tools/image-compress",
-      apiNamespace: "/api/tools/image-compress"
+      apiNamespace: "/api/v1/tools/image-compress"
     });
     expect(getToolById("image-ai")).toMatchObject({
       routePath: "/tools/image-ai",
-      apiNamespace: "/api/tools/image-ai"
+      apiNamespace: "/api/v1/tools/image-ai"
     });
     expect(getToolById("lan-transfer")).toMatchObject({
       routePath: "/tools/lan-transfer",
-      apiNamespace: "/api/tools/lan-transfer"
+      apiNamespace: "/api/v1/tools/lan-transfer"
     });
     expect(getToolById("video-text")).toMatchObject({
       routePath: "/tools/video-text",
-      apiNamespace: "/api/tools/video-text"
+      apiNamespace: "/api/v1/tools/video-text"
     });
     expect(getToolById("edge-tts")).toMatchObject({
       routePath: "/tools/edge-tts",
-      apiNamespace: "/api/tools/edge-tts"
+      apiNamespace: "/api/v1/tools/edge-tts"
     });
     expect(getToolById("short-video")).toMatchObject({
       routePath: "/tools/short-video",
-      apiNamespace: "/api/tools/short-video"
+      apiNamespace: "/api/v1/tools/short-video"
     });
     expect(getToolById("xhs-archive")).toMatchObject({
       routePath: "/tools/xhs-archive",
-      apiNamespace: "/api/tools/xhs-archive"
+      apiNamespace: "/api/v1/tools/xhs-archive"
     });
   });
 });

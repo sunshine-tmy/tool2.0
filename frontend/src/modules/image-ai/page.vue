@@ -535,7 +535,7 @@ const ResultGallery = defineComponent({
     }
 
     function downloadAll() {
-      triggerImageAiDownload(`/api/tools/image-ai/tasks/${props.task.id}/download.zip`);
+      triggerImageAiDownload(`/api/v1/tools/image-ai/tasks/${props.task.id}/download.zip`);
     }
 
     return () =>

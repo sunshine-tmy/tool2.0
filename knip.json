@@ -1,3 +1,8 @@
 {
-  "ignoreBinaries": ["python"]
+  "ignoreBinaries": ["python"],
+  "workspaces": {
+    "backend": {
+      "entry": ["src/database/cli.ts"]
+    }
+  }
 }

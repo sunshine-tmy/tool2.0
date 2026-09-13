@@ -18,7 +18,7 @@ type CleanupCategory = {
 };
 
 export function registerMaintenanceRoutes(app: FastifyInstance) {
-  app.get("/api/maintenance/cleanup", async (_request, reply) => {
+  app.get("/api/v1/maintenance/cleanup", async (_request, reply) => {
     try {
       const categories = (await runCleanup(["--json"])) as CleanupCategory[];
       return ok(categories.filter((category) => category.id !== "build"));
@@ -27,7 +27,7 @@ export function registerMaintenanceRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post("/api/maintenance/cleanup", async (request, reply) => {
+  app.post("/api/v1/maintenance/cleanup", async (request, reply) => {
     const body = isRecord(request.body) ? request.body : {};
     const ids = Array.isArray(body.ids) ? body.ids.filter((value): value is string => typeof value === "string") : [];
     if (!ids.length) return reply.code(400).send(fail("CLEANUP_SELECTION_REQUIRED", "请至少选择一个清理分类"));

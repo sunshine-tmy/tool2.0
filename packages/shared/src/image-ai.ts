@@ -59,6 +59,7 @@ export type ImageAiModelHealth = {
 };
 
 export type ImageAiHealth = {
+  protocolVersion: number;
   available: boolean;
   deploymentUsage: "internal-noncommercial" | "commercial";
   workerUrl: string;

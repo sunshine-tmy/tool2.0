@@ -30,8 +30,8 @@ describe("short video downloads", () => {
       url: "https://cdn.test/video.mp4?token=abc"
     };
 
-    expect(createShortVideoDownloadUrl(media, "https://tool.test/api")).toBe(
-      "https://tool.test/api/tools/short-video/download?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4%3Ftoken%3Dabc&filename=Public-Video.mp4"
+    expect(createShortVideoDownloadUrl(media, "https://tool.test/api/v1")).toBe(
+      "https://tool.test/api/v1/tools/short-video/download?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4%3Ftoken%3Dabc&filename=Public-Video.mp4"
     );
   });
 
@@ -46,7 +46,7 @@ describe("short video downloads", () => {
     const scheduledTasks: Array<() => void> = [];
 
     triggerShortVideoDownload(media, {
-      apiBase: "https://tool.test/api",
+      apiBase: "https://tool.test/api/v1",
       deps: {
         startFrameDownload: (url) => {
           frameUrls.push(url);
@@ -58,7 +58,7 @@ describe("short video downloads", () => {
     });
 
     expect(frameUrls).toEqual([
-      "https://tool.test/api/tools/short-video/download?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4&filename=%E9%BB%98%E8%AE%A4%E8%A7%86%E9%A2%91.mp4"
+      "https://tool.test/api/v1/tools/short-video/download?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4&filename=%E9%BB%98%E8%AE%A4%E8%A7%86%E9%A2%91.mp4"
     ]);
     expect(removedFrameUrls).toEqual([]);
     scheduledTasks.forEach((task) => task());

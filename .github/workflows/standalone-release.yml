@@ -1,0 +1,41 @@
+name: Standalone release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-14
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - shell: pwsh
+        run: ./scripts/package-standalone.ps1 -Platform ${{ matrix.platform }}
+      - uses: anchore/sbom-action@v0
+        with:
+          path: .
+          output-file: .package/standalone/toolbox-${{ matrix.platform }}.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolbox-${{ matrix.platform }}
+          path: .package/standalone/toolbox-*

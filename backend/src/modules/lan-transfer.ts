@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 import {
   classifyLanFile,
@@ -21,10 +21,12 @@ import {
   type LanNoteRecord
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
+import type { ToolboxDatabase } from "../database/toolbox-database";
 
 type RegisterLanTransferRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
+  database: ToolboxDatabase;
 };
 
 type ListResponse = {
@@ -63,10 +65,10 @@ class LanNoteInputError extends Error {
   }
 }
 
-export async function registerLanTransferRoutes({ app, config }: RegisterLanTransferRoutesOptions) {
-  const store = createLanFileStore(config);
-  const noteStore = createLanNoteStore(config);
-  const uploadStore = createLanUploadStore(config);
+export async function registerLanTransferRoutes({ app, config, database }: RegisterLanTransferRoutesOptions) {
+  const store = createLanFileStore(config, database);
+  const noteStore = createLanNoteStore(config, database);
+  const uploadStore = createLanUploadStore(config, database);
   const finalizingUploads = new Set<string>();
   const access = createLanAccessController(config);
   const audit = createLanAuditLog(path.join(config.lanTransferDir, "audit.jsonl"));
@@ -77,19 +79,17 @@ export async function registerLanTransferRoutes({ app, config }: RegisterLanTran
   await noteStore.cleanupExpired();
   await uploadStore.cleanupStale(config.lanTransferUploadRetentionHours);
 
-  for (const basePath of ["/api/tools/lan-transfer", "/api/lan"]) {
-    registerLanTransferNamespace(
-      app,
-      config,
-      store,
-      noteStore,
-      uploadStore,
-      finalizingUploads,
-      access,
-      audit,
-      basePath
-    );
-  }
+  registerLanTransferNamespace(
+    app,
+    config,
+    store,
+    noteStore,
+    uploadStore,
+    finalizingUploads,
+    access,
+    audit,
+    "/api/v1/tools/lan-transfer"
+  );
 
   const cleanupTimer = setInterval(
     () => {
@@ -425,7 +425,7 @@ function registerLanTransferNamespace(
     }
     await store.incrementDownloadCounts(files.map((file) => file.id));
     await audit.write("files.batch-downloaded", request, { fileIds: files.map((file) => file.id) });
-    const archive = archiver("zip", { zlib: { level: 1 } });
+    const archive = new ZipArchive({ zlib: { level: 1 } });
     const usedNames = new Set<string>();
     for (const file of files) {
       archive.file(path.join(config.lanTransferFilesDir, file.storedName), {
@@ -716,7 +716,7 @@ function registerLanTransferNamespace(
   });
 }
 
-function createLanFileStore(config: AppConfig) {
+function createLanFileStore(config: AppConfig, database: ToolboxDatabase) {
   let queue = Promise.resolve();
 
   function runExclusive<T>(operation: () => Promise<T>) {
@@ -731,10 +731,22 @@ function createLanFileStore(config: AppConfig) {
   async function ensure() {
     await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
     await ensureJsonIndex(config.lanTransferIndexPath);
+    if (!database.isDomainInitialized("lan-file")) {
+      let parsed;
+      try {
+        parsed = parseLanFileIndex(await readJsonIndex(config.lanTransferIndexPath));
+      } catch {
+        parsed = parseLanFileIndex(await fsp.readFile(`${config.lanTransferIndexPath}.bak`, "utf8"));
+      }
+      await write(parsed.records);
+    }
   }
 
   async function read(): Promise<LanFileRecord[]> {
     await ensure();
+    if (database.isDomainInitialized("lan-file")) {
+      return database.list("lan-file").map((entity) => entity.payload as LanFileRecord);
+    }
     let parsed;
     try {
       parsed = parseLanFileIndex(await readJsonIndex(config.lanTransferIndexPath));
@@ -749,7 +761,21 @@ function createLanFileStore(config: AppConfig) {
   }
 
   async function write(records: LanFileRecord[]) {
-    await writeJsonIndex(config.lanTransferIndexPath, records);
+    database.transaction(() => {
+      const active = new Set(records.map((record) => record.id));
+      for (const entity of database.list("lan-file"))
+        if (!active.has(entity.id)) database.remove("lan-file", entity.id);
+      for (const record of records) {
+        database.upsert({
+          id: record.id,
+          kind: "lan-file",
+          payload: record,
+          createdAt: record.createdAt,
+          updatedAt: record.createdAt
+        });
+      }
+      database.markDomainInitialized("lan-file");
+    });
   }
 
   return {
@@ -863,7 +889,7 @@ function createLanFileStore(config: AppConfig) {
   };
 }
 
-function createLanNoteStore(config: AppConfig) {
+function createLanNoteStore(config: AppConfig, database: ToolboxDatabase) {
   const notesDir = path.join(config.lanTransferDir, "notes");
   const imagesDir = path.join(notesDir, "images");
   const indexPath = path.join(notesDir, "index.json");
@@ -881,10 +907,22 @@ function createLanNoteStore(config: AppConfig) {
   async function ensure() {
     await fsp.mkdir(imagesDir, { recursive: true });
     await ensureJsonIndex(indexPath);
+    if (!database.isDomainInitialized("lan-note")) {
+      let parsed;
+      try {
+        parsed = parseLanNoteIndex(await readJsonIndex(indexPath));
+      } catch {
+        parsed = parseLanNoteIndex(await fsp.readFile(`${indexPath}.bak`, "utf8"));
+      }
+      await write(parsed.records);
+    }
   }
 
   async function read(): Promise<LanNoteRecord[]> {
     await ensure();
+    if (database.isDomainInitialized("lan-note")) {
+      return database.list("lan-note").map((entity) => entity.payload as LanNoteRecord);
+    }
     let parsed;
     try {
       parsed = parseLanNoteIndex(await readJsonIndex(indexPath));
@@ -897,7 +935,21 @@ function createLanNoteStore(config: AppConfig) {
   }
 
   async function write(records: LanNoteRecord[]) {
-    await writeJsonIndex(indexPath, records);
+    database.transaction(() => {
+      const active = new Set(records.map((record) => record.id));
+      for (const entity of database.list("lan-note"))
+        if (!active.has(entity.id)) database.remove("lan-note", entity.id);
+      for (const record of records) {
+        database.upsert({
+          id: record.id,
+          kind: "lan-note",
+          payload: record,
+          createdAt: record.createdAt,
+          updatedAt: record.createdAt
+        });
+      }
+      database.markDomainInitialized("lan-note");
+    });
   }
 
   async function removeImages(note: LanNoteRecord) {
@@ -1105,7 +1157,7 @@ function isLanFileRecord(value: unknown): value is LanFileRecord {
   );
 }
 
-function createLanUploadStore(config: AppConfig) {
+function createLanUploadStore(config: AppConfig, database: ToolboxDatabase) {
   const uploadsDir = path.join(config.lanTransferDir, "uploads");
   const uploadIndexPath = path.join(uploadsDir, "index.json");
   let queue = Promise.resolve();
@@ -1122,10 +1174,22 @@ function createLanUploadStore(config: AppConfig) {
   async function ensure() {
     await fsp.mkdir(uploadsDir, { recursive: true });
     await ensureJsonIndex(uploadIndexPath);
+    if (!database.isDomainInitialized("upload-session")) {
+      let value: unknown;
+      try {
+        value = JSON.parse(await readJsonIndex(uploadIndexPath)) as unknown;
+      } catch {
+        value = JSON.parse(await fsp.readFile(`${uploadIndexPath}.bak`, "utf8")) as unknown;
+      }
+      await write(Array.isArray(value) ? (value.filter(isLanUploadSession) as LanChunkUploadSession[]) : []);
+    }
   }
 
   async function read(): Promise<LanChunkUploadSession[]> {
     await ensure();
+    if (database.isDomainInitialized("upload-session")) {
+      return database.list("upload-session").map((entity) => entity.payload as LanChunkUploadSession);
+    }
     let value: unknown;
     try {
       value = JSON.parse(await readJsonIndex(uploadIndexPath)) as unknown;
@@ -1136,7 +1200,23 @@ function createLanUploadStore(config: AppConfig) {
   }
 
   async function write(sessions: LanChunkUploadSession[]) {
-    await writeJsonIndex(uploadIndexPath, sessions);
+    database.transaction(() => {
+      const active = new Set(sessions.map((session) => session.uploadId));
+      for (const entity of database.list("upload-session")) {
+        if (!active.has(entity.id)) database.remove("upload-session", entity.id);
+      }
+      for (const session of sessions) {
+        database.upsert({
+          id: session.uploadId,
+          kind: "upload-session",
+          status: "uploading",
+          payload: session,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt
+        });
+      }
+      database.markDomainInitialized("upload-session");
+    });
   }
 
   function sessionDir(uploadId: string) {
@@ -1728,37 +1808,6 @@ async function ensureJsonIndex(indexPath: string) {
 async function readJsonIndex(indexPath: string) {
   await ensureJsonIndex(indexPath);
   return fsp.readFile(indexPath, "utf8");
-}
-
-async function writeJsonIndex(indexPath: string, value: unknown) {
-  const temporaryPath = `${indexPath}.${process.pid}.${nanoid(6)}.tmp`;
-  const backupPath = `${indexPath}.bak`;
-  const handle = await fsp.open(temporaryPath, "wx");
-  try {
-    await handle.writeFile(JSON.stringify(value, null, 2));
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-
-  await fsp.rm(backupPath, { force: true });
-  try {
-    await fsp.rename(indexPath, backupPath);
-  } catch (error) {
-    if (!isRecord(error) || error.code !== "ENOENT") throw error;
-  }
-
-  try {
-    await fsp.rename(temporaryPath, indexPath);
-  } catch (error) {
-    await fsp.rm(temporaryPath, { force: true });
-    try {
-      await fsp.rename(backupPath, indexPath);
-    } catch {
-      // The original error is more actionable; startup recovery will retry the backup.
-    }
-    throw error;
-  }
 }
 
 function isLanUploadSession(value: unknown): value is LanChunkUploadSession {

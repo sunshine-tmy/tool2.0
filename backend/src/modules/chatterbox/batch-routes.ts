@@ -3,7 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import {
@@ -27,6 +27,7 @@ import {
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { createChatterboxWorkerClient } from "./worker-client";
 
 type WorkerClient = ReturnType<typeof createChatterboxWorkerClient>;
@@ -72,11 +73,12 @@ export async function registerChatterboxBatchRoutes(options: {
   config: AppConfig;
   worker: WorkerClient;
   media: MediaTools;
+  database: ToolboxDatabase;
   externalQueueStats?: () => { active: number; queued: number };
 }) {
-  const { app, config, worker, media } = options;
-  const store = new ChatterboxBatchStore(path.join(config.chatterboxDir, "batches"));
-  const voiceStore = new ChatterboxVoiceStore(path.join(config.chatterboxDir, "voices"));
+  const { app, config, worker, media, database } = options;
+  const store = new ChatterboxBatchStore(path.join(config.chatterboxDir, "batches"), database);
+  const voiceStore = new ChatterboxVoiceStore(path.join(config.chatterboxDir, "voices"), database);
   await store.initialize();
   await voiceStore.initialize();
   await store.cleanupExpired();
@@ -90,12 +92,12 @@ export async function registerChatterboxBatchRoutes(options: {
     for (const item of batch.items) if (item.status === "queued") queue.enqueue(batch.id, item.id);
   }
 
-  app.get("/api/tools/edge-tts/chatterbox/voices", async () => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/voices", async () => {
     const data: ChatterboxSavedVoiceList = { voices: voiceStore.list().map(toPublicVoice) };
     return ok(data);
   });
 
-  app.post("/api/tools/edge-tts/chatterbox/voices", async (request, reply) => {
+  app.post("/api/v1/tools/edge-tts/chatterbox/voices", async (request, reply) => {
     const voiceId = nanoid(12);
     const paths = voiceStore.paths(voiceId);
     await fsp.mkdir(paths.dir, { recursive: true });
@@ -132,7 +134,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/voices/:voiceId/audio", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/voices/:voiceId/audio", async (request, reply) => {
     const voiceId = voiceIdFrom(request.params);
     const voice = voiceStore.get(voiceId);
     if (!voice) return reply.code(404).send(fail("CHATTERBOX_VOICE_NOT_FOUND", "保存的参考音色不存在"));
@@ -148,7 +150,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.delete("/api/tools/edge-tts/chatterbox/voices/:voiceId", async (request, reply) => {
+  app.delete("/api/v1/tools/edge-tts/chatterbox/voices/:voiceId", async (request, reply) => {
     const voiceId = voiceIdFrom(request.params);
     if (!voiceStore.get(voiceId)) {
       return reply.code(404).send(fail("CHATTERBOX_VOICE_NOT_FOUND", "保存的参考音色不存在"));
@@ -157,7 +159,7 @@ export async function registerChatterboxBatchRoutes(options: {
     return ok({ removed: true });
   });
 
-  app.post("/api/tools/edge-tts/chatterbox/batches", async (request, reply) => {
+  app.post("/api/v1/tools/edge-tts/chatterbox/batches", async (request, reply) => {
     if (queueLoad() >= config.chatterboxQueueLimit) {
       return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
     }
@@ -209,7 +211,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches", async (request) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches", async (request) => {
     const query = request.query as { page?: string; pageSize?: string };
     const page = positiveInteger(query.page, 1);
     const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
@@ -225,21 +227,21 @@ export async function registerChatterboxBatchRoutes(options: {
     return ok(data);
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId", async (request, reply) => {
     const batch = store.get(batchIdFrom(request.params));
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
     return ok(toPublicBatch(batch));
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/audio", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/audio", async (request, reply) => {
     return sendBatchAudio(store, idsFrom(request.params), reply, false);
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/download", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/download", async (request, reply) => {
     return sendBatchAudio(store, idsFrom(request.params), reply, true);
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/combined-audio", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/combined-audio", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -260,7 +262,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/subtitle", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/subtitle", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -281,7 +283,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/subtitle.zh-CN", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/subtitle.zh-CN", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -307,7 +309,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/subtitle.bilingual", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/subtitle.bilingual", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -331,7 +333,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/batches/:batchId/download.zip", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/download.zip", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -339,7 +341,7 @@ export async function registerChatterboxBatchRoutes(options: {
     if (!completed.length) return reply.code(409).send(fail("CHATTERBOX_BATCH_NOT_READY", "批次中还没有可下载的音频"));
     if (batch.status === "completed" && batch.items.length > 1) await ensureBatchAudio(store, batch, media);
     if (batch.status === "completed" && batch.includeSubtitles) await rebuildBatchSubtitles(store, batch);
-    const archive = archiver("zip", { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     archive.on("warning", (error) => app.log.warn(error));
     archive.on("error", (error) => reply.raw.destroy(error));
     reply.header("content-type", "application/zip");
@@ -365,7 +367,7 @@ export async function registerChatterboxBatchRoutes(options: {
     return reply;
   });
 
-  app.post("/api/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/regenerate", async (request, reply) => {
+  app.post("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/regenerate", async (request, reply) => {
     const ids = idsFrom(request.params);
     const batch = store.get(ids.batchId);
     const item = batch?.items.find((entry) => entry.id === ids.itemId);
@@ -482,7 +484,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.patch("/api/tools/edge-tts/chatterbox/batches/:batchId/order", async (request, reply) => {
+  app.patch("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/order", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -507,7 +509,7 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   });
 
-  app.delete("/api/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId", async (request, reply) => {
+  app.delete("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId", async (request, reply) => {
     const ids = idsFrom(request.params);
     const batch = store.get(ids.batchId);
     if (!batch?.items.some((item) => item.id === ids.itemId)) {
@@ -529,7 +531,7 @@ export async function registerChatterboxBatchRoutes(options: {
     return ok({ removed: true, batch: updated ? toPublicBatch(updated) : undefined });
   });
 
-  app.post("/api/tools/edge-tts/chatterbox/batches/:batchId/cancel", async (request, reply) => {
+  app.post("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/cancel", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -552,7 +554,7 @@ export async function registerChatterboxBatchRoutes(options: {
     return ok(toPublicBatch(updated!));
   });
 
-  app.delete("/api/tools/edge-tts/chatterbox/batches/:batchId/reference", async (request, reply) => {
+  app.delete("/api/v1/tools/edge-tts/chatterbox/batches/:batchId/reference", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     const batch = store.get(batchId);
     if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -564,7 +566,7 @@ export async function registerChatterboxBatchRoutes(options: {
     return ok({ removed: true });
   });
 
-  app.delete("/api/tools/edge-tts/chatterbox/batches/:batchId", async (request, reply) => {
+  app.delete("/api/v1/tools/edge-tts/chatterbox/batches/:batchId", async (request, reply) => {
     const batchId = batchIdFrom(request.params);
     if (!store.get(batchId)) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
     if (queue.hasActiveBatch(batchId)) {
@@ -740,27 +742,38 @@ type StoredVoice = Omit<ChatterboxSavedVoice, "audioUrl">;
 class ChatterboxVoiceStore {
   private readonly voices = new Map<string, StoredVoice>();
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly database: ToolboxDatabase
+  ) {}
 
   async initialize() {
     await fsp.mkdir(this.root, { recursive: true });
-    for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !isSafeId(entry.name)) continue;
-      try {
-        const voice = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as StoredVoice;
-        if (!isStoredVoice(voice) || voice.id !== entry.name || !(await fileExists(this.paths(entry.name).audio)))
-          continue;
-        this.voices.set(voice.id, voice);
-      } catch {
-        // Ignore incomplete saved voice directories.
+    if (!this.database.isDomainInitialized("chatterbox-voice")) {
+      for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !isSafeId(entry.name)) continue;
+        try {
+          const voice = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as StoredVoice;
+          if (!isStoredVoice(voice) || voice.id !== entry.name || !(await fileExists(this.paths(entry.name).audio)))
+            continue;
+          this.persist(voice);
+        } catch {
+          // Invalid legacy metadata stays untouched for manual recovery.
+        }
       }
+      this.database.markDomainInitialized("chatterbox-voice");
+    }
+    for (const entity of this.database.list("chatterbox-voice")) {
+      const voice = entity.payload as StoredVoice;
+      if (!isStoredVoice(voice) || !(await fileExists(this.paths(voice.id).audio))) continue;
+      this.voices.set(voice.id, voice);
     }
   }
 
   async create(input: Omit<StoredVoice, "createdAt" | "updatedAt">) {
     const now = new Date().toISOString();
     const voice: StoredVoice = { ...input, createdAt: now, updatedAt: now };
-    await writeJsonAtomic(this.paths(voice.id).meta, voice);
+    this.persist(voice);
     this.voices.set(voice.id, voice);
     return { ...voice };
   }
@@ -779,6 +792,7 @@ class ChatterboxVoiceStore {
   async remove(id: string) {
     if (!isSafeId(id)) return false;
     this.voices.delete(id);
+    this.database.remove("chatterbox-voice", id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -793,35 +807,57 @@ class ChatterboxVoiceStore {
       audio: path.join(dir, "reference.wav")
     };
   }
+
+  private persist(voice: StoredVoice) {
+    this.database.upsert({
+      id: voice.id,
+      kind: "chatterbox-voice",
+      payload: voice,
+      createdAt: voice.createdAt,
+      updatedAt: voice.updatedAt
+    });
+  }
 }
 
 class ChatterboxBatchStore {
   private readonly batches = new Map<string, ChatterboxBatch>();
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly database: ToolboxDatabase
+  ) {}
 
   async initialize() {
     await fsp.mkdir(this.root, { recursive: true });
-    for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !isSafeId(entry.name)) continue;
-      try {
-        const batch = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxBatch;
-        if (!isStoredBatch(batch) || batch.id !== entry.name) continue;
-        for (const item of batch.items) {
-          if (item.status === "processing") {
-            item.status = "failed";
-            item.progress = 100;
-            item.error = "服务重启导致生成中断，可在详情中重新生成";
-            item.updatedAt = new Date().toISOString();
-          }
+    if (!this.database.isDomainInitialized("chatterbox-batch")) {
+      for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !isSafeId(entry.name)) continue;
+        try {
+          const batch = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxBatch;
+          if (!isStoredBatch(batch) || batch.id !== entry.name) continue;
+          await this.write(batch);
+        } catch {
+          // Invalid legacy metadata stays untouched for manual recovery.
         }
-        batch.referenceAvailable = await fileExists(this.paths(batch.id).reference);
-        this.applyAggregate(batch);
-        await this.write(batch);
-        this.batches.set(batch.id, batch);
-      } catch {
-        // Ignore incomplete batch directories.
       }
+      this.database.markDomainInitialized("chatterbox-batch");
+      this.database.markDomainInitialized("chatterbox-item");
+    }
+    for (const entity of this.database.list("chatterbox-batch")) {
+      const batch = entity.payload as ChatterboxBatch;
+      if (!isStoredBatch(batch)) continue;
+      for (const item of batch.items) {
+        if (item.status === "queued" || item.status === "processing") {
+          item.status = "failed";
+          item.progress = 100;
+          item.error = "INTERRUPTED";
+          item.updatedAt = new Date().toISOString();
+        }
+      }
+      batch.referenceAvailable = await fileExists(this.paths(batch.id).reference);
+      this.applyAggregate(batch);
+      await this.write(batch);
+      this.batches.set(batch.id, batch);
     }
   }
 
@@ -955,7 +991,12 @@ class ChatterboxBatchStore {
 
   async remove(id: string) {
     if (!isSafeId(id)) return false;
+    const batch = this.batches.get(id);
     this.batches.delete(id);
+    this.database.transaction(() => {
+      for (const item of batch?.items ?? []) this.database.remove("chatterbox-item", item.id);
+      this.database.remove("chatterbox-batch", id);
+    });
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -1016,7 +1057,31 @@ class ChatterboxBatchStore {
   }
 
   private async write(batch: ChatterboxBatch) {
-    await writeJsonAtomic(this.paths(batch.id).meta, batch);
+    this.database.transaction(() => {
+      this.database.upsert({
+        id: batch.id,
+        kind: "chatterbox-batch",
+        status: batch.status,
+        payload: batch,
+        createdAt: batch.createdAt,
+        updatedAt: batch.updatedAt
+      });
+      const itemIds = new Set(batch.items.map((item) => item.id));
+      for (const entity of this.database.list("chatterbox-item")) {
+        const payload = entity.payload as { batchId?: string };
+        if (payload.batchId === batch.id && !itemIds.has(entity.id)) this.database.remove("chatterbox-item", entity.id);
+      }
+      for (const item of batch.items) {
+        this.database.upsert({
+          id: item.id,
+          kind: "chatterbox-item",
+          status: item.status,
+          payload: { ...item, batchId: batch.id },
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt
+        });
+      }
+    });
   }
 }
 
@@ -1348,21 +1413,21 @@ function toPublicBatch(batch: ChatterboxBatch): ChatterboxBatch {
   const result = cloneBatch(batch);
   result.items = result.items.map((item) => {
     if (item.audioBytes) {
-      item.audioUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/items/${item.id}/audio`;
-      item.downloadUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/items/${item.id}/download`;
+      item.audioUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/items/${item.id}/audio`;
+      item.downloadUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/items/${item.id}/download`;
     }
     return item;
   });
-  if (result.completedItems) result.archiveUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/download.zip`;
+  if (result.completedItems) result.archiveUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/download.zip`;
   if (result.status === "completed" && result.items.length > 1) {
-    result.combinedAudioUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/combined-audio`;
+    result.combinedAudioUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/combined-audio`;
   }
   if (result.status === "completed" && result.includeSubtitles) {
-    result.subtitleUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/subtitle`;
+    result.subtitleUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/subtitle`;
     if (hasReferenceTranslation(result)) {
-      result.translationSubtitleUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/subtitle.zh-CN`;
+      result.translationSubtitleUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/subtitle.zh-CN`;
       if (result.items.length > 1) {
-        result.bilingualSubtitleUrl = `/api/tools/edge-tts/chatterbox/batches/${batch.id}/subtitle.bilingual`;
+        result.bilingualSubtitleUrl = `/api/v1/tools/edge-tts/chatterbox/batches/${batch.id}/subtitle.bilingual`;
       }
     }
   }
@@ -1374,7 +1439,7 @@ function hasReferenceTranslation(batch: ChatterboxBatch) {
 }
 
 function toPublicVoice(voice: StoredVoice): ChatterboxSavedVoice {
-  return { ...voice, audioUrl: `/api/tools/edge-tts/chatterbox/voices/${voice.id}/audio` };
+  return { ...voice, audioUrl: `/api/v1/tools/edge-tts/chatterbox/voices/${voice.id}/audio` };
 }
 
 function toBatchSummary(batch: ChatterboxBatch) {

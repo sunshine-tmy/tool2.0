@@ -26,7 +26,7 @@ type ChatterboxCreateTaskInput = {
   fileName?: string;
 };
 
-export type ChatterboxBatchSegmentInput = { text: string; referenceTranslation?: string; fileName?: string };
+type ChatterboxBatchSegmentInput = { text: string; referenceTranslation?: string; fileName?: string };
 
 type ChatterboxCreateBatchInput = Omit<ChatterboxCreateTaskInput, "text" | "fileName" | "reference"> & {
   reference?: File;

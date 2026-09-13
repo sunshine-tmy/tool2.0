@@ -8,14 +8,22 @@ export class ApiRequestError extends Error {
   code: string;
   status?: number;
   details?: unknown;
+  requestId?: string;
+  retryable: boolean;
   cause?: unknown;
 
-  constructor(message: string, options: { code: string; status?: number; details?: unknown; cause?: unknown }) {
+  constructor(
+    message: string,
+    options: { code: string; status?: number; details?: unknown; requestId?: string; cause?: unknown }
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.code = options.code;
     this.status = options.status;
     this.details = options.details;
+    this.requestId = options.requestId;
+    this.retryable =
+      options.status === undefined || options.status === 408 || options.status === 429 || options.status >= 500;
     this.cause = options.cause;
   }
 }
@@ -25,6 +33,11 @@ const api = axios.create({
   timeout: 120000,
   withCredentials: true
 });
+let adminCsrfToken: string | undefined;
+
+export function setAdminCsrfToken(token: string | undefined) {
+  adminCsrfToken = token;
+}
 
 export async function withApiError<T>(operation: () => Promise<T>, fallbackMessage = "请求失败") {
   try {
@@ -47,6 +60,7 @@ export function normalizeApiError(error: unknown, fallbackMessage = "请求失�
       code: responseData.error?.code || "REQUEST_FAILED",
       status,
       details: responseData.error?.details,
+      requestId: responseData.requestId,
       cause: error
     });
   }
@@ -58,7 +72,7 @@ export function normalizeApiError(error: unknown, fallbackMessage = "请求失�
   });
 }
 
-function createHttpClient(instance: AxiosInstance = api) {
+export function createHttpClient(instance: AxiosInstance = api) {
   return {
     async get<T>(url: string, config?: AxiosRequestConfig) {
       const response = await instance.get<unknown, AxiosResponse<unknown>>(url, config);
@@ -66,12 +80,12 @@ function createHttpClient(instance: AxiosInstance = api) {
     },
 
     async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
-      const response = await instance.post<unknown, AxiosResponse<unknown>>(url, data, config);
+      const response = await instance.post<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
       return unwrapResponse<T>(response.data);
     },
 
     async postBlob(url: string, data?: unknown, config?: AxiosRequestConfig) {
-      const response = await instance.post<Blob>(url, data, { ...config, responseType: "blob" });
+      const response = await instance.post<Blob>(url, data, withWriteSecurity({ ...config, responseType: "blob" }));
       return {
         blob: response.data,
         contentDisposition: response.headers["content-disposition"] as string | undefined
@@ -79,17 +93,17 @@ function createHttpClient(instance: AxiosInstance = api) {
     },
 
     async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
-      const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, config);
+      const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
       return unwrapResponse<T>(response.data);
     },
 
     async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
-      const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, config);
+      const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
       return unwrapResponse<T>(response.data);
     },
 
     async delete<T>(url: string, config?: AxiosRequestConfig) {
-      const response = await instance.delete<unknown, AxiosResponse<unknown>>(url, config);
+      const response = await instance.delete<unknown, AxiosResponse<unknown>>(url, withWriteSecurity(config));
       return unwrapResponse<T>(response.data);
     }
   };
@@ -97,11 +111,23 @@ function createHttpClient(instance: AxiosInstance = api) {
 
 export const httpClient = createHttpClient();
 
+function withWriteSecurity(config?: AxiosRequestConfig): AxiosRequestConfig {
+  if (!adminCsrfToken) return config ?? {};
+  return {
+    ...config,
+    headers: {
+      ...config?.headers,
+      "x-csrf-token": adminCsrfToken
+    }
+  };
+}
+
 function unwrapResponse<T>(data: unknown) {
   if (isBackendFailure(data)) {
     throw new ApiRequestError(data.message, {
       code: data.error.code,
-      details: data.error.details
+      details: data.error.details,
+      requestId: data.requestId
     });
   }
 
@@ -109,7 +135,9 @@ function unwrapResponse<T>(data: unknown) {
     return data.data;
   }
 
-  return data as T;
+  throw new ApiRequestError("服务响应未通过 API 契约校验", {
+    code: "INVALID_API_RESPONSE"
+  });
 }
 
 function isBackendSuccess<T>(value: unknown): value is Extract<ApiResponse<T>, { success: true }> {
@@ -122,7 +150,8 @@ function isBackendFailure(value: unknown): value is BackendFailure {
     value.success === false &&
     typeof value.message === "string" &&
     isRecord(value.error) &&
-    typeof value.error.code === "string"
+    typeof value.error.code === "string" &&
+    (value.requestId === undefined || typeof value.requestId === "string")
   );
 }
 

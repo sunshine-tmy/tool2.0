@@ -56,7 +56,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
   await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
 
-  app.post("/api/tools/video-text/tasks", async (request, reply) => {
+  app.post("/api/v1/tools/video-text/tasks", async (request, reply) => {
     const file = await request.file();
     if (!file) {
       return reply.code(400).send(fail("FILE_REQUIRED", "Please upload a video file"));
@@ -78,7 +78,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     );
   });
 
-  app.post("/api/tools/video-text/tasks/from-url", async (request, reply) => {
+  app.post("/api/v1/tools/video-text/tasks/from-url", async (request, reply) => {
     const body = request.body as { url?: string; fileName?: string } | undefined;
     const sourceUrl = typeof body?.url === "string" ? body.url.trim() : "";
 
@@ -115,7 +115,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     }
   });
 
-  app.get("/api/tools/video-text/remote-video", async (request, reply) => {
+  app.get("/api/v1/tools/video-text/remote-video", async (request, reply) => {
     const query = request.query as { url?: string };
     const sourceUrl = typeof query.url === "string" ? query.url.trim() : "";
 
@@ -143,7 +143,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     }
   });
 
-  app.get("/api/tools/video-text/history", async (request) => {
+  app.get("/api/v1/tools/video-text/history", async (request) => {
     const query = request.query as {
       keyword?: string;
       page?: string;
@@ -165,7 +165,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     });
   });
 
-  app.get("/api/tools/video-text/history/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/video-text/history/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     if (!isValidTaskId(taskId)) {
       return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
@@ -177,7 +177,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     return ok(result);
   });
 
-  app.delete("/api/tools/video-text/history/:taskId", async (request, reply) => {
+  app.delete("/api/v1/tools/video-text/history/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     if (!isValidTaskId(taskId)) {
       return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
@@ -193,7 +193,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     return ok({ removed: true });
   });
 
-  app.get("/api/tools/video-text/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/video-text/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     if (!isValidTaskId(taskId)) {
       return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
@@ -209,7 +209,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     });
   });
 
-  app.get("/api/tools/video-text/tasks/:taskId/result", async (request, reply) => {
+  app.get("/api/v1/tools/video-text/tasks/:taskId/result", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     if (!isValidTaskId(taskId)) {
       return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
@@ -221,7 +221,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     return ok(result);
   });
 
-  app.get("/api/tools/video-text/tasks/:taskId/export", async (request, reply) => {
+  app.get("/api/v1/tools/video-text/tasks/:taskId/export", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     if (!isValidTaskId(taskId)) {
       return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
@@ -245,7 +245,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     return reply.send(body);
   });
 
-  app.delete("/api/tools/video-text/tasks/:taskId", async (request, reply) => {
+  app.delete("/api/v1/tools/video-text/tasks/:taskId", async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     if (!isValidTaskId(taskId)) {
       return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));

@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 import {
   fail,
@@ -17,6 +17,7 @@ import {
 } from "@toolbox/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 import {
   assertRemoteResponseSize,
   fetchRemoteResponse,
@@ -35,9 +36,10 @@ export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
   config: AppConfig;
   remoteFetch: RemoteFetch;
+  database: ToolboxDatabase;
 }) {
-  const { app, config, remoteFetch } = options;
-  const store = new XhsArchiveStore(config);
+  const { app, config, remoteFetch, database } = options;
+  const store = new XhsArchiveStore(config, database);
   const runtime = new XhsRuntimeManager(config);
   const auth = new XhsAuthManager(config);
   const translationRuntime = new XhsTranslationRuntime(config);
@@ -46,13 +48,13 @@ export async function registerXhsArchiveRoutes(options: {
   await store.initialize();
   await translation.recoverInterrupted();
 
-  app.get("/api/tools/xhs-archive/runtime", async () =>
+  app.get("/api/v1/tools/xhs-archive/runtime", async () =>
     ok({ ...runtime.getStatus(), authenticated: await auth.isAuthenticated() })
   );
 
-  app.get("/api/tools/xhs-archive/translation/runtime", async () => ok(translation.getRuntimeStatus()));
+  app.get("/api/v1/tools/xhs-archive/translation/runtime", async () => ok(translation.getRuntimeStatus()));
 
-  app.post("/api/tools/xhs-archive/items/:id/translation", async (request, reply) => {
+  app.post("/api/v1/tools/xhs-archive/items/:id/translation", async (request, reply) => {
     const id = (request.params as { id: string }).id;
     if (!(await store.get(id))) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     const force = record(request.body).force === true;
@@ -60,12 +62,12 @@ export async function registerXhsArchiveRoutes(options: {
     return task ? reply.code(202).send(ok(task)) : ok({ status: "completed", message: "英文翻译已是最新" });
   });
 
-  app.get("/api/tools/xhs-archive/translation/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/xhs-archive/translation/tasks/:taskId", async (request, reply) => {
     const task = translation.getTask((request.params as { taskId: string }).taskId);
     return task ? ok(task) : reply.code(404).send(fail("XHS_TRANSLATION_TASK_NOT_FOUND", "翻译任务不存在"));
   });
 
-  app.post("/api/tools/xhs-archive/translation/batches", async (request, reply) => {
+  app.post("/api/v1/tools/xhs-archive/translation/batches", async (request, reply) => {
     const body = record(request.body);
     const mode = body.mode;
     let ids: string[] = [];
@@ -96,7 +98,7 @@ export async function registerXhsArchiveRoutes(options: {
     return task ? reply.code(202).send(ok(task)) : ok({ status: "completed", message: "没有需要翻译的存档" });
   });
 
-  app.patch("/api/tools/xhs-archive/items/:id/translation", async (request, reply) => {
+  app.patch("/api/v1/tools/xhs-archive/items/:id/translation", async (request, reply) => {
     const id = (request.params as { id: string }).id;
     const item = await store.get(id);
     if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
@@ -151,7 +153,7 @@ export async function registerXhsArchiveRoutes(options: {
     return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
   });
 
-  app.post("/api/tools/xhs-archive/items/:id/translation/reset", async (request, reply) => {
+  app.post("/api/v1/tools/xhs-archive/items/:id/translation/reset", async (request, reply) => {
     const id = (request.params as { id: string }).id;
     const updated = await store.updateTranslation(id, (current) =>
       current.translation
@@ -171,7 +173,7 @@ export async function registerXhsArchiveRoutes(options: {
     return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
   });
 
-  app.post("/api/tools/xhs-archive/items", async (request, reply) => {
+  app.post("/api/v1/tools/xhs-archive/items", async (request, reply) => {
     const source = record(request.body).url;
     if (typeof source !== "string" || !extractXhsUrl(source))
       return reply.code(400).send(fail("XHS_URL_INVALID", "请输入有效的小红书链接或分享文案"));
@@ -181,12 +183,12 @@ export async function registerXhsArchiveRoutes(options: {
     return reply.code(202).send(ok(task));
   });
 
-  app.get("/api/tools/xhs-archive/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/xhs-archive/tasks/:taskId", async (request, reply) => {
     const task = tasks.get((request.params as { taskId: string }).taskId);
     return task ? ok(task) : reply.code(404).send(fail("XHS_TASK_NOT_FOUND", "获取任务不存在"));
   });
 
-  app.get("/api/tools/xhs-archive/items", async (request) => {
+  app.get("/api/v1/tools/xhs-archive/items", async (request) => {
     const query = request.query as { keyword?: string; type?: string; page?: string; pageSize?: string };
     return ok(
       await store.list({
@@ -198,12 +200,12 @@ export async function registerXhsArchiveRoutes(options: {
     );
   });
 
-  app.get("/api/tools/xhs-archive/items/:id", async (request, reply) => {
+  app.get("/api/v1/tools/xhs-archive/items/:id", async (request, reply) => {
     const item = await store.get((request.params as { id: string }).id);
     return item ? ok(item) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
   });
 
-  app.post("/api/tools/xhs-archive/items/:id/refresh", async (request, reply) => {
+  app.post("/api/v1/tools/xhs-archive/items/:id/refresh", async (request, reply) => {
     const item = await store.get((request.params as { id: string }).id);
     if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     const task = createTask();
@@ -212,7 +214,7 @@ export async function registerXhsArchiveRoutes(options: {
     return reply.code(202).send(ok(task));
   });
 
-  app.delete("/api/tools/xhs-archive/items/:id", async (request, reply) => {
+  app.delete("/api/v1/tools/xhs-archive/items/:id", async (request, reply) => {
     const id = (request.params as { id: string }).id;
     const item = await store.get(id);
     if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
@@ -220,7 +222,7 @@ export async function registerXhsArchiveRoutes(options: {
     return ok({ removed: true, mediaCount: item.media.length, releasedBytes: item.totalBytes });
   });
 
-  app.get("/api/tools/xhs-archive/items/:id/media/:mediaId", async (request, reply) => {
+  app.get("/api/v1/tools/xhs-archive/items/:id/media/:mediaId", async (request, reply) => {
     const { id, mediaId } = request.params as { id: string; mediaId: string };
     const value = await store.mediaPath(id, mediaId);
     if (!value) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
@@ -235,10 +237,10 @@ export async function registerXhsArchiveRoutes(options: {
     return sendRange(reply, value.filePath, stat.size, request.headers.range);
   });
 
-  app.get("/api/tools/xhs-archive/items/:id/download.zip", async (request, reply) => {
+  app.get("/api/v1/tools/xhs-archive/items/:id/download.zip", async (request, reply) => {
     const item = await store.get((request.params as { id: string }).id);
     if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-    const archive = archiver("zip", { zlib: { level: 6 } });
+    const archive = new ZipArchive({ zlib: { level: 6 } });
     reply
       .header("content-type", "application/zip")
       .header(
@@ -283,8 +285,8 @@ export async function registerXhsArchiveRoutes(options: {
     return reply.send(archive);
   });
 
-  app.post("/api/tools/xhs-archive/auth/start", async () => ok(auth.start()));
-  app.get("/api/tools/xhs-archive/auth/:sessionId", async (request, reply) => {
+  app.post("/api/v1/tools/xhs-archive/auth/start", async () => ok(auth.start()));
+  app.get("/api/v1/tools/xhs-archive/auth/:sessionId", async (request, reply) => {
     const session = auth.get((request.params as { sessionId: string }).sessionId);
     return session ? ok(session) : reply.code(404).send(fail("XHS_AUTH_SESSION_NOT_FOUND", "登录会话不存在"));
   });
@@ -500,8 +502,8 @@ export async function registerXhsArchiveRoutes(options: {
       mimeType,
       size: stat.size,
       checksum: hash.digest("hex"),
-      previewUrl: `/api/tools/xhs-archive/items/${itemId}/media/${id}`,
-      downloadUrl: `/api/tools/xhs-archive/items/${itemId}/media/${id}?download=1`
+      previewUrl: `/api/v1/tools/xhs-archive/items/${itemId}/media/${id}`,
+      downloadUrl: `/api/v1/tools/xhs-archive/items/${itemId}/media/${id}?download=1`
     } satisfies XhsArchiveMedia;
   }
 

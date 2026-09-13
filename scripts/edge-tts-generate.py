@@ -13,7 +13,6 @@ from typing import Any
 
 import edge_tts
 
-
 SUPPORTED_LOCALES = {"ms-MY", "en-US", "en-GB", "pt-BR"}
 MAX_TEXT_LENGTH = 20_000
 
@@ -157,4 +156,4 @@ if __name__ == "__main__":
     except Exception as error:
         sys.stderr.write(str(error))
         sys.stderr.flush()
-        raise SystemExit(1)
+        raise SystemExit(1) from error

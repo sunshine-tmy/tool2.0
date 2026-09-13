@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
   };
   return {
     envDir: repositoryRoot,
+    build: { manifest: true },
     plugins: [vue()],
     resolve: {
       alias: {

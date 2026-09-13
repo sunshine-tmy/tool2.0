@@ -24,7 +24,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["image/jpeg", "image/png", "image/webp"],
     routePath: "/tools/image-compress",
-    apiNamespace: "/api/tools/image-compress"
+    apiNamespace: "/api/v1/tools/image-compress"
   },
   {
     id: "image-ai",
@@ -35,7 +35,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["image/jpeg", "image/png", "image/webp"],
     routePath: "/tools/image-ai",
-    apiNamespace: "/api/tools/image-ai"
+    apiNamespace: "/api/v1/tools/image-ai"
   },
   {
     id: "lan-transfer",
@@ -46,7 +46,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["*/*"],
     routePath: "/tools/lan-transfer",
-    apiNamespace: "/api/tools/lan-transfer"
+    apiNamespace: "/api/v1/tools/lan-transfer"
   },
   {
     id: "video-text",
@@ -57,7 +57,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["video/mp4", "video/webm", "video/quicktime"],
     routePath: "/tools/video-text",
-    apiNamespace: "/api/tools/video-text"
+    apiNamespace: "/api/v1/tools/video-text"
   },
   {
     id: "edge-tts",
@@ -68,7 +68,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["text/plain"],
     routePath: "/tools/edge-tts",
-    apiNamespace: "/api/tools/edge-tts"
+    apiNamespace: "/api/v1/tools/edge-tts"
   },
   {
     id: "short-video",
@@ -79,7 +79,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["text/plain"],
     routePath: "/tools/short-video",
-    apiNamespace: "/api/tools/short-video"
+    apiNamespace: "/api/v1/tools/short-video"
   },
   {
     id: "xhs-archive",
@@ -90,7 +90,7 @@ const tools: ToolDefinition[] = [
     requiresAuth: false,
     acceptedTypes: ["text/plain"],
     routePath: "/tools/xhs-archive",
-    apiNamespace: "/api/tools/xhs-archive"
+    apiNamespace: "/api/v1/tools/xhs-archive"
   }
 ];
 

@@ -24,6 +24,7 @@ import {
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 import { registerChatterboxBatchRoutes } from "./batch-routes";
 import { ChatterboxWorkerError, createChatterboxWorkerClient } from "./worker-client";
 
@@ -56,8 +57,8 @@ type ChatterboxCreateInput = Pick<
   | "fileName"
 >;
 
-export async function registerChatterboxRoutes(app: FastifyInstance, config: AppConfig) {
-  const store = new ChatterboxTaskStore(config.chatterboxTasksDir);
+export async function registerChatterboxRoutes(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
+  const store = new ChatterboxTaskStore(config.chatterboxTasksDir, database);
   const worker = createChatterboxWorkerClient(config);
   const media = new ChatterboxMediaTools(config);
   await store.initialize();
@@ -77,13 +78,14 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
     config,
     worker,
     media,
+    database,
     externalQueueStats: () => queue.stats()
   });
   for (const task of store.list()) {
     if (task.status === "queued") queue.enqueue(task.id);
   }
 
-  app.get("/api/tools/edge-tts/chatterbox/health", async () => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/health", async () => {
     let status: Awaited<ReturnType<typeof worker.health>> | undefined;
     try {
       status = await workerHealth();
@@ -97,6 +99,7 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
       queued: legacyStats.queued + batchStats.queued
     };
     const data: ChatterboxHealth = {
+      protocolVersion: status?.protocolVersion ?? 1,
       available: status?.available === true,
       workerAvailable: status?.available === true,
       packageVersion: status?.packageVersion,
@@ -123,7 +126,7 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
     return ok(data);
   });
 
-  app.post("/api/tools/edge-tts/chatterbox/tasks", async (request, reply) => {
+  app.post("/api/v1/tools/edge-tts/chatterbox/tasks", async (request, reply) => {
     const batchStats = batchQueue.stats();
     if (
       queue.stats().active + queue.stats().queued + batchStats.active + batchStats.queued >=
@@ -165,7 +168,7 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
     }
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/tasks", async (request) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/tasks", async (request) => {
     const query = request.query as { page?: string; pageSize?: string };
     const page = positiveInteger(query.page, 1);
     const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
@@ -181,25 +184,25 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
     return ok(data);
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/tasks/:taskId", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId", async (request, reply) => {
     const task = store.get(taskIdFrom(request.params));
     if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
     return ok(toPublicTask(task));
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/tasks/:taskId/audio", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/audio", async (request, reply) => {
     return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, false);
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/tasks/:taskId/download", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/download", async (request, reply) => {
     return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, true);
   });
 
-  app.get("/api/tools/edge-tts/chatterbox/tasks/:taskId/subtitle", async (request, reply) => {
+  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/subtitle", async (request, reply) => {
     return sendTaskFile(store, taskIdFrom(request.params), "subtitle", reply, true);
   });
 
-  app.delete("/api/tools/edge-tts/chatterbox/tasks/:taskId", async (request, reply) => {
+  app.delete("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId", async (request, reply) => {
     const taskId = taskIdFrom(request.params);
     const task = store.get(taskId);
     if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
@@ -224,25 +227,37 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
 class ChatterboxTaskStore {
   private readonly tasks = new Map<string, ChatterboxTask>();
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly database: ToolboxDatabase
+  ) {}
 
   async initialize() {
     await fsp.mkdir(this.root, { recursive: true });
-    for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !isSafeTaskId(entry.name)) continue;
-      try {
-        const task = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxTask;
-        if (!isStoredTask(task) || task.id !== entry.name) continue;
-        if (task.status === "processing") {
-          task.status = "failed";
-          task.error = "服务重启导致本地生成中断，请重新上传参考音色";
-          task.updatedAt = new Date().toISOString();
+    if (!this.database.isDomainInitialized("chatterbox-task")) {
+      for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !isSafeTaskId(entry.name)) continue;
+        try {
+          const task = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxTask;
+          if (!isStoredTask(task) || task.id !== entry.name) continue;
           await this.write(task);
+        } catch {
+          // Invalid legacy metadata stays untouched for manual recovery.
         }
-        this.tasks.set(task.id, task);
-      } catch {
-        // Ignore incomplete task directories.
       }
+      this.database.markDomainInitialized("chatterbox-task");
+    }
+    for (const entity of this.database.list("chatterbox-task")) {
+      const task = entity.payload as ChatterboxTask;
+      if (!isStoredTask(task)) continue;
+      if (task.status === "queued" || task.status === "processing") {
+        task.status = "failed";
+        task.progress = 100;
+        task.error = "INTERRUPTED";
+        task.updatedAt = new Date().toISOString();
+        await this.write(task);
+      }
+      this.tasks.set(task.id, task);
     }
   }
 
@@ -289,6 +304,7 @@ class ChatterboxTaskStore {
   async remove(id: string) {
     if (!isSafeTaskId(id)) return false;
     this.tasks.delete(id);
+    this.database.remove("chatterbox-task", id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -314,7 +330,14 @@ class ChatterboxTaskStore {
   }
 
   private async write(task: ChatterboxTask) {
-    await writeJsonAtomic(this.paths(task.id).meta, task);
+    this.database.upsert({
+      id: task.id,
+      kind: "chatterbox-task",
+      status: task.status,
+      payload: task,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt
+    });
   }
 }
 
@@ -617,9 +640,9 @@ async function sendTaskFile(
 function toPublicTask(task: ChatterboxTask): ChatterboxTask {
   const result = cloneTask(task);
   if (task.status === "completed") {
-    result.audioUrl = `/api/tools/edge-tts/chatterbox/tasks/${task.id}/audio`;
-    result.downloadUrl = `/api/tools/edge-tts/chatterbox/tasks/${task.id}/download`;
-    if (task.includeSubtitles) result.subtitleUrl = `/api/tools/edge-tts/chatterbox/tasks/${task.id}/subtitle`;
+    result.audioUrl = `/api/v1/tools/edge-tts/chatterbox/tasks/${task.id}/audio`;
+    result.downloadUrl = `/api/v1/tools/edge-tts/chatterbox/tasks/${task.id}/download`;
+    if (task.includeSubtitles) result.subtitleUrl = `/api/v1/tools/edge-tts/chatterbox/tasks/${task.id}/subtitle`;
   }
   return result;
 }
@@ -710,12 +733,6 @@ function sanitizeFileName(value: string) {
 function contentDisposition(fileName: string) {
   const ascii = fileName.replace(/[^\x20-\x7e]/g, "_").replaceAll('"', "");
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
-}
-
-async function writeJsonAtomic(filePath: string, value: unknown) {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fsp.writeFile(tempPath, JSON.stringify(value, null, 2), "utf8");
-  await fsp.rename(tempPath, filePath);
 }
 
 type SubtitleTimingSegment = {

@@ -648,7 +648,7 @@ function showFirstVideoFrame(event: Event) {
   video.currentTime = target;
 }
 function zipUrl(id: string) {
-  return resolveBackendUrl(`/api/tools/xhs-archive/items/${id}/download.zip`);
+  return resolveBackendUrl(`/api/v1/tools/xhs-archive/items/${id}/download.zip`);
 }
 function typeName(type: string) {
   return type === "video" ? "视频" : type === "live-photo" ? "Live Photo" : "图文";

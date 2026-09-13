@@ -1,9 +1,9 @@
-import type { ChatterboxHealth, ChatterboxLanguage } from "@toolbox/shared";
+import { WORKER_PROTOCOL_VERSION, type ChatterboxHealth, type ChatterboxLanguage } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 
 type WorkerHealth = Pick<
   ChatterboxHealth,
-  "available" | "packageVersion" | "model" | "modelLoaded" | "device" | "gpuName" | "watermarked"
+  "protocolVersion" | "available" | "packageVersion" | "model" | "modelLoaded" | "device" | "gpuName" | "watermarked"
 > & { message?: string };
 
 type WorkerGenerateResult = {
@@ -35,8 +35,12 @@ export class ChatterboxWorkerError extends Error {
 
 export function createChatterboxWorkerClient(config: AppConfig) {
   return {
-    health() {
-      return requestWorker<WorkerHealth>(config, "/health", { method: "GET" }, 10_000);
+    async health() {
+      const health = await requestWorker<WorkerHealth>(config, "/health", { method: "GET" }, 10_000);
+      if (health.protocolVersion !== WORKER_PROTOCOL_VERSION) {
+        throw new ChatterboxWorkerError("WORKER_PROTOCOL_MISMATCH", "Chatterbox Worker 协议版本与主程序不兼容");
+      }
+      return health;
     },
 
     generate(input: {

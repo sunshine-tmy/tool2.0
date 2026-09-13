@@ -54,4 +54,45 @@ describe("LAN transfer text-image API", () => {
       ids: ["note-1", "note-2"]
     });
   });
+
+  it("covers resumable upload, file listing, preview, expiry, deletion and download operations", async () => {
+    for (const method of Object.values(httpMock)) method.mockResolvedValue({});
+    const file = new File(["payload"], "payload.txt", { type: "text/plain" });
+    const chunk = file.slice(0, 3);
+    const progress = vi.fn();
+    const controller = new AbortController();
+
+    await lanTransferApi.getInfo();
+    await lanTransferApi.unlock("246810");
+    await lanTransferApi.uploadFile(file, progress);
+    await lanTransferApi.createUploadSession({
+      originalName: file.name,
+      mimeType: file.type,
+      size: file.size,
+      chunkSize: 3,
+      totalChunks: 3
+    });
+    await lanTransferApi.getUploadStatus("upload-1");
+    await lanTransferApi.uploadChunk("upload-1", 0, chunk, progress, controller.signal);
+    await lanTransferApi.completeUpload("upload-1");
+    await lanTransferApi.cancelUpload("upload-1");
+    await lanTransferApi.listFiles({ page: 2, pageSize: 10 });
+    await lanTransferApi.getTextPreview("/tools/lan-transfer/files/file-1/preview");
+    await lanTransferApi.updateExpiry("file-1", 30);
+    await lanTransferApi.deleteFile("file-1");
+    await lanTransferApi.deleteFiles(["file-1", "file-2"]);
+    await lanTransferApi.downloadFiles(["file-1", "file-2"]);
+
+    expect(httpMock.put).toHaveBeenCalledWith(
+      "/tools/lan-transfer/uploads/upload-1/chunks/0",
+      expect.any(FormData),
+      expect.objectContaining({ onUploadProgress: progress, signal: controller.signal })
+    );
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/lan-transfer/files", {
+      params: { page: 2, pageSize: 10 }
+    });
+    expect(httpMock.postBlob).toHaveBeenCalledWith("/tools/lan-transfer/files/batch-download", {
+      ids: ["file-1", "file-2"]
+    });
+  });
 });

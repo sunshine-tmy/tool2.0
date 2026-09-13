@@ -69,7 +69,7 @@ describe("xhs archive api", () => {
     const app = await createApp({ remoteAddressResolver: publicResolver });
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/xhs-archive/items",
+      url: "/api/v1/tools/xhs-archive/items",
       payload: { url: "分享 https://www.xiaohongshu.com/explore/note-100?xsec_token=test" }
     });
     expect(created.statusCode).toBe(202);
@@ -78,7 +78,7 @@ describe("xhs archive api", () => {
 
     const detailResponse = await app.inject({
       method: "GET",
-      url: `/api/tools/xhs-archive/items/${firstTask.archiveId}`
+      url: `/api/v1/tools/xhs-archive/items/${firstTask.archiveId}`
     });
     const detail = detailResponse.json().data;
     expect(detail).toMatchObject({
@@ -100,21 +100,21 @@ describe("xhs archive api", () => {
     expect(preview.headers["content-range"]).toBe(`bytes 2-6/${image.length}`);
     expect(preview.rawPayload).toEqual(image.subarray(2, 7));
 
-    const zip = await app.inject({ method: "GET", url: `/api/tools/xhs-archive/items/${detail.id}/download.zip` });
+    const zip = await app.inject({ method: "GET", url: `/api/v1/tools/xhs-archive/items/${detail.id}/download.zip` });
     expect(zip.statusCode).toBe(200);
     expect(zip.headers["content-type"]).toBe("application/zip");
     expect(zip.rawPayload.subarray(0, 2).toString()).toBe("PK");
     expect(zip.headers["content-disposition"]).toContain("filename*=UTF-8''");
 
-    const refreshed = await app.inject({ method: "POST", url: `/api/tools/xhs-archive/items/${detail.id}/refresh` });
+    const refreshed = await app.inject({ method: "POST", url: `/api/v1/tools/xhs-archive/items/${detail.id}/refresh` });
     const refreshTask = await waitForTask(app, refreshed.json().data.id);
     expect(refreshTask.archiveId).toBe(detail.id);
-    const refreshedDetail = await app.inject({ method: "GET", url: `/api/tools/xhs-archive/items/${detail.id}` });
+    const refreshedDetail = await app.inject({ method: "GET", url: `/api/v1/tools/xhs-archive/items/${detail.id}` });
     expect(refreshedDetail.json().data.media[0].id).toBe(detail.media[0].id);
-    const list = await app.inject({ method: "GET", url: "/api/tools/xhs-archive/items?keyword=测试作者" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items?keyword=测试作者" });
     expect(list.json().data).toMatchObject({ total: 1 });
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/tools/xhs-archive/items/${detail.id}` });
+    const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/xhs-archive/items/${detail.id}` });
     expect(removed.json().data).toMatchObject({ removed: true, mediaCount: 1, releasedBytes: image.length });
     await app.close();
   });
@@ -124,7 +124,7 @@ describe("xhs archive api", () => {
     const app = await createApp({ remoteAddressResolver: publicResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/xhs-archive/items",
+      url: "/api/v1/tools/xhs-archive/items",
       payload: { url: "https://example.com/post" }
     });
     expect(response.statusCode).toBe(400);
@@ -136,7 +136,7 @@ describe("xhs archive api", () => {
 
 async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, id: string) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/xhs-archive/tasks/${id}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/xhs-archive/tasks/${id}` });
     const task = response.json().data;
     if (task.status === "completed" || task.status === "failed") return task;
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -146,7 +146,7 @@ async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, id: strin
 
 async function waitForTranslation(app: Awaited<ReturnType<typeof createApp>>, id: string) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/xhs-archive/items/${id}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/xhs-archive/items/${id}` });
     const item = response.json().data;
     if (item.translation?.status === "ready" || item.translation?.status === "failed") return item;
     await new Promise((resolve) => setTimeout(resolve, 20));

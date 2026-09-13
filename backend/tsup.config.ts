@@ -8,7 +8,7 @@ export default defineConfig({
   outDir: "dist",
   format: ["esm"],
   platform: "node",
-  target: "node20",
+  target: "node24",
   bundle: true,
   splitting: true,
   sourcemap: true,

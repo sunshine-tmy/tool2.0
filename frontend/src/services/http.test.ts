@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { ApiRequestError, normalizeApiError, withApiError } from "./http";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError, createHttpClient, normalizeApiError, setAdminCsrfToken, withApiError } from "./http";
+
+afterEach(() => setAdminCsrfToken(undefined));
 
 describe("api error wrapper", () => {
   it("returns successful results unchanged", async () => {
@@ -38,5 +40,24 @@ describe("api error wrapper", () => {
     expect(error).toBeInstanceOf(ApiRequestError);
     expect(error.message).toBe("请求失败");
     expect(error.code).toBe("REQUEST_FAILED");
+  });
+
+  it("adds the administrator CSRF token only to state-changing requests", async () => {
+    const instance = {
+      get: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null } }),
+      post: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null } })
+    };
+    const client = createHttpClient(instance as never);
+    setAdminCsrfToken("csrf-token");
+
+    await client.get("/health");
+    await client.post("/maintenance/cleanup", { ids: [] });
+
+    expect(instance.get).toHaveBeenCalledWith("/health", undefined);
+    expect(instance.post).toHaveBeenCalledWith(
+      "/maintenance/cleanup",
+      { ids: [] },
+      expect.objectContaining({ headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
+    );
   });
 });

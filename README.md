@@ -3,19 +3,19 @@
 一个本地优先、免账号登录的电商素材处理工作台。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
 
 > [!WARNING]
-> 本项目包含文件上传、下载、删除和高计算量 AI 接口，默认不启用账号系统；局域网传输可选管理 PIN 和访客权限。默认 API 仅监听 `127.0.0.1`，并使用精确 CORS 白名单。不要把 API 或 AI Worker 直接暴露到公网；局域网部署也应只在可信网络中使用。
+> 本项目包含文件上传、下载、删除和高计算量 AI 接口。`local` 模式默认只监听 `127.0.0.1`；`lan` 模式必须配置 `ADMIN_PIN`，管理写操作使用 HttpOnly 会话 Cookie、CSRF Header 和精确 Origin 校验，访客传输权限仍由 guest mode 控制。不要把 API 或 AI Worker 直接暴露到公网。
 
 ## 功能矩阵
 
-| 模块           | 前端路由                | API 命名空间                | 能力                                                   |
-| -------------- | ----------------------- | --------------------------- | ------------------------------------------------------ |
-| 图片压缩       | `/tools/image-compress` | `/api/tools/image-compress` | JPEG/PNG/WebP 批量压缩、缩放和格式转换                 |
-| AI 图片处理    | `/tools/image-ai`       | `/api/tools/image-ai/*`     | 去水印、清晰度增强、商品图抠图，本地模型推理           |
-| 局域网文件传输 | `/tools/lan-transfer`   | `/api/tools/lan-transfer/*` | 文件断点续传、剪贴板粘贴上传、图文快传、预览和过期清理 |
-| 视频文本解析   | `/tools/video-text`     | `/api/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出   |
-| 多国语言配音   | `/tools/edge-tts`       | `/api/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆         |
-| 短视频解析     | `/tools/short-video`    | `/api/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理      |
-| 小红书内容归档 | `/tools/xhs-archive`    | `/api/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地归档、预览与中英翻译  |
+| 模块           | 前端路由                | API 命名空间                   | 能力                                                   |
+| -------------- | ----------------------- | ------------------------------ | ------------------------------------------------------ |
+| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress` | JPEG/PNG/WebP 批量压缩、缩放和格式转换                 |
+| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`     | 去水印、清晰度增强、商品图抠图，本地模型推理           |
+| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*` | 文件断点续传、剪贴板粘贴上传、图文快传、预览和过期清理 |
+| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出   |
+| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆         |
+| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理      |
+| 小红书内容归档 | `/tools/xhs-archive`    | `/api/v1/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地归档、预览与中英翻译  |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
@@ -31,7 +31,8 @@ Browser
                  ├─ Python AI Worker：抠图、增强、去水印（可选）
                  ├─ Chatterbox V3 Worker：参考音色克隆（可选）
                  ├─ XHS-Downloader Worker：按首次使用安装的小红书解析适配器
-                 └─ storage/：本地运行数据
+                 ├─ SQLite（storage/toolbox.db）：元数据、任务与审计事实源
+                 └─ storage/：媒体、模型、临时文件与迁移备份
 ```
 
 ```text
@@ -39,7 +40,8 @@ frontend/                 Vue 前端
 backend/                  Fastify API、任务与存储逻辑
 packages/shared/          前后端共享类型、响应结构和领域工具
 scripts/                  启动、安装、Python Worker、测试和构建冒烟脚本
-storage/                  运行时上传、输出、任务和索引（不提交 Git）
+storage/                  SQLite、媒体、临时文件和迁移备份（不提交 Git）
+packaging/standalone/     由发布流水线使用的启动器与分发模板
 models/                   本地模型权重（不提交 Git）
 docs/api.md               API 说明
 ```
@@ -48,8 +50,8 @@ docs/api.md               API 说明
 
 必需：
 
-- Node.js `>=20 <25`（CI 使用 Node 24）
-- pnpm `>=10 <12`，项目锁定 `pnpm@11.7.0`
+- Node.js `>=24 <25`
+- pnpm `>=11 <12`，项目锁定 `pnpm@11.7.0`
 
 按功能可选：
 
@@ -91,7 +93,7 @@ Copy-Item .env.example .env
 .\package-source.bat
 ```
 
-脚本会在 `.package/ecommerce-toolbox-source.zip` 生成干净的源码包，不修改当前工作目录。源码包包含当前已提交及尚未提交但未被 Git 忽略的项目文件，并自动排除本机 `.env`、依赖、Python 虚拟环境、AI 模型、构建产物、日志、缓存和所有运行数据。接收方解压后运行 `start.bat` 即可按需重新安装运行环境。
+脚本通过 `git archive HEAD` 在 `.package/ecommerce-toolbox-source.zip` 生成可复现源码包，只包含当前提交；未提交和未跟踪文件不会进入产物，中文 Git 路径也不会被转义破坏。接收方解压后运行 `start.bat` 即可按需重新安装运行环境。
 
 ### 通用命令行启动
 
@@ -101,7 +103,7 @@ pnpm dev
 ```
 
 - 本机访问：<http://127.0.0.1:5173>
-- API 健康检查：<http://127.0.0.1:3100/api/health>
+- API 健康检查：<http://127.0.0.1:3100/api/v1/health>
 - 局域网访问：使用启动日志显示的 `http://<LAN-IP>:5173`
 
 开发前端通过 `/api` 代理到本机 API，因此无需把 3100 端口暴露给局域网客户端。
@@ -114,10 +116,13 @@ pnpm dev
 | --------------------------------------- | ----------------------- | ---------------------------------------------------- |
 | `API_HOST`                              | `127.0.0.1`             | API 监听地址；仅在明确需要直连 API 时改为 `0.0.0.0`  |
 | `API_PORT`                              | `3100`                  | API 端口，启动时校验范围                             |
+| `DEPLOYMENT_MODE`                       | `local`                 | `local` 仅本机；`lan` 面向可信局域网并强制管理员 PIN |
+| `ADMIN_PIN`                             | 空                      | `lan` 模式必填；用于建立浏览器管理员会话             |
 | `VITE_API_BASE`                         | 空                      | 空值使用同源 `/api`；分离部署时填写完整 API 地址     |
 | `VITE_API_PROXY_TARGET`                 | `http://127.0.0.1:3100` | Vite 开发/预览代理目标                               |
 | `CORS_ORIGINS`                          | localhost/127.0.0.1     | 允许直连 API 的精确浏览器 Origin，逗号分隔           |
 | `STORAGE_ROOT`                          | `./storage`             | 运行数据目录；相对路径始终基于仓库根目录解析         |
+| `DATABASE_PATH`                         | `storage/toolbox.db`    | SQLite 元数据数据库；通常无需覆盖                     |
 | `LAN_TRANSFER_MAX_FILE_BYTES`           | `21474836480`           | 局域网单文件上限，默认 20 GiB                        |
 | `LAN_TRANSFER_RETENTION_DAYS`           | `3`                     | 局域网文件和图文便签保留天数                         |
 | `LAN_TRANSFER_UPLOAD_RETENTION_HOURS`   | `24`                    | 未完成分片上传的保留时间                             |
@@ -157,7 +162,7 @@ pnpm dev
 
 完整变量及注释见 [.env.example](./.env.example)。所有整数配置都会在 API 启动时校验，非法值会直接终止启动，避免带错误配置运行。
 
-要启用局域网管理保护，请同时设置 `LAN_TRANSFER_PIN`，并把 `LAN_TRANSFER_GUEST_MODE` 设为 `upload-only`、`download-only` 或 `disabled`。保持 `full` 表示所有局域网设备仍拥有完整权限。
+局域网部署必须设置 `DEPLOYMENT_MODE=lan` 和 `ADMIN_PIN`，否则 API 拒绝启动。`LAN_TRANSFER_PIN` 与 `LAN_TRANSFER_GUEST_MODE` 只控制访客文件传输能力；删除、清理、AI、翻译、配音、归档和配置写操作始终要求管理员会话。
 
 ## 可选能力安装
 
@@ -231,6 +236,7 @@ pnpm dev:ai
 | `pnpm dev`                          | 并行启动前端和 API                                   |
 | `pnpm dev:web` / `pnpm dev:api`     | 单独启动某一侧                                       |
 | `pnpm test`                         | 运行全部 TypeScript/Vue 测试                         |
+| `pnpm coverage`                     | 执行 75/65 全局覆盖率门槛                            |
 | `pnpm test:python`                  | 运行无需模型的 faster-whisper 单元测试               |
 | `pnpm lint`                         | ESLint（TypeScript + Vue）                           |
 | `pnpm deadcode`                     | Knip 未使用文件、依赖与导出检查                      |
@@ -240,6 +246,10 @@ pnpm dev:ai
 | `pnpm check`                        | CI 同款完整质量门禁                                  |
 | `pnpm clean`                        | 删除构建与覆盖率产物                                 |
 | `pnpm clear:generated`              | 清空缓存、构建产物、日志和运行时生成数据（保留依赖） |
+| `pnpm db:migrate --dry-run`         | 预检旧 JSON 元数据迁移                               |
+| `pnpm db:verify`                    | 校验 SQLite 完整性、外键和记录统计                   |
+| `pnpm db:rollback --backup <id>`    | 从指定迁移备份恢复旧元数据                           |
+| `pnpm smoke:standalone`             | 验证分发包安装、启动、上传、下载和清理               |
 
 图片 AI 的可选环境测试：
 
@@ -261,7 +271,15 @@ pnpm start
 - `backend/dist/server.js`：可运行 API 入口
 - `frontend/dist`：静态站点
 
-构建末尾会从真实产物导入 shared、创建 Fastify 应用并调用 `/api/health`，防止“编译成功但产物无法运行”。`pnpm start` 只启动 API；生产环境还需要静态服务器托管 `frontend/dist`，并把 `/api` 反向代理到 `127.0.0.1:3100`。本地验证可在另一个终端运行 `pnpm preview:web`。
+构建末尾会从真实产物导入 shared、创建 Fastify 应用并调用 `/api/v1/health`，防止“编译成功但产物无法运行”。`pnpm start` 只启动 API；生产环境还需要静态服务器托管 `frontend/dist`，并把 `/api` 反向代理到 `127.0.0.1:3100`。本地验证可在另一个终端运行 `pnpm preview:web`。
+
+Standalone 不是第二套源码。运行 `pwsh ./scripts/package-standalone.ps1 -Platform windows` 或 `-Platform macos` 会从当前提交生成平台包、SHA-256、构建清单和第三方许可证清单；Release CI 另行生成 SBOM，并从 Python 官方固定地址下载安装器后校验摘要。
+
+## SQLite 迁移与回滚
+
+首次启动会先把旧 JSON/manifest 元数据复制到 `storage/migration-backups/<timestamp>`，再导入 `storage/toolbox.db`。媒体文件路径不变，旧元数据至少保留一个发布周期且不会作为新写入目标。SQLite 使用 WAL、外键、`busy_timeout` 和参数化语句；异常中断的任务在重启后标记为 `failed/INTERRUPTED`，必须由用户显式重试。
+
+升级前建议先运行 `pnpm db:migrate --dry-run`。迁移后用 `pnpm db:verify` 检查完整性；需要恢复时运行 `pnpm db:rollback --backup <id>`。不要手工删除数据库的 `-wal` 或 `-shm` 文件。
 
 生产部署应额外做到：TLS、可信网络访问控制、磁盘配额、日志轮转、备份和进程守护。若要暴露公网，必须先增加身份认证、授权、CSRF/速率限制和审计日志。
 
@@ -282,7 +300,7 @@ pnpm start
 健康检查：
 
 ```http
-GET /api/health
+GET /api/v1/health
 ```
 
 统一响应：
@@ -291,7 +309,8 @@ GET /api/health
 {
   "success": true,
   "message": "ok",
-  "data": {}
+  "data": {},
+  "requestId": "req-..."
 }
 ```
 
@@ -301,8 +320,10 @@ GET /api/health
   "message": "可读错误信息",
   "error": {
     "code": "STABLE_ERROR_CODE",
+    "message": "可读错误信息",
     "details": {}
-  }
+  },
+  "requestId": "req-..."
 }
 ```
 
@@ -312,7 +333,7 @@ GET /api/health
 
 1. 在 `packages/shared/src/tools.ts` 注册工具元数据和稳定 ID。
 2. 在 `packages/shared` 定义可复用 DTO、校验与响应契约，避免前后端复制类型。
-3. 后端模块只在 `/api/tools/<tool-id>` 下注册路由，并为上传大小、像素、超时、并发和磁盘占用设置独立上限。
+3. 后端模块只在 `/api/v1/tools/<tool-id>` 下注册路由，并为上传大小、像素、超时、并发和磁盘占用设置独立上限。
 4. 前端在 `frontend/src/modules/<tool-id>` 内维护页面、API 与纯函数，路由使用动态 import。
 5. 对路径、远程 URL、文件签名、失败清理和并发竞态补测试。
 6. 运行 `pnpm check`，确认 dead-code、生产构建和冒烟全部通过。

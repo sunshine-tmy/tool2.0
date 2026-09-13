@@ -11,7 +11,7 @@ let storageRoot: string;
 beforeEach(async () => {
   storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-short-video-"));
   process.env.STORAGE_ROOT = storageRoot;
-  process.env.SHORT_VIDEO_PARSE_API_URL = "https://provider.test/api/short_videos";
+  process.env.SHORT_VIDEO_PARSE_API_URL = "https://provider.test/api/v1/short_videos";
   process.env.SHORT_VIDEO_PARSE_TIMEOUT_MS = "5000";
   process.env.SHORT_VIDEO_PARSE_RETRIES = "0";
 });
@@ -52,7 +52,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: {
         input: "分享链接 https://v.douyin.com/abc123/",
         platform: "auto"
@@ -69,7 +69,7 @@ describe("short video api", () => {
     });
     expect(body.data.media).toEqual([expect.objectContaining({ type: "video", url: "https://cdn.test/video.mp4" })]);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://provider.test/api/short_videos?url=https%3A%2F%2Fv.douyin.com%2Fabc123%2F",
+      "https://provider.test/api/v1/short_videos?url=https%3A%2F%2Fv.douyin.com%2Fabc123%2F",
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
@@ -81,7 +81,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: {
         input: "https://example.com/video/1"
       }
@@ -115,7 +115,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: {
         input: "https://www.tiktok.com/@creator/video/123456789",
         platform: "tiktok"
@@ -130,7 +130,7 @@ describe("short video api", () => {
       media: [{ type: "video", url: "https://cdn.test/tiktok.mp4" }]
     });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://provider.test/api/short_videos?url=https%3A%2F%2Fwww.tiktok.com%2F%40creator%2Fvideo%2F123456789",
+      "https://provider.test/api/v1/short_videos?url=https%3A%2F%2Fwww.tiktok.com%2F%40creator%2Fvideo%2F123456789",
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
@@ -142,7 +142,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: {
         input: "https://www.tiktok.com/@creator/video/123456789",
         platform: "douyin"
@@ -169,8 +169,8 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const payload = { input: "https://vm.tiktok.com/abc123/", platform: "auto" };
 
-    const first = await app.inject({ method: "POST", url: "/api/tools/short-video/parse", payload });
-    const second = await app.inject({ method: "POST", url: "/api/tools/short-video/parse", payload });
+    const first = await app.inject({ method: "POST", url: "/api/v1/tools/short-video/parse", payload });
+    const second = await app.inject({ method: "POST", url: "/api/v1/tools/short-video/parse", payload });
 
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(200);
@@ -202,7 +202,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: { input: "https://www.tiktok.com/@creator/video/123456789" }
     });
 
@@ -236,7 +236,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: { input: "https://www.tiktok.com/@creator/video/123456789" }
     });
 
@@ -256,7 +256,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: {
         input: "https://www.xiaohongshu.com/explore/abc",
         platform: "xiaohongshu"
@@ -282,7 +282,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "GET",
-      url: `/api/tools/short-video/download?url=${encodeURIComponent(
+      url: `/api/v1/tools/short-video/download?url=${encodeURIComponent(
         "https://cdn.test/video.mp4"
       )}&filename=${encodeURIComponent("Public Video.mp4")}`
     });
@@ -311,7 +311,7 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "GET",
-      url: `/api/tools/short-video/download?url=${encodeURIComponent(
+      url: `/api/v1/tools/short-video/download?url=${encodeURIComponent(
         "https://cdn.test/video.mp4"
       )}&filename=${encodeURIComponent("默认视频.mp4")}`
     });
@@ -353,12 +353,12 @@ describe("short video api", () => {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     await app.inject({
       method: "GET",
-      url: `/api/tools/short-video/download?url=${encodeURIComponent("https://cdn.test/video.mp4")}`
+      url: `/api/v1/tools/short-video/download?url=${encodeURIComponent("https://cdn.test/video.mp4")}`
     });
 
     const retry = await app.inject({
       method: "POST",
-      url: "/api/tools/short-video/parse",
+      url: "/api/v1/tools/short-video/parse",
       payload: { input: "https://v.douyin.com/abc123/" }
     });
 

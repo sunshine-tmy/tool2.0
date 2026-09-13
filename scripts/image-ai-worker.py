@@ -43,10 +43,11 @@ os.environ.setdefault("U2NET_HOME", str(ROOT / "models" / "image-ai" / "rembg"))
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from PIL import Image
+from pydantic import BaseModel
 
 Image.MAX_IMAGE_PIXELS = 100_000_000
+
 
 def project_path(value: str | Path) -> Path:
     candidate = Path(value)
@@ -142,8 +143,8 @@ class ModelManager:
             return self.gpu_model
         self.unload_gpu()
         try:
-            from simple_lama_inpainting import SimpleLama
             import torch
+            from simple_lama_inpainting import SimpleLama
         except ImportError as exc:
             raise WorkerFailure("LAMA_UNAVAILABLE", "未安装 LaMa 推理组件，请运行图片 AI 安装脚本") from exc
         model_path = project_path(
@@ -210,7 +211,7 @@ class ModelManager:
         self.gpu_key = key
         return self.gpu_model
 
-    def get_bria(self) -> tuple[Any, Any]:
+    def get_bria(self) -> tuple[Any, Any, Any]:
         if self.gpu_key == "bria-rmbg-2.0":
             return self.gpu_model
         self.unload_gpu()
@@ -281,7 +282,7 @@ def install_basicsr_torchvision_compat() -> None:
     from torchvision.transforms.functional import rgb_to_grayscale
 
     compatibility_module = types.ModuleType(module_name)
-    compatibility_module.rgb_to_grayscale = rgb_to_grayscale
+    setattr(compatibility_module, "rgb_to_grayscale", rgb_to_grayscale)  # noqa: B010
     sys.modules[module_name] = compatibility_module
 
 
@@ -345,6 +346,7 @@ async def health() -> dict[str, Any]:
     return {
         "success": True,
         "data": {
+            "protocolVersion": 1,
             "available": any(item["available"] for item in models[:4]),
             "deploymentUsage": "internal-noncommercial" if internal else "commercial",
             "workerUrl": f"http://{HOST}:{PORT}",
@@ -401,7 +403,7 @@ def run_ocr(input_path: Path) -> dict[str, Any]:
             result = data.get("res", data) if isinstance(data, dict) else {}
             polygons = result.get("dt_polys", [])
             scores = result.get("dt_scores", [1.0] * len(polygons))
-            for polygon, score in zip(polygons, scores):
+            for polygon, score in zip(polygons, scores, strict=False):
                 suggestions.append(normalized_polygon(polygon, float(score), width, height))
     else:
         predictions = ocr.ocr(str(input_path), cls=False)
@@ -472,9 +474,7 @@ def run_realesrgan(input_path: Path, output_path: Path, scale: int) -> dict[str,
     raise WorkerFailure("REALESRGAN_FAILED", "Real-ESRGAN 推理失败")
 
 
-def run_background_removal(
-    input_path: Path, output_path: Path, deployment_usage: str
-) -> dict[str, Any]:
+def run_background_removal(input_path: Path, output_path: Path, deployment_usage: str) -> dict[str, Any]:
     warnings: list[str] = []
     if deployment_usage == "internal-noncommercial":
         try:
@@ -496,7 +496,9 @@ def run_bria(input_path: Path, output_path: Path) -> None:
         tensor = transform(image).unsqueeze(0).to(manager.device())
         with torch.no_grad():
             prediction = model(tensor)[-1].sigmoid().cpu()[0].squeeze()
-        mask = Image.fromarray((prediction.numpy() * 255).astype("uint8")).resize(original_size, Image.Resampling.LANCZOS)
+        mask = Image.fromarray((prediction.numpy() * 255).astype("uint8")).resize(
+            original_size, Image.Resampling.LANCZOS
+        )
         image.putalpha(mask)
         image.save(output_path, format="PNG", optimize=True)
 

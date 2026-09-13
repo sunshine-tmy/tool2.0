@@ -6,6 +6,7 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createApp } from "../app";
+import { ToolboxDatabase } from "../database/toolbox-database";
 
 let storageRoot: string;
 let workerServer: http.Server;
@@ -20,6 +21,7 @@ beforeEach(async () => {
   if (!address || typeof address === "string") throw new Error("Fake worker did not bind");
   workerUrl = `http://127.0.0.1:${address.port}`;
   process.env.STORAGE_ROOT = storageRoot;
+  process.env.DATABASE_PATH = path.join(storageRoot, "toolbox.db");
   process.env.IMAGE_AI_WORKER_URL = workerUrl;
   process.env.DEPLOYMENT_USAGE = "internal-noncommercial";
 });
@@ -29,6 +31,7 @@ afterEach(async () => {
   app = undefined;
   await new Promise<void>((resolve) => workerServer.close(() => resolve()));
   delete process.env.STORAGE_ROOT;
+  delete process.env.DATABASE_PATH;
   delete process.env.IMAGE_AI_WORKER_URL;
   delete process.env.DEPLOYMENT_USAGE;
   await fs.rm(storageRoot, { recursive: true, force: true });
@@ -37,7 +40,7 @@ afterEach(async () => {
 describe("image ai api", () => {
   it("reports local worker model and license health", async () => {
     app = await createApp();
-    const response = await app.inject({ method: "GET", url: "/api/tools/image-ai/health" });
+    const response = await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/health" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data.available).toBe(true);
@@ -51,7 +54,7 @@ describe("image ai api", () => {
     await new Promise<void>((resolve) => workerServer.listen(Number(new URL(workerUrl).port), "127.0.0.1", resolve));
     app = await createApp();
 
-    const response = await app.inject({ method: "GET", url: "/api/tools/image-ai/health" });
+    const response = await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/health" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data.available).toBe(true);
@@ -62,7 +65,7 @@ describe("image ai api", () => {
     const image = await testImage(80, 60);
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/image-ai/watermark/suggestions",
+      url: "/api/v1/tools/image-ai/watermark/suggestions",
       ...multipartPayload([{ field: "file", fileName: "owned.png", mimeType: "image/png", content: image }])
     });
 
@@ -76,7 +79,7 @@ describe("image ai api", () => {
     const image = await testImage(80, 60);
     const createResponse = await app.inject({
       method: "POST",
-      url: "/api/tools/image-ai/tasks",
+      url: "/api/v1/tools/image-ai/tasks",
       ...multipartPayload([{ field: "files", fileName: "product.png", mimeType: "image/png", content: image }], {
         operation: "enhance",
         scale: "2"
@@ -94,6 +97,10 @@ describe("image ai api", () => {
       provider: "real-esrgan",
       model: "RealESRGAN_x2plus"
     });
+    const database = new ToolboxDatabase(path.join(storageRoot, "toolbox.db"));
+    const storedTask = database.get("image-ai-task", taskId)?.payload;
+    database.close();
+    expect(storedTask).toMatchObject({ id: taskId, status: "completed" });
 
     const fileResponse = await app.inject({ method: "GET", url: task.results[0].downloadUrl });
     expect(fileResponse.statusCode).toBe(200);
@@ -110,7 +117,7 @@ describe("image ai api", () => {
 
     const zipResponse = await app.inject({
       method: "GET",
-      url: `/api/tools/image-ai/tasks/${taskId}/download.zip`
+      url: `/api/v1/tools/image-ai/tasks/${taskId}/download.zip`
     });
     expect(zipResponse.statusCode).toBe(200);
     expect(zipResponse.headers["content-type"]).toContain("application/zip");
@@ -128,7 +135,7 @@ describe("image ai api", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/image-ai/tasks",
+      url: "/api/v1/tools/image-ai/tasks",
       ...multipartPayload(
         [
           { field: "files", fileName: "owned.png", mimeType: "image/png", content: image },
@@ -147,7 +154,7 @@ describe("image ai api", () => {
     const image = await testImage(20, 20);
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/image-ai/tasks",
+      url: "/api/v1/tools/image-ai/tasks",
       ...multipartPayload([{ field: "files", fileName: "payload.txt", mimeType: "image/png", content: image }], {
         operation: "background_remove"
       })
@@ -167,6 +174,7 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
         JSON.stringify({
           success: true,
           data: {
+            protocolVersion: 1,
             available: true,
             deploymentUsage: "internal-noncommercial",
             workerUrl,
@@ -258,7 +266,7 @@ async function readBody(request: http.IncomingMessage) {
 
 async function waitForTask(instance: FastifyInstance, taskId: string) {
   for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await instance.inject({ method: "GET", url: `/api/tools/image-ai/tasks/${taskId}` });
+    const response = await instance.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${taskId}` });
     const task = response.json().data;
     if (!["pending", "running"].includes(task.status)) return task;
     await new Promise((resolve) => setTimeout(resolve, 25));

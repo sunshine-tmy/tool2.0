@@ -8,7 +8,6 @@ import cv2
 import numpy as np
 from PIL import Image
 
-
 WORKER_PATH = Path(__file__).with_name("image-ai-worker.py")
 SPEC = importlib.util.spec_from_file_location("image_ai_worker", WORKER_PATH)
 assert SPEC and SPEC.loader
