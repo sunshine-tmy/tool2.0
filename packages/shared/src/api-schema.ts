@@ -1,4 +1,4 @@
-import { FormatRegistry, Type, type Static } from "@sinclair/typebox";
+import { FormatRegistry, Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
 if (!FormatRegistry.Has("date-time")) {
@@ -18,7 +18,7 @@ export const ApiFailureSchema = Type.Object({
   requestId: Type.String()
 });
 
-export function apiSuccessSchema<T extends ReturnType<typeof Type.Any>>(data: T) {
+export function apiSuccessSchema<T extends TSchema>(data: T) {
   return Type.Object({
     success: Type.Literal(true),
     message: Type.String(),
@@ -44,6 +44,15 @@ export const TaskSchema = Type.Object({
   createdAt: Type.String({ format: "date-time" }),
   updatedAt: Type.String({ format: "date-time" })
 });
+
+export const TaskListSchema = Type.Array(TaskSchema);
+
+export const TaskIdParamsSchema = Type.Object(
+  {
+    taskId: Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" })
+  },
+  { additionalProperties: false }
+);
 
 export const PaginationQuerySchema = Type.Object({
   cursor: Type.Optional(Type.String()),

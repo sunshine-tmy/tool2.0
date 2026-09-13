@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/coverage/**",
       "**/node_modules/**",
+      ".package/**",
       ".venv-*/**",
       ".runtime/**",
       "models/**",

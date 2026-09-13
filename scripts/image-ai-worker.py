@@ -79,6 +79,41 @@ class WorkerFailure(RuntimeError):
         self.status = status
 
 
+class LamaInpaintingModel:
+    """Minimal adapter around the pinned Big-LaMa TorchScript model."""
+
+    model: Any
+    device: Any
+
+    def __call__(self, image: Image.Image, mask: Image.Image) -> Image.Image:
+        import numpy as np
+        import torch
+
+        def tensor_input(source: Image.Image) -> Any:
+            values = np.asarray(source, dtype=np.float32) / 255.0
+            if values.ndim == 2:
+                values = values[np.newaxis, ...]
+            else:
+                values = np.transpose(values, (2, 0, 1))
+            _, height, width = values.shape
+            padded_height = ((height + 7) // 8) * 8
+            padded_width = ((width + 7) // 8) * 8
+            values = np.pad(
+                values,
+                ((0, 0), (0, padded_height - height), (0, padded_width - width)),
+                mode="symmetric",
+            )
+            return torch.from_numpy(values).unsqueeze(0).to(self.device)
+
+        image_tensor = tensor_input(image)
+        mask_tensor = (tensor_input(mask) > 0).to(dtype=image_tensor.dtype)
+        with torch.inference_mode():
+            inpainted = self.model(image_tensor, mask_tensor)
+        output = inpainted[0].permute(1, 2, 0).detach().cpu().numpy()
+        output = np.clip(output * 255, 0, 255).astype(np.uint8)
+        return Image.fromarray(output)
+
+
 class SuggestionRequest(BaseModel):
     input_path: str
 
@@ -144,7 +179,6 @@ class ModelManager:
         self.unload_gpu()
         try:
             import torch
-            from simple_lama_inpainting import SimpleLama
         except ImportError as exc:
             raise WorkerFailure("LAMA_UNAVAILABLE", "未安装 LaMa 推理组件，请运行图片 AI 安装脚本") from exc
         model_path = project_path(
@@ -160,7 +194,7 @@ class ModelManager:
         # Unicode Windows paths reliably. Loading through a Python binary stream keeps
         # all filesystem access Unicode-safe while preserving the official TorchScript.
         device = torch.device(self.device())
-        lama = SimpleLama.__new__(SimpleLama)
+        lama = LamaInpaintingModel()
         with model_path.open("rb") as model_stream:
             lama.model = torch.jit.load(model_stream, map_location=device)
         lama.model.eval()
@@ -176,6 +210,9 @@ class ModelManager:
             return self.gpu_model
         self.unload_gpu()
         try:
+            # BasicSR's optional SLURM helper can invoke a command with this
+            # environment value. This desktop worker never runs under SLURM.
+            os.environ.pop("SLURM_NODELIST", None)
             install_basicsr_torchvision_compat()
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
@@ -311,7 +348,7 @@ async def health() -> dict[str, Any]:
             "lama",
             "big-lama",
             "Apache-2.0",
-            "simple_lama_inpainting",
+            "torch",
             device,
             weight_files=[Path(os.environ["TORCH_HOME"]) / "hub" / "checkpoints" / "big-lama.pt"],
         ),

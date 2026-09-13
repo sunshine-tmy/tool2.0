@@ -73,6 +73,12 @@ describe("xhs archive api", () => {
       payload: { url: "分享 https://www.xiaohongshu.com/explore/note-100?xsec_token=test" }
     });
     expect(created.statusCode).toBe(202);
+    const unifiedCreated = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${created.json().data.id}`
+    });
+    expect(unifiedCreated.statusCode).toBe(200);
+    expect(unifiedCreated.json().data).toMatchObject({ toolId: "xhs-archive" });
     const firstTask = await waitForTask(app, created.json().data.id);
     expect(firstTask).toMatchObject({ status: "completed", progress: 100 });
 
@@ -90,6 +96,12 @@ describe("xhs archive api", () => {
     expect(detail.media).toHaveLength(1);
     const translated = await waitForTranslation(app, detail.id);
     expect(translated.translation).toMatchObject({ status: "ready", title: { machine: "EN:测试笔记" } });
+    const translationTask = await app.inject({
+      method: "GET",
+      url: `/api/v1/tasks/${translated.translation.taskId}`
+    });
+    expect(translationTask.statusCode).toBe(200);
+    expect(translationTask.json().data).toMatchObject({ toolId: "xhs-translation", status: "completed" });
 
     const preview = await app.inject({
       method: "GET",

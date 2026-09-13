@@ -18,6 +18,7 @@ type TaskPatch = Partial<Pick<Task, "status" | "progress" | "outputPath" | "erro
 
 export type TaskStore = {
   create: (toolId: string) => Task;
+  upsert: (task: Task) => Task;
   get: (id: string) => Task | undefined;
   update: (id: string, patch: TaskPatch) => Task | undefined;
   remove: (id: string) => boolean;
@@ -35,6 +36,15 @@ export function createTaskStore(maxEntries = 1000, database?: ToolboxDatabase): 
   );
   const listeners = new Map<string, Set<(task: Task) => void>>();
 
+  const evictOldest = () => {
+    while (tasks.size >= maxEntries) {
+      const oldestId = tasks.keys().next().value as string | undefined;
+      if (!oldestId) break;
+      tasks.delete(oldestId);
+      database?.remove("task", oldestId);
+    }
+  };
+
   const persist = (task: Task) => {
     database?.upsert({
       id: task.id,
@@ -49,12 +59,7 @@ export function createTaskStore(maxEntries = 1000, database?: ToolboxDatabase): 
 
   return {
     create(toolId) {
-      while (tasks.size >= maxEntries) {
-        const oldestId = tasks.keys().next().value as string | undefined;
-        if (!oldestId) break;
-        tasks.delete(oldestId);
-        database?.remove("task", oldestId);
-      }
+      evictOldest();
       const now = new Date().toISOString();
       const task: Task = {
         id: nanoid(12),
@@ -67,6 +72,13 @@ export function createTaskStore(maxEntries = 1000, database?: ToolboxDatabase): 
       tasks.set(task.id, task);
       persist(task);
       return { ...task };
+    },
+    upsert(task) {
+      if (!tasks.has(task.id)) evictOldest();
+      const next = { ...task };
+      tasks.set(next.id, next);
+      persist(next);
+      return { ...next };
     },
     get(id) {
       const task = tasks.get(id);

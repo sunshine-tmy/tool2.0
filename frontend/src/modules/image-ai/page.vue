@@ -218,6 +218,7 @@ import {
 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
+import { useTaskEvents } from "../../composables/useTaskEvents";
 import BeforeAfterCompare from "./BeforeAfterCompare.vue";
 import MaskEditor from "./MaskEditor.vue";
 import { absoluteImageAiUrl, imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
@@ -242,9 +243,9 @@ const cutoutFiles = ref<File[]>([]);
 const activeTaskFiles = ref<File[]>([]);
 const enhanceScale = ref<2 | 4>(2);
 const activeTask = ref<ImageAiTask>();
-let pollTimer: ReturnType<typeof setTimeout> | undefined;
-
 const isBusy = computed(() => activeTask.value?.status === "pending" || activeTask.value?.status === "running");
+const streamedTaskId = computed(() => (isBusy.value ? activeTask.value?.id : undefined));
+const taskEvents = useTaskEvents(streamedTaskId);
 const healthLabel = computed(() => {
   if (!health.value) return "请启动本地 Worker";
   const ready = health.value.models.filter((model) => model.available).length;
@@ -261,12 +262,23 @@ const watermarkDimensionsLabel = computed(() =>
 
 onMounted(loadHealth);
 onBeforeUnmount(() => {
-  if (pollTimer) clearTimeout(pollTimer);
   revokeWatermarkUrl();
 });
 
-watch(activeTab, () => {
-  if (pollTimer && !isBusy.value) clearTimeout(pollTimer);
+watch(taskEvents.task, (task) => {
+  if (!task || task.id !== activeTask.value?.id) return;
+  activeTask.value = {
+    ...activeTask.value,
+    status: task.error === "CANCELLED" ? "canceled" : task.status,
+    progress: task.progress,
+    error: task.error,
+    updatedAt: task.updatedAt
+  };
+  if (task.status === "completed" || task.status === "failed") void finishStreamedTask(task.id);
+});
+
+watch(taskEvents.error, (error) => {
+  if (error) message.warning(`${error.message}（${error.code}）`);
 });
 
 async function loadHealth() {
@@ -330,9 +342,6 @@ async function submitWatermark() {
     form.append("files", watermarkFile.value);
     form.append("mask", mask, "mask.png");
     activeTask.value = await imageAiApi.createTask(form);
-    await pollTask(activeTask.value.id);
-    const result = activeTask.value?.results[0];
-    if (result) watermarkResultUrl.value = absoluteImageAiUrl(result.downloadUrl);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "去水印失败");
   }
@@ -348,7 +357,6 @@ async function submitBatch(operation: "enhance" | "background_remove") {
   try {
     activeTask.value = await imageAiApi.createTask(form);
     activeTaskFiles.value = [...files];
-    await pollTask(activeTask.value.id);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "图片处理失败");
   }
@@ -359,19 +367,25 @@ function downloadWatermarkResult() {
   if (result) triggerImageAiDownload(resultDownloadUrl(result.downloadUrl));
 }
 
-async function pollTask(taskId: string): Promise<void> {
-  if (pollTimer) clearTimeout(pollTimer);
-  const task = await imageAiApi.getTask(taskId);
-  activeTask.value = task;
-  if (task.status === "pending" || task.status === "running") {
-    await new Promise<void>((resolve) => {
-      pollTimer = setTimeout(() => resolve(), 900);
-    });
-    return pollTask(taskId);
+async function finishStreamedTask(taskId: string) {
+  try {
+    const task = await imageAiApi.getTask(taskId);
+    if (activeTask.value?.id !== taskId) return;
+    activeTask.value = task;
+    if (task.status === "completed") {
+      const result = task.results[0];
+      if (task.operation === "watermark_remove" && result) {
+        watermarkResultUrl.value = absoluteImageAiUrl(result.downloadUrl);
+      }
+      message.success(`处理完成，共生成 ${task.results.length} 张图片`);
+    } else if (task.status === "canceled") {
+      message.info("任务已取消");
+    } else {
+      message.error(task.error || "任务处理失败");
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "任务结果读取失败");
   }
-  if (task.status === "completed") message.success(`处理完成，共生成 ${task.results.length} 张图片`);
-  else if (task.status === "canceled") message.info("任务已取消");
-  else message.error(task.error || "任务处理失败");
 }
 
 async function cancelActiveTask() {

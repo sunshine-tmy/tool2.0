@@ -240,7 +240,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { NButton, NCheckbox, NEmpty, NInput, NSlider, NTag, useMessage } from "naive-ui";
 import {
   AudioLines,
@@ -266,6 +266,7 @@ import {
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveBackendUrl } from "../../config/runtime";
 import { edgeTtsApi } from "./api";
 import ChatterboxPanel from "./ChatterboxPanel.vue";
@@ -294,7 +295,6 @@ const history = ref<EdgeTtsTaskList>({
   tasks: [],
   pagination: { page: 1, pageSize: 10, total: 0, totalPages: 1 }
 });
-let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
 const languages: Array<{ value: EdgeTtsLanguage; title: string; description: string }> = [
   { value: "ms-MY", title: "Bahasa Melayu", description: "马来西亚马来语" },
@@ -315,6 +315,8 @@ const estimatedDuration = computed(() =>
 const isCurrentRunning = computed(
   () => currentTask.value?.status === "queued" || currentTask.value?.status === "processing"
 );
+const streamedTaskId = computed(() => (isCurrentRunning.value ? currentTask.value?.id : undefined));
+const taskEvents = useTaskEvents(streamedTaskId);
 
 watch(language, async () => {
   await loadVoices();
@@ -324,8 +326,20 @@ onMounted(async () => {
   await Promise.all([loadHealth(), loadVoices(), loadHistory()]);
 });
 
-onBeforeUnmount(() => {
-  if (pollTimer) clearTimeout(pollTimer);
+watch(taskEvents.task, (task) => {
+  if (!task || task.id !== currentTask.value?.id) return;
+  currentTask.value = {
+    ...currentTask.value,
+    status: task.status === "pending" ? "queued" : task.status === "running" ? "processing" : task.status,
+    progress: task.progress,
+    error: task.error,
+    updatedAt: task.updatedAt
+  };
+  if (task.status === "completed" || task.status === "failed") void finishCurrentTask(task.id);
+});
+
+watch(taskEvents.error, (error) => {
+  if (error) errorMessage.value = `${error.message}（${error.code}）`;
 });
 
 async function loadHealth() {
@@ -366,7 +380,6 @@ async function createTask() {
       includeSubtitles: includeSubtitles.value,
       fileName: fileName.value.trim() || undefined
     });
-    schedulePoll();
     await loadHistory();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "语音任务创建失败";
@@ -375,26 +388,17 @@ async function createTask() {
   }
 }
 
-function schedulePoll() {
-  if (pollTimer) clearTimeout(pollTimer);
-  if (!currentTask.value || !["queued", "processing"].includes(currentTask.value.status)) return;
-  pollTimer = setTimeout(async () => {
-    try {
-      if (!currentTask.value) return;
-      currentTask.value = await edgeTtsApi.task(currentTask.value.id);
-      if (currentTask.value.status === "completed") {
-        message.success("语音生成完成");
-        await loadHistory();
-      } else if (currentTask.value.status === "failed") {
-        errorMessage.value = currentTask.value.error || "语音生成失败";
-        await loadHistory();
-      }
-    } catch (error) {
-      errorMessage.value = error instanceof Error ? error.message : "任务状态读取失败";
-    } finally {
-      schedulePoll();
-    }
-  }, 1000);
+async function finishCurrentTask(taskId: string) {
+  try {
+    const task = await edgeTtsApi.task(taskId);
+    if (currentTask.value?.id !== taskId) return;
+    currentTask.value = task;
+    if (task.status === "completed") message.success("语音生成完成");
+    else errorMessage.value = task.error || "语音生成失败";
+    await loadHistory();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "任务结果读取失败";
+  }
 }
 
 async function loadHistory() {

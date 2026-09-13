@@ -122,7 +122,7 @@ pnpm dev
 | `VITE_API_PROXY_TARGET`                 | `http://127.0.0.1:3100` | Vite 开发/预览代理目标                               |
 | `CORS_ORIGINS`                          | localhost/127.0.0.1     | 允许直连 API 的精确浏览器 Origin，逗号分隔           |
 | `STORAGE_ROOT`                          | `./storage`             | 运行数据目录；相对路径始终基于仓库根目录解析         |
-| `DATABASE_PATH`                         | `storage/toolbox.db`    | SQLite 元数据数据库；通常无需覆盖                     |
+| `DATABASE_PATH`                         | `storage/toolbox.db`    | SQLite 元数据数据库；通常无需覆盖                    |
 | `LAN_TRANSFER_MAX_FILE_BYTES`           | `21474836480`           | 局域网单文件上限，默认 20 GiB                        |
 | `LAN_TRANSFER_RETENTION_DAYS`           | `3`                     | 局域网文件和图文便签保留天数                         |
 | `LAN_TRANSFER_UPLOAD_RETENTION_HOURS`   | `24`                    | 未完成分片上传的保留时间                             |
@@ -238,6 +238,8 @@ pnpm dev:ai
 | `pnpm test`                         | 运行全部 TypeScript/Vue 测试                         |
 | `pnpm coverage`                     | 执行 75/65 全局覆盖率门槛                            |
 | `pnpm test:python`                  | 运行无需模型的 faster-whisper 单元测试               |
+| `pnpm lock:python`                  | 生成 Python 3.11/Windows x64 Worker 哈希锁           |
+| `pnpm audit:python`                 | 审计四组 Python Worker 运行时依赖                    |
 | `pnpm lint`                         | ESLint（TypeScript + Vue）                           |
 | `pnpm deadcode`                     | Knip 未使用文件、依赖与导出检查                      |
 | `pnpm typecheck`                    | 全 workspace 严格类型检查                            |
@@ -248,6 +250,7 @@ pnpm dev:ai
 | `pnpm clear:generated`              | 清空缓存、构建产物、日志和运行时生成数据（保留依赖） |
 | `pnpm db:migrate --dry-run`         | 预检旧 JSON 元数据迁移                               |
 | `pnpm db:verify`                    | 校验 SQLite 完整性、外键和记录统计                   |
+| `pnpm db:benchmark`                 | 以 10,000 条元数据验证列表/详情 P95 预算             |
 | `pnpm db:rollback --backup <id>`    | 从指定迁移备份恢复旧元数据                           |
 | `pnpm smoke:standalone`             | 验证分发包安装、启动、上传、下载和清理               |
 

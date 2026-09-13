@@ -4,6 +4,7 @@ import type { ImageAiOperation, ImageAiResult, ImageAiTask } from "@toolbox/shar
 import sharp from "sharp";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { Task, TaskStore } from "../../tasks/task-store";
 import { createImageAiWorkerClient } from "./worker-client";
 
 export type StoredInput = {
@@ -24,7 +25,7 @@ type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
   cancelRequested?: boolean;
 };
 
-export function createImageAiTaskManager(config: AppConfig, database: ToolboxDatabase) {
+export function createImageAiTaskManager(config: AppConfig, database: ToolboxDatabase, taskStore: TaskStore) {
   const worker = createImageAiWorkerClient(config);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
@@ -137,6 +138,7 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
       if (queueIndex >= 0) queue.splice(queueIndex, 1);
       tasks.delete(task.id);
       database.remove("image-ai-task", task.id);
+      taskStore.remove(task.id);
       await Promise.all([
         fs.rm(path.join(config.imageAiInputsDir, task.id), { recursive: true, force: true }),
         fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true })
@@ -256,7 +258,17 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
     for (const entity of database.list("image-ai-task")) {
       const task = entity.payload as StoredImageAiTask;
       if (!task.id || !task.operation) continue;
+      if (task.status === "pending" || task.status === "running") {
+        patchTask(task, {
+          status: "failed",
+          progress: 100,
+          queuePosition: null,
+          error: "任务因服务重启而中断，请手动重试"
+        });
+        database.upsert(toEntity(task));
+      }
       tasks.set(task.id, task);
+      taskStore.upsert(toUnifiedTask(task));
     }
     refreshQueuePositions();
   }
@@ -270,6 +282,7 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
 
   async function persist(task: StoredImageAiTask) {
     database.upsert(toEntity(task));
+    taskStore.upsert(toUnifiedTask(task));
   }
 
   return {
@@ -282,6 +295,19 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
     getStored,
     cancel,
     cleanupExpired
+  };
+}
+
+function toUnifiedTask(task: StoredImageAiTask): Task {
+  return {
+    id: task.id,
+    toolId: "image-ai",
+    status: task.status === "canceled" ? "failed" : task.status,
+    progress: task.progress,
+    outputPath: task.results[0]?.outputPath,
+    error: task.status === "canceled" ? "CANCELLED" : task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
   };
 }
 

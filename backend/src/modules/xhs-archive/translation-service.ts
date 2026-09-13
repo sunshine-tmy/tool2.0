@@ -8,6 +8,7 @@ import {
   type XhsTranslationTaskStage
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import type { Task, TaskStore } from "../../tasks/task-store";
 import { XhsArchiveStore } from "./store";
 import { XhsTranslationRuntime, XhsTranslationRuntimeError } from "./translation-runtime";
 
@@ -24,7 +25,8 @@ export class XhsTranslationService {
   constructor(
     private readonly config: AppConfig,
     private readonly store: XhsArchiveStore,
-    private readonly runtime: XhsTranslationRuntime
+    private readonly runtime: XhsTranslationRuntime,
+    private readonly taskStore: TaskStore
   ) {}
 
   async recoverInterrupted() {
@@ -71,6 +73,7 @@ export class XhsTranslationService {
     if (!valid.length) return undefined;
     const task = createTranslationTask(valid);
     this.tasks.set(task.id, task);
+    this.taskStore.upsert(toUnifiedTranslationTask(task));
     for (const id of valid) {
       const item = await this.store.get(id);
       if (!item) continue;
@@ -340,7 +343,7 @@ export class XhsTranslationService {
       stage === "saving" && currentItemId && task.stage !== "saving"
         ? Math.min(task.totalItems, task.completedItems + 1)
         : task.completedItems;
-    this.tasks.set(id, {
+    const next: XhsTranslationTask = {
       ...task,
       status,
       stage,
@@ -350,8 +353,23 @@ export class XhsTranslationService {
       completedItems,
       errorCode,
       updatedAt: new Date().toISOString()
-    });
+    };
+    this.tasks.set(id, next);
+    this.taskStore.upsert(toUnifiedTranslationTask(next));
   }
+}
+
+function toUnifiedTranslationTask(task: XhsTranslationTask): Task {
+  return {
+    id: task.id,
+    toolId: "xhs-translation",
+    status: task.status,
+    progress: task.progress,
+    outputPath: task.currentItemId,
+    error: task.errorCode ?? task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  };
 }
 
 function createTranslationTask(itemIds: string[]): XhsTranslationTask {

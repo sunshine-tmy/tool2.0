@@ -228,6 +228,7 @@ import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveApiUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
@@ -254,6 +255,10 @@ const isDragging = ref(false);
 const uploadProgress = ref(0);
 const currentTask = ref<ToolTask | null>(null);
 const result = ref<VideoTextResult | null>(null);
+const streamedTaskId = computed(() =>
+  currentTask.value && ["pending", "running"].includes(currentTask.value.status) ? currentTask.value.id : undefined
+);
+const taskEvents = useTaskEvents(streamedTaskId);
 const historyKeyword = ref("");
 const historyPagination = reactive({
   page: 1,
@@ -289,6 +294,17 @@ const recognitionQualityRows = computed(() => describeRecognitionQuality(result.
 const lowConfidenceSegments = computed(() => result.value?.recognitionQuality?.lowConfidenceSegments ?? []);
 const historyPageIds = computed(() => historyItems.value.map((item) => item.id));
 const historyPageSelection = computed(() => getPageSelectionState(selectedHistoryIds.value, historyPageIds.value));
+
+watch(taskEvents.task, (task) => {
+  if (!task || task.id !== currentTask.value?.id) return;
+  currentTask.value = task;
+  uploadProgress.value = task.progress;
+  if (task.status === "completed" || task.status === "failed") void finishStreamedTask(task.id);
+});
+
+watch(taskEvents.error, (error) => {
+  if (error) message.warning(`${error.message}（${error.code}）`);
+});
 
 function onVideoChange(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -332,13 +348,31 @@ async function submit() {
     if (response.task.status === "completed") {
       message.success("视频文案解析完成");
       await loadHistory(1);
-    } else {
+    } else if (response.task.status === "failed") {
       message.error(response.task.error || "视频文案解析失败");
     }
   } catch (error) {
     message.error(error instanceof Error ? error.message : "视频文案解析失败");
   } finally {
     submitting.value = false;
+  }
+}
+
+async function finishStreamedTask(taskId: string) {
+  try {
+    const response = await videoTextApi.getTask(taskId);
+    if (currentTask.value?.id !== taskId) return;
+    currentTask.value = response.task;
+    result.value = response.result;
+    uploadProgress.value = response.task.progress;
+    if (response.task.status === "completed") {
+      message.success("视频文案解析完成");
+      await loadHistory(1);
+    } else {
+      message.error(response.task.error || "视频文案解析失败");
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : "视频文案结果读取失败");
   }
 }
 

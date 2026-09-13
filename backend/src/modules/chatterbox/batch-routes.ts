@@ -28,6 +28,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { Task, TaskStore } from "../../tasks/task-store";
 import type { createChatterboxWorkerClient } from "./worker-client";
 
 type WorkerClient = ReturnType<typeof createChatterboxWorkerClient>;
@@ -74,10 +75,11 @@ export async function registerChatterboxBatchRoutes(options: {
   worker: WorkerClient;
   media: MediaTools;
   database: ToolboxDatabase;
+  taskStore: TaskStore;
   externalQueueStats?: () => { active: number; queued: number };
 }) {
-  const { app, config, worker, media, database } = options;
-  const store = new ChatterboxBatchStore(path.join(config.chatterboxDir, "batches"), database);
+  const { app, config, worker, media, database, taskStore } = options;
+  const store = new ChatterboxBatchStore(path.join(config.chatterboxDir, "batches"), database, taskStore);
   const voiceStore = new ChatterboxVoiceStore(path.join(config.chatterboxDir, "voices"), database);
   await store.initialize();
   await voiceStore.initialize();
@@ -824,7 +826,8 @@ class ChatterboxBatchStore {
 
   constructor(
     private readonly root: string,
-    private readonly database: ToolboxDatabase
+    private readonly database: ToolboxDatabase,
+    private readonly taskStore: TaskStore
   ) {}
 
   async initialize() {
@@ -997,6 +1000,7 @@ class ChatterboxBatchStore {
       for (const item of batch?.items ?? []) this.database.remove("chatterbox-item", item.id);
       this.database.remove("chatterbox-batch", id);
     });
+    this.taskStore.remove(id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -1082,7 +1086,34 @@ class ChatterboxBatchStore {
         });
       }
     });
+    this.taskStore.upsert(toUnifiedBatchTask(batch));
   }
+}
+
+function toUnifiedBatchTask(batch: ChatterboxBatch): Task {
+  const status: Task["status"] =
+    batch.status === "queued"
+      ? "pending"
+      : batch.status === "processing"
+        ? "running"
+        : batch.status === "completed"
+          ? "completed"
+          : "failed";
+  return {
+    id: batch.id,
+    toolId: "chatterbox-batch",
+    status,
+    progress: batch.progress,
+    outputPath: batch.status === "completed" ? "combined.mp3" : undefined,
+    error:
+      batch.status === "cancelled"
+        ? "CANCELLED"
+        : batch.status === "partial_failed"
+          ? `${batch.failedItems} 个分段处理失败`
+          : undefined,
+    createdAt: batch.createdAt,
+    updatedAt: batch.updatedAt
+  };
 }
 
 function batchStatus(items: ChatterboxBatchItem[]): ChatterboxBatchStatus {

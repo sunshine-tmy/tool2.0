@@ -258,7 +258,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   NAlert,
   NButton,
@@ -307,6 +307,7 @@ import MediaGallery from "./MediaGallery.vue";
 import BilingualContent from "./BilingualContent.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useTaskEvents } from "../../composables/useTaskEvents";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { resolveBackendUrl } from "../../config/runtime";
 import { xhsArchiveApi } from "./api";
@@ -315,6 +316,12 @@ const message = useMessage();
 const confirm = useConfirmDialog();
 const inputUrl = ref("");
 const task = ref<XhsArchiveTask>();
+const streamedTaskId = computed(() =>
+  task.value && !["completed", "failed"].includes(task.value.status) ? task.value.id : undefined
+);
+const taskEvents = useTaskEvents(streamedTaskId);
+const translationTarget = ref<{ taskId: string; itemId?: string; updateCurrent: boolean }>();
+const translationEvents = useTaskEvents(computed(() => translationTarget.value?.taskId));
 const current = ref<XhsArchiveItem>();
 const refreshing = ref(false);
 const authWaiting = ref(false);
@@ -351,6 +358,23 @@ const stages: Array<{ key: XhsArchiveTaskStage; label: string; icon: unknown }> 
   { key: "archiving", label: "写入存档", icon: Box }
 ];
 const stageOrder: XhsArchiveTaskStage[] = ["installing", "parsing", "downloading", "archiving", "completed"];
+let taskSyncRevision = 0;
+
+watch(taskEvents.task, (event) => {
+  if (event && event.id === task.value?.id) void syncArchiveTask(event.id);
+});
+
+watch(taskEvents.error, (error) => {
+  if (error) message.warning(`${error.message}（${error.code}）`);
+});
+
+watch(translationEvents.task, (event) => {
+  if (event && (event.status === "completed" || event.status === "failed")) void finishTranslation(event.id);
+});
+
+watch(translationEvents.error, (error) => {
+  if (error) message.warning(`${error.message}（${error.code}）`);
+});
 
 function handlePagePaste(event: ClipboardEvent) {
   const target = event.target;
@@ -370,32 +394,44 @@ async function startFetch() {
   if (!inputUrl.value.trim()) return;
   try {
     task.value = await xhsArchiveApi.create(inputUrl.value);
-    await pollTask();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "获取失败");
-  }
-}
-async function pollTask() {
-  while (task.value && !["completed", "failed"].includes(task.value.status)) {
-    await delay(900);
-    task.value = await xhsArchiveApi.task(task.value.id);
-  }
-  if (task.value?.status === "completed" && task.value.archiveId) {
-    current.value = await xhsArchiveApi.detail(task.value.archiveId);
-    if (current.value.translation?.taskId && current.value.translation.status !== "ready") {
-      void pollTranslation(current.value.translation.taskId, current.value.id, true);
-    }
-    message.success(task.value.message);
-    await loadArchives();
   }
 }
 async function refreshItem(id: string) {
   refreshing.value = true;
   try {
     task.value = await xhsArchiveApi.refresh(id);
-    await pollTask();
-  } finally {
+  } catch (error) {
     refreshing.value = false;
+    message.error(error instanceof Error ? error.message : "刷新存档失败");
+  }
+}
+
+async function syncArchiveTask(taskId: string) {
+  const revision = ++taskSyncRevision;
+  try {
+    const next = await xhsArchiveApi.task(taskId);
+    if (revision !== taskSyncRevision || task.value?.id !== taskId) return;
+    task.value = next;
+    if (next.status === "failed") {
+      refreshing.value = false;
+      message.error(next.error || next.message);
+      return;
+    }
+    if (next.status !== "completed" || !next.archiveId) return;
+    refreshing.value = false;
+    current.value = await xhsArchiveApi.detail(next.archiveId);
+    if (current.value.translation?.taskId && current.value.translation.status !== "ready") {
+      trackTranslation(current.value.translation.taskId, current.value.id, true);
+    }
+    message.success(next.message);
+    await loadArchives();
+  } catch (error) {
+    if (revision === taskSyncRevision) {
+      refreshing.value = false;
+      message.error(error instanceof Error ? error.message : "读取获取任务失败");
+    }
   }
 }
 async function loginAndRetry() {
@@ -438,14 +474,14 @@ async function openDetail(id: string) {
   detail.value = await xhsArchiveApi.detail(id);
   drawerOpen.value = true;
   if (detail.value.translation?.taskId && detail.value.translation.status !== "ready") {
-    void pollTranslation(detail.value.translation.taskId, detail.value.id, false);
+    trackTranslation(detail.value.translation.taskId, detail.value.id, false);
   }
 }
 async function translateCurrent() {
   if (!current.value) return;
   try {
     const task = await xhsArchiveApi.translate(current.value.id, current.value.translation?.status === "ready");
-    if (task?.id) await pollTranslation(task.id, current.value.id, true);
+    if (task?.id) trackTranslation(task.id, current.value.id, true);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建翻译任务失败");
   }
@@ -454,7 +490,7 @@ async function translateDetail() {
   if (!detail.value) return;
   try {
     const task = await xhsArchiveApi.translate(detail.value.id, detail.value.translation?.status === "ready");
-    if (task?.id) await pollTranslation(task.id, detail.value.id, false);
+    if (task?.id) trackTranslation(task.id, detail.value.id, false);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建翻译任务失败");
   }
@@ -513,39 +549,43 @@ async function translateSelected() {
     const task = selectedArchiveIds.value.length
       ? await xhsArchiveApi.translateBatch({ mode: "selected", itemIds: selectedArchiveIds.value })
       : await xhsArchiveApi.translateBatch({ mode: "missing-or-stale" });
-    if (task?.id) await pollTranslation(task.id, undefined, false);
+    if (task?.id) trackTranslation(task.id, undefined, false);
     await loadArchives();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建批量翻译任务失败");
   }
 }
-async function pollTranslation(taskId: string, itemId?: string, updateCurrent = false) {
+function trackTranslation(taskId: string, itemId?: string, updateCurrent = false) {
+  translationTarget.value = { taskId, itemId, updateCurrent };
+}
+
+async function finishTranslation(taskId: string) {
+  const target = translationTarget.value;
+  if (!target || target.taskId !== taskId) return;
   try {
-    let state = await xhsArchiveApi.translationTask(taskId);
-    while (!disposed && !["completed", "failed"].includes(state.status)) {
-      await delay(1000);
-      state = await xhsArchiveApi.translationTask(taskId);
-    }
+    const state = await xhsArchiveApi.translationTask(taskId);
     if (state.status === "failed") {
-      if (itemId) {
-        const updated = await xhsArchiveApi.detail(itemId).catch(() => undefined);
+      if (target.itemId) {
+        const updated = await xhsArchiveApi.detail(target.itemId).catch(() => undefined);
         if (updated) {
-          if (updateCurrent && current.value?.id === itemId) current.value = updated;
-          if (detail.value?.id === itemId) detail.value = updated;
+          if (target.updateCurrent && current.value?.id === target.itemId) current.value = updated;
+          if (detail.value?.id === target.itemId) detail.value = updated;
         }
       }
       await loadArchives().catch(() => undefined);
       message.error(state.error || state.message);
       return;
     }
-    if (itemId) {
-      const updated = await xhsArchiveApi.detail(itemId);
-      if (updateCurrent && current.value?.id === itemId) current.value = updated;
-      if (detail.value?.id === itemId) detail.value = updated;
+    if (target.itemId) {
+      const updated = await xhsArchiveApi.detail(target.itemId);
+      if (target.updateCurrent && current.value?.id === target.itemId) current.value = updated;
+      if (detail.value?.id === target.itemId) detail.value = updated;
     }
     message.success("英文翻译已完成");
   } catch (error) {
     if (!disposed) message.error(error instanceof Error ? error.message : "读取翻译进度失败");
+  } finally {
+    if (translationTarget.value?.taskId === taskId) translationTarget.value = undefined;
   }
 }
 async function removeItem() {

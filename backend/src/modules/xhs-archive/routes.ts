@@ -18,6 +18,7 @@ import {
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { Task, TaskStore } from "../../tasks/task-store";
 import {
   assertRemoteResponseSize,
   fetchRemoteResponse,
@@ -37,13 +38,14 @@ export async function registerXhsArchiveRoutes(options: {
   config: AppConfig;
   remoteFetch: RemoteFetch;
   database: ToolboxDatabase;
+  taskStore: TaskStore;
 }) {
-  const { app, config, remoteFetch, database } = options;
+  const { app, config, remoteFetch, database, taskStore } = options;
   const store = new XhsArchiveStore(config, database);
   const runtime = new XhsRuntimeManager(config);
   const auth = new XhsAuthManager(config);
   const translationRuntime = new XhsTranslationRuntime(config);
-  const translation = new XhsTranslationService(config, store, translationRuntime);
+  const translation = new XhsTranslationService(config, store, translationRuntime, taskStore);
   const tasks = new Map<string, XhsArchiveTask>();
   await store.initialize();
   await translation.recoverInterrupted();
@@ -179,6 +181,7 @@ export async function registerXhsArchiveRoutes(options: {
       return reply.code(400).send(fail("XHS_URL_INVALID", "请输入有效的小红书链接或分享文案"));
     const task = createTask();
     tasks.set(task.id, task);
+    taskStore.upsert(toUnifiedArchiveTask(task));
     void processTask(task.id, source);
     return reply.code(202).send(ok(task));
   });
@@ -210,6 +213,7 @@ export async function registerXhsArchiveRoutes(options: {
     if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     const task = createTask();
     tasks.set(task.id, task);
+    taskStore.upsert(toUnifiedArchiveTask(task));
     void processTask(task.id, item.sourceUrl);
     return reply.code(202).send(ok(task));
   });
@@ -430,8 +434,8 @@ export async function registerXhsArchiveRoutes(options: {
     } catch (error) {
       await fsp.rm(staging, { recursive: true, force: true });
       const task = tasks.get(taskId);
-      if (task)
-        tasks.set(taskId, {
+      if (task) {
+        const failedTask: XhsArchiveTask = {
           ...task,
           status: "failed",
           stage: "failed",
@@ -439,7 +443,10 @@ export async function registerXhsArchiveRoutes(options: {
           error: error instanceof Error ? error.message : "获取失败",
           errorCode: error instanceof XhsError ? error.code : "XHS_TASK_FAILED",
           updatedAt: new Date().toISOString()
-        });
+        };
+        tasks.set(taskId, failedTask);
+        taskStore.upsert(toUnifiedArchiveTask(failedTask));
+      }
     }
   }
 
@@ -516,8 +523,8 @@ export async function registerXhsArchiveRoutes(options: {
     archiveId?: string
   ) {
     const task = tasks.get(id);
-    if (task)
-      tasks.set(id, {
+    if (task) {
+      const next: XhsArchiveTask = {
         ...task,
         status,
         stage,
@@ -525,8 +532,24 @@ export async function registerXhsArchiveRoutes(options: {
         message,
         archiveId: archiveId ?? task.archiveId,
         updatedAt: new Date().toISOString()
-      });
+      };
+      tasks.set(id, next);
+      taskStore.upsert(toUnifiedArchiveTask(next));
+    }
   }
+}
+
+function toUnifiedArchiveTask(task: XhsArchiveTask): Task {
+  return {
+    id: task.id,
+    toolId: "xhs-archive",
+    status: task.status,
+    progress: task.progress,
+    outputPath: task.archiveId,
+    error: task.errorCode ?? task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  };
 }
 
 class XhsError extends Error {

@@ -9,6 +9,14 @@ const LEGACY_SOURCES = [
   { kind: "lan-transfer", relativePath: "lan-transfer/index.json" },
   { kind: "xhs-archive", relativePath: "xhs-archive/index.json" }
 ] as const;
+const MIGRATION_MANIFEST = "migration-manifest.json";
+
+type BackupManifest = {
+  schemaVersion: 1;
+  backupId: string;
+  createdAt: string;
+  files: Array<{ relativePath: string; bytes: number; sha256: string; count: number; kind: string }>;
+};
 
 export async function migrateLegacyMetadata(config: AppConfig, database: ToolboxDatabase, dryRun = false) {
   const discovered = [] as Array<{ kind: string; source: string; count: number; bytes: number; value: unknown }>;
@@ -37,7 +45,26 @@ export async function migrateLegacyMetadata(config: AppConfig, database: Toolbox
     const destination = path.join(backupDir, relative);
     await fsp.mkdir(path.dirname(destination), { recursive: true });
     await fsp.copyFile(source.source, destination);
+    if ((await sha256File(destination)) !== (await sha256File(source.source))) {
+      throw new Error(`Migration backup verification failed: ${relative}`);
+    }
   }
+
+  const manifest: BackupManifest = {
+    schemaVersion: 1,
+    backupId,
+    createdAt: new Date().toISOString(),
+    files: await Promise.all(
+      discovered.map(async (source) => ({
+        relativePath: path.relative(config.storageRoot, source.source),
+        bytes: source.bytes,
+        sha256: await sha256File(source.source),
+        count: source.count,
+        kind: source.kind
+      }))
+    )
+  };
+  await fsp.writeFile(path.join(backupDir, MIGRATION_MANIFEST), JSON.stringify(manifest, null, 2), "utf8");
 
   const now = new Date().toISOString();
   database.transaction(() => {
@@ -62,15 +89,23 @@ export async function rollbackDatabase(config: AppConfig, backupId: string) {
   const resolvedRoot = path.resolve(config.migrationBackupDir) + path.sep;
   const resolvedBackup = path.resolve(backupDir);
   if (!resolvedBackup.startsWith(resolvedRoot)) throw new Error("Unsafe backup path");
-  const files = await walkFiles(backupDir);
-  if (!files.length) throw new Error(`Migration backup not found: ${backupId}`);
-  for (const source of files) {
-    const relative = path.relative(backupDir, source);
-    const destination = path.join(config.storageRoot, relative);
+  const manifestPath = path.join(backupDir, MIGRATION_MANIFEST);
+  const manifest = await readManifest(manifestPath, backupId);
+  if (!manifest.files.length) throw new Error(`Migration backup is empty: ${backupId}`);
+  const resolvedStorageRoot = path.resolve(config.storageRoot) + path.sep;
+  for (const entry of manifest.files) {
+    const source = path.resolve(backupDir, entry.relativePath);
+    if (!source.startsWith(resolvedBackup + path.sep)) throw new Error("Unsafe migration backup entry");
+    const destination = path.resolve(config.storageRoot, entry.relativePath);
+    if (!destination.startsWith(resolvedStorageRoot)) throw new Error("Unsafe migration restore target");
+    const stat = await fsp.stat(source).catch(() => undefined);
+    if (!stat?.isFile() || stat.size !== entry.bytes || (await sha256File(source)) !== entry.sha256) {
+      throw new Error(`Migration backup checksum mismatch: ${entry.relativePath}`);
+    }
     await fsp.mkdir(path.dirname(destination), { recursive: true });
     await fsp.copyFile(source, destination);
   }
-  return { restored: files.length, backupId };
+  return { restored: manifest.files.length, backupId };
 }
 
 function backupTimestamp() {
@@ -89,13 +124,16 @@ function countObjectRecords(value: unknown) {
   return 1;
 }
 
-async function walkFiles(root: string): Promise<string[]> {
-  const entries = await fsp.readdir(root, { withFileTypes: true });
-  const files: string[] = [];
-  for (const entry of entries) {
-    const candidate = path.join(root, entry.name);
-    if (entry.isDirectory()) files.push(...(await walkFiles(candidate)));
-    else if (entry.isFile()) files.push(candidate);
+async function sha256File(filePath: string) {
+  const hash = crypto.createHash("sha256");
+  hash.update(await fsp.readFile(filePath));
+  return hash.digest("hex");
+}
+
+async function readManifest(manifestPath: string, backupId: string): Promise<BackupManifest> {
+  const value = JSON.parse(await fsp.readFile(manifestPath, "utf8")) as BackupManifest;
+  if (value.schemaVersion !== 1 || value.backupId !== backupId || !Array.isArray(value.files)) {
+    throw new Error("Invalid migration backup manifest");
   }
-  return files;
+  return value;
 }

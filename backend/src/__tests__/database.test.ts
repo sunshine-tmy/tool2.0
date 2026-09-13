@@ -83,12 +83,23 @@ describe("toolbox database", () => {
     expect(preview).toMatchObject({ migrated: false, sources: [{ kind: "lan-transfer", count: 1 }] });
     const migrated = await migrateLegacyMetadata(config, database);
     expect(migrated.migrated).toBe(true);
+    const manifestPath = path.join(config.migrationBackupDir, migrated.backupId!, "migration-manifest.json");
+    const manifest = JSON.parse(await fsp.readFile(manifestPath, "utf8"));
+    expect(manifest).toMatchObject({
+      schemaVersion: 1,
+      backupId: migrated.backupId,
+      files: [{ relativePath: path.join("lan-transfer", "index.json"), count: 1 }]
+    });
     expect((await migrateLegacyMetadata(config, database)).migrated).toBe(false);
     database.close();
 
     await fsp.writeFile(legacyPath, "[]");
     await rollbackDatabase(config, migrated.backupId!);
     expect(JSON.parse(await fsp.readFile(legacyPath, "utf8"))).toEqual([{ id: "legacy-file" }]);
+
+    const backupFile = path.join(config.migrationBackupDir, migrated.backupId!, "lan-transfer", "index.json");
+    await fsp.writeFile(backupFile, "[]", "utf8");
+    await expect(rollbackDatabase(config, migrated.backupId!)).rejects.toThrow("checksum mismatch");
   });
 });
 

@@ -1,8 +1,8 @@
 {
-  "ignoreBinaries": ["python"],
+  "ignoreBinaries": ["python", "pwsh"],
   "workspaces": {
     "backend": {
-      "entry": ["src/database/cli.ts"]
+      "entry": ["src/database/cli.ts", "src/database/benchmark.ts"]
     }
   }
 }

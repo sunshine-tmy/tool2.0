@@ -20,8 +20,8 @@ type CleanupCategory = {
 export function registerMaintenanceRoutes(app: FastifyInstance) {
   app.get("/api/v1/maintenance/cleanup", async (_request, reply) => {
     try {
-      const categories = (await runCleanup(["--json"])) as CleanupCategory[];
-      return ok(categories.filter((category) => category.id !== "build"));
+      const categories = (await runCleanup(["--json-web"])) as CleanupCategory[];
+      return ok(categories);
     } catch (error) {
       return reply.code(500).send(fail("CLEANUP_INSPECTION_FAILED", message(error)));
     }
@@ -31,7 +31,7 @@ export function registerMaintenanceRoutes(app: FastifyInstance) {
     const body = isRecord(request.body) ? request.body : {};
     const ids = Array.isArray(body.ids) ? body.ids.filter((value): value is string => typeof value === "string") : [];
     if (!ids.length) return reply.code(400).send(fail("CLEANUP_SELECTION_REQUIRED", "请至少选择一个清理分类"));
-    if (ids.includes("build"))
+    if (ids.some((id) => id === "build" || id === "packages"))
       return reply
         .code(400)
         .send(fail("CLEANUP_BUILD_REQUIRES_TERMINAL", "网页运行期间不能清理构建产物，请停止服务后使用终端清理脚本"));

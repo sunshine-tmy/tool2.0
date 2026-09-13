@@ -25,6 +25,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { Task, TaskStore } from "../../tasks/task-store";
 import { registerChatterboxBatchRoutes } from "./batch-routes";
 import { ChatterboxWorkerError, createChatterboxWorkerClient } from "./worker-client";
 
@@ -57,8 +58,13 @@ type ChatterboxCreateInput = Pick<
   | "fileName"
 >;
 
-export async function registerChatterboxRoutes(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
-  const store = new ChatterboxTaskStore(config.chatterboxTasksDir, database);
+export async function registerChatterboxRoutes(
+  app: FastifyInstance,
+  config: AppConfig,
+  database: ToolboxDatabase,
+  taskStore: TaskStore
+) {
+  const store = new ChatterboxTaskStore(config.chatterboxTasksDir, database, taskStore);
   const worker = createChatterboxWorkerClient(config);
   const media = new ChatterboxMediaTools(config);
   await store.initialize();
@@ -79,6 +85,7 @@ export async function registerChatterboxRoutes(app: FastifyInstance, config: App
     worker,
     media,
     database,
+    taskStore,
     externalQueueStats: () => queue.stats()
   });
   for (const task of store.list()) {
@@ -229,7 +236,8 @@ class ChatterboxTaskStore {
 
   constructor(
     private readonly root: string,
-    private readonly database: ToolboxDatabase
+    private readonly database: ToolboxDatabase,
+    private readonly taskStore: TaskStore
   ) {}
 
   async initialize() {
@@ -305,6 +313,7 @@ class ChatterboxTaskStore {
     if (!isSafeTaskId(id)) return false;
     this.tasks.delete(id);
     this.database.remove("chatterbox-task", id);
+    this.taskStore.remove(id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -338,7 +347,29 @@ class ChatterboxTaskStore {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt
     });
+    this.taskStore.upsert(toUnifiedChatterboxTask(task));
   }
+}
+
+function toUnifiedChatterboxTask(task: ChatterboxTask): Task {
+  const status: Task["status"] =
+    task.status === "queued"
+      ? "pending"
+      : task.status === "processing"
+        ? "running"
+        : task.status === "cancelled"
+          ? "failed"
+          : task.status;
+  return {
+    id: task.id,
+    toolId: "chatterbox",
+    status,
+    progress: task.progress,
+    outputPath: task.status === "completed" ? "audio.mp3" : undefined,
+    error: task.status === "cancelled" ? "CANCELLED" : task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  };
 }
 
 class ChatterboxQueue {

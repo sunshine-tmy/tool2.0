@@ -320,11 +320,19 @@ describe("lan transfer api", () => {
     const deniedList = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(deniedList.statusCode).toBe(401);
 
-    const login = await app.inject({ method: "POST", url: "/api/v1/tools/lan-transfer/access", payload: { pin: "2468" } });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/access",
+      payload: { pin: "2468" }
+    });
     expect(login.statusCode).toBe(200);
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/lan-transfer/files/${id}`, headers: { cookie } });
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/tools/lan-transfer/files/${id}`,
+      headers: { cookie }
+    });
     expect(removed.statusCode).toBe(200);
   });
 

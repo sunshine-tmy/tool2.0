@@ -64,6 +64,9 @@ describe("edge tts module", () => {
 
     expect(created.statusCode).toBe(202);
     const taskId = created.json().data.id as string;
+    const unifiedTask = await app.inject({ method: "GET", url: `/api/v1/tasks/${taskId}` });
+    expect(unifiedTask.statusCode).toBe(200);
+    expect(unifiedTask.json().data).toMatchObject({ id: taskId, toolId: "edge-tts" });
     const completed = await waitForTask(app, taskId);
     expect(completed).toMatchObject({ status: "completed", audioBytes: 13 });
 

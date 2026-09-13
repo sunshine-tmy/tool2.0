@@ -52,6 +52,15 @@ type VideoTextTaskSource = {
 
 export async function registerVideoTextRoutes({ app, config, taskStore, remoteFetch }: RegisterVideoTextRoutesOptions) {
   const results = new Map<string, StoredVideoTextResult>();
+  const activeJobs = new Set<Promise<unknown>>();
+  const shutdownController = new AbortController();
+  const trackJob = (job: Promise<unknown>) => {
+    activeJobs.add(job);
+    void job.then(
+      () => activeJobs.delete(job),
+      () => activeJobs.delete(job)
+    );
+  };
   await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
   await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
@@ -66,14 +75,16 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
       return reply.code(400).send(fail("VIDEO_REQUIRED", "Please upload a supported video file"));
     }
 
-    return ok(
-      await createVideoTextTaskFromSource(
-        {
-          stream: file.file,
-          fileName: file.filename || "video.mp4",
-          mimeType: file.mimetype
-        },
-        { config, taskStore, results }
+    return reply.code(202).send(
+      ok(
+        await createVideoTextTaskFromSource(
+          {
+            stream: file.file,
+            fileName: file.filename || "video.mp4",
+            mimeType: file.mimetype
+          },
+          { config, taskStore, results, signal: shutdownController.signal, trackJob }
+        )
       )
     );
   });
@@ -97,15 +108,17 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
       const mimeType = normalizeVideoMimeType(response.headers.get("content-type"));
       const fileName = body?.fileName || fileNameFromUrl(sourceUrl);
 
-      return ok(
-        await createVideoTextTaskFromSource(
-          {
-            stream: limitedResponseStream(response, config.remoteMediaMaxBytes),
-            fileName,
-            mimeType,
-            fileSize: parseContentLength(response.headers.get("content-length"))
-          },
-          { config, taskStore, results }
+      return reply.code(202).send(
+        ok(
+          await createVideoTextTaskFromSource(
+            {
+              stream: limitedResponseStream(response, config.remoteMediaMaxBytes),
+              fileName,
+              mimeType,
+              fileSize: parseContentLength(response.headers.get("content-length"))
+            },
+            { config, taskStore, results, signal: shutdownController.signal, trackJob }
+          )
         )
       );
     } catch (error) {
@@ -260,6 +273,11 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
     await deleteStoredResultFiles(config, taskId);
     return ok({ removed: true });
   });
+
+  app.addHook("onClose", async () => {
+    shutdownController.abort();
+    await Promise.allSettled([...activeJobs]);
+  });
 }
 
 async function createVideoTextTaskFromSource(
@@ -268,9 +286,11 @@ async function createVideoTextTaskFromSource(
     config: AppConfig;
     taskStore: TaskStore;
     results: Map<string, StoredVideoTextResult>;
+    signal: AbortSignal;
+    trackJob: (job: Promise<unknown>) => void;
   }
 ) {
-  const { config, taskStore, results } = context;
+  const { config, taskStore, results, signal, trackJob } = context;
   const task = taskStore.create("video-text");
   taskStore.update(task.id, { status: "running", progress: 10 });
 
@@ -285,10 +305,45 @@ async function createVideoTextTaskFromSource(
   try {
     await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
     await pipeline(source.stream, fs.createWriteStream(videoPath));
-    taskStore.update(task.id, { progress: 35 });
+    const running = taskStore.update(task.id, { progress: 35 }) as Task;
+    trackJob(
+      processVideoTextTask({
+        task,
+        videoPath,
+        safeName,
+        mimeType: source.mimeType,
+        config,
+        taskStore,
+        results,
+        signal
+      })
+    );
+    return { task: running, result: null };
+  } catch (error) {
+    const failed = taskStore.update(task.id, {
+      status: "failed",
+      progress: 100,
+      error: error instanceof Error ? error.message : "视频上传失败"
+    }) as Task;
+    await cleanupVideoTextWorkingFiles(config, task.id, videoPath);
+    return { task: failed, result: null };
+  }
+}
 
+async function processVideoTextTask(input: {
+  task: Task;
+  videoPath: string;
+  safeName: string;
+  mimeType: string;
+  config: AppConfig;
+  taskStore: TaskStore;
+  results: Map<string, StoredVideoTextResult>;
+  signal: AbortSignal;
+}) {
+  const { task, videoPath, safeName, mimeType, config, taskStore, results, signal } = input;
+  try {
     const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
-    const transcribed = await transcribeVideo(videoPath, task.id, config);
+    const transcribed = await transcribeVideo(videoPath, task.id, config, signal);
     const transcript = transcribed.transcript;
 
     if (!transcript.trim()) {
@@ -300,10 +355,7 @@ async function createVideoTextTaskFromSource(
           : "未配置视频语音识别命令，请配置本地识别后再分析。"
       }) as Task;
 
-      return {
-        task: failed,
-        result: null
-      };
+      return failed;
     }
 
     taskStore.update(task.id, { progress: 70 });
@@ -316,7 +368,7 @@ async function createVideoTextTaskFromSource(
       id: task.id,
       fileName: safeName,
       fileSize: (await fsp.stat(videoPath)).size,
-      mimeType: source.mimeType,
+      mimeType,
       source: "transcriber",
       createdAt: new Date().toISOString(),
       ...analysis
@@ -331,36 +383,34 @@ async function createVideoTextTaskFromSource(
       outputPath: path.basename(resultPath)
     }) as Task;
 
-    return {
-      task: completed,
-      result
-    };
+    return completed;
   } catch (error) {
     const failed = taskStore.update(task.id, {
       status: "failed",
       progress: 100,
       error: error instanceof Error ? error.message : "视频文本解析失败"
     }) as Task;
-    return {
-      task: failed,
-      result: null
-    };
+    return failed;
   } finally {
-    await Promise.all([
-      fsp.rm(videoPath, { force: true }),
-      fsp.rm(path.join(config.videoTextAudioDir, `${task.id}.wav`), { force: true }),
-      fsp.rm(path.join(config.videoTextResultsDir, `${task.id}.txt`), { force: true }),
-      fsp.rm(path.join(config.videoTextResultsDir, `${task.id}.txt.meta.json`), { force: true })
-    ]);
+    await cleanupVideoTextWorkingFiles(config, task.id, videoPath);
   }
 }
 
-async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig) {
+async function cleanupVideoTextWorkingFiles(config: AppConfig, taskId: string, videoPath: string) {
+  await Promise.all([
+    fsp.rm(videoPath, { force: true }),
+    fsp.rm(path.join(config.videoTextAudioDir, `${taskId}.wav`), { force: true }),
+    fsp.rm(path.join(config.videoTextResultsDir, `${taskId}.txt`), { force: true }),
+    fsp.rm(path.join(config.videoTextResultsDir, `${taskId}.txt.meta.json`), { force: true })
+  ]);
+}
+
+async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig, signal: AbortSignal) {
   if (!config.videoTextTranscribeCommand) {
     return { transcript: "" };
   }
 
-  const audioPath = await extractAudio(videoPath, taskId, config);
+  const audioPath = await extractAudio(videoPath, taskId, config, signal);
   const outputPath = path.join(config.videoTextResultsDir, `${taskId}.txt`);
   const metadataPath = `${outputPath}.meta.json`;
   const { stdout } = await runCommand(
@@ -371,7 +421,8 @@ async function transcribeVideo(videoPath: string, taskId: string, config: AppCon
       video: videoPath,
       output: outputPath
     },
-    "视频语音识别失败：请检查 VIDEO_TEXT_TRANSCRIBE_COMMAND 配置。"
+    "视频语音识别失败：请检查 VIDEO_TEXT_TRANSCRIBE_COMMAND 配置。",
+    signal
   );
 
   const recognitionQuality = await readRecognitionQuality(metadataPath);
@@ -428,7 +479,7 @@ function numberOrUndefined(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-async function extractAudio(videoPath: string, taskId: string, config: AppConfig) {
+async function extractAudio(videoPath: string, taskId: string, config: AppConfig, signal: AbortSignal) {
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
   const audioPath = path.join(config.videoTextAudioDir, `${taskId}.wav`);
   await runCommand(
@@ -439,12 +490,18 @@ async function extractAudio(videoPath: string, taskId: string, config: AppConfig
       output: audioPath,
       audio: audioPath
     },
-    "音频提取失败：请确认已安装 ffmpeg，或配置 VIDEO_TEXT_AUDIO_EXTRACT_COMMAND。"
+    "音频提取失败：请确认已安装 ffmpeg，或配置 VIDEO_TEXT_AUDIO_EXTRACT_COMMAND。",
+    signal
   );
   return audioPath;
 }
 
-async function runCommand(template: string, values: Record<string, string>, fallbackMessage: string) {
+async function runCommand(
+  template: string,
+  values: Record<string, string>,
+  fallbackMessage: string,
+  signal: AbortSignal
+) {
   try {
     const command = parseCommandTemplate(template).map((argument) => replaceCommandPlaceholders(argument, values));
     const [executable, ...args] = command;
@@ -452,7 +509,8 @@ async function runCommand(template: string, values: Record<string, string>, fall
     return await execFileAsync(executable, args, {
       timeout: 30 * 60 * 1000,
       maxBuffer: 20 * 1024 * 1024,
-      windowsHide: true
+      windowsHide: true,
+      signal
     });
   } catch {
     throw new Error(fallbackMessage);

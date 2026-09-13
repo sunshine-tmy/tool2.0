@@ -6,6 +6,7 @@ import { fail, isImageAiOperation, ok } from "@toolbox/shared";
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { TaskStore } from "../../tasks/task-store";
 import {
   IMAGE_AI_MAX_FILE_BYTES,
   IMAGE_AI_MAX_MASK_BYTES,
@@ -25,8 +26,13 @@ type UploadedPart = {
   fieldname: string;
 };
 
-export async function registerImageAiRoutes(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
-  const manager = createImageAiTaskManager(config, database);
+export async function registerImageAiRoutes(
+  app: FastifyInstance,
+  config: AppConfig,
+  database: ToolboxDatabase,
+  taskStore: TaskStore
+) {
+  const manager = createImageAiTaskManager(config, database, taskStore);
   const worker = createImageAiWorkerClient(config);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());

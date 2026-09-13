@@ -643,6 +643,7 @@ import {
   WandSparkles
 } from "lucide-vue-next";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useTaskEvents } from "../../composables/useTaskEvents";
 import {
   CHATTERBOX_MAX_BATCH_SEGMENTS,
   CHATTERBOX_MAX_BATCH_TEXT_LENGTH,
@@ -732,7 +733,6 @@ const regeneratingItemId = ref<string>();
 const itemDrafts = reactive<Record<string, ItemDraft>>({});
 const errorMessage = ref("");
 const dragItemId = ref<string>();
-let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
 const totalCharacters = computed(() => segments.value.reduce((sum, item) => sum + item.text.length, 0));
 const validSegmentCount = computed(() => segments.value.filter((item) => item.text.trim()).length);
@@ -741,6 +741,8 @@ const translatedAutoSegmentCount = computed(
   () => parsedAutoSegments.value.filter((item) => item.referenceTranslation).length
 );
 const isCurrentRunning = computed(() => currentBatch.value && isBatchRunning(currentBatch.value));
+const streamedBatchId = computed(() => (isCurrentRunning.value ? currentBatch.value?.id : undefined));
+const taskEvents = useTaskEvents(streamedBatchId);
 const hasSelectedReference = computed(() =>
   referenceSource.value === "upload"
     ? Boolean(referenceFile.value)
@@ -786,8 +788,32 @@ watch(language, () => {
   }
 });
 onBeforeUnmount(() => {
-  if (pollTimer) clearTimeout(pollTimer);
   revokePreview();
+});
+
+watch(taskEvents.task, (task) => {
+  const current = currentBatch.value;
+  if (!task || task.id !== current?.id) return;
+  const next: ChatterboxBatch = {
+    ...current,
+    status:
+      task.status === "pending"
+        ? "queued"
+        : task.status === "running"
+          ? "processing"
+          : task.status === "completed"
+            ? "completed"
+            : "partial_failed",
+    progress: task.progress,
+    updatedAt: task.updatedAt
+  };
+  currentBatch.value = next;
+  if (detailBatch.value?.id === task.id) setDetailBatch(next);
+  if (task.status === "completed" || task.status === "failed") void finishStreamedBatch(task.id);
+});
+
+watch(taskEvents.error, (error) => {
+  if (error) errorMessage.value = `${error.message}（${error.code}）`;
 });
 
 function newEditorSegment(text = "", fileName = "", referenceTranslation = ""): EditorSegment {
@@ -1014,7 +1040,6 @@ async function createBatch() {
       referenceRetained: referenceRetained.value
     });
     message.success("批次已加入生成队列");
-    schedulePoll();
     await loadBatches();
   } catch (error) {
     errorMessage.value = readableError(error, "声音克隆批次创建失败");
@@ -1023,26 +1048,19 @@ async function createBatch() {
   }
 }
 
-function schedulePoll() {
-  if (pollTimer) clearTimeout(pollTimer);
-  if (!currentBatch.value || !isBatchRunning(currentBatch.value)) return;
-  pollTimer = setTimeout(async () => {
-    try {
-      if (!currentBatch.value) return;
-      currentBatch.value = await chatterboxApi.batch(currentBatch.value.id);
-      if (detailBatch.value?.id === currentBatch.value.id) setDetailBatch(currentBatch.value);
-      if (!isBatchRunning(currentBatch.value)) {
-        message[currentBatch.value.status === "completed" ? "success" : "warning"](
-          currentBatch.value.status === "completed" ? "批量声音克隆生成完成" : "批次已结束，请查看失败文案段"
-        );
-        await loadBatches();
-      }
-    } catch (error) {
-      errorMessage.value = readableError(error, "批次状态读取失败");
-    } finally {
-      schedulePoll();
-    }
-  }, 1500);
+async function finishStreamedBatch(batchId: string) {
+  try {
+    const batch = await chatterboxApi.batch(batchId);
+    if (currentBatch.value?.id !== batchId) return;
+    currentBatch.value = batch;
+    if (detailBatch.value?.id === batchId) setDetailBatch(batch);
+    message[batch.status === "completed" ? "success" : "warning"](
+      batch.status === "completed" ? "批量声音克隆生成完成" : "批次已结束，请查看失败文案段"
+    );
+    await loadBatches();
+  } catch (error) {
+    errorMessage.value = readableError(error, "批次结果读取失败");
+  }
 }
 
 async function openBatch(id: string) {
@@ -1051,7 +1069,6 @@ async function openBatch(id: string) {
     setDetailBatch(batch);
     if (isBatchRunning(batch)) {
       currentBatch.value = batch;
-      schedulePoll();
     }
     detailVisible.value = true;
   } catch (error) {
@@ -1100,7 +1117,6 @@ async function regenerateItem(itemId: string) {
     currentBatch.value = detailBatch.value;
     retryReference.value = undefined;
     retryVoiceId.value = "";
-    schedulePoll();
     message.success("该文案段已加入重新生成队列");
   } catch (error) {
     message.error(readableError(error, "重新生成失败"));

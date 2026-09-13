@@ -8,8 +8,7 @@ export type TaskEventSource = {
   close: () => void;
 };
 
-type TaskConnectionState =
-  "idle" | "connecting" | "streaming" | "reconnecting" | "polling" | "paused" | "completed";
+type TaskConnectionState = "idle" | "connecting" | "streaming" | "reconnecting" | "polling" | "paused" | "completed";
 
 type TaskEventsOptions = {
   createEventSource?: (url: string) => TaskEventSource;

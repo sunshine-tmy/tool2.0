@@ -124,6 +124,9 @@ describe("Chatterbox voice cloning module", () => {
     const created = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/batches", ...request });
     expect(created.statusCode).toBe(202);
     const batchId = created.json().data.id as string;
+    const unifiedBatch = await app.inject({ method: "GET", url: `/api/v1/tasks/${batchId}` });
+    expect(unifiedBatch.statusCode).toBe(200);
+    expect(unifiedBatch.json().data).toMatchObject({ id: batchId, toolId: "chatterbox-batch" });
     let batch = await waitForBatch(app, batchId);
     expect(batch).toMatchObject({
       status: "completed",
@@ -352,6 +355,9 @@ describe("Chatterbox voice cloning module", () => {
     const created = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks", ...request });
     expect(created.statusCode).toBe(202);
     const taskId = created.json().data.id as string;
+    const unifiedTask = await app.inject({ method: "GET", url: `/api/v1/tasks/${taskId}` });
+    expect(unifiedTask.statusCode).toBe(200);
+    expect(unifiedTask.json().data).toMatchObject({ id: taskId, toolId: "chatterbox" });
     const task = await waitForTask(app, taskId);
     expect(task).toMatchObject({
       status: "completed",

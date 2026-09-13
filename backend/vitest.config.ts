@@ -16,7 +16,14 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary", "lcov"],
       include: ["src/**/*.ts"],
-      exclude: ["src/server.ts", "src/database/cli.ts", "src/types/**", "src/**/*.test.ts", "src/__tests__/**"],
+      exclude: [
+        "src/server.ts",
+        "src/database/cli.ts",
+        "src/database/benchmark.ts",
+        "src/types/**",
+        "src/**/*.test.ts",
+        "src/__tests__/**"
+      ],
       thresholds: { statements: 75, lines: 75, functions: 75, branches: 65 }
     }
   }

@@ -88,6 +88,9 @@ describe("image ai api", () => {
 
     expect(createResponse.statusCode).toBe(202);
     const taskId = createResponse.json().data.id as string;
+    const unifiedTaskResponse = await app.inject({ method: "GET", url: `/api/v1/tasks/${taskId}` });
+    expect(unifiedTaskResponse.statusCode).toBe(200);
+    expect(unifiedTaskResponse.json().data).toMatchObject({ id: taskId, toolId: "image-ai" });
     const task = await waitForTask(app, taskId);
     expect(task.status).toBe("completed");
     expect(task.results[0]).toMatchObject({

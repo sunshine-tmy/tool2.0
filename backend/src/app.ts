@@ -7,7 +7,16 @@ import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import fastify from "fastify";
-import { fail, listTools, ok } from "@toolbox/shared";
+import {
+  ApiFailureSchema,
+  TaskIdParamsSchema,
+  TaskListSchema,
+  TaskSchema,
+  apiSuccessSchema,
+  fail,
+  listTools,
+  ok
+} from "@toolbox/shared";
 import { getConfig } from "./config";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerImageAiRoutes } from "./modules/image-ai/routes";
@@ -91,20 +100,16 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
   await registerAdminSecurity(app, config, database);
 
+  app.addHook("preSerialization", async (request, _reply, payload) => {
+    if (typeof payload !== "object" || payload === null) return payload;
+    const value = payload as Record<string, unknown>;
+    return typeof value.success === "boolean" && typeof value.requestId !== "string"
+      ? { ...value, requestId: request.id }
+      : payload;
+  });
+
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
-    if (typeof payload !== "string" || !reply.getHeader("content-type")?.toString().includes("application/json")) {
-      return payload;
-    }
-    try {
-      const value = JSON.parse(payload) as Record<string, unknown>;
-      if (typeof value.success === "boolean" && typeof value.requestId !== "string") {
-        value.requestId = request.id;
-        return JSON.stringify(value);
-      }
-    } catch {
-      // Non-JSON payloads are returned unchanged.
-    }
     return payload;
   });
 
@@ -188,22 +193,31 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     return ok(listTools());
   });
 
-  app.get("/api/v1/tasks", async () => {
-    return ok(taskStore.list());
-  });
+  app.get("/api/v1/tasks", { schema: { response: { 200: apiSuccessSchema(TaskListSchema) } } }, async () =>
+    ok(taskStore.list())
+  );
 
-  app.get("/api/v1/tasks/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    const task = taskStore.get(taskId);
+  app.get(
+    "/api/v1/tasks/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(TaskSchema), 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params as { taskId: string };
+      const task = taskStore.get(taskId);
 
-    if (!task) {
-      return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      if (!task) {
+        return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      }
+
+      return ok(task);
     }
+  );
 
-    return ok(task);
-  });
-
-  app.get("/api/v1/tasks/:taskId/events", async (request, reply) => {
+  app.get("/api/v1/tasks/:taskId/events", { schema: { params: TaskIdParamsSchema } }, async (request, reply) => {
     const { taskId } = request.params as { taskId: string };
     const task = taskStore.get(taskId);
     if (!task) return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
@@ -246,13 +260,13 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
 
   registerImageCompressRoutes(app, config, taskStore);
-  await registerImageAiRoutes(app, config, database);
-  await registerEdgeTtsRoutes({ app, config, database });
-  await registerChatterboxRoutes(app, config, database);
+  await registerImageAiRoutes(app, config, database, taskStore);
+  await registerEdgeTtsRoutes({ app, config, database, taskStore });
+  await registerChatterboxRoutes(app, config, database, taskStore);
   await registerLanTransferRoutes({ app, config, database });
   await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
   await registerShortVideoRoutes({ app, config, remoteFetch });
-  await registerXhsArchiveRoutes({ app, config, remoteFetch, database });
+  await registerXhsArchiveRoutes({ app, config, remoteFetch, database, taskStore });
   registerMaintenanceRoutes(app);
 
   return app;

@@ -22,6 +22,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
+import type { Task, TaskStore } from "../tasks/task-store";
 
 const execFileAsync = promisify(execFile);
 const VOICE_CACHE_MS = 24 * 60 * 60 * 1000;
@@ -31,6 +32,7 @@ type RegisterEdgeTtsRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
   database: ToolboxDatabase;
+  taskStore: TaskStore;
 };
 
 type RuntimeInfo = { available: boolean; version?: string; message: string };
@@ -46,8 +48,8 @@ type TaskPaths = {
   subtitleTemp: string;
 };
 
-export async function registerEdgeTtsRoutes({ app, config, database }: RegisterEdgeTtsRoutesOptions) {
-  const store = new EdgeTtsTaskStore(config.edgeTtsTasksDir, database);
+export async function registerEdgeTtsRoutes({ app, config, database, taskStore }: RegisterEdgeTtsRoutesOptions) {
+  const store = new EdgeTtsTaskStore(config.edgeTtsTasksDir, database, taskStore);
   const runner = new EdgeTtsRunner(config);
   await store.initialize();
   await store.cleanupExpired();
@@ -188,7 +190,8 @@ class EdgeTtsTaskStore {
 
   constructor(
     private readonly root: string,
-    private readonly database: ToolboxDatabase
+    private readonly database: ToolboxDatabase,
+    private readonly taskStore: TaskStore
   ) {}
 
   async initialize() {
@@ -197,7 +200,17 @@ class EdgeTtsTaskStore {
     if (stored.length) {
       for (const entity of stored) {
         const task = entity.payload as EdgeTtsTask;
-        if (isStoredTask(task)) this.tasks.set(task.id, task);
+        if (!isStoredTask(task)) continue;
+        if (task.status === "queued" || task.status === "processing") {
+          task.status = "failed";
+          task.progress = 100;
+          task.error = "INTERRUPTED";
+          task.updatedAt = new Date().toISOString();
+          await this.write(task);
+        } else {
+          this.taskStore.upsert(toUnifiedEdgeTask(task));
+        }
+        this.tasks.set(task.id, task);
       }
       return;
     }
@@ -207,9 +220,10 @@ class EdgeTtsTaskStore {
       try {
         const task = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as EdgeTtsTask;
         if (!isStoredTask(task) || task.id !== entry.name) continue;
-        if (task.status === "processing") {
+        if (task.status === "queued" || task.status === "processing") {
           task.status = "failed";
-          task.error = "服务重启导致任务中断，请重新生成";
+          task.progress = 100;
+          task.error = "INTERRUPTED";
           task.updatedAt = new Date().toISOString();
           await this.write(task);
         }
@@ -264,6 +278,7 @@ class EdgeTtsTaskStore {
     if (!isSafeTaskId(id)) return false;
     this.tasks.delete(id);
     this.database.remove("edge-tts-task", id);
+    this.taskStore.remove(id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -298,7 +313,29 @@ class EdgeTtsTaskStore {
       createdAt: task.createdAt,
       updatedAt: task.updatedAt
     });
+    this.taskStore.upsert(toUnifiedEdgeTask(task));
   }
+}
+
+function toUnifiedEdgeTask(task: EdgeTtsTask): Task {
+  const status: Task["status"] =
+    task.status === "queued"
+      ? "pending"
+      : task.status === "processing"
+        ? "running"
+        : task.status === "cancelled"
+          ? "failed"
+          : task.status;
+  return {
+    id: task.id,
+    toolId: "edge-tts",
+    status,
+    progress: task.progress,
+    outputPath: task.status === "completed" ? "audio.mp3" : undefined,
+    error: task.status === "cancelled" ? "CANCELLED" : task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  };
 }
 
 class EdgeTtsRunner {

@@ -59,8 +59,9 @@ Injected text should be ignored.`
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    expect(response.json().data).toMatchObject({ task: { status: "running", progress: 35 }, result: null });
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.fullText).toContain("Transcribed speech from video only");
     expect(data.result.fullText).not.toContain("Injected text should be ignored");
@@ -81,8 +82,8 @@ Injected text should be ignored.`
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("failed");
     expect(data.needsTranscript).toBeUndefined();
     expect(data.result).toBeNull();
@@ -134,8 +135,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json().data.task.status).toBe("completed");
+    expect(response.statusCode).toBe(202);
+    expect((await waitForVideoTextTask(app, response.json().data.task.id)).task.status).toBe("completed");
     await expect(fs.readdir(path.join(storageRoot, "video-text", "uploads"))).resolves.toEqual([]);
   });
 
@@ -169,8 +170,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.source).toBe("transcriber");
     expect(data.result.fullText).toContain("Voice script from local transcriber");
@@ -212,8 +213,8 @@ if (mode === "extract") {
       }
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.fileName).toBe("达人视频.mp4");
     expect(data.result.fullText).toContain("Remote short video transcript");
@@ -294,8 +295,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.recognitionQuality).toMatchObject({
       model: "large-v3-turbo",
@@ -336,8 +337,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("failed");
     expect(data.task.error).not.toEqual("视频语音识别失败：未配置本地识别命令。");
     expect(data.result).toBeNull();
@@ -372,6 +373,7 @@ if (mode === "extract") {
       })
     });
     const taskId = created.json().data.task.id;
+    await waitForVideoTextTask(app, taskId);
 
     const exported = await app.inject({
       method: "GET",
@@ -489,11 +491,11 @@ if (mode === "extract") {
   return createApp();
 }
 
-function createVideoTextTask(
+async function createVideoTextTask(
   app: Awaited<ReturnType<typeof createApp>>,
   input: { fileName: string; transcript: string }
 ) {
-  return app.inject({
+  const response = await app.inject({
     method: "POST",
     url: "/api/v1/tools/video-text/tasks",
     ...multipartPayload({
@@ -502,6 +504,19 @@ function createVideoTextTask(
       content: input.transcript
     })
   });
+  expect(response.statusCode).toBe(202);
+  await waitForVideoTextTask(app, response.json().data.task.id);
+  return response;
+}
+
+async function waitForVideoTextTask(app: Awaited<ReturnType<typeof createApp>>, taskId: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/video-text/tasks/${taskId}` });
+    const data = response.json().data;
+    if (data.task.status === "completed" || data.task.status === "failed") return data;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Video text task timed out");
 }
 
 function multipartPayload(input: {

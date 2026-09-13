@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Venv = Join-Path $Root $VenvPath
-$Requirements = Join-Path $PSScriptRoot "chatterbox-requirements.txt"
+$Requirements = Join-Path $PSScriptRoot "chatterbox.lock.txt"
 $Worker = Join-Path $PSScriptRoot "chatterbox-worker.py"
 
 Set-Location -LiteralPath $Root
@@ -32,12 +32,7 @@ $VenvPython = Join-Path $Venv "Scripts\python.exe"
 & $VenvPython -m pip install --disable-pip-version-check --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "Unable to upgrade pip" }
 
-# The official package pins Torch 2.6. Install the matching CUDA 12.4 wheels
-# explicitly so Windows does not silently end up with a CPU-only runtime.
-& $VenvPython -m pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-if ($LASTEXITCODE -ne 0) { throw "Unable to install the Chatterbox PyTorch runtime" }
-
-& $VenvPython -m pip install -r $Requirements
+& $VenvPython -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cu124 -r $Requirements
 if ($LASTEXITCODE -ne 0) { throw "Unable to install Chatterbox dependencies" }
 
 # The current 0.1.7 PyPI wheel predates the V3 loader argument. Install the

@@ -12,10 +12,24 @@ describe("api app", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       success: true,
+      requestId: expect.any(String),
       data: {
         status: "ok"
       }
     });
+  });
+
+  it("returns schema-stable task errors with a request id", async () => {
+    const app = await createApp();
+    const response = await app.inject({ method: "GET", url: "/api/v1/tasks/missing-task" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({
+      success: false,
+      requestId: expect.any(String),
+      error: { code: "TASK_NOT_FOUND", message: "Task not found" }
+    });
+    await app.close();
   });
 
   it("returns the no-login tool registry", async () => {
@@ -43,6 +57,7 @@ describe("api app", () => {
     expect(inspected.statusCode).toBe(200);
     expect(inspected.json().data.some((item: { id: string }) => item.id === "xhs-archive")).toBe(true);
     expect(inspected.json().data.some((item: { id: string }) => item.id === "build")).toBe(false);
+    expect(inspected.json().data.some((item: { id: string }) => item.id === "packages")).toBe(false);
 
     const rejected = await app.inject({
       method: "POST",
