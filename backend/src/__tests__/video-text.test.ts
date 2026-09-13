@@ -104,6 +104,32 @@ Injected text should be ignored.`
     await expect(fs.readFile(sentinelPath, "utf8")).resolves.toBe("do-not-delete");
   });
 
+  it("rejects malformed remote and export requests at the schema boundary", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const missingUrl = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/video-text/tasks/from-url",
+      payload: { fileName: "remote.mp4" }
+    });
+    const invalidFormat = await app.inject({
+      method: "GET",
+      url: "/api/v1/tools/video-text/tasks/abcdef/export?format=exe"
+    });
+
+    expect(missingUrl.statusCode).toBe(400);
+    expect(missingUrl.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+    expect(invalidFormat.statusCode).toBe(400);
+    expect(invalidFormat.json().error.code).toBe("REQUEST_INVALID");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("recreates upload directories before saving video files", async () => {
     const helperPath = path.join(storageRoot, "video-text-recovered-upload-helper.cjs");
     await fs.writeFile(

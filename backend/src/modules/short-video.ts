@@ -2,6 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import {
+  ApiFailureSchema,
+  ShortVideoDownloadQuerySchema,
+  ShortVideoParseInputSchema,
+  ShortVideoParseResultSchema,
+  apiSuccessSchema,
   detectShortVideoPlatform,
   extractFirstUrl,
   fail,
@@ -49,83 +54,101 @@ class ProviderHttpError extends Error {
 class ProviderTimeoutError extends Error {}
 
 export async function registerShortVideoRoutes({ app, config, remoteFetch }: RegisterShortVideoRoutesOptions) {
-  app.post("/api/v1/tools/short-video/parse", async (request, reply) => {
-    const body = request.body as Partial<ShortVideoParseInput> | undefined;
-    const rawInput = typeof body?.input === "string" ? body.input.trim() : "";
-    const sourceUrl = extractFirstUrl(rawInput) ?? rawInput;
-    const requestedPlatform = body?.platform ?? "auto";
-
-    if (!sourceUrl) {
-      return reply.code(400).send(fail("SHORT_VIDEO_URL_REQUIRED", "请输入抖音、小红书或 TikTok 分享链接"));
-    }
-
-    if (!isValidRequestedPlatform(requestedPlatform)) {
-      return reply.code(400).send(fail("INVALID_SHORT_VIDEO_PLATFORM", "不支持的平台参数"));
-    }
-
-    if (!isSupportedShortVideoUrl(sourceUrl)) {
-      return reply.code(400).send(fail("UNSUPPORTED_SHORT_VIDEO_URL", "当前支持抖音、小红书和 TikTok 公开分享链接"));
-    }
-
-    if (isPlatformMismatch(sourceUrl, requestedPlatform)) {
-      return reply
-        .code(400)
-        .send(fail("SHORT_VIDEO_PLATFORM_MISMATCH", "选择的平台与分享链接不匹配，请切换平台或使用自动识别"));
-    }
-
-    try {
-      return ok(await resolveShortVideo(config, sourceUrl, requestedPlatform));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "短视频解析请求失败";
-      if (error instanceof ProviderResultError) {
-        return reply.code(400).send(fail("SHORT_VIDEO_PARSE_FAILED", message));
+  app.post<{ Body: ShortVideoParseInput }>(
+    "/api/v1/tools/short-video/parse",
+    {
+      schema: {
+        body: ShortVideoParseInputSchema,
+        response: { 200: apiSuccessSchema(ShortVideoParseResultSchema), 400: ApiFailureSchema, 502: ApiFailureSchema }
       }
-      return reply.code(502).send(fail("SHORT_VIDEO_PROVIDER_UNAVAILABLE", message));
-    }
-  });
+    },
+    async (request, reply) => {
+      const body = request.body;
+      const rawInput = body.input.trim();
+      const sourceUrl = extractFirstUrl(rawInput) ?? rawInput;
+      const requestedPlatform = body.platform ?? "auto";
 
-  app.get("/api/v1/tools/short-video/download", async (request, reply) => {
-    const query = request.query as { url?: string; filename?: string };
-    const mediaUrl = typeof query.url === "string" ? query.url.trim() : "";
-    const filename = sanitizeDownloadFilename(query.filename || "short-video-media");
-
-    if (!isHttpUrl(mediaUrl)) {
-      return reply.code(400).send(fail("INVALID_SHORT_VIDEO_MEDIA_URL", "下载地址无效"));
-    }
-
-    try {
-      const response = await fetchRemoteResponse(
-        remoteFetch,
-        mediaUrl,
-        {
-          headers: {
-            accept: "*/*",
-            "user-agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
-          }
-        },
-        config.remoteFetchTimeoutMs
-      );
-
-      if (!response.ok || !response.body) {
-        return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", `媒体下载失败：${response.status}`));
-      }
-      assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
-
-      const contentType = response.headers.get("content-type") || "application/octet-stream";
-      const contentLength = response.headers.get("content-length");
-      reply.header("content-type", contentType);
-      reply.header("content-disposition", createAttachmentDisposition(filename));
-      if (contentLength) {
-        reply.header("content-length", contentLength);
+      if (!sourceUrl) {
+        return reply.code(400).send(fail("SHORT_VIDEO_URL_REQUIRED", "请输入抖音、小红书或 TikTok 分享链接"));
       }
 
-      return reply.send(limitedResponseStream(response, config.remoteMediaMaxBytes));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "媒体下载失败";
-      return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", message));
+      if (!isValidRequestedPlatform(requestedPlatform)) {
+        return reply.code(400).send(fail("INVALID_SHORT_VIDEO_PLATFORM", "不支持的平台参数"));
+      }
+
+      if (!isSupportedShortVideoUrl(sourceUrl)) {
+        return reply.code(400).send(fail("UNSUPPORTED_SHORT_VIDEO_URL", "当前支持抖音、小红书和 TikTok 公开分享链接"));
+      }
+
+      if (isPlatformMismatch(sourceUrl, requestedPlatform)) {
+        return reply
+          .code(400)
+          .send(fail("SHORT_VIDEO_PLATFORM_MISMATCH", "选择的平台与分享链接不匹配，请切换平台或使用自动识别"));
+      }
+
+      try {
+        return ok(await resolveShortVideo(config, sourceUrl, requestedPlatform));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "短视频解析请求失败";
+        if (error instanceof ProviderResultError) {
+          return reply.code(400).send(fail("SHORT_VIDEO_PARSE_FAILED", message));
+        }
+        return reply.code(502).send(fail("SHORT_VIDEO_PROVIDER_UNAVAILABLE", message));
+      }
     }
-  });
+  );
+
+  app.get<{ Querystring: { url: string; filename?: string } }>(
+    "/api/v1/tools/short-video/download",
+    {
+      schema: {
+        querystring: ShortVideoDownloadQuerySchema,
+        response: { 400: ApiFailureSchema, 502: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const query = request.query;
+      const mediaUrl = query.url.trim();
+      const filename = sanitizeDownloadFilename(query.filename || "short-video-media");
+
+      if (!isHttpUrl(mediaUrl)) {
+        return reply.code(400).send(fail("INVALID_SHORT_VIDEO_MEDIA_URL", "下载地址无效"));
+      }
+
+      try {
+        const response = await fetchRemoteResponse(
+          remoteFetch,
+          mediaUrl,
+          {
+            headers: {
+              accept: "*/*",
+              "user-agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+            }
+          },
+          config.remoteFetchTimeoutMs
+        );
+
+        if (!response.ok || !response.body) {
+          return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", `媒体下载失败：${response.status}`));
+        }
+        assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
+
+        const contentType = response.headers.get("content-type") || "application/octet-stream";
+        const contentLength = response.headers.get("content-length");
+        reply.header("content-type", contentType);
+        reply.header("content-disposition", createAttachmentDisposition(filename));
+        if (contentLength) {
+          reply.header("content-length", contentLength);
+        }
+
+        return reply.send(limitedResponseStream(response, config.remoteMediaMaxBytes));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "媒体下载失败";
+        return reply.code(502).send(fail("SHORT_VIDEO_DOWNLOAD_FAILED", message));
+      }
+    }
+  );
 }
 
 async function resolveShortVideo(

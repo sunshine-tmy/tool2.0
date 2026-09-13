@@ -5,8 +5,25 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
-import { fail, ok } from "@toolbox/shared";
-import { analyzeVideoText, type VideoTextAnalysis, type VideoTextRecognitionQuality } from "@toolbox/shared/video-text";
+import {
+  ApiFailureSchema,
+  StoredVideoTextResultSchema,
+  VideoTextExportQuerySchema,
+  VideoTextFromUrlInputSchema,
+  VideoTextHistoryQuerySchema,
+  VideoTextHistorySchema,
+  VideoTextRemoteQuerySchema,
+  VideoTextRemovalSchema,
+  VideoTextTaskResponseSchema,
+  VideoTextTaskParamsSchema,
+  apiSuccessSchema,
+  fail,
+  ok,
+  type StoredVideoTextResultDto,
+  type VideoTextFromUrlInputDto,
+  type VideoTextHistoryItemDto
+} from "@toolbox/shared";
+import { analyzeVideoText, type VideoTextRecognitionQuality } from "@toolbox/shared/video-text";
 import type { AppConfig } from "../config";
 import type { Task, TaskStore } from "../tasks/task-store";
 import {
@@ -25,23 +42,9 @@ type RegisterVideoTextRoutesOptions = {
   remoteFetch: RemoteFetch;
 };
 
-type StoredVideoTextResult = VideoTextAnalysis & {
-  id: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
-  source: "form-text" | "transcriber";
-  createdAt: string;
-};
-
-type VideoTextHistoryItem = Pick<
-  StoredVideoTextResult,
-  "id" | "fileName" | "fileSize" | "mimeType" | "source" | "createdAt"
-> & {
-  summary: string[];
-  textPreview: string;
-  characterCount: number;
-};
+type StoredVideoTextResult = StoredVideoTextResultDto;
+type VideoTextHistoryItem = VideoTextHistoryItemDto;
+type TaskParams = { taskId: string };
 
 type VideoTextTaskSource = {
   stream: NodeJS.ReadableStream;
@@ -65,214 +68,291 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
   await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
   await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
 
-  app.post("/api/v1/tools/video-text/tasks", async (request, reply) => {
-    const file = await request.file();
-    if (!file) {
-      return reply.code(400).send(fail("FILE_REQUIRED", "Please upload a video file"));
-    }
-
-    if (!file.mimetype.startsWith("video/")) {
-      return reply.code(400).send(fail("VIDEO_REQUIRED", "Please upload a supported video file"));
-    }
-
-    return reply.code(202).send(
-      ok(
-        await createVideoTextTaskFromSource(
-          {
-            stream: file.file,
-            fileName: file.filename || "video.mp4",
-            mimeType: file.mimetype
-          },
-          { config, taskStore, results, signal: shutdownController.signal, trackJob }
-        )
-      )
-    );
-  });
-
-  app.post("/api/v1/tools/video-text/tasks/from-url", async (request, reply) => {
-    const body = request.body as { url?: string; fileName?: string } | undefined;
-    const sourceUrl = typeof body?.url === "string" ? body.url.trim() : "";
-
-    if (!isHttpUrl(sourceUrl)) {
-      return reply.code(400).send(fail("INVALID_VIDEO_URL", "请输入有效的视频地址"));
-    }
-
-    try {
-      const response = await fetchRemoteVideo(sourceUrl, remoteFetch, config);
-
-      if (!response.ok || !response.body) {
-        return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
+  app.post(
+    "/api/v1/tools/video-text/tasks",
+    {
+      schema: {
+        response: { 202: apiSuccessSchema(VideoTextTaskResponseSchema), 400: ApiFailureSchema, 413: ApiFailureSchema }
       }
-      assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
+    },
+    async (request, reply) => {
+      const file = await request.file();
+      if (!file) {
+        return reply.code(400).send(fail("FILE_REQUIRED", "Please upload a video file"));
+      }
 
-      const mimeType = normalizeVideoMimeType(response.headers.get("content-type"));
-      const fileName = body?.fileName || fileNameFromUrl(sourceUrl);
+      if (!file.mimetype.startsWith("video/")) {
+        return reply.code(400).send(fail("VIDEO_REQUIRED", "Please upload a supported video file"));
+      }
 
       return reply.code(202).send(
         ok(
           await createVideoTextTaskFromSource(
             {
-              stream: limitedResponseStream(response, config.remoteMediaMaxBytes),
-              fileName,
-              mimeType,
-              fileSize: parseContentLength(response.headers.get("content-length"))
+              stream: file.file,
+              fileName: file.filename || "video.mp4",
+              mimeType: file.mimetype
             },
             { config, taskStore, results, signal: shutdownController.signal, trackJob }
           )
         )
       );
-    } catch (error) {
-      return reply
-        .code(502)
-        .send(fail("VIDEO_DOWNLOAD_FAILED", error instanceof Error ? error.message : "视频下载失败"));
     }
-  });
+  );
 
-  app.get("/api/v1/tools/video-text/remote-video", async (request, reply) => {
-    const query = request.query as { url?: string };
-    const sourceUrl = typeof query.url === "string" ? query.url.trim() : "";
-
-    if (!isHttpUrl(sourceUrl)) {
-      return reply.code(400).send(fail("INVALID_VIDEO_URL", "请输入有效的视频地址"));
-    }
-
-    try {
-      const response = await fetchRemoteVideo(sourceUrl, remoteFetch, config, request.headers.range);
-      if (!response.ok || !response.body) {
-        return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
+  app.post<{ Body: VideoTextFromUrlInputDto }>(
+    "/api/v1/tools/video-text/tasks/from-url",
+    {
+      schema: {
+        body: VideoTextFromUrlInputSchema,
+        response: {
+          202: apiSuccessSchema(VideoTextTaskResponseSchema),
+          400: ApiFailureSchema,
+          502: ApiFailureSchema
+        }
       }
-      assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
+    },
+    async (request, reply) => {
+      const body = request.body;
+      const sourceUrl = body.url.trim();
 
-      reply.code(response.status === 206 ? 206 : 200);
-      reply.header("content-type", normalizeVideoMimeType(response.headers.get("content-type")));
-      copyHeader(response, reply, "content-length");
-      copyHeader(response, reply, "content-range");
-      copyHeader(response, reply, "accept-ranges");
-      return reply.send(limitedResponseStream(response, config.remoteMediaMaxBytes));
-    } catch (error) {
-      return reply
-        .code(502)
-        .send(fail("VIDEO_DOWNLOAD_FAILED", error instanceof Error ? error.message : "视频下载失败"));
-    }
-  });
+      if (!isHttpUrl(sourceUrl)) {
+        return reply.code(400).send(fail("INVALID_VIDEO_URL", "请输入有效的视频地址"));
+      }
 
-  app.get("/api/v1/tools/video-text/history", async (request) => {
-    const query = request.query as {
-      keyword?: string;
-      page?: string;
-      pageSize?: string;
-    };
-    const page = parsePositiveInteger(query.page, 1);
-    const pageSize = Math.min(parsePositiveInteger(query.pageSize, 10), 50);
-    const keyword = (query.keyword ?? "").trim().toLowerCase();
-    const history = await listHistoryResults(config, results);
-    const matched = keyword ? history.filter((result) => matchHistoryKeyword(result, keyword)) : history;
-    const start = (page - 1) * pageSize;
+      try {
+        const response = await fetchRemoteVideo(sourceUrl, remoteFetch, config);
 
-    return ok({
-      items: matched.slice(start, start + pageSize).map(toHistoryItem),
-      total: matched.length,
-      page,
-      pageSize,
-      pageCount: Math.max(1, Math.ceil(matched.length / pageSize))
-    });
-  });
+        if (!response.ok || !response.body) {
+          return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
+        }
+        assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
 
-  app.get("/api/v1/tools/video-text/history/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    if (!isValidTaskId(taskId)) {
-      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
-    }
-    const result = await loadResult(config, results, taskId);
-    if (!result) {
-      return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
-    }
-    return ok(result);
-  });
+        const mimeType = normalizeVideoMimeType(response.headers.get("content-type"));
+        const fileName = body.fileName || fileNameFromUrl(sourceUrl);
 
-  app.delete("/api/v1/tools/video-text/history/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    if (!isValidTaskId(taskId)) {
-      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+        return reply.code(202).send(
+          ok(
+            await createVideoTextTaskFromSource(
+              {
+                stream: limitedResponseStream(response, config.remoteMediaMaxBytes),
+                fileName,
+                mimeType,
+                fileSize: parseContentLength(response.headers.get("content-length"))
+              },
+              { config, taskStore, results, signal: shutdownController.signal, trackJob }
+            )
+          )
+        );
+      } catch (error) {
+        return reply
+          .code(502)
+          .send(fail("VIDEO_DOWNLOAD_FAILED", error instanceof Error ? error.message : "视频下载失败"));
+      }
     }
-    const existed = Boolean(await loadResult(config, results, taskId));
-    if (!existed) {
-      return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
-    }
+  );
 
-    results.delete(taskId);
-    taskStore.remove(taskId);
-    await deleteStoredResultFiles(config, taskId);
-    return ok({ removed: true });
-  });
+  app.get<{ Querystring: { url: string } }>(
+    "/api/v1/tools/video-text/remote-video",
+    { schema: { querystring: VideoTextRemoteQuerySchema } },
+    async (request, reply) => {
+      const sourceUrl = request.query.url.trim();
 
-  app.get("/api/v1/tools/video-text/tasks/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    if (!isValidTaskId(taskId)) {
-      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
-    }
-    const task = taskStore.get(taskId);
-    if (!task || task.toolId !== "video-text") {
-      return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
-    }
+      if (!isHttpUrl(sourceUrl)) {
+        return reply.code(400).send(fail("INVALID_VIDEO_URL", "请输入有效的视频地址"));
+      }
 
-    return ok({
-      task,
-      result: await loadResult(config, results, taskId)
-    });
-  });
+      try {
+        const response = await fetchRemoteVideo(sourceUrl, remoteFetch, config, request.headers.range);
+        if (!response.ok || !response.body) {
+          return reply.code(502).send(fail("VIDEO_DOWNLOAD_FAILED", `视频下载失败：${response.status}`));
+        }
+        assertRemoteResponseSize(response, config.remoteMediaMaxBytes);
 
-  app.get("/api/v1/tools/video-text/tasks/:taskId/result", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    if (!isValidTaskId(taskId)) {
-      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+        reply.code(response.status === 206 ? 206 : 200);
+        reply.header("content-type", normalizeVideoMimeType(response.headers.get("content-type")));
+        copyHeader(response, reply, "content-length");
+        copyHeader(response, reply, "content-range");
+        copyHeader(response, reply, "accept-ranges");
+        return reply.send(limitedResponseStream(response, config.remoteMediaMaxBytes));
+      } catch (error) {
+        return reply
+          .code(502)
+          .send(fail("VIDEO_DOWNLOAD_FAILED", error instanceof Error ? error.message : "视频下载失败"));
+      }
     }
-    const result = await loadResult(config, results, taskId);
-    if (!result) {
-      return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
-    }
-    return ok(result);
-  });
+  );
 
-  app.get("/api/v1/tools/video-text/tasks/:taskId/export", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    if (!isValidTaskId(taskId)) {
-      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
-    }
-    const { format = "txt" } = request.query as { format?: string };
-    const result = await loadResult(config, results, taskId);
-    if (!result) {
-      return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
-    }
+  app.get<{ Querystring: { keyword?: string; page?: string; pageSize?: string } }>(
+    "/api/v1/tools/video-text/history",
+    {
+      schema: {
+        querystring: VideoTextHistoryQuerySchema,
+        response: { 200: apiSuccessSchema(VideoTextHistorySchema) }
+      }
+    },
+    async (request) => {
+      const query = request.query;
+      const page = parsePositiveInteger(query.page, 1);
+      const pageSize = Math.min(parsePositiveInteger(query.pageSize, 10), 50);
+      const keyword = (query.keyword ?? "").trim().toLowerCase();
+      const history = await listHistoryResults(config, results);
+      const matched = keyword ? history.filter((result) => matchHistoryKeyword(result, keyword)) : history;
+      const start = (page - 1) * pageSize;
 
-    const exportFormat = format === "json" || format === "srt" ? format : "txt";
-    const body = formatResult(result, exportFormat);
-    const fileName = encodeURIComponent(`${path.parse(result.fileName).name}.${exportFormat}`);
+      return ok({
+        items: matched.slice(start, start + pageSize).map(toHistoryItem),
+        total: matched.length,
+        page,
+        pageSize,
+        pageCount: Math.max(1, Math.ceil(matched.length / pageSize))
+      });
+    }
+  );
 
-    reply.header("Content-Disposition", `attachment; filename*=UTF-8''${fileName}`);
-    if (exportFormat === "json") {
-      reply.type("application/json; charset=utf-8");
-    } else {
-      reply.type("text/plain; charset=utf-8");
+  app.get<{ Params: TaskParams }>(
+    "/api/v1/tools/video-text/history/:taskId",
+    {
+      schema: {
+        params: VideoTextTaskParamsSchema,
+        response: { 200: apiSuccessSchema(StoredVideoTextResultSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      if (!isValidTaskId(taskId)) {
+        return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+      }
+      const result = await loadResult(config, results, taskId);
+      if (!result) {
+        return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
+      }
+      return ok(result);
     }
-    return reply.send(body);
-  });
+  );
 
-  app.delete("/api/v1/tools/video-text/tasks/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    if (!isValidTaskId(taskId)) {
-      return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+  app.delete<{ Params: TaskParams }>(
+    "/api/v1/tools/video-text/history/:taskId",
+    {
+      schema: {
+        params: VideoTextTaskParamsSchema,
+        response: { 200: apiSuccessSchema(VideoTextRemovalSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      if (!isValidTaskId(taskId)) {
+        return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+      }
+      const existed = Boolean(await loadResult(config, results, taskId));
+      if (!existed) {
+        return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
+      }
+
+      results.delete(taskId);
+      taskStore.remove(taskId);
+      await deleteStoredResultFiles(config, taskId);
+      return ok({ removed: true as const });
     }
-    const task = taskStore.get(taskId);
-    const result = await loadResult(config, results, taskId);
-    if ((!task || task.toolId !== "video-text") && !result) {
-      return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+  );
+
+  app.get<{ Params: TaskParams }>(
+    "/api/v1/tools/video-text/tasks/:taskId",
+    {
+      schema: {
+        params: VideoTextTaskParamsSchema,
+        response: { 200: apiSuccessSchema(VideoTextTaskResponseSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      if (!isValidTaskId(taskId)) {
+        return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+      }
+      const task = taskStore.get(taskId);
+      if (!task || task.toolId !== "video-text") {
+        return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      }
+
+      return ok({
+        task,
+        result: await loadResult(config, results, taskId)
+      });
     }
-    results.delete(taskId);
-    taskStore.remove(taskId);
-    await deleteStoredResultFiles(config, taskId);
-    return ok({ removed: true });
-  });
+  );
+
+  app.get<{ Params: TaskParams }>(
+    "/api/v1/tools/video-text/tasks/:taskId/result",
+    {
+      schema: {
+        params: VideoTextTaskParamsSchema,
+        response: { 200: apiSuccessSchema(StoredVideoTextResultSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      if (!isValidTaskId(taskId)) {
+        return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+      }
+      const result = await loadResult(config, results, taskId);
+      if (!result) {
+        return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
+      }
+      return ok(result);
+    }
+  );
+
+  app.get<{ Params: TaskParams; Querystring: { format?: "txt" | "srt" | "json" } }>(
+    "/api/v1/tools/video-text/tasks/:taskId/export",
+    { schema: { params: VideoTextTaskParamsSchema, querystring: VideoTextExportQuerySchema } },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      if (!isValidTaskId(taskId)) {
+        return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+      }
+      const { format = "txt" } = request.query;
+      const result = await loadResult(config, results, taskId);
+      if (!result) {
+        return reply.code(404).send(fail("RESULT_NOT_FOUND", "Result not found"));
+      }
+
+      const body = formatResult(result, format);
+      const fileName = encodeURIComponent(`${path.parse(result.fileName).name}.${format}`);
+
+      reply.header("Content-Disposition", `attachment; filename*=UTF-8''${fileName}`);
+      if (format === "json") {
+        reply.type("application/json; charset=utf-8");
+      } else {
+        reply.type("text/plain; charset=utf-8");
+      }
+      return reply.send(body);
+    }
+  );
+
+  app.delete<{ Params: TaskParams }>(
+    "/api/v1/tools/video-text/tasks/:taskId",
+    {
+      schema: {
+        params: VideoTextTaskParamsSchema,
+        response: { 200: apiSuccessSchema(VideoTextRemovalSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      if (!isValidTaskId(taskId)) {
+        return reply.code(400).send(fail("INVALID_TASK_ID", "Invalid task id"));
+      }
+      const task = taskStore.get(taskId);
+      const result = await loadResult(config, results, taskId);
+      if ((!task || task.toolId !== "video-text") && !result) {
+        return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      }
+      results.delete(taskId);
+      taskStore.remove(taskId);
+      await deleteStoredResultFiles(config, taskId);
+      return ok({ removed: true as const });
+    }
+  );
 
   app.addHook("onClose", async () => {
     shutdownController.abort();
@@ -377,6 +457,7 @@ async function processVideoTextTask(input: {
     results.set(task.id, result);
     const resultPath = resultFilePath(config, task.id);
     await fsp.writeFile(resultPath, JSON.stringify(result, null, 2), "utf8");
+    await cleanupVideoTextWorkingFiles(config, task.id, videoPath);
     const completed = taskStore.update(task.id, {
       status: "completed",
       progress: 100,

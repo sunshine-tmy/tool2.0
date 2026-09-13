@@ -96,12 +96,8 @@ describe("xhs archive api", () => {
     expect(detail.media).toHaveLength(1);
     const translated = await waitForTranslation(app, detail.id);
     expect(translated.translation).toMatchObject({ status: "ready", title: { machine: "EN:测试笔记" } });
-    const translationTask = await app.inject({
-      method: "GET",
-      url: `/api/v1/tasks/${translated.translation.taskId}`
-    });
-    expect(translationTask.statusCode).toBe(200);
-    expect(translationTask.json().data).toMatchObject({ toolId: "xhs-translation", status: "completed" });
+    const translationTask = await waitForUnifiedTask(app, translated.translation.taskId);
+    expect(translationTask).toMatchObject({ toolId: "xhs-translation", status: "completed" });
 
     const preview = await app.inject({
       method: "GET",
@@ -164,4 +160,14 @@ async function waitForTranslation(app: Awaited<ReturnType<typeof createApp>>, id
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("XHS translation task timed out");
+}
+
+async function waitForUnifiedTask(app: Awaited<ReturnType<typeof createApp>>, id: string) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const response = await app.inject({ method: "GET", url: `/api/v1/tasks/${id}` });
+    const task = response.json().data;
+    if (task.status === "completed" || task.status === "failed") return task;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Unified task timed out");
 }

@@ -92,6 +92,29 @@ describe("short video api", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects malformed parse and download requests at the schema boundary", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const invalidParse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/short-video/parse",
+      payload: { platform: "auto" }
+    });
+    const invalidDownload = await app.inject({ method: "GET", url: "/api/v1/tools/short-video/download" });
+
+    expect(invalidParse.statusCode).toBe(400);
+    expect(invalidParse.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+    expect(invalidDownload.statusCode).toBe(400);
+    expect(invalidDownload.json().error.code).toBe("REQUEST_INVALID");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("parses TikTok share links and normalizes downloadable media", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(

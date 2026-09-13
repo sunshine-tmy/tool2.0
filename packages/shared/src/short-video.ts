@@ -1,50 +1,100 @@
-export type ShortVideoPlatform = "auto" | "douyin" | "xiaohongshu" | "tiktok" | "unknown";
+import { Type, type Static } from "@sinclair/typebox";
 
-export type ShortVideoMedia = {
-  type: "video" | "image";
-  url: string;
-  label: string;
-  quality?: string;
-  width?: number;
-  height?: number;
-  bitRate?: number;
-  durationMs?: number;
-};
+export const ShortVideoPlatformSchema = Type.Union([
+  Type.Literal("auto"),
+  Type.Literal("douyin"),
+  Type.Literal("xiaohongshu"),
+  Type.Literal("tiktok"),
+  Type.Literal("unknown")
+]);
 
-export type ShortVideoAuthor = {
-  name?: string;
-  id?: string;
-  avatarUrl?: string;
-};
+export const ShortVideoRequestedPlatformSchema = Type.Union([
+  Type.Literal("auto"),
+  Type.Literal("douyin"),
+  Type.Literal("xiaohongshu"),
+  Type.Literal("tiktok")
+]);
 
-export type ShortVideoMusic = {
-  title?: string;
-  author?: string;
-  avatarUrl?: string;
-  url?: string;
-};
+export const ShortVideoMediaSchema = Type.Object(
+  {
+    type: Type.Union([Type.Literal("video"), Type.Literal("image")]),
+    url: Type.String({ minLength: 1 }),
+    label: Type.String({ minLength: 1 }),
+    quality: Type.Optional(Type.String()),
+    width: Type.Optional(Type.Number({ minimum: 0 })),
+    height: Type.Optional(Type.Number({ minimum: 0 })),
+    bitRate: Type.Optional(Type.Number({ minimum: 0 })),
+    durationMs: Type.Optional(Type.Number({ minimum: 0 }))
+  },
+  { additionalProperties: false }
+);
 
-export type ShortVideoParseResult = {
-  platform: Exclude<ShortVideoPlatform, "auto">;
-  sourceUrl: string;
-  type: string;
-  title: string;
-  description?: string;
-  author?: ShortVideoAuthor;
-  coverUrl?: string;
-  media: ShortVideoMedia[];
-  music?: ShortVideoMusic;
-  provider: "bugpk" | "tiktok-oembed";
-  embedUrl?: string;
-  providerMessage?: string;
-  cacheStatus?: string;
-  warnings: string[];
-};
+export const ShortVideoAuthorSchema = Type.Object(
+  {
+    name: Type.Optional(Type.String()),
+    id: Type.Optional(Type.String()),
+    avatarUrl: Type.Optional(Type.String())
+  },
+  { additionalProperties: false }
+);
 
-export type ShortVideoParseInput = {
-  input: string;
-  platform?: Exclude<ShortVideoPlatform, "unknown">;
-};
+export const ShortVideoMusicSchema = Type.Object(
+  {
+    title: Type.Optional(Type.String()),
+    author: Type.Optional(Type.String()),
+    avatarUrl: Type.Optional(Type.String()),
+    url: Type.Optional(Type.String())
+  },
+  { additionalProperties: false }
+);
+
+export const ShortVideoParseResultSchema = Type.Object(
+  {
+    platform: Type.Union([
+      Type.Literal("douyin"),
+      Type.Literal("xiaohongshu"),
+      Type.Literal("tiktok"),
+      Type.Literal("unknown")
+    ]),
+    sourceUrl: Type.String({ minLength: 1 }),
+    type: Type.String({ minLength: 1 }),
+    title: Type.String({ minLength: 1 }),
+    description: Type.Optional(Type.String()),
+    author: Type.Optional(ShortVideoAuthorSchema),
+    coverUrl: Type.Optional(Type.String()),
+    media: Type.Array(ShortVideoMediaSchema),
+    music: Type.Optional(ShortVideoMusicSchema),
+    provider: Type.Union([Type.Literal("bugpk"), Type.Literal("tiktok-oembed")]),
+    embedUrl: Type.Optional(Type.String()),
+    providerMessage: Type.Optional(Type.String()),
+    cacheStatus: Type.Optional(Type.String()),
+    warnings: Type.Array(Type.String())
+  },
+  { additionalProperties: false }
+);
+
+export const ShortVideoParseInputSchema = Type.Object(
+  {
+    input: Type.String({ maxLength: 4096 }),
+    platform: Type.Optional(ShortVideoRequestedPlatformSchema)
+  },
+  { additionalProperties: false }
+);
+
+export const ShortVideoDownloadQuerySchema = Type.Object(
+  {
+    url: Type.String({ minLength: 1, maxLength: 4096 }),
+    filename: Type.Optional(Type.String({ maxLength: 255 }))
+  },
+  { additionalProperties: false }
+);
+
+export type ShortVideoPlatform = Static<typeof ShortVideoPlatformSchema>;
+export type ShortVideoMedia = Static<typeof ShortVideoMediaSchema>;
+export type ShortVideoAuthor = Static<typeof ShortVideoAuthorSchema>;
+export type ShortVideoMusic = Static<typeof ShortVideoMusicSchema>;
+export type ShortVideoParseResult = Static<typeof ShortVideoParseResultSchema>;
+export type ShortVideoParseInput = Static<typeof ShortVideoParseInputSchema>;
 
 type ProviderResponse = {
   code?: unknown;

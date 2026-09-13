@@ -166,6 +166,24 @@ describe("image ai api", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("UNSUPPORTED_IMAGE_EXTENSION");
   });
+
+  it("validates task and result route parameters before storage access", async () => {
+    app = await createApp();
+    const invalidTask = await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/tasks/bad!" });
+    const invalidDownload = await app.inject({
+      method: "GET",
+      url: "/api/v1/tools/image-ai/tasks/abcdef/files/abcdef-1?download=2"
+    });
+
+    expect(invalidTask.statusCode).toBe(400);
+    expect(invalidTask.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+    expect(invalidDownload.statusCode).toBe(400);
+    expect(invalidDownload.json().error.code).toBe("REQUEST_INVALID");
+  });
 });
 
 function createFakeWorker(options: { healthDelayMs?: number } = {}) {
