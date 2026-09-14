@@ -31,6 +31,7 @@ import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
 import { registerAdminSecurity } from "./security/admin-session";
 import { openToolboxDatabase } from "./database/legacy-migration";
+import { reconcileLanStorage } from "./database/storage-consistency";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
@@ -266,6 +267,20 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await registerShortVideoRoutes({ app, config, remoteFetch });
   await registerXhsArchiveRoutes({ app, config, remoteFetch, database, taskStore });
   registerMaintenanceRoutes(app);
+
+  if (config.databasePath !== ":memory:") {
+    const consistency = await reconcileLanStorage(config, database);
+    if (consistency.quarantinedFiles || consistency.quarantinedRecords || consistency.failures.length) {
+      app.log.warn(
+        {
+          quarantinedFiles: consistency.quarantinedFiles,
+          quarantinedRecords: consistency.quarantinedRecords,
+          failures: consistency.failures.length
+        },
+        "LAN storage consistency check found recoverable issues"
+      );
+    }
+  }
 
   return app;
 }

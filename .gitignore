@@ -53,6 +53,7 @@ storage/toolbox.db
 storage/toolbox.db-shm
 storage/toolbox.db-wal
 storage/migration-backups/**
+storage/quarantine/**
 .runtime/xhs-downloader/
 .runtime/xhs-translate/
 .runtime/xhs-translation-model-cache/

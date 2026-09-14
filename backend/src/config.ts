@@ -13,6 +13,7 @@ export type AppConfig = {
   storageRoot: string;
   databasePath: string;
   migrationBackupDir: string;
+  quarantineDir: string;
   uploadDir: string;
   outputDir: string;
   tempDir: string;
@@ -111,6 +112,7 @@ export function getConfig(): AppConfig {
       getEnv("DATABASE_PATH", fileEnv)?.trim() ||
       (process.env.NODE_ENV === "test" ? ":memory:" : path.join(storageRoot, "toolbox.db")),
     migrationBackupDir: path.join(storageRoot, "migration-backups"),
+    quarantineDir: path.join(storageRoot, "quarantine"),
     uploadDir: path.join(storageRoot, "uploads"),
     outputDir: path.join(storageRoot, "outputs"),
     tempDir: path.join(storageRoot, "temp"),
