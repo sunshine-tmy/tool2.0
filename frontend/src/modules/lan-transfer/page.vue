@@ -124,147 +124,34 @@
           </n-tab-pane>
 
           <n-tab-pane name="notes" tab="图文快传" display-directive="show">
-            <section class="lan-note-section">
-              <div class="lan-note-heading">
-                <div>
-                  <h3>图文快传</h3>
-                  <p>发送文字、链接、验证码或图文内容，局域网内其他设备可直接复制和查看。</p>
-                </div>
-                <span v-if="lanInfo">{{ lanInfo.noteCount ?? 0 }} 条 · 默认保留 {{ lanInfo.retentionDays }} 天</span>
-              </div>
-
-              <div v-if="canUploadFiles" class="lan-note-composer" @paste="onNotePaste">
-                <n-input
-                  v-model:value="noteTitle"
-                  clearable
-                  :maxlength="lanNoteLimits.titleCharacters"
-                  placeholder="标题（可选）"
-                />
-                <n-input
-                  v-model:value="noteContent"
-                  type="textarea"
-                  :autosize="{ minRows: 3, maxRows: 10 }"
-                  :maxlength="lanNoteLimits.contentCharacters"
-                  show-count
-                  placeholder="输入要传输的文字、链接、地址或说明……"
-                />
-                <div class="lan-note-picker">
-                  <input
-                    ref="noteImageInput"
-                    hidden
-                    multiple
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp,image/avif"
-                    @change="onNoteImagesChange"
-                  />
-                  <n-button
-                    secondary
-                    :disabled="noteImages.length >= lanNoteLimits.maxImages"
-                    @click="noteImageInput?.click()"
-                  >
-                    添加图片 {{ noteImages.length }}/{{ lanNoteLimits.maxImages }}
-                  </n-button>
-                  <span>单张不超过 10 MB，合计不超过 30 MB；支持直接粘贴剪贴板截图</span>
-                </div>
-                <div v-if="noteImages.length" class="lan-note-draft-images">
-                  <figure v-for="(image, index) in noteImages" :key="image.id">
-                    <img :src="image.previewUrl" :alt="image.file.name" />
-                    <figcaption>
-                      <span>{{ image.file.name }}</span>
-                      <n-button tertiary size="tiny" type="error" @click="removeNoteImage(index)">移除</n-button>
-                    </figcaption>
-                  </figure>
-                </div>
-                <div class="lan-note-publish-actions">
-                  <span
-                    >{{ noteContent.length.toLocaleString() }} /
-                    {{ lanNoteLimits.contentCharacters.toLocaleString() }} 字</span
-                  >
-                  <n-button type="primary" :loading="publishingNote" @click="publishNote">发布图文</n-button>
-                </div>
-              </div>
-
-              <div v-if="canManageFiles" class="batch-toolbar lan-note-batch-toolbar">
-                <n-checkbox
-                  :checked="lanNotePageSelection.checked"
-                  :indeterminate="lanNotePageSelection.indeterminate"
-                  :disabled="!lanNotes.length"
-                  @update:checked="toggleAllLanNotes"
-                >
-                  全选本页
-                </n-checkbox>
-                <n-button
-                  tertiary
-                  type="error"
-                  size="small"
-                  :disabled="!selectedLanNoteIds.length"
-                  :loading="batchDeletingLanNotes"
-                  @click="deleteSelectedLanNotes"
-                >
-                  批量删除 {{ selectedLanNoteIds.length || "" }}
-                </n-button>
-              </div>
-
-              <div v-if="canReadFiles" class="lan-note-list">
-                <article v-for="note in lanNotes" :key="note.id" class="lan-note-card">
-                  <header>
-                    <div class="lan-note-card-main">
-                      <n-checkbox
-                        v-if="canManageFiles"
-                        :checked="selectedLanNoteIds.includes(note.id)"
-                        :aria-label="`选择 ${note.title || '图文快传'}`"
-                        @update:checked="(checked) => toggleLanNote(note.id, checked)"
-                      />
-                      <div>
-                        <strong>{{ note.title || "图文快传" }}</strong>
-                        <span>发布 {{ formatDate(note.createdAt) }} · 过期 {{ formatDate(note.expiresAt) }}</span>
-                      </div>
-                    </div>
-                    <div class="lan-note-actions">
-                      <n-button v-if="note.content" secondary size="small" @click="copyNoteContent(note)"
-                        >复制文字</n-button
-                      >
-                      <n-button v-if="canManageFiles" tertiary size="small" @click="extendNoteExpiry(note)"
-                        >保留30天</n-button
-                      >
-                      <n-button v-if="canManageFiles" tertiary size="small" type="error" @click="deleteLanNote(note)"
-                        >删除</n-button
-                      >
-                    </div>
-                  </header>
-                  <pre v-if="note.content">{{ note.content }}</pre>
-                  <div v-if="note.images.length" class="lan-note-images">
-                    <figure v-for="image in note.images" :key="image.id">
-                      <a :href="image.previewUrl" target="_blank" rel="noreferrer">
-                        <img :src="image.previewUrl" :alt="image.originalName" loading="lazy" decoding="async" />
-                      </a>
-                      <figcaption>
-                        <span>{{ image.originalName }} · {{ formatBytes(image.size) }}</span>
-                        <span>
-                          <a :href="image.downloadUrl">下载</a>
-                          <n-button text type="primary" size="tiny" @click="copyNoteImageLink(image.previewUrl)">
-                            复制链接
-                          </n-button>
-                        </span>
-                      </figcaption>
-                    </figure>
-                  </div>
-                </article>
-                <n-empty v-if="!lanNotes.length" description="暂无图文，发送一段文字或几张图片试试" />
-                <div v-if="shouldShowPagination(notePagination.total)" class="pagination-row">
-                  <span class="pagination-total">共 {{ notePagination.total }} 条图文</span>
-                  <n-pagination
-                    v-model:page="notePagination.page"
-                    v-model:page-size="notePagination.pageSize"
-                    :item-count="notePagination.total"
-                    :page-sizes="[10, 20, 50, 100]"
-                    show-size-picker
-                    @update:page="refreshLanNotes"
-                    @update:page-size="onNotePageSizeChange"
-                  />
-                </div>
-              </div>
-            </section>
+            <LanNotePanel
+              v-model:title="noteTitle"
+              v-model:content="noteContent"
+              :info="lanInfo"
+              :can-upload="canUploadFiles"
+              :can-read="canReadFiles"
+              :can-manage="canManageFiles"
+              :images="noteImages"
+              :publishing="publishingNote"
+              :notes="lanNotes"
+              :selected-ids="selectedLanNoteIds"
+              :page-selection="lanNotePageSelection"
+              :batch-deleting="batchDeletingLanNotes"
+              :pagination="notePagination"
+              @select-images="addNoteImages"
+              @paste="onNotePaste"
+              @remove-image="removeNoteImage"
+              @publish="publishNote"
+              @copy-content="copyNoteContent"
+              @copy-image-link="copyNoteImageLink"
+              @extend-expiry="extendNoteExpiry"
+              @delete-note="deleteLanNote"
+              @toggle-note="toggleLanNote"
+              @toggle-all="toggleAllLanNotes"
+              @delete-selected="deleteSelectedLanNotes"
+              @page-change="onNotePageChange"
+              @page-size-change="onNotePageSizeChange"
+            />
           </n-tab-pane>
         </n-tabs>
 
@@ -331,19 +218,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
-import {
-  NButton,
-  NCheckbox,
-  NEmpty,
-  NInput,
-  NModal,
-  NPagination,
-  NProgress,
-  NSelect,
-  NTabPane,
-  NTabs,
-  useMessage
-} from "naive-ui";
+import { NButton, NEmpty, NInput, NModal, NProgress, NSelect, NTabPane, NTabs, useMessage } from "naive-ui";
 import type { LanFileCategory, LanFileSortBy, LanFileSortOrder } from "@toolbox/shared";
 import { lanFileCategories, lanNoteLimits } from "@toolbox/shared";
 import { RefreshCw, UploadCloud } from "lucide-vue-next";
@@ -351,12 +226,12 @@ import QRCode from "qrcode";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import LanFileListPanel from "./LanFileListPanel.vue";
+import LanNotePanel from "./LanNotePanel.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { currentWebUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { ConcurrentChunkUploader } from "./chunk-uploader";
 import { lanTransferApi } from "./api";
-import { shouldShowPagination } from "./pagination";
 import { filesFromClipboard, isEditablePasteTarget } from "./paste-upload";
 import type { LanFileView, LanNoteView, LanTransferInfo, PendingLanUpload, UploadItem } from "./types";
 import { removeUploadItem } from "./upload-queue";
@@ -396,7 +271,6 @@ const batchDeletingLanFiles = ref(false);
 const batchDownloadingLanFiles = ref(false);
 const noteTitle = ref("");
 const noteContent = ref("");
-const noteImageInput = ref<HTMLInputElement | null>(null);
 const noteImages = ref<Array<{ id: string; file: File; previewUrl: string }>>([]);
 const publishingNote = ref(false);
 const lanNotes = ref<LanNoteView[]>([]);
@@ -529,13 +403,6 @@ async function unlockLanTransfer() {
   } finally {
     unlocking.value = false;
   }
-}
-
-function onNoteImagesChange(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const selected = Array.from(input.files ?? []);
-  input.value = "";
-  addNoteImages(selected);
 }
 
 function onNotePaste(event: ClipboardEvent) {
@@ -681,6 +548,11 @@ async function deleteSelectedLanNotes() {
 async function onNotePageSizeChange(pageSize: number) {
   notePagination.page = 1;
   notePagination.pageSize = pageSize;
+  await refreshLanNotes();
+}
+
+async function onNotePageChange(page: number) {
+  notePagination.page = page;
   await refreshLanNotes();
 }
 
@@ -992,14 +864,5 @@ function formatBytes(bytes: number) {
     unitIndex += 1;
   }
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
 }
 </script>
