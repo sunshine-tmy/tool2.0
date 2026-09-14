@@ -21,6 +21,7 @@ import {
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import {
   IMAGE_AI_MAX_FILE_BYTES,
@@ -75,7 +76,7 @@ export async function registerImageAiRoutes(
   app.post(
     "/api/v1/tools/image-ai/watermark/suggestions",
     {
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.ai,
       schema: {
         response: {
           200: apiSuccessSchema(WatermarkSuggestionResponseSchema),
@@ -113,7 +114,7 @@ export async function registerImageAiRoutes(
   app.post(
     "/api/v1/tools/image-ai/tasks",
     {
-      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.ai,
       schema: {
         response: {
           202: apiSuccessSchema(ImageAiTaskSchema),

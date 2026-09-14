@@ -24,6 +24,7 @@ import {
   limitedResponseStream,
   type RemoteFetch
 } from "../security/remote-fetch";
+import { REQUEST_QUOTAS } from "../security/request-quotas";
 
 const execFileAsync = promisify(execFile);
 const resultCaches = new WeakMap<AppConfig, Map<string, { expiresAt: number; result: ShortVideoParseResult }>>();
@@ -57,6 +58,7 @@ export async function registerShortVideoRoutes({ app, config, remoteFetch }: Reg
   app.post<{ Body: ShortVideoParseInput }>(
     "/api/v1/tools/short-video/parse",
     {
+      config: REQUEST_QUOTAS.remoteFetch,
       schema: {
         body: ShortVideoParseInputSchema,
         response: { 200: apiSuccessSchema(ShortVideoParseResultSchema), 400: ApiFailureSchema, 502: ApiFailureSchema }
@@ -101,6 +103,7 @@ export async function registerShortVideoRoutes({ app, config, remoteFetch }: Reg
   app.get<{ Querystring: { url: string; filename?: string } }>(
     "/api/v1/tools/short-video/download",
     {
+      config: REQUEST_QUOTAS.remoteFetch,
       schema: {
         querystring: ShortVideoDownloadQuerySchema,
         response: { 400: ApiFailureSchema, 502: ApiFailureSchema }

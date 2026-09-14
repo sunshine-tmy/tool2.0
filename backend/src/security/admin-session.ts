@@ -12,6 +12,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
+import { REQUEST_QUOTAS } from "./request-quotas";
 
 const COOKIE_NAME = "toolbox_admin";
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -25,7 +26,7 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
   app.post<{ Body: AdminLoginInput }>(
     "/api/v1/session",
     {
-      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.login,
       schema: {
         body: AdminLoginInputSchema,
         response: {

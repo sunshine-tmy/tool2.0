@@ -159,7 +159,7 @@ describe("edge tts module", () => {
       expect(response?.statusCode).toBe(429);
       expect(response?.json()).toMatchObject({
         success: false,
-        error: { code: "REQUEST_INVALID" },
+        error: { code: "RATE_LIMIT_EXCEEDED" },
         requestId: expect.any(String)
       });
     } finally {

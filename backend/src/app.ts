@@ -37,6 +37,7 @@ import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
 import { registerAdminSecurity } from "./security/admin-session";
+import { registerConcurrencyQuotas } from "./security/request-quotas";
 import { openToolboxDatabase } from "./database/legacy-migration";
 import { reconcileLanStorage } from "./database/storage-consistency";
 
@@ -79,8 +80,16 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   await app.register(rateLimit, {
     global: true,
     max: 300,
-    timeWindow: "1 minute"
+    timeWindow: "1 minute",
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      code: "RATE_LIMIT_EXCEEDED",
+      error: "Too Many Requests",
+      message: "请求过于频繁，请稍后重试",
+      details: { limit: context.max, retryAfter: context.after }
+    })
   });
+  registerConcurrencyQuotas(app);
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: {
@@ -126,6 +135,17 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
 
   app.setErrorHandler((error, request, reply) => {
     request.log.error({ err: error, requestId: request.id }, "request failed");
+    const reported = error as unknown as {
+      statusCode?: number;
+      code?: string;
+      message?: string;
+      details?: unknown;
+    };
+    if (reported.statusCode === 429 || reported.code === "RATE_LIMIT_EXCEEDED") {
+      return reply
+        .code(429)
+        .send(fail("RATE_LIMIT_EXCEEDED", reported.message || "请求过于频繁，请稍后重试", reported.details));
+    }
     const normalized = error instanceof Error ? error : new Error("Unknown request error");
     const reportedStatus = (normalized as Error & { statusCode?: number }).statusCode;
     const statusCode = reportedStatus && reportedStatus >= 400 ? reportedStatus : 500;

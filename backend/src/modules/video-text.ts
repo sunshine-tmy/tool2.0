@@ -21,6 +21,7 @@ import {
 import type { AppConfig } from "../config";
 import type { TaskStore } from "../tasks/task-store";
 import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../security/remote-fetch";
+import { REQUEST_QUOTAS } from "../security/request-quotas";
 import {
   deleteStoredResultFiles,
   formatResult,
@@ -69,6 +70,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
   app.post(
     "/api/v1/tools/video-text/tasks",
     {
+      config: REQUEST_QUOTAS.remoteFetch,
       schema: {
         response: { 202: apiSuccessSchema(VideoTextTaskResponseSchema), 400: ApiFailureSchema, 413: ApiFailureSchema }
       }
@@ -101,6 +103,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
   app.post<{ Body: VideoTextFromUrlInputDto }>(
     "/api/v1/tools/video-text/tasks/from-url",
     {
+      config: REQUEST_QUOTAS.remoteFetch,
       schema: {
         body: VideoTextFromUrlInputSchema,
         response: {
@@ -152,7 +155,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
 
   app.get<{ Querystring: { url: string } }>(
     "/api/v1/tools/video-text/remote-video",
-    { schema: { querystring: VideoTextRemoteQuerySchema } },
+    { config: REQUEST_QUOTAS.remoteFetch, schema: { querystring: VideoTextRemoteQuerySchema } },
     async (request, reply) => {
       const sourceUrl = request.query.url.trim();
 

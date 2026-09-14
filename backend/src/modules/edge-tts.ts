@@ -37,6 +37,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
+import { REQUEST_QUOTAS } from "../security/request-quotas";
 import type { Task, TaskStore } from "../tasks/task-store";
 
 const execFileAsync = promisify(execFile);
@@ -147,7 +148,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
   app.post(
     "/api/v1/tools/edge-tts/tasks",
     {
-      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.voice,
       schema: {
         body: EdgeTtsCreateTaskInputSchema,
         response: {

@@ -28,6 +28,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import {
   batchFileName,
@@ -96,6 +97,7 @@ export async function registerChatterboxBatchRoutes(options: {
   app.post(
     "/api/v1/tools/edge-tts/chatterbox/batches",
     {
+      config: REQUEST_QUOTAS.voice,
       schema: {
         response: {
           202: apiSuccessSchema(ChatterboxBatchSchema),

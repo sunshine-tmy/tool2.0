@@ -17,6 +17,7 @@ import {
   type ChatterboxVoiceAuthorization,
   type ChatterboxVoiceIdParams
 } from "@toolbox/shared";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import { sanitizeFileName, toPublicVoice } from "./batch-artifacts";
 import type { ChatterboxMediaTools } from "./batch-queue";
 import { BatchInputError, mapBatchError } from "./errors";
@@ -40,6 +41,7 @@ export function registerChatterboxVoiceRoutes(
   app.post(
     "/api/v1/tools/edge-tts/chatterbox/voices",
     {
+      config: REQUEST_QUOTAS.voice,
       schema: {
         response: {
           201: apiSuccessSchema(ChatterboxSavedVoiceSchema),

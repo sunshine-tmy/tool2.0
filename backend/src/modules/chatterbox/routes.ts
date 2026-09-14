@@ -32,6 +32,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import { registerChatterboxBatchRoutes } from "./batch-routes";
 import { ChatterboxInputError, ChatterboxMediaTools, type ChatterboxUploadErrorStatus } from "./media-tools";
@@ -128,6 +129,7 @@ export async function registerChatterboxRoutes(
   app.post(
     "/api/v1/tools/edge-tts/chatterbox/tasks",
     {
+      config: REQUEST_QUOTAS.voice,
       schema: {
         response: {
           202: apiSuccessSchema(ChatterboxTaskSchema),

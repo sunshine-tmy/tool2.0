@@ -585,7 +585,7 @@ describe("lan transfer api", () => {
     }
 
     expect(response?.statusCode).toBe(429);
-    expect(response?.json().error.code).toBe("REQUEST_INVALID");
+    expect(response?.json().error.code).toBe("RATE_LIMIT_EXCEEDED");
     await app.close();
   });
 

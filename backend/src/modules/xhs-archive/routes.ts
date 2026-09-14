@@ -28,6 +28,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { Task, TaskStore } from "../../tasks/task-store";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import {
   assertRemoteResponseSize,
   fetchRemoteResponse,
@@ -70,7 +71,7 @@ export async function registerXhsArchiveRoutes(options: {
   app.post<{ Body: XhsArchiveCreateInput }>(
     "/api/v1/tools/xhs-archive/items",
     {
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.remoteFetch,
       schema: { body: XhsArchiveCreateInputSchema }
     },
     async (request, reply) => {
@@ -112,7 +113,7 @@ export async function registerXhsArchiveRoutes(options: {
   app.post<{ Params: XhsArchiveIdParams }>(
     "/api/v1/tools/xhs-archive/items/:id/refresh",
     {
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.remoteFetch,
       schema: { params: XhsArchiveIdParamsSchema }
     },
     async (request, reply) => {
@@ -140,11 +141,7 @@ export async function registerXhsArchiveRoutes(options: {
 
   registerXhsMediaRoutes({ app, store });
 
-  app.post(
-    "/api/v1/tools/xhs-archive/auth/start",
-    { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } },
-    async () => ok(auth.start())
-  );
+  app.post("/api/v1/tools/xhs-archive/auth/start", { config: REQUEST_QUOTAS.login }, async () => ok(auth.start()));
   app.get<{ Params: XhsAuthSessionParams }>(
     "/api/v1/tools/xhs-archive/auth/:sessionId",
     { schema: { params: XhsAuthSessionParamsSchema } },

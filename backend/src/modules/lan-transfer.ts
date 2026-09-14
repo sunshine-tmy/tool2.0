@@ -32,6 +32,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
+import { REQUEST_QUOTAS } from "../security/request-quotas";
 import {
   createLanAccessController,
   createLanAuditLog,
@@ -149,7 +150,7 @@ function registerLanTransferNamespace(
   app.post<{ Body: LanAccessInput }>(
     `${basePath}/access`,
     {
-      config: { allowGuestTransfer: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
+      config: { ...REQUEST_QUOTAS.login, allowGuestTransfer: true },
       schema: { body: LanAccessInputSchema }
     },
     async (request, reply) => {
@@ -172,77 +173,85 @@ function registerLanTransferNamespace(
 
   registerLanNoteRoutes({ app, config, store, noteStore, uploadStore, access, audit, basePath });
 
-  app.post(`${basePath}/files`, { config: { allowGuestTransfer: true } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const file = await request.file({
-      limits: {
-        fileSize: config.lanTransferMaxFileBytes
-      }
-    });
-
-    if (!file) {
-      return reply.code(400).send(fail("FILE_REQUIRED", "Please upload a file"));
-    }
-
-    const originalName = path.basename(file.filename || "upload.bin");
-    const extension = getLanFileExtension(originalName);
-    const id = nanoid(12);
-    const storedName = extension ? `${id}.${extension}` : id;
-    const targetPath = path.join(config.lanTransferFilesDir, storedName);
-
-    try {
-      await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-      await pipeline(file.file, fs.createWriteStream(targetPath));
-
-      const stat = await fsp.stat(targetPath);
-      if (file.file.truncated || stat.size > config.lanTransferMaxFileBytes) {
-        await fsp.rm(targetPath, { force: true });
-        return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
-      }
-      if (
-        (await store.totalSize()) +
-          (await noteStore.totalSize()) +
-          (await uploadStore.totalDeclaredSize()) +
-          stat.size >
-        config.lanTransferMaxStorageBytes
-      ) {
-        await fsp.rm(targetPath, { force: true });
-        return reply.code(507).send(fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足"));
-      }
-
-      const classifiedCategory = classifyLanFile(originalName, file.mimetype);
-      const category =
-        classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
-      const createdAt = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
-      const record: LanFileRecord = {
-        id,
-        originalName,
-        storedName,
-        mimeType: file.mimetype || "application/octet-stream",
-        extension,
-        size: stat.size,
-        category,
-        createdAt,
-        expiresAt,
-        downloadCount: 0,
-        previewable: isLanFilePreviewable(category)
-      };
-
-      await store.add(record);
-      await audit.write("file.uploaded", request, { fileId: record.id, name: record.originalName, size: record.size });
-
-      return ok({
-        file: record,
-        previewUrl: `${basePath}/files/${record.id}/preview`,
-        downloadUrl: `${basePath}/files/${record.id}/download`
+  app.post(
+    `${basePath}/files`,
+    { config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const file = await request.file({
+        limits: {
+          fileSize: config.lanTransferMaxFileBytes
+        }
       });
-    } catch (error) {
-      await fsp.rm(targetPath, { force: true });
-      const message = error instanceof Error ? error.message : "File upload failed";
-      return reply.code(500).send(fail("UPLOAD_FAILED", message));
+
+      if (!file) {
+        return reply.code(400).send(fail("FILE_REQUIRED", "Please upload a file"));
+      }
+
+      const originalName = path.basename(file.filename || "upload.bin");
+      const extension = getLanFileExtension(originalName);
+      const id = nanoid(12);
+      const storedName = extension ? `${id}.${extension}` : id;
+      const targetPath = path.join(config.lanTransferFilesDir, storedName);
+
+      try {
+        await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
+        await pipeline(file.file, fs.createWriteStream(targetPath));
+
+        const stat = await fsp.stat(targetPath);
+        if (file.file.truncated || stat.size > config.lanTransferMaxFileBytes) {
+          await fsp.rm(targetPath, { force: true });
+          return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
+        }
+        if (
+          (await store.totalSize()) +
+            (await noteStore.totalSize()) +
+            (await uploadStore.totalDeclaredSize()) +
+            stat.size >
+          config.lanTransferMaxStorageBytes
+        ) {
+          await fsp.rm(targetPath, { force: true });
+          return reply.code(507).send(fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足"));
+        }
+
+        const classifiedCategory = classifyLanFile(originalName, file.mimetype);
+        const category =
+          classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
+        const createdAt = new Date().toISOString();
+        const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
+        const record: LanFileRecord = {
+          id,
+          originalName,
+          storedName,
+          mimeType: file.mimetype || "application/octet-stream",
+          extension,
+          size: stat.size,
+          category,
+          createdAt,
+          expiresAt,
+          downloadCount: 0,
+          previewable: isLanFilePreviewable(category)
+        };
+
+        await store.add(record);
+        await audit.write("file.uploaded", request, {
+          fileId: record.id,
+          name: record.originalName,
+          size: record.size
+        });
+
+        return ok({
+          file: record,
+          previewUrl: `${basePath}/files/${record.id}/preview`,
+          downloadUrl: `${basePath}/files/${record.id}/download`
+        });
+      } catch (error) {
+        await fsp.rm(targetPath, { force: true });
+        const message = error instanceof Error ? error.message : "File upload failed";
+        return reply.code(500).send(fail("UPLOAD_FAILED", message));
+      }
     }
-  });
+  );
 
   app.get<{ Querystring: LanFileListQuery }>(
     `${basePath}/files`,
@@ -271,7 +280,7 @@ function registerLanTransferNamespace(
   app.post<{ Body: LanIdsInput }>(
     `${basePath}/files/batch-download`,
     {
-      config: { allowGuestTransfer: true, rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: { ...REQUEST_QUOTAS.batchDownload, allowGuestTransfer: true },
       schema: { body: LanIdsInputSchema }
     },
     async (request, reply) => {
@@ -392,7 +401,7 @@ function registerLanTransferNamespace(
   app.post<{ Body: LanUploadSessionInput }>(
     `${basePath}/uploads`,
     {
-      config: { allowGuestTransfer: true, rateLimit: { max: 30, timeWindow: "1 minute" } },
+      config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
       schema: { body: LanUploadSessionInputSchema }
     },
     async (request, reply) => {
@@ -441,7 +450,7 @@ function registerLanTransferNamespace(
   app.put<{ Params: LanChunkParams }>(
     `${basePath}/uploads/:uploadId/chunks/:index`,
     {
-      config: { allowGuestTransfer: true, rateLimit: { max: 120, timeWindow: "1 minute" } },
+      config: { ...REQUEST_QUOTAS.lanChunk, allowGuestTransfer: true },
       schema: { params: LanChunkParamsSchema }
     },
     async (request, reply) => {
@@ -511,7 +520,10 @@ function registerLanTransferNamespace(
 
   app.post<{ Params: LanUploadParams }>(
     `${basePath}/uploads/:uploadId/complete`,
-    { config: { allowGuestTransfer: true }, schema: { params: LanUploadParamsSchema } },
+    {
+      config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
+      schema: { params: LanUploadParamsSchema }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const { uploadId } = request.params;
@@ -609,7 +621,10 @@ function registerLanTransferNamespace(
 
   app.delete<{ Params: LanUploadParams }>(
     `${basePath}/uploads/:uploadId`,
-    { config: { allowGuestTransfer: true }, schema: { params: LanUploadParamsSchema } },
+    {
+      config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
+      schema: { params: LanUploadParamsSchema }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const { uploadId } = request.params;

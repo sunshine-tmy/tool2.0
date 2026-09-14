@@ -22,6 +22,7 @@ import {
   type LanPaginationQuery
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { createLanAccessController, createLanAuditLog } from "./access";
 import {
   extensionForLanNoteImage,
@@ -64,114 +65,118 @@ export function registerLanNoteRoutes({
   audit,
   basePath
 }: RegisterLanNoteRoutesOptions) {
-  app.post(`${basePath}/notes`, { config: { allowGuestTransfer: true } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const noteId = nanoid(12);
-    const writtenNames: string[] = [];
-    const images: LanNoteImageRecord[] = [];
-    let title = "";
-    let content = "";
+  app.post(
+    `${basePath}/notes`,
+    { config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const noteId = nanoid(12);
+      const writtenNames: string[] = [];
+      const images: LanNoteImageRecord[] = [];
+      let title = "";
+      let content = "";
 
-    try {
-      await noteStore.ensure();
-      const parts = request.parts({
-        limits: {
-          files: lanNoteLimits.maxImages,
-          fields: 4,
-          fileSize: lanNoteLimits.maxImageBytes
-        }
-      });
-      for await (const part of parts) {
-        if (part.type === "field") {
-          if (part.fieldname === "title") title = String(part.value ?? "").trim();
-          if (part.fieldname === "content") content = String(part.value ?? "").trim();
-          continue;
-        }
-
-        if (part.fieldname !== "images") {
-          part.file.resume();
-          continue;
-        }
-        if (!isAllowedLanNoteImageMime(part.mimetype)) {
-          part.file.resume();
-          throw new LanNoteInputError(
-            "LAN_NOTE_IMAGE_TYPE_UNSUPPORTED",
-            415,
-            "仅支持 JPG、PNG、GIF、WebP 和 AVIF 图片"
-          );
-        }
-        const imageId = nanoid(10);
-        const extension = extensionForLanNoteImage(part.mimetype);
-        const storedName = `${noteId}-${imageId}.${extension}`;
-        const targetPath = noteStore.imagePath(storedName);
-        writtenNames.push(storedName);
-        await pipeline(part.file, fs.createWriteStream(targetPath));
-        const stat = await fsp.stat(targetPath);
-        if (part.file.truncated || stat.size > lanNoteLimits.maxImageBytes) {
-          throw new LanNoteInputError("LAN_NOTE_IMAGE_TOO_LARGE", 413, "单张图片不能超过 10 MB");
-        }
-        if (!(await hasLanNoteImageSignature(targetPath, part.mimetype))) {
-          throw new LanNoteInputError("LAN_NOTE_IMAGE_INVALID", 415, "图片内容与文件类型不匹配");
-        }
-        images.push({
-          id: imageId,
-          originalName: path.basename(part.filename || `image.${extension}`),
-          storedName,
-          mimeType: part.mimetype,
-          extension,
-          size: stat.size
+      try {
+        await noteStore.ensure();
+        const parts = request.parts({
+          limits: {
+            files: lanNoteLimits.maxImages,
+            fields: 4,
+            fileSize: lanNoteLimits.maxImageBytes
+          }
         });
-      }
+        for await (const part of parts) {
+          if (part.type === "field") {
+            if (part.fieldname === "title") title = String(part.value ?? "").trim();
+            if (part.fieldname === "content") content = String(part.value ?? "").trim();
+            continue;
+          }
 
-      if (title.length > lanNoteLimits.titleCharacters) {
-        throw new LanNoteInputError("LAN_NOTE_TITLE_TOO_LONG", 400, "标题不能超过 100 个字符");
-      }
-      if (content.length > lanNoteLimits.contentCharacters) {
-        throw new LanNoteInputError("LAN_NOTE_CONTENT_TOO_LONG", 400, "文字不能超过 20,000 个字符");
-      }
-      if (!content && !images.length) {
-        throw new LanNoteInputError("LAN_NOTE_CONTENT_REQUIRED", 400, "请输入文字或至少选择一张图片");
-      }
-      const imageBytes = images.reduce((total, image) => total + image.size, 0);
-      if (imageBytes > lanNoteLimits.maxTotalImageBytes) {
-        throw new LanNoteInputError("LAN_NOTE_IMAGES_TOO_LARGE", 413, "图文中的图片总大小不能超过 30 MB");
-      }
-      const reservedBytes =
-        (await store.totalSize()) + (await noteStore.totalSize()) + (await uploadStore.totalDeclaredSize());
-      if (reservedBytes + imageBytes > config.lanTransferMaxStorageBytes) {
-        throw new LanNoteInputError("LAN_STORAGE_QUOTA_EXCEEDED", 507, "局域网存储配额不足");
-      }
+          if (part.fieldname !== "images") {
+            part.file.resume();
+            continue;
+          }
+          if (!isAllowedLanNoteImageMime(part.mimetype)) {
+            part.file.resume();
+            throw new LanNoteInputError(
+              "LAN_NOTE_IMAGE_TYPE_UNSUPPORTED",
+              415,
+              "仅支持 JPG、PNG、GIF、WebP 和 AVIF 图片"
+            );
+          }
+          const imageId = nanoid(10);
+          const extension = extensionForLanNoteImage(part.mimetype);
+          const storedName = `${noteId}-${imageId}.${extension}`;
+          const targetPath = noteStore.imagePath(storedName);
+          writtenNames.push(storedName);
+          await pipeline(part.file, fs.createWriteStream(targetPath));
+          const stat = await fsp.stat(targetPath);
+          if (part.file.truncated || stat.size > lanNoteLimits.maxImageBytes) {
+            throw new LanNoteInputError("LAN_NOTE_IMAGE_TOO_LARGE", 413, "单张图片不能超过 10 MB");
+          }
+          if (!(await hasLanNoteImageSignature(targetPath, part.mimetype))) {
+            throw new LanNoteInputError("LAN_NOTE_IMAGE_INVALID", 415, "图片内容与文件类型不匹配");
+          }
+          images.push({
+            id: imageId,
+            originalName: path.basename(part.filename || `image.${extension}`),
+            storedName,
+            mimeType: part.mimetype,
+            extension,
+            size: stat.size
+          });
+        }
 
-      const now = new Date();
-      const note: LanNoteRecord = {
-        id: noteId,
-        title: title || undefined,
-        content,
-        images,
-        createdAt: now.toISOString(),
-        expiresAt: new Date(now.getTime() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString()
-      };
-      await noteStore.add(note);
-      await audit.write("note.created", request, {
-        noteId,
-        characters: content.length,
-        imageCount: images.length,
-        imageBytes
-      });
-      return ok(withNoteUrls(note, basePath));
-    } catch (error) {
-      await Promise.all(writtenNames.map((storedName) => fsp.rm(noteStore.imagePath(storedName), { force: true })));
-      if (error instanceof LanNoteInputError) {
-        return reply.code(error.statusCode).send(fail(error.code, error.message));
+        if (title.length > lanNoteLimits.titleCharacters) {
+          throw new LanNoteInputError("LAN_NOTE_TITLE_TOO_LONG", 400, "标题不能超过 100 个字符");
+        }
+        if (content.length > lanNoteLimits.contentCharacters) {
+          throw new LanNoteInputError("LAN_NOTE_CONTENT_TOO_LONG", 400, "文字不能超过 20,000 个字符");
+        }
+        if (!content && !images.length) {
+          throw new LanNoteInputError("LAN_NOTE_CONTENT_REQUIRED", 400, "请输入文字或至少选择一张图片");
+        }
+        const imageBytes = images.reduce((total, image) => total + image.size, 0);
+        if (imageBytes > lanNoteLimits.maxTotalImageBytes) {
+          throw new LanNoteInputError("LAN_NOTE_IMAGES_TOO_LARGE", 413, "图文中的图片总大小不能超过 30 MB");
+        }
+        const reservedBytes =
+          (await store.totalSize()) + (await noteStore.totalSize()) + (await uploadStore.totalDeclaredSize());
+        if (reservedBytes + imageBytes > config.lanTransferMaxStorageBytes) {
+          throw new LanNoteInputError("LAN_STORAGE_QUOTA_EXCEEDED", 507, "局域网存储配额不足");
+        }
+
+        const now = new Date();
+        const note: LanNoteRecord = {
+          id: noteId,
+          title: title || undefined,
+          content,
+          images,
+          createdAt: now.toISOString(),
+          expiresAt: new Date(now.getTime() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString()
+        };
+        await noteStore.add(note);
+        await audit.write("note.created", request, {
+          noteId,
+          characters: content.length,
+          imageCount: images.length,
+          imageBytes
+        });
+        return ok(withNoteUrls(note, basePath));
+      } catch (error) {
+        await Promise.all(writtenNames.map((storedName) => fsp.rm(noteStore.imagePath(storedName), { force: true })));
+        if (error instanceof LanNoteInputError) {
+          return reply.code(error.statusCode).send(fail(error.code, error.message));
+        }
+        const multipartError = lanNoteMultipartError(error);
+        if (multipartError) {
+          return reply.code(multipartError.statusCode).send(fail(multipartError.code, multipartError.message));
+        }
+        const message = error instanceof Error ? error.message : "图文发布失败";
+        return reply.code(500).send(fail("LAN_NOTE_CREATE_FAILED", message));
       }
-      const multipartError = lanNoteMultipartError(error);
-      if (multipartError) {
-        return reply.code(multipartError.statusCode).send(fail(multipartError.code, multipartError.message));
-      }
-      const message = error instanceof Error ? error.message : "图文发布失败";
-      return reply.code(500).send(fail("LAN_NOTE_CREATE_FAILED", message));
     }
-  });
+  );
 
   app.get<{ Querystring: LanPaginationQuery }>(
     `${basePath}/notes`,

@@ -182,7 +182,7 @@ describe("xhs archive api", () => {
     }
 
     expect(response?.statusCode).toBe(429);
-    expect(response?.json().error.code).toBe("REQUEST_INVALID");
+    expect(response?.json().error.code).toBe("RATE_LIMIT_EXCEEDED");
     expect(globalThis.fetch).not.toHaveBeenCalled();
     await app.close();
   });

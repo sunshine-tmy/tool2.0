@@ -14,6 +14,7 @@ import {
   type XhsTranslationEditInput,
   type XhsTranslationRequest
 } from "@toolbox/shared";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { XhsArchiveStore } from "./store";
 import { type XhsTranslationService, translationSourceHash } from "./translation-service";
 
@@ -29,7 +30,7 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
   app.post<{ Params: XhsArchiveIdParams; Body: XhsTranslationRequest }>(
     "/api/v1/tools/xhs-archive/items/:id/translation",
     {
-      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.translation,
       schema: { params: XhsArchiveIdParamsSchema, body: XhsTranslationRequestSchema }
     },
     async (request, reply) => {
@@ -52,7 +53,7 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
   app.post<{ Body: XhsTranslationBatchInput }>(
     "/api/v1/tools/xhs-archive/translation/batches",
     {
-      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.translationBatch,
       schema: { body: XhsTranslationBatchInputSchema }
     },
     async (request, reply) => {

@@ -16,6 +16,7 @@ import {
   type XhsArchiveMediaParams,
   type XhsMediaQuery
 } from "@toolbox/shared";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { XhsArchiveStore } from "./store";
 import { effectiveTranslation } from "./translation-service";
 
@@ -47,7 +48,7 @@ export function registerXhsMediaRoutes({ app, store }: RegisterXhsMediaRoutesOpt
   app.get<{ Params: XhsArchiveIdParams }>(
     "/api/v1/tools/xhs-archive/items/:id/download.zip",
     {
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: REQUEST_QUOTAS.batchDownload,
       schema: { params: XhsArchiveIdParamsSchema }
     },
     async (request, reply) => {
