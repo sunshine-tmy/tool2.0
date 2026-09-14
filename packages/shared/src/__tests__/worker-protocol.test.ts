@@ -14,7 +14,18 @@ describe("Worker protocol schemas", () => {
         available: true,
         deploymentUsage: "commercial",
         workerUrl: "http://127.0.0.1:3210",
-        models: []
+        models: [
+          {
+            provider: "paddleocr",
+            model: "PP-OCRv5",
+            version: "3.0.0",
+            license: "Apache-2.0",
+            sha256: null,
+            device: "cpu",
+            available: true,
+            reason: null
+          }
+        ]
       })
     ).toBe(true);
   });

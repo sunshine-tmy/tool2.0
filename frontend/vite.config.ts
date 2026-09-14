@@ -24,6 +24,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      host: env.VITE_DEV_HOST?.trim() || "127.0.0.1",
       proxy: apiProxy
     },
     preview: {

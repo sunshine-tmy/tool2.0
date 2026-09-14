@@ -17,10 +17,10 @@ export const ImageWorkerHealthSchema = Type.Object({
       model: Type.String({ minLength: 1 }),
       version: Type.String(),
       license: Type.String(),
-      sha256: Type.Optional(Type.String({ pattern: "^[a-fA-F0-9]{64}$" })),
+      sha256: Type.Optional(Type.Union([Type.String({ pattern: "^[a-fA-F0-9]{64}$" }), Type.Null()])),
       device: Type.String(),
       available: Type.Boolean(),
-      reason: Type.Optional(Type.String())
+      reason: Type.Optional(Type.Union([Type.String(), Type.Null()]))
     })
   )
 });
