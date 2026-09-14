@@ -25,6 +25,9 @@ afterEach(async () => {
   delete process.env.LAN_TRANSFER_GUEST_MODE;
   delete process.env.LAN_TRANSFER_UPLOAD_RETENTION_HOURS;
   delete process.env.LAN_PUBLIC_BASE_URL;
+  delete process.env.DEPLOYMENT_MODE;
+  delete process.env.ADMIN_PIN;
+  delete process.env.CORS_ORIGINS;
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
 
@@ -64,6 +67,117 @@ describe("lan transfer api", () => {
       url: `/api/v1/tools/lan-transfer/files/${id}/preview`
     });
     expect(preview.body).toBe("new namespace");
+  });
+
+  it("allows guest transfers but requires an administrator session for LAN management in LAN mode", async () => {
+    process.env.DEPLOYMENT_MODE = "lan";
+    process.env.ADMIN_PIN = "123456";
+    process.env.CORS_ORIGINS = "http://192.168.1.10:5173";
+    const app = await createApp();
+
+    try {
+      const upload = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/files",
+        ...multipartPayload("file", "guest.txt", "text/plain", "guest transfer")
+      });
+      expect(upload.statusCode).toBe(200);
+      const fileId = upload.json().data.file.id;
+
+      const download = await app.inject({
+        method: "GET",
+        url: `/api/v1/tools/lan-transfer/files/${fileId}/download`
+      });
+      expect(download.statusCode).toBe(200);
+      expect(download.body).toBe("guest transfer");
+
+      const note = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/notes",
+        ...noteMultipartPayload({ content: "guest note" }, [])
+      });
+      expect(note.statusCode).toBe(200);
+      const noteId = note.json().data.id;
+
+      const uploadSession = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/uploads",
+        payload: {
+          originalName: "chunked.txt",
+          mimeType: "text/plain",
+          size: 4,
+          chunkSize: 4,
+          totalChunks: 1
+        }
+      });
+      expect(uploadSession.statusCode).toBe(200);
+      const uploadId = uploadSession.json().data.uploadId;
+      const cancelled = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/tools/lan-transfer/uploads/${uploadId}`
+      });
+      expect(cancelled.statusCode).toBe(200);
+
+      const deniedManagementRequests = await Promise.all([
+        app.inject({ method: "DELETE", url: `/api/v1/tools/lan-transfer/files/${fileId}` }),
+        app.inject({
+          method: "PATCH",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}/expiry`,
+          payload: { days: 30 }
+        }),
+        app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/files/batch-delete",
+          payload: { ids: [fileId] }
+        }),
+        app.inject({ method: "POST", url: "/api/v1/tools/lan-transfer/cleanup" }),
+        app.inject({ method: "DELETE", url: `/api/v1/tools/lan-transfer/notes/${noteId}` }),
+        app.inject({
+          method: "PATCH",
+          url: `/api/v1/tools/lan-transfer/notes/${noteId}/expiry`,
+          payload: { days: 30 }
+        }),
+        app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/notes/batch-delete",
+          payload: { ids: [noteId] }
+        })
+      ]);
+      for (const response of deniedManagementRequests) {
+        expect(response.statusCode).toBe(401);
+        expect(response.json().error.code).toBe("ADMIN_SESSION_REQUIRED");
+      }
+
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/session",
+        payload: { pin: "123456" }
+      });
+      const setCookie = login.headers["set-cookie"]!;
+      const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie).split(";", 1)[0];
+      const adminHeaders = {
+        cookie,
+        origin: "http://192.168.1.10:5173",
+        "x-csrf-token": login.json().data.csrfToken
+      };
+
+      const [deletedFile, deletedNote] = await Promise.all([
+        app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}`,
+          headers: adminHeaders
+        }),
+        app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/lan-transfer/notes/${noteId}`,
+          headers: adminHeaders
+        })
+      ]);
+      expect(deletedFile.statusCode).toBe(200);
+      expect(deletedNote.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
   });
 
   it("uploads a file, stores metadata, lists it, previews it, and downloads it", async () => {

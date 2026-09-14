@@ -107,7 +107,7 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
 }
 
 function isGuestTransferRequest(request: FastifyRequest) {
-  return request.url.startsWith("/api/v1/tools/lan-transfer/");
+  return request.routeOptions.config.allowGuestTransfer === true;
 }
 
 function timingSafeEqual(actual: string, expected: string) {

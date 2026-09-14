@@ -140,7 +140,7 @@ function registerLanTransferNamespace(
   app.post<{ Body: LanAccessInput }>(
     `${basePath}/access`,
     {
-      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+      config: { allowGuestTransfer: true, rateLimit: { max: 5, timeWindow: "1 minute" } },
       schema: { body: LanAccessInputSchema }
     },
     async (request, reply) => {
@@ -155,7 +155,7 @@ function registerLanTransferNamespace(
     }
   );
 
-  app.delete(`${basePath}/access`, async (request, reply) => {
+  app.delete(`${basePath}/access`, { config: { allowGuestTransfer: true } }, async (request, reply) => {
     access.logout(request);
     reply.header("set-cookie", access.expiredSessionCookie());
     return ok({ authenticated: false });
@@ -163,7 +163,7 @@ function registerLanTransferNamespace(
 
   registerLanNoteRoutes({ app, config, store, noteStore, uploadStore, access, audit, basePath });
 
-  app.post(`${basePath}/files`, async (request, reply) => {
+  app.post(`${basePath}/files`, { config: { allowGuestTransfer: true } }, async (request, reply) => {
     if (!access.authorize(request, reply, "upload")) return reply;
     const file = await request.file({
       limits: {
@@ -262,7 +262,7 @@ function registerLanTransferNamespace(
   app.post<{ Body: LanIdsInput }>(
     `${basePath}/files/batch-download`,
     {
-      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      config: { allowGuestTransfer: true, rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: { body: LanIdsInputSchema }
     },
     async (request, reply) => {
@@ -378,7 +378,7 @@ function registerLanTransferNamespace(
   app.post<{ Body: LanUploadSessionInput }>(
     `${basePath}/uploads`,
     {
-      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      config: { allowGuestTransfer: true, rateLimit: { max: 30, timeWindow: "1 minute" } },
       schema: { body: LanUploadSessionInputSchema }
     },
     async (request, reply) => {
@@ -426,7 +426,10 @@ function registerLanTransferNamespace(
 
   app.put<{ Params: LanChunkParams }>(
     `${basePath}/uploads/:uploadId/chunks/:index`,
-    { config: { rateLimit: { max: 120, timeWindow: "1 minute" } }, schema: { params: LanChunkParamsSchema } },
+    {
+      config: { allowGuestTransfer: true, rateLimit: { max: 120, timeWindow: "1 minute" } },
+      schema: { params: LanChunkParamsSchema }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const { uploadId, index } = request.params;
@@ -494,7 +497,7 @@ function registerLanTransferNamespace(
 
   app.post<{ Params: LanUploadParams }>(
     `${basePath}/uploads/:uploadId/complete`,
-    { schema: { params: LanUploadParamsSchema } },
+    { config: { allowGuestTransfer: true }, schema: { params: LanUploadParamsSchema } },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const { uploadId } = request.params;
@@ -592,7 +595,7 @@ function registerLanTransferNamespace(
 
   app.delete<{ Params: LanUploadParams }>(
     `${basePath}/uploads/:uploadId`,
-    { schema: { params: LanUploadParamsSchema } },
+    { config: { allowGuestTransfer: true }, schema: { params: LanUploadParamsSchema } },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const { uploadId } = request.params;

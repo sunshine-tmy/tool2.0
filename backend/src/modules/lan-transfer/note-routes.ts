@@ -64,7 +64,7 @@ export function registerLanNoteRoutes({
   audit,
   basePath
 }: RegisterLanNoteRoutesOptions) {
-  app.post(`${basePath}/notes`, async (request, reply) => {
+  app.post(`${basePath}/notes`, { config: { allowGuestTransfer: true } }, async (request, reply) => {
     if (!access.authorize(request, reply, "upload")) return reply;
     const noteId = nanoid(12);
     const writtenNames: string[] = [];
