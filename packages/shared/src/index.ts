@@ -7,6 +7,7 @@ export * from "./edge-tts";
 export * from "./chatterbox";
 export * from "./lan-file";
 export * from "./lan-note";
+export * from "./lan-transfer-api";
 export * from "./tools";
 export * from "./short-video";
 export * from "./xhs-archive";

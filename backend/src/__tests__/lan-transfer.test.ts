@@ -336,6 +336,52 @@ describe("lan transfer api", () => {
     expect(removed.statusCode).toBe(200);
   });
 
+  it("rejects malformed list, entity, expiry, upload and chunk parameters at the schema boundary", async () => {
+    const app = await createApp();
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files?page=0" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files/bad!/download" }),
+      app.inject({
+        method: "PATCH",
+        url: "/api/v1/tools/lan-transfer/files/abcdef/expiry",
+        payload: { days: 0 }
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/uploads",
+        payload: { originalName: "file.txt", size: -1, chunkSize: 1, totalChunks: 0 }
+      }),
+      app.inject({ method: "PUT", url: "/api/v1/tools/lan-transfer/uploads/abcdef/chunks/-1" })
+    ]);
+
+    for (const response of responses) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: "REQUEST_INVALID" },
+        requestId: expect.any(String)
+      });
+    }
+    await app.close();
+  });
+
+  it("rate limits repeated LAN PIN attempts independently", async () => {
+    process.env.LAN_TRANSFER_PIN = "2468";
+    const app = await createApp();
+    let response;
+    for (let requestNumber = 0; requestNumber < 6; requestNumber += 1) {
+      response = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/access",
+        payload: { pin: "wrong" }
+      });
+    }
+
+    expect(response?.statusCode).toBe(429);
+    expect(response?.json().error.code).toBe("REQUEST_INVALID");
+    await app.close();
+  });
+
   it("enforces the configured storage quota", async () => {
     process.env.LAN_TRANSFER_MAX_STORAGE_BYTES = "4";
     const app = await createApp();

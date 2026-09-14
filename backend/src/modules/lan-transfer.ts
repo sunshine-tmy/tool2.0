@@ -6,6 +6,16 @@ import type { FastifyInstance } from "fastify";
 import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 import {
+  LanAccessInputSchema,
+  LanChunkParamsSchema,
+  LanExpiryInputSchema,
+  LanFileListQuerySchema,
+  LanIdParamsSchema,
+  LanIdsInputSchema,
+  LanNoteImageParamsSchema,
+  LanPaginationQuerySchema,
+  LanUploadParamsSchema,
+  LanUploadSessionInputSchema,
   classifyLanFile,
   fail,
   getLanFileExtension,
@@ -14,8 +24,18 @@ import {
   normalizeLanFileQuery,
   ok,
   type LanFileRecord,
+  type LanAccessInput,
+  type LanChunkParams,
+  type LanExpiryInput,
+  type LanFileListQuery,
+  type LanIdParams,
+  type LanIdsInput,
   type LanNoteImageRecord,
-  type LanNoteRecord
+  type LanNoteImageParams,
+  type LanNoteRecord,
+  type LanPaginationQuery,
+  type LanUploadParams,
+  type LanUploadSessionInput
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
@@ -143,17 +163,23 @@ function registerLanTransferNamespace(
     });
   });
 
-  app.post(`${basePath}/access`, async (request, reply) => {
-    const pin = isRecord(request.body) ? String(request.body.pin ?? "") : "";
-    const token = access.login(pin);
-    if (!token) {
-      await audit.write("access.denied", request);
-      return reply.code(401).send(fail("INVALID_LAN_PIN", "访问 PIN 不正确"));
+  app.post<{ Body: LanAccessInput }>(
+    `${basePath}/access`,
+    {
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+      schema: { body: LanAccessInputSchema }
+    },
+    async (request, reply) => {
+      const token = access.login(request.body.pin);
+      if (!token) {
+        await audit.write("access.denied", request);
+        return reply.code(401).send(fail("INVALID_LAN_PIN", "访问 PIN 不正确"));
+      }
+      await audit.write("access.granted", request);
+      reply.header("set-cookie", access.sessionCookie(token));
+      return ok({ authenticated: true });
     }
-    await audit.write("access.granted", request);
-    reply.header("set-cookie", access.sessionCookie(token));
-    return ok({ authenticated: true });
-  });
+  );
 
   app.delete(`${basePath}/access`, async (request, reply) => {
     access.logout(request);
@@ -270,65 +296,85 @@ function registerLanTransferNamespace(
     }
   });
 
-  app.get(`${basePath}/notes`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const query = request.query as { page?: string; pageSize?: string };
-    const pageSize = Math.min(Math.max(Number(query.pageSize) || 20, 1), 100);
-    const requestedPage = Math.max(Number(query.page) || 1, 1);
-    const notes = await noteStore.list();
-    const total = notes.length;
-    const pageCount = Math.max(1, Math.ceil(total / pageSize));
-    const page = Math.min(requestedPage, pageCount);
-    const start = (page - 1) * pageSize;
-    return ok({
-      notes: notes.slice(start, start + pageSize).map((note) => withNoteUrls(note, basePath)),
-      pagination: { page, pageSize, total, pageCount }
-    });
-  });
-
-  app.post(`${basePath}/notes/batch-delete`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const ids = parseLanFileIds(request.body);
-    if (!ids.length) {
-      return reply.code(400).send(fail("NOTE_IDS_REQUIRED", "请至少选择一条图文"));
+  app.get<{ Querystring: LanPaginationQuery }>(
+    `${basePath}/notes`,
+    { schema: { querystring: LanPaginationQuerySchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const pageSize = request.query.pageSize ?? 20;
+      const requestedPage = request.query.page ?? 1;
+      const notes = await noteStore.list();
+      const total = notes.length;
+      const pageCount = Math.max(1, Math.ceil(total / pageSize));
+      const page = Math.min(requestedPage, pageCount);
+      const start = (page - 1) * pageSize;
+      return ok({
+        notes: notes.slice(start, start + pageSize).map((note) => withNoteUrls(note, basePath)),
+        pagination: { page, pageSize, total, pageCount }
+      });
     }
-    const result = await noteStore.removeMany(ids);
-    await audit.write("notes.batch-deleted", request, result);
-    return ok(result);
-  });
+  );
 
-  app.get(`${basePath}/notes/:id/images/:imageId/preview`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    return sendLanNoteImage(noteStore, request, reply, "inline");
-  });
-
-  app.get(`${basePath}/notes/:id/images/:imageId/download`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    return sendLanNoteImage(noteStore, request, reply, "attachment");
-  });
-
-  app.patch(`${basePath}/notes/:id/expiry`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const { id } = request.params as { id: string };
-    const days = isRecord(request.body) ? Number(request.body.days) : Number.NaN;
-    if (!Number.isInteger(days) || days < 1 || days > 3650) {
-      return reply.code(400).send(fail("INVALID_RETENTION_DAYS", "保留天数必须是 1 到 3650 的整数"));
+  app.post<{ Body: LanIdsInput }>(
+    `${basePath}/notes/batch-delete`,
+    { schema: { body: LanIdsInputSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const ids = parseLanFileIds(request.body);
+      if (!ids.length) {
+        return reply.code(400).send(fail("NOTE_IDS_REQUIRED", "请至少选择一条图文"));
+      }
+      const result = await noteStore.removeMany(ids);
+      await audit.write("notes.batch-deleted", request, result);
+      return ok(result);
     }
-    const updated = await noteStore.updateExpiry(id, days);
-    if (!updated) return reply.code(404).send(fail("LAN_NOTE_NOT_FOUND", "图文不存在或已过期"));
-    await audit.write("note.expiry-updated", request, { noteId: id, days });
-    return ok(withNoteUrls(updated, basePath));
-  });
+  );
 
-  app.delete(`${basePath}/notes/:id`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const { id } = request.params as { id: string };
-    if (!(await noteStore.remove(id))) {
-      return reply.code(404).send(fail("LAN_NOTE_NOT_FOUND", "图文不存在或已过期"));
+  app.get<{ Params: LanNoteImageParams }>(
+    `${basePath}/notes/:id/images/:imageId/preview`,
+    { schema: { params: LanNoteImageParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      return sendLanNoteImage(noteStore, request, reply, "inline");
     }
-    await audit.write("note.deleted", request, { noteId: id });
-    return ok({ removed: true });
-  });
+  );
+
+  app.get<{ Params: LanNoteImageParams }>(
+    `${basePath}/notes/:id/images/:imageId/download`,
+    { schema: { params: LanNoteImageParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      return sendLanNoteImage(noteStore, request, reply, "attachment");
+    }
+  );
+
+  app.patch<{ Params: LanIdParams; Body: LanExpiryInput }>(
+    `${basePath}/notes/:id/expiry`,
+    { schema: { params: LanIdParamsSchema, body: LanExpiryInputSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const { id } = request.params;
+      const { days } = request.body;
+      const updated = await noteStore.updateExpiry(id, days);
+      if (!updated) return reply.code(404).send(fail("LAN_NOTE_NOT_FOUND", "图文不存在或已过期"));
+      await audit.write("note.expiry-updated", request, { noteId: id, days });
+      return ok(withNoteUrls(updated, basePath));
+    }
+  );
+
+  app.delete<{ Params: LanIdParams }>(
+    `${basePath}/notes/:id`,
+    { schema: { params: LanIdParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const { id } = request.params;
+      if (!(await noteStore.remove(id))) {
+        return reply.code(404).send(fail("LAN_NOTE_NOT_FOUND", "图文不存在或已过期"));
+      }
+      await audit.write("note.deleted", request, { noteId: id });
+      return ok({ removed: true });
+    }
+  );
 
   app.post(`${basePath}/files`, async (request, reply) => {
     if (!access.authorize(request, reply, "upload")) return reply;
@@ -402,110 +448,138 @@ function registerLanTransferNamespace(
     }
   });
 
-  app.get(`${basePath}/files`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const query = normalizeLanFileQuery(request.query as Record<string, unknown>);
-    const files = await store.list(query);
-    const total = files.length;
-    const pageCount = Math.max(1, Math.ceil(total / query.pageSize));
-    const page = Math.min(query.page, pageCount);
-    const start = (page - 1) * query.pageSize;
-    const pageFiles = files.slice(start, start + query.pageSize);
-    return ok<ListResponse>({
-      files: pageFiles.map((file) => withUrls(file, basePath)),
-      pagination: {
-        page,
-        pageSize: query.pageSize,
-        total,
-        pageCount
-      }
-    });
-  });
-
-  app.post(`${basePath}/files/batch-download`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const ids = parseLanFileIds(request.body);
-    if (!ids.length) {
-      return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
-    }
-    const files = await store.getMany(ids);
-    if (!files.length) {
-      return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
-    }
-    await store.incrementDownloadCounts(files.map((file) => file.id));
-    await audit.write("files.batch-downloaded", request, { fileIds: files.map((file) => file.id) });
-    const archive = new ZipArchive({ zlib: { level: 1 } });
-    const usedNames = new Set<string>();
-    for (const file of files) {
-      archive.file(path.join(config.lanTransferFilesDir, file.storedName), {
-        name: uniqueArchiveName(file.originalName, usedNames)
+  app.get<{ Querystring: LanFileListQuery }>(
+    `${basePath}/files`,
+    { schema: { querystring: LanFileListQuerySchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const query = normalizeLanFileQuery(request.query);
+      const files = await store.list(query);
+      const total = files.length;
+      const pageCount = Math.max(1, Math.ceil(total / query.pageSize));
+      const page = Math.min(query.page, pageCount);
+      const start = (page - 1) * query.pageSize;
+      const pageFiles = files.slice(start, start + query.pageSize);
+      return ok<ListResponse>({
+        files: pageFiles.map((file) => withUrls(file, basePath)),
+        pagination: {
+          page,
+          pageSize: query.pageSize,
+          total,
+          pageCount
+        }
       });
     }
-    reply.header("content-type", "application/zip");
-    reply.header("content-disposition", `attachment; filename="lan-files-${Date.now()}.zip"`);
-    void archive.finalize();
-    return reply.send(archive);
-  });
+  );
 
-  app.post(`${basePath}/files/batch-delete`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const ids = parseLanFileIds(request.body);
-    if (!ids.length) {
-      return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+  app.post<{ Body: LanIdsInput }>(
+    `${basePath}/files/batch-download`,
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: { body: LanIdsInputSchema }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const ids = parseLanFileIds(request.body);
+      if (!ids.length) {
+        return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+      }
+      const files = await store.getMany(ids);
+      if (!files.length) {
+        return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+      }
+      await store.incrementDownloadCounts(files.map((file) => file.id));
+      await audit.write("files.batch-downloaded", request, { fileIds: files.map((file) => file.id) });
+      const archive = new ZipArchive({ zlib: { level: 1 } });
+      const usedNames = new Set<string>();
+      for (const file of files) {
+        archive.file(path.join(config.lanTransferFilesDir, file.storedName), {
+          name: uniqueArchiveName(file.originalName, usedNames)
+        });
+      }
+      reply.header("content-type", "application/zip");
+      reply.header("content-disposition", `attachment; filename="lan-files-${Date.now()}.zip"`);
+      void archive.finalize();
+      return reply.send(archive);
     }
-    const result = await store.removeMany(ids);
-    await audit.write("files.batch-deleted", request, result);
-    return ok(result);
-  });
+  );
 
-  app.get(`${basePath}/files/:id/preview`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const file = await getFileOr404(store, request, reply);
-    if (!file) return reply;
-
-    if (!file.previewable) {
-      return reply.code(415).send(fail("PREVIEW_UNSUPPORTED", "This file type cannot be previewed"));
+  app.post<{ Body: LanIdsInput }>(
+    `${basePath}/files/batch-delete`,
+    { schema: { body: LanIdsInputSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const ids = parseLanFileIds(request.body);
+      if (!ids.length) {
+        return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+      }
+      const result = await store.removeMany(ids);
+      await audit.write("files.batch-deleted", request, result);
+      return ok(result);
     }
+  );
 
-    return sendFile(reply, config, file, "inline", request.headers.range);
-  });
+  app.get<{ Params: LanIdParams }>(
+    `${basePath}/files/:id/preview`,
+    { schema: { params: LanIdParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const file = await getFileOr404(store, request, reply);
+      if (!file) return reply;
 
-  app.get(`${basePath}/files/:id/download`, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const file = await getFileOr404(store, request, reply);
-    if (!file) return reply;
+      if (!file.previewable) {
+        return reply.code(415).send(fail("PREVIEW_UNSUPPORTED", "This file type cannot be previewed"));
+      }
 
-    if (!request.headers.range || /^bytes=0-/i.test(request.headers.range)) {
-      await store.incrementDownloadCount(file.id);
+      return sendFile(reply, config, file, "inline", request.headers.range);
     }
-    return sendFile(reply, config, file, "attachment", request.headers.range);
-  });
+  );
 
-  app.delete(`${basePath}/files/:id`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const { id } = request.params as { id: string };
-    const removed = await store.remove(id);
-    if (!removed) {
-      return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
-    }
-    await audit.write("file.deleted", request, { fileId: id });
-    return ok({ removed: true });
-  });
+  app.get<{ Params: LanIdParams }>(
+    `${basePath}/files/:id/download`,
+    { schema: { params: LanIdParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const file = await getFileOr404(store, request, reply);
+      if (!file) return reply;
 
-  app.patch(`${basePath}/files/:id/expiry`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const { id } = request.params as { id: string };
-    const days = isRecord(request.body) ? Number(request.body.days) : Number.NaN;
-    if (!Number.isInteger(days) || days < 1 || days > 3650) {
-      return reply.code(400).send(fail("INVALID_RETENTION_DAYS", "保留天数必须是 1 到 3650 的整数"));
+      if (!request.headers.range || /^bytes=0-/i.test(request.headers.range)) {
+        await store.incrementDownloadCount(file.id);
+      }
+      return sendFile(reply, config, file, "attachment", request.headers.range);
     }
-    const updated = await store.updateExpiry(id, days);
-    if (!updated) {
-      return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+  );
+
+  app.delete<{ Params: LanIdParams }>(
+    `${basePath}/files/:id`,
+    { schema: { params: LanIdParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const { id } = request.params;
+      const removed = await store.remove(id);
+      if (!removed) {
+        return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+      }
+      await audit.write("file.deleted", request, { fileId: id });
+      return ok({ removed: true });
     }
-    await audit.write("file.expiry-updated", request, { fileId: id, days });
-    return ok(withUrls(updated, basePath));
-  });
+  );
+
+  app.patch<{ Params: LanIdParams; Body: LanExpiryInput }>(
+    `${basePath}/files/:id/expiry`,
+    { schema: { params: LanIdParamsSchema, body: LanExpiryInputSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const { id } = request.params;
+      const { days } = request.body;
+      const updated = await store.updateExpiry(id, days);
+      if (!updated) {
+        return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+      }
+      await audit.write("file.expiry-updated", request, { fileId: id, days });
+      return ok(withUrls(updated, basePath));
+    }
+  );
 
   app.post(`${basePath}/cleanup`, async (request, reply) => {
     if (!access.authorize(request, reply, "manage")) return reply;
@@ -514,215 +588,238 @@ function registerLanTransferNamespace(
     return ok({ removed: files.removed + notes.removed, filesRemoved: files.removed, notesRemoved: notes.removed });
   });
 
-  app.post(`${basePath}/uploads`, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const parsed = parseUploadSessionBody(request.body);
-    if (!parsed.ok) {
-      return reply.code(400).send(fail(parsed.code, parsed.message));
-    }
-
-    if (parsed.value.size > config.lanTransferMaxFileBytes) {
-      return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
-    }
-
-    const reservedBytes =
-      (await store.totalSize()) + (await noteStore.totalSize()) + (await uploadStore.totalDeclaredSize());
-    if (reservedBytes + parsed.value.size > config.lanTransferMaxStorageBytes) {
-      return reply.code(507).send(
-        fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足", {
-          maxStorageBytes: config.lanTransferMaxStorageBytes,
-          reservedBytes,
-          requestedBytes: parsed.value.size
-        })
-      );
-    }
-
-    const session = await uploadStore.create(parsed.value);
-    return ok(toUploadStatus(session));
-  });
-
-  app.get(`${basePath}/uploads/:uploadId`, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const { uploadId } = request.params as { uploadId: string };
-    const session = await uploadStore.get(uploadId);
-    if (!session) {
-      return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
-    }
-
-    return ok(toUploadStatus(session));
-  });
-
-  app.put(`${basePath}/uploads/:uploadId/chunks/:index`, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const { uploadId, index } = request.params as { uploadId: string; index: string };
-    if (finalizingUploads.has(uploadId)) {
-      return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
-    }
-    const session = await uploadStore.get(uploadId);
-    if (!session) {
-      return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
-    }
-
-    const chunkIndex = Number(index);
-    if (!Number.isInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= session.totalChunks) {
-      return reply.code(400).send(fail("INVALID_CHUNK_INDEX", "Invalid chunk index"));
-    }
-
-    const chunk = await request.file({
-      limits: {
-        fileSize: session.chunkSize
-      }
-    });
-
-    if (!chunk) {
-      return reply.code(400).send(fail("CHUNK_REQUIRED", "Please upload a chunk"));
-    }
-
-    const expectedSize = getExpectedChunkSize(session, chunkIndex);
-    const chunkPath = uploadStore.chunkPath(session.uploadId, chunkIndex);
-    const temporaryPath = `${chunkPath}.tmp-${nanoid(6)}`;
-
-    try {
-      await fsp.mkdir(path.dirname(chunkPath), { recursive: true });
-      await pipeline(chunk.file, fs.createWriteStream(temporaryPath));
-      const stat = await fsp.stat(temporaryPath);
-
-      if (chunk.file.truncated || stat.size > expectedSize) {
-        await fsp.rm(temporaryPath, { force: true });
-        return reply.code(413).send(fail("CHUNK_TOO_LARGE", "Uploaded chunk exceeds the expected size"));
+  app.post<{ Body: LanUploadSessionInput }>(
+    `${basePath}/uploads`,
+    {
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      schema: { body: LanUploadSessionInputSchema }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const parsed = parseUploadSessionBody(request.body);
+      if (!parsed.ok) {
+        return reply.code(400).send(fail(parsed.code, parsed.message));
       }
 
-      if (stat.size !== expectedSize) {
-        await fsp.rm(temporaryPath, { force: true });
-        return reply.code(400).send(
-          fail("INVALID_CHUNK_SIZE", "Uploaded chunk size does not match the expected size", {
-            expectedSize,
-            actualSize: stat.size
+      if (parsed.value.size > config.lanTransferMaxFileBytes) {
+        return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
+      }
+
+      const reservedBytes =
+        (await store.totalSize()) + (await noteStore.totalSize()) + (await uploadStore.totalDeclaredSize());
+      if (reservedBytes + parsed.value.size > config.lanTransferMaxStorageBytes) {
+        return reply.code(507).send(
+          fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足", {
+            maxStorageBytes: config.lanTransferMaxStorageBytes,
+            reservedBytes,
+            requestedBytes: parsed.value.size
           })
         );
       }
 
-      await fsp.rename(temporaryPath, chunkPath);
-      const updated = await uploadStore.markChunkUploaded(session.uploadId, chunkIndex);
-      if (!updated) {
-        return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
-      }
-
-      return ok(toUploadStatus(updated));
-    } catch (error) {
-      await fsp.rm(temporaryPath, { force: true });
-      const message = error instanceof Error ? error.message : "Chunk upload failed";
-      return reply.code(500).send(fail("CHUNK_UPLOAD_FAILED", message));
+      const session = await uploadStore.create(parsed.value);
+      return ok(toUploadStatus(session));
     }
-  });
+  );
 
-  app.post(`${basePath}/uploads/:uploadId/complete`, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const { uploadId } = request.params as { uploadId: string };
-    if (finalizingUploads.has(uploadId)) {
-      return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is already being finalized"));
-    }
-    finalizingUploads.add(uploadId);
-
-    try {
+  app.get<{ Params: LanUploadParams }>(
+    `${basePath}/uploads/:uploadId`,
+    { schema: { params: LanUploadParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const { uploadId } = request.params;
       const session = await uploadStore.get(uploadId);
       if (!session) {
         return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
       }
 
-      const missingChunks = getMissingChunks(session);
-      if (missingChunks.length) {
-        return reply.code(409).send(fail("UPLOAD_INCOMPLETE", "Upload has missing chunks", { missingChunks }));
+      return ok(toUploadStatus(session));
+    }
+  );
+
+  app.put<{ Params: LanChunkParams }>(
+    `${basePath}/uploads/:uploadId/chunks/:index`,
+    { config: { rateLimit: { max: 120, timeWindow: "1 minute" } }, schema: { params: LanChunkParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const { uploadId, index } = request.params;
+      if (finalizingUploads.has(uploadId)) {
+        return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
+      }
+      const session = await uploadStore.get(uploadId);
+      if (!session) {
+        return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
       }
 
-      const extension = getLanFileExtension(session.originalName);
-      const id = nanoid(12);
-      const storedName = extension ? `${id}.${extension}` : id;
-      const targetPath = path.join(config.lanTransferFilesDir, storedName);
+      const chunkIndex = Number(index);
+      if (!Number.isInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= session.totalChunks) {
+        return reply.code(400).send(fail("INVALID_CHUNK_INDEX", "Invalid chunk index"));
+      }
+
+      const chunk = await request.file({
+        limits: {
+          fileSize: session.chunkSize
+        }
+      });
+
+      if (!chunk) {
+        return reply.code(400).send(fail("CHUNK_REQUIRED", "Please upload a chunk"));
+      }
+
+      const expectedSize = getExpectedChunkSize(session, chunkIndex);
+      const chunkPath = uploadStore.chunkPath(session.uploadId, chunkIndex);
+      const temporaryPath = `${chunkPath}.tmp-${nanoid(6)}`;
 
       try {
-        await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-        const storageCheck = await checkMergeHeadroom(path.dirname(targetPath), session);
-        if (!storageCheck.ok) {
-          return reply.code(507).send(
-            fail("INSUFFICIENT_STORAGE", "Not enough free disk space to merge uploaded chunks", {
-              requiredBytes: storageCheck.requiredBytes,
-              availableBytes: storageCheck.availableBytes
-            })
-          );
+        await fsp.mkdir(path.dirname(chunkPath), { recursive: true });
+        await pipeline(chunk.file, fs.createWriteStream(temporaryPath));
+        const stat = await fsp.stat(temporaryPath);
+
+        if (chunk.file.truncated || stat.size > expectedSize) {
+          await fsp.rm(temporaryPath, { force: true });
+          return reply.code(413).send(fail("CHUNK_TOO_LARGE", "Uploaded chunk exceeds the expected size"));
         }
 
-        await mergeChunks(session, uploadStore, targetPath);
-        const stat = await fsp.stat(targetPath);
-
-        if (stat.size !== session.size || stat.size > config.lanTransferMaxFileBytes) {
-          await fsp.rm(targetPath, { force: true });
-          return reply.code(500).send(
-            fail("MERGE_FAILED", "Merged file size does not match the upload session", {
-              expectedSize: session.size,
+        if (stat.size !== expectedSize) {
+          await fsp.rm(temporaryPath, { force: true });
+          return reply.code(400).send(
+            fail("INVALID_CHUNK_SIZE", "Uploaded chunk size does not match the expected size", {
+              expectedSize,
               actualSize: stat.size
             })
           );
         }
 
-        const classifiedCategory = classifyLanFile(session.originalName, session.mimeType);
-        const category =
-          classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
-        const createdAt = new Date().toISOString();
-        const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
-        const record: LanFileRecord = {
-          id,
-          originalName: session.originalName,
-          storedName,
-          mimeType: session.mimeType,
-          extension,
-          size: stat.size,
-          category,
-          createdAt,
-          expiresAt,
-          downloadCount: 0,
-          previewable: isLanFilePreviewable(category)
-        };
-
-        await store.add(record);
-        await uploadStore.remove(uploadId);
-        await audit.write("file.uploaded", request, {
-          fileId: record.id,
-          name: record.originalName,
-          size: record.size
-        });
-
-        return ok({
-          file: record,
-          previewUrl: `${basePath}/files/${record.id}/preview`,
-          downloadUrl: `${basePath}/files/${record.id}/download`
-        });
-      } catch (error) {
-        await fsp.rm(targetPath, { force: true });
-        const message = error instanceof Error ? error.message : "Chunk merge failed";
-        if (isNoSpaceError(error)) {
-          return reply.code(507).send(fail("INSUFFICIENT_STORAGE", message));
+        await fsp.rename(temporaryPath, chunkPath);
+        const updated = await uploadStore.markChunkUploaded(session.uploadId, chunkIndex);
+        if (!updated) {
+          return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
         }
-        return reply.code(500).send(fail("MERGE_FAILED", message));
+
+        return ok(toUploadStatus(updated));
+      } catch (error) {
+        await fsp.rm(temporaryPath, { force: true });
+        const message = error instanceof Error ? error.message : "Chunk upload failed";
+        return reply.code(500).send(fail("CHUNK_UPLOAD_FAILED", message));
       }
-    } finally {
-      finalizingUploads.delete(uploadId);
     }
-  });
+  );
 
-  app.delete(`${basePath}/uploads/:uploadId`, async (request, reply) => {
-    if (!access.authorize(request, reply, "upload")) return reply;
-    const { uploadId } = request.params as { uploadId: string };
-    if (finalizingUploads.has(uploadId)) {
-      return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
-    }
-    const removed = await uploadStore.remove(uploadId);
-    if (!removed) {
-      return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
-    }
+  app.post<{ Params: LanUploadParams }>(
+    `${basePath}/uploads/:uploadId/complete`,
+    { schema: { params: LanUploadParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const { uploadId } = request.params;
+      if (finalizingUploads.has(uploadId)) {
+        return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is already being finalized"));
+      }
+      finalizingUploads.add(uploadId);
 
-    return ok({ removed: true });
-  });
+      try {
+        const session = await uploadStore.get(uploadId);
+        if (!session) {
+          return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
+        }
+
+        const missingChunks = getMissingChunks(session);
+        if (missingChunks.length) {
+          return reply.code(409).send(fail("UPLOAD_INCOMPLETE", "Upload has missing chunks", { missingChunks }));
+        }
+
+        const extension = getLanFileExtension(session.originalName);
+        const id = nanoid(12);
+        const storedName = extension ? `${id}.${extension}` : id;
+        const targetPath = path.join(config.lanTransferFilesDir, storedName);
+
+        try {
+          await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
+          const storageCheck = await checkMergeHeadroom(path.dirname(targetPath), session);
+          if (!storageCheck.ok) {
+            return reply.code(507).send(
+              fail("INSUFFICIENT_STORAGE", "Not enough free disk space to merge uploaded chunks", {
+                requiredBytes: storageCheck.requiredBytes,
+                availableBytes: storageCheck.availableBytes
+              })
+            );
+          }
+
+          await mergeChunks(session, uploadStore, targetPath);
+          const stat = await fsp.stat(targetPath);
+
+          if (stat.size !== session.size || stat.size > config.lanTransferMaxFileBytes) {
+            await fsp.rm(targetPath, { force: true });
+            return reply.code(500).send(
+              fail("MERGE_FAILED", "Merged file size does not match the upload session", {
+                expectedSize: session.size,
+                actualSize: stat.size
+              })
+            );
+          }
+
+          const classifiedCategory = classifyLanFile(session.originalName, session.mimeType);
+          const category =
+            classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
+          const createdAt = new Date().toISOString();
+          const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
+          const record: LanFileRecord = {
+            id,
+            originalName: session.originalName,
+            storedName,
+            mimeType: session.mimeType,
+            extension,
+            size: stat.size,
+            category,
+            createdAt,
+            expiresAt,
+            downloadCount: 0,
+            previewable: isLanFilePreviewable(category)
+          };
+
+          await store.add(record);
+          await uploadStore.remove(uploadId);
+          await audit.write("file.uploaded", request, {
+            fileId: record.id,
+            name: record.originalName,
+            size: record.size
+          });
+
+          return ok({
+            file: record,
+            previewUrl: `${basePath}/files/${record.id}/preview`,
+            downloadUrl: `${basePath}/files/${record.id}/download`
+          });
+        } catch (error) {
+          await fsp.rm(targetPath, { force: true });
+          const message = error instanceof Error ? error.message : "Chunk merge failed";
+          if (isNoSpaceError(error)) {
+            return reply.code(507).send(fail("INSUFFICIENT_STORAGE", message));
+          }
+          return reply.code(500).send(fail("MERGE_FAILED", message));
+        }
+      } finally {
+        finalizingUploads.delete(uploadId);
+      }
+    }
+  );
+
+  app.delete<{ Params: LanUploadParams }>(
+    `${basePath}/uploads/:uploadId`,
+    { schema: { params: LanUploadParamsSchema } },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "upload")) return reply;
+      const { uploadId } = request.params;
+      if (finalizingUploads.has(uploadId)) {
+        return reply.code(409).send(fail("UPLOAD_FINALIZING", "Upload is being finalized"));
+      }
+      const removed = await uploadStore.remove(uploadId);
+      if (!removed) {
+        return reply.code(404).send(fail("UPLOAD_NOT_FOUND", "Upload session not found"));
+      }
+
+      return ok({ removed: true });
+    }
+  );
 }
 
 function parseLanFileIds(body: unknown) {

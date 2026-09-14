@@ -2,7 +2,13 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { fail, type LanFileRecord, type LanNoteRecord } from "@toolbox/shared";
+import {
+  fail,
+  type LanFileRecord,
+  type LanIdParams,
+  type LanNoteImageParams,
+  type LanNoteRecord
+} from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 
 type LanFileReader = { get(id: string): Promise<LanFileRecord | undefined> };
@@ -11,8 +17,12 @@ type LanNoteImageReader = {
   imagePath(storedName: string): string;
 };
 
-export async function getFileOr404(store: LanFileReader, request: FastifyRequest, reply: FastifyReply) {
-  const { id } = request.params as { id: string };
+export async function getFileOr404(
+  store: LanFileReader,
+  request: FastifyRequest<{ Params: LanIdParams }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params;
   const file = await store.get(id);
   if (!file) {
     reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
@@ -150,11 +160,11 @@ export function withNoteUrls(note: LanNoteRecord, basePath: string) {
 
 export async function sendLanNoteImage(
   noteStore: LanNoteImageReader,
-  request: FastifyRequest,
+  request: FastifyRequest<{ Params: LanNoteImageParams }>,
   reply: FastifyReply,
   disposition: "inline" | "attachment"
 ) {
-  const { id, imageId } = request.params as { id: string; imageId: string };
+  const { id, imageId } = request.params;
   const note = await noteStore.get(id);
   const image = note?.images.find((item) => item.id === imageId);
   if (!note || !image) {
