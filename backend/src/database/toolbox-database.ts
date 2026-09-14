@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
-const DATABASE_SCHEMA_VERSION = 1;
+const DATABASE_SCHEMA_VERSION = 2;
 
 type StoredEntity = {
   id: string;
@@ -33,20 +33,39 @@ export class ToolboxDatabase {
       timeout: 5_000,
       fileMustExist: false
     });
-    this.connection.pragma("journal_mode = WAL");
-    this.connection.pragma("foreign_keys = ON");
-    this.connection.pragma("busy_timeout = 5000");
-    this.connection.pragma("trusted_schema = OFF");
-    this.migrate();
-    this.recoverInterruptedTasks();
+    try {
+      this.connection.pragma("journal_mode = WAL");
+      this.connection.pragma("foreign_keys = ON");
+      this.connection.pragma("busy_timeout = 5000");
+      this.connection.pragma("trusted_schema = OFF");
+      this.migrate();
+      this.recoverInterruptedTasks();
+    } catch (error) {
+      this.connection.close();
+      throw error;
+    }
   }
 
   close() {
     if (this.connection.open) this.connection.close();
   }
 
+  checkpoint() {
+    return this.connection.pragma("wal_checkpoint(TRUNCATE)") as Array<{
+      busy: number;
+      log: number;
+      checkpointed: number;
+    }>;
+  }
+
   ready() {
     return this.connection.prepare("SELECT 1 AS ready").get() as { ready: 1 };
+  }
+
+  verifyQuick() {
+    const integrity = this.connection.pragma("quick_check(1)", { simple: true }) as string;
+    const foreignKeys = this.connection.pragma("foreign_key_check") as unknown[];
+    return { integrity, foreignKeys };
   }
 
   transaction<T>(operation: () => T): T {
@@ -151,12 +170,27 @@ export class ToolboxDatabase {
       );
   }
 
+  hasCompletedLegacyMigration() {
+    return Boolean(this.connection.prepare("SELECT 1 FROM legacy_migrations WHERE status = 'completed' LIMIT 1").get());
+  }
+
+  recordLegacyMigration(input: { backupId: string; sourceCount: number; recordCount: number; totalBytes: number }) {
+    this.connection
+      .prepare(
+        `INSERT INTO legacy_migrations
+           (backup_id, status, source_count, record_count, total_bytes, completed_at)
+         VALUES (@backupId, 'completed', @sourceCount, @recordCount, @totalBytes, @completedAt)`
+      )
+      .run({ ...input, completedAt: new Date().toISOString() });
+  }
+
   verify() {
     const integrity = this.connection.pragma("integrity_check", { simple: true }) as string;
     const foreignKeys = this.connection.pragma("foreign_key_check") as unknown[];
-    const counts = this.connection
-      .prepare("SELECT 'tasks' AS kind, COUNT(*) AS count FROM tasks UNION ALL SELECT 'legacy', COUNT(*) FROM entities")
-      .all() as Array<{ kind: string; count: number }>;
+    const counts = ["entities", "files", "audit_events", ...DOMAIN_TABLES].map((table) => ({
+      kind: table,
+      count: (this.connection.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as { count: number }).count
+    }));
     return { integrity, foreignKeys, counts, schemaVersion: DATABASE_SCHEMA_VERSION };
   }
 
@@ -169,6 +203,14 @@ export class ToolboxDatabase {
       CREATE TABLE IF NOT EXISTS domain_state (
         kind TEXT PRIMARY KEY,
         initialized_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS legacy_migrations (
+        backup_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL CHECK(status IN ('completed')),
+        source_count INTEGER NOT NULL CHECK(source_count >= 0),
+        record_count INTEGER NOT NULL CHECK(record_count >= 0),
+        total_bytes INTEGER NOT NULL CHECK(total_bytes >= 0),
+        completed_at TEXT NOT NULL
       ) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS entities (
         id TEXT NOT NULL,

@@ -280,9 +280,9 @@ Standalone 不是第二套源码。运行 `pwsh ./scripts/package-standalone.ps1
 
 ## SQLite 迁移与回滚
 
-首次启动会先把旧 JSON/manifest 元数据复制到 `storage/migration-backups/<timestamp>`，再导入 `storage/toolbox.db`。媒体文件路径不变，旧元数据至少保留一个发布周期且不会作为新写入目标。SQLite 使用 WAL、外键、`busy_timeout` 和参数化语句；异常中断的任务在重启后标记为 `failed/INTERRUPTED`，必须由用户显式重试。
+首次启动会检测局域网文件、便签、分片上传和小红书归档的旧索引，先复制到 `storage/migration-backups/<timestamp>` 并校验大小与 SHA-256。正式数据库尚不存在时，迁移会在同目录临时数据库中以单事务导入，完成完整性与外键检查、WAL checkpoint 和 `fsync` 后才原子切换为 `storage/toolbox.db`；解析或校验失败时拒绝启动且不会留下半迁移数据库。各任务目录中的旧 manifest 继续由对应 Repository 首次初始化时导入。媒体文件路径不变，旧元数据至少保留一个发布周期且不会作为新写入目标。SQLite 使用 WAL、外键、`busy_timeout` 和参数化语句；异常中断的任务在重启后标记为 `failed/INTERRUPTED`，必须由用户显式重试。
 
-升级前建议先运行 `pnpm db:migrate --dry-run`。迁移后用 `pnpm db:verify` 检查完整性；需要恢复时运行 `pnpm db:rollback --backup <id>`。不要手工删除数据库的 `-wal` 或 `-shm` 文件。
+升级前建议先运行 `pnpm db:migrate --dry-run`；预检不会创建数据库或备份。迁移后用 `pnpm db:verify` 检查完整性；需要恢复时运行 `pnpm db:rollback --backup <id>`。回滚会先验证整份备份，再原子替换旧索引；校验失败时保留当前数据库。不要手工删除数据库的 `-wal` 或 `-shm` 文件。
 
 生产部署应额外做到：TLS、可信网络访问控制、磁盘配额、日志轮转、备份和进程守护。若要暴露公网，必须先增加身份认证、授权、CSRF/速率限制和审计日志。
 

@@ -30,8 +30,7 @@ import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
 import { registerAdminSecurity } from "./security/admin-session";
-import { migrateLegacyMetadata } from "./database/legacy-migration";
-import { ToolboxDatabase } from "./database/toolbox-database";
+import { openToolboxDatabase } from "./database/legacy-migration";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
@@ -57,8 +56,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     requestIdHeader: "x-request-id"
   });
   const config = getConfig();
-  const database = new ToolboxDatabase(config.databasePath);
-  await migrateLegacyMetadata(config, database);
+  const { database } = await openToolboxDatabase(config);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
 
