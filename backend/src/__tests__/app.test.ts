@@ -4,10 +4,11 @@ import { createApp } from "../app";
 describe("api app", () => {
   it("returns health information", async () => {
     const app = await createApp();
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/v1/health"
-    });
+    const [response, live, ready] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/health" }),
+      app.inject({ method: "GET", url: "/health/live" }),
+      app.inject({ method: "GET", url: "/health/ready" })
+    ]);
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
@@ -17,6 +18,13 @@ describe("api app", () => {
         status: "ok"
       }
     });
+    expect(live.json()).toMatchObject({ success: true, requestId: expect.any(String), data: { status: "ok" } });
+    expect(ready.json()).toMatchObject({
+      success: true,
+      requestId: expect.any(String),
+      data: { status: "ready", database: "ok", storage: "ok" }
+    });
+    await app.close();
   });
 
   it("returns schema-stable task errors with a request id", async () => {
@@ -49,6 +57,19 @@ describe("api app", () => {
       "short-video",
       "xhs-archive"
     ]);
+    await app.close();
+  });
+
+  it("rejects malformed task ids and download file names at the schema boundary", async () => {
+    const app = await createApp();
+    const invalidTask = await app.inject({ method: "GET", url: "/api/v1/tasks/not-valid!" });
+    const invalidFile = await app.inject({ method: "GET", url: "/api/v1/files/bad%0D%0Aname.txt" });
+
+    expect(invalidTask.statusCode).toBe(400);
+    expect(invalidTask.json()).toMatchObject({ success: false, error: { code: "REQUEST_INVALID" } });
+    expect(invalidFile.statusCode).toBe(400);
+    expect(invalidFile.json()).toMatchObject({ success: false, error: { code: "REQUEST_INVALID" } });
+    await app.close();
   });
 
   it("exposes only whitelisted cleanup categories and rejects paths", async () => {
@@ -86,6 +107,7 @@ describe("api app", () => {
       expect(response.statusCode).toBe(204);
       expect(response.headers["access-control-allow-origin"]).toBe("http://192.168.1.241:5173");
       expect(response.headers["access-control-allow-methods"]).toContain("PUT");
+      await app.close();
     } finally {
       delete process.env.CORS_ORIGINS;
     }
@@ -102,6 +124,7 @@ describe("api app", () => {
       });
 
       expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+      await app.close();
     } finally {
       delete process.env.CORS_ORIGINS;
     }

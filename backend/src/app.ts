@@ -9,13 +9,20 @@ import rateLimit from "@fastify/rate-limit";
 import fastify from "fastify";
 import {
   ApiFailureSchema,
+  ApiHealthSchema,
+  FileNameParamsSchema,
+  LiveHealthSchema,
+  ReadyHealthSchema,
   TaskIdParamsSchema,
   TaskListSchema,
   TaskSchema,
+  ToolListSchema,
   apiSuccessSchema,
   fail,
   listTools,
-  ok
+  ok,
+  type FileNameParams,
+  type TaskIdParams
 } from "@toolbox/shared";
 import { getConfig } from "./config";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
@@ -127,41 +134,53 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       );
   });
 
-  await fsp.mkdir(config.uploadDir, { recursive: true });
-  await fsp.mkdir(config.outputDir, { recursive: true });
-  await fsp.mkdir(config.tempDir, { recursive: true });
-  await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-  await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
-  await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
-  await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
-  await fsp.mkdir(config.imageAiInputsDir, { recursive: true });
-  await fsp.mkdir(config.imageAiOutputsDir, { recursive: true });
-  await fsp.mkdir(config.imageAiTasksDir, { recursive: true });
-  await fsp.mkdir(config.edgeTtsTasksDir, { recursive: true });
-  await fsp.mkdir(config.chatterboxTasksDir, { recursive: true });
-  await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });
-  await fsp.mkdir(config.xhsArchiveStagingDir, { recursive: true });
+  const requiredStorageDirectories = [
+    config.storageRoot,
+    config.migrationBackupDir,
+    config.quarantineDir,
+    config.uploadDir,
+    config.outputDir,
+    config.tempDir,
+    config.lanTransferFilesDir,
+    config.videoTextUploadsDir,
+    config.videoTextAudioDir,
+    config.videoTextResultsDir,
+    config.imageAiInputsDir,
+    config.imageAiOutputsDir,
+    config.imageAiTasksDir,
+    config.edgeTtsTasksDir,
+    config.chatterboxTasksDir,
+    config.xhsArchiveItemsDir,
+    config.xhsArchiveStagingDir
+  ];
+  await Promise.all(requiredStorageDirectories.map((directory) => fsp.mkdir(directory, { recursive: true })));
 
-  app.get("/health/live", async () => {
-    return ok({ status: "ok" });
-  });
+  app.get("/health/live", { schema: { response: { 200: apiSuccessSchema(LiveHealthSchema) } } }, async () =>
+    ok({ status: "ok" as const })
+  );
 
-  app.get("/health/ready", async (_request, reply) => {
-    try {
-      database.ready();
-      await Promise.all(
-        [config.storageRoot, config.tempDir].map((directory) =>
-          fsp.access(directory, fs.constants.R_OK | fs.constants.W_OK)
-        )
-      );
-      return ok({ status: "ready", database: "ok", storage: "ok" });
-    } catch {
-      return reply.code(503).send(fail("NOT_READY", "Required storage is unavailable"));
+  app.get(
+    "/health/ready",
+    {
+      schema: {
+        response: { 200: apiSuccessSchema(ReadyHealthSchema), 503: ApiFailureSchema }
+      }
+    },
+    async (_request, reply) => {
+      try {
+        database.ready();
+        await Promise.all(
+          requiredStorageDirectories.map((directory) => fsp.access(directory, fs.constants.R_OK | fs.constants.W_OK))
+        );
+        return ok({ status: "ready" as const, database: "ok" as const, storage: "ok" as const });
+      } catch {
+        return reply.code(503).send(fail("NOT_READY", "Required storage is unavailable"));
+      }
     }
-  });
+  );
 
-  app.get("/api/v1/health", async () => {
-    return ok({
+  app.get("/api/v1/health", { schema: { response: { 200: apiSuccessSchema(ApiHealthSchema) } } }, async () =>
+    ok({
       status: "ok",
       name: "toolbox-api",
       deploymentMode: config.deploymentMode,
@@ -185,18 +204,18 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       chatterbox: {
         retentionDays: config.chatterboxRetentionDays
       }
-    });
-  });
+    })
+  );
 
-  app.get("/api/v1/tools", async () => {
-    return ok(listTools());
-  });
+  app.get("/api/v1/tools", { schema: { response: { 200: apiSuccessSchema(ToolListSchema) } } }, async () =>
+    ok(listTools())
+  );
 
   app.get("/api/v1/tasks", { schema: { response: { 200: apiSuccessSchema(TaskListSchema) } } }, async () =>
     ok(taskStore.list())
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tasks/:taskId",
     {
       schema: {
@@ -205,7 +224,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       }
     },
     async (request, reply) => {
-      const { taskId } = request.params as { taskId: string };
+      const { taskId } = request.params;
       const task = taskStore.get(taskId);
 
       if (!task) {
@@ -216,47 +235,55 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     }
   );
 
-  app.get("/api/v1/tasks/:taskId/events", { schema: { params: TaskIdParamsSchema } }, async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    const task = taskStore.get(taskId);
-    if (!task) return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
-    reply.hijack();
-    reply.raw.writeHead(200, {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no"
-    });
-    const send = (value: typeof task) => reply.raw.write(`event: task\ndata: ${JSON.stringify(value)}\n\n`);
-    send(task);
-    const unsubscribe = taskStore.subscribe(taskId, (value) => {
-      send(value);
-      if (value.status === "completed" || value.status === "failed") reply.raw.end();
-    });
-    const heartbeat = setInterval(() => reply.raw.write(": keep-alive\n\n"), 15_000);
-    reply.raw.on("close", () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-    });
-  });
-
-  app.get("/api/v1/files/:fileName", async (request, reply) => {
-    const { fileName } = request.params as { fileName: string };
-    const safeName = path.basename(fileName);
-    const filePath = path.join(config.outputDir, safeName);
-
-    try {
-      const stat = await fsp.stat(filePath);
-      if (!stat.isFile()) throw new Error("Not a file");
-      reply.header("content-length", String(stat.size));
-      reply.header("content-type", outputContentType(path.extname(safeName)));
-      reply.header("content-disposition", contentDisposition(safeName));
-      reply.header("x-content-type-options", "nosniff");
-      return reply.send(fs.createReadStream(filePath));
-    } catch {
-      return reply.code(404).send(fail("FILE_NOT_FOUND", "File not found"));
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tasks/:taskId/events",
+    { schema: { params: TaskIdParamsSchema } },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const task = taskStore.get(taskId);
+      if (!task) return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no"
+      });
+      const send = (value: typeof task) => reply.raw.write(`event: task\ndata: ${JSON.stringify(value)}\n\n`);
+      send(task);
+      const unsubscribe = taskStore.subscribe(taskId, (value) => {
+        send(value);
+        if (value.status === "completed" || value.status === "failed") reply.raw.end();
+      });
+      const heartbeat = setInterval(() => reply.raw.write(": keep-alive\n\n"), 15_000);
+      reply.raw.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
     }
-  });
+  );
+
+  app.get<{ Params: FileNameParams }>(
+    "/api/v1/files/:fileName",
+    { schema: { params: FileNameParamsSchema, response: { 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      const { fileName } = request.params;
+      const safeName = path.basename(fileName);
+      const filePath = path.join(config.outputDir, safeName);
+
+      try {
+        const stat = await fsp.stat(filePath);
+        if (!stat.isFile()) throw new Error("Not a file");
+        reply.header("content-length", String(stat.size));
+        reply.header("content-type", outputContentType(path.extname(safeName)));
+        reply.header("content-disposition", contentDisposition(safeName));
+        reply.header("x-content-type-options", "nosniff");
+        return reply.send(fs.createReadStream(filePath));
+      } catch {
+        return reply.code(404).send(fail("FILE_NOT_FOUND", "File not found"));
+      }
+    }
+  );
 
   registerImageCompressRoutes(app, config, taskStore);
   await registerImageAiRoutes(app, config, database, taskStore);

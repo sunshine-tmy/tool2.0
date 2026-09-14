@@ -54,12 +54,72 @@ export const TaskIdParamsSchema = Type.Object(
   { additionalProperties: false }
 );
 
+export const FileNameParamsSchema = Type.Object(
+  {
+    fileName: Type.String({ minLength: 1, maxLength: 255, pattern: "^[^\\\\/\\r\\n]+$" })
+  },
+  { additionalProperties: false }
+);
+
+export const LiveHealthSchema = Type.Object({ status: Type.Literal("ok") });
+
+export const ReadyHealthSchema = Type.Object({
+  status: Type.Literal("ready"),
+  database: Type.Literal("ok"),
+  storage: Type.Literal("ok")
+});
+
+export const ApiHealthSchema = Type.Object({
+  status: Type.Literal("ok"),
+  name: Type.Literal("toolbox-api"),
+  deploymentMode: Type.Union([Type.Literal("local"), Type.Literal("lan")]),
+  videoText: Type.Object({
+    audioExtractorConfigured: Type.Boolean(),
+    transcriberConfigured: Type.Boolean()
+  }),
+  shortVideo: Type.Object({ providerConfigured: Type.Boolean() }),
+  xhsArchive: Type.Object({
+    providerConfigured: Type.Boolean(),
+    translationProviderConfigured: Type.Boolean()
+  }),
+  imageAi: Type.Object({
+    deploymentUsage: Type.Union([Type.Literal("internal-noncommercial"), Type.Literal("commercial")])
+  }),
+  edgeTts: Type.Object({ retentionDays: Type.Integer({ minimum: 1 }) }),
+  chatterbox: Type.Object({ retentionDays: Type.Integer({ minimum: 1 }) })
+});
+
+const ToolCategorySchema = Type.Union([
+  Type.Literal("file"),
+  Type.Literal("image"),
+  Type.Literal("video"),
+  Type.Literal("audio"),
+  Type.Literal("text"),
+  Type.Literal("table")
+]);
+
+export const ToolDefinitionSchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  title: Type.String({ minLength: 1 }),
+  description: Type.String(),
+  category: ToolCategorySchema,
+  status: Type.Union([Type.Literal("ready"), Type.Literal("planned")]),
+  requiresAuth: Type.Literal(false),
+  acceptedTypes: Type.Array(Type.String()),
+  routePath: Type.String({ pattern: "^/" }),
+  apiNamespace: Type.String({ pattern: "^/api/v1/" })
+});
+
+export const ToolListSchema = Type.Array(ToolDefinitionSchema);
+
 export const PaginationQuerySchema = Type.Object({
   cursor: Type.Optional(Type.String()),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, default: 20 }))
 });
 
 export type TaskDto = Static<typeof TaskSchema>;
+export type TaskIdParams = Static<typeof TaskIdParamsSchema>;
+export type FileNameParams = Static<typeof FileNameParamsSchema>;
 
 export function isTaskDto(value: unknown): value is TaskDto {
   return Value.Check(TaskSchema, value);

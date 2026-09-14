@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { Value } from "@sinclair/typebox/value";
+import { ToolListSchema } from "../api-schema";
 import { getToolById, listTools } from "../tools";
 
 describe("tool registry", () => {
@@ -15,6 +17,7 @@ describe("tool registry", () => {
       "xhs-archive"
     ]);
     expect(tools.every((tool) => tool.requiresAuth === false)).toBe(true);
+    expect(Value.Check(ToolListSchema, tools)).toBe(true);
   });
 
   it("finds a tool by id", () => {
