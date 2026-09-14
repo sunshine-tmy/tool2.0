@@ -140,6 +140,52 @@ describe("xhs archive api", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
     await app.close();
   });
+
+  it("rejects malformed archive routes and payloads at the schema boundary", async () => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+    const app = await createApp({ remoteAddressResolver: publicResolver });
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items/bad!" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/tasks/bad!" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items?type=unsupported" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items/abcdef/media/ghijkl?download=2" }),
+      app.inject({ method: "POST", url: "/api/v1/tools/xhs-archive/items", payload: {} }),
+      app.inject({
+        method: "PATCH",
+        url: "/api/v1/tools/xhs-archive/items/abcdef/translation",
+        payload: { sourceHash: "invalid", title: { edited: "Title" }, topics: [] }
+      })
+    ]);
+
+    for (const response of responses) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: "REQUEST_INVALID" },
+        requestId: expect.any(String)
+      });
+    }
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("rate limits repeated remote archive requests independently", async () => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+    const app = await createApp({ remoteAddressResolver: publicResolver });
+    let response;
+    for (let requestNumber = 0; requestNumber < 11; requestNumber += 1) {
+      response = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/xhs-archive/items",
+        payload: { url: "https://example.com/post" }
+      });
+    }
+
+    expect(response?.statusCode).toBe(429);
+    expect(response?.json().error.code).toBe("REQUEST_INVALID");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await app.close();
+  });
 });
 
 async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, id: string) {

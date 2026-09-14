@@ -1,3 +1,103 @@
+import { Type, type Static } from "@sinclair/typebox";
+
+const XhsEntityIdSchema = Type.String({ minLength: 6, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" });
+
+export const XhsArchiveIdParamsSchema = Type.Object({ id: XhsEntityIdSchema }, { additionalProperties: false });
+
+export const XhsArchiveMediaParamsSchema = Type.Object(
+  { id: XhsEntityIdSchema, mediaId: XhsEntityIdSchema },
+  { additionalProperties: false }
+);
+
+export const XhsAuthSessionParamsSchema = Type.Object(
+  { sessionId: XhsEntityIdSchema },
+  { additionalProperties: false }
+);
+
+export const XhsArchiveCreateInputSchema = Type.Object(
+  { url: Type.String({ minLength: 1, maxLength: 10_000 }) },
+  { additionalProperties: false }
+);
+
+export const XhsArchiveListQuerySchema = Type.Object(
+  {
+    keyword: Type.Optional(Type.String({ maxLength: 200 })),
+    type: Type.Optional(
+      Type.Union([
+        Type.Literal("all"),
+        Type.Literal("image"),
+        Type.Literal("video"),
+        Type.Literal("live-photo"),
+        Type.Literal("unknown")
+      ])
+    ),
+    page: Type.Optional(Type.Integer({ minimum: 1 })),
+    pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
+  },
+  { additionalProperties: false }
+);
+
+export const XhsMediaQuerySchema = Type.Object(
+  { download: Type.Optional(Type.Union([Type.Literal("0"), Type.Literal("1")])) },
+  { additionalProperties: false }
+);
+
+export const XhsTranslationRequestSchema = Type.Object(
+  { force: Type.Optional(Type.Boolean()) },
+  { additionalProperties: false }
+);
+
+export const XhsTranslationBatchInputSchema = Type.Union([
+  Type.Object(
+    {
+      mode: Type.Literal("selected"),
+      itemIds: Type.Array(XhsEntityIdSchema, { minItems: 1, maxItems: 100, uniqueItems: true })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      mode: Type.Literal("missing-or-stale"),
+      itemIds: Type.Optional(Type.Array(XhsEntityIdSchema, { maxItems: 100, uniqueItems: true }))
+    },
+    { additionalProperties: false }
+  )
+]);
+
+const XhsTranslationEditedFieldSchema = Type.Object(
+  { edited: Type.String({ maxLength: 100_000 }) },
+  { additionalProperties: false }
+);
+
+export const XhsTranslationEditInputSchema = Type.Object(
+  {
+    sourceHash: Type.String({ pattern: "^[a-f0-9]{64}$" }),
+    title: Type.Object({ edited: Type.String({ maxLength: 2_000 }) }, { additionalProperties: false }),
+    description: Type.Optional(XhsTranslationEditedFieldSchema),
+    topics: Type.Array(
+      Type.Object(
+        {
+          topicId: Type.String({ minLength: 1, maxLength: 255 }),
+          edited: Type.String({ maxLength: 200 })
+        },
+        { additionalProperties: false }
+      ),
+      { maxItems: 100 }
+    )
+  },
+  { additionalProperties: false }
+);
+
+export type XhsArchiveIdParams = Static<typeof XhsArchiveIdParamsSchema>;
+export type XhsArchiveMediaParams = Static<typeof XhsArchiveMediaParamsSchema>;
+export type XhsAuthSessionParams = Static<typeof XhsAuthSessionParamsSchema>;
+export type XhsArchiveCreateInput = Static<typeof XhsArchiveCreateInputSchema>;
+export type XhsArchiveListQuery = Static<typeof XhsArchiveListQuerySchema>;
+export type XhsMediaQuery = Static<typeof XhsMediaQuerySchema>;
+export type XhsTranslationRequest = Static<typeof XhsTranslationRequestSchema>;
+export type XhsTranslationBatchInput = Static<typeof XhsTranslationBatchInputSchema>;
+export type XhsTranslationEditInput = Static<typeof XhsTranslationEditInputSchema>;
+
 export type XhsArchiveContentType = "image" | "video" | "live-photo" | "unknown";
 
 export type XhsArchiveMediaKind = "image" | "video" | "cover" | "live-photo";

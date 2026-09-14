@@ -7,13 +7,33 @@ import { pipeline } from "node:stream/promises";
 import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 import {
+  TaskIdParamsSchema,
+  XhsArchiveCreateInputSchema,
+  XhsArchiveIdParamsSchema,
+  XhsArchiveListQuerySchema,
+  XhsArchiveMediaParamsSchema,
+  XhsAuthSessionParamsSchema,
+  XhsMediaQuerySchema,
+  XhsTranslationBatchInputSchema,
+  XhsTranslationEditInputSchema,
+  XhsTranslationRequestSchema,
   fail,
   normalizeXhsText,
   ok,
   parseXhsContentText,
   type XhsArchiveItem,
   type XhsArchiveMedia,
-  type XhsArchiveTask
+  type XhsArchiveTask,
+  type TaskIdParams,
+  type XhsArchiveCreateInput,
+  type XhsArchiveIdParams,
+  type XhsArchiveListQuery,
+  type XhsArchiveMediaParams,
+  type XhsAuthSessionParams,
+  type XhsMediaQuery,
+  type XhsTranslationBatchInput,
+  type XhsTranslationEditInput,
+  type XhsTranslationRequest
 } from "@toolbox/shared";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { AppConfig } from "../../config";
@@ -56,244 +76,293 @@ export async function registerXhsArchiveRoutes(options: {
 
   app.get("/api/v1/tools/xhs-archive/translation/runtime", async () => ok(translation.getRuntimeStatus()));
 
-  app.post("/api/v1/tools/xhs-archive/items/:id/translation", async (request, reply) => {
-    const id = (request.params as { id: string }).id;
-    if (!(await store.get(id))) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-    const force = record(request.body).force === true;
-    const task = await translation.translateOne(id, force);
-    return task ? reply.code(202).send(ok(task)) : ok({ status: "completed", message: "英文翻译已是最新" });
-  });
+  app.post<{ Params: XhsArchiveIdParams; Body: XhsTranslationRequest }>(
+    "/api/v1/tools/xhs-archive/items/:id/translation",
+    {
+      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
+      schema: { params: XhsArchiveIdParamsSchema, body: XhsTranslationRequestSchema }
+    },
+    async (request, reply) => {
+      const { id } = request.params;
+      if (!(await store.get(id))) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      const task = await translation.translateOne(id, request.body.force === true);
+      return task ? reply.code(202).send(ok(task)) : ok({ status: "completed", message: "英文翻译已是最新" });
+    }
+  );
 
-  app.get("/api/v1/tools/xhs-archive/translation/tasks/:taskId", async (request, reply) => {
-    const task = translation.getTask((request.params as { taskId: string }).taskId);
-    return task ? ok(task) : reply.code(404).send(fail("XHS_TRANSLATION_TASK_NOT_FOUND", "翻译任务不存在"));
-  });
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tools/xhs-archive/translation/tasks/:taskId",
+    { schema: { params: TaskIdParamsSchema } },
+    async (request, reply) => {
+      const task = translation.getTask(request.params.taskId);
+      return task ? ok(task) : reply.code(404).send(fail("XHS_TRANSLATION_TASK_NOT_FOUND", "翻译任务不存在"));
+    }
+  );
 
-  app.post("/api/v1/tools/xhs-archive/translation/batches", async (request, reply) => {
-    const body = record(request.body);
-    const mode = body.mode;
-    let ids: string[] = [];
-    if (mode === "selected") {
-      ids = Array.isArray(body.itemIds) ? body.itemIds.filter((id): id is string => typeof id === "string") : [];
-      if (ids.length > 100)
-        return reply.code(400).send(fail("XHS_TRANSLATION_BATCH_TOO_LARGE", "单次最多翻译100条存档"));
-      for (const id of ids) {
-        if (!(await store.get(id))) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", `存档不存在：${id}`));
-      }
-    } else if (mode === "missing-or-stale") {
-      const all = await store.list({ page: 1, pageSize: 50 });
-      for (let page = 1; page <= all.pageCount; page += 1) {
-        const values = page === 1 ? all : await store.list({ page, pageSize: 50 });
-        ids.push(
-          ...values.items
-            .filter(
-              (item) =>
-                item.translation?.status !== "ready" ||
-                item.translation.sourceHash !== translationSourceHashFromList(item)
-            )
-            .map((item) => item.id)
-        );
-      }
-      ids = ids.slice(0, 100);
-    } else return reply.code(400).send(fail("XHS_TRANSLATION_MODE_INVALID", "翻译批量模式无效"));
-    const task = await translation.enqueue(ids, false);
-    return task ? reply.code(202).send(ok(task)) : ok({ status: "completed", message: "没有需要翻译的存档" });
-  });
-
-  app.patch("/api/v1/tools/xhs-archive/items/:id/translation", async (request, reply) => {
-    const id = (request.params as { id: string }).id;
-    const item = await store.get(id);
-    if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-    const body = record(request.body);
-    if (typeof body.sourceHash !== "string")
-      return reply.code(400).send(fail("XHS_TRANSLATION_SOURCE_HASH_REQUIRED", "缺少来源版本"));
-    const currentHash = translationSourceHash(item);
-    if (body.sourceHash !== currentHash)
-      return reply.code(409).send(fail("XHS_TRANSLATION_SOURCE_CHANGED", "中文内容已变化，请重新翻译"));
-    const title = record(body.title);
-    const description = record(body.description);
-    const topics = Array.isArray(body.topics) ? body.topics : [];
-    if (typeof title.edited === "string" && title.edited.length > 2000)
-      return reply.code(413).send(fail("XHS_TRANSLATION_TITLE_TOO_LONG", "英文标题不得超过2000个字符"));
-    if (typeof description.edited === "string" && description.edited.length > 100000)
-      return reply.code(413).send(fail("XHS_TRANSLATION_DESCRIPTION_TOO_LONG", "英文正文不得超过100000个字符"));
-    if (
-      topics.length > 100 ||
-      topics.some((entry) => {
-        const edited = record(entry).edited;
-        return typeof edited === "string" && edited.length > 200;
-      })
-    )
-      return reply.code(413).send(fail("XHS_TRANSLATION_TOPIC_TOO_LONG", "英文话题数量或长度超出限制"));
-    const updated = await store.updateTranslation(id, (current) => {
-      const previous = current.translation;
-      if (!previous) return current;
-      return {
-        ...current,
-        translation: {
-          ...previous,
-          status: "ready",
-          title: {
-            ...previous.title,
-            edited: typeof title.edited === "string" ? title.edited.trim() : previous.title.edited,
-            editedAt: new Date().toISOString()
-          },
-          description:
-            previous.description && typeof description.edited === "string"
-              ? { ...previous.description, edited: description.edited.trim(), editedAt: new Date().toISOString() }
-              : previous.description,
-          topics: previous.topics.map((topic) => {
-            const input = topics.find((entry) => record(entry).topicId === topic.topicId);
-            const value = record(input).edited;
-            return typeof value === "string"
-              ? { ...topic, edited: value.trim(), editedAt: new Date().toISOString() }
-              : topic;
-          })
+  app.post<{ Body: XhsTranslationBatchInput }>(
+    "/api/v1/tools/xhs-archive/translation/batches",
+    {
+      config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
+      schema: { body: XhsTranslationBatchInputSchema }
+    },
+    async (request, reply) => {
+      const { mode } = request.body;
+      let ids: string[] = [];
+      if (mode === "selected") {
+        ids = request.body.itemIds;
+        for (const id of ids) {
+          if (!(await store.get(id))) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", `存档不存在：${id}`));
         }
-      };
-    });
-    return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-  });
+      } else if (mode === "missing-or-stale") {
+        const all = await store.list({ page: 1, pageSize: 50 });
+        for (let page = 1; page <= all.pageCount; page += 1) {
+          const values = page === 1 ? all : await store.list({ page, pageSize: 50 });
+          ids.push(
+            ...values.items
+              .filter(
+                (item) =>
+                  item.translation?.status !== "ready" ||
+                  item.translation.sourceHash !== translationSourceHashFromList(item)
+              )
+              .map((item) => item.id)
+          );
+        }
+        ids = ids.slice(0, 100);
+      }
+      const task = await translation.enqueue(ids, false);
+      return task ? reply.code(202).send(ok(task)) : ok({ status: "completed", message: "没有需要翻译的存档" });
+    }
+  );
 
-  app.post("/api/v1/tools/xhs-archive/items/:id/translation/reset", async (request, reply) => {
-    const id = (request.params as { id: string }).id;
-    const updated = await store.updateTranslation(id, (current) =>
-      current.translation
-        ? {
-            ...current,
-            translation: {
-              ...current.translation,
-              title: { ...current.translation.title, edited: undefined, editedAt: undefined },
-              description: current.translation.description
-                ? { ...current.translation.description, edited: undefined, editedAt: undefined }
-                : undefined,
-              topics: current.translation.topics.map((topic) => ({ ...topic, edited: undefined, editedAt: undefined }))
-            }
+  app.patch<{ Params: XhsArchiveIdParams; Body: XhsTranslationEditInput }>(
+    "/api/v1/tools/xhs-archive/items/:id/translation",
+    { schema: { params: XhsArchiveIdParamsSchema, body: XhsTranslationEditInputSchema } },
+    async (request, reply) => {
+      const { id } = request.params;
+      const item = await store.get(id);
+      if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      const body = request.body;
+      const currentHash = translationSourceHash(item);
+      if (body.sourceHash !== currentHash)
+        return reply.code(409).send(fail("XHS_TRANSLATION_SOURCE_CHANGED", "中文内容已变化，请重新翻译"));
+      const updated = await store.updateTranslation(id, (current) => {
+        const previous = current.translation;
+        if (!previous) return current;
+        return {
+          ...current,
+          translation: {
+            ...previous,
+            status: "ready",
+            title: {
+              ...previous.title,
+              edited: body.title.edited.trim(),
+              editedAt: new Date().toISOString()
+            },
+            description:
+              previous.description && body.description
+                ? {
+                    ...previous.description,
+                    edited: body.description.edited.trim(),
+                    editedAt: new Date().toISOString()
+                  }
+                : previous.description,
+            topics: previous.topics.map((topic) => {
+              const input = body.topics.find((entry) => entry.topicId === topic.topicId);
+              return input ? { ...topic, edited: input.edited.trim(), editedAt: new Date().toISOString() } : topic;
+            })
           }
-        : current
-    );
-    return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-  });
-
-  app.post("/api/v1/tools/xhs-archive/items", async (request, reply) => {
-    const source = record(request.body).url;
-    if (typeof source !== "string" || !extractXhsUrl(source))
-      return reply.code(400).send(fail("XHS_URL_INVALID", "请输入有效的小红书链接或分享文案"));
-    const task = createTask();
-    tasks.set(task.id, task);
-    taskStore.upsert(toUnifiedArchiveTask(task));
-    void processTask(task.id, source);
-    return reply.code(202).send(ok(task));
-  });
-
-  app.get("/api/v1/tools/xhs-archive/tasks/:taskId", async (request, reply) => {
-    const task = tasks.get((request.params as { taskId: string }).taskId);
-    return task ? ok(task) : reply.code(404).send(fail("XHS_TASK_NOT_FOUND", "获取任务不存在"));
-  });
-
-  app.get("/api/v1/tools/xhs-archive/items", async (request) => {
-    const query = request.query as { keyword?: string; type?: string; page?: string; pageSize?: string };
-    return ok(
-      await store.list({
-        keyword: query.keyword,
-        type: query.type,
-        page: Number(query.page),
-        pageSize: Number(query.pageSize)
-      })
-    );
-  });
-
-  app.get("/api/v1/tools/xhs-archive/items/:id", async (request, reply) => {
-    const item = await store.get((request.params as { id: string }).id);
-    return item ? ok(item) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-  });
-
-  app.post("/api/v1/tools/xhs-archive/items/:id/refresh", async (request, reply) => {
-    const item = await store.get((request.params as { id: string }).id);
-    if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-    const task = createTask();
-    tasks.set(task.id, task);
-    taskStore.upsert(toUnifiedArchiveTask(task));
-    void processTask(task.id, item.sourceUrl);
-    return reply.code(202).send(ok(task));
-  });
-
-  app.delete("/api/v1/tools/xhs-archive/items/:id", async (request, reply) => {
-    const id = (request.params as { id: string }).id;
-    const item = await store.get(id);
-    if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-    await store.remove(id);
-    return ok({ removed: true, mediaCount: item.media.length, releasedBytes: item.totalBytes });
-  });
-
-  app.get("/api/v1/tools/xhs-archive/items/:id/media/:mediaId", async (request, reply) => {
-    const { id, mediaId } = request.params as { id: string; mediaId: string };
-    const value = await store.mediaPath(id, mediaId);
-    if (!value) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
-    const stat = await fsp.stat(value.filePath).catch(() => undefined);
-    if (!stat?.isFile()) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
-    const download = record(request.query).download === "1";
-    reply
-      .header("accept-ranges", "bytes")
-      .header("content-type", value.media.mimeType)
-      .header("x-content-type-options", "nosniff");
-    if (download) reply.header("content-disposition", disposition(value.media.fileName));
-    return sendRange(reply, value.filePath, stat.size, request.headers.range);
-  });
-
-  app.get("/api/v1/tools/xhs-archive/items/:id/download.zip", async (request, reply) => {
-    const item = await store.get((request.params as { id: string }).id);
-    if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-    const archive = new ZipArchive({ zlib: { level: 6 } });
-    reply
-      .header("content-type", "application/zip")
-      .header(
-        "content-disposition",
-        disposition(`小红书-${safeName(normalizeXhsText(item.title))}-${item.id.slice(-6)}.zip`)
-      );
-    archive.append(contentText(item), { name: "内容-中文.txt" });
-    if (item.translation?.status === "ready") {
-      archive.append(englishContentText(item), { name: "Content-English.txt" });
-      archive.append(bilingualContentText(item), { name: "内容-中英双语.txt" });
+        };
+      });
+      return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     }
-    archive.append(
-      JSON.stringify(
-        {
-          ...item,
-          title: normalizeXhsText(item.title),
-          description: item.description ? normalizeXhsText(item.description) : undefined,
-          translation: item.translation
-            ? {
-                ...item.translation,
-                effective: {
-                  title: effectiveTranslation(item.translation.title),
-                  description: effectiveTranslation(item.translation.description),
-                  topics: item.translation.topics.map((topic) => ({
-                    topicId: topic.topicId,
-                    value: effectiveTranslation(topic)
-                  }))
-                }
+  );
+
+  app.post<{ Params: XhsArchiveIdParams }>(
+    "/api/v1/tools/xhs-archive/items/:id/translation/reset",
+    { schema: { params: XhsArchiveIdParamsSchema } },
+    async (request, reply) => {
+      const { id } = request.params;
+      const updated = await store.updateTranslation(id, (current) =>
+        current.translation
+          ? {
+              ...current,
+              translation: {
+                ...current.translation,
+                title: { ...current.translation.title, edited: undefined, editedAt: undefined },
+                description: current.translation.description
+                  ? { ...current.translation.description, edited: undefined, editedAt: undefined }
+                  : undefined,
+                topics: current.translation.topics.map((topic) => ({
+                  ...topic,
+                  edited: undefined,
+                  editedAt: undefined
+                }))
               }
-            : undefined
-        },
-        null,
-        2
-      ),
-      { name: "metadata.json" }
-    );
-    for (const media of item.media) {
-      const value = await store.mediaPath(item.id, media.id);
-      if (value && fs.existsSync(value.filePath)) archive.file(value.filePath, { name: exportName(media) });
+            }
+          : current
+      );
+      return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     }
-    void archive.finalize();
-    return reply.send(archive);
-  });
+  );
 
-  app.post("/api/v1/tools/xhs-archive/auth/start", async () => ok(auth.start()));
-  app.get("/api/v1/tools/xhs-archive/auth/:sessionId", async (request, reply) => {
-    const session = auth.get((request.params as { sessionId: string }).sessionId);
-    return session ? ok(session) : reply.code(404).send(fail("XHS_AUTH_SESSION_NOT_FOUND", "登录会话不存在"));
-  });
+  app.post<{ Body: XhsArchiveCreateInput }>(
+    "/api/v1/tools/xhs-archive/items",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: { body: XhsArchiveCreateInputSchema }
+    },
+    async (request, reply) => {
+      const { url: source } = request.body;
+      if (!extractXhsUrl(source))
+        return reply.code(400).send(fail("XHS_URL_INVALID", "请输入有效的小红书链接或分享文案"));
+      const task = createTask();
+      tasks.set(task.id, task);
+      taskStore.upsert(toUnifiedArchiveTask(task));
+      void processTask(task.id, source);
+      return reply.code(202).send(ok(task));
+    }
+  );
+
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tools/xhs-archive/tasks/:taskId",
+    { schema: { params: TaskIdParamsSchema } },
+    async (request, reply) => {
+      const task = tasks.get(request.params.taskId);
+      return task ? ok(task) : reply.code(404).send(fail("XHS_TASK_NOT_FOUND", "获取任务不存在"));
+    }
+  );
+
+  app.get<{ Querystring: XhsArchiveListQuery }>(
+    "/api/v1/tools/xhs-archive/items",
+    { schema: { querystring: XhsArchiveListQuerySchema } },
+    async (request) => ok(await store.list(request.query))
+  );
+
+  app.get<{ Params: XhsArchiveIdParams }>(
+    "/api/v1/tools/xhs-archive/items/:id",
+    { schema: { params: XhsArchiveIdParamsSchema } },
+    async (request, reply) => {
+      const item = await store.get(request.params.id);
+      return item ? ok(item) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+    }
+  );
+
+  app.post<{ Params: XhsArchiveIdParams }>(
+    "/api/v1/tools/xhs-archive/items/:id/refresh",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: { params: XhsArchiveIdParamsSchema }
+    },
+    async (request, reply) => {
+      const item = await store.get(request.params.id);
+      if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      const task = createTask();
+      tasks.set(task.id, task);
+      taskStore.upsert(toUnifiedArchiveTask(task));
+      void processTask(task.id, item.sourceUrl);
+      return reply.code(202).send(ok(task));
+    }
+  );
+
+  app.delete<{ Params: XhsArchiveIdParams }>(
+    "/api/v1/tools/xhs-archive/items/:id",
+    { schema: { params: XhsArchiveIdParamsSchema } },
+    async (request, reply) => {
+      const { id } = request.params;
+      const item = await store.get(id);
+      if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      await store.remove(id);
+      return ok({ removed: true, mediaCount: item.media.length, releasedBytes: item.totalBytes });
+    }
+  );
+
+  app.get<{ Params: XhsArchiveMediaParams; Querystring: XhsMediaQuery }>(
+    "/api/v1/tools/xhs-archive/items/:id/media/:mediaId",
+    { schema: { params: XhsArchiveMediaParamsSchema, querystring: XhsMediaQuerySchema } },
+    async (request, reply) => {
+      const { id, mediaId } = request.params;
+      const value = await store.mediaPath(id, mediaId);
+      if (!value) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
+      const stat = await fsp.stat(value.filePath).catch(() => undefined);
+      if (!stat?.isFile()) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
+      const download = request.query.download === "1";
+      reply
+        .header("accept-ranges", "bytes")
+        .header("content-type", value.media.mimeType)
+        .header("x-content-type-options", "nosniff");
+      if (download) reply.header("content-disposition", disposition(value.media.fileName));
+      return sendRange(reply, value.filePath, stat.size, request.headers.range);
+    }
+  );
+
+  app.get<{ Params: XhsArchiveIdParams }>(
+    "/api/v1/tools/xhs-archive/items/:id/download.zip",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+      schema: { params: XhsArchiveIdParamsSchema }
+    },
+    async (request, reply) => {
+      const item = await store.get(request.params.id);
+      if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      const archive = new ZipArchive({ zlib: { level: 6 } });
+      reply
+        .header("content-type", "application/zip")
+        .header(
+          "content-disposition",
+          disposition(`小红书-${safeName(normalizeXhsText(item.title))}-${item.id.slice(-6)}.zip`)
+        );
+      archive.append(contentText(item), { name: "内容-中文.txt" });
+      if (item.translation?.status === "ready") {
+        archive.append(englishContentText(item), { name: "Content-English.txt" });
+        archive.append(bilingualContentText(item), { name: "内容-中英双语.txt" });
+      }
+      archive.append(
+        JSON.stringify(
+          {
+            ...item,
+            title: normalizeXhsText(item.title),
+            description: item.description ? normalizeXhsText(item.description) : undefined,
+            translation: item.translation
+              ? {
+                  ...item.translation,
+                  effective: {
+                    title: effectiveTranslation(item.translation.title),
+                    description: effectiveTranslation(item.translation.description),
+                    topics: item.translation.topics.map((topic) => ({
+                      topicId: topic.topicId,
+                      value: effectiveTranslation(topic)
+                    }))
+                  }
+                }
+              : undefined
+          },
+          null,
+          2
+        ),
+        { name: "metadata.json" }
+      );
+      for (const media of item.media) {
+        const value = await store.mediaPath(item.id, media.id);
+        if (value && fs.existsSync(value.filePath)) archive.file(value.filePath, { name: exportName(media) });
+      }
+      void archive.finalize();
+      return reply.send(archive);
+    }
+  );
+
+  app.post(
+    "/api/v1/tools/xhs-archive/auth/start",
+    { config: { rateLimit: { max: 3, timeWindow: "1 minute" } } },
+    async () => ok(auth.start())
+  );
+  app.get<{ Params: XhsAuthSessionParams }>(
+    "/api/v1/tools/xhs-archive/auth/:sessionId",
+    { schema: { params: XhsAuthSessionParamsSchema } },
+    async (request, reply) => {
+      const session = auth.get(request.params.sessionId);
+      return session ? ok(session) : reply.code(404).send(fail("XHS_AUTH_SESSION_NOT_FOUND", "登录会话不存在"));
+    }
+  );
 
   app.addHook("onClose", async () => {
     await runtime.stop();
