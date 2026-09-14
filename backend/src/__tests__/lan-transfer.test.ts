@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import { createApp } from "../app";
+import { ToolboxDatabase } from "../database/toolbox-database";
 
 let storageRoot: string;
 
@@ -28,6 +29,7 @@ afterEach(async () => {
   delete process.env.DEPLOYMENT_MODE;
   delete process.env.ADMIN_PIN;
   delete process.env.CORS_ORIGINS;
+  delete process.env.DATABASE_PATH;
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
 
@@ -178,6 +180,97 @@ describe("lan transfer api", () => {
     } finally {
       await app.close();
     }
+  });
+
+  it("writes LAN audit events to SQLite without modifying the legacy JSONL log", async () => {
+    process.env.LAN_TRANSFER_PIN = "2468";
+    const databasePath = path.join(storageRoot, "toolbox.db");
+    process.env.DATABASE_PATH = databasePath;
+    const legacyAuditPath = path.join(storageRoot, "lan-transfer", "audit.jsonl");
+    const legacyAudit = '{"event":"legacy.audit"}\n';
+    await fs.mkdir(path.dirname(legacyAuditPath), { recursive: true });
+    await fs.writeFile(legacyAuditPath, legacyAudit, "utf8");
+    const app = await createApp();
+
+    const deniedLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/access",
+      payload: { pin: "wrong" }
+    });
+    expect(deniedLogin.statusCode).toBe(401);
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/access",
+      payload: { pin: "2468" }
+    });
+    const cookie = String(login.headers["set-cookie"]).split(";", 1)[0];
+
+    const uploadPayload = multipartPayload("file", "audit.txt", "text/plain", "audit");
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/files",
+      headers: { ...uploadPayload.headers, cookie },
+      payload: uploadPayload.payload
+    });
+    expect(upload.statusCode).toBe(200);
+    const fileId = upload.json().data.file.id;
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}/download`,
+          headers: { cookie }
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}/expiry`,
+          headers: { cookie },
+          payload: { days: 30 }
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/cleanup",
+          headers: { cookie }
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}`,
+          headers: { cookie }
+        })
+      ).statusCode
+    ).toBe(200);
+    await app.close();
+
+    expect(await fs.readFile(legacyAuditPath, "utf8")).toBe(legacyAudit);
+    const database = new ToolboxDatabase(databasePath);
+    const actions = database.connection
+      .prepare("SELECT action FROM audit_events WHERE action LIKE 'lan.%' ORDER BY id")
+      .all()
+      .map((row) => (row as { action: string }).action);
+    database.close();
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        "lan.access.denied",
+        "lan.access.granted",
+        "lan.file.uploaded",
+        "lan.file.downloaded",
+        "lan.file.expiry-updated",
+        "lan.cleanup.completed",
+        "lan.file.deleted"
+      ])
+    );
   });
 
   it("uploads a file, stores metadata, lists it, previews it, and downloads it", async () => {

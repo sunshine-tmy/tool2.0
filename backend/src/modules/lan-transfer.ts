@@ -74,7 +74,7 @@ export async function registerLanTransferRoutes({ app, config, database }: Regis
   const uploadStore = createLanUploadStore(config, database);
   const finalizingUploads = new Set<string>();
   const access = createLanAccessController(config);
-  const audit = createLanAuditLog(path.join(config.lanTransferDir, "audit.jsonl"));
+  const audit = createLanAuditLog(database);
   await store.ensure();
   await noteStore.ensure();
   await uploadStore.ensure();
@@ -100,7 +100,16 @@ export async function registerLanTransferRoutes({ app, config, database }: Regis
         store.cleanupExpired(),
         noteStore.cleanupExpired(),
         uploadStore.cleanupStale(config.lanTransferUploadRetentionHours, finalizingUploads)
-      ]).catch(() => undefined);
+      ])
+        .then(([files, notes, uploads]) => {
+          if (files.removed + notes.removed + uploads.removed <= 0) return;
+          database.appendAudit({
+            action: "lan.cleanup.scheduled",
+            outcome: "success",
+            details: { filesRemoved: files.removed, notesRemoved: notes.removed, uploadsRemoved: uploads.removed }
+          });
+        })
+        .catch(() => undefined);
     },
     config.lanTransferCleanupIntervalMinutes * 60 * 1000
   );
@@ -332,6 +341,7 @@ function registerLanTransferNamespace(
 
       if (!request.headers.range || /^bytes=0-/i.test(request.headers.range)) {
         await store.incrementDownloadCount(file.id);
+        await audit.write("file.downloaded", request, { fileId: file.id });
       }
       return sendFile(reply, config, file, "attachment", request.headers.range);
     }
@@ -372,6 +382,10 @@ function registerLanTransferNamespace(
     if (!access.authorize(request, reply, "manage")) return reply;
     // Kept for backwards compatibility; scheduled cleanup runs automatically.
     const [files, notes] = await Promise.all([store.cleanupExpired(), noteStore.cleanupExpired()]);
+    await audit.write("cleanup.completed", request, {
+      filesRemoved: files.removed,
+      notesRemoved: notes.removed
+    });
     return ok({ removed: files.removed + notes.removed, filesRemoved: files.removed, notesRemoved: notes.removed });
   });
 

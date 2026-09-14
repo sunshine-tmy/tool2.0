@@ -43,7 +43,7 @@
 | A01 | DONE | 修复 Python CI 审计任务 | 无   | Python Job 直接运行审计脚本或显式安装 pnpm；Linux CI 可独立通过                               |
 | A02 | DONE | 收紧 LAN 管理权限边界   | 无   | LAN 模式下删除、清理、延期和批量管理必须使用管理员会话；仅明确访客上传/下载路由放行           |
 | A03 | DONE | 后端有界优雅退出        | 无   | `SIGINT/SIGTERM` 调用 `app.close()`；队列、Worker、计时器、SSE、数据库在超时内结束            |
-| A04 | TODO | LAN 审计迁移至 SQLite   | A02  | 停止新增 `audit.jsonl`；登录、上传、下载、删除、延期和清理写入 `audit_events`，旧日志只读保留 |
+| A04 | DONE | LAN 审计迁移至 SQLite   | A02  | 停止新增 `audit.jsonl`；登录、上传、下载、删除、延期和清理写入 `audit_events`，旧日志只读保留 |
 | A05 | TODO | 统一限流与并发矩阵      | A02  | 登录、上传、分片、远程抓取、AI、翻译、配音和批量下载均有独立额度及 429 契约测试               |
 
 ### B. API 契约与类型边界
@@ -142,4 +142,5 @@
 | A01     | DONE                | 2026-09-14 | `[A01]`   | `python scripts/audit-worker-dependencies.py`                               | `pnpm check` 通过 | 不涉及运行时接口                     | Python Job 不再依赖未安装的 pnpm              |
 | A02     | DONE                | 2026-09-14 | `[A02]`   | `pnpm --filter backend test -- src/__tests__/lan-transfer.test.ts`（27 项） | `pnpm check` 通过 | live/ready、访客上传下载、管理员删除 | 管理操作使用全局管理员会话与 CSRF             |
 | A03     | DONE                | 2026-09-14 | `[A03]`   | 生命周期、Worker 退出及受影响模块定向测试 43 项                             | `pnpm check` 通过 | live/ready/API、信号关闭与超时强退   | SSE、队列、计时器、Worker、数据库纳入关闭链路 |
+| A04     | DONE                | 2026-09-15 | `[A04]`   | `lan-transfer.test.ts` 28 项；SQLite 审计动作断言                           | `pnpm check` 通过 | live/ready、上传下载删除清理接口     | 旧 `audit.jsonl` 内容保持不变                 |
 | F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                    | 当前大规模重构合并形成新基线后启用            |

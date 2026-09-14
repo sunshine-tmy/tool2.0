@@ -221,6 +221,10 @@ export function registerLanNoteRoutes({
     { schema: { params: LanNoteImageParamsSchema } },
     async (request, reply) => {
       if (!access.authorize(request, reply, "read")) return reply;
+      await audit.write("note.image-downloaded", request, {
+        noteId: request.params.id,
+        imageId: request.params.imageId
+      });
       return sendLanNoteImage(noteStore, request, reply, "attachment");
     }
   );

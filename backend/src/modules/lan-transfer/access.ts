@@ -1,10 +1,9 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import fsp from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { fail } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
 
 type LanAccessAction = "read" | "upload" | "manage";
 
@@ -82,22 +81,16 @@ export function createLanAccessController(config: AppConfig) {
 
 export type LanAccessController = ReturnType<typeof createLanAccessController>;
 
-export function createLanAuditLog(logPath: string) {
-  let queue = Promise.resolve();
+export function createLanAuditLog(database: ToolboxDatabase) {
   return {
-    write(event: string, request: FastifyRequest, details: unknown = undefined) {
-      const entry = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        event,
-        remoteAddress: request.ip,
-        details
+    async write(event: string, request: FastifyRequest, details: unknown = undefined) {
+      database.appendAudit({
+        action: `lan.${event}`,
+        outcome: event.endsWith("denied") ? "denied" : "success",
+        requestId: request.id,
+        actor: request.ip,
+        details: { remoteAddress: request.ip, data: details }
       });
-      const operation = queue.then(async () => {
-        await fsp.mkdir(path.dirname(logPath), { recursive: true });
-        await fsp.appendFile(logPath, `${entry}\n`, "utf8");
-      });
-      queue = operation.catch(() => undefined);
-      return operation.catch(() => undefined);
     }
   };
 }
