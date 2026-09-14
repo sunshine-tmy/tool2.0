@@ -184,6 +184,21 @@ describe("image ai api", () => {
     expect(invalidDownload.statusCode).toBe(400);
     expect(invalidDownload.json().error.code).toBe("REQUEST_INVALID");
   });
+
+  it("applies independent rate limits to expensive task creation", async () => {
+    app = await createApp();
+    let response;
+    for (let requestNumber = 0; requestNumber < 21; requestNumber += 1) {
+      response = await app.inject({ method: "POST", url: "/api/v1/tools/image-ai/tasks" });
+    }
+
+    expect(response?.statusCode).toBe(429);
+    expect(response?.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+  });
 });
 
 function createFakeWorker(options: { healthDelayMs?: number } = {}) {

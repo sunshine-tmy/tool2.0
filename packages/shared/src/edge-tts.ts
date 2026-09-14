@@ -128,6 +128,8 @@ export const EdgeTtsRemovalSchema = Type.Object({ removed: Type.Literal(true) },
 
 export type EdgeTtsLanguage = Static<typeof EdgeTtsLanguageSchema>;
 export type EdgeTtsTaskStatus = Static<typeof EdgeTtsTaskStatusSchema>;
+export type EdgeTtsVoiceQuery = Static<typeof EdgeTtsVoiceQuerySchema>;
+export type EdgeTtsTaskListQuery = Static<typeof EdgeTtsTaskListQuerySchema>;
 export type EdgeTtsVoice = Static<typeof EdgeTtsVoiceSchema>;
 export type EdgeTtsCreateTaskInput = Static<typeof EdgeTtsCreateTaskInputSchema>;
 export type EdgeTtsTask = Static<typeof EdgeTtsTaskSchema>;

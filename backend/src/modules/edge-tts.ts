@@ -27,10 +27,13 @@ import {
   type EdgeTtsHealth,
   type EdgeTtsLanguage,
   type EdgeTtsTask,
+  type EdgeTtsTaskListQuery,
   type EdgeTtsTaskList,
   type EdgeTtsTaskStatus,
   type EdgeTtsTaskSummary,
-  type EdgeTtsVoice
+  type EdgeTtsVoice,
+  type EdgeTtsVoiceQuery,
+  type TaskIdParams
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
@@ -123,7 +126,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
     }
   );
 
-  app.get(
+  app.get<{ Querystring: EdgeTtsVoiceQuery }>(
     "/api/v1/tools/edge-tts/voices",
     {
       schema: {
@@ -132,7 +135,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
       }
     },
     async (request, reply) => {
-      const query = request.query as { language?: string };
+      const query = request.query;
       if (query.language && !isSupportedLanguage(query.language)) {
         return reply.code(400).send(fail("EDGE_TTS_LANGUAGE_INVALID", "不支持该语言"));
       }
@@ -144,6 +147,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
   app.post(
     "/api/v1/tools/edge-tts/tasks",
     {
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
       schema: {
         body: EdgeTtsCreateTaskInputSchema,
         response: {
@@ -173,7 +177,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
     }
   );
 
-  app.get(
+  app.get<{ Querystring: EdgeTtsTaskListQuery }>(
     "/api/v1/tools/edge-tts/tasks",
     {
       schema: {
@@ -182,7 +186,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
       }
     },
     async (request) => {
-      const query = request.query as { page?: string; pageSize?: string };
+      const query = request.query;
       const page = positiveInteger(query.page, 1);
       const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
       const tasks = store.listInternal();
@@ -198,7 +202,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
     }
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/edge-tts/tasks/:taskId",
     {
       schema: {
@@ -207,31 +211,31 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
       }
     },
     async (request, reply) => {
-      const task = store.get(taskIdFrom(request.params));
+      const task = store.get(request.params.taskId);
       if (!task) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
       return ok(toPublicTask(task));
     }
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/edge-tts/tasks/:taskId/audio",
     { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
-    async (request, reply) => sendTaskFile(store, taskIdFrom(request.params), "audio", reply, false)
+    async (request, reply) => sendTaskFile(store, request.params.taskId, "audio", reply, false)
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/edge-tts/tasks/:taskId/download",
     { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
-    async (request, reply) => sendTaskFile(store, taskIdFrom(request.params), "audio", reply, true)
+    async (request, reply) => sendTaskFile(store, request.params.taskId, "audio", reply, true)
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/edge-tts/tasks/:taskId/subtitle",
     { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
-    async (request, reply) => sendTaskFile(store, taskIdFrom(request.params), "subtitle", reply, true)
+    async (request, reply) => sendTaskFile(store, request.params.taskId, "subtitle", reply, true)
   );
 
-  app.delete(
+  app.delete<{ Params: TaskIdParams }>(
     "/api/v1/tools/edge-tts/tasks/:taskId",
     {
       schema: {
@@ -240,7 +244,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
       }
     },
     async (request, reply) => {
-      const taskId = taskIdFrom(request.params);
+      const taskId = request.params.taskId;
       if (!store.get(taskId)) return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
       await queue.cancel(taskId);
       await store.remove(taskId);
@@ -637,10 +641,6 @@ function toPublicTask(task: EdgeTtsTask): EdgeTtsTask {
 function toTaskSummary(task: EdgeTtsTask): EdgeTtsTaskSummary {
   const { text, ...summary } = toPublicTask(task);
   return { ...summary, textPreview: text.length > 120 ? `${text.slice(0, 120)}…` : text };
-}
-
-function taskIdFrom(params: unknown) {
-  return isRecord(params) && typeof params.taskId === "string" ? params.taskId : "";
 }
 
 function cloneTask(task: EdgeTtsTask): EdgeTtsTask {

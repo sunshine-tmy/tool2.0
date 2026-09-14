@@ -148,6 +148,25 @@ describe("edge tts module", () => {
     }
   });
 
+  it("applies an independent rate limit to task creation", async () => {
+    const app = await createApp();
+    try {
+      let response;
+      for (let requestNumber = 0; requestNumber < 31; requestNumber += 1) {
+        response = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/tasks", payload: {} });
+      }
+
+      expect(response?.statusCode).toBe(429);
+      expect(response?.json()).toMatchObject({
+        success: false,
+        error: { code: "REQUEST_INVALID" },
+        requestId: expect.any(String)
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("filters Brazilian voices and rejects a voice from another locale", async () => {
     const app = await createApp();
     try {

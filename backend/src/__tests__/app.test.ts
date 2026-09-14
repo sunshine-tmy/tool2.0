@@ -184,4 +184,21 @@ describe("api app", () => {
       delete process.env.CORS_ORIGINS;
     }
   });
+
+  it("validates administrator login input before authentication", async () => {
+    const app = await createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/session",
+      payload: { pin: "123", unexpected: true }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+    await app.close();
+  });
 });

@@ -1,4 +1,14 @@
 import crypto from "node:crypto";
+import {
+  AdminLoginInputSchema,
+  AdminSessionSchema,
+  ApiFailureSchema,
+  EmptyResultSchema,
+  apiSuccessSchema,
+  fail,
+  ok,
+  type AdminLoginInput
+} from "@toolbox/shared";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
@@ -12,29 +22,25 @@ type Session = { csrfToken: string; expiresAt: number };
 export async function registerAdminSecurity(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
   const sessions = new Map<string, Session>();
 
-  app.post(
+  app.post<{ Body: AdminLoginInput }>(
     "/api/v1/session",
     {
       config: { rateLimit: { max: 5, timeWindow: "1 minute" } },
       schema: {
-        body: {
-          type: "object",
-          additionalProperties: false,
-          required: ["pin"],
-          properties: { pin: { type: "string", minLength: 4, maxLength: 128 } }
+        body: AdminLoginInputSchema,
+        response: {
+          200: apiSuccessSchema(AdminSessionSchema),
+          401: ApiFailureSchema,
+          429: ApiFailureSchema
         }
       }
     },
     async (request, reply) => {
-      const { pin } = request.body as { pin: string };
+      const { pin } = request.body;
       if (!config.adminPin || !timingSafeEqual(pin, config.adminPin)) {
         await delayFailedLogin();
         database.appendAudit({ action: "admin.login", outcome: "denied", requestId: request.id });
-        return reply.code(401).send({
-          success: false,
-          message: "Invalid administrator PIN",
-          error: { code: "INVALID_ADMIN_PIN", message: "Invalid administrator PIN" }
-        });
+        return reply.code(401).send(fail("INVALID_ADMIN_PIN", "Invalid administrator PIN"));
       }
       const sessionId = crypto.randomBytes(32).toString("base64url");
       const csrfToken = crypto.randomBytes(24).toString("base64url");
@@ -47,34 +53,37 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
         maxAge: SESSION_TTL_MS / 1000
       });
       database.appendAudit({ action: "admin.login", outcome: "success", requestId: request.id });
-      return { success: true, message: "ok", data: { csrfToken, expiresInSeconds: SESSION_TTL_MS / 1000 } };
+      return ok({ csrfToken, expiresInSeconds: SESSION_TTL_MS / 1000 });
     }
   );
 
-  app.get("/api/v1/session", async (request, reply) => {
-    const sessionId = request.cookies[COOKIE_NAME];
-    const session = sessionId ? sessions.get(sessionId) : undefined;
-    if (!session || session.expiresAt <= Date.now()) {
-      if (sessionId) sessions.delete(sessionId);
-      return reply.code(401).send({
-        success: false,
-        message: "Administrator session required",
-        error: { code: "ADMIN_SESSION_REQUIRED", message: "Administrator session required" }
+  app.get(
+    "/api/v1/session",
+    { schema: { response: { 200: apiSuccessSchema(AdminSessionSchema), 401: ApiFailureSchema } } },
+    async (request, reply) => {
+      const sessionId = request.cookies[COOKIE_NAME];
+      const session = sessionId ? sessions.get(sessionId) : undefined;
+      if (!session || session.expiresAt <= Date.now()) {
+        if (sessionId) sessions.delete(sessionId);
+        return reply.code(401).send(fail("ADMIN_SESSION_REQUIRED", "Administrator session required"));
+      }
+      return ok({
+        csrfToken: session.csrfToken,
+        expiresInSeconds: Math.ceil((session.expiresAt - Date.now()) / 1000)
       });
     }
-    return {
-      success: true,
-      message: "ok",
-      data: { csrfToken: session.csrfToken, expiresInSeconds: Math.ceil((session.expiresAt - Date.now()) / 1000) }
-    };
-  });
+  );
 
-  app.delete("/api/v1/session", async (request, reply) => {
-    const id = request.cookies[COOKIE_NAME];
-    if (id) sessions.delete(id);
-    reply.clearCookie(COOKIE_NAME, { path: "/" });
-    return { success: true, message: "ok", data: null };
-  });
+  app.delete(
+    "/api/v1/session",
+    { schema: { response: { 200: apiSuccessSchema(EmptyResultSchema) } } },
+    async (request, reply) => {
+      const id = request.cookies[COOKIE_NAME];
+      if (id) sessions.delete(id);
+      reply.clearCookie(COOKIE_NAME, { path: "/" });
+      return ok(null);
+    }
+  );
 
   app.addHook("preHandler", async (request, reply) => {
     if (config.deploymentMode === "local" || SAFE_METHODS.has(request.method)) return;
@@ -85,20 +94,12 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
     const session = sessionId ? sessions.get(sessionId) : undefined;
     if (!session || session.expiresAt <= Date.now()) {
       if (sessionId) sessions.delete(sessionId);
-      return reply.code(401).send({
-        success: false,
-        message: "Administrator session required",
-        error: { code: "ADMIN_SESSION_REQUIRED", message: "Administrator session required" }
-      });
+      return reply.code(401).send(fail("ADMIN_SESSION_REQUIRED", "Administrator session required"));
     }
     const origin = request.headers.origin;
     const csrf = request.headers["x-csrf-token"];
     if (!origin || !config.corsOrigins.includes(origin) || csrf !== session.csrfToken) {
-      return reply.code(403).send({
-        success: false,
-        message: "CSRF validation failed",
-        error: { code: "CSRF_VALIDATION_FAILED", message: "CSRF validation failed" }
-      });
+      return reply.code(403).send(fail("CSRF_VALIDATION_FAILED", "CSRF validation failed"));
     }
   });
 

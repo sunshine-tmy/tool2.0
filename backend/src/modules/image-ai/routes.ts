@@ -13,7 +13,10 @@ import {
   apiSuccessSchema,
   fail,
   isImageAiOperation,
-  ok
+  ok,
+  type ImageAiFileQuery,
+  type ImageAiResultParams,
+  type TaskIdParams
 } from "@toolbox/shared";
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
@@ -72,6 +75,7 @@ export async function registerImageAiRoutes(
   app.post(
     "/api/v1/tools/image-ai/watermark/suggestions",
     {
+      config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
       schema: {
         response: {
           200: apiSuccessSchema(WatermarkSuggestionResponseSchema),
@@ -109,6 +113,7 @@ export async function registerImageAiRoutes(
   app.post(
     "/api/v1/tools/image-ai/tasks",
     {
+      config: { rateLimit: { max: 20, timeWindow: "1 minute" } },
       schema: {
         response: {
           202: apiSuccessSchema(ImageAiTaskSchema),
@@ -205,7 +210,7 @@ export async function registerImageAiRoutes(
     }
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/image-ai/tasks/:taskId",
     {
       schema: {
@@ -214,13 +219,13 @@ export async function registerImageAiRoutes(
       }
     },
     async (request, reply) => {
-      const { taskId } = request.params as { taskId: string };
+      const { taskId } = request.params;
       const task = manager.get(taskId);
       return task ? ok(task) : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
     }
   );
 
-  app.delete(
+  app.delete<{ Params: TaskIdParams }>(
     "/api/v1/tools/image-ai/tasks/:taskId",
     {
       schema: {
@@ -229,13 +234,13 @@ export async function registerImageAiRoutes(
       }
     },
     async (request, reply) => {
-      const { taskId } = request.params as { taskId: string };
+      const { taskId } = request.params;
       const task = await manager.cancel(taskId);
       return task ? ok(task, "取消请求已提交") : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
     }
   );
 
-  app.get(
+  app.get<{ Params: ImageAiResultParams; Querystring: ImageAiFileQuery }>(
     "/api/v1/tools/image-ai/tasks/:taskId/files/:resultId",
     {
       schema: {
@@ -245,8 +250,8 @@ export async function registerImageAiRoutes(
       }
     },
     async (request, reply) => {
-      const { taskId, resultId } = request.params as { taskId: string; resultId: string };
-      const { download } = request.query as { download?: string };
+      const { taskId, resultId } = request.params;
+      const { download } = request.query;
       const task = manager.getStored(taskId);
       const result = task?.results.find((item) => item.id === resultId);
       if (!result) return reply.code(404).send(fail("RESULT_NOT_FOUND", "处理结果不存在或已过期"));
@@ -264,11 +269,11 @@ export async function registerImageAiRoutes(
     }
   );
 
-  app.get(
+  app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/image-ai/tasks/:taskId/download.zip",
     { schema: { params: TaskIdParamsSchema, response: { 400: ApiFailureSchema, 404: ApiFailureSchema } } },
     async (request, reply) => {
-      const { taskId } = request.params as { taskId: string };
+      const { taskId } = request.params;
       const task = manager.getStored(taskId);
       if (!task || !task.results.length) {
         return reply.code(404).send(fail("RESULT_NOT_FOUND", "当前任务没有可下载结果"));

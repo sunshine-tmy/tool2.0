@@ -61,6 +61,21 @@ export const FileNameParamsSchema = Type.Object(
   { additionalProperties: false }
 );
 
+export const AdminLoginInputSchema = Type.Object(
+  { pin: Type.String({ minLength: 4, maxLength: 128 }) },
+  { additionalProperties: false }
+);
+
+export const AdminSessionSchema = Type.Object(
+  {
+    csrfToken: Type.String({ minLength: 32, maxLength: 128 }),
+    expiresInSeconds: Type.Integer({ minimum: 1 })
+  },
+  { additionalProperties: false }
+);
+
+export const EmptyResultSchema = Type.Null();
+
 export const LiveHealthSchema = Type.Object({ status: Type.Literal("ok") });
 
 export const ReadyHealthSchema = Type.Object({
@@ -120,6 +135,8 @@ export const PaginationQuerySchema = Type.Object({
 export type TaskDto = Static<typeof TaskSchema>;
 export type TaskIdParams = Static<typeof TaskIdParamsSchema>;
 export type FileNameParams = Static<typeof FileNameParamsSchema>;
+export type AdminLoginInput = Static<typeof AdminLoginInputSchema>;
+export type AdminSession = Static<typeof AdminSessionSchema>;
 
 export function isTaskDto(value: unknown): value is TaskDto {
   return Value.Check(TaskSchema, value);
