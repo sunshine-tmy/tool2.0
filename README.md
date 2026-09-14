@@ -44,6 +44,7 @@ storage/                  SQLite、媒体、临时文件和迁移备份（不提
 packaging/standalone/     由发布流水线使用的启动器与分发模板
 models/                   本地模型权重（不提交 Git）
 docs/api.md               API 说明
+docs/enterprise-optimization-backlog.md  企业级优化实时任务与验收清单
 ```
 
 ## 环境要求
