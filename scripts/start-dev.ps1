@@ -297,7 +297,7 @@ Set-Location -LiteralPath $Root
 $LanHost = Find-LanHost
 $FrontendUrl = "http://${LanHost}:5173"
 $FrontendHealthUrl = "http://127.0.0.1:5173"
-$BackendUrl = "http://127.0.0.1:3100/api/health"
+$BackendUrl = "http://127.0.0.1:3100/api/v1/health"
 $ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
 $ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"

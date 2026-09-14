@@ -59,7 +59,7 @@ export async function reconcileLanStorage(
 
   const entries = await fsp.readdir(config.lanTransferFilesDir, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
-    if (entry.isDirectory() || referenced.has(fileNameKey(entry.name))) continue;
+    if (entry.isDirectory() || entry.name === ".gitkeep" || referenced.has(fileNameKey(entry.name))) continue;
     await quarantineFile(
       config,
       path.join(config.lanTransferFilesDir, entry.name),

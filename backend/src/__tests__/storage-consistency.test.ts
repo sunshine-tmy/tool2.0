@@ -26,6 +26,7 @@ describe("storage consistency", () => {
       fsp.writeFile(path.join(config.lanTransferFilesDir, "valid.txt"), "valid"),
       fsp.writeFile(path.join(config.lanTransferFilesDir, "mismatch.txt"), "bad"),
       fsp.writeFile(path.join(config.lanTransferFilesDir, "orphan.txt"), "orphan"),
+      fsp.writeFile(path.join(config.lanTransferFilesDir, ".gitkeep"), ""),
       fsp.writeFile(path.join(config.lanTransferDir, "outside.txt"), "outside")
     ]);
 
@@ -61,6 +62,7 @@ describe("storage consistency", () => {
         .sort()
     ).toEqual(["mismatch", "missing", "unsafe"]);
     expect(await fsp.readFile(path.join(config.lanTransferFilesDir, "valid.txt"), "utf8")).toBe("valid");
+    await expect(fsp.readFile(path.join(config.lanTransferFilesDir, ".gitkeep"), "utf8")).resolves.toBe("");
     expect(await fsp.readFile(path.join(config.lanTransferDir, "outside.txt"), "utf8")).toBe("outside");
     await expect(fsp.access(path.join(config.lanTransferFilesDir, "mismatch.txt"))).rejects.toThrow();
     await expect(fsp.access(path.join(config.lanTransferFilesDir, "orphan.txt"))).rejects.toThrow();

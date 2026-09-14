@@ -1,6 +1,7 @@
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import { getConfig } from "../config";
 import {
@@ -22,6 +23,65 @@ afterEach(async () => {
 });
 
 describe("toolbox database", () => {
+  it("upgrades the legacy entities table without losing existing metadata", async () => {
+    const databasePath = await prepareDatabasePath();
+    const legacy = new Database(databasePath);
+    legacy.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      INSERT INTO schema_migrations(version, applied_at) VALUES (1, '2026-01-01T00:00:00.000Z');
+      CREATE TABLE entities (
+        id TEXT NOT NULL PRIMARY KEY,
+        status TEXT,
+        payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) WITHOUT ROWID;
+      CREATE INDEX entities_status_created_idx ON entities(status, created_at DESC);
+    `);
+    const createdAt = "2026-01-01T00:00:00.000Z";
+    const insert = legacy.prepare(
+      "INSERT INTO entities(id, status, payload_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+    );
+    insert.run(
+      "legacy-lan",
+      null,
+      JSON.stringify({ source: "lan-transfer\\index.json", value: [{ id: "file-1" }] }),
+      createdAt,
+      createdAt
+    );
+    insert.run(
+      "legacy-xhs",
+      null,
+      JSON.stringify({ source: "xhs-archive/index.json", value: { version: 2, items: [{ id: "note-1" }] } }),
+      createdAt,
+      createdAt
+    );
+    legacy.close();
+
+    const upgraded = new ToolboxDatabase(databasePath);
+    expect(upgraded.get("legacy:lan-transfer", "legacy-lan")?.payload).toEqual({
+      source: "lan-transfer\\index.json",
+      value: [{ id: "file-1" }]
+    });
+    expect(upgraded.get("legacy:xhs-archive", "legacy-xhs")?.payload).toEqual({
+      source: "xhs-archive/index.json",
+      value: { version: 2, items: [{ id: "note-1" }] }
+    });
+    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 3 });
+    expect(upgraded.connection.pragma("table_info(entities)")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "kind", pk: 1 }),
+        expect.objectContaining({ name: "id", pk: 2 })
+      ])
+    );
+    upgraded.close();
+
+    const restarted = new ToolboxDatabase(databasePath);
+    expect(restarted.list("legacy:lan-transfer")).toHaveLength(1);
+    expect(restarted.list("legacy:xhs-archive")).toHaveLength(1);
+    restarted.close();
+  });
+
   it("persists records and marks interrupted work failed after restart", async () => {
     const databasePath = await prepareDatabasePath();
     const now = new Date().toISOString();
@@ -149,7 +209,7 @@ describe("toolbox database", () => {
     const { database, migration } = await openToolboxDatabase(config);
     expect(migration).toMatchObject({ migrated: true, atomicSwitch: true });
     expect(database.hasCompletedLegacyMigration()).toBe(true);
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 2 });
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 3 });
     database.close();
 
     expect(await exists(databasePath)).toBe(true);
