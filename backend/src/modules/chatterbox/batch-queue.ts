@@ -18,6 +18,9 @@ export type ChatterboxMediaTools = {
 export class ChatterboxBatchQueue {
   private readonly pending: Array<{ batchId: string; itemId: string }> = [];
   private active: { batchId: string; itemId: string } | undefined;
+  private activeController: AbortController | undefined;
+  private activeDone: Promise<void> | undefined;
+  private stopped = false;
 
   constructor(
     private readonly options: {
@@ -32,6 +35,7 @@ export class ChatterboxBatchQueue {
 
   enqueue(batchId: string, itemId: string) {
     if (
+      this.stopped ||
       this.isActive(batchId, itemId) ||
       this.pending.some((entry) => entry.batchId === batchId && entry.itemId === itemId)
     ) {
@@ -64,28 +68,41 @@ export class ChatterboxBatchQueue {
     }
   }
 
+  async close() {
+    this.stopped = true;
+    this.pending.length = 0;
+    this.activeController?.abort();
+    await this.activeDone;
+  }
+
   private pump() {
-    if (this.active || !this.pending.length) return;
+    if (this.stopped || this.active || !this.pending.length) return;
     const next = this.pending.shift();
     if (!next) return;
     this.active = next;
-    void this.process(next.batchId, next.itemId).then(
-      () => this.finish(next),
-      () => this.finish(next)
-    );
+    this.activeController = new AbortController();
+    const done = this.process(next.batchId, next.itemId, this.activeController.signal)
+      .then(
+        () => this.finish(next),
+        () => this.finish(next)
+      )
+      .finally(() => {
+        this.activeController = undefined;
+        this.activeDone = undefined;
+      });
+    this.activeDone = done;
+    void done;
   }
 
-  private finish(entry: { batchId: string; itemId: string }) {
+  private async finish(entry: { batchId: string; itemId: string }) {
     if (this.active?.batchId === entry.batchId && this.active.itemId === entry.itemId) {
       this.active = undefined;
     }
-    void this.options.store.recalculate(entry.batchId).then(
-      () => this.pump(),
-      () => this.pump()
-    );
+    await this.options.store.recalculate(entry.batchId).catch(() => undefined);
+    this.pump();
   }
 
-  private async process(batchId: string, itemId: string) {
+  private async process(batchId: string, itemId: string, signal: AbortSignal) {
     const batch = this.options.store.get(batchId);
     const item = batch?.items.find((entry) => entry.id === itemId);
     if (!batch || !item || item.status !== "queued") return;
@@ -106,7 +123,8 @@ export class ChatterboxBatchQueue {
         exaggeration: item.exaggeration ?? batch.exaggeration,
         cfgWeight: item.cfgWeight ?? batch.cfgWeight,
         temperature: item.temperature ?? batch.temperature,
-        seed: item.seed ?? batch.seed
+        seed: item.seed ?? batch.seed,
+        signal
       });
       await this.options.store.updateItem(batchId, itemId, { progress: 82 });
       await this.options.media.toMp3(itemPaths.outputWav, itemPaths.candidateAudio);

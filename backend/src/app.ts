@@ -67,8 +67,13 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const { database } = await openToolboxDatabase(config);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
+  const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   app.addHook("onClose", async () => database.close());
+  app.addHook("preClose", async () => {
+    for (const stream of taskEventStreams) stream.end();
+    taskEventStreams.clear();
+  });
 
   await app.register(cookie);
   await app.register(rateLimit, {
@@ -249,6 +254,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
         connection: "keep-alive",
         "x-accel-buffering": "no"
       });
+      taskEventStreams.add(reply.raw);
       const send = (value: typeof task) => reply.raw.write(`event: task\ndata: ${JSON.stringify(value)}\n\n`);
       send(task);
       const unsubscribe = taskStore.subscribe(taskId, (value) => {
@@ -257,6 +263,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       });
       const heartbeat = setInterval(() => reply.raw.write(": keep-alive\n\n"), 15_000);
       reply.raw.on("close", () => {
+        taskEventStreams.delete(reply.raw);
         clearInterval(heartbeat);
         unsubscribe();
       });

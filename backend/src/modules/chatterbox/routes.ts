@@ -76,6 +76,10 @@ export async function registerChatterboxRoutes(
     if (task.status === "queued") queue.enqueue(task.id);
   }
 
+  app.addHook("onClose", async () => {
+    await Promise.allSettled([queue.close(), batchQueue.close()]);
+  });
+
   app.get(
     "/api/v1/tools/edge-tts/chatterbox/health",
     { schema: { response: { 200: apiSuccessSchema(ChatterboxHealthSchema) } } },

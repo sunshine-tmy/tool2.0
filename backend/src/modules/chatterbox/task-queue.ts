@@ -7,6 +7,9 @@ import type { ChatterboxTaskStore } from "./task-store";
 export class ChatterboxQueue {
   private readonly pending: string[] = [];
   private activeId: string | undefined;
+  private activeController: AbortController | undefined;
+  private activeDone: Promise<void> | undefined;
+  private stopped = false;
 
   constructor(
     private readonly options: {
@@ -17,7 +20,7 @@ export class ChatterboxQueue {
   ) {}
 
   enqueue(id: string) {
-    if (this.pending.includes(id) || this.activeId === id) return;
+    if (this.stopped || this.pending.includes(id) || this.activeId === id) return;
     this.pending.push(id);
     this.pump();
   }
@@ -35,18 +38,30 @@ export class ChatterboxQueue {
     return { active: this.activeId ? 1 : 0, queued: this.pending.length };
   }
 
+  async close() {
+    this.stopped = true;
+    this.pending.length = 0;
+    this.activeController?.abort();
+    await this.activeDone;
+  }
+
   private pump() {
-    if (this.activeId || !this.pending.length) return;
+    if (this.stopped || this.activeId || !this.pending.length) return;
     const id = this.pending.shift();
     if (!id) return;
     this.activeId = id;
-    void this.process(id).finally(() => {
+    this.activeController = new AbortController();
+    const done = this.process(id, this.activeController.signal).finally(() => {
       this.activeId = undefined;
+      this.activeController = undefined;
+      this.activeDone = undefined;
       this.pump();
     });
+    this.activeDone = done;
+    void done;
   }
 
-  private async process(id: string) {
+  private async process(id: string, signal: AbortSignal) {
     const task = this.options.store.get(id);
     if (!task || task.status !== "queued") return;
     const paths = this.options.store.paths(id);
@@ -60,7 +75,8 @@ export class ChatterboxQueue {
         exaggeration: task.exaggeration,
         cfgWeight: task.cfgWeight,
         temperature: task.temperature,
-        seed: task.seed
+        seed: task.seed,
+        signal
       });
       await this.options.store.update(id, { progress: 82 });
       await this.options.media.toMp3(paths.outputWav, paths.audio);

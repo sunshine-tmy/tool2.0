@@ -102,7 +102,7 @@ export async function registerEdgeTtsRoutes({ app, config, database, taskStore }
   }
 
   app.addHook("onClose", async () => {
-    queue.close();
+    await queue.close();
   });
 
   app.get(
@@ -516,10 +516,11 @@ class EdgeTtsQueue {
     return { active: this.active.size, queued: this.pending.length };
   }
 
-  close() {
+  async close() {
     this.stopped = true;
     this.pending.length = 0;
     for (const job of this.active.values()) job.controller.abort();
+    await Promise.allSettled(Array.from(this.active.values(), (job) => job.done));
   }
 
   private pump() {

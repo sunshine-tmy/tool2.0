@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { XhsTranslationRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { terminateChildProcess } from "../../lifecycle/child-process";
 
 const MODEL_REVISION = "cf109095479db38d6df799875e34039d4938aaa6";
 const MODEL_ID = "Helsinki-NLP/opus-mt-zh-en";
@@ -88,8 +89,9 @@ export class XhsTranslationRuntime {
 
   async stop() {
     if (!this.worker || this.worker.killed) return;
-    this.worker.kill();
+    const worker = this.worker;
     this.worker = undefined;
+    await terminateChildProcess(worker);
   }
 
   private async install(onProgress?: (status: XhsTranslationRuntimeStatus) => void) {

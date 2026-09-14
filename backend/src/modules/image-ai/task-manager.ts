@@ -32,6 +32,9 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
   let processing = false;
   let reservations = 0;
   let cleanupTimer: NodeJS.Timeout | undefined;
+  let drainPromise: Promise<void> | undefined;
+  let stopped = false;
+  const shutdownController = new AbortController();
 
   async function initialize() {
     await Promise.all([
@@ -47,7 +50,11 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
   }
 
   async function close() {
+    stopped = true;
+    queue.length = 0;
+    shutdownController.abort();
     if (cleanupTimer) clearInterval(cleanupTimer);
+    await drainPromise;
   }
 
   function activeCount() {
@@ -148,12 +155,19 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
   }
 
   function scheduleDrain() {
+    if (stopped || drainPromise) return;
     queueMicrotask(() => {
-      void drain().catch(() => {
-        if (!queue.length) return;
-        const retry = setTimeout(scheduleDrain, 1000);
-        retry.unref();
-      });
+      if (stopped || drainPromise) return;
+      const operation = drain()
+        .catch(() => {
+          if (stopped || !queue.length) return;
+          const retry = setTimeout(scheduleDrain, 1000);
+          retry.unref();
+        })
+        .finally(() => {
+          if (drainPromise === operation) drainPromise = undefined;
+        });
+      drainPromise = operation;
     });
   }
 
@@ -192,7 +206,8 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
           inputPath: input.path,
           outputPath,
           maskPath: task.maskPath,
-          scale: task.scale
+          scale: task.scale,
+          signal: shutdownController.signal
         });
         await sanitizePng(outputPath);
         const metadata = await sharp(outputPath).metadata();
@@ -211,6 +226,15 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
         });
         task.warnings = unique([...task.warnings, ...(inference.warnings ?? [])]);
       } catch (error) {
+        if (shutdownController.signal.aborted) {
+          patchTask(task, {
+            status: "failed",
+            progress: 100,
+            error: "任务因服务关闭而中断，请手动重试"
+          });
+          await persist(task);
+          return;
+        }
         failures += 1;
         task.warnings = unique([
           ...task.warnings,

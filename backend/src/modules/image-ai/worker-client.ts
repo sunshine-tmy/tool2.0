@@ -60,6 +60,7 @@ export function createImageAiWorkerClient(config: AppConfig) {
       outputPath: string;
       maskPath?: string;
       scale?: 2 | 4;
+      signal?: AbortSignal;
     }): Promise<ImageWorkerProcess> {
       return requestWorker<ImageWorkerProcess>(
         config,
@@ -74,7 +75,8 @@ export function createImageAiWorkerClient(config: AppConfig) {
             mask_path: input.maskPath,
             scale: input.scale,
             deployment_usage: config.deploymentUsage
-          })
+          }),
+          signal: input.signal
         },
         config.imageAiWorkerTimeoutMs,
         isImageWorkerProcess
@@ -92,6 +94,9 @@ async function requestWorker<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const externalSignal = init.signal;
+  const abortFromExternal = () => controller.abort();
+  externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
 
   try {
     const response = await fetch(new URL(pathname, `${config.imageAiWorkerUrl}/`), {
@@ -114,11 +119,15 @@ async function requestWorker<T>(
   } catch (error) {
     if (error instanceof ImageAiWorkerError) throw error;
     if (error instanceof Error && error.name === "AbortError") {
-      throw new ImageAiWorkerError("IMAGE_AI_WORKER_TIMEOUT", "AI 推理超时，请缩小图片或稍后重试");
+      throw new ImageAiWorkerError(
+        externalSignal?.aborted ? "IMAGE_AI_TASK_INTERRUPTED" : "IMAGE_AI_WORKER_TIMEOUT",
+        externalSignal?.aborted ? "AI 任务因服务关闭而中断，请手动重试" : "AI 推理超时，请缩小图片或稍后重试"
+      );
     }
     throw new ImageAiWorkerError("IMAGE_AI_WORKER_UNAVAILABLE", "AI 推理服务未启动，请先启动本地 image-ai worker");
   } finally {
     clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
   }
 }
 

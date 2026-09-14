@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import type { XhsRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { terminateChildProcess } from "../../lifecycle/child-process";
 
 const XHS_COMMIT = "afaf2fb459980fccef9eec74e304a39af2c49cab";
 const UV_VERSION = "0.8.17";
@@ -61,8 +62,9 @@ export class XhsRuntimeManager {
 
   async stop() {
     if (!this.worker || this.worker.killed) return;
-    this.worker.kill();
+    const worker = this.worker;
     this.worker = undefined;
+    await terminateChildProcess(worker);
   }
 
   private async install(onProgress?: (status: XhsRuntimeStatus) => void) {
