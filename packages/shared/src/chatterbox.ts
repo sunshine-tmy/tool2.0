@@ -1,3 +1,5 @@
+import { Type, type Static } from "@sinclair/typebox";
+
 export const CHATTERBOX_MAX_TEXT_LENGTH = 1_200;
 export const CHATTERBOX_MAX_BATCH_SEGMENTS = 30;
 export const CHATTERBOX_MAX_BATCH_TEXT_LENGTH = 20_000;
@@ -8,6 +10,44 @@ export const CHATTERBOX_MAX_REFERENCE_SECONDS = 30;
 
 export const CHATTERBOX_LANGUAGES = ["ms", "en", "pt-BR"] as const;
 export type ChatterboxLanguage = (typeof CHATTERBOX_LANGUAGES)[number];
+
+const ChatterboxIdSchema = Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" });
+
+export const ChatterboxListQuerySchema = Type.Object(
+  {
+    page: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$" })),
+    pageSize: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$" }))
+  },
+  { additionalProperties: false }
+);
+
+export const ChatterboxTaskIdParamsSchema = Type.Object(
+  { taskId: ChatterboxIdSchema },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchIdParamsSchema = Type.Object(
+  { batchId: ChatterboxIdSchema },
+  { additionalProperties: false }
+);
+export const ChatterboxVoiceIdParamsSchema = Type.Object(
+  { voiceId: ChatterboxIdSchema },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchItemParamsSchema = Type.Object(
+  { batchId: ChatterboxIdSchema, itemId: ChatterboxIdSchema },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchOrderSchema = Type.Object(
+  { itemIds: Type.Array(ChatterboxIdSchema, { minItems: 1, maxItems: CHATTERBOX_MAX_BATCH_SEGMENTS }) },
+  { additionalProperties: false }
+);
+
+export type ChatterboxListQuery = Static<typeof ChatterboxListQuerySchema>;
+export type ChatterboxTaskIdParams = Static<typeof ChatterboxTaskIdParamsSchema>;
+export type ChatterboxBatchIdParams = Static<typeof ChatterboxBatchIdParamsSchema>;
+export type ChatterboxVoiceIdParams = Static<typeof ChatterboxVoiceIdParamsSchema>;
+export type ChatterboxBatchItemParams = Static<typeof ChatterboxBatchItemParamsSchema>;
+export type ChatterboxBatchOrder = Static<typeof ChatterboxBatchOrderSchema>;
 
 export type ChatterboxVoiceAuthorization = "self" | "authorized";
 export type ChatterboxSubtitleMode = "sentences" | "segments";

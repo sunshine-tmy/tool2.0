@@ -9,15 +9,19 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import {
   CHATTERBOX_LANGUAGES,
+  ChatterboxListQuerySchema,
   CHATTERBOX_MAX_REFERENCE_BYTES,
   CHATTERBOX_MAX_REFERENCE_SECONDS,
   CHATTERBOX_MAX_TEXT_LENGTH,
   CHATTERBOX_MIN_REFERENCE_SECONDS,
+  ChatterboxTaskIdParamsSchema,
   fail,
   ok,
   type ChatterboxHealth,
   type ChatterboxLanguage,
+  type ChatterboxListQuery,
   type ChatterboxTask,
+  type ChatterboxTaskIdParams,
   type ChatterboxTaskList,
   type ChatterboxTaskStatus,
   type ChatterboxTaskSummary,
@@ -175,51 +179,69 @@ export async function registerChatterboxRoutes(
     }
   });
 
-  app.get("/api/v1/tools/edge-tts/chatterbox/tasks", async (request) => {
-    const query = request.query as { page?: string; pageSize?: string };
-    const page = positiveInteger(query.page, 1);
-    const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
-    const tasks = store.list();
-    const total = tasks.length;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    const safePage = Math.min(page, totalPages);
-    const start = (safePage - 1) * pageSize;
-    const data: ChatterboxTaskList = {
-      tasks: tasks.slice(start, start + pageSize).map(toTaskSummary),
-      pagination: { page: safePage, pageSize, total, totalPages }
-    };
-    return ok(data);
-  });
-
-  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId", async (request, reply) => {
-    const task = store.get(taskIdFrom(request.params));
-    if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
-    return ok(toPublicTask(task));
-  });
-
-  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/audio", async (request, reply) => {
-    return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, false);
-  });
-
-  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/download", async (request, reply) => {
-    return sendTaskFile(store, taskIdFrom(request.params), "audio", reply, true);
-  });
-
-  app.get("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/subtitle", async (request, reply) => {
-    return sendTaskFile(store, taskIdFrom(request.params), "subtitle", reply, true);
-  });
-
-  app.delete("/api/v1/tools/edge-tts/chatterbox/tasks/:taskId", async (request, reply) => {
-    const taskId = taskIdFrom(request.params);
-    const task = store.get(taskId);
-    if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
-    if (queue.isActive(taskId)) {
-      return reply.code(409).send(fail("CHATTERBOX_TASK_ACTIVE", "本地模型正在生成，完成后即可删除"));
+  app.get<{ Querystring: ChatterboxListQuery }>(
+    "/api/v1/tools/edge-tts/chatterbox/tasks",
+    { schema: { querystring: ChatterboxListQuerySchema } },
+    async (request) => {
+      const query = request.query;
+      const page = positiveInteger(query.page, 1);
+      const pageSize = Math.min(50, positiveInteger(query.pageSize, 10));
+      const tasks = store.list();
+      const total = tasks.length;
+      const totalPages = Math.max(1, Math.ceil(total / pageSize));
+      const safePage = Math.min(page, totalPages);
+      const start = (safePage - 1) * pageSize;
+      const data: ChatterboxTaskList = {
+        tasks: tasks.slice(start, start + pageSize).map(toTaskSummary),
+        pagination: { page: safePage, pageSize, total, totalPages }
+      };
+      return ok(data);
     }
-    queue.removePending(taskId);
-    await store.remove(taskId);
-    return ok({ removed: true });
-  });
+  );
+
+  app.get<{ Params: ChatterboxTaskIdParams }>(
+    "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId",
+    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    async (request, reply) => {
+      const task = store.get(taskIdFrom(request.params));
+      if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
+      return ok(toPublicTask(task));
+    }
+  );
+
+  app.get<{ Params: ChatterboxTaskIdParams }>(
+    "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/audio",
+    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    async (request, reply) => sendTaskFile(store, request.params.taskId, "audio", reply, false)
+  );
+
+  app.get<{ Params: ChatterboxTaskIdParams }>(
+    "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/download",
+    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    async (request, reply) => sendTaskFile(store, request.params.taskId, "audio", reply, true)
+  );
+
+  app.get<{ Params: ChatterboxTaskIdParams }>(
+    "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/subtitle",
+    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    async (request, reply) => sendTaskFile(store, request.params.taskId, "subtitle", reply, true)
+  );
+
+  app.delete<{ Params: ChatterboxTaskIdParams }>(
+    "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId",
+    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    async (request, reply) => {
+      const taskId = taskIdFrom(request.params);
+      const task = store.get(taskId);
+      if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
+      if (queue.isActive(taskId)) {
+        return reply.code(409).send(fail("CHATTERBOX_TASK_ACTIVE", "本地模型正在生成，完成后即可删除"));
+      }
+      queue.removePending(taskId);
+      await store.remove(taskId);
+      return ok({ removed: true });
+    }
+  );
 
   const cleanupTimer = setInterval(
     () => {
