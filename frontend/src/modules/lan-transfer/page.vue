@@ -268,142 +268,38 @@
           </n-tab-pane>
         </n-tabs>
 
-        <div v-show="activeLanTab === 'files'" class="lan-files-workspace">
-          <div v-if="canReadFiles" class="lan-filters">
-            <n-input
-              v-model:value="lanQuery.keyword"
-              clearable
-              placeholder="搜索文件名或扩展名"
-              @keyup.enter="applyLanFilters"
-            />
-            <n-select
-              v-model:value="lanQuery.category"
-              clearable
-              :options="lanCategoryOptions"
-              placeholder="文件类型"
-            />
-            <n-input v-model:value="lanQuery.extension" clearable placeholder="扩展名，例如 pdf" />
-            <n-select v-model:value="lanQuery.sortBy" :options="lanSortOptions" />
-            <n-select v-model:value="lanQuery.sortOrder" :options="lanSortOrderOptions" />
-            <n-button type="primary" @click="applyLanFilters">筛选</n-button>
-            <n-button secondary @click="resetLanFilters">重置</n-button>
-          </div>
-
-          <div v-if="canReadFiles" class="batch-toolbar">
-            <n-checkbox
-              :checked="lanPageSelection.checked"
-              :indeterminate="lanPageSelection.indeterminate"
-              :disabled="!lanFiles.length"
-              @update:checked="toggleAllLanFiles"
-            >
-              全选本页
-            </n-checkbox>
-            <div class="batch-actions">
-              <n-button
-                secondary
-                size="small"
-                :disabled="!selectedLanFileIds.length"
-                :loading="batchDownloadingLanFiles"
-                @click="downloadSelectedLanFiles"
-                >批量下载 {{ selectedLanFileIds.length || "" }}</n-button
-              >
-              <n-button
-                v-if="canManageFiles"
-                tertiary
-                type="error"
-                size="small"
-                :disabled="!selectedLanFileIds.length"
-                :loading="batchDeletingLanFiles"
-                @click="deleteSelectedLanFiles"
-                >批量删除 {{ selectedLanFileIds.length || "" }}</n-button
-              >
-            </div>
-          </div>
-
-          <div v-if="canReadFiles" class="file-list">
-            <article v-for="file in lanFiles" :key="file.id" class="file-row">
-              <div class="file-main">
-                <n-checkbox
-                  :checked="selectedLanFileIds.includes(file.id)"
-                  :aria-label="`选择 ${file.originalName}`"
-                  @update:checked="(checked) => toggleLanFile(file.id, checked)"
-                />
-                <FileArchive v-if="file.category === 'archive'" :size="20" />
-                <FileVideo v-else-if="file.category === 'video'" :size="20" />
-                <ImageDown v-else-if="file.category === 'image'" :size="20" />
-                <Music v-else-if="file.category === 'audio'" :size="20" />
-                <FileText v-else :size="20" />
-                <div>
-                  <strong>{{ file.originalName }}</strong>
-                  <span
-                    >{{ categoryName(file.category) }} · {{ formatBytes(file.size) }} ·
-                    {{ file.extension || "无扩展名" }}</span
-                  >
-                </div>
-              </div>
-              <div class="file-meta">
-                <span>上传 {{ formatDate(file.createdAt) }}</span>
-                <span>过期 {{ formatDate(file.expiresAt) }}</span>
-                <span>下载 {{ file.downloadCount }}</span>
-              </div>
-              <div class="file-actions">
-                <n-button
-                  secondary
-                  size="small"
-                  :disabled="!file.previewable"
-                  :aria-label="`预览 ${file.originalName}`"
-                  @click="openPreview(file)"
-                  >预览</n-button
-                >
-                <n-button
-                  secondary
-                  size="small"
-                  tag="a"
-                  :href="file.downloadUrl"
-                  :aria-label="`下载 ${file.originalName}`"
-                  >下载</n-button
-                >
-                <n-button
-                  tertiary
-                  size="small"
-                  :aria-label="`复制 ${file.originalName} 的下载链接`"
-                  @click="copyFileLink(file)"
-                  >复制链接</n-button
-                >
-                <n-button
-                  v-if="canManageFiles"
-                  tertiary
-                  size="small"
-                  :aria-label="`将 ${file.originalName} 保留 30 天`"
-                  @click="extendFileExpiry(file)"
-                  >保留30天</n-button
-                >
-                <n-button
-                  v-if="canManageFiles"
-                  tertiary
-                  size="small"
-                  type="error"
-                  :aria-label="`删除 ${file.originalName}`"
-                  @click="deleteLanFile(file)"
-                  >删除</n-button
-                >
-              </div>
-            </article>
-            <n-empty v-if="!lanFiles.length" description="暂无文件" />
-          </div>
-          <div v-if="canReadFiles && shouldShowPagination(lanPagination.total)" class="pagination-row">
-            <span class="pagination-total">共 {{ lanPagination.total }} 个文件</span>
-            <n-pagination
-              v-model:page="lanPagination.page"
-              v-model:page-size="lanPagination.pageSize"
-              :item-count="lanPagination.total"
-              :page-sizes="[10, 20, 50, 100]"
-              show-size-picker
-              @update:page="refreshLanFiles"
-              @update:page-size="onLanPageSizeChange"
-            />
-          </div>
-        </div>
+        <LanFileListPanel
+          v-show="activeLanTab === 'files'"
+          v-model:keyword="lanQuery.keyword"
+          v-model:category="lanQuery.category"
+          v-model:extension="lanQuery.extension"
+          v-model:sort-by="lanQuery.sortBy"
+          v-model:sort-order="lanQuery.sortOrder"
+          v-model:page="lanPagination.page"
+          v-model:page-size="lanPagination.pageSize"
+          :can-read-files="canReadFiles"
+          :can-manage-files="canManageFiles"
+          :files="lanFiles"
+          :selected-ids="selectedLanFileIds"
+          :batch-deleting="batchDeletingLanFiles"
+          :batch-downloading="batchDownloadingLanFiles"
+          :pagination="lanPagination"
+          :category-options="lanCategoryOptions"
+          :sort-options="lanSortOptions"
+          :sort-order-options="lanSortOrderOptions"
+          @apply-filters="applyLanFilters"
+          @reset-filters="resetLanFilters"
+          @toggle-all="toggleAllLanFiles"
+          @toggle-file="toggleLanFile"
+          @download-selected="downloadSelectedLanFiles"
+          @delete-selected="deleteSelectedLanFiles"
+          @preview="openPreview"
+          @copy-link="copyFileLink"
+          @extend-expiry="extendFileExpiry"
+          @delete-file="deleteLanFile"
+          @page-change="refreshLanFiles"
+          @page-size-change="onLanPageSizeChange"
+        />
       </section>
     </section>
 
@@ -450,10 +346,11 @@ import {
 } from "naive-ui";
 import type { LanFileCategory, LanFileSortBy, LanFileSortOrder } from "@toolbox/shared";
 import { lanFileCategories, lanNoteLimits } from "@toolbox/shared";
-import { FileArchive, FileText, FileVideo, ImageDown, Music, RefreshCw, UploadCloud } from "lucide-vue-next";
+import { RefreshCw, UploadCloud } from "lucide-vue-next";
 import QRCode from "qrcode";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
+import LanFileListPanel from "./LanFileListPanel.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { currentWebUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
@@ -535,7 +432,6 @@ const lanSortOrderOptions = [
   { label: "升序", value: "asc" }
 ];
 const lanPageFileIds = computed(() => lanFiles.value.map((file) => file.id));
-const lanPageSelection = computed(() => getPageSelectionState(selectedLanFileIds.value, lanPageFileIds.value));
 const lanNotePageIds = computed(() => lanNotes.value.map((note) => note.id));
 const lanNotePageSelection = computed(() => getPageSelectionState(selectedLanNoteIds.value, lanNotePageIds.value));
 const shareUrlOptions = computed(() =>
