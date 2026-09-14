@@ -69,50 +69,59 @@ async function processVideoTextTask(input: {
   signal: AbortSignal;
 }) {
   const { task, videoPath, safeName, mimeType, config, taskStore, results, signal } = input;
+  let terminalPatch: Parameters<TaskStore["update"]>[1];
   try {
     const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
     const transcribed = await transcribeVideo(videoPath, task.id, config, signal);
     if (!transcribed.transcript.trim()) {
-      return taskStore.update(task.id, {
+      terminalPatch = {
         status: "failed",
         progress: 100,
         error: hasTranscriber
           ? "未识别到视频语音文案，请确认视频包含清晰人声后再重试。"
           : "未配置视频语音识别命令，请配置本地识别后再分析。"
-      }) as Task;
+      };
+    } else {
+      taskStore.update(task.id, { progress: 70 });
+      const result: StoredVideoTextResult = {
+        id: task.id,
+        fileName: safeName,
+        fileSize: (await fsp.stat(videoPath)).size,
+        mimeType,
+        source: "transcriber",
+        createdAt: new Date().toISOString(),
+        ...analyzeVideoText({
+          title: safeName,
+          transcript: transcribed.transcript,
+          recognitionQuality: transcribed.recognitionQuality
+        })
+      };
+      results.set(task.id, result);
+      const outputPath = resultFilePath(config, task.id);
+      await fsp.writeFile(outputPath, JSON.stringify(result, null, 2), "utf8");
+      terminalPatch = {
+        status: "completed",
+        progress: 100,
+        outputPath: path.basename(outputPath)
+      };
     }
-
-    taskStore.update(task.id, { progress: 70 });
-    const result: StoredVideoTextResult = {
-      id: task.id,
-      fileName: safeName,
-      fileSize: (await fsp.stat(videoPath)).size,
-      mimeType,
-      source: "transcriber",
-      createdAt: new Date().toISOString(),
-      ...analyzeVideoText({
-        title: safeName,
-        transcript: transcribed.transcript,
-        recognitionQuality: transcribed.recognitionQuality
-      })
-    };
-    results.set(task.id, result);
-    const outputPath = resultFilePath(config, task.id);
-    await fsp.writeFile(outputPath, JSON.stringify(result, null, 2), "utf8");
-    return taskStore.update(task.id, {
-      status: "completed",
-      progress: 100,
-      outputPath: path.basename(outputPath)
-    }) as Task;
   } catch (error) {
-    return taskStore.update(task.id, {
+    terminalPatch = {
       status: "failed",
       progress: 100,
       error: error instanceof Error ? error.message : "视频文本解析失败"
-    }) as Task;
-  } finally {
-    await cleanupVideoTextWorkingFiles(config, task.id, videoPath);
+    };
   }
+  try {
+    await cleanupVideoTextWorkingFiles(config, task.id, videoPath);
+  } catch (error) {
+    terminalPatch = {
+      status: "failed",
+      progress: 100,
+      error: error instanceof Error ? `视频临时文件清理失败：${error.message}` : "视频临时文件清理失败"
+    };
+  }
+  return taskStore.update(task.id, terminalPatch) as Task;
 }
 
 async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig, signal: AbortSignal) {
