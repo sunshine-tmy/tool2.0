@@ -13,7 +13,7 @@ import {
   type ChatterboxSubtitleMode,
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
-import { BatchInputError } from "./errors";
+import { BatchInputError, type ChatterboxBatchErrorStatus } from "./errors";
 import type { BatchCreateInput, BatchSegmentInput } from "./stores";
 
 export async function receiveBatchMultipart(
@@ -65,7 +65,7 @@ export function parseBatchFields(
   referenceFileName: string
 ):
   | { success: true; value: Omit<BatchCreateInput, "referenceDurationSeconds"> }
-  | { success: false; statusCode: number; code: string; message: string } {
+  | { success: false; statusCode: ChatterboxBatchErrorStatus; code: string; message: string } {
   let rawSegments: unknown;
   try {
     rawSegments = JSON.parse(fields.segments || "[]");
@@ -165,7 +165,7 @@ function boundedInteger(value: string | undefined, minimum: number, maximum: num
   return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : undefined;
 }
 
-function invalid(code: string, message: string, statusCode = 400) {
+function invalid(code: string, message: string, statusCode: ChatterboxBatchErrorStatus = 400) {
   return { success: false as const, code, message, statusCode };
 }
 

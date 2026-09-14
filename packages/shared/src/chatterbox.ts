@@ -51,6 +51,14 @@ const ChatterboxTaskStatusSchema = Type.Union([
   Type.Literal("failed"),
   Type.Literal("cancelled")
 ]);
+const ChatterboxBatchStatusSchema = Type.Union([
+  Type.Literal("queued"),
+  Type.Literal("processing"),
+  Type.Literal("partial_failed"),
+  Type.Literal("completed"),
+  Type.Literal("cancelled")
+]);
+const ChatterboxSubtitleModeSchema = Type.Union([Type.Literal("sentences"), Type.Literal("segments")]);
 const ChatterboxPaginationSchema = Type.Object(
   {
     page: Type.Integer({ minimum: 1 }),
@@ -136,6 +144,107 @@ export const ChatterboxHealthSchema = Type.Object(
   { additionalProperties: false }
 );
 export const ChatterboxRemovalSchema = Type.Object({ removed: Type.Literal(true) }, { additionalProperties: false });
+export const ChatterboxSavedVoiceSchema = Type.Object(
+  {
+    id: ChatterboxIdSchema,
+    name: Type.String(),
+    language: ChatterboxLanguageSchema,
+    originalFileName: Type.String(),
+    durationSeconds: Type.Number({ minimum: 0 }),
+    audioBytes: Type.Integer({ minimum: 0 }),
+    authorization: ChatterboxAuthorizationSchema,
+    consentConfirmed: Type.Literal(true),
+    createdAt: Type.String({ format: "date-time" }),
+    updatedAt: Type.String({ format: "date-time" }),
+    audioUrl: Type.String()
+  },
+  { additionalProperties: false }
+);
+export const ChatterboxSavedVoiceListSchema = Type.Object(
+  { voices: Type.Array(ChatterboxSavedVoiceSchema) },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchItemSchema = Type.Object(
+  {
+    id: ChatterboxIdSchema,
+    order: Type.Integer({ minimum: 1 }),
+    text: Type.String(),
+    referenceTranslation: Type.Optional(Type.String()),
+    fileName: Type.Optional(Type.String()),
+    status: ChatterboxTaskStatusSchema,
+    progress: Type.Number({ minimum: 0, maximum: 100 }),
+    attempt: Type.Integer({ minimum: 1 }),
+    seed: Type.Optional(Type.Integer()),
+    exaggeration: Type.Optional(Type.Number()),
+    cfgWeight: Type.Optional(Type.Number()),
+    temperature: Type.Optional(Type.Number()),
+    characterCount: Type.Integer({ minimum: 0 }),
+    audioBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+    audioDurationSeconds: Type.Optional(Type.Number({ minimum: 0 })),
+    error: Type.Optional(Type.String()),
+    createdAt: Type.String({ format: "date-time" }),
+    updatedAt: Type.String({ format: "date-time" }),
+    audioUrl: Type.Optional(Type.String()),
+    downloadUrl: Type.Optional(Type.String())
+  },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchSchema = Type.Object(
+  {
+    id: ChatterboxIdSchema,
+    engine: Type.Literal("chatterbox-multilingual-v3"),
+    status: ChatterboxBatchStatusSchema,
+    progress: Type.Number({ minimum: 0, maximum: 100 }),
+    name: Type.Optional(Type.String()),
+    language: ChatterboxLanguageSchema,
+    referenceFileName: Type.String(),
+    referenceDurationSeconds: Type.Number({ minimum: 0 }),
+    referenceRetained: Type.Boolean(),
+    referenceAvailable: Type.Boolean(),
+    authorization: ChatterboxAuthorizationSchema,
+    consentConfirmed: Type.Literal(true),
+    exaggeration: Type.Number(),
+    cfgWeight: Type.Number(),
+    temperature: Type.Number(),
+    seed: Type.Integer(),
+    includeSubtitles: Type.Boolean(),
+    subtitleMode: ChatterboxSubtitleModeSchema,
+    items: Type.Array(ChatterboxBatchItemSchema),
+    totalCharacters: Type.Integer({ minimum: 0 }),
+    totalAudioBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+    totalAudioDurationSeconds: Type.Optional(Type.Number({ minimum: 0 })),
+    completedItems: Type.Integer({ minimum: 0 }),
+    failedItems: Type.Integer({ minimum: 0 }),
+    createdAt: Type.String({ format: "date-time" }),
+    updatedAt: Type.String({ format: "date-time" }),
+    expiresAt: Type.String({ format: "date-time" }),
+    combinedAudioUrl: Type.Optional(Type.String()),
+    subtitleUrl: Type.Optional(Type.String()),
+    translationSubtitleUrl: Type.Optional(Type.String()),
+    bilingualSubtitleUrl: Type.Optional(Type.String()),
+    archiveUrl: Type.Optional(Type.String())
+  },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchItemSummarySchema = Type.Composite(
+  [Type.Omit(ChatterboxBatchItemSchema, ["text", "referenceTranslation"]), Type.Object({ textPreview: Type.String() })],
+  { additionalProperties: false }
+);
+export const ChatterboxBatchSummarySchema = Type.Composite(
+  [
+    Type.Omit(ChatterboxBatchSchema, ["items"]),
+    Type.Object({ itemPreviews: Type.Array(ChatterboxBatchItemSummarySchema) })
+  ],
+  { additionalProperties: false }
+);
+export const ChatterboxBatchListSchema = Type.Object(
+  { batches: Type.Array(ChatterboxBatchSummarySchema), pagination: ChatterboxPaginationSchema },
+  { additionalProperties: false }
+);
+export const ChatterboxBatchItemRemovalSchema = Type.Object(
+  { removed: Type.Literal(true), batch: Type.Optional(ChatterboxBatchSchema) },
+  { additionalProperties: false }
+);
 
 export type ChatterboxListQuery = Static<typeof ChatterboxListQuerySchema>;
 export type ChatterboxTaskIdParams = Static<typeof ChatterboxTaskIdParamsSchema>;

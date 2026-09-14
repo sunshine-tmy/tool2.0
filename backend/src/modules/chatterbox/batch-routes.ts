@@ -5,15 +5,23 @@ import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import {
+  ApiFailureSchema,
   CHATTERBOX_LANGUAGES,
+  ChatterboxBatchItemRemovalSchema,
   ChatterboxBatchIdParamsSchema,
   ChatterboxBatchItemParamsSchema,
+  ChatterboxBatchListSchema,
   ChatterboxBatchOrderSchema,
+  ChatterboxBatchSchema,
   ChatterboxListQuerySchema,
   CHATTERBOX_MAX_BATCH_TEXT_LENGTH,
   CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH,
   CHATTERBOX_MAX_TEXT_LENGTH,
+  ChatterboxRemovalSchema,
+  ChatterboxSavedVoiceListSchema,
+  ChatterboxSavedVoiceSchema,
   ChatterboxVoiceIdParamsSchema,
+  apiSuccessSchema,
   fail,
   ok,
   type ChatterboxBatch,
@@ -74,47 +82,66 @@ export async function registerChatterboxBatchRoutes(options: {
     for (const item of batch.items) if (item.status === "queued") queue.enqueue(batch.id, item.id);
   }
 
-  app.get("/api/v1/tools/edge-tts/chatterbox/voices", async () => {
-    const data: ChatterboxSavedVoiceList = { voices: voiceStore.list().map(toPublicVoice) };
-    return ok(data);
-  });
-
-  app.post("/api/v1/tools/edge-tts/chatterbox/voices", async (request, reply) => {
-    const voiceId = nanoid(12);
-    const paths = voiceStore.paths(voiceId);
-    await fsp.mkdir(paths.dir, { recursive: true });
-    try {
-      const uploaded = await receiveBatchMultipart(request.parts(), paths.upload, true);
-      const name = uploaded.fields.name?.trim();
-      if (!name) throw new BatchInputError("CHATTERBOX_VOICE_NAME_REQUIRED", "请输入音色名称", 400);
-      if (!isLanguage(uploaded.fields.language)) {
-        throw new BatchInputError("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语", 400);
-      }
-      if (!isAuthorization(uploaded.fields.authorization)) {
-        throw new BatchInputError("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源", 400);
-      }
-      if (uploaded.fields.consentConfirmed !== "true") {
-        throw new BatchInputError("CHATTERBOX_CONSENT_REQUIRED", "必须确认已获得参考声音的合法授权", 400);
-      }
-      const durationSeconds = await media.normalizeReference(paths.upload, paths.audio);
-      const audioBytes = (await fsp.stat(paths.audio)).size;
-      const voice = await voiceStore.create({
-        id: voiceId,
-        name: sanitizeFileName(name),
-        language: uploaded.fields.language,
-        originalFileName: uploaded.referenceFileName,
-        durationSeconds,
-        audioBytes,
-        authorization: uploaded.fields.authorization,
-        consentConfirmed: true
-      });
-      return reply.code(201).send(ok(toPublicVoice(voice)));
-    } catch (error) {
-      await fsp.rm(paths.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      const mapped = mapBatchError(error);
-      return reply.code(mapped.statusCode).send(fail(mapped.code, mapped.message));
+  app.get(
+    "/api/v1/tools/edge-tts/chatterbox/voices",
+    { schema: { response: { 200: apiSuccessSchema(ChatterboxSavedVoiceListSchema) } } },
+    async () => {
+      const data: ChatterboxSavedVoiceList = { voices: voiceStore.list().map(toPublicVoice) };
+      return ok(data);
     }
-  });
+  );
+
+  app.post(
+    "/api/v1/tools/edge-tts/chatterbox/voices",
+    {
+      schema: {
+        response: {
+          201: apiSuccessSchema(ChatterboxSavedVoiceSchema),
+          400: ApiFailureSchema,
+          404: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema,
+          429: ApiFailureSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const voiceId = nanoid(12);
+      const paths = voiceStore.paths(voiceId);
+      await fsp.mkdir(paths.dir, { recursive: true });
+      try {
+        const uploaded = await receiveBatchMultipart(request.parts(), paths.upload, true);
+        const name = uploaded.fields.name?.trim();
+        if (!name) throw new BatchInputError("CHATTERBOX_VOICE_NAME_REQUIRED", "请输入音色名称", 400);
+        if (!isLanguage(uploaded.fields.language)) {
+          throw new BatchInputError("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语", 400);
+        }
+        if (!isAuthorization(uploaded.fields.authorization)) {
+          throw new BatchInputError("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源", 400);
+        }
+        if (uploaded.fields.consentConfirmed !== "true") {
+          throw new BatchInputError("CHATTERBOX_CONSENT_REQUIRED", "必须确认已获得参考声音的合法授权", 400);
+        }
+        const durationSeconds = await media.normalizeReference(paths.upload, paths.audio);
+        const audioBytes = (await fsp.stat(paths.audio)).size;
+        const voice = await voiceStore.create({
+          id: voiceId,
+          name: sanitizeFileName(name),
+          language: uploaded.fields.language,
+          originalFileName: uploaded.referenceFileName,
+          durationSeconds,
+          audioBytes,
+          authorization: uploaded.fields.authorization,
+          consentConfirmed: true
+        });
+        return reply.code(201).send(ok(toPublicVoice(voice)));
+      } catch (error) {
+        await fsp.rm(paths.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+        const mapped = mapBatchError(error);
+        return reply.code(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
+    }
+  );
 
   app.get<{ Params: ChatterboxVoiceIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/voices/:voiceId/audio",
@@ -138,7 +165,12 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.delete<{ Params: ChatterboxVoiceIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/voices/:voiceId",
-    { schema: { params: ChatterboxVoiceIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxVoiceIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxRemovalSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const voiceId = voiceIdFrom(request.params);
       if (!voiceStore.get(voiceId)) {
@@ -149,61 +181,81 @@ export async function registerChatterboxBatchRoutes(options: {
     }
   );
 
-  app.post("/api/v1/tools/edge-tts/chatterbox/batches", async (request, reply) => {
-    if (queueLoad() >= config.chatterboxQueueLimit) {
-      return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
-    }
-    try {
-      const health = await worker.health();
-      if (!health.available) {
-        return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
-      }
-    } catch {
-      return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
-    }
-    const batchId = nanoid(12);
-    const paths = store.paths(batchId);
-    await fsp.mkdir(paths.dir, { recursive: true });
-    try {
-      const uploaded = await receiveBatchMultipart(request.parts(), paths.referenceUpload, false);
-      const parsed = parseBatchFields(uploaded.fields, uploaded.referenceFileName);
-      if (!parsed.success) throw new BatchInputError(parsed.code, parsed.message, parsed.statusCode);
-      if (queueLoad() + parsed.value.segments.length > config.chatterboxQueueLimit) {
-        throw new BatchInputError("CHATTERBOX_QUEUE_FULL", "本批次段数超过当前可用队列容量", 429);
-      }
-      let referenceDurationSeconds: number;
-      let referenceFileName = uploaded.referenceFileName;
-      if (uploaded.receivedFile) {
-        referenceDurationSeconds = await media.normalizeReference(paths.referenceUpload, paths.reference);
-      } else {
-        const savedVoice = voiceStore.get(uploaded.fields.voiceId || "");
-        if (!savedVoice) {
-          throw new BatchInputError("CHATTERBOX_REFERENCE_REQUIRED", "请上传参考音频或选择已保存音色", 400);
+  app.post(
+    "/api/v1/tools/edge-tts/chatterbox/batches",
+    {
+      schema: {
+        response: {
+          202: apiSuccessSchema(ChatterboxBatchSchema),
+          400: ApiFailureSchema,
+          404: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema,
+          429: ApiFailureSchema
         }
-        if (savedVoice.language !== parsed.value.language) {
-          throw new BatchInputError("CHATTERBOX_VOICE_LANGUAGE_MISMATCH", "保存音色的语言与当前目标语言不一致", 400);
-        }
-        await fsp.copyFile(voiceStore.paths(savedVoice.id).audio, paths.reference);
-        referenceDurationSeconds = savedVoice.durationSeconds;
-        referenceFileName = savedVoice.name;
       }
-      const batch = await store.create(
-        batchId,
-        { ...parsed.value, referenceFileName, referenceDurationSeconds },
-        config.chatterboxRetentionDays
-      );
-      for (const item of batch.items) queue.enqueue(batch.id, item.id);
-      return reply.code(202).send(ok(toPublicBatch(batch)));
-    } catch (error) {
-      await fsp.rm(paths.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      const mapped = mapBatchError(error);
-      return reply.code(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    },
+    async (request, reply) => {
+      if (queueLoad() >= config.chatterboxQueueLimit) {
+        return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
+      }
+      try {
+        const health = await worker.health();
+        if (!health.available) {
+          return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
+        }
+      } catch {
+        return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
+      }
+      const batchId = nanoid(12);
+      const paths = store.paths(batchId);
+      await fsp.mkdir(paths.dir, { recursive: true });
+      try {
+        const uploaded = await receiveBatchMultipart(request.parts(), paths.referenceUpload, false);
+        const parsed = parseBatchFields(uploaded.fields, uploaded.referenceFileName);
+        if (!parsed.success) throw new BatchInputError(parsed.code, parsed.message, parsed.statusCode);
+        if (queueLoad() + parsed.value.segments.length > config.chatterboxQueueLimit) {
+          throw new BatchInputError("CHATTERBOX_QUEUE_FULL", "本批次段数超过当前可用队列容量", 429);
+        }
+        let referenceDurationSeconds: number;
+        let referenceFileName = uploaded.referenceFileName;
+        if (uploaded.receivedFile) {
+          referenceDurationSeconds = await media.normalizeReference(paths.referenceUpload, paths.reference);
+        } else {
+          const savedVoice = voiceStore.get(uploaded.fields.voiceId || "");
+          if (!savedVoice) {
+            throw new BatchInputError("CHATTERBOX_REFERENCE_REQUIRED", "请上传参考音频或选择已保存音色", 400);
+          }
+          if (savedVoice.language !== parsed.value.language) {
+            throw new BatchInputError("CHATTERBOX_VOICE_LANGUAGE_MISMATCH", "保存音色的语言与当前目标语言不一致", 400);
+          }
+          await fsp.copyFile(voiceStore.paths(savedVoice.id).audio, paths.reference);
+          referenceDurationSeconds = savedVoice.durationSeconds;
+          referenceFileName = savedVoice.name;
+        }
+        const batch = await store.create(
+          batchId,
+          { ...parsed.value, referenceFileName, referenceDurationSeconds },
+          config.chatterboxRetentionDays
+        );
+        for (const item of batch.items) queue.enqueue(batch.id, item.id);
+        return reply.code(202).send(ok(toPublicBatch(batch)));
+      } catch (error) {
+        await fsp.rm(paths.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+        const mapped = mapBatchError(error);
+        return reply.code(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
     }
-  });
+  );
 
   app.get<{ Querystring: ChatterboxListQuery }>(
     "/api/v1/tools/edge-tts/chatterbox/batches",
-    { schema: { querystring: ChatterboxListQuerySchema } },
+    {
+      schema: {
+        querystring: ChatterboxListQuerySchema,
+        response: { 200: apiSuccessSchema(ChatterboxBatchListSchema) }
+      }
+    },
     async (request) => {
       const query = request.query;
       const page = positiveInteger(query.page, 1);
@@ -223,7 +275,12 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.get<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxBatchSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const batch = store.get(batchIdFrom(request.params));
       if (!batch) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
@@ -392,7 +449,19 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.post<{ Params: ChatterboxBatchItemParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/regenerate",
-    { schema: { params: ChatterboxBatchItemParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchItemParamsSchema,
+        response: {
+          202: apiSuccessSchema(ChatterboxBatchSchema),
+          400: ApiFailureSchema,
+          404: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema,
+          429: ApiFailureSchema
+        }
+      }
+    },
     async (request, reply) => {
       const ids = idsFrom(request.params);
       const batch = store.get(ids.batchId);
@@ -513,7 +582,18 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.patch<{ Params: ChatterboxBatchIdParams; Body: ChatterboxBatchOrder }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/order",
-    { schema: { params: ChatterboxBatchIdParamsSchema, body: ChatterboxBatchOrderSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchIdParamsSchema,
+        body: ChatterboxBatchOrderSchema,
+        response: {
+          200: apiSuccessSchema(ChatterboxBatchSchema),
+          400: ApiFailureSchema,
+          404: ApiFailureSchema,
+          409: ApiFailureSchema
+        }
+      }
+    },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -539,7 +619,16 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.delete<{ Params: ChatterboxBatchItemParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId",
-    { schema: { params: ChatterboxBatchItemParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchItemParamsSchema,
+        response: {
+          200: apiSuccessSchema(ChatterboxBatchItemRemovalSchema),
+          404: ApiFailureSchema,
+          409: ApiFailureSchema
+        }
+      }
+    },
     async (request, reply) => {
       const ids = idsFrom(request.params);
       const batch = store.get(ids.batchId);
@@ -565,7 +654,12 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.post<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/cancel",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxBatchSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -597,7 +691,12 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.delete<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/reference",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxRemovalSchema), 404: ApiFailureSchema, 409: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -613,7 +712,12 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.delete<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxBatchIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxRemovalSchema), 404: ApiFailureSchema, 409: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       if (!store.get(batchId)) return reply.code(404).send(fail("CHATTERBOX_BATCH_NOT_FOUND", "声音克隆批次不存在"));
