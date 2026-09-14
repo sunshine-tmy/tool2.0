@@ -42,6 +42,101 @@ export const ChatterboxBatchOrderSchema = Type.Object(
   { additionalProperties: false }
 );
 
+const ChatterboxLanguageSchema = Type.Union(CHATTERBOX_LANGUAGES.map((language) => Type.Literal(language)));
+const ChatterboxAuthorizationSchema = Type.Union([Type.Literal("self"), Type.Literal("authorized")]);
+const ChatterboxTaskStatusSchema = Type.Union([
+  Type.Literal("queued"),
+  Type.Literal("processing"),
+  Type.Literal("completed"),
+  Type.Literal("failed"),
+  Type.Literal("cancelled")
+]);
+const ChatterboxPaginationSchema = Type.Object(
+  {
+    page: Type.Integer({ minimum: 1 }),
+    pageSize: Type.Integer({ minimum: 1, maximum: 50 }),
+    total: Type.Integer({ minimum: 0 }),
+    totalPages: Type.Integer({ minimum: 1 })
+  },
+  { additionalProperties: false }
+);
+
+export const ChatterboxTaskSchema = Type.Object(
+  {
+    id: ChatterboxIdSchema,
+    engine: Type.Literal("chatterbox-multilingual-v3"),
+    status: ChatterboxTaskStatusSchema,
+    progress: Type.Number({ minimum: 0, maximum: 100 }),
+    text: Type.String(),
+    language: ChatterboxLanguageSchema,
+    referenceFileName: Type.String(),
+    referenceDurationSeconds: Type.Number({ minimum: 0 }),
+    authorization: ChatterboxAuthorizationSchema,
+    consentConfirmed: Type.Literal(true),
+    exaggeration: Type.Number(),
+    cfgWeight: Type.Number(),
+    temperature: Type.Number(),
+    seed: Type.Integer(),
+    includeSubtitles: Type.Boolean(),
+    fileName: Type.Optional(Type.String()),
+    characterCount: Type.Integer({ minimum: 0 }),
+    audioBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+    audioDurationSeconds: Type.Optional(Type.Number({ minimum: 0 })),
+    error: Type.Optional(Type.String()),
+    createdAt: Type.String({ format: "date-time" }),
+    updatedAt: Type.String({ format: "date-time" }),
+    expiresAt: Type.String({ format: "date-time" }),
+    audioUrl: Type.Optional(Type.String()),
+    downloadUrl: Type.Optional(Type.String()),
+    subtitleUrl: Type.Optional(Type.String())
+  },
+  { additionalProperties: false }
+);
+
+export const ChatterboxTaskSummarySchema = Type.Composite(
+  [Type.Omit(ChatterboxTaskSchema, ["text"]), Type.Object({ textPreview: Type.String() })],
+  { additionalProperties: false }
+);
+export const ChatterboxTaskListSchema = Type.Object(
+  { tasks: Type.Array(ChatterboxTaskSummarySchema), pagination: ChatterboxPaginationSchema },
+  { additionalProperties: false }
+);
+export const ChatterboxHealthSchema = Type.Object(
+  {
+    protocolVersion: Type.Integer({ minimum: 1 }),
+    available: Type.Boolean(),
+    workerAvailable: Type.Boolean(),
+    packageVersion: Type.Optional(Type.String()),
+    model: Type.Literal("multilingual-v3"),
+    modelLoaded: Type.Boolean(),
+    device: Type.Optional(Type.Union([Type.Literal("cuda"), Type.Literal("cpu")])),
+    gpuName: Type.Optional(Type.String()),
+    message: Type.String(),
+    reference: Type.Object(
+      {
+        maxBytes: Type.Integer({ minimum: 1 }),
+        minSeconds: Type.Number({ minimum: 0 }),
+        maxSeconds: Type.Number({ minimum: 0 })
+      },
+      { additionalProperties: false }
+    ),
+    maxTextLength: Type.Integer({ minimum: 1 }),
+    retentionDays: Type.Integer({ minimum: 1 }),
+    queue: Type.Object(
+      {
+        active: Type.Integer({ minimum: 0 }),
+        queued: Type.Integer({ minimum: 0 }),
+        concurrency: Type.Literal(1),
+        limit: Type.Integer({ minimum: 1 })
+      },
+      { additionalProperties: false }
+    ),
+    watermarked: Type.Literal(true)
+  },
+  { additionalProperties: false }
+);
+export const ChatterboxRemovalSchema = Type.Object({ removed: Type.Literal(true) }, { additionalProperties: false });
+
 export type ChatterboxListQuery = Static<typeof ChatterboxListQuerySchema>;
 export type ChatterboxTaskIdParams = Static<typeof ChatterboxTaskIdParamsSchema>;
 export type ChatterboxBatchIdParams = Static<typeof ChatterboxBatchIdParamsSchema>;

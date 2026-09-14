@@ -8,13 +8,19 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { nanoid } from "nanoid";
 import {
+  ApiFailureSchema,
   CHATTERBOX_LANGUAGES,
+  ChatterboxHealthSchema,
   ChatterboxListQuerySchema,
   CHATTERBOX_MAX_REFERENCE_BYTES,
   CHATTERBOX_MAX_REFERENCE_SECONDS,
   CHATTERBOX_MAX_TEXT_LENGTH,
   CHATTERBOX_MIN_REFERENCE_SECONDS,
+  ChatterboxRemovalSchema,
+  ChatterboxTaskListSchema,
+  ChatterboxTaskSchema,
   ChatterboxTaskIdParamsSchema,
+  apiSuccessSchema,
   fail,
   ok,
   type ChatterboxHealth,
@@ -35,6 +41,7 @@ import { ChatterboxWorkerError, createChatterboxWorkerClient } from "./worker-cl
 
 const execFileAsync = promisify(execFile);
 const HEALTH_CACHE_MS = 10_000;
+type ChatterboxUploadErrorStatus = 400 | 413 | 415 | 422;
 
 type TaskPaths = {
   dir: string;
@@ -96,92 +103,117 @@ export async function registerChatterboxRoutes(
     if (task.status === "queued") queue.enqueue(task.id);
   }
 
-  app.get("/api/v1/tools/edge-tts/chatterbox/health", async () => {
-    let status: Awaited<ReturnType<typeof worker.health>> | undefined;
-    try {
-      status = await workerHealth();
-    } catch {
-      status = undefined;
-    }
-    const legacyStats = queue.stats();
-    const batchStats = batchQueue.stats();
-    const stats = {
-      active: legacyStats.active + batchStats.active,
-      queued: legacyStats.queued + batchStats.queued
-    };
-    const data: ChatterboxHealth = {
-      protocolVersion: status?.protocolVersion ?? 1,
-      available: status?.available === true,
-      workerAvailable: status?.available === true,
-      packageVersion: status?.packageVersion,
-      model: "multilingual-v3",
-      modelLoaded: status?.modelLoaded === true,
-      device: status?.device,
-      gpuName: status?.gpuName,
-      message:
-        status?.available === true
-          ? status.modelLoaded
-            ? "Chatterbox Multilingual V3 已加载"
-            : "运行环境已就绪，首次生成会下载并加载模型"
-          : "Chatterbox Worker 未启动，请先安装并重新一键启动",
-      reference: {
-        maxBytes: CHATTERBOX_MAX_REFERENCE_BYTES,
-        minSeconds: CHATTERBOX_MIN_REFERENCE_SECONDS,
-        maxSeconds: CHATTERBOX_MAX_REFERENCE_SECONDS
-      },
-      maxTextLength: CHATTERBOX_MAX_TEXT_LENGTH,
-      retentionDays: config.chatterboxRetentionDays,
-      queue: { ...stats, concurrency: 1, limit: config.chatterboxQueueLimit },
-      watermarked: true
-    };
-    return ok(data);
-  });
-
-  app.post("/api/v1/tools/edge-tts/chatterbox/tasks", async (request, reply) => {
-    const batchStats = batchQueue.stats();
-    if (
-      queue.stats().active + queue.stats().queued + batchStats.active + batchStats.queued >=
-      config.chatterboxQueueLimit
-    ) {
-      return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
-    }
-    try {
-      const health = await workerHealth();
-      if (!health.available) {
-        return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
+  app.get(
+    "/api/v1/tools/edge-tts/chatterbox/health",
+    { schema: { response: { 200: apiSuccessSchema(ChatterboxHealthSchema) } } },
+    async () => {
+      let status: Awaited<ReturnType<typeof worker.health>> | undefined;
+      try {
+        status = await workerHealth();
+      } catch {
+        status = undefined;
       }
-    } catch {
-      return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
+      const legacyStats = queue.stats();
+      const batchStats = batchQueue.stats();
+      const stats = {
+        active: legacyStats.active + batchStats.active,
+        queued: legacyStats.queued + batchStats.queued
+      };
+      const data: ChatterboxHealth = {
+        protocolVersion: status?.protocolVersion ?? 1,
+        available: status?.available === true,
+        workerAvailable: status?.available === true,
+        packageVersion: status?.packageVersion,
+        model: "multilingual-v3",
+        modelLoaded: status?.modelLoaded === true,
+        device: status?.device,
+        gpuName: status?.gpuName,
+        message:
+          status?.available === true
+            ? status.modelLoaded
+              ? "Chatterbox Multilingual V3 已加载"
+              : "运行环境已就绪，首次生成会下载并加载模型"
+            : "Chatterbox Worker 未启动，请先安装并重新一键启动",
+        reference: {
+          maxBytes: CHATTERBOX_MAX_REFERENCE_BYTES,
+          minSeconds: CHATTERBOX_MIN_REFERENCE_SECONDS,
+          maxSeconds: CHATTERBOX_MAX_REFERENCE_SECONDS
+        },
+        maxTextLength: CHATTERBOX_MAX_TEXT_LENGTH,
+        retentionDays: config.chatterboxRetentionDays,
+        queue: { ...stats, concurrency: 1, limit: config.chatterboxQueueLimit },
+        watermarked: true
+      };
+      return ok(data);
     }
+  );
 
-    const taskId = nanoid(12);
-    const paths = store.paths(taskId);
-    await fsp.mkdir(paths.dir, { recursive: true });
-    try {
-      const uploaded = await receiveMultipartTask(request.parts(), paths.referenceUpload);
-      const parsed = parseFields(uploaded.fields, uploaded.referenceFileName);
-      if (!parsed.success) {
-        await fsp.rm(paths.dir, { recursive: true, force: true });
-        return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
+  app.post(
+    "/api/v1/tools/edge-tts/chatterbox/tasks",
+    {
+      schema: {
+        response: {
+          202: apiSuccessSchema(ChatterboxTaskSchema),
+          400: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema,
+          415: ApiFailureSchema,
+          422: ApiFailureSchema,
+          429: ApiFailureSchema
+        }
       }
-      const duration = await media.normalizeReference(paths.referenceUpload, paths.reference);
-      const task = await store.create(
-        taskId,
-        { ...parsed.value, referenceDurationSeconds: duration },
-        config.chatterboxRetentionDays
-      );
-      queue.enqueue(task.id);
-      return reply.code(202).send(ok(toPublicTask(task)));
-    } catch (error) {
-      await fsp.rm(paths.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      const mapped = mapUploadError(error);
-      return reply.code(mapped.statusCode).send(fail(mapped.code, mapped.message));
+    },
+    async (request, reply) => {
+      const batchStats = batchQueue.stats();
+      if (
+        queue.stats().active + queue.stats().queued + batchStats.active + batchStats.queued >=
+        config.chatterboxQueueLimit
+      ) {
+        return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
+      }
+      try {
+        const health = await workerHealth();
+        if (!health.available) {
+          return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
+        }
+      } catch {
+        return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
+      }
+
+      const taskId = nanoid(12);
+      const paths = store.paths(taskId);
+      await fsp.mkdir(paths.dir, { recursive: true });
+      try {
+        const uploaded = await receiveMultipartTask(request.parts(), paths.referenceUpload);
+        const parsed = parseFields(uploaded.fields, uploaded.referenceFileName);
+        if (!parsed.success) {
+          await fsp.rm(paths.dir, { recursive: true, force: true });
+          return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
+        }
+        const duration = await media.normalizeReference(paths.referenceUpload, paths.reference);
+        const task = await store.create(
+          taskId,
+          { ...parsed.value, referenceDurationSeconds: duration },
+          config.chatterboxRetentionDays
+        );
+        queue.enqueue(task.id);
+        return reply.code(202).send(ok(toPublicTask(task)));
+      } catch (error) {
+        await fsp.rm(paths.dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+        const mapped = mapUploadError(error);
+        return reply.code(mapped.statusCode).send(fail(mapped.code, mapped.message));
+      }
     }
-  });
+  );
 
   app.get<{ Querystring: ChatterboxListQuery }>(
     "/api/v1/tools/edge-tts/chatterbox/tasks",
-    { schema: { querystring: ChatterboxListQuerySchema } },
+    {
+      schema: {
+        querystring: ChatterboxListQuerySchema,
+        response: { 200: apiSuccessSchema(ChatterboxTaskListSchema) }
+      }
+    },
     async (request) => {
       const query = request.query;
       const page = positiveInteger(query.page, 1);
@@ -201,7 +233,12 @@ export async function registerChatterboxRoutes(
 
   app.get<{ Params: ChatterboxTaskIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId",
-    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxTaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxTaskSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const task = store.get(taskIdFrom(request.params));
       if (!task) return reply.code(404).send(fail("CHATTERBOX_TASK_NOT_FOUND", "声音克隆任务不存在"));
@@ -229,7 +266,12 @@ export async function registerChatterboxRoutes(
 
   app.delete<{ Params: ChatterboxTaskIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId",
-    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    {
+      schema: {
+        params: ChatterboxTaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(ChatterboxRemovalSchema), 404: ApiFailureSchema, 409: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const taskId = taskIdFrom(request.params);
       const task = store.get(taskId);
@@ -572,7 +614,7 @@ class ChatterboxInputError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly statusCode: number
+    readonly statusCode: ChatterboxUploadErrorStatus
   ) {
     super(message);
   }
@@ -619,7 +661,7 @@ function parseFields(
   referenceFileName: string
 ):
   | { success: true; value: Omit<ChatterboxCreateInput, "referenceDurationSeconds"> }
-  | { success: false; statusCode: number; code: string; message: string } {
+  | { success: false; statusCode: ChatterboxUploadErrorStatus; code: string; message: string } {
   const text = fields.text?.trim() || "";
   if (!text) return invalid("CHATTERBOX_TEXT_REQUIRED", "请输入需要生成的文案");
   if (text.length > CHATTERBOX_MAX_TEXT_LENGTH) {
@@ -751,7 +793,7 @@ function positiveInteger(value: string | undefined, fallback: number) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function invalid(code: string, message: string, statusCode = 400) {
+function invalid(code: string, message: string, statusCode: ChatterboxUploadErrorStatus = 400) {
   return { success: false as const, statusCode, code, message };
 }
 
@@ -988,7 +1030,11 @@ async function replaceFile(source: string, target: string) {
   }
 }
 
-function mapUploadError(error: unknown) {
+function mapUploadError(error: unknown): {
+  code: string;
+  message: string;
+  statusCode: ChatterboxUploadErrorStatus;
+} {
   if (error instanceof ChatterboxInputError) {
     return { code: error.code, message: error.message, statusCode: error.statusCode };
   }
