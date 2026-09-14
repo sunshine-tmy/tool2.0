@@ -5,10 +5,10 @@ import pathlib
 import sys
 import unittest
 from contextlib import redirect_stdout
-from types import SimpleNamespace
+from types import ModuleType
 
 SCRIPT_PATH = pathlib.Path(__file__).with_name("edge-tts-generate.py")
-sys.modules.setdefault("edge_tts", SimpleNamespace())
+sys.modules.setdefault("edge_tts", ModuleType("edge_tts"))
 spec = importlib.util.spec_from_file_location("edge_tts_generate", SCRIPT_PATH)
 if spec is None or spec.loader is None:
     raise RuntimeError(f"Unable to load Edge-TTS adapter from {SCRIPT_PATH}")
