@@ -1,8 +1,6 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { FastifyInstance, FastifyReply } from "fastify";
@@ -29,45 +27,20 @@ import {
   type ChatterboxTask,
   type ChatterboxTaskIdParams,
   type ChatterboxTaskList,
-  type ChatterboxTaskStatus,
   type ChatterboxTaskSummary,
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
-import type { Task, TaskStore } from "../../tasks/task-store";
+import type { TaskStore } from "../../tasks/task-store";
 import { registerChatterboxBatchRoutes } from "./batch-routes";
-import { ChatterboxWorkerError, createChatterboxWorkerClient } from "./worker-client";
+import { ChatterboxInputError, ChatterboxMediaTools, type ChatterboxUploadErrorStatus } from "./media-tools";
+import { repairLegacySubtitle } from "./subtitle";
+import { ChatterboxQueue } from "./task-queue";
+import { ChatterboxTaskStore, type ChatterboxCreateInput } from "./task-store";
+import { createChatterboxWorkerClient } from "./worker-client";
 
-const execFileAsync = promisify(execFile);
 const HEALTH_CACHE_MS = 10_000;
-type ChatterboxUploadErrorStatus = 400 | 413 | 415 | 422;
-
-type TaskPaths = {
-  dir: string;
-  meta: string;
-  referenceUpload: string;
-  reference: string;
-  outputWav: string;
-  audio: string;
-  subtitle: string;
-};
-
-type ChatterboxCreateInput = Pick<
-  ChatterboxTask,
-  | "text"
-  | "language"
-  | "referenceFileName"
-  | "referenceDurationSeconds"
-  | "authorization"
-  | "consentConfirmed"
-  | "exaggeration"
-  | "cfgWeight"
-  | "temperature"
-  | "seed"
-  | "includeSubtitles"
-  | "fileName"
->;
 
 export async function registerChatterboxRoutes(
   app: FastifyInstance,
@@ -89,7 +62,7 @@ export async function registerChatterboxRoutes(
     return value;
   };
 
-  const queue = new ChatterboxQueue({ config, store, worker, media });
+  const queue = new ChatterboxQueue({ store, worker, media });
   const batchQueue = await registerChatterboxBatchRoutes({
     app,
     config,
@@ -295,331 +268,6 @@ export async function registerChatterboxRoutes(
   app.addHook("onClose", async () => clearInterval(cleanupTimer));
 }
 
-class ChatterboxTaskStore {
-  private readonly tasks = new Map<string, ChatterboxTask>();
-
-  constructor(
-    private readonly root: string,
-    private readonly database: ToolboxDatabase,
-    private readonly taskStore: TaskStore
-  ) {}
-
-  async initialize() {
-    await fsp.mkdir(this.root, { recursive: true });
-    if (!this.database.isDomainInitialized("chatterbox-task")) {
-      for (const entry of await fsp.readdir(this.root, { withFileTypes: true })) {
-        if (!entry.isDirectory() || !isSafeTaskId(entry.name)) continue;
-        try {
-          const task = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxTask;
-          if (!isStoredTask(task) || task.id !== entry.name) continue;
-          await this.write(task);
-        } catch {
-          // Invalid legacy metadata stays untouched for manual recovery.
-        }
-      }
-      this.database.markDomainInitialized("chatterbox-task");
-    }
-    for (const entity of this.database.list("chatterbox-task")) {
-      const task = entity.payload as ChatterboxTask;
-      if (!isStoredTask(task)) continue;
-      if (task.status === "queued" || task.status === "processing") {
-        task.status = "failed";
-        task.progress = 100;
-        task.error = "INTERRUPTED";
-        task.updatedAt = new Date().toISOString();
-        await this.write(task);
-      }
-      this.tasks.set(task.id, task);
-    }
-  }
-
-  async create(id: string, input: ChatterboxCreateInput, retentionDays: number) {
-    const now = new Date();
-    const task: ChatterboxTask = {
-      ...input,
-      id,
-      engine: "chatterbox-multilingual-v3",
-      status: "queued",
-      progress: 0,
-      characterCount: input.text.length,
-      createdAt: now.toISOString(),
-      updatedAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + retentionDays * 24 * 60 * 60 * 1000).toISOString()
-    };
-    await this.write(task);
-    this.tasks.set(id, task);
-    return cloneTask(task);
-  }
-
-  get(id: string) {
-    const task = this.tasks.get(id);
-    return task ? cloneTask(task) : undefined;
-  }
-
-  list() {
-    return [...this.tasks.values()].map(cloneTask).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-  }
-
-  async update(
-    id: string,
-    patch: Partial<Pick<ChatterboxTask, "status" | "progress" | "audioBytes" | "audioDurationSeconds" | "error">>
-  ) {
-    const current = this.tasks.get(id);
-    if (!current) return undefined;
-    const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    if (patch.error === undefined && (patch.status === "processing" || patch.status === "completed")) delete next.error;
-    await this.write(next);
-    this.tasks.set(id, next);
-    return cloneTask(next);
-  }
-
-  async remove(id: string) {
-    if (!isSafeTaskId(id)) return false;
-    this.tasks.delete(id);
-    this.database.remove("chatterbox-task", id);
-    this.taskStore.remove(id);
-    await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-    return true;
-  }
-
-  async cleanupExpired(isActive: (id: string) => boolean = () => false, now = Date.now()) {
-    const expired = [...this.tasks.values()].filter((task) => !isActive(task.id) && Date.parse(task.expiresAt) <= now);
-    await Promise.all(expired.map((task) => this.remove(task.id)));
-    return expired.length;
-  }
-
-  paths(id: string): TaskPaths {
-    if (!isSafeTaskId(id)) throw new Error("Invalid Chatterbox task id");
-    const dir = path.join(this.root, id);
-    return {
-      dir,
-      meta: path.join(dir, "meta.json"),
-      referenceUpload: path.join(dir, "reference-upload"),
-      reference: path.join(dir, "reference.wav"),
-      outputWav: path.join(dir, "output.wav"),
-      audio: path.join(dir, "audio.mp3"),
-      subtitle: path.join(dir, "subtitle.srt")
-    };
-  }
-
-  private async write(task: ChatterboxTask) {
-    this.database.upsert({
-      id: task.id,
-      kind: "chatterbox-task",
-      status: task.status,
-      payload: task,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt
-    });
-    this.taskStore.upsert(toUnifiedChatterboxTask(task));
-  }
-}
-
-function toUnifiedChatterboxTask(task: ChatterboxTask): Task {
-  const status: Task["status"] =
-    task.status === "queued"
-      ? "pending"
-      : task.status === "processing"
-        ? "running"
-        : task.status === "cancelled"
-          ? "failed"
-          : task.status;
-  return {
-    id: task.id,
-    toolId: "chatterbox",
-    status,
-    progress: task.progress,
-    outputPath: task.status === "completed" ? "audio.mp3" : undefined,
-    error: task.status === "cancelled" ? "CANCELLED" : task.error,
-    createdAt: task.createdAt,
-    updatedAt: task.updatedAt
-  };
-}
-
-class ChatterboxQueue {
-  private readonly pending: string[] = [];
-  private activeId: string | undefined;
-
-  constructor(
-    private readonly options: {
-      config: AppConfig;
-      store: ChatterboxTaskStore;
-      worker: ReturnType<typeof createChatterboxWorkerClient>;
-      media: ChatterboxMediaTools;
-    }
-  ) {}
-
-  enqueue(id: string) {
-    if (this.pending.includes(id) || this.activeId === id) return;
-    this.pending.push(id);
-    this.pump();
-  }
-
-  removePending(id: string) {
-    const index = this.pending.indexOf(id);
-    if (index >= 0) this.pending.splice(index, 1);
-  }
-
-  isActive(id: string) {
-    return this.activeId === id;
-  }
-
-  stats() {
-    return { active: this.activeId ? 1 : 0, queued: this.pending.length };
-  }
-
-  private pump() {
-    if (this.activeId || !this.pending.length) return;
-    const id = this.pending.shift();
-    if (!id) return;
-    this.activeId = id;
-    void this.process(id).finally(() => {
-      this.activeId = undefined;
-      this.pump();
-    });
-  }
-
-  private async process(id: string) {
-    const task = this.options.store.get(id);
-    if (!task || task.status !== "queued") return;
-    const paths = this.options.store.paths(id);
-    await this.options.store.update(id, { status: "processing", progress: 10 });
-    try {
-      const result = await this.options.worker.generate({
-        text: task.text,
-        language: task.language,
-        referencePath: paths.reference,
-        outputPath: paths.outputWav,
-        exaggeration: task.exaggeration,
-        cfgWeight: task.cfgWeight,
-        temperature: task.temperature,
-        seed: task.seed
-      });
-      await this.options.store.update(id, { progress: 82 });
-      await this.options.media.toMp3(paths.outputWav, paths.audio);
-      const audioBytes = (await fsp.stat(paths.audio)).size;
-      const duration = await this.options.media.duration(paths.audio);
-      if (task.includeSubtitles) await writeSubtitle(paths.subtitle, task.text, duration, result.segments);
-      await this.options.store.update(id, {
-        status: "completed",
-        progress: 100,
-        audioBytes,
-        audioDurationSeconds: result.durationSeconds || duration,
-        error: undefined
-      });
-    } catch (error) {
-      await this.options.store.update(id, {
-        status: "failed",
-        progress: 100,
-        error: readableGenerationError(error)
-      });
-    } finally {
-      await Promise.all([
-        fsp.rm(paths.referenceUpload, { force: true }),
-        fsp.rm(paths.reference, { force: true }),
-        fsp.rm(paths.outputWav, { force: true })
-      ]);
-    }
-  }
-}
-
-class ChatterboxMediaTools {
-  constructor(private readonly config: AppConfig) {}
-
-  async normalizeReference(inputPath: string, outputPath: string) {
-    const sourceDuration = await this.duration(inputPath);
-    if (sourceDuration < CHATTERBOX_MIN_REFERENCE_SECONDS || sourceDuration > CHATTERBOX_MAX_REFERENCE_SECONDS) {
-      throw new ChatterboxInputError(
-        "CHATTERBOX_REFERENCE_DURATION_INVALID",
-        `参考音频应为 ${CHATTERBOX_MIN_REFERENCE_SECONDS}–${CHATTERBOX_MAX_REFERENCE_SECONDS} 秒`,
-        400
-      );
-    }
-    await execFileAsync(
-      this.config.chatterboxFfmpegPath,
-      ["-y", "-v", "error", "-i", inputPath, "-vn", "-ac", "1", "-ar", "24000", "-c:a", "pcm_s16le", outputPath],
-      { timeout: 120_000, windowsHide: true, maxBuffer: 1024 * 1024 }
-    );
-    await fsp.rm(inputPath, { force: true });
-    return Number(sourceDuration.toFixed(3));
-  }
-
-  async toMp3(inputPath: string, outputPath: string) {
-    const tempPath = `${outputPath}.tmp.mp3`;
-    await execFileAsync(
-      this.config.chatterboxFfmpegPath,
-      ["-y", "-v", "error", "-i", inputPath, "-codec:a", "libmp3lame", "-b:a", "192k", tempPath],
-      { timeout: 120_000, windowsHide: true, maxBuffer: 1024 * 1024 }
-    );
-    const stat = await fsp.stat(tempPath);
-    if (stat.size <= 0 || !(await isMp3File(tempPath))) throw new Error("Chatterbox MP3 输出无效");
-    await fsp.rename(tempPath, outputPath);
-  }
-
-  async concatMp3(inputPaths: string[], outputPath: string) {
-    if (!inputPaths.length) throw new Error("没有可合并的 Chatterbox 音频");
-    const tempPath = `${outputPath}.tmp.mp3`;
-    if (inputPaths.length === 1) {
-      await fsp.copyFile(inputPaths[0], tempPath);
-    } else {
-      const inputs = inputPaths.flatMap((inputPath) => ["-i", inputPath]);
-      const streams = inputPaths.map((_, index) => `[${index}:a:0]`).join("");
-      await execFileAsync(
-        this.config.chatterboxFfmpegPath,
-        [
-          "-y",
-          "-v",
-          "error",
-          ...inputs,
-          "-filter_complex",
-          `${streams}concat=n=${inputPaths.length}:v=0:a=1[out]`,
-          "-map",
-          "[out]",
-          "-codec:a",
-          "libmp3lame",
-          "-b:a",
-          "192k",
-          tempPath
-        ],
-        { timeout: 300_000, windowsHide: true, maxBuffer: 1024 * 1024 }
-      );
-    }
-    const stat = await fsp.stat(tempPath);
-    if (stat.size <= 0 || !(await isMp3File(tempPath))) throw new Error("Chatterbox 合并 MP3 输出无效");
-    await replaceFile(tempPath, outputPath);
-  }
-
-  async duration(filePath: string) {
-    try {
-      const result = await execFileAsync(
-        this.config.chatterboxFfprobePath,
-        ["-v", "error", "-show_entries", "format=duration", "-of", "json", filePath],
-        { timeout: 30_000, windowsHide: true, maxBuffer: 1024 * 1024, encoding: "utf8" }
-      );
-      const parsed = JSON.parse(String(result.stdout)) as { format?: { duration?: string } };
-      const duration = Number(parsed.format?.duration);
-      if (!Number.isFinite(duration) || duration <= 0) throw new Error("duration unavailable");
-      return duration;
-    } catch {
-      throw new ChatterboxInputError(
-        "CHATTERBOX_REFERENCE_INVALID",
-        "无法读取音频，请上传有效的 WAV、MP3、M4A 或 FLAC",
-        415
-      );
-    }
-  }
-}
-
-class ChatterboxInputError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly statusCode: ChatterboxUploadErrorStatus
-  ) {
-    super(message);
-  }
-}
-
 async function receiveMultipartTask(
   parts: AsyncIterableIterator<import("@fastify/multipart").Multipart>,
   targetPath: string
@@ -751,25 +399,6 @@ function cloneTask(task: ChatterboxTask): ChatterboxTask {
   return { ...task };
 }
 
-function isStoredTask(value: unknown): value is ChatterboxTask {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    value.engine === "chatterbox-multilingual-v3" &&
-    isTaskStatus(value.status) &&
-    typeof value.text === "string" &&
-    isLanguage(value.language) &&
-    typeof value.createdAt === "string" &&
-    typeof value.expiresAt === "string"
-  );
-}
-
-function isTaskStatus(value: unknown): value is ChatterboxTaskStatus {
-  return (
-    value === "queued" || value === "processing" || value === "completed" || value === "failed" || value === "cancelled"
-  );
-}
-
 function isLanguage(value: unknown): value is ChatterboxLanguage {
   return typeof value === "string" && (CHATTERBOX_LANGUAGES as readonly string[]).includes(value);
 }
@@ -801,10 +430,6 @@ function taskIdFrom(params: unknown) {
   return isRecord(params) && typeof params.taskId === "string" ? params.taskId : "";
 }
 
-function isSafeTaskId(value: string) {
-  return /^[A-Za-z0-9_-]{6,64}$/.test(value);
-}
-
 function sanitizeDisplayName(value: string) {
   return (
     path
@@ -830,206 +455,6 @@ function contentDisposition(fileName: string) {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
-type SubtitleTimingSegment = {
-  text: string;
-  startSeconds: number;
-  endSeconds: number;
-};
-
-async function writeSubtitle(
-  filePath: string,
-  text: string,
-  durationSeconds: number,
-  timingSegments?: SubtitleTimingSegment[]
-) {
-  const duration = Math.max(0.001, durationSeconds);
-  const sentences = splitSubtitleText(text);
-  const cues = buildSentenceCues(
-    sentences,
-    duration,
-    validSubtitleSegments(timingSegments, duration) ? timingSegments : undefined
-  );
-
-  const content = cues
-    .map(
-      (cue, index) =>
-        `${index + 1}\n${srtTimestamp(cue.startSeconds)} --> ${srtTimestamp(cue.endSeconds)}\n${wrapSubtitleLines(cue.text)}`
-    )
-    .join("\n\n");
-  await fsp.writeFile(filePath, `${content}\n`, "utf8");
-}
-
-async function repairLegacySubtitle(filePath: string, text: string, durationSeconds: number) {
-  const expectedSentences = splitSubtitleText(text);
-  try {
-    const current = await fsp.readFile(filePath, "utf8");
-    const currentCues = parseSrtCueTexts(current);
-    const alreadySentenceBased =
-      currentCues.length === expectedSentences.length &&
-      currentCues.every((cue, index) => normalizeSubtitleText(cue) === normalizeSubtitleText(expectedSentences[index]));
-    if (alreadySentenceBased) return;
-  } catch {
-    return;
-  }
-  await writeSubtitle(filePath, text, durationSeconds);
-}
-
-function buildSentenceCues(
-  sentences: string[],
-  durationSeconds: number,
-  timingSegments?: SubtitleTimingSegment[]
-): SubtitleTimingSegment[] {
-  const sentenceWeights = sentences.map(subtitleWeight);
-  const totalSentenceWeight = sentenceWeights.reduce((sum, weight) => sum + weight, 0);
-
-  if (!timingSegments?.length) {
-    let elapsedWeight = 0;
-    return sentences.map((sentence, index) => {
-      const startSeconds = (elapsedWeight / totalSentenceWeight) * durationSeconds;
-      elapsedWeight += sentenceWeights[index];
-      return {
-        text: sentence,
-        startSeconds,
-        endSeconds: (elapsedWeight / totalSentenceWeight) * durationSeconds
-      };
-    });
-  }
-
-  const segmentWeights = timingSegments.map((segment) => subtitleWeight(segment.text));
-  const totalSegmentWeight = segmentWeights.reduce((sum, weight) => sum + weight, 0);
-  let elapsedSentenceWeight = 0;
-  return sentences.map((sentence, index) => {
-    const scaledStartWeight = (elapsedSentenceWeight / totalSentenceWeight) * totalSegmentWeight;
-    elapsedSentenceWeight += sentenceWeights[index];
-    const scaledEndWeight = (elapsedSentenceWeight / totalSentenceWeight) * totalSegmentWeight;
-    return {
-      text: sentence,
-      startSeconds: timingAtTextWeight(scaledStartWeight, "start", timingSegments, segmentWeights),
-      endSeconds: timingAtTextWeight(scaledEndWeight, "end", timingSegments, segmentWeights)
-    };
-  });
-}
-
-function timingAtTextWeight(
-  targetWeight: number,
-  edge: "start" | "end",
-  segments: SubtitleTimingSegment[],
-  weights: number[]
-) {
-  let elapsedWeight = 0;
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index];
-    const segmentWeight = weights[index];
-    const nextWeight = elapsedWeight + segmentWeight;
-    if (targetWeight < nextWeight || (edge === "end" && targetWeight <= nextWeight)) {
-      const ratio = Math.max(0, Math.min(1, (targetWeight - elapsedWeight) / segmentWeight));
-      return segment.startSeconds + (segment.endSeconds - segment.startSeconds) * ratio;
-    }
-    elapsedWeight = nextWeight;
-  }
-  return segments.at(-1)!.endSeconds;
-}
-
-function parseSrtCueTexts(content: string) {
-  return content
-    .replace(/^\uFEFF/, "")
-    .trim()
-    .split(/\r?\n\s*\r?\n/)
-    .map((block) => block.split(/\r?\n/).slice(2).join(" ").trim())
-    .filter(Boolean);
-}
-
-function validSubtitleSegments(
-  segments: SubtitleTimingSegment[] | undefined,
-  durationSeconds: number
-): segments is SubtitleTimingSegment[] {
-  return Boolean(
-    segments?.length &&
-    segments.every(
-      (segment) =>
-        segment.text.trim() &&
-        Number.isFinite(segment.startSeconds) &&
-        Number.isFinite(segment.endSeconds) &&
-        segment.startSeconds >= 0 &&
-        segment.endSeconds > segment.startSeconds &&
-        segment.endSeconds <= durationSeconds + 0.25
-    )
-  );
-}
-
-function splitSubtitleText(text: string) {
-  const normalized = normalizeSubtitleText(text);
-  if (!normalized) return [""];
-  return normalized.match(/[^.!?。！？;；]+(?:[.!?。！？;；]+|$)/g)?.map((value) => value.trim()) ?? [normalized];
-}
-
-function normalizeSubtitleText(text: string) {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function wrapSubtitleLines(text: string, maxLineCharacters = 38) {
-  const words = text.split(" ");
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if (!current) current = word;
-    else if (current.length + 1 + word.length <= maxLineCharacters) current += ` ${word}`;
-    else {
-      lines.push(current);
-      current = word;
-    }
-  }
-  if (current) lines.push(current);
-  return lines.join("\n");
-}
-
-function subtitleWeight(text: string) {
-  return Math.max(1, text.replace(/\s+/g, "").length);
-}
-
-function srtTimestamp(seconds: number) {
-  const milliseconds = Math.max(0, Math.round(seconds * 1000));
-  const hours = Math.floor(milliseconds / 3_600_000);
-  const minutes = Math.floor((milliseconds % 3_600_000) / 60_000);
-  const secs = Math.floor((milliseconds % 60_000) / 1000);
-  const millis = milliseconds % 1000;
-  return `${pad(hours, 2)}:${pad(minutes, 2)}:${pad(secs, 2)},${pad(millis, 3)}`;
-}
-
-function pad(value: number, length: number) {
-  return String(value).padStart(length, "0");
-}
-
-async function isMp3File(filePath: string) {
-  const handle = await fsp.open(filePath, "r");
-  try {
-    const buffer = Buffer.alloc(3);
-    const { bytesRead } = await handle.read(buffer, 0, 3, 0);
-    return (
-      bytesRead >= 2 && (buffer.toString("ascii") === "ID3" || (buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0))
-    );
-  } finally {
-    await handle.close();
-  }
-}
-
-async function replaceFile(source: string, target: string) {
-  const backup = `${target}.backup`;
-  await fsp.rm(backup, { force: true });
-  const targetExists = await fsp.stat(target).then(
-    (stat) => stat.isFile(),
-    () => false
-  );
-  if (targetExists) await fsp.rename(target, backup);
-  try {
-    await fsp.rename(source, target);
-    await fsp.rm(backup, { force: true });
-  } catch (error) {
-    if (targetExists) await fsp.rename(backup, target);
-    throw error;
-  }
-}
-
 function mapUploadError(error: unknown): {
   code: string;
   message: string;
@@ -1043,11 +468,6 @@ function mapUploadError(error: unknown): {
     message: error instanceof Error ? `参考音频处理失败：${error.message}` : "参考音频处理失败",
     statusCode: 422
   };
-}
-
-function readableGenerationError(error: unknown) {
-  if (error instanceof ChatterboxWorkerError) return error.message;
-  return `声音克隆失败：${error instanceof Error ? error.message.slice(0, 300) : "未知错误"}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
