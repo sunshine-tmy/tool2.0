@@ -1,3 +1,4 @@
+/** 中文模块说明：工程质量门禁，统一配置 TypeScript、Vue、JavaScript 与 Prettier 规则。 */
 import js from "@eslint/js";
 import prettier from "eslint-config-prettier";
 import vue from "eslint-plugin-vue";
