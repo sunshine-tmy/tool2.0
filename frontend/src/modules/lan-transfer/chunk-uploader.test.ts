@@ -195,6 +195,19 @@ describe("ConcurrentChunkUploader", () => {
     expect(uploadedIndexes).toEqual([]);
     expect(api.completedUploadId).toBe("upload-1");
   });
+
+  it("stops without deleting the resumable session when its owning scope aborts", async () => {
+    const controller = new AbortController();
+    const api = createFakeChunkApi();
+    const uploader = new ConcurrentChunkUploader(new File(["abc"], "scope.txt"), api, {
+      chunkSize: 2,
+      signal: controller.signal
+    });
+
+    controller.abort();
+    await expect(uploader.start()).resolves.toMatchObject({ status: "canceled" });
+    expect(api.completedUploadId).toBeUndefined();
+  });
 });
 
 function createFakeChunkApi(overrides: Partial<ChunkUploadApi> & { uploadedChunks?: number[] } = {}) {

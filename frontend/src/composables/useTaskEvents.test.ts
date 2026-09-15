@@ -118,4 +118,38 @@ describe("useTaskEvents", () => {
     scope.stop();
     expect(pollSignals[0].aborted).toBe(true);
   });
+
+  it("closes the stream and aborts polling when the owning request scope aborts", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const sources: FakeEventSource[] = [];
+    const pollSignals: AbortSignal[] = [];
+    const scope = effectScope();
+    const result = scope.run(() =>
+      useTaskEvents("task/one", {
+        signal: controller.signal,
+        maxReconnectAttempts: 0,
+        pollIntervalMs: 10,
+        createEventSource: () => {
+          const source = new FakeEventSource();
+          sources.push(source);
+          return source;
+        },
+        fetchTask: async (_taskId, signal) => {
+          pollSignals.push(signal);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return task("running");
+        }
+      })
+    )!;
+
+    sources[0].emit("error");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(result.connection.value).toBe("polling");
+    controller.abort();
+    expect(sources[0].closed).toBe(true);
+    expect(pollSignals[0].aborted).toBe(true);
+    expect(result.connection.value).toBe("idle");
+    scope.stop();
+  });
 });

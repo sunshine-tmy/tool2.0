@@ -266,6 +266,7 @@ import {
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveBackendUrl } from "../../config/runtime";
 import { edgeTtsApi } from "./api";
@@ -316,7 +317,8 @@ const isCurrentRunning = computed(
   () => currentTask.value?.status === "queued" || currentTask.value?.status === "processing"
 );
 const streamedTaskId = computed(() => (isCurrentRunning.value ? currentTask.value?.id : undefined));
-const taskEvents = useTaskEvents(streamedTaskId);
+const requestScope = useRequestScope();
+const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 
 watch(language, async () => {
   await loadVoices();

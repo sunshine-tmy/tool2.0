@@ -38,16 +38,16 @@ class LanTransferApi {
     );
   }
 
-  async createUploadSession(input: CreateLanUploadSessionInput) {
+  async createUploadSession(input: CreateLanUploadSessionInput, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.post("/tools/lan-transfer/uploads", LanUploadStatusSchema, input),
+      () => httpClient.post("/tools/lan-transfer/uploads", LanUploadStatusSchema, input, { signal }),
       "创建上传会话失败"
     );
   }
 
-  async getUploadStatus(uploadId: string) {
+  async getUploadStatus(uploadId: string, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.get(`/tools/lan-transfer/uploads/${uploadId}`, LanUploadStatusSchema),
+      () => httpClient.get(`/tools/lan-transfer/uploads/${uploadId}`, LanUploadStatusSchema, { signal }),
       "获取上传状态失败"
     );
   }
@@ -72,16 +72,19 @@ class LanTransferApi {
     );
   }
 
-  async completeUpload(uploadId: string) {
+  async completeUpload(uploadId: string, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.post(`/tools/lan-transfer/uploads/${uploadId}/complete`, LanFileUploadResultSchema),
+      () =>
+        httpClient.post(`/tools/lan-transfer/uploads/${uploadId}/complete`, LanFileUploadResultSchema, undefined, {
+          signal
+        }),
       "合并文件失败"
     );
   }
 
-  async cancelUpload(uploadId: string) {
+  async cancelUpload(uploadId: string, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.delete(`/tools/lan-transfer/uploads/${uploadId}`, LanRemovalSchema),
+      () => httpClient.delete(`/tools/lan-transfer/uploads/${uploadId}`, LanRemovalSchema, { signal }),
       "取消上传失败"
     );
   }

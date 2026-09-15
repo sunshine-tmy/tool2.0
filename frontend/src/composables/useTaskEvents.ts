@@ -18,6 +18,8 @@ type TaskEventsOptions = {
   reconnectBaseMs?: number;
   maxReconnectAttempts?: number;
   pollIntervalMs?: number;
+  /** Abort the complete transport when the owning page scope is disposed. */
+  signal?: AbortSignal;
 };
 
 const terminalStatuses = new Set<TaskDto["status"]>(["completed", "failed"]);
@@ -41,11 +43,15 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
   let reconnectAttempts = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let pollController: AbortController | undefined;
-  let disposed = false;
+  let disposed = options.signal?.aborted ?? false;
 
   const unwatch = watch(
     () => toValue(taskId),
     (nextTaskId, previousTaskId) => {
+      if (disposed) {
+        connection.value = "idle";
+        return;
+      }
       if (nextTaskId === previousTaskId) return;
       task.value = undefined;
       error.value = undefined;
@@ -57,16 +63,23 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
     { immediate: true }
   );
 
-  const unsubscribeVisibility = subscribeVisibility(() => {
-    if (disposed) return;
-    if (!isVisible()) {
-      stopTransport();
-      connection.value = "paused";
-      return;
-    }
-    const id = toValue(taskId);
-    if (id && !isTerminal(task.value)) connect(id);
-  });
+  const unsubscribeVisibility = disposed
+    ? () => undefined
+    : subscribeVisibility(() => {
+        if (disposed) return;
+        if (!isVisible()) {
+          stopTransport();
+          connection.value = "paused";
+          return;
+        }
+        const id = toValue(taskId);
+        if (id && !isTerminal(task.value)) connect(id);
+      });
+
+  const onExternalAbort = () => stop();
+  if (options.signal && !disposed) {
+    options.signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
 
   function connect(id: string) {
     if (disposed || !isVisible()) {
@@ -122,9 +135,10 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
   async function poll(id: string) {
     if (disposed || !isVisible()) return;
     pollController?.abort();
-    pollController = new AbortController();
+    const controller = new AbortController();
+    pollController = controller;
     try {
-      const nextTask = await fetchTask(id, pollController.signal);
+      const nextTask = await fetchTask(id, controller.signal);
       if (!isTaskDto(nextTask)) throw new Error("Task response did not match the shared schema");
       task.value = nextTask;
       error.value = undefined;
@@ -133,7 +147,7 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
         return;
       }
     } catch (caught) {
-      if (!pollController.signal.aborted) {
+      if (!controller.signal.aborted) {
         error.value = new ApiRequestError("任务进度查询失败", { code: "TASK_POLL_FAILED", cause: caught });
       }
     }
@@ -180,6 +194,7 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
 
   onScopeDispose(() => {
     stop();
+    options.signal?.removeEventListener("abort", onExternalAbort);
     unwatch();
     unsubscribeVisibility();
   });

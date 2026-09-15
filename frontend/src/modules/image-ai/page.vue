@@ -218,6 +218,7 @@ import {
 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
+import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import BeforeAfterCompare from "./BeforeAfterCompare.vue";
 import MaskEditor from "./MaskEditor.vue";
@@ -245,7 +246,8 @@ const enhanceScale = ref<2 | 4>(2);
 const activeTask = ref<ImageAiTask>();
 const isBusy = computed(() => activeTask.value?.status === "pending" || activeTask.value?.status === "running");
 const streamedTaskId = computed(() => (isBusy.value ? activeTask.value?.id : undefined));
-const taskEvents = useTaskEvents(streamedTaskId);
+const requestScope = useRequestScope();
+const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 const healthLabel = computed(() => {
   if (!health.value) return "请启动本地 Worker";
   const ready = health.value.models.filter((model) => model.available).length;

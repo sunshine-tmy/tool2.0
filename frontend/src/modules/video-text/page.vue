@@ -228,6 +228,7 @@ import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveApiUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
@@ -258,7 +259,8 @@ const result = ref<VideoTextResult | null>(null);
 const streamedTaskId = computed(() =>
   currentTask.value && ["pending", "running"].includes(currentTask.value.status) ? currentTask.value.id : undefined
 );
-const taskEvents = useTaskEvents(streamedTaskId);
+const requestScope = useRequestScope();
+const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 const historyKeyword = ref("");
 const historyPagination = reactive({
   page: 1,

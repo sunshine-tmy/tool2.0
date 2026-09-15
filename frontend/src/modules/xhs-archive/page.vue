@@ -147,6 +147,7 @@ import MediaGallery from "./MediaGallery.vue";
 import BilingualContent from "./BilingualContent.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { resolveBackendUrl } from "../../config/runtime";
@@ -159,9 +160,15 @@ const task = ref<XhsArchiveTask>();
 const streamedTaskId = computed(() =>
   task.value && !["completed", "failed"].includes(task.value.status) ? task.value.id : undefined
 );
-const taskEvents = useTaskEvents(streamedTaskId);
+const requestScope = useRequestScope();
+const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 const translationTarget = ref<{ taskId: string; itemId?: string; updateCurrent: boolean }>();
-const translationEvents = useTaskEvents(computed(() => translationTarget.value?.taskId));
+const translationEvents = useTaskEvents(
+  computed(() => translationTarget.value?.taskId),
+  {
+    signal: requestScope.signal
+  }
+);
 const current = ref<XhsArchiveItem>();
 const refreshing = ref(false);
 const authWaiting = ref(false);

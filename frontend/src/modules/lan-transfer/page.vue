@@ -228,6 +228,7 @@ import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import LanFileListPanel from "./LanFileListPanel.vue";
 import LanNotePanel from "./LanNotePanel.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useRequestScope } from "../../composables/useRequestScope";
 import { currentWebUrl } from "../../config/runtime";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { ConcurrentChunkUploader } from "./chunk-uploader";
@@ -251,6 +252,7 @@ import {
 
 const message = useMessage();
 const confirmAction = useConfirmDialog();
+const requestScope = useRequestScope();
 const activeLanTab = ref<"files" | "notes">("files");
 const currentTransferUrl = new URL("/tools/lan-transfer", currentWebUrl()).toString();
 const lanInfo = ref<LanTransferInfo | null>(null);
@@ -624,7 +626,10 @@ async function uploadLanFile(file: File) {
     status: "uploading"
   });
   uploadQueue.value = [item, ...uploadQueue.value];
-  const uploader = new ConcurrentChunkUploader(file, undefined, { uploadId: pending?.uploadId });
+  const uploader = new ConcurrentChunkUploader(file, undefined, {
+    uploadId: pending?.uploadId,
+    signal: requestScope.signal
+  });
   let activeUiRun: Promise<void> | undefined;
   let savedUploadId = pending?.uploadId;
 
@@ -670,6 +675,10 @@ async function uploadLanFile(file: File) {
         message.warning(`${file.name} 已取消`);
       }
     } catch (error) {
+      if (requestScope.aborted) {
+        item.status = "canceled";
+        return;
+      }
       item.status = "failed";
       message.error(error instanceof Error ? error.message : `${file.name} 上传失败`);
     }

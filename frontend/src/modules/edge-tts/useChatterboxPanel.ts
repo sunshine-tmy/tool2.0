@@ -18,6 +18,7 @@ import {
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
+import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveBackendUrl } from "../../config/runtime";
 import { createLocalId } from "../../utils/local-id";
@@ -101,7 +102,8 @@ export function useChatterboxPanel() {
   );
   const isCurrentRunning = computed(() => currentBatch.value && isBatchRunning(currentBatch.value));
   const streamedBatchId = computed(() => (isCurrentRunning.value ? currentBatch.value?.id : undefined));
-  const taskEvents = useTaskEvents(streamedBatchId);
+  const requestScope = useRequestScope();
+  const taskEvents = useTaskEvents(streamedBatchId, { signal: requestScope.signal });
   const hasSelectedReference = computed(() =>
     referenceSource.value === "upload"
       ? Boolean(referenceFile.value)
