@@ -4,13 +4,13 @@ uvicorn==0.52.4
 pydantic==2.13.5
 starlette==1.6.0
 Pillow==12.3.0
-numpy==2.3.5
-opencv-python-headless==4.11.0.86
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
 
 # Local inference providers. Keep the CUDA runtime versions in this input so the
 # generated hash lock also covers the large PyTorch wheels.
-torch==2.6.0
-torchvision==0.21.0
+torch==2.14.0
+torchvision==0.29.0
 basicsr==1.4.2
 realesrgan==0.3.0
 rembg[gpu]==2.0.84
