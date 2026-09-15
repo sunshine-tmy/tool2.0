@@ -7,6 +7,9 @@ dist/
 *.log
 *.tsbuildinfo
 coverage/
+test-results/
+playwright-report/
+blob-report/
 .logs/
 .package/
 **/.vite/
