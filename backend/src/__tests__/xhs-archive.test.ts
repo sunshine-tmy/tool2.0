@@ -169,6 +169,49 @@ describe("xhs archive api", () => {
     await app.close();
   });
 
+  it("serves schema-validated runtime, list and missing-resource envelopes", async () => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+    const app = await createApp({ remoteAddressResolver: publicResolver });
+    const [runtime, translationRuntime, list, task, translationTask, detail, media] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/runtime" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/translation/runtime" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/tasks/missing_task" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/translation/tasks/missing_task" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items/missing_item" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items/missing_item/media/missing_media" })
+    ]);
+
+    expect(runtime.statusCode).toBe(200);
+    expect(runtime.json()).toMatchObject({
+      success: true,
+      data: { status: expect.any(String), authenticated: expect.any(Boolean) },
+      requestId: expect.any(String)
+    });
+    expect(translationRuntime.statusCode).toBe(200);
+    expect(translationRuntime.json()).toMatchObject({
+      success: true,
+      data: { status: expect.any(String), modelId: "Helsinki-NLP/opus-mt-zh-en" },
+      requestId: expect.any(String)
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toMatchObject({
+      success: true,
+      data: { items: [], total: 0, page: 1 },
+      requestId: expect.any(String)
+    });
+    for (const response of [task, translationTask, detail, media]) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: expect.any(String) },
+        requestId: expect.any(String)
+      });
+    }
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    await app.close();
+  });
+
   it("rate limits repeated remote archive requests independently", async () => {
     globalThis.fetch = vi.fn() as typeof fetch;
     const app = await createApp({ remoteAddressResolver: publicResolver });

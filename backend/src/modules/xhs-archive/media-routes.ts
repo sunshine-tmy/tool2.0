@@ -4,6 +4,7 @@ import path from "node:path";
 import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
+  ApiFailureSchema,
   XhsArchiveIdParamsSchema,
   XhsArchiveMediaParamsSchema,
   XhsMediaQuerySchema,
@@ -28,7 +29,13 @@ type RegisterXhsMediaRoutesOptions = {
 export function registerXhsMediaRoutes({ app, store }: RegisterXhsMediaRoutesOptions) {
   app.get<{ Params: XhsArchiveMediaParams; Querystring: XhsMediaQuery }>(
     "/api/v1/tools/xhs-archive/items/:id/media/:mediaId",
-    { schema: { params: XhsArchiveMediaParamsSchema, querystring: XhsMediaQuerySchema } },
+    {
+      schema: {
+        params: XhsArchiveMediaParamsSchema,
+        querystring: XhsMediaQuerySchema,
+        response: { 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const { id, mediaId } = request.params;
       const value = await store.mediaPath(id, mediaId);
@@ -49,7 +56,7 @@ export function registerXhsMediaRoutes({ app, store }: RegisterXhsMediaRoutesOpt
     "/api/v1/tools/xhs-archive/items/:id/download.zip",
     {
       config: REQUEST_QUOTAS.batchDownload,
-      schema: { params: XhsArchiveIdParamsSchema }
+      schema: { params: XhsArchiveIdParamsSchema, response: { 404: ApiFailureSchema } }
     },
     async (request, reply) => {
       const item = await store.get(request.params.id);

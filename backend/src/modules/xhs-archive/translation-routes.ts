@@ -1,10 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import {
+  ApiFailureSchema,
   TaskIdParamsSchema,
   XhsArchiveIdParamsSchema,
+  XhsArchiveTranslationResultSchema,
   XhsTranslationBatchInputSchema,
   XhsTranslationEditInputSchema,
+  XhsTranslationNoopSchema,
   XhsTranslationRequestSchema,
+  XhsTranslationRuntimeStatusSchema,
+  XhsTranslationTaskSchema,
+  apiSuccessSchema,
   fail,
   ok,
   type TaskIdParams,
@@ -25,13 +31,25 @@ type RegisterXhsTranslationRoutesOptions = {
 };
 
 export function registerXhsTranslationRoutes({ app, store, translation }: RegisterXhsTranslationRoutesOptions) {
-  app.get("/api/v1/tools/xhs-archive/translation/runtime", async () => ok(translation.getRuntimeStatus()));
+  app.get(
+    "/api/v1/tools/xhs-archive/translation/runtime",
+    { schema: { response: { 200: apiSuccessSchema(XhsTranslationRuntimeStatusSchema) } } },
+    async () => ok(translation.getRuntimeStatus())
+  );
 
   app.post<{ Params: XhsArchiveIdParams; Body: XhsTranslationRequest }>(
     "/api/v1/tools/xhs-archive/items/:id/translation",
     {
       config: REQUEST_QUOTAS.translation,
-      schema: { params: XhsArchiveIdParamsSchema, body: XhsTranslationRequestSchema }
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        body: XhsTranslationRequestSchema,
+        response: {
+          200: apiSuccessSchema(XhsTranslationNoopSchema),
+          202: apiSuccessSchema(XhsTranslationTaskSchema),
+          404: ApiFailureSchema
+        }
+      }
     },
     async (request, reply) => {
       const { id } = request.params;
@@ -43,7 +61,12 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
 
   app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/xhs-archive/translation/tasks/:taskId",
-    { schema: { params: TaskIdParamsSchema } },
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(XhsTranslationTaskSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const task = translation.getTask(request.params.taskId);
       return task ? ok(task) : reply.code(404).send(fail("XHS_TRANSLATION_TASK_NOT_FOUND", "翻译任务不存在"));
@@ -54,7 +77,14 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
     "/api/v1/tools/xhs-archive/translation/batches",
     {
       config: REQUEST_QUOTAS.translationBatch,
-      schema: { body: XhsTranslationBatchInputSchema }
+      schema: {
+        body: XhsTranslationBatchInputSchema,
+        response: {
+          200: apiSuccessSchema(XhsTranslationNoopSchema),
+          202: apiSuccessSchema(XhsTranslationTaskSchema),
+          404: ApiFailureSchema
+        }
+      }
     },
     async (request, reply) => {
       const { mode } = request.body;
@@ -87,7 +117,17 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
 
   app.patch<{ Params: XhsArchiveIdParams; Body: XhsTranslationEditInput }>(
     "/api/v1/tools/xhs-archive/items/:id/translation",
-    { schema: { params: XhsArchiveIdParamsSchema, body: XhsTranslationEditInputSchema } },
+    {
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        body: XhsTranslationEditInputSchema,
+        response: {
+          200: apiSuccessSchema(XhsArchiveTranslationResultSchema),
+          404: ApiFailureSchema,
+          409: ApiFailureSchema
+        }
+      }
+    },
     async (request, reply) => {
       const { id } = request.params;
       const item = await store.get(id);
@@ -124,13 +164,20 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
           }
         };
       });
-      return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      return updated
+        ? ok(updated.translation ?? null)
+        : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     }
   );
 
   app.post<{ Params: XhsArchiveIdParams }>(
     "/api/v1/tools/xhs-archive/items/:id/translation/reset",
-    { schema: { params: XhsArchiveIdParamsSchema } },
+    {
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        response: { 200: apiSuccessSchema(XhsArchiveTranslationResultSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const { id } = request.params;
       const updated = await store.updateTranslation(id, (current) =>
@@ -152,7 +199,9 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
             }
           : current
       );
-      return updated ? ok(updated.translation) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      return updated
+        ? ok(updated.translation ?? null)
+        : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
     }
   );
 }

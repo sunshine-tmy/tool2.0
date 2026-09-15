@@ -6,11 +6,19 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { nanoid } from "nanoid";
 import {
+  ApiFailureSchema,
   TaskIdParamsSchema,
+  XhsArchiveItemSchema,
+  XhsArchiveListResponseSchema,
+  XhsArchiveRemovalSchema,
+  XhsArchiveTaskSchema,
   XhsArchiveCreateInputSchema,
   XhsArchiveIdParamsSchema,
   XhsArchiveListQuerySchema,
+  XhsAuthSessionSchema,
   XhsAuthSessionParamsSchema,
+  XhsRuntimeStatusSchema,
+  apiSuccessSchema,
   fail,
   normalizeXhsText,
   ok,
@@ -62,8 +70,10 @@ export async function registerXhsArchiveRoutes(options: {
   await store.initialize();
   await translation.recoverInterrupted();
 
-  app.get("/api/v1/tools/xhs-archive/runtime", async () =>
-    ok({ ...runtime.getStatus(), authenticated: await auth.isAuthenticated() })
+  app.get(
+    "/api/v1/tools/xhs-archive/runtime",
+    { schema: { response: { 200: apiSuccessSchema(XhsRuntimeStatusSchema) } } },
+    async () => ok({ ...runtime.getStatus(), authenticated: await auth.isAuthenticated() })
   );
 
   registerXhsTranslationRoutes({ app, store, translation });
@@ -72,7 +82,10 @@ export async function registerXhsArchiveRoutes(options: {
     "/api/v1/tools/xhs-archive/items",
     {
       config: REQUEST_QUOTAS.remoteFetch,
-      schema: { body: XhsArchiveCreateInputSchema }
+      schema: {
+        body: XhsArchiveCreateInputSchema,
+        response: { 202: apiSuccessSchema(XhsArchiveTaskSchema), 400: ApiFailureSchema }
+      }
     },
     async (request, reply) => {
       const { url: source } = request.body;
@@ -88,7 +101,12 @@ export async function registerXhsArchiveRoutes(options: {
 
   app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/xhs-archive/tasks/:taskId",
-    { schema: { params: TaskIdParamsSchema } },
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(XhsArchiveTaskSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const task = tasks.get(request.params.taskId);
       return task ? ok(task) : reply.code(404).send(fail("XHS_TASK_NOT_FOUND", "获取任务不存在"));
@@ -97,13 +115,23 @@ export async function registerXhsArchiveRoutes(options: {
 
   app.get<{ Querystring: XhsArchiveListQuery }>(
     "/api/v1/tools/xhs-archive/items",
-    { schema: { querystring: XhsArchiveListQuerySchema } },
+    {
+      schema: {
+        querystring: XhsArchiveListQuerySchema,
+        response: { 200: apiSuccessSchema(XhsArchiveListResponseSchema) }
+      }
+    },
     async (request) => ok(await store.list(request.query))
   );
 
   app.get<{ Params: XhsArchiveIdParams }>(
     "/api/v1/tools/xhs-archive/items/:id",
-    { schema: { params: XhsArchiveIdParamsSchema } },
+    {
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        response: { 200: apiSuccessSchema(XhsArchiveItemSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const item = await store.get(request.params.id);
       return item ? ok(item) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
@@ -114,7 +142,10 @@ export async function registerXhsArchiveRoutes(options: {
     "/api/v1/tools/xhs-archive/items/:id/refresh",
     {
       config: REQUEST_QUOTAS.remoteFetch,
-      schema: { params: XhsArchiveIdParamsSchema }
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        response: { 202: apiSuccessSchema(XhsArchiveTaskSchema), 404: ApiFailureSchema }
+      }
     },
     async (request, reply) => {
       const item = await store.get(request.params.id);
@@ -129,7 +160,12 @@ export async function registerXhsArchiveRoutes(options: {
 
   app.delete<{ Params: XhsArchiveIdParams }>(
     "/api/v1/tools/xhs-archive/items/:id",
-    { schema: { params: XhsArchiveIdParamsSchema } },
+    {
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        response: { 200: apiSuccessSchema(XhsArchiveRemovalSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const { id } = request.params;
       const item = await store.get(id);
@@ -141,10 +177,19 @@ export async function registerXhsArchiveRoutes(options: {
 
   registerXhsMediaRoutes({ app, store });
 
-  app.post("/api/v1/tools/xhs-archive/auth/start", { config: REQUEST_QUOTAS.login }, async () => ok(auth.start()));
+  app.post(
+    "/api/v1/tools/xhs-archive/auth/start",
+    { config: REQUEST_QUOTAS.login, schema: { response: { 200: apiSuccessSchema(XhsAuthSessionSchema) } } },
+    async () => ok(auth.start())
+  );
   app.get<{ Params: XhsAuthSessionParams }>(
     "/api/v1/tools/xhs-archive/auth/:sessionId",
-    { schema: { params: XhsAuthSessionParamsSchema } },
+    {
+      schema: {
+        params: XhsAuthSessionParamsSchema,
+        response: { 200: apiSuccessSchema(XhsAuthSessionSchema), 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const session = auth.get(request.params.sessionId);
       return session ? ok(session) : reply.code(404).send(fail("XHS_AUTH_SESSION_NOT_FOUND", "登录会话不存在"));
