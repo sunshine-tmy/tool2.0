@@ -114,7 +114,7 @@
 | G01 | DONE | 实现确定性 standalone 归档 | A01  | 同一提交同一平台连续构建两次 SHA-256 一致                  |
 | G02 | DONE | 校正 SBOM 与许可证产物范围 | G01  | 从最终 staging/归档生成，并随产物发布                      |
 | G03 | DONE | 发布到 GitHub Release      | G02  | `v*` 标签上传双平台包、SHA-256、SBOM 和许可证清单          |
-| G04 | TODO | 从最终压缩包执行双平台冒烟 | G01  | 解压真实归档后验证安装、构建、启动、健康、传输、删除和退出 |
+| G04 | DONE | 从最终压缩包执行双平台冒烟 | G01  | 解压真实归档后验证安装、构建、启动、健康、传输、删除和退出 |
 
 ### H. 文档与最终验收
 
@@ -183,3 +183,4 @@
 | G01     | DONE                | 2026-09-15 | `[G01]`   | `pwsh -NoProfile -File scripts/package-standalone.ps1 -Platform windows -SkipPythonInstaller`（连续 2 次）；macOS 同命令（连续 2 次）                                             | `pnpm check` 通过 | Windows ZIP SHA-256 两次均为 `87c98c4b3f528f7e4569f740377101a59923fc61ab9db4980a2aa901195f9bc8`；macOS TAR.GZ 两次均为 `41ac215bd7a0ea04f487e26604b9f69d397befb765f82468c1eca88b0f4baf49`；中文启动器归档可列出 | 归档仅取 HEAD 已提交文件；文件按 Ordinal 排序并固定提交时间、UID/GID、用户名及 gzip 头；保留 Python 固定地址和 SHA-256 校验，未修改 Git 历史 |
 | G02     | DONE                | 2026-09-15 | `[G02]`   | Windows/macOS standalone 连续构建与元数据校验；许可证 JSON 无 `paths` 字段                                                                                                        | `pnpm check` 通过 | SBOM 工作流仅扫描最终 staging；构建清单、许可证清单、归档和 SBOM 均生成 SHA-256 sidecar；artifact 上传不包含 staging 目录                                                                                       | 许可证清单从 staging lockfile 解析并移除构建机绝对路径；CI 断言 SBOM 不含开发 checkout/node_modules；未改动现有数据                          |
 | G03     | DONE                | 2026-09-15 | `[G03]`   | 工作流格式检查；Release 输入文件清单与 `gh release create/upload` 分支静态校验                                                                                                    | `pnpm check` 通过 | `v*` tag 自动下载双平台 artifact，校验归档/SBOM/许可证/manifest 及全部 SHA-256 后创建或更新 GitHub Release；非 tag 手动运行不发布                                                                               | 使用 GitHub Actions 原生 token，重复 tag 采用 `gh release upload --clobber`；未在本地创建真实 Release，避免修改远程仓库状态                  |
+| G04     | DONE                | 2026-09-15 | `[G04]`   | Windows ZIP、macOS TAR.GZ 各完成真实解压、`pnpm install --frozen-lockfile`、`pnpm build` 和 `smoke-standalone.mjs`                                                                | `pnpm check` 通过 | 两种归档均从独立解压目录完成健康、前端预览、上传、下载、删除和退出；CI 矩阵在 Windows/macOS runner 重复执行，不使用 staging                                                                                     | 解压前校验归档 SHA-256；Windows ZIP 根目录与 macOS `toolbox-macos/` 目录均验证 `package.json`；临时 storage 自动清理，未改动现有数据         |
