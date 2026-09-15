@@ -129,7 +129,12 @@ export class ChatterboxBatchQueue {
       await this.options.store.updateItem(batchId, itemId, { progress: 82 });
       await this.options.media.toMp3(itemPaths.outputWav, itemPaths.candidateAudio);
       const audioBytes = (await fsp.stat(itemPaths.candidateAudio)).size;
-      const audioDurationSeconds = await this.options.media.duration(itemPaths.candidateAudio);
+      // Validate the encoded file with ffprobe, but use the Worker duration for
+      // metadata and subtitle timing. MP3 encoders add a platform-dependent
+      // encoder delay (for example, Ubuntu may report 1.056s for a 1s WAV),
+      // while the Worker duration describes the generated audio itself.
+      const encodedDurationSeconds = await this.options.media.duration(itemPaths.candidateAudio);
+      const audioDurationSeconds = result.durationSeconds > 0 ? result.durationSeconds : encodedDurationSeconds;
       await replaceFile(itemPaths.candidateAudio, itemPaths.audio);
       await writeJsonAtomic(itemPaths.timing, result.segments);
       const preparedBatch = await this.options.store.updateItem(batchId, itemId, {
