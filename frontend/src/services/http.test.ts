@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Type } from "@sinclair/typebox";
-import { ApiRequestError, createHttpClient, normalizeApiError, setAdminCsrfToken, withApiError } from "./http";
+import {
+  ApiRequestError,
+  createHttpClient,
+  describeApiError,
+  formatApiError,
+  normalizeApiError,
+  setAdminCsrfToken,
+  withApiError
+} from "./http";
 
 afterEach(() => setAdminCsrfToken(undefined));
 
@@ -107,5 +115,42 @@ describe("api error wrapper", () => {
       retryable: false
     });
     expect(instance.get).toHaveBeenCalledWith("/health", { signal: controller.signal });
+  });
+
+  it("presents rate limits with a stable code, request id and retry guidance", () => {
+    const error = new ApiRequestError("请求过于频繁", {
+      code: "RATE_LIMITED",
+      status: 429,
+      requestId: "req-rate-limit"
+    });
+    const presentation = describeApiError(error);
+
+    expect(presentation).toMatchObject({
+      category: "rate_limited",
+      code: "RATE_LIMITED",
+      requestId: "req-rate-limit",
+      retryable: true,
+      suggestion: "请求过于频繁，请稍后重试"
+    });
+    expect(formatApiError(error)).toContain("请求 ID req-rate-limit");
+  });
+
+  it("distinguishes offline transport failures from business errors", () => {
+    const presentation = describeApiError({ code: "ERR_NETWORK" }, "服务不可用");
+
+    expect(presentation).toMatchObject({
+      category: "offline",
+      code: "REQUEST_FAILED",
+      message: "服务不可用",
+      suggestion: "请确认本地服务已启动并检查网络后重试"
+    });
+  });
+
+  it("does not turn cancellation into a retry prompt", () => {
+    const presentation = describeApiError(new ApiRequestError("请求已取消", { code: "REQUEST_ABORTED" }));
+
+    expect(presentation).toMatchObject({ category: "cancelled", cancelled: true, retryable: false });
+    expect(presentation.suggestion).toBeUndefined();
+    expect(presentation.text).toBe("请求已取消；错误码 REQUEST_ABORTED");
   });
 });

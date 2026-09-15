@@ -95,6 +95,7 @@ import ImageAiOperationPanel from "./ImageAiOperationPanel.vue";
 import ImageAiWatermarkPanel from "./ImageAiWatermarkPanel.vue";
 import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { absoluteImageAiUrl, imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
 
 const message = useMessage();
@@ -150,7 +151,7 @@ watch(taskEvents.task, (task) => {
 });
 
 watch(taskEvents.error, (error) => {
-  if (error) message.warning(`${error.message}（${error.code}）`);
+  if (error && !isApiErrorCancelled(error)) message.warning(formatApiError(error));
 });
 
 async function loadHealth() {
@@ -159,7 +160,7 @@ async function loadHealth() {
     health.value = await imageAiApi.health();
   } catch (error) {
     health.value = undefined;
-    message.warning(error instanceof Error ? error.message : "本地推理服务未启动");
+    if (!isApiErrorCancelled(error)) message.warning(formatApiError(error, "本地推理服务未启动"));
   } finally {
     loadingHealth.value = false;
   }
@@ -199,7 +200,7 @@ async function suggestWatermark(applySuggestions?: (suggestions: WatermarkSugges
     if (response.suggestions.length)
       message.success(`已标记 ${response.suggestions.length} 个疑似文字区域，请检查蒙版`);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "智能框选失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "智能框选失败"));
   } finally {
     suggesting.value = false;
   }
@@ -215,7 +216,7 @@ async function submitWatermark(editor?: { toMaskBlob: () => Promise<Blob> }) {
     form.append("mask", mask, "mask.png");
     activeTask.value = await imageAiApi.createTask(form);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "去水印失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "去水印失败"));
   }
 }
 
@@ -230,7 +231,7 @@ async function submitBatch(operation: "enhance" | "background_remove") {
     activeTask.value = await imageAiApi.createTask(form);
     activeTaskFiles.value = [...files];
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "图片处理失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "图片处理失败"));
   }
 }
 
@@ -256,7 +257,7 @@ async function finishStreamedTask(taskId: string) {
       message.error(task.error || "任务处理失败");
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "任务结果读取失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "任务结果读取失败"));
   }
 }
 

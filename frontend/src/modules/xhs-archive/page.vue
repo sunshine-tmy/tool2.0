@@ -90,6 +90,7 @@ import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { resolveBackendUrl } from "../../config/runtime";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { xhsArchiveApi } from "./api";
 
 const message = useMessage();
@@ -130,7 +131,7 @@ watch(taskEvents.task, (event) => {
 });
 
 watch(taskEvents.error, (error) => {
-  if (error) message.warning(`${error.message}（${error.code}）`);
+  if (error && !isApiErrorCancelled(error)) message.warning(formatApiError(error));
 });
 
 watch(translationEvents.task, (event) => {
@@ -138,7 +139,7 @@ watch(translationEvents.task, (event) => {
 });
 
 watch(translationEvents.error, (error) => {
-  if (error) message.warning(`${error.message}（${error.code}）`);
+  if (error && !isApiErrorCancelled(error)) message.warning(formatApiError(error));
 });
 
 function handlePagePaste(event: ClipboardEvent) {
@@ -160,7 +161,7 @@ async function startFetch() {
   try {
     task.value = await xhsArchiveApi.create(inputUrl.value);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取失败"));
   }
 }
 async function refreshItem(id: string) {
@@ -169,7 +170,7 @@ async function refreshItem(id: string) {
     task.value = await xhsArchiveApi.refresh(id);
   } catch (error) {
     refreshing.value = false;
-    message.error(error instanceof Error ? error.message : "刷新存档失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "刷新存档失败"));
   }
 }
 
@@ -195,7 +196,7 @@ async function syncArchiveTask(taskId: string) {
   } catch (error) {
     if (revision === taskSyncRevision) {
       refreshing.value = false;
-      message.error(error instanceof Error ? error.message : "读取获取任务失败");
+      if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "读取获取任务失败"));
     }
   }
 }
@@ -212,7 +213,7 @@ async function loginAndRetry() {
     message.success("登录成功，正在重新获取");
     await startFetch();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "登录失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "登录失败"));
   } finally {
     authWaiting.value = false;
   }
@@ -230,7 +231,7 @@ async function loadArchives() {
       archives.value.items.some((item) => item.id === id)
     );
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "读取存档失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "读取存档失败"));
   } finally {
     listLoading.value = false;
   }
@@ -248,7 +249,7 @@ async function translateCurrent() {
     const task = await xhsArchiveApi.translate(current.value.id, current.value.translation?.status === "ready");
     if ("id" in task) trackTranslation(task.id, current.value.id, true);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "创建翻译任务失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "创建翻译任务失败"));
   }
 }
 async function translateDetail() {
@@ -257,7 +258,7 @@ async function translateDetail() {
     const task = await xhsArchiveApi.translate(detail.value.id, detail.value.translation?.status === "ready");
     if ("id" in task) trackTranslation(task.id, detail.value.id, false);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "创建翻译任务失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "创建翻译任务失败"));
   }
 }
 function editTranslation(item: XhsArchiveItem) {
@@ -286,7 +287,7 @@ async function resetTranslation(item: XhsArchiveItem) {
     if (detail.value?.id === item.id) detail.value = updated;
     message.success("已恢复机器翻译");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "恢复机器翻译失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "恢复机器翻译失败"));
   }
 }
 async function saveTranslation(payload: {
@@ -306,7 +307,7 @@ async function saveTranslation(payload: {
     void updated;
     message.success("英文修订已保存");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "保存英文修订失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "保存英文修订失败"));
   }
 }
 async function translateSelected() {
@@ -317,7 +318,7 @@ async function translateSelected() {
     if ("id" in task) trackTranslation(task.id, undefined, false);
     await loadArchives();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "创建批量翻译任务失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "创建批量翻译任务失败"));
   }
 }
 function trackTranslation(taskId: string, itemId?: string, updateCurrent = false) {
@@ -348,7 +349,7 @@ async function finishTranslation(taskId: string) {
     }
     message.success("英文翻译已完成");
   } catch (error) {
-    if (!disposed) message.error(error instanceof Error ? error.message : "读取翻译进度失败");
+    if (!disposed && !isApiErrorCancelled(error)) message.error(formatApiError(error, "读取翻译进度失败"));
   } finally {
     if (translationTarget.value?.taskId === taskId) translationTarget.value = undefined;
   }

@@ -33,6 +33,19 @@ export class ApiRequestError extends Error {
   }
 }
 
+type ApiErrorCategory = "cancelled" | "offline" | "timeout" | "rate_limited" | "server" | "client" | "unknown";
+
+type ApiErrorPresentation = {
+  message: string;
+  code: string;
+  requestId?: string;
+  retryable: boolean;
+  cancelled: boolean;
+  category: ApiErrorCategory;
+  suggestion?: string;
+  text: string;
+};
+
 const api = axios.create({
   baseURL: apiBaseUrl,
   timeout: 120000,
@@ -85,7 +98,7 @@ export function createHttpClient(instance: AxiosInstance = api) {
   return {
     async get<T extends TSchema>(url: string, schema: T, config?: AxiosRequestConfig): Promise<Static<T>> {
       const response = await instance.get<unknown, AxiosResponse<unknown>>(url, config);
-      return unwrapResponse(response.data, schema);
+      return unwrapResponse(response.data, schema, response.status);
     },
 
     async getText(url: string, config?: AxiosRequestConfig) {
@@ -100,7 +113,7 @@ export function createHttpClient(instance: AxiosInstance = api) {
       config?: AxiosRequestConfig
     ): Promise<Static<T>> {
       const response = await instance.post<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
-      return unwrapResponse(response.data, schema);
+      return unwrapResponse(response.data, schema, response.status);
     },
 
     async postBlob(url: string, data?: unknown, config?: AxiosRequestConfig) {
@@ -118,7 +131,7 @@ export function createHttpClient(instance: AxiosInstance = api) {
       config?: AxiosRequestConfig
     ): Promise<Static<T>> {
       const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
-      return unwrapResponse(response.data, schema);
+      return unwrapResponse(response.data, schema, response.status);
     },
 
     async patch<T extends TSchema>(
@@ -128,12 +141,12 @@ export function createHttpClient(instance: AxiosInstance = api) {
       config?: AxiosRequestConfig
     ): Promise<Static<T>> {
       const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
-      return unwrapResponse(response.data, schema);
+      return unwrapResponse(response.data, schema, response.status);
     },
 
     async delete<T extends TSchema>(url: string, schema: T, config?: AxiosRequestConfig): Promise<Static<T>> {
       const response = await instance.delete<unknown, AxiosResponse<unknown>>(url, withWriteSecurity(config));
-      return unwrapResponse(response.data, schema);
+      return unwrapResponse(response.data, schema, response.status);
     }
   };
 }
@@ -151,10 +164,11 @@ function withWriteSecurity(config?: AxiosRequestConfig): AxiosRequestConfig {
   };
 }
 
-function unwrapResponse<T extends TSchema>(data: unknown, schema: T): Static<T> {
+function unwrapResponse<T extends TSchema>(data: unknown, schema: T, status?: number): Static<T> {
   if (isBackendFailure(data)) {
     throw new ApiRequestError(data.message, {
       code: data.error.code,
+      status,
       details: data.error.details,
       requestId: data.requestId
     });
@@ -169,6 +183,70 @@ function unwrapResponse<T extends TSchema>(data: unknown, schema: T): Static<T> 
     code: "INVALID_API_RESPONSE",
     details: [...Value.Errors(successSchema, data)].slice(0, 5).map(({ path, message }) => ({ path, message }))
   });
+}
+
+/**
+ * Convert an API failure into a stable, user-facing message. Callers should
+ * use this at UI boundaries so error codes, request IDs, cancellation and
+ * retry guidance are presented consistently across tools.
+ */
+export function describeApiError(error: unknown, fallbackMessage = "请求失败"): ApiErrorPresentation {
+  const normalized = normalizeApiError(error, fallbackMessage);
+  const category = classifyApiError(normalized);
+  const suggestion = apiErrorSuggestion(category, normalized.status, normalized.retryable);
+  const metadata = [
+    `错误码 ${normalized.code}`,
+    normalized.requestId ? `请求 ID ${normalized.requestId}` : undefined
+  ].filter((value): value is string => Boolean(value));
+  const text = [normalized.message || fallbackMessage, ...metadata, suggestion].filter(Boolean).join("；");
+
+  return {
+    message: normalized.message || fallbackMessage,
+    code: normalized.code,
+    requestId: normalized.requestId,
+    retryable: normalized.retryable,
+    cancelled: normalized.cancelled,
+    category,
+    suggestion,
+    text
+  };
+}
+
+export function formatApiError(error: unknown, fallbackMessage = "请求失败") {
+  return describeApiError(error, fallbackMessage).text;
+}
+
+export function isApiErrorCancelled(error: unknown) {
+  return describeApiError(error).cancelled;
+}
+
+function classifyApiError(error: ApiRequestError): ApiErrorCategory {
+  if (error.cancelled) return "cancelled";
+  if (error.status === 429) return "rate_limited";
+  if (error.status === 408) return "timeout";
+  if (error.status !== undefined && error.status >= 500) return "server";
+  if (error.status !== undefined && error.status >= 400) return "client";
+  if (isOfflineError(error.cause)) return "offline";
+  return "unknown";
+}
+
+function apiErrorSuggestion(category: ApiErrorCategory, status: number | undefined, retryable: boolean) {
+  switch (category) {
+    case "cancelled":
+      return undefined;
+    case "offline":
+      return "请确认本地服务已启动并检查网络后重试";
+    case "timeout":
+      return "服务响应超时，请稍后重试";
+    case "rate_limited":
+      return "请求过于频繁，请稍后重试";
+    case "server":
+      return "服务暂时不可用，请稍后重试";
+    case "client":
+      return status === 401 || status === 403 ? "请重新登录或检查管理员权限" : "请检查输入内容后再试";
+    default:
+      return retryable ? "请稍后重试" : undefined;
+  }
 }
 
 function isBackendSuccess(value: unknown): value is Extract<ApiResponse<unknown>, { success: true }> {
@@ -190,6 +268,17 @@ function isRequestCancelled(error: unknown) {
   if (axios.isCancel(error)) return true;
   if (isRecord(error) && (error.code === "ERR_CANCELED" || error.name === "AbortError")) return true;
   return typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError";
+}
+
+function isOfflineError(error: unknown) {
+  if (!error) return typeof navigator !== "undefined" && navigator.onLine === false;
+  if (isRecord(error)) {
+    const code = typeof error.code === "string" ? error.code : "";
+    if (["ERR_NETWORK", "ECONNABORTED", "ETIMEDOUT", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code)) {
+      return true;
+    }
+  }
+  return typeof navigator !== "undefined" && navigator.onLine === false;
 }
 
 function getErrorResponseData(error: unknown) {

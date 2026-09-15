@@ -1,5 +1,6 @@
 import { reactive, ref, type ComputedRef, type Ref } from "vue";
 import { useRequestScope } from "../../composables/useRequestScope";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { isEditablePasteTarget, filesFromClipboard } from "./paste-upload";
 import { ConcurrentChunkUploader } from "./chunk-uploader";
 import { lanTransferApi } from "./api";
@@ -127,7 +128,7 @@ export function useLanUploadQueue(options: {
           return;
         }
         item.status = "failed";
-        options.message.error(error instanceof Error ? error.message : `${file.name} 上传失败`);
+        if (!isApiErrorCancelled(error)) options.message.error(formatApiError(error, `${file.name} 上传失败`));
       }
     }
 
@@ -146,7 +147,7 @@ export function useLanUploadQueue(options: {
         } catch (error) {
           if (requestScope.aborted) return;
           item.status = "failed";
-          options.message.error(error instanceof Error ? error.message : `${file.name} 取消失败`);
+          if (!isApiErrorCancelled(error)) options.message.error(formatApiError(error, `${file.name} 取消失败`));
         }
       }
     };

@@ -150,6 +150,7 @@ import LanSharePanel from "./LanSharePanel.vue";
 import LanUploadPanel from "./LanUploadPanel.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { currentWebUrl } from "../../config/runtime";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { lanTransferApi } from "./api";
 import type { LanFileView, LanNoteView } from "./types";
@@ -261,7 +262,7 @@ async function refreshLanInfo() {
       selectedShareUrl.value = lanInfo.value.lanUrls[0];
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取传输服务信息失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取传输服务信息失败"));
   }
 }
 
@@ -285,7 +286,7 @@ async function refreshLanNotes() {
     notePagination.pageCount = result.pagination.pageCount;
     selectedLanNoteIds.value = pruneSelectedIds(selectedLanNoteIds.value, lanNotePageIds.value);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取图文列表失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取图文列表失败"));
   }
 }
 
@@ -299,7 +300,7 @@ async function unlockLanTransfer() {
     await Promise.all([refreshLanFiles(), refreshLanNotes()]);
     message.success("管理权限已解锁");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "访问 PIN 不正确");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "访问 PIN 不正确"));
   } finally {
     unlocking.value = false;
   }
@@ -376,7 +377,7 @@ async function publishNote() {
     await Promise.all([refreshLanInfo(), refreshLanNotes()]);
     message.success("图文已发送到局域网");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "发布图文失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "发布图文失败"));
   } finally {
     publishingNote.value = false;
   }
@@ -396,7 +397,7 @@ async function extendNoteExpiry(note: LanNoteView) {
     await refreshLanNotes();
     message.success("图文已延长保留 30 天");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "更新图文有效期失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "更新图文有效期失败"));
   }
 }
 
@@ -408,7 +409,7 @@ async function deleteLanNote(note: LanNoteView) {
     await Promise.all([refreshLanInfo(), refreshLanNotes()]);
     message.success("图文已删除");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "删除图文失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "删除图文失败"));
   }
 }
 
@@ -439,7 +440,7 @@ async function deleteSelectedLanNotes() {
     await Promise.all([refreshLanInfo(), refreshLanNotes()]);
     message.success("已批量删除图文");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "批量删除图文失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "批量删除图文失败"));
   } finally {
     batchDeletingLanNotes.value = false;
   }
@@ -479,7 +480,7 @@ async function refreshLanFiles() {
     lanPagination.pageCount = result.pagination.pageCount;
     pruneLanFileSelection();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取文件列表失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取文件列表失败"));
   }
 }
 
@@ -511,7 +512,7 @@ async function openPreview(file: LanFileView) {
     try {
       previewText.value = await lanTransferApi.getTextPreview(file.previewUrl);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "获取预览失败");
+      if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取预览失败"));
     }
   }
 }
@@ -526,7 +527,7 @@ async function deleteLanFile(file: LanFileView) {
     await refreshLanInfo();
     await refreshLanFiles();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "删除文件失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "删除文件失败"));
   }
 }
 
@@ -540,7 +541,7 @@ async function extendFileExpiry(file: LanFileView) {
     message.success(`${file.originalName} 已延长保留 30 天`);
     await refreshLanFiles();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "更新文件有效期失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "更新文件有效期失败"));
   }
 }
 

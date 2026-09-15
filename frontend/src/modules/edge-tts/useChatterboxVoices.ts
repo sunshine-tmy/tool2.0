@@ -5,6 +5,7 @@ import type {
   ChatterboxSavedVoice,
   ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { chatterboxApi } from "./chatterbox-api";
 
 type VoiceMessage = {
@@ -55,7 +56,7 @@ export function useChatterboxVoices(state: VoiceState) {
         state.referenceSource.value = "saved";
       }
     } catch (error) {
-      state.errorMessage.value = readableError(error, "永久参考音色读取失败");
+      if (!isApiErrorCancelled(error)) state.errorMessage.value = formatApiError(error, "永久参考音色读取失败");
     }
   }
 
@@ -76,7 +77,7 @@ export function useChatterboxVoices(state: VoiceState) {
       state.voiceName.value = "";
       state.message.success("参考音色已永久保存");
     } catch (error) {
-      state.message.error(readableError(error, "永久保存参考音色失败"));
+      if (!isApiErrorCancelled(error)) state.message.error(formatApiError(error, "永久保存参考音色失败"));
     } finally {
       state.savingVoice.value = false;
     }
@@ -92,7 +93,7 @@ export function useChatterboxVoices(state: VoiceState) {
       await loadSavedVoices();
       state.message.success("永久参考音色已删除");
     } catch (error) {
-      state.message.error(readableError(error, "删除永久参考音色失败"));
+      if (!isApiErrorCancelled(error)) state.message.error(formatApiError(error, "删除永久参考音色失败"));
     }
   }
 
@@ -101,13 +102,9 @@ export function useChatterboxVoices(state: VoiceState) {
       state.health.value = await chatterboxApi.health();
     } catch (error) {
       state.health.value = undefined;
-      state.errorMessage.value = readableError(error, "无法读取声音克隆服务状态");
+      if (!isApiErrorCancelled(error)) state.errorMessage.value = formatApiError(error, "无法读取声音克隆服务状态");
     }
   }
 
   return { loadHealth, loadSavedVoices, saveCurrentVoice, removeSavedVoice };
-}
-
-function readableError(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
 }

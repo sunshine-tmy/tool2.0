@@ -253,7 +253,7 @@ import {
   X,
   Wrench
 } from "lucide-vue-next";
-import { httpClient } from "../services/http";
+import { formatApiError, httpClient, isApiErrorCancelled } from "../services/http";
 import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "../services/admin-session";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
 
@@ -351,7 +351,7 @@ async function loadCleanup() {
     if (!selectedCleanupIds.value.length)
       selectedCleanupIds.value = cleanupCategories.value.filter((item) => item.defaults).map((item) => item.id);
   } catch (error) {
-    cleanupError.value = error instanceof Error ? error.message : "读取存储信息失败";
+    if (!isApiErrorCancelled(error)) cleanupError.value = formatApiError(error, "读取存储信息失败");
   } finally {
     cleanupLoading.value = false;
   }
@@ -376,7 +376,7 @@ async function executeCleanup() {
     selectedCleanupIds.value = [];
     await loadCleanup();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "清理失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "清理失败"));
   } finally {
     cleanupExecuting.value = false;
   }
@@ -426,7 +426,7 @@ async function loginAdmin() {
     message.success("管理员权限已解锁");
   } catch (error) {
     adminAuthenticated.value = false;
-    adminError.value = error instanceof Error ? error.message : "管理员 PIN 验证失败";
+    if (!isApiErrorCancelled(error)) adminError.value = formatApiError(error, "管理员 PIN 验证失败");
   } finally {
     adminLoading.value = false;
   }
@@ -439,7 +439,7 @@ async function logoutAdmin() {
     await signOutAdmin();
     adminAuthenticated.value = false;
   } catch (error) {
-    adminError.value = error instanceof Error ? error.message : "退出管理员会话失败";
+    if (!isApiErrorCancelled(error)) adminError.value = formatApiError(error, "退出管理员会话失败");
   } finally {
     adminLoading.value = false;
   }

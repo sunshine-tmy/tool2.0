@@ -269,6 +269,7 @@ import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveBackendUrl } from "../../config/runtime";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { edgeTtsApi } from "./api";
 import ChatterboxPanel from "./ChatterboxPanel.vue";
 
@@ -341,14 +342,14 @@ watch(taskEvents.task, (task) => {
 });
 
 watch(taskEvents.error, (error) => {
-  if (error) errorMessage.value = `${error.message}（${error.code}）`;
+  if (error && !isApiErrorCancelled(error)) errorMessage.value = formatApiError(error);
 });
 
 async function loadHealth() {
   try {
     health.value = await edgeTtsApi.health();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "无法读取语音服务状态";
+    if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "无法读取语音服务状态");
   }
 }
 
@@ -361,7 +362,7 @@ async function loadVoices() {
       voice.value = voices.value.find((item) => item.suggested)?.shortName || voices.value[0]?.shortName || "";
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "音色读取失败";
+    if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "音色读取失败");
   } finally {
     loadingVoices.value = false;
   }
@@ -384,7 +385,7 @@ async function createTask() {
     });
     await loadHistory();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "语音任务创建失败";
+    if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "语音任务创建失败");
   } finally {
     creating.value = false;
   }
@@ -399,7 +400,7 @@ async function finishCurrentTask(taskId: string) {
     else errorMessage.value = task.error || "语音生成失败";
     await loadHistory();
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "任务结果读取失败";
+    if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "任务结果读取失败");
   }
 }
 
@@ -423,7 +424,7 @@ async function loadTaskForReuse(id: string) {
     reuseTask(await edgeTtsApi.task(id));
     window.scrollTo({ top: 0, behavior: "smooth" });
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "任务读取失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "任务读取失败"));
   }
 }
 
@@ -446,7 +447,7 @@ async function removeTask(id: string) {
     await loadHistory();
     message.success("语音记录已删除");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "删除失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "删除失败"));
   }
 }
 

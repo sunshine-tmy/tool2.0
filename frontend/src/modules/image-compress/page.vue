@@ -167,6 +167,7 @@ import { Download, ImageDown, Trash2, UploadCloud } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { resolveBackendUrl } from "../../config/runtime";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { imageCompressApi, type ImageToolResponse } from "./api";
 import { createImageItemId } from "./image-id";
 
@@ -291,9 +292,10 @@ async function compressItem(
     item.progress = 100;
     return true;
   } catch (error) {
+    if (isApiErrorCancelled(error)) return false;
     item.status = "failed";
     item.progress = 100;
-    item.error = error instanceof Error ? error.message : "压缩失败";
+    item.error = formatApiError(error, "压缩失败");
     return false;
   }
 }
@@ -342,7 +344,7 @@ async function downloadAll() {
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "批量下载失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "批量下载失败"));
   } finally {
     downloading.value = false;
   }

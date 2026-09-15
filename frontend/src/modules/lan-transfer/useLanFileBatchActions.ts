@@ -1,6 +1,7 @@
 import { computed, ref, type Ref } from "vue";
 import type { LanFileView } from "./types";
 import { lanTransferApi } from "./api";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { getPageSelectionState, togglePageSelection, toggleSelectedId } from "../../utils/batch-selection";
 
 type ActionMessage = {
@@ -48,7 +49,7 @@ export function useLanFileBatchActions(options: {
       await options.refreshFiles();
       options.message.success("已批量删除文件");
     } catch (error) {
-      options.message.error(error instanceof Error ? error.message : "批量删除文件失败");
+      if (!isApiErrorCancelled(error)) options.message.error(formatApiError(error, "批量删除文件失败"));
     } finally {
       deleting.value = false;
     }
@@ -69,7 +70,7 @@ export function useLanFileBatchActions(options: {
       options.message.success("批量下载已开始");
       await options.refreshFiles();
     } catch (error) {
-      options.message.error(error instanceof Error ? error.message : "批量下载文件失败");
+      if (!isApiErrorCancelled(error)) options.message.error(formatApiError(error, "批量下载文件失败"));
     } finally {
       downloading.value = false;
     }

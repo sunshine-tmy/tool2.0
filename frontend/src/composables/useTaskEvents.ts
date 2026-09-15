@@ -1,7 +1,7 @@
 import { onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { isTaskDto, TaskSchema, type TaskDto } from "@toolbox/shared";
 import { resolveApiUrl } from "../config/runtime";
-import { ApiRequestError, httpClient } from "../services/http";
+import { ApiRequestError, httpClient, normalizeApiError } from "../services/http";
 
 export type TaskEventSource = {
   addEventListener: (type: string, listener: (event: MessageEvent<string>) => void) => void;
@@ -148,7 +148,14 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
       }
     } catch (caught) {
       if (!controller.signal.aborted) {
-        error.value = new ApiRequestError("任务进度查询失败", { code: "TASK_POLL_FAILED", cause: caught });
+        const normalized = normalizeApiError(caught, "任务进度查询失败");
+        error.value = new ApiRequestError("任务进度查询失败", {
+          code: "TASK_POLL_FAILED",
+          status: normalized.status,
+          details: normalized.details,
+          requestId: normalized.requestId,
+          cause: caught
+        });
       }
     }
     if (!disposed && isVisible()) startPolling(id);

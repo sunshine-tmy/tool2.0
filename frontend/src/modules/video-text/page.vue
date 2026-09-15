@@ -72,6 +72,7 @@ import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { resolveApiUrl } from "../../config/runtime";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { videoTextApi } from "./api";
 import { describeRecognitionQuality } from "./quality";
@@ -145,7 +146,7 @@ watch(taskEvents.task, (task) => {
 });
 
 watch(taskEvents.error, (error) => {
-  if (error) message.warning(`${error.message}（${error.code}）`);
+  if (error && !isApiErrorCancelled(error)) message.warning(formatApiError(error));
 });
 
 function onVideoChange(event: Event) {
@@ -194,7 +195,7 @@ async function submit() {
       message.error(response.task.error || "视频文案解析失败");
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "视频文案解析失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "视频文案解析失败"));
   } finally {
     submitting.value = false;
   }
@@ -214,7 +215,7 @@ async function finishStreamedTask(taskId: string) {
       message.error(response.task.error || "视频文案解析失败");
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "视频文案结果读取失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "视频文案结果读取失败"));
   }
 }
 
@@ -258,7 +259,7 @@ async function loadHistory(page = historyPagination.page) {
     historyPagination.pageCount = response.pageCount;
     selectedHistoryIds.value = pruneSelectedIds(selectedHistoryIds.value, historyPageIds.value);
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取解析历史失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取解析历史失败"));
   } finally {
     historyLoading.value = false;
   }
@@ -290,7 +291,7 @@ async function openHistory(taskId: string) {
     uploadProgress.value = 100;
     message.success("已打开历史解析结果");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取历史解析结果失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取历史解析结果失败"));
   } finally {
     openingHistoryId.value = "";
   }
@@ -309,7 +310,7 @@ async function openTaskResult(taskId: string) {
       message.error(response.task.error || "视频文案解析失败");
     }
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "获取视频文案解析结果失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取视频文案解析结果失败"));
   } finally {
     openingTaskId.value = "";
   }
@@ -335,7 +336,7 @@ async function deleteHistory(item: VideoTextHistoryItem) {
     await loadHistory(nextPage);
     message.success("已删除历史记录");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "删除解析历史失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "删除解析历史失败"));
   } finally {
     deletingHistoryId.value = "";
   }
@@ -373,7 +374,7 @@ async function deleteSelectedHistory() {
     await loadHistory(historyPagination.page);
     message.success("已批量删除解析历史");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "批量删除解析历史失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "批量删除解析历史失败"));
   } finally {
     batchDeletingHistory.value = false;
   }
@@ -385,7 +386,7 @@ async function copyFullText() {
     await copyTextToClipboard(result.value.fullText);
     message.success("已复制文案");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "复制失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "复制失败"));
   }
 }
 

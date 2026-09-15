@@ -2,7 +2,7 @@ import { computed, onMounted, ref, watch, type Ref } from "vue";
 import type { ChatterboxBatch, ChatterboxBatchList, ChatterboxTaskList, TaskDto } from "@toolbox/shared";
 import { chatterboxApi } from "./chatterbox-api";
 import type { ChatterboxEditorState } from "./useChatterboxEditor";
-import { ApiRequestError } from "../../services/http";
+import { ApiRequestError, formatApiError, isApiErrorCancelled } from "../../services/http";
 
 type BatchMessage = {
   success: (message: string) => void;
@@ -77,7 +77,7 @@ export function useChatterboxBatches(options: {
     if (task.status === "completed" || task.status === "failed") void finishStreamedBatch(task.id);
   });
   watch(options.taskEvents.error, (error) => {
-    if (error) errorMessage.value = `${error.message}（${error.code}）`;
+    if (error && !isApiErrorCancelled(error)) errorMessage.value = formatApiError(error);
   });
 
   async function loadBatches() {
@@ -85,7 +85,7 @@ export function useChatterboxBatches(options: {
     try {
       batchHistory.value = await chatterboxApi.batches(1, 10);
     } catch (error) {
-      errorMessage.value = readableError(error, "批次记录读取失败");
+      if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次记录读取失败");
     } finally {
       loadingBatches.value = false;
     }
@@ -126,7 +126,7 @@ export function useChatterboxBatches(options: {
       options.message.success("批次已加入生成队列");
       await loadBatches();
     } catch (error) {
-      errorMessage.value = readableError(error, "声音克隆批次创建失败");
+      if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "声音克隆批次创建失败");
     } finally {
       editor.creating.value = false;
     }
@@ -142,7 +142,7 @@ export function useChatterboxBatches(options: {
       else options.message.warning("批次已结束，请查看失败文案段");
       await loadBatches();
     } catch (error) {
-      errorMessage.value = readableError(error, "批次结果读取失败");
+      if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次结果读取失败");
     }
   }
 
@@ -153,7 +153,7 @@ export function useChatterboxBatches(options: {
       if (isBatchRunning(batch)) editor.currentBatch.value = batch;
       detailVisible.value = true;
     } catch (error) {
-      options.message.error(readableError(error, "批次详情读取失败"));
+      notifyError(options.message, error, "批次详情读取失败");
     }
   }
   function setDetailBatch(batch: ChatterboxBatch) {
@@ -201,7 +201,7 @@ export function useChatterboxBatches(options: {
       editor.retryVoiceId.value = "";
       options.message.success("该文案段已加入重新生成队列");
     } catch (error) {
-      options.message.error(readableError(error, "重新生成失败"));
+      notifyError(options.message, error, "重新生成失败");
     } finally {
       regeneratingItemId.value = undefined;
     }
@@ -216,7 +216,7 @@ export function useChatterboxBatches(options: {
       setDetailBatch(await chatterboxApi.reorder(detailBatch.value.id, ids));
       await loadBatches();
     } catch (error) {
-      options.message.error(readableError(error, "调整顺序失败"));
+      notifyError(options.message, error, "调整顺序失败");
     }
   }
   async function removeBatchItem(itemId: string) {
@@ -228,7 +228,7 @@ export function useChatterboxBatches(options: {
       await loadBatches();
       options.message.success("文案段已删除");
     } catch (error) {
-      options.message.error(readableError(error, "删除失败"));
+      notifyError(options.message, error, "删除失败");
     }
   }
   async function cancelBatch(id: string) {
@@ -243,7 +243,7 @@ export function useChatterboxBatches(options: {
       editor.currentBatch.value = await chatterboxApi.cancelBatch(id);
       await loadBatches();
     } catch (error) {
-      options.message.error(readableError(error, "取消失败"));
+      notifyError(options.message, error, "取消失败");
     }
   }
   async function removeReference(id: string) {
@@ -256,7 +256,7 @@ export function useChatterboxBatches(options: {
       await refreshDetail();
       options.message.success("参考音色已删除");
     } catch (error) {
-      options.message.error(readableError(error, "删除参考音色失败"));
+      notifyError(options.message, error, "删除参考音色失败");
     }
   }
   async function removeBatch(id: string) {
@@ -268,7 +268,7 @@ export function useChatterboxBatches(options: {
       await loadBatches();
       options.message.success("批次已删除");
     } catch (error) {
-      options.message.error(readableError(error, "删除批次失败"));
+      notifyError(options.message, error, "删除批次失败");
     }
   }
   async function reuseLegacy(id: string) {
@@ -286,7 +286,7 @@ export function useChatterboxBatches(options: {
       window.scrollTo({ top: 0, behavior: "smooth" });
       options.message.info("旧文案已载入，请重新上传参考音色并确认授权");
     } catch (error) {
-      options.message.error(readableError(error, "读取旧记录失败"));
+      notifyError(options.message, error, "读取旧记录失败");
     }
   }
   async function removeLegacy(id: string) {
@@ -295,7 +295,7 @@ export function useChatterboxBatches(options: {
       await chatterboxApi.remove(id);
       await loadLegacyHistory();
     } catch (error) {
-      options.message.error(readableError(error, "删除失败"));
+      notifyError(options.message, error, "删除失败");
     }
   }
 
@@ -328,6 +328,6 @@ function isBatchRunning(batch: ChatterboxBatch) {
   return batch.status === "queued" || batch.status === "processing";
 }
 
-function readableError(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
+function notifyError(message: BatchMessage, error: unknown, fallback: string) {
+  if (!isApiErrorCancelled(error)) message.error(formatApiError(error, fallback));
 }
