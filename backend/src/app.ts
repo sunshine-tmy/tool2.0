@@ -41,6 +41,7 @@ import { registerConcurrencyQuotas } from "./security/request-quotas";
 import { openToolboxDatabase } from "./database/legacy-migration";
 import { reconcileLanStorage } from "./database/storage-consistency";
 import { FileMetadataRepository } from "./database/file-metadata";
+import { reconcileFileMetadataStorage } from "./database/file-consistency";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
@@ -337,6 +338,18 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
           failures: consistency.failures.length
         },
         "LAN storage consistency check found recoverable issues"
+      );
+    }
+    const fileConsistency = await reconcileFileMetadataStorage(config, database);
+    if (fileConsistency.quarantined || fileConsistency.removedMetadata || fileConsistency.failures.length) {
+      app.log.warn(
+        {
+          checked: fileConsistency.checked,
+          quarantined: fileConsistency.quarantined,
+          removedMetadata: fileConsistency.removedMetadata,
+          failures: fileConsistency.failures.length
+        },
+        "File metadata consistency check found recoverable issues"
       );
     }
   }

@@ -78,7 +78,7 @@
 | D01 | DONE | 建立 Schema v4 领域关系 | C01–C06  | 为小红书媒体/翻译、Chatterbox 分段增加关联列和外键；保留旧 `payload_json` |
 | D02 | DONE | 启用统一文件元数据表    | D01      | 各领域登记相对路径、大小、摘要、媒体类型和所有者                          |
 | D03 | DONE | 抽取原子文件提交网关    | D02      | 统一同盘 staging、校验、fsync、原子移动和数据库事务；失败清理 staging     |
-| D04 | TODO | 扩展启动一致性检查      | D02、D03 | 覆盖所有领域；异常文件移入隔离区并写审计，不永久删除                      |
+| D04 | DONE | 扩展启动一致性检查      | D02、D03 | 覆盖所有领域；异常文件移入隔离区并写审计，不永久删除                      |
 | D05 | TODO | 完善迁移与故障恢复测试  | D01–D04  | 覆盖 v3→v4、幂等、中断、磁盘不足、损坏、回滚、断电式提交和并发写入        |
 
 ### E. 前端结构、取消和错误恢复
@@ -163,3 +163,4 @@
 | F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                                                                              | —                 | —                                                                            | 当前大规模重构合并形成新基线后启用                                                               |
 | D02     | DONE                | 2026-09-15 | `[D02]`   | `pnpm --filter backend test -- database image-tools lan-transfer edge-tts chatterbox xhs-archive video-text image-ai`（86 项） | `pnpm check` 通过 | live/ready、图片/LAN/视频/配音/小红书/AI 流程通过；文件元数据登记与删除验证  | `files` 表启用 owner、实体索引和 SHA-256；统一仓库通过流式哈希登记相对路径，旧媒体与 JSON 未删除 |
 | D03     | DONE                | 2026-09-15 | `[D03]`   | `pnpm --filter backend test -- file-commit-gateway image-tools lan-transfer chatterbox edge-tts`（54 项）                      | `pnpm check` 通过 | live/ready、图片/LAN/分片/Chatterbox/Edge-TTS 流程通过；staging 失败清理验证 | 新增统一同盘 staging、文件/目录同步和原子提交网关；输出与上传接口保持不变                        |
+| D04     | DONE                | 2026-09-15 | `[D04]`   | `pnpm --filter backend test -- file-consistency`（1 项）                                                                       | `pnpm check` 通过 | 启动时 live/ready 及文件元数据一致性检查通过；损坏/临时文件进入隔离区        | 扩展到图片、LAN、视频、AI、Edge-TTS、Chatterbox、小红书目录；未登记历史媒体保持不变              |
