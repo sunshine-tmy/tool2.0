@@ -1,10 +1,12 @@
 # API 参考
 
-基础路径：`/api/v1`。除文件流与导出外，接口使用统一 `{ success, message, data | error, requestId }` 响应结构。正式接口不保留旧 `/api` 路径兼容层。
+基础路径：`/api/v1`。除文件流与导出外，接口使用统一 `{ success, message?, data | error, requestId }` 响应结构。正式接口不保留旧 `/api` 路径兼容层。启动、权限、迁移和发布操作见 [运维与发布手册](./operations.md)。
 
 ## 系统
 
 - `GET /api/v1/health`：服务、转写、短视频 Provider 和图片 AI 配置状态。
+- `GET /health/live`：仅表示进程存活；供进程守护使用。
+- `GET /health/ready`：检查 SQLite 和必需 storage 目录；依赖不可用时返回 `503 NOT_READY`。
 - `GET /api/v1/tools`：工具注册表。
 - `GET /api/v1/tasks`：最近任务，SQLite 默认最多保留 1000 条。
 - `GET /api/v1/tasks/:taskId`：读取一个任务。
@@ -13,6 +15,10 @@
 - `GET /api/v1/session`：通过现有 Cookie 恢复 CSRF token。
 - `DELETE /api/v1/session`：退出管理员会话。
 - `GET /api/v1/files/:fileName`：流式下载 `storage/outputs` 内的处理结果。
+
+`POST /api/v1/session` 在 `DEPLOYMENT_MODE=lan` 下建立全局管理员会话。后续管理写请求必须携带 HttpOnly、SameSite=Strict 的 `toolbox_admin` Cookie、`X-CSRF-Token` 和 `CORS_ORIGINS` 中的精确 `Origin`；`DELETE /api/v1/session` 退出。局域网文件传输的 `/tools/lan-transfer/access` 使用独立的可选 `LAN_TRANSFER_PIN`，只解锁访客上传/读取权限，不授予管理写权限。
+
+耗时创建接口统一返回 HTTP `202` 和 `data.taskId`；使用 `/api/v1/tasks/:taskId` 查询或 `/api/v1/tasks/:taskId/events` 订阅 SSE。所有 JSON 响应都会经过共享 TypeBox Schema 校验；错误至少包含稳定 `error.code`、可读 `message` 和 `requestId`。
 
 ## 图片压缩
 

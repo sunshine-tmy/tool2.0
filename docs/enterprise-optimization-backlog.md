@@ -120,7 +120,7 @@
 
 | ID  | 状态 | 任务                | 依赖          | 验收重点                                                             |
 | --- | ---- | ------------------- | ------------- | -------------------------------------------------------------------- |
-| H01 | TODO | 同步 API 与运维文档 | B07、D05、G03 | API、错误码、权限、迁移/回滚、隔离恢复和发布流程与实现一致           |
+| H01 | DONE | 同步 API 与运维文档 | B07、D05、G03 | API、错误码、权限、迁移/回滚、隔离恢复和发布流程与实现一致           |
 | H02 | TODO | 最终企业级验收      | 全部任务      | 干净 checkout 完成全部门禁、迁移、基准、E2E 和双平台分发，媒体不丢失 |
 
 ## 4. 接口与数据决策
@@ -184,3 +184,4 @@
 | G02     | DONE                | 2026-09-15 | `[G02]`   | Windows/macOS standalone 连续构建与元数据校验；许可证 JSON 无 `paths` 字段                                                                                                        | `pnpm check` 通过 | SBOM 工作流仅扫描最终 staging；构建清单、许可证清单、归档和 SBOM 均生成 SHA-256 sidecar；artifact 上传不包含 staging 目录                                                                                       | 许可证清单从 staging lockfile 解析并移除构建机绝对路径；CI 断言 SBOM 不含开发 checkout/node_modules；未改动现有数据                          |
 | G03     | DONE                | 2026-09-15 | `[G03]`   | 工作流格式检查；Release 输入文件清单与 `gh release create/upload` 分支静态校验                                                                                                    | `pnpm check` 通过 | `v*` tag 自动下载双平台 artifact，校验归档/SBOM/许可证/manifest 及全部 SHA-256 后创建或更新 GitHub Release；非 tag 手动运行不发布                                                                               | 使用 GitHub Actions 原生 token，重复 tag 采用 `gh release upload --clobber`；未在本地创建真实 Release，避免修改远程仓库状态                  |
 | G04     | DONE                | 2026-09-15 | `[G04]`   | Windows ZIP、macOS TAR.GZ 各完成真实解压、`pnpm install --frozen-lockfile`、`pnpm build` 和 `smoke-standalone.mjs`                                                                | `pnpm check` 通过 | 两种归档均从独立解压目录完成健康、前端预览、上传、下载、删除和退出；CI 矩阵在 Windows/macOS runner 重复执行，不使用 staging                                                                                     | 解压前校验归档 SHA-256；Windows ZIP 根目录与 macOS `toolbox-macos/` 目录均验证 `package.json`；临时 storage 自动清理，未改动现有数据         |
+| H01     | DONE                | 2026-09-15 | `[H01]`   | `pnpm exec prettier --write README.md docs/api.md docs/operations.md`                                                                                                             | `pnpm check` 通过 | 文档覆盖 `/health/live`、`/health/ready`、`/api/v1`、权限/CSRF、限流、迁移/回滚、隔离区恢复、SBOM 和 Release 流程                                                                                               | 新增 `docs/operations.md`；API 参考和 README 链接保持一致；隔离区恢复明确先备份、校验摘要、正常重新登记，避免手工破坏 SQLite                 |
