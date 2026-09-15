@@ -44,7 +44,12 @@ export class XhsRuntimeManager {
         this.installPromise = undefined;
       });
     }
-    await this.installPromise;
+    try {
+      await this.installPromise;
+    } catch (error) {
+      this.update({ status: "failed", message: error instanceof Error ? error.message : "解析环境安装失败" });
+      throw error;
+    }
     try {
       await this.provider.start(this.installer.runtimeSourceDir(), this.installer.venvPython());
       onProgress?.(this.getStatus());

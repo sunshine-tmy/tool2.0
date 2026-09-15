@@ -2,7 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { XhsAuthSession } from "@toolbox/shared";
 import { createApp } from "../app";
+import { XhsAuthManager } from "../modules/xhs-archive/auth";
 
 const originalFetch = globalThis.fetch;
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
@@ -57,6 +59,7 @@ describe("xhs archive api", () => {
         });
       }
       if (url === "https://translation.test/translate") {
+        await new Promise((resolve) => setTimeout(resolve, 20));
         const body = JSON.parse(String(init?.body || "{}")) as { texts?: string[] };
         return new Response(JSON.stringify({ translations: (body.texts ?? []).map((text) => `EN:${text}`) }), {
           status: 200,
@@ -94,10 +97,28 @@ describe("xhs archive api", () => {
       totalBytes: image.length
     });
     expect(detail.media).toHaveLength(1);
+    const batchTranslation = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/xhs-archive/translation/batches",
+      payload: { mode: "selected", itemIds: [detail.id] }
+    });
+    expect([200, 202]).toContain(batchTranslation.statusCode);
     const translated = await waitForTranslation(app, detail.id);
     expect(translated.translation).toMatchObject({ status: "ready", title: { machine: "EN:测试笔记" } });
     const translationTask = await waitForUnifiedTask(app, translated.translation.taskId);
     expect(translationTask).toMatchObject({ toolId: "xhs-translation", status: "completed" });
+
+    const conflict = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/tools/xhs-archive/items/${detail.id}/translation`,
+      payload: { sourceHash: "0".repeat(64), title: { edited: "冲突编辑" }, topics: [] }
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json()).toMatchObject({
+      success: false,
+      error: { code: "XHS_TRANSLATION_SOURCE_CHANGED" },
+      requestId: expect.any(String)
+    });
 
     const preview = await app.inject({
       method: "GET",
@@ -209,6 +230,62 @@ describe("xhs archive api", () => {
       });
     }
     expect(globalThis.fetch).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("serves the login session lifecycle and missing-session error contract", async () => {
+    const session: XhsAuthSession = {
+      id: "auth-session-1",
+      status: "pending",
+      message: "正在准备登录窗口",
+      createdAt: "2026-09-15T00:00:00.000Z",
+      updatedAt: "2026-09-15T00:00:00.000Z"
+    };
+    vi.spyOn(XhsAuthManager.prototype, "start").mockReturnValue(session);
+    vi.spyOn(XhsAuthManager.prototype, "get").mockImplementation((id) => (id === session.id ? session : undefined));
+
+    const app = await createApp({ remoteAddressResolver: publicResolver });
+    const started = await app.inject({ method: "POST", url: "/api/v1/tools/xhs-archive/auth/start" });
+    expect(started.statusCode).toBe(200);
+    expect(started.json()).toMatchObject({
+      success: true,
+      data: { id: session.id, status: "pending" },
+      requestId: expect.any(String)
+    });
+
+    const current = await app.inject({ method: "GET", url: `/api/v1/tools/xhs-archive/auth/${session.id}` });
+    expect(current.statusCode).toBe(200);
+    expect(current.json().data).toMatchObject({ id: session.id, status: "pending" });
+
+    const missing = await app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/auth/missing-session" });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toMatchObject({ success: false, error: { code: "XHS_AUTH_SESSION_NOT_FOUND" } });
+    await app.close();
+  });
+
+  it("rejects a short-link redirect outside Xiaohongshu before provider access", async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "https://xhslink.com/short") {
+        return new Response(null, { status: 302, headers: { location: "https://example.com/not-xhs" } });
+      }
+      if (url === "https://example.com/not-xhs") {
+        const response = new Response(null, { status: 200 });
+        Object.defineProperty(response, "url", { value: url });
+        return response;
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const app = await createApp({ remoteAddressResolver: publicResolver });
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/xhs-archive/items",
+      payload: { url: "https://xhslink.com/short" }
+    });
+    const task = await waitForTask(app, created.json().data.id);
+    expect(task).toMatchObject({ status: "failed", errorCode: "XHS_URL_INVALID" });
+    expect(globalThis.fetch).not.toHaveBeenCalledWith("https://provider.test/extract", expect.anything());
     await app.close();
   });
 

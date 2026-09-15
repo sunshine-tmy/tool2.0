@@ -1,15 +1,22 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getConfig } from "../config";
 import { XhsRuntimeManager } from "../modules/xhs-archive/runtime";
 import { XHS_COMMIT, XhsRuntimeInstallGateway } from "../modules/xhs-archive/runtime-install-gateway";
+import { XhsProviderProcess } from "../modules/xhs-archive/runtime-process";
+import { XhsTranslationRuntime } from "../modules/xhs-archive/translation-runtime";
 
 let runtimeDir = "";
+const originalFetch = globalThis.fetch;
 
 afterEach(async () => {
   delete process.env.XHS_RUNTIME_DIR;
+  delete process.env.XHS_TRANSLATION_RUNTIME_DIR;
+  delete process.env.XHS_TRANSLATION_MODEL_URL;
+  delete process.env.XHS_TRANSLATION_MODEL_SHA256;
+  globalThis.fetch = originalFetch;
   if (runtimeDir) await fs.rm(runtimeDir, { recursive: true, force: true });
 });
 
@@ -46,5 +53,45 @@ describe("xhs runtime validation", () => {
 
     await fs.writeFile(path.join(sourceDir, "requirements.txt"), "fastapi==0.116.2\n");
     await expect(gateway.validateExistingSource()).rejects.toThrow("固定版本源码摘要校验失败");
+  });
+
+  it("rejects a pinned source when a required file is missing", async () => {
+    runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-runtime-"));
+    process.env.XHS_RUNTIME_DIR = runtimeDir;
+    const sourceDir = path.join(runtimeDir, `XHS-Downloader-${XHS_COMMIT}`);
+    await fs.mkdir(sourceDir, { recursive: true });
+    await fs.writeFile(path.join(sourceDir, "LICENSE"), "license");
+
+    const gateway = new XhsRuntimeInstallGateway(getConfig(), () => undefined);
+
+    await expect(gateway.validateExistingSource()).rejects.toThrow("固定版本源码校验失败");
+  });
+
+  it("surfaces installation failures without starting a provider process", async () => {
+    runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-runtime-"));
+    process.env.XHS_RUNTIME_DIR = runtimeDir;
+    vi.spyOn(XhsProviderProcess.prototype, "isHealthy").mockResolvedValue(false);
+    vi.spyOn(XhsRuntimeInstallGateway.prototype, "install").mockRejectedValue(new Error("安装依赖失败"));
+
+    const manager = new XhsRuntimeManager(getConfig());
+
+    await expect(manager.ensureReady()).rejects.toThrow("安装依赖失败");
+    expect(manager.getStatus()).toMatchObject({ status: "failed", message: "安装依赖失败" });
+  });
+
+  it("rejects a translation model whose pinned digest does not match", async () => {
+    runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-runtime-"));
+    process.env.XHS_RUNTIME_DIR = runtimeDir;
+    process.env.XHS_TRANSLATION_RUNTIME_DIR = path.join(runtimeDir, "translation");
+    process.env.XHS_TRANSLATION_MODEL_URL = "https://model.test/model.tar.gz";
+    process.env.XHS_TRANSLATION_MODEL_SHA256 = "0".repeat(64);
+    globalThis.fetch = vi.fn(
+      async () => new Response(Buffer.from("not-the-pinned-model"), { status: 200 })
+    ) as typeof fetch;
+
+    const runtime = new XhsTranslationRuntime(getConfig());
+    const downloadModel = (runtime as unknown as { downloadModel: () => Promise<void> }).downloadModel.bind(runtime);
+
+    await expect(downloadModel()).rejects.toThrow("翻译模型校验失败");
   });
 });
