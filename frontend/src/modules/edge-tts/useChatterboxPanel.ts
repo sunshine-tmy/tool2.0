@@ -43,6 +43,8 @@ export function useChatterboxPanel() {
   };
 }
 
+export type ChatterboxPanelState = ReturnType<typeof useChatterboxPanel>;
+
 const displayHelpers = {
   isBatchRunning,
   languageLabel,
