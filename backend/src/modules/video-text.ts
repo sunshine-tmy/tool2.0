@@ -155,7 +155,13 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
 
   app.get<{ Querystring: { url: string } }>(
     "/api/v1/tools/video-text/remote-video",
-    { config: REQUEST_QUOTAS.remoteFetch, schema: { querystring: VideoTextRemoteQuerySchema } },
+    {
+      config: REQUEST_QUOTAS.remoteFetch,
+      schema: {
+        querystring: VideoTextRemoteQuerySchema,
+        response: { 400: ApiFailureSchema, 502: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const sourceUrl = request.query.url.trim();
 
@@ -305,7 +311,13 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
 
   app.get<{ Params: TaskParams; Querystring: { format?: "txt" | "srt" | "json" } }>(
     "/api/v1/tools/video-text/tasks/:taskId/export",
-    { schema: { params: VideoTextTaskParamsSchema, querystring: VideoTextExportQuerySchema } },
+    {
+      schema: {
+        params: VideoTextTaskParamsSchema,
+        querystring: VideoTextExportQuerySchema,
+        response: { 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
     async (request, reply) => {
       const { taskId } = request.params;
       if (!isValidTaskId(taskId)) {

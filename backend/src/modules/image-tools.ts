@@ -3,7 +3,14 @@ import path from "node:path";
 import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
-import { fail, normalizeImageOptions, ok } from "@toolbox/shared";
+import {
+  ApiFailureSchema,
+  ImageCompressResultSchema,
+  apiSuccessSchema,
+  fail,
+  normalizeImageOptions,
+  ok
+} from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { TaskStore } from "../tasks/task-store";
 
@@ -23,44 +30,63 @@ export function registerSingleImageToolRoute({
   taskStore,
   toolId
 }: RegisterImageToolRoutesOptions & { toolId: "image-compress" }) {
-  app.post(`/api/v1/tools/${toolId}`, async (request, reply) => {
-    return processImageRequest(toolId, request, reply, config, taskStore);
-  });
-
-  app.post(`/api/v1/tools/${toolId}/download.zip`, async (request, reply) => {
-    const requestedFiles = parseBatchDownloadFiles(request.body);
-    if (!requestedFiles.length) {
-      return reply.code(400).send(fail("FILES_REQUIRED", "Please select completed images to download"));
-    }
-
-    const archiveFiles: Array<{ filePath: string; archiveName: string }> = [];
-    const usedNames = new Set<string>();
-    for (const requested of requestedFiles) {
-      const task = taskStore.get(requested.taskId);
-      if (task?.toolId !== toolId || task.status !== "completed" || !task.outputPath) {
-        return reply.code(404).send(fail("RESULT_NOT_FOUND", "One or more compressed images are unavailable"));
+  app.post(
+    `/api/v1/tools/${toolId}`,
+    {
+      schema: {
+        response: {
+          200: apiSuccessSchema(ImageCompressResultSchema),
+          400: ApiFailureSchema,
+          413: ApiFailureSchema,
+          415: ApiFailureSchema
+        }
       }
-      const outputName = path.basename(task.outputPath);
-      const filePath = path.join(config.outputDir, outputName);
-      try {
-        const stat = await fs.stat(filePath);
-        if (!stat.isFile()) throw new Error("Not a file");
-      } catch {
-        return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "One or more compressed images were cleaned up"));
-      }
-      archiveFiles.push({
-        filePath,
-        archiveName: uniqueArchiveName(requested.fileName, path.extname(outputName), usedNames)
-      });
-    }
+    },
+    async (request, reply) => processImageRequest(toolId, request, reply, config, taskStore)
+  );
 
-    const archive = new ZipArchive({ zlib: { level: 6 } });
-    for (const file of archiveFiles) archive.file(file.filePath, { name: file.archiveName });
-    void archive.finalize();
-    reply.type("application/zip");
-    reply.header("content-disposition", `attachment; filename="image-compress-${Date.now()}.zip"`);
-    return reply.send(archive);
-  });
+  app.post(
+    `/api/v1/tools/${toolId}/download.zip`,
+    {
+      schema: {
+        response: { 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const requestedFiles = parseBatchDownloadFiles(request.body);
+      if (!requestedFiles.length) {
+        return reply.code(400).send(fail("FILES_REQUIRED", "Please select completed images to download"));
+      }
+
+      const archiveFiles: Array<{ filePath: string; archiveName: string }> = [];
+      const usedNames = new Set<string>();
+      for (const requested of requestedFiles) {
+        const task = taskStore.get(requested.taskId);
+        if (task?.toolId !== toolId || task.status !== "completed" || !task.outputPath) {
+          return reply.code(404).send(fail("RESULT_NOT_FOUND", "One or more compressed images are unavailable"));
+        }
+        const outputName = path.basename(task.outputPath);
+        const filePath = path.join(config.outputDir, outputName);
+        try {
+          const stat = await fs.stat(filePath);
+          if (!stat.isFile()) throw new Error("Not a file");
+        } catch {
+          return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "One or more compressed images were cleaned up"));
+        }
+        archiveFiles.push({
+          filePath,
+          archiveName: uniqueArchiveName(requested.fileName, path.extname(outputName), usedNames)
+        });
+      }
+
+      const archive = new ZipArchive({ zlib: { level: 6 } });
+      for (const file of archiveFiles) archive.file(file.filePath, { name: file.archiveName });
+      void archive.finalize();
+      reply.type("application/zip");
+      reply.header("content-disposition", `attachment; filename="image-compress-${Date.now()}.zip"`);
+      return reply.send(archive);
+    }
+  );
 }
 
 function parseBatchDownloadFiles(body: unknown) {

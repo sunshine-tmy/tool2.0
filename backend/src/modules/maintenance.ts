@@ -3,7 +3,14 @@ import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
-import { fail, ok } from "@toolbox/shared";
+import {
+  ApiFailureSchema,
+  CleanupInspectionSchema,
+  CleanupResultsSchema,
+  apiSuccessSchema,
+  fail,
+  ok
+} from "@toolbox/shared";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,30 +25,45 @@ type CleanupCategory = {
 };
 
 export function registerMaintenanceRoutes(app: FastifyInstance) {
-  app.get("/api/v1/maintenance/cleanup", async (_request, reply) => {
-    try {
-      const categories = (await runCleanup(["--json-web"])) as CleanupCategory[];
-      return ok(categories);
-    } catch (error) {
-      return reply.code(500).send(fail("CLEANUP_INSPECTION_FAILED", message(error)));
+  app.get(
+    "/api/v1/maintenance/cleanup",
+    { schema: { response: { 200: apiSuccessSchema(CleanupInspectionSchema), 500: ApiFailureSchema } } },
+    async (_request, reply) => {
+      try {
+        const categories = (await runCleanup(["--json-web"])) as CleanupCategory[];
+        return ok(categories);
+      } catch (error) {
+        return reply.code(500).send(fail("CLEANUP_INSPECTION_FAILED", message(error)));
+      }
     }
-  });
+  );
 
-  app.post("/api/v1/maintenance/cleanup", async (request, reply) => {
-    const body = isRecord(request.body) ? request.body : {};
-    const ids = Array.isArray(body.ids) ? body.ids.filter((value): value is string => typeof value === "string") : [];
-    if (!ids.length) return reply.code(400).send(fail("CLEANUP_SELECTION_REQUIRED", "请至少选择一个清理分类"));
-    if (ids.some((id) => id === "build" || id === "packages"))
-      return reply
-        .code(400)
-        .send(fail("CLEANUP_BUILD_REQUIRES_TERMINAL", "网页运行期间不能清理构建产物，请停止服务后使用终端清理脚本"));
-    try {
-      const results = await runCleanup([`--execute=${ids.join(",")}`, ...(body.dryRun === true ? ["--dry-run"] : [])]);
-      return ok(results);
-    } catch (error) {
-      return reply.code(400).send(fail("CLEANUP_FAILED", message(error)));
+  app.post(
+    "/api/v1/maintenance/cleanup",
+    {
+      schema: {
+        response: { 200: apiSuccessSchema(CleanupResultsSchema), 400: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const body = isRecord(request.body) ? request.body : {};
+      const ids = Array.isArray(body.ids) ? body.ids.filter((value): value is string => typeof value === "string") : [];
+      if (!ids.length) return reply.code(400).send(fail("CLEANUP_SELECTION_REQUIRED", "请至少选择一个清理分类"));
+      if (ids.some((id) => id === "build" || id === "packages"))
+        return reply
+          .code(400)
+          .send(fail("CLEANUP_BUILD_REQUIRES_TERMINAL", "网页运行期间不能清理构建产物，请停止服务后使用终端清理脚本"));
+      try {
+        const results = await runCleanup([
+          `--execute=${ids.join(",")}`,
+          ...(body.dryRun === true ? ["--dry-run"] : [])
+        ]);
+        return ok(results);
+      } catch (error) {
+        return reply.code(400).send(fail("CLEANUP_FAILED", message(error)));
+      }
     }
-  });
+  );
 }
 
 async function runCleanup(args: string[]) {

@@ -262,7 +262,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
 
   app.get<{ Params: TaskIdParams }>(
     "/api/v1/tasks/:taskId/events",
-    { schema: { params: TaskIdParamsSchema } },
+    { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema } } },
     async (request, reply) => {
       const { taskId } = request.params;
       const task = taskStore.get(taskId);
