@@ -12,6 +12,7 @@ export class ApiRequestError extends Error {
   details?: unknown;
   requestId?: string;
   retryable: boolean;
+  readonly cancelled: boolean;
   cause?: unknown;
 
   constructor(
@@ -24,8 +25,10 @@ export class ApiRequestError extends Error {
     this.status = options.status;
     this.details = options.details;
     this.requestId = options.requestId;
+    this.cancelled = options.code === "REQUEST_ABORTED";
     this.retryable =
-      options.status === undefined || options.status === 408 || options.status === 429 || options.status >= 500;
+      !this.cancelled &&
+      (options.status === undefined || options.status === 408 || options.status === 429 || options.status >= 500);
     this.cause = options.cause;
   }
 }
@@ -52,6 +55,10 @@ export async function withApiError<T>(operation: () => Promise<T>, fallbackMessa
 export function normalizeApiError(error: unknown, fallbackMessage = "请求失败") {
   if (error instanceof ApiRequestError) {
     return error;
+  }
+
+  if (isRequestCancelled(error)) {
+    return new ApiRequestError("请求已取消", { code: "REQUEST_ABORTED", cause: error });
   }
 
   const status = getErrorStatus(error);
@@ -177,6 +184,12 @@ function getErrorStatus(error: unknown) {
     return error.response.status;
   }
   return undefined;
+}
+
+function isRequestCancelled(error: unknown) {
+  if (axios.isCancel(error)) return true;
+  if (isRecord(error) && (error.code === "ERR_CANCELED" || error.name === "AbortError")) return true;
+  return typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError";
 }
 
 function getErrorResponseData(error: unknown) {

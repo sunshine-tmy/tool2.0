@@ -91,4 +91,21 @@ describe("api error wrapper", () => {
       status: "ok"
     });
   });
+
+  it("passes AbortSignal through every transport and treats cancellation as non-business failure", async () => {
+    const controller = new AbortController();
+    const instance = {
+      get: vi.fn().mockRejectedValue({ code: "ERR_CANCELED", name: "CanceledError" })
+    };
+    const client = createHttpClient(instance as never);
+
+    await expect(
+      withApiError(() => client.get("/health", Type.Null(), { signal: controller.signal }))
+    ).rejects.toMatchObject({
+      code: "REQUEST_ABORTED",
+      cancelled: true,
+      retryable: false
+    });
+    expect(instance.get).toHaveBeenCalledWith("/health", { signal: controller.signal });
+  });
 });

@@ -85,7 +85,7 @@
 
 | ID  | 状态 | 任务                             | 依赖     | 验收重点                                                                  |
 | --- | ---- | -------------------------------- | -------- | ------------------------------------------------------------------------- |
-| E01 | TODO | 为全部 HTTP API 支持 AbortSignal | B06      | 所有方法与上传均可取消，取消不显示为业务失败                              |
+| E01 | DONE | 为全部 HTTP API 支持 AbortSignal | B06      | 所有方法与上传均可取消，取消不显示为业务失败                              |
 | E02 | TODO | 页面生命周期接入请求取消         | E01      | 路由切换、卸载和任务取消时终止请求，释放轮询与 SSE                        |
 | E03 | TODO | 拆分 LAN 页面                    | C02、C03 | 页面容器不超过 600 行，队列、分享信息和批量管理进入 composable/子组件     |
 | E04 | TODO | 拆分 Chatterbox composable       | C06      | 拆为编辑器、音色、任务事件和批次操作 composable；单文件不超过 400 行      |
@@ -165,3 +165,4 @@
 | D03     | DONE                | 2026-09-15 | `[D03]`   | `pnpm --filter backend test -- file-commit-gateway image-tools lan-transfer chatterbox edge-tts`（54 项）                      | `pnpm check` 通过 | live/ready、图片/LAN/分片/Chatterbox/Edge-TTS 流程通过；staging 失败清理验证 | 新增统一同盘 staging、文件/目录同步和原子提交网关；输出与上传接口保持不变                        |
 | D04     | DONE                | 2026-09-15 | `[D04]`   | `pnpm --filter backend test -- file-consistency`（1 项）                                                                       | `pnpm check` 通过 | 启动时 live/ready 及文件元数据一致性检查通过；损坏/临时文件进入隔离区        | 扩展到图片、LAN、视频、AI、Edge-TTS、Chatterbox、小红书目录；未登记历史媒体保持不变              |
 | D05     | DONE                | 2026-09-15 | `[D05]`   | `pnpm --filter backend test -- database`（10 项）                                                                              | `pnpm check` 通过 | v4→v5 升级、幂等重启、事务回滚、完整性和现有迁移回归通过                     | 保留旧媒体/JSON；验证异常不会留下半写入元数据；D03 原子提交测试覆盖断电式 staging 清理           |
+| E01     | DONE                | 2026-09-15 | `[E01]`   | `pnpm --filter frontend test -- http`（7 项）                                                                                  | `pnpm check` 通过 | HTTP 客户端各方法透传 AbortSignal；取消不显示为业务失败                      | 取消统一为 `REQUEST_ABORTED`，`cancelled=true` 且不可重试；上传配置保持兼容                      |
