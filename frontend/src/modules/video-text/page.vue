@@ -7,215 +7,54 @@
         kicker="VIDEO TRANSCRIPTION"
       />
 
-      <section class="workspace-panel video-text-panel">
-        <div class="video-text-grid">
-          <div class="video-input-stack">
-            <label
-              class="dropzone video-dropzone"
-              :class="{ 'is-dragging': isDragging }"
-              @dragenter.prevent="isDragging = true"
-              @dragover.prevent="isDragging = true"
-              @dragleave.prevent="isDragging = false"
-              @drop.prevent="onVideoDrop"
-            >
-              <input hidden type="file" accept="video/mp4,video/webm,video/quicktime" @change="onVideoChange" />
-              <UploadCloud :size="28" />
-              <strong>{{ selectedVideo ? selectedVideo.name : remoteVideo?.fileName || "点击或拖拽上传视频" }}</strong>
-              <span>
-                {{
-                  remoteVideo
-                    ? "已从短视频解析带入视频，点击开始解析后将提取文案。"
-                    : "支持 MP4、WebM、MOV。上传后将调用后端配置的本地语音识别命令生成文案。"
-                }}
-              </span>
-            </label>
-
-            <div v-if="videoPreviewUrl" class="video-preview-box">
-              <video :src="videoPreviewUrl" controls />
-            </div>
-
-            <n-button type="primary" :loading="submitting" :disabled="!selectedVideo && !remoteVideo" @click="submit">
-              <template #icon>
-                <Wand2 :size="16" />
-              </template>
-              开始解析
-            </n-button>
-
-            <n-progress
-              v-if="submitting || currentTask"
-              type="line"
-              :percentage="uploadProgress"
-              :status="
-                currentTask?.status === 'failed' ? 'error' : currentTask?.status === 'completed' ? 'success' : 'default'
-              "
-              indicator-placement="inside"
-            />
-          </div>
-
-          <aside class="video-status-panel">
-            <h3>解析状态</h3>
-            <div class="metric-list">
-              <div>
-                <span>任务</span>
-                <strong>{{ currentTask?.id || "未开始" }}</strong>
-              </div>
-              <div>
-                <span>状态</span>
-                <strong>{{ statusLabel }}</strong>
-              </div>
-              <div>
-                <span>来源</span>
-                <strong>{{ sourceLabel }}</strong>
-              </div>
-              <div v-if="result">
-                <span>字数</span>
-                <strong>{{ result.stats.characterCount }}</strong>
-              </div>
-              <div v-for="row in recognitionQualityRows" :key="row.label">
-                <span>{{ row.label }}</span>
-                <strong>{{ row.value }}</strong>
-              </div>
-            </div>
-            <p v-if="currentTask?.error" class="status-error">{{ currentTask.error }}</p>
-            <p v-else class="status-hint">
-              已支持本地识别链路：视频会先提取音频，再调用后端配置的语音识别命令生成文案。
-            </p>
-          </aside>
-        </div>
-      </section>
-
-      <section class="workspace-panel video-history-panel">
-        <div class="panel-heading">
-          <h3>解析历史</h3>
-          <div class="history-search video-history-filters">
-            <n-input
-              v-model:value="historyKeyword"
-              clearable
-              size="small"
-              placeholder="搜索文件名、文案或摘要"
-              @keyup.enter="searchHistory"
-            />
-            <n-button type="primary" size="small" :loading="historyLoading" @click="searchHistory">筛选</n-button>
-          </div>
-        </div>
-
-        <div class="batch-toolbar">
-          <n-checkbox
-            :checked="historyPageSelection.checked"
-            :indeterminate="historyPageSelection.indeterminate"
-            :disabled="!historyItems.length"
-            @update:checked="toggleAllHistoryItems"
-          >
-            全选本页
-          </n-checkbox>
-          <n-button
-            tertiary
-            type="error"
-            size="small"
-            :disabled="!selectedHistoryIds.length"
-            :loading="batchDeletingHistory"
-            @click="deleteSelectedHistory"
-          >
-            批量删除 {{ selectedHistoryIds.length || "" }}
-          </n-button>
-        </div>
-
-        <div class="file-list">
-          <article v-for="item in historyItems" :key="item.id" class="file-row">
-            <div class="file-main">
-              <n-checkbox
-                :checked="selectedHistoryIds.includes(item.id)"
-                @update:checked="(checked) => toggleHistoryItem(item.id, checked)"
-              />
-              <FileVideo :size="20" />
-              <div>
-                <strong>{{ item.fileName }}</strong>
-                <span>{{ sourceName(item.source) }} · {{ formatBytes(item.fileSize) }} · {{ item.mimeType }}</span>
-                <span class="history-preview">{{ item.textPreview || "无预览内容" }}</span>
-              </div>
-            </div>
-            <div class="file-meta">
-              <span>解析 {{ formatDateTime(item.createdAt) }}</span>
-              <span>字数 {{ item.characterCount }}</span>
-              <span>摘要 {{ item.summary[0] || "暂无" }}</span>
-            </div>
-            <div class="file-actions">
-              <n-button secondary size="small" :loading="openingHistoryId === item.id" @click="openHistory(item.id)">
-                查看
-              </n-button>
-              <n-button
-                tertiary
-                type="error"
-                size="small"
-                :loading="deletingHistoryId === item.id"
-                @click="deleteHistory(item)"
-              >
-                删除
-              </n-button>
-            </div>
-          </article>
-          <n-empty v-if="!historyItems.length && !historyLoading" description="暂无历史记录" />
-        </div>
-
-        <div v-if="shouldShowPagination(historyPagination.total)" class="pagination-row">
-          <span class="pagination-total">共 {{ historyPagination.total }} 条历史</span>
-          <n-pagination
-            v-model:page="historyPagination.page"
-            v-model:page-size="historyPagination.pageSize"
-            :item-count="historyPagination.total"
-            :page-sizes="[5, 10, 20, 50]"
-            show-size-picker
-            @update:page="loadHistory"
-            @update:page-size="onHistoryPageSizeChange"
-          />
-        </div>
-      </section>
-
-      <section v-if="result" class="workspace-panel result-panel">
-        <div class="panel-heading">
-          <h3>提取结果</h3>
-          <div class="result-actions">
-            <n-button secondary size="small" @click="copyFullText">复制全文</n-button>
-            <n-button secondary size="small" tag="a" :href="exportUrl('txt')" target="_blank">TXT</n-button>
-            <n-button secondary size="small" tag="a" :href="exportUrl('srt')" target="_blank">SRT</n-button>
-            <n-button secondary size="small" tag="a" :href="exportUrl('json')" target="_blank">JSON</n-button>
-          </div>
-        </div>
-
-        <div class="analysis-grid">
-          <div class="analysis-section transcript-section">
-            <h4>完整文案</h4>
-            <pre>{{ result.fullText }}</pre>
-          </div>
-
-          <div class="analysis-section">
-            <h4>摘要</h4>
-            <ul>
-              <li v-for="item in result.summary" :key="item">{{ item }}</li>
-            </ul>
-          </div>
-        </div>
-
-        <div class="timeline-list">
-          <h4>时间轴文案</h4>
-          <article v-for="segment in result.segments" :key="`${segment.index}-${segment.text}`" class="timeline-row">
-            <span>{{ formatSeconds(segment.startSeconds) }} - {{ formatSeconds(segment.endSeconds) }}</span>
-            <strong>{{ segment.text }}</strong>
-          </article>
-        </div>
-
-        <div v-if="lowConfidenceSegments.length" class="timeline-list">
-          <h4>建议复核片段</h4>
-          <article
-            v-for="segment in lowConfidenceSegments"
-            :key="`${segment.index}-${segment.text}`"
-            class="timeline-row"
-          >
-            <span>{{ formatSeconds(segment.startSeconds) }} - {{ formatSeconds(segment.endSeconds) }}</span>
-            <strong>{{ segment.text }}</strong>
-          </article>
-        </div>
-      </section>
+      <VideoInputPanel
+        v-model:is-dragging="isDragging"
+        :selected-video="selectedVideo"
+        :remote-video="remoteVideo"
+        :video-preview-url="videoPreviewUrl"
+        :submitting="submitting"
+        :upload-progress="uploadProgress"
+        :current-task="currentTask"
+        :result="result"
+        :status-label="statusLabel"
+        :source-label="sourceLabel"
+        :recognition-quality-rows="recognitionQualityRows"
+        :on-video-drop="onVideoDrop"
+        :on-video-change="onVideoChange"
+        :submit="submit"
+      />
+      <VideoHistoryPanel
+        v-model:keyword="historyKeyword"
+        :history-loading="historyLoading"
+        :search-history="searchHistory"
+        :history-page-selection="historyPageSelection"
+        :history-items="historyItems"
+        :selected-history-ids="selectedHistoryIds"
+        :batch-deleting-history="batchDeletingHistory"
+        :toggle-all-history-items="toggleAllHistoryItems"
+        :delete-selected-history="deleteSelectedHistory"
+        :opening-history-id="openingHistoryId"
+        :source-name="sourceName"
+        :format-bytes="formatBytes"
+        :format-date-time="formatDateTime"
+        :toggle-history-item="toggleHistoryItem"
+        :deleting-history-id="deletingHistoryId"
+        :open-history="openHistory"
+        :delete-history="deleteHistory"
+        :total="historyPagination.total"
+        :page="historyPagination.page"
+        :page-size="historyPagination.pageSize"
+        :load-history="loadHistory"
+        :on-history-page-size-change="onHistoryPageSizeChange"
+      />
+      <VideoResultPanel
+        v-if="result"
+        :result="result"
+        :low-confidence-segments="lowConfidenceSegments"
+        :copy-full-text="copyFullText"
+        :export-url="exportUrl"
+        :format-seconds="formatSeconds"
+      />
     </section>
   </ToolLayout>
 </template>
@@ -223,10 +62,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { NButton, NCheckbox, NEmpty, NInput, NPagination, NProgress, useMessage } from "naive-ui";
-import { FileVideo, UploadCloud, Wand2 } from "lucide-vue-next";
+import { useMessage } from "naive-ui";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
+import VideoHistoryPanel from "./VideoHistoryPanel.vue";
+import VideoInputPanel from "./VideoInputPanel.vue";
+import VideoResultPanel from "./VideoResultPanel.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
@@ -237,7 +78,6 @@ import { describeRecognitionQuality } from "./quality";
 import { createRemoteVideoPreviewUrl, getRemoteVideoSourceFromQuery, type RemoteVideoSource } from "./remote-source";
 import type { VideoTextHistoryItem, VideoTextResult } from "./types";
 import type { ToolTask } from "../../types";
-import { shouldShowPagination } from "../lan-transfer/pagination";
 import {
   getPageSelectionState,
   pruneSelectedIds,
