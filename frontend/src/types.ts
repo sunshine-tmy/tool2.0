@@ -1,8 +1,1 @@
-export type ToolTask = {
-  id: string;
-  toolId: string;
-  status: "pending" | "running" | "completed" | "failed";
-  progress: number;
-  outputPath?: string;
-  error?: string;
-};
+export type { TaskDto as ToolTask } from "@toolbox/shared";

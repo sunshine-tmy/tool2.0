@@ -130,6 +130,7 @@ import { NButton, NInput, NTag, useMessage } from "naive-ui";
 import { Clapperboard, Download, FileText, Link2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { shortVideoApi } from "./api";
 import { createShortVideoDownloadName, triggerShortVideoDownload } from "./download";
@@ -169,7 +170,7 @@ async function parse() {
     });
     message.success("解析完成");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "短视频解析失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "短视频解析失败"));
   } finally {
     loading.value = false;
   }
@@ -180,7 +181,7 @@ async function copyUrl(url: string) {
     await copyTextToClipboard(url);
     message.success("已复制链接");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "复制失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "复制失败"));
   }
 }
 
@@ -191,7 +192,7 @@ async function downloadMedia(item: ShortVideoMedia) {
     await triggerShortVideoDownload(item);
     message.success("已开始下载");
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "下载失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "下载失败"));
   } finally {
     downloadingUrls.value = downloadingUrls.value.filter((url) => url !== item.url);
   }

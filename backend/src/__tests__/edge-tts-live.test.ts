@@ -21,9 +21,9 @@ describe.skipIf(!live)("edge tts live service", () => {
   it("generates real Malay, English and Brazilian Portuguese audio with subtitles", async () => {
     const app = await createApp();
     try {
-      const health = await app.inject({ method: "GET", url: "/api/tools/edge-tts/health" });
+      const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/health" });
       expect(health.json().data).toMatchObject({ available: true, version: "7.2.8" });
-      const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices" });
+      const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices" });
       const voiceNames = voices.json().data.voices.map((voice: { shortName: string }) => voice.shortName);
       expect(voiceNames).toEqual(expect.arrayContaining(["ms-MY-YasminNeural", "en-US-JennyNeural"]));
 
@@ -51,7 +51,7 @@ describe.skipIf(!live)("edge tts live service", () => {
       ] as const) {
         const created = await app.inject({
           method: "POST",
-          url: "/api/tools/edge-tts/tasks",
+          url: "/api/v1/tools/edge-tts/tasks",
           payload: { ...sample, rate: 0, volume: 0, pitch: 0, includeSubtitles: true }
         });
         expect(created.statusCode).toBe(202);
@@ -74,7 +74,7 @@ describe.skipIf(!live)("edge tts live service", () => {
 
 async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, taskId: string) {
   for (let attempt = 0; attempt < 240; attempt += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     const task = response.json().data;
     if (task.status === "completed" || task.status === "failed") return task;
     await new Promise((resolve) => setTimeout(resolve, 500));

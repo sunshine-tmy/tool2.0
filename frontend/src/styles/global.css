@@ -1,3 +1,4 @@
+/* Foundation: reset, document defaults, layout primitives and legacy module compatibility. */
 * {
   box-sizing: border-box;
 }
@@ -1553,6 +1554,22 @@ a {
   gap: 8px;
 }
 
+.lan-note-batch-toolbar {
+  margin-bottom: 0;
+  padding: 2px 0;
+}
+
+.lan-note-card-main {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.lan-note-card-main > div {
+  min-width: 0;
+}
+
 .lan-filters {
   display: grid;
   grid-template-columns: minmax(180px, 1.4fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(130px, 0.8fr) minmax(100px, 0.6fr) auto auto;
@@ -2468,6 +2485,7 @@ a {
   color: #dc2626;
 }
 
+/* Responsive foundation overrides. Visual component-specific responsive rules remain in redesign.css. */
 @media (max-width: 1180px) {
   .edge-tts-workbench {
     grid-template-columns: 1fr;

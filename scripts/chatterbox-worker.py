@@ -10,7 +10,6 @@ import json
 import os
 import random
 import re
-import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -176,7 +175,7 @@ class ModelManager:
             combined_parts = []
             segments = []
             cursor_samples = 0
-            for index, (chunk, wav) in enumerate(zip(chunks, generated)):
+            for index, (chunk, wav) in enumerate(zip(chunks, generated, strict=False)):
                 if index:
                     combined_parts.append(silence)
                     cursor_samples += int(silence.shape[-1])
@@ -217,6 +216,7 @@ class ModelManager:
         self.model = None
         self.device = None
         import gc
+
         import torch
 
         gc.collect()
@@ -248,6 +248,7 @@ async def health() -> dict[str, Any]:
         return {
             "success": True,
             "data": {
+                "protocolVersion": 1,
                 "available": True,
                 "packageVersion": version,
                 "model": "multilingual-v3",
@@ -261,6 +262,7 @@ async def health() -> dict[str, Any]:
         return {
             "success": True,
             "data": {
+                "protocolVersion": 1,
                 "available": False,
                 "model": "multilingual-v3",
                 "modelLoaded": False,
@@ -304,6 +306,7 @@ if __name__ == "__main__":
     arguments = parse_args()
     if arguments.check:
         import inspect
+
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
         if "t3_model" not in inspect.signature(ChatterboxMultilingualTTS.from_pretrained).parameters:

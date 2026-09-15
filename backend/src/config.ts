@@ -5,10 +5,15 @@ import { fileURLToPath } from "node:url";
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 export type AppConfig = {
+  deploymentMode: "local" | "lan";
+  adminPin?: string;
   host: string;
   port: number;
   corsOrigins: string[];
   storageRoot: string;
+  databasePath: string;
+  migrationBackupDir: string;
+  quarantineDir: string;
   uploadDir: string;
   outputDir: string;
   tempDir: string;
@@ -42,6 +47,13 @@ export type AppConfig = {
   xhsProviderPort: number;
   xhsInstallTimeoutMs: number;
   xhsArchiveMaxStorageBytes: number;
+  xhsTranslationRuntimeDir: string;
+  xhsTranslationModelDir: string;
+  xhsTranslationProviderUrl?: string;
+  xhsTranslationProviderPort: number;
+  xhsTranslationInstallTimeoutMs: number;
+  xhsTranslationModelUrl: string;
+  xhsTranslationModelSha256?: string;
   remoteFetchTimeoutMs: number;
   remoteMediaMaxBytes: number;
   imageAiDir: string;
@@ -79,13 +91,28 @@ export function getConfig(): AppConfig {
   const edgeTtsDir = path.join(storageRoot, "edge-tts");
   const chatterboxDir = path.join(storageRoot, "chatterbox");
   const xhsArchiveDir = path.join(storageRoot, "xhs-archive");
+  const xhsTranslationRuntimeDir = resolveProjectPath(
+    getEnv("XHS_TRANSLATION_RUNTIME_DIR", fileEnv)?.trim() || ".runtime/xhs-translate"
+  );
   const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv)?.trim();
+  const deploymentMode = readDeploymentMode(getEnv("DEPLOYMENT_MODE", fileEnv));
+  const adminPin = getEnv("ADMIN_PIN", fileEnv)?.trim() || undefined;
+  if (deploymentMode === "lan" && !adminPin) {
+    throw new Error("ADMIN_PIN is required when DEPLOYMENT_MODE=lan");
+  }
 
   return {
-    host: getEnv("API_HOST", fileEnv)?.trim() || "127.0.0.1",
+    deploymentMode,
+    adminPin,
+    host: getEnv("API_HOST", fileEnv)?.trim() || (deploymentMode === "lan" ? "0.0.0.0" : "127.0.0.1"),
     port: readInteger("API_PORT", getEnv("API_PORT", fileEnv), 3100, 1, 65535),
     corsOrigins: readCorsOrigins(fileEnv),
     storageRoot,
+    databasePath:
+      getEnv("DATABASE_PATH", fileEnv)?.trim() ||
+      (process.env.NODE_ENV === "test" ? ":memory:" : path.join(storageRoot, "toolbox.db")),
+    migrationBackupDir: path.join(storageRoot, "migration-backups"),
+    quarantineDir: path.join(storageRoot, "quarantine"),
     uploadDir: path.join(storageRoot, "uploads"),
     outputDir: path.join(storageRoot, "outputs"),
     tempDir: path.join(storageRoot, "temp"),
@@ -136,7 +163,7 @@ export function getConfig(): AppConfig {
       "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}",
     videoTextTranscribeCommand: getEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND", fileEnv)?.trim() || undefined,
     shortVideoParseApiUrl:
-      getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv)?.trim() || "https://api.bugpk.com/api/short_videos",
+      getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv)?.trim() || "https://api.bugpk.com/api/v1/short_videos",
     shortVideoParseTimeoutMs: readInteger(
       "SHORT_VIDEO_PARSE_TIMEOUT_MS",
       getEnv("SHORT_VIDEO_PARSE_TIMEOUT_MS", fileEnv),
@@ -183,6 +210,29 @@ export function getConfig(): AppConfig {
       100 * 1024 * 1024 * 1024,
       1
     ),
+    xhsTranslationRuntimeDir,
+    xhsTranslationModelDir: resolveProjectPath(
+      getEnv("XHS_TRANSLATION_MODEL_DIR", fileEnv)?.trim() || path.join(xhsTranslationRuntimeDir, "model")
+    ),
+    xhsTranslationProviderUrl: getEnv("XHS_TRANSLATION_PROVIDER_URL", fileEnv)?.trim() || undefined,
+    xhsTranslationProviderPort: readInteger(
+      "XHS_TRANSLATION_PROVIDER_PORT",
+      getEnv("XHS_TRANSLATION_PROVIDER_PORT", fileEnv),
+      5557,
+      1,
+      65535
+    ),
+    xhsTranslationInstallTimeoutMs: readInteger(
+      "XHS_TRANSLATION_INSTALL_TIMEOUT_MS",
+      getEnv("XHS_TRANSLATION_INSTALL_TIMEOUT_MS", fileEnv),
+      20 * 60 * 1000,
+      30_000,
+      60 * 60 * 1000
+    ),
+    xhsTranslationModelUrl:
+      getEnv("XHS_TRANSLATION_MODEL_URL", fileEnv)?.trim() ||
+      "https://github.com/sunshine-tmy/tool2.0/releases/download/xhs-translation-v1/opus-mt-zh-en-ct2-int8-cf109095.tar.gz",
+    xhsTranslationModelSha256: getEnv("XHS_TRANSLATION_MODEL_SHA256", fileEnv)?.trim() || undefined,
     remoteFetchTimeoutMs: readInteger(
       "REMOTE_FETCH_TIMEOUT_MS",
       getEnv("REMOTE_FETCH_TIMEOUT_MS", fileEnv),
@@ -253,6 +303,12 @@ export function getConfig(): AppConfig {
     chatterboxFfprobePath: getEnv("CHATTERBOX_FFPROBE_PATH", fileEnv)?.trim() || "ffprobe",
     deploymentUsage: configuredUsage === "internal-noncommercial" ? "internal-noncommercial" : "commercial"
   };
+}
+
+function readDeploymentMode(value: string | undefined): AppConfig["deploymentMode"] {
+  const normalized = value?.trim().toLowerCase() || "local";
+  if (normalized === "local" || normalized === "lan") return normalized;
+  throw new Error("DEPLOYMENT_MODE must be local or lan");
 }
 
 function readLanTransferGuestMode(value: string | undefined): AppConfig["lanTransferGuestMode"] {

@@ -1,4 +1,4 @@
-/* Visual system overrides. Keep module behavior in global.css while components migrate. */
+/* Components: visual system overrides. Keep module behavior in global.css while components migrate. */
 body {
   color: var(--color-text);
   background: var(--color-canvas);

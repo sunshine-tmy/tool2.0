@@ -2,6 +2,9 @@ import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 import { Readable, Transform } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
+import { Agent, fetch as undiciFetch } from "undici";
+
+const nativeGlobalFetch = globalThis.fetch;
 
 export type ResolvedAddress = { address: string; family: number };
 export type AddressResolver = (hostname: string) => Promise<ResolvedAddress[]>;
@@ -41,15 +44,37 @@ export function createRemoteFetch(
   } = {}
 ): RemoteFetch {
   const resolver = options.resolver ?? resolveAllAddresses;
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const maxRedirects = options.maxRedirects ?? 3;
+  const injectedFetch = options.fetchImpl ?? (globalThis.fetch !== nativeGlobalFetch ? globalThis.fetch : undefined);
+  const pinnedAddresses = new Map<string, ResolvedAddress>();
+  const dispatcher = injectedFetch
+    ? undefined
+    : new Agent({
+        connect: {
+          lookup(hostname, _options, callback) {
+            const selected = pinnedAddresses.get(normalizeHostname(hostname));
+            if (!selected) {
+              callback(new Error("Remote hostname was not resolved through the SSRF policy"), "", 4);
+              return;
+            }
+            callback(null, selected.address, selected.family as 4 | 6);
+          }
+        }
+      });
 
   return async (input, init = {}) => {
     let current = new URL(input);
 
     for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-      await assertPublicRemoteUrl(current, resolver);
-      const response = await fetchImpl(current.toString(), { ...init, redirect: "manual" });
+      const addresses = await resolvePublicRemoteUrl(current, resolver);
+      pinnedAddresses.set(normalizeHostname(current.hostname), addresses[0]);
+      const response = (injectedFetch
+        ? await injectedFetch(current.toString(), { ...init, redirect: "manual" })
+        : await undiciFetch(current.toString(), {
+            ...(init as Parameters<typeof undiciFetch>[1]),
+            redirect: "manual",
+            dispatcher
+          })) as unknown as Response;
       if (!isRedirect(response.status)) return response;
 
       const location = response.headers.get("location");
@@ -64,6 +89,10 @@ export function createRemoteFetch(
 }
 
 export async function assertPublicRemoteUrl(url: URL, resolver: AddressResolver = resolveAllAddresses) {
+  await resolvePublicRemoteUrl(url, resolver);
+}
+
+async function resolvePublicRemoteUrl(url: URL, resolver: AddressResolver) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Only HTTP and HTTPS remote URLs are allowed");
   }
@@ -83,6 +112,14 @@ export async function assertPublicRemoteUrl(url: URL, resolver: AddressResolver 
   if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) {
     throw new Error("Remote URL resolves to a private or reserved network address");
   }
+  return addresses;
+}
+
+function normalizeHostname(hostname: string) {
+  return hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.$/, "");
 }
 
 export function assertRemoteResponseSize(response: Response, maxBytes: number) {

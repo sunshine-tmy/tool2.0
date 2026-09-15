@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ShortVideoParseResultSchema } from "@toolbox/shared";
 import { shortVideoApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ describe("short video api", () => {
       platform: "douyin"
     });
 
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/short-video/parse", {
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/short-video/parse", ShortVideoParseResultSchema, {
       input: "https://v.douyin.com/abc123/",
       platform: "douyin"
     });
@@ -37,7 +38,7 @@ describe("short video api", () => {
       platform: "tiktok"
     });
 
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/short-video/parse", {
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/short-video/parse", ShortVideoParseResultSchema, {
       input: "https://www.tiktok.com/@creator/video/123456789",
       platform: "tiktok"
     });

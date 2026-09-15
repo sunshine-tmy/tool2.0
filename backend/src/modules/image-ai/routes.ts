@@ -1,10 +1,29 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import archiver from "archiver";
+import { ZipArchive } from "archiver";
 import type { FastifyInstance } from "fastify";
-import { fail, isImageAiOperation, ok } from "@toolbox/shared";
+import {
+  ApiFailureSchema,
+  ImageAiFileQuerySchema,
+  ImageAiHealthSchema,
+  ImageAiResultParamsSchema,
+  ImageAiTaskSchema,
+  TaskIdParamsSchema,
+  WatermarkSuggestionResponseSchema,
+  apiSuccessSchema,
+  fail,
+  isImageAiOperation,
+  ok,
+  type ImageAiFileQuery,
+  type ImageAiResultParams,
+  type TaskIdParams
+} from "@toolbox/shared";
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
+import { REQUEST_QUOTAS } from "../../security/request-quotas";
+import type { TaskStore } from "../../tasks/task-store";
 import {
   IMAGE_AI_MAX_FILE_BYTES,
   IMAGE_AI_MAX_MASK_BYTES,
@@ -24,176 +43,252 @@ type UploadedPart = {
   fieldname: string;
 };
 
-export async function registerImageAiRoutes(app: FastifyInstance, config: AppConfig) {
-  const manager = createImageAiTaskManager(config);
+export async function registerImageAiRoutes(
+  app: FastifyInstance,
+  config: AppConfig,
+  database: ToolboxDatabase,
+  taskStore: TaskStore,
+  fileMetadata?: FileMetadataRepository
+) {
+  const manager = createImageAiTaskManager(config, database, taskStore, fileMetadata);
   const worker = createImageAiWorkerClient(config);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());
 
-  app.get("/api/tools/image-ai/health", async (_request, reply) => {
-    try {
-      return ok(await worker.health());
-    } catch (error) {
-      const workerError = toWorkerError(error);
-      return reply.code(503).send(
-        fail(workerError.code, workerError.message, {
-          available: false,
-          deploymentUsage: config.deploymentUsage,
-          workerUrl: config.imageAiWorkerUrl,
-          models: []
-        })
-      );
+  app.get(
+    "/api/v1/tools/image-ai/health",
+    { schema: { response: { 200: apiSuccessSchema(ImageAiHealthSchema), 503: ApiFailureSchema } } },
+    async (_request, reply) => {
+      try {
+        return ok(await worker.health());
+      } catch (error) {
+        const workerError = toWorkerError(error);
+        return reply.code(503).send(
+          fail(workerError.code, workerError.message, {
+            available: false,
+            deploymentUsage: config.deploymentUsage,
+            workerUrl: config.imageAiWorkerUrl,
+            models: []
+          })
+        );
+      }
     }
-  });
+  );
 
-  app.post("/api/tools/image-ai/watermark/suggestions", async (request, reply) => {
-    const tempId = `suggestion-${nanoid(12)}`;
-    const tempDir = path.join(config.imageAiInputsDir, tempId);
-    await fs.mkdir(tempDir, { recursive: true });
-
-    try {
-      const file = await request.file();
-      if (!file) return reply.code(400).send(fail("FILE_REQUIRED", "请选择一张图片"));
-      const stored = await storeStream(file.file, path.join(tempDir, "input.bin"), IMAGE_AI_MAX_FILE_BYTES);
-      await validateUploadedImage({
-        filePath: stored.path,
-        originalName: path.basename(file.filename || "image"),
-        mimetype: file.mimetype,
-        size: stored.size
-      });
-      return ok(await worker.suggestions(stored.path));
-    } catch (error) {
-      return sendRouteError(reply, error);
-    } finally {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    }
-  });
-
-  app.post("/api/tools/image-ai/tasks", async (request, reply) => {
-    const releaseReservation = manager.tryReserveSlot();
-    if (!releaseReservation) {
-      return reply.code(429).send(fail("IMAGE_AI_QUEUE_FULL", "AI 任务队列已满，请稍后再试"));
-    }
-
-    const taskId = nanoid(12);
-    const inputDir = path.join(config.imageAiInputsDir, taskId);
-    const uploaded: UploadedPart[] = [];
-    const fields: Record<string, string> = {};
-
-    try {
-      await fs.mkdir(inputDir, { recursive: true });
-      let fileIndex = 0;
-      for await (const part of request.parts()) {
-        if (part.type === "field") {
-          fields[part.fieldname] = String(part.value ?? "");
-          continue;
+  app.post(
+    "/api/v1/tools/image-ai/watermark/suggestions",
+    {
+      config: REQUEST_QUOTAS.ai,
+      schema: {
+        response: {
+          200: apiSuccessSchema(WatermarkSuggestionResponseSchema),
+          400: ApiFailureSchema,
+          413: ApiFailureSchema,
+          422: ApiFailureSchema,
+          503: ApiFailureSchema
         }
-        const isMask = part.fieldname === "mask";
-        const limit = isMask ? IMAGE_AI_MAX_MASK_BYTES : IMAGE_AI_MAX_FILE_BYTES;
-        const destination = path.join(inputDir, isMask ? "mask.png" : `input-${fileIndex++}.bin`);
-        const stored = await storeStream(part.file, destination, limit);
-        uploaded.push({
-          ...stored,
-          filename: path.basename(part.filename || (isMask ? "mask.png" : "image")),
-          mimetype: part.mimetype,
-          fieldname: part.fieldname
+      }
+    },
+    async (request, reply) => {
+      const tempId = `suggestion-${nanoid(12)}`;
+      const tempDir = path.join(config.imageAiInputsDir, tempId);
+      await fs.mkdir(tempDir, { recursive: true });
+
+      try {
+        const file = await request.file();
+        if (!file) return reply.code(400).send(fail("FILE_REQUIRED", "请选择一张图片"));
+        const stored = await storeStream(file.file, path.join(tempDir, "input.bin"), IMAGE_AI_MAX_FILE_BYTES);
+        await validateUploadedImage({
+          filePath: stored.path,
+          originalName: path.basename(file.filename || "image"),
+          mimetype: file.mimetype,
+          size: stored.size
         });
+        return ok(await worker.suggestions(stored.path));
+      } catch (error) {
+        return sendRouteError(reply, error);
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  app.post(
+    "/api/v1/tools/image-ai/tasks",
+    {
+      config: REQUEST_QUOTAS.ai,
+      schema: {
+        response: {
+          202: apiSuccessSchema(ImageAiTaskSchema),
+          400: ApiFailureSchema,
+          413: ApiFailureSchema,
+          422: ApiFailureSchema,
+          429: ApiFailureSchema,
+          503: ApiFailureSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const releaseReservation = manager.tryReserveSlot();
+      if (!releaseReservation) {
+        return reply.code(429).send(fail("IMAGE_AI_QUEUE_FULL", "AI 任务队列已满，请稍后再试"));
       }
 
-      const operation = fields.operation;
-      if (!isImageAiOperation(operation)) {
-        throw validationError("INVALID_OPERATION", "不支持的图片处理操作");
-      }
-      const fileParts = uploaded.filter((part) => part.fieldname !== "mask");
-      const maskPart = uploaded.find((part) => part.fieldname === "mask");
-      const maxFiles = operation === "watermark_remove" ? 1 : 10;
-      if (!fileParts.length) throw validationError("FILE_REQUIRED", "请至少选择一张图片");
-      if (fileParts.length > maxFiles) {
-        throw validationError("TOO_MANY_FILES", `该操作最多支持 ${maxFiles} 张图片`);
-      }
+      const taskId = nanoid(12);
+      const inputDir = path.join(config.imageAiInputsDir, taskId);
+      const uploaded: UploadedPart[] = [];
+      const fields: Record<string, string> = {};
 
-      const scale = fields.scale === "4" ? 4 : 2;
-      const validatedFiles: StoredInput[] = [];
-      for (const part of fileParts) {
-        const metadata = await validateUploadedImage({
-          filePath: part.path,
-          originalName: part.filename,
-          mimetype: part.mimetype,
-          size: part.size
+      try {
+        await fs.mkdir(inputDir, { recursive: true });
+        let fileIndex = 0;
+        for await (const part of request.parts()) {
+          if (part.type === "field") {
+            fields[part.fieldname] = String(part.value ?? "");
+            continue;
+          }
+          const isMask = part.fieldname === "mask";
+          const limit = isMask ? IMAGE_AI_MAX_MASK_BYTES : IMAGE_AI_MAX_FILE_BYTES;
+          const destination = path.join(inputDir, isMask ? "mask.png" : `input-${fileIndex++}.bin`);
+          const stored = await storeStream(part.file, destination, limit);
+          uploaded.push({
+            ...stored,
+            filename: path.basename(part.filename || (isMask ? "mask.png" : "image")),
+            mimetype: part.mimetype,
+            fieldname: part.fieldname
+          });
+        }
+
+        const operation = fields.operation;
+        if (!isImageAiOperation(operation)) {
+          throw validationError("INVALID_OPERATION", "不支持的图片处理操作");
+        }
+        const fileParts = uploaded.filter((part) => part.fieldname !== "mask");
+        const maskPart = uploaded.find((part) => part.fieldname === "mask");
+        const maxFiles = operation === "watermark_remove" ? 1 : 10;
+        if (!fileParts.length) throw validationError("FILE_REQUIRED", "请至少选择一张图片");
+        if (fileParts.length > maxFiles) {
+          throw validationError("TOO_MANY_FILES", `该操作最多支持 ${maxFiles} 张图片`);
+        }
+
+        const scale = fields.scale === "4" ? 4 : 2;
+        const validatedFiles: StoredInput[] = [];
+        for (const part of fileParts) {
+          const metadata = await validateUploadedImage({
+            filePath: part.path,
+            originalName: part.filename,
+            mimetype: part.mimetype,
+            size: part.size
+          });
+          if (operation === "enhance") validateEnhanceOutput(metadata.width, metadata.height, scale);
+          validatedFiles.push({
+            path: part.path,
+            originalName: part.filename,
+            mimetype: part.mimetype,
+            size: part.size,
+            width: metadata.width,
+            height: metadata.height
+          });
+        }
+
+        if (operation === "watermark_remove") {
+          if (!maskPart) throw validationError("MASK_REQUIRED", "去水印必须提交用户确认的 PNG 蒙版");
+          await validateWatermarkMask(maskPart.path, maskPart.size, validatedFiles[0]);
+        }
+
+        const task = await manager.create({
+          id: taskId,
+          operation,
+          files: validatedFiles,
+          maskPath: maskPart?.path,
+          scale: operation === "enhance" ? scale : undefined
         });
-        if (operation === "enhance") validateEnhanceOutput(metadata.width, metadata.height, scale);
-        validatedFiles.push({
-          path: part.path,
-          originalName: part.filename,
-          mimetype: part.mimetype,
-          size: part.size,
-          width: metadata.width,
-          height: metadata.height
-        });
+        return reply.code(202).send(ok(task, "任务已进入本地处理队列"));
+      } catch (error) {
+        await fs.rm(inputDir, { recursive: true, force: true });
+        return sendRouteError(reply, error);
+      } finally {
+        releaseReservation();
       }
+    }
+  );
 
-      if (operation === "watermark_remove") {
-        if (!maskPart) throw validationError("MASK_REQUIRED", "去水印必须提交用户确认的 PNG 蒙版");
-        await validateWatermarkMask(maskPart.path, maskPart.size, validatedFiles[0]);
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tools/image-ai/tasks/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(ImageAiTaskSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
       }
-
-      const task = await manager.create({
-        id: taskId,
-        operation,
-        files: validatedFiles,
-        maskPath: maskPart?.path,
-        scale: operation === "enhance" ? scale : undefined
-      });
-      return reply.code(202).send(ok(task, "任务已进入本地处理队列"));
-    } catch (error) {
-      await fs.rm(inputDir, { recursive: true, force: true });
-      return sendRouteError(reply, error);
-    } finally {
-      releaseReservation();
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const task = manager.get(taskId);
+      return task ? ok(task) : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
     }
-  });
+  );
 
-  app.get("/api/tools/image-ai/tasks/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    const task = manager.get(taskId);
-    return task ? ok(task) : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
-  });
-
-  app.delete("/api/tools/image-ai/tasks/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    const task = await manager.cancel(taskId);
-    return task ? ok(task, "取消请求已提交") : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
-  });
-
-  app.get("/api/tools/image-ai/tasks/:taskId/files/:resultId", async (request, reply) => {
-    const { taskId, resultId } = request.params as { taskId: string; resultId: string };
-    const { download } = request.query as { download?: string };
-    const task = manager.getStored(taskId);
-    const result = task?.results.find((item) => item.id === resultId);
-    if (!result) return reply.code(404).send(fail("RESULT_NOT_FOUND", "处理结果不存在或已过期"));
-    try {
-      reply.type("image/png");
-      const disposition = download === "1" ? "attachment" : "inline";
-      reply.header("Content-Disposition", `${disposition}; filename*=UTF-8''${encodeURIComponent(result.outputName)}`);
-      return reply.send(await fs.readFile(result.outputPath));
-    } catch {
-      return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "处理结果文件已被清理"));
+  app.delete<{ Params: TaskIdParams }>(
+    "/api/v1/tools/image-ai/tasks/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(ImageAiTaskSchema), 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const task = await manager.cancel(taskId);
+      return task ? ok(task, "取消请求已提交") : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已过期"));
     }
-  });
+  );
 
-  app.get("/api/tools/image-ai/tasks/:taskId/download.zip", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    const task = manager.getStored(taskId);
-    if (!task || !task.results.length) {
-      return reply.code(404).send(fail("RESULT_NOT_FOUND", "当前任务没有可下载结果"));
+  app.get<{ Params: ImageAiResultParams; Querystring: ImageAiFileQuery }>(
+    "/api/v1/tools/image-ai/tasks/:taskId/files/:resultId",
+    {
+      schema: {
+        params: ImageAiResultParamsSchema,
+        querystring: ImageAiFileQuerySchema,
+        response: { 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId, resultId } = request.params;
+      const { download } = request.query;
+      const task = manager.getStored(taskId);
+      const result = task?.results.find((item) => item.id === resultId);
+      if (!result) return reply.code(404).send(fail("RESULT_NOT_FOUND", "处理结果不存在或已过期"));
+      try {
+        reply.type("image/png");
+        const disposition = download === "1" ? "attachment" : "inline";
+        reply.header(
+          "Content-Disposition",
+          `${disposition}; filename*=UTF-8''${encodeURIComponent(result.outputName)}`
+        );
+        return reply.send(await fs.readFile(result.outputPath));
+      } catch {
+        return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "处理结果文件已被清理"));
+      }
     }
-    const archive = archiver("zip", { zlib: { level: 6 } });
-    for (const result of task.results) archive.file(result.outputPath, { name: result.outputName });
-    void archive.finalize();
-    reply.type("application/zip");
-    reply.header("Content-Disposition", `attachment; filename="image-ai-${taskId}.zip"`);
-    return reply.send(archive);
-  });
+  );
+
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tools/image-ai/tasks/:taskId/download.zip",
+    { schema: { params: TaskIdParamsSchema, response: { 400: ApiFailureSchema, 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const task = manager.getStored(taskId);
+      if (!task || !task.results.length) {
+        return reply.code(404).send(fail("RESULT_NOT_FOUND", "当前任务没有可下载结果"));
+      }
+      const archive = new ZipArchive({ zlib: { level: 6 } });
+      for (const result of task.results) archive.file(result.outputPath, { name: result.outputName });
+      void archive.finalize();
+      reply.type("application/zip");
+      reply.header("Content-Disposition", `attachment; filename="image-ai-${taskId}.zip"`);
+      return reply.send(archive);
+    }
+  );
 }
 
 async function storeStream(stream: NodeJS.ReadableStream, destination: string, limit: number) {
@@ -215,7 +310,10 @@ async function storeStream(stream: NodeJS.ReadableStream, destination: string, l
   return { path: destination, size };
 }
 
-function sendRouteError(reply: { code: (status: number) => { send: (payload: unknown) => unknown } }, error: unknown) {
+function sendRouteError(
+  reply: { code: (status: 400 | 413 | 422 | 503) => { send: (payload: unknown) => unknown } },
+  error: unknown
+) {
   const workerError = error instanceof ImageAiWorkerError ? error : undefined;
   const code =
     workerError?.code || (error instanceof Error && "code" in error ? String(error.code) : "IMAGE_AI_REQUEST_FAILED");

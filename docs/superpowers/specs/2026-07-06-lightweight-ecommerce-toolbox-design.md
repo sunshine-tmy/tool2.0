@@ -71,10 +71,10 @@ type ApiFailure = {
 
 Initial API routes:
 
-- `GET /api/health`
-- `GET /api/tools`
-- `POST /api/tools/image-compress`
-- `GET /api/tasks/:taskId`
+- `GET /api/v1/health`
+- `GET /api/v1/tools`
+- `POST /api/v1/tools/image-compress`
+- `GET /api/v1/tasks/:taskId`
 
 ## Verification
 

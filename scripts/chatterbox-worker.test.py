@@ -2,9 +2,9 @@
 
 import importlib.util
 import sys
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import torch
@@ -33,8 +33,10 @@ class LanguageTests(unittest.TestCase):
                     manager.model = model
                     manager.device = "cpu"
                     payload = worker.GenerateRequest(
-                        text="Olá! Confira nossas promoções.", language=language,
-                        reference_path=str(reference), output_path=str(root / f"{language}.wav")
+                        text="Olá! Confira nossas promoções.",
+                        language=language,
+                        reference_path=str(reference),
+                        output_path=str(root / f"{language}.wav"),
                     )
                     result = manager.generate(payload)
                     self.assertEqual(result["chunks"], 2)

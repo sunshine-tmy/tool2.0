@@ -48,4 +48,31 @@ describe("task store", () => {
     expect(store.remove(task.id)).toBe(true);
     expect(store.get(task.id)).toBeUndefined();
   });
+
+  it("upserts externally managed tasks with stable ids and emits updates", () => {
+    const store = createTaskStore();
+    const updates: number[] = [];
+    const unsubscribe = store.subscribe("image-ai-1", (task) => updates.push(task.progress));
+
+    store.upsert({
+      id: "image-ai-1",
+      toolId: "image-ai",
+      status: "pending",
+      progress: 0,
+      createdAt: "2026-09-13T00:00:00.000Z",
+      updatedAt: "2026-09-13T00:00:00.000Z"
+    });
+    store.upsert({
+      id: "image-ai-1",
+      toolId: "image-ai",
+      status: "running",
+      progress: 45,
+      createdAt: "2026-09-13T00:00:00.000Z",
+      updatedAt: "2026-09-13T00:00:01.000Z"
+    });
+    unsubscribe();
+
+    expect(store.get("image-ai-1")).toMatchObject({ status: "running", progress: 45 });
+    expect(updates).toEqual([0, 45]);
+  });
 });

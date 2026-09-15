@@ -7,14 +7,17 @@ const DEFAULT_LAN_CHUNK_MAX_RETRIES = 3;
 const DEFAULT_LAN_CHUNK_RETRY_DELAY_MS = 800;
 
 export type ChunkUploadApi = {
-  createUploadSession(input: {
-    originalName: string;
-    mimeType: string;
-    size: number;
-    chunkSize: number;
-    totalChunks: number;
-  }): Promise<LanUploadStatus>;
-  getUploadStatus(uploadId: string): Promise<LanUploadStatus>;
+  createUploadSession(
+    input: {
+      originalName: string;
+      mimeType: string;
+      size: number;
+      chunkSize: number;
+      totalChunks: number;
+    },
+    signal?: AbortSignal
+  ): Promise<LanUploadStatus>;
+  getUploadStatus(uploadId: string, signal?: AbortSignal): Promise<LanUploadStatus>;
   uploadChunk(
     uploadId: string,
     index: number,
@@ -22,11 +25,11 @@ export type ChunkUploadApi = {
     onUploadProgress?: (event: { loaded: number; total?: number }) => void,
     signal?: AbortSignal
   ): Promise<LanUploadStatus>;
-  completeUpload(uploadId: string): Promise<LanUploadResponse>;
-  cancelUpload(uploadId: string): Promise<{ removed: boolean }>;
+  completeUpload(uploadId: string, signal?: AbortSignal): Promise<LanUploadResponse>;
+  cancelUpload(uploadId: string, signal?: AbortSignal): Promise<{ removed: boolean }>;
 };
 
-export type ChunkUploadSnapshot = {
+type ChunkUploadSnapshot = {
   uploadId?: string;
   fileName: string;
   progress: number;
@@ -46,6 +49,7 @@ type ChunkUploaderOptions = {
   maxRetries?: number;
   retryDelayMs?: number;
   uploadId?: string;
+  signal?: AbortSignal;
 };
 
 type ProgressListener = (snapshot: ChunkUploadSnapshot) => void;
@@ -64,6 +68,8 @@ export class ConcurrentChunkUploader {
   private readonly retryDelayMs: number;
   private activeRun?: Promise<ChunkUploadResult>;
   private abortControllers = new Map<number, AbortController>();
+  private disposed = false;
+  private readonly scopeSignal?: AbortSignal;
 
   constructor(
     private readonly file: File,
@@ -76,6 +82,12 @@ export class ConcurrentChunkUploader {
     this.retryDelayMs = Math.max(0, options.retryDelayMs ?? DEFAULT_LAN_CHUNK_RETRY_DELAY_MS);
     this.uploadId = options.uploadId;
     this.totalChunks = Math.ceil(file.size / this.chunkSize);
+    this.scopeSignal = options.signal;
+    if (options.signal?.aborted) {
+      this.dispose();
+    } else {
+      options.signal?.addEventListener("abort", () => this.dispose(), { once: true });
+    }
   }
 
   onProgress(listener: ProgressListener) {
@@ -100,12 +112,23 @@ export class ConcurrentChunkUploader {
   }
 
   async cancel() {
+    if (this.disposed) return;
     this.canceled = true;
     this.paused = false;
     this.abortInFlight();
     if (this.uploadId) {
       await this.api.cancelUpload(this.uploadId);
     }
+    this.emit("canceled");
+  }
+
+  /** Stop local work on route disposal without deleting the resumable session. */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.canceled = true;
+    this.paused = false;
+    this.abortInFlight();
     this.emit("canceled");
   }
 
@@ -123,9 +146,11 @@ export class ConcurrentChunkUploader {
   }
 
   private async run(): Promise<ChunkUploadResult> {
+    if (this.disposed) return { status: "canceled" };
     this.paused = false;
     this.canceled = false;
     await this.ensureSession();
+    if (this.disposed) return { status: "canceled" };
     this.emit("uploading");
 
     const queue = this.createMissingChunkQueue();
@@ -135,7 +160,7 @@ export class ConcurrentChunkUploader {
       return result;
     }
 
-    const response = await this.api.completeUpload(this.uploadId!);
+    const response = await this.api.completeUpload(this.uploadId!, this.scopeSignal);
     this.emit("done");
     return {
       status: "done",
@@ -147,7 +172,7 @@ export class ConcurrentChunkUploader {
     let status: LanUploadStatus;
     if (this.uploadId) {
       try {
-        status = await this.api.getUploadStatus(this.uploadId);
+        status = await this.api.getUploadStatus(this.uploadId, this.scopeSignal);
       } catch (error) {
         if (!isUploadNotFoundError(error)) throw error;
         this.uploadId = undefined;
@@ -162,13 +187,16 @@ export class ConcurrentChunkUploader {
   }
 
   private createSession() {
-    return this.api.createUploadSession({
-      originalName: this.file.name,
-      mimeType: this.file.type || "application/octet-stream",
-      size: this.file.size,
-      chunkSize: this.chunkSize,
-      totalChunks: this.totalChunks
-    });
+    return this.api.createUploadSession(
+      {
+        originalName: this.file.name,
+        mimeType: this.file.type || "application/octet-stream",
+        size: this.file.size,
+        chunkSize: this.chunkSize,
+        totalChunks: this.totalChunks
+      },
+      this.scopeSignal
+    );
   }
 
   private createMissingChunkQueue() {

@@ -1,3 +1,22 @@
-chatterbox-tts==0.1.7
-fastapi==0.115.12
-uvicorn==0.34.3
+# Runtime-only dependencies for the pinned Chatterbox V3 source. The upstream
+# package also declares Gradio, which is not imported by our loopback FastAPI
+# worker and would unnecessarily expose a second web stack.
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+starlette==1.6.0
+numpy==1.26.4
+librosa==0.11.0
+s3tokenizer==0.3.0
+torch==2.6.0
+torchaudio==2.6.0
+transformers==5.17.0
+diffusers==0.38.0
+resemble-perth==1.0.1
+conformer==0.3.2
+safetensors==0.8.0
+spacy-pkuseg==1.0.1
+pykakasi==2.3.0
+pyloudnorm==0.2.0
+omegaconf==2.3.1
+huggingface-hub==1.31.0

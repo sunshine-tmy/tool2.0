@@ -2,9 +2,28 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
+import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
+import rateLimit from "@fastify/rate-limit";
 import fastify from "fastify";
-import { fail, listTools, ok } from "@toolbox/shared";
+import {
+  ApiFailureSchema,
+  ApiHealthSchema,
+  FileNameParamsSchema,
+  LiveHealthSchema,
+  ReadyHealthSchema,
+  TaskIdParamsSchema,
+  TaskListSchema,
+  TaskSchema,
+  ToolListSchema,
+  apiSuccessSchema,
+  fail,
+  listTools,
+  ok,
+  type FileNameParams,
+  type TaskIdParams
+} from "@toolbox/shared";
 import { getConfig } from "./config";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerImageAiRoutes } from "./modules/image-ai/routes";
@@ -17,23 +36,82 @@ import { registerXhsArchiveRoutes } from "./modules/xhs-archive/routes";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
+import { registerAdminSecurity } from "./security/admin-session";
+import { registerConcurrencyQuotas } from "./security/request-quotas";
+import { openToolboxDatabase } from "./database/legacy-migration";
+import { reconcileLanStorage } from "./database/storage-consistency";
+import { FileMetadataRepository } from "./database/file-metadata";
+import { reconcileFileMetadataStorage } from "./database/file-consistency";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
-    logger: false,
-    bodyLimit: 220 * 1024 * 1024
+    logger:
+      process.env.NODE_ENV === "test"
+        ? false
+        : {
+            level: process.env.LOG_LEVEL?.trim() || "info",
+            redact: {
+              paths: [
+                "req.headers.authorization",
+                "req.headers.cookie",
+                "req.headers.x-csrf-token",
+                "req.headers.x-lan-transfer-pin",
+                "pin",
+                "text",
+                "path"
+              ],
+              censor: "[REDACTED]"
+            }
+          },
+    bodyLimit: 1024 * 1024,
+    requestIdHeader: "x-request-id"
   });
   const config = getConfig();
-  const taskStore = createTaskStore();
+  const { database } = await openToolboxDatabase(config);
+  const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
+  const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
+  const taskEventStreams = new Set<import("node:http").ServerResponse>();
+
+  app.addHook("onClose", async () => database.close());
+  app.addHook("preClose", async () => {
+    for (const stream of taskEventStreams) stream.end();
+    taskEventStreams.clear();
+  });
+
+  await app.register(cookie);
+  await app.register(rateLimit, {
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      code: "RATE_LIMIT_EXCEEDED",
+      error: "Too Many Requests",
+      message: "请求过于频繁，请稍后重试",
+      details: { limit: context.max, retryAfter: context.after }
+    })
+  });
+  registerConcurrencyQuotas(app);
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        mediaSrc: ["'self'", "blob:"],
+        connectSrc: ["'self'"]
+      }
+    },
+    crossOriginResourcePolicy: { policy: "same-site" }
+  });
 
   await app.register(cors, {
     origin(origin, callback) {
       callback(null, !origin || config.corsOrigins.includes(origin));
     },
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Range", "X-Lan-Transfer-Pin"],
-    exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges"],
+    allowedHeaders: ["Content-Type", "Authorization", "Range", "X-Lan-Transfer-Pin", "X-CSRF-Token", "X-Request-Id"],
+    exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges", "X-Request-Id"],
     credentials: true
   });
   await app.register(multipart, {
@@ -43,26 +121,100 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     },
     throwFileSizeLimit: false
   });
+  await registerAdminSecurity(app, config, database);
 
-  await fsp.mkdir(config.uploadDir, { recursive: true });
-  await fsp.mkdir(config.outputDir, { recursive: true });
-  await fsp.mkdir(config.tempDir, { recursive: true });
-  await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-  await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
-  await fsp.mkdir(config.videoTextAudioDir, { recursive: true });
-  await fsp.mkdir(config.videoTextResultsDir, { recursive: true });
-  await fsp.mkdir(config.imageAiInputsDir, { recursive: true });
-  await fsp.mkdir(config.imageAiOutputsDir, { recursive: true });
-  await fsp.mkdir(config.imageAiTasksDir, { recursive: true });
-  await fsp.mkdir(config.edgeTtsTasksDir, { recursive: true });
-  await fsp.mkdir(config.chatterboxTasksDir, { recursive: true });
-  await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });
-  await fsp.mkdir(config.xhsArchiveStagingDir, { recursive: true });
+  app.addHook("preSerialization", async (request, _reply, payload) => {
+    if (typeof payload !== "object" || payload === null) return payload;
+    const value = payload as Record<string, unknown>;
+    return typeof value.success === "boolean" ? { ...value, requestId: request.id } : payload;
+  });
 
-  app.get("/api/health", async () => {
-    return ok({
+  app.addHook("onSend", async (request, reply, payload) => {
+    reply.header("x-request-id", request.id);
+    return payload;
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    request.log.info({ requestId: request.id, method: request.method, url: request.url }, "route not found");
+    return reply.code(404).send(fail("ROUTE_NOT_FOUND", "请求的接口不存在"));
+  });
+
+  app.setErrorHandler((error, request, reply) => {
+    request.log.error({ err: error, requestId: request.id }, "request failed");
+    const reported = error as unknown as {
+      statusCode?: number;
+      code?: string;
+      message?: string;
+      details?: unknown;
+    };
+    if (reported.statusCode === 429 || reported.code === "RATE_LIMIT_EXCEEDED") {
+      return reply
+        .code(429)
+        .send(fail("RATE_LIMIT_EXCEEDED", reported.message || "请求过于频繁，请稍后重试", reported.details));
+    }
+    const normalized = error instanceof Error ? error : new Error("Unknown request error");
+    const reportedStatus = (normalized as Error & { statusCode?: number }).statusCode;
+    const statusCode = reportedStatus && reportedStatus >= 400 ? reportedStatus : 500;
+    return reply
+      .code(statusCode)
+      .send(
+        fail(
+          statusCode >= 500 ? "INTERNAL_ERROR" : "REQUEST_INVALID",
+          statusCode >= 500 ? "Internal server error" : normalized.message
+        )
+      );
+  });
+
+  const requiredStorageDirectories = [
+    config.storageRoot,
+    config.migrationBackupDir,
+    config.quarantineDir,
+    config.uploadDir,
+    config.outputDir,
+    config.tempDir,
+    config.lanTransferFilesDir,
+    config.videoTextUploadsDir,
+    config.videoTextAudioDir,
+    config.videoTextResultsDir,
+    config.imageAiInputsDir,
+    config.imageAiOutputsDir,
+    config.imageAiTasksDir,
+    config.edgeTtsTasksDir,
+    config.chatterboxTasksDir,
+    config.xhsArchiveItemsDir,
+    config.xhsArchiveStagingDir
+  ];
+  await Promise.all(requiredStorageDirectories.map((directory) => fsp.mkdir(directory, { recursive: true })));
+
+  app.get("/health/live", { schema: { response: { 200: apiSuccessSchema(LiveHealthSchema) } } }, async () =>
+    ok({ status: "ok" as const })
+  );
+
+  app.get(
+    "/health/ready",
+    {
+      schema: {
+        response: { 200: apiSuccessSchema(ReadyHealthSchema), 503: ApiFailureSchema }
+      }
+    },
+    async (_request, reply) => {
+      try {
+        database.ready();
+        await Promise.all(
+          requiredStorageDirectories.map((directory) => fsp.access(directory, fs.constants.R_OK | fs.constants.W_OK))
+        );
+        return ok({ status: "ready" as const, database: "ok" as const, storage: "ok" as const });
+      } catch {
+        return reply.code(503).send(fail("NOT_READY", "Required storage is unavailable"));
+      }
+    }
+  );
+
+  app.get("/api/v1/health", { schema: { response: { 200: apiSuccessSchema(ApiHealthSchema) } } }, async () =>
+    ok({
       status: "ok",
       name: "toolbox-api",
+      deploymentMode: config.deploymentMode,
       videoText: {
         audioExtractorConfigured: Boolean(config.videoTextAudioExtractCommand),
         transcriberConfigured: Boolean(config.videoTextTranscribeCommand)
@@ -72,69 +224,135 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       },
       xhsArchive: {
         providerConfigured: Boolean(config.xhsProviderUrl),
-        archiveDir: config.xhsArchiveDir
+        translationProviderConfigured: Boolean(config.xhsTranslationProviderUrl)
       },
       imageAi: {
-        workerUrl: config.imageAiWorkerUrl,
         deploymentUsage: config.deploymentUsage
       },
       edgeTts: {
-        pythonPath: config.edgeTtsPythonPath,
         retentionDays: config.edgeTtsRetentionDays
       },
       chatterbox: {
-        workerUrl: config.chatterboxWorkerUrl,
         retentionDays: config.chatterboxRetentionDays
       }
-    });
-  });
+    })
+  );
 
-  app.get("/api/tools", async () => {
-    return ok(listTools());
-  });
+  app.get("/api/v1/tools", { schema: { response: { 200: apiSuccessSchema(ToolListSchema) } } }, async () =>
+    ok(listTools())
+  );
 
-  app.get("/api/tasks", async () => {
-    return ok(taskStore.list());
-  });
+  app.get("/api/v1/tasks", { schema: { response: { 200: apiSuccessSchema(TaskListSchema) } } }, async () =>
+    ok(taskStore.list())
+  );
 
-  app.get("/api/tasks/:taskId", async (request, reply) => {
-    const { taskId } = request.params as { taskId: string };
-    const task = taskStore.get(taskId);
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tasks/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: { 200: apiSuccessSchema(TaskSchema), 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const task = taskStore.get(taskId);
 
-    if (!task) {
-      return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      if (!task) {
+        return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      }
+
+      return ok(task);
     }
+  );
 
-    return ok(task);
-  });
-
-  app.get("/api/files/:fileName", async (request, reply) => {
-    const { fileName } = request.params as { fileName: string };
-    const safeName = path.basename(fileName);
-    const filePath = path.join(config.outputDir, safeName);
-
-    try {
-      const stat = await fsp.stat(filePath);
-      if (!stat.isFile()) throw new Error("Not a file");
-      reply.header("content-length", String(stat.size));
-      reply.header("content-type", outputContentType(path.extname(safeName)));
-      reply.header("content-disposition", `attachment; filename="${safeName.replaceAll('"', "")}"`);
-      reply.header("x-content-type-options", "nosniff");
-      return reply.send(fs.createReadStream(filePath));
-    } catch {
-      return reply.code(404).send(fail("FILE_NOT_FOUND", "File not found"));
+  app.get<{ Params: TaskIdParams }>(
+    "/api/v1/tasks/:taskId/events",
+    { schema: { params: TaskIdParamsSchema, response: { 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      const { taskId } = request.params;
+      const task = taskStore.get(taskId);
+      if (!task) return reply.code(404).send(fail("TASK_NOT_FOUND", "Task not found"));
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no"
+      });
+      taskEventStreams.add(reply.raw);
+      const send = (value: typeof task) => reply.raw.write(`event: task\ndata: ${JSON.stringify(value)}\n\n`);
+      send(task);
+      const unsubscribe = taskStore.subscribe(taskId, (value) => {
+        send(value);
+        if (value.status === "completed" || value.status === "failed") reply.raw.end();
+      });
+      const heartbeat = setInterval(() => reply.raw.write(": keep-alive\n\n"), 15_000);
+      reply.raw.on("close", () => {
+        taskEventStreams.delete(reply.raw);
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
     }
-  });
+  );
 
-  registerImageCompressRoutes(app, config, taskStore);
-  await registerImageAiRoutes(app, config);
-  await registerEdgeTtsRoutes({ app, config });
-  await registerChatterboxRoutes(app, config);
-  await registerLanTransferRoutes({ app, config });
-  await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
+  app.get<{ Params: FileNameParams }>(
+    "/api/v1/files/:fileName",
+    { schema: { params: FileNameParamsSchema, response: { 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      const { fileName } = request.params;
+      const safeName = path.basename(fileName);
+      const filePath = path.join(config.outputDir, safeName);
+
+      try {
+        const stat = await fsp.stat(filePath);
+        if (!stat.isFile()) throw new Error("Not a file");
+        reply.header("content-length", String(stat.size));
+        reply.header("content-type", outputContentType(path.extname(safeName)));
+        reply.header("content-disposition", contentDisposition(safeName));
+        reply.header("x-content-type-options", "nosniff");
+        return reply.send(fs.createReadStream(filePath));
+      } catch {
+        return reply.code(404).send(fail("FILE_NOT_FOUND", "File not found"));
+      }
+    }
+  );
+
+  registerImageCompressRoutes(app, config, taskStore, fileMetadata);
+  await registerImageAiRoutes(app, config, database, taskStore, fileMetadata);
+  await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
+  await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
+  await registerLanTransferRoutes({ app, config, database, fileMetadata });
+  await registerVideoTextRoutes({ app, config, taskStore, remoteFetch, fileMetadata });
   await registerShortVideoRoutes({ app, config, remoteFetch });
-  await registerXhsArchiveRoutes({ app, config, remoteFetch });
+  await registerXhsArchiveRoutes({ app, config, remoteFetch, database, taskStore, fileMetadata });
   registerMaintenanceRoutes(app);
+
+  if (config.databasePath !== ":memory:") {
+    const consistency = await reconcileLanStorage(config, database);
+    if (consistency.quarantinedFiles || consistency.quarantinedRecords || consistency.failures.length) {
+      app.log.warn(
+        {
+          quarantinedFiles: consistency.quarantinedFiles,
+          quarantinedRecords: consistency.quarantinedRecords,
+          failures: consistency.failures.length
+        },
+        "LAN storage consistency check found recoverable issues"
+      );
+    }
+    const fileConsistency = await reconcileFileMetadataStorage(config, database);
+    if (fileConsistency.quarantined || fileConsistency.removedMetadata || fileConsistency.failures.length) {
+      app.log.warn(
+        {
+          checked: fileConsistency.checked,
+          quarantined: fileConsistency.quarantined,
+          removedMetadata: fileConsistency.removedMetadata,
+          failures: fileConsistency.failures.length
+        },
+        "File metadata consistency check found recoverable issues"
+      );
+    }
+  }
 
   return app;
 }
@@ -144,4 +362,10 @@ function outputContentType(extension: string) {
   if (extension === ".png") return "image/png";
   if (extension === ".webp") return "image/webp";
   return "application/octet-stream";
+}
+
+function contentDisposition(fileName: string) {
+  const normalized = fileName.replace(/[\r\n]/g, "").replace(/["\\]/g, "_");
+  const ascii = normalized.replace(/[^\x20-\x7e]/g, "_");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(normalized)}`;
 }

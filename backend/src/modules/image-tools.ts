@@ -1,66 +1,81 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import archiver from "archiver";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import sharp from "sharp";
-import { fail, normalizeImageOptions, ok } from "@toolbox/shared";
+import type { FastifyInstance } from "fastify";
+import { ApiFailureSchema, ImageCompressResultSchema, apiSuccessSchema, fail, ok } from "@toolbox/shared";
 import type { AppConfig } from "../config";
+import type { FileMetadataRepository } from "../database/file-metadata";
 import type { TaskStore } from "../tasks/task-store";
+import { ImageArchiveError, ImageArchiveGateway } from "./image-compress-file-gateway";
+import { ImageInputError, readImageMultipart } from "./image-compress-input";
+import { ImageCompressionService } from "./image-compress-service";
 
 type RegisterImageToolRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
   taskStore: TaskStore;
+  fileMetadata?: FileMetadataRepository;
 };
-
-const IMAGE_COMPRESS_MAX_FILE_BYTES = 20 * 1024 * 1024;
-const IMAGE_COMPRESS_MAX_PIXELS = 40_000_000;
-const supportedImageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export function registerSingleImageToolRoute({
   app,
   config,
   taskStore,
+  fileMetadata,
   toolId
 }: RegisterImageToolRoutesOptions & { toolId: "image-compress" }) {
-  app.post(`/api/tools/${toolId}`, async (request, reply) => {
-    return processImageRequest(toolId, request, reply, config, taskStore);
-  });
+  const service = new ImageCompressionService(config, taskStore, fileMetadata);
+  const archive = new ImageArchiveGateway(config, taskStore);
 
-  app.post(`/api/tools/${toolId}/download.zip`, async (request, reply) => {
-    const requestedFiles = parseBatchDownloadFiles(request.body);
-    if (!requestedFiles.length) {
-      return reply.code(400).send(fail("FILES_REQUIRED", "Please select completed images to download"));
-    }
-
-    const archiveFiles: Array<{ filePath: string; archiveName: string }> = [];
-    const usedNames = new Set<string>();
-    for (const requested of requestedFiles) {
-      const task = taskStore.get(requested.taskId);
-      if (task?.toolId !== toolId || task.status !== "completed" || !task.outputPath) {
-        return reply.code(404).send(fail("RESULT_NOT_FOUND", "One or more compressed images are unavailable"));
+  app.post(
+    `/api/v1/tools/${toolId}`,
+    {
+      schema: {
+        response: {
+          200: apiSuccessSchema(ImageCompressResultSchema),
+          400: ApiFailureSchema,
+          413: ApiFailureSchema,
+          415: ApiFailureSchema
+        }
       }
-      const outputName = path.basename(task.outputPath);
-      const filePath = path.join(config.outputDir, outputName);
+    },
+    async (request, reply) => {
+      const task = taskStore.create(toolId);
+      taskStore.update(task.id, { status: "running", progress: 15 });
       try {
-        const stat = await fs.stat(filePath);
-        if (!stat.isFile()) throw new Error("Not a file");
-      } catch {
-        return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "One or more compressed images were cleaned up"));
+        const input = await readImageMultipart(request);
+        return ok(await service.process(task, input.input, input.originalName, input.fields));
+      } catch (error) {
+        if (error instanceof ImageInputError) {
+          service.fail(task.id, error.message);
+          return reply.code(error.statusCode).send(fail(error.code, error.message));
+        }
+        service.fail(task.id, error instanceof Error ? error.message : "Image processing failed");
+        return reply.code(400).send(fail("IMAGE_PROCESSING_FAILED", "Image processing failed"));
       }
-      archiveFiles.push({
-        filePath,
-        archiveName: uniqueArchiveName(requested.fileName, path.extname(outputName), usedNames)
-      });
     }
+  );
 
-    const archive = archiver("zip", { zlib: { level: 6 } });
-    for (const file of archiveFiles) archive.file(file.filePath, { name: file.archiveName });
-    void archive.finalize();
-    reply.type("application/zip");
-    reply.header("content-disposition", `attachment; filename="image-compress-${Date.now()}.zip"`);
-    return reply.send(archive);
-  });
+  app.post(
+    `/api/v1/tools/${toolId}/download.zip`,
+    {
+      schema: {
+        response: { 400: ApiFailureSchema, 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const requestedFiles = parseBatchDownloadFiles(request.body);
+      if (!requestedFiles.length)
+        return reply.code(400).send(fail("FILES_REQUIRED", "Please select completed images to download"));
+      try {
+        const result = await archive.create(requestedFiles, toolId);
+        reply.type("application/zip");
+        reply.header("content-disposition", `attachment; filename="image-compress-${Date.now()}.zip"`);
+        return reply.send(result);
+      } catch (error) {
+        if (error instanceof ImageArchiveError)
+          return reply.code(error.statusCode).send(fail(error.code, error.message));
+        return reply.code(400).send(fail("ARCHIVE_FAILED", "Unable to create image archive"));
+      }
+    }
+  );
 }
 
 function parseBatchDownloadFiles(body: unknown) {
@@ -76,117 +91,4 @@ function parseBatchDownloadFiles(body: unknown) {
     files.push({ taskId, fileName });
   }
   return files;
-}
-
-function uniqueArchiveName(requestedName: string, extension: string, usedNames: Set<string>) {
-  const safeBase =
-    path
-      .basename(requestedName || "image", path.extname(requestedName || "image"))
-      .replace(/[<>:"/\\|?*]/g, "_")
-      .split("")
-      .map((character) => (character.charCodeAt(0) < 32 ? "_" : character))
-      .join("")
-      .trim()
-      .slice(0, 120) || "image";
-  let candidate = `${safeBase}${extension}`;
-  let suffix = 2;
-  while (usedNames.has(candidate.toLowerCase())) candidate = `${safeBase} (${suffix++})${extension}`;
-  usedNames.add(candidate.toLowerCase());
-  return candidate;
-}
-
-async function processImageRequest(
-  toolId: "image-compress",
-  request: FastifyRequest,
-  reply: FastifyReply,
-  config: AppConfig,
-  taskStore: TaskStore
-) {
-  const task = taskStore.create(toolId);
-  taskStore.update(task.id, { status: "running", progress: 15 });
-  const rejectInput = (status: number, code: string, message: string) => {
-    taskStore.update(task.id, { status: "failed", progress: 100, error: message });
-    return reply.code(status).send(fail(code, message));
-  };
-
-  try {
-    let input: Buffer | undefined;
-    let originalName = "image";
-    const fields: Record<string, unknown> = {};
-    // Consume the whole multipart request: settings may arrive after the file stream.
-    for await (const part of request.parts({ limits: { fileSize: IMAGE_COMPRESS_MAX_FILE_BYTES, files: 1 } })) {
-      if (part.type === "field") {
-        fields[part.fieldname] = part.value;
-        continue;
-      }
-      if (!supportedImageMimeTypes.has(part.mimetype)) {
-        part.file.resume();
-        return rejectInput(415, "UNSUPPORTED_IMAGE_TYPE", "Only JPEG, PNG and WebP images are supported");
-      }
-      input = await part.toBuffer();
-      originalName = path.basename(part.filename || "image");
-      if (part.file.truncated || input.length > IMAGE_COMPRESS_MAX_FILE_BYTES) {
-        return rejectInput(413, "IMAGE_TOO_LARGE", "Image exceeds the 20MB limit");
-      }
-    }
-    if (!input) return rejectInput(400, "FILE_REQUIRED", "Please upload an image file");
-
-    await fs.mkdir(config.outputDir, { recursive: true });
-    const options = normalizeImageOptions({
-      quality: Number(fields.quality ?? 78),
-      outputFormat: String(fields.outputFormat ?? "webp"),
-      width: fields.width ? Number(fields.width) : undefined
-    });
-
-    const originalSize = input.length;
-    const outputName = `${task.id}.${options.outputFormat}`;
-    const outputPath = path.join(config.outputDir, outputName);
-
-    const image = sharp(input, { limitInputPixels: IMAGE_COMPRESS_MAX_PIXELS }).rotate();
-    const metadata = await image.metadata();
-    let pipeline = image.clone();
-    if (!metadata.width || !metadata.height || !supportedImageMimeTypes.has(`image/${metadata.format}`)) {
-      throw new Error("Invalid or unsupported image content");
-    }
-    if (options.width) {
-      pipeline = pipeline.resize({ width: options.width, withoutEnlargement: true });
-    }
-
-    if (options.outputFormat === "jpeg") {
-      pipeline = pipeline.jpeg({ quality: options.quality });
-    } else if (options.outputFormat === "png") {
-      pipeline = pipeline.png({ quality: options.quality });
-    } else {
-      pipeline = pipeline.webp({ quality: options.quality });
-    }
-
-    await pipeline.toFile(outputPath);
-    const outputStat = await fs.stat(outputPath);
-    const completed = taskStore.update(task.id, {
-      status: "completed",
-      progress: 100,
-      outputPath: outputName
-    });
-
-    return ok({
-      task: completed,
-      downloadUrl: `/api/files/${outputName}`,
-      originalName,
-      outputName,
-      outputFormat: options.outputFormat,
-      originalSize,
-      outputSize: outputStat.size,
-      savedBytes: originalSize - outputStat.size,
-      compressionRatio: originalSize > 0 ? outputStat.size / originalSize : 1,
-      width: metadata.width,
-      height: metadata.height
-    });
-  } catch (error) {
-    taskStore.update(task.id, {
-      status: "failed",
-      progress: 100,
-      error: error instanceof Error ? error.message : "Image processing failed"
-    });
-    return reply.code(400).send(fail("IMAGE_PROCESSING_FAILED", "Image processing failed"));
-  }
 }

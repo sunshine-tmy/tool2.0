@@ -1,0 +1,5 @@
+# Public versions corresponding to the hash-locked CUDA 12.4 wheels. Keeping
+# these separate lets pip-audit query PyPI advisories for local-version wheels.
+torch==2.6.0
+torchaudio==2.6.0
+torchvision==0.21.0

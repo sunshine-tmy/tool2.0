@@ -46,7 +46,7 @@ if (mode === "extract") {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "demo.mp4",
         mimeType: "video/mp4",
@@ -59,8 +59,9 @@ Injected text should be ignored.`
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    expect(response.json().data).toMatchObject({ task: { status: "running", progress: 35 }, result: null });
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.fullText).toContain("Transcribed speech from video only");
     expect(data.result.fullText).not.toContain("Injected text should be ignored");
@@ -73,7 +74,7 @@ Injected text should be ignored.`
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "speech-only.mp4",
         mimeType: "video/mp4",
@@ -81,8 +82,8 @@ Injected text should be ignored.`
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("failed");
     expect(data.needsTranscript).toBeUndefined();
     expect(data.result).toBeNull();
@@ -95,12 +96,38 @@ Injected text should be ignored.`
 
     const response = await app.inject({
       method: "DELETE",
-      url: "/api/tools/video-text/tasks/..%5C..%5Csentinel"
+      url: "/api/v1/tools/video-text/tasks/..%5C..%5Csentinel"
     });
 
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("INVALID_TASK_ID");
     await expect(fs.readFile(sentinelPath, "utf8")).resolves.toBe("do-not-delete");
+  });
+
+  it("rejects malformed remote and export requests at the schema boundary", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const missingUrl = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/video-text/tasks/from-url",
+      payload: { fileName: "remote.mp4" }
+    });
+    const invalidFormat = await app.inject({
+      method: "GET",
+      url: "/api/v1/tools/video-text/tasks/abcdef/export?format=exe"
+    });
+
+    expect(missingUrl.statusCode).toBe(400);
+    expect(missingUrl.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+    expect(invalidFormat.statusCode).toBe(400);
+    expect(invalidFormat.json().error.code).toBe("REQUEST_INVALID");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("recreates upload directories before saving video files", async () => {
@@ -126,7 +153,7 @@ if (mode === "extract") {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "demo.mp4",
         mimeType: "video/mp4",
@@ -134,8 +161,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json().data.task.status).toBe("completed");
+    expect(response.statusCode).toBe(202);
+    expect((await waitForVideoTextTask(app, response.json().data.task.id)).task.status).toBe("completed");
     await expect(fs.readdir(path.join(storageRoot, "video-text", "uploads"))).resolves.toEqual([]);
   });
 
@@ -161,7 +188,7 @@ if (mode === "extract") {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "speech-only.mp4",
         mimeType: "video/mp4",
@@ -169,8 +196,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.source).toBe("transcriber");
     expect(data.result.fullText).toContain("Voice script from local transcriber");
@@ -205,15 +232,15 @@ if (mode === "extract") {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks/from-url",
+      url: "/api/v1/tools/video-text/tasks/from-url",
       payload: {
         url: "https://cdn.test/creator-video.mp4",
         fileName: "达人视频.mp4"
       }
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.fileName).toBe("达人视频.mp4");
     expect(data.result.fullText).toContain("Remote short video transcript");
@@ -237,7 +264,7 @@ if (mode === "extract") {
     const app = await createApp({ remoteAddressResolver: publicTestResolver });
     const response = await app.inject({
       method: "GET",
-      url: `/api/tools/video-text/remote-video?url=${encodeURIComponent("https://cdn.test/video.mp4")}`
+      url: `/api/v1/tools/video-text/remote-video?url=${encodeURIComponent("https://cdn.test/video.mp4")}`
     });
 
     expect(response.statusCode).toBe(200);
@@ -286,7 +313,7 @@ if (mode === "extract") {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "quality.mp4",
         mimeType: "video/mp4",
@@ -294,8 +321,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("completed");
     expect(data.result.recognitionQuality).toMatchObject({
       model: "large-v3-turbo",
@@ -328,7 +355,7 @@ if (mode === "extract") {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "silent.mp4",
         mimeType: "video/mp4",
@@ -336,8 +363,8 @@ if (mode === "extract") {
       })
     });
 
-    expect(response.statusCode).toBe(200);
-    const data = response.json().data;
+    expect(response.statusCode).toBe(202);
+    const data = await waitForVideoTextTask(app, response.json().data.task.id);
     expect(data.task.status).toBe("failed");
     expect(data.task.error).not.toEqual("视频语音识别失败：未配置本地识别命令。");
     expect(data.result).toBeNull();
@@ -364,7 +391,7 @@ if (mode === "extract") {
     const app = await createApp();
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/video-text/tasks",
+      url: "/api/v1/tools/video-text/tasks",
       ...multipartPayload({
         fileName: "demo.mp4",
         mimeType: "video/mp4",
@@ -372,10 +399,11 @@ if (mode === "extract") {
       })
     });
     const taskId = created.json().data.task.id;
+    await waitForVideoTextTask(app, taskId);
 
     const exported = await app.inject({
       method: "GET",
-      url: `/api/tools/video-text/tasks/${taskId}/export?format=txt`
+      url: `/api/v1/tools/video-text/tasks/${taskId}/export?format=txt`
     });
 
     expect(exported.statusCode).toBe(200);
@@ -396,7 +424,7 @@ if (mode === "extract") {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/tools/video-text/history?keyword=summer&page=1&pageSize=1"
+      url: "/api/v1/tools/video-text/history?keyword=summer&page=1&pageSize=1"
     });
 
     expect(response.statusCode).toBe(200);
@@ -430,7 +458,7 @@ if (mode === "extract") {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/tools/video-text/history?page=1&pageSize=5"
+      url: "/api/v1/tools/video-text/history?page=1&pageSize=5"
     });
 
     expect(response.statusCode).toBe(200);
@@ -450,20 +478,20 @@ if (mode === "extract") {
 
     const deleted = await app.inject({
       method: "DELETE",
-      url: `/api/tools/video-text/history/${taskId}`
+      url: `/api/v1/tools/video-text/history/${taskId}`
     });
     expect(deleted.statusCode).toBe(200);
     expect(deleted.json().data.removed).toBe(true);
 
     const history = await app.inject({
       method: "GET",
-      url: "/api/tools/video-text/history?keyword=temporary"
+      url: "/api/v1/tools/video-text/history?keyword=temporary"
     });
     expect(history.json().data.total).toBe(0);
 
     const result = await app.inject({
       method: "GET",
-      url: `/api/tools/video-text/tasks/${taskId}/result`
+      url: `/api/v1/tools/video-text/tasks/${taskId}/result`
     });
     expect(result.statusCode).toBe(404);
   });
@@ -489,19 +517,32 @@ if (mode === "extract") {
   return createApp();
 }
 
-function createVideoTextTask(
+async function createVideoTextTask(
   app: Awaited<ReturnType<typeof createApp>>,
   input: { fileName: string; transcript: string }
 ) {
-  return app.inject({
+  const response = await app.inject({
     method: "POST",
-    url: "/api/tools/video-text/tasks",
+    url: "/api/v1/tools/video-text/tasks",
     ...multipartPayload({
       fileName: input.fileName,
       mimeType: "video/mp4",
       content: input.transcript
     })
   });
+  expect(response.statusCode).toBe(202);
+  await waitForVideoTextTask(app, response.json().data.task.id);
+  return response;
+}
+
+async function waitForVideoTextTask(app: Awaited<ReturnType<typeof createApp>>, taskId: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/video-text/tasks/${taskId}` });
+    const data = response.json().data;
+    if (data.task.status === "completed" || data.task.status === "failed") return data;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Video text task timed out");
 }
 
 function multipartPayload(input: {

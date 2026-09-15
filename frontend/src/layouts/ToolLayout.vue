@@ -140,6 +140,34 @@
             </p>
           </div>
         </div>
+        <section v-if="deploymentMode === 'lan'" class="admin-session-section">
+          <div class="admin-session-heading">
+            <div>
+              <strong>局域网管理员</strong>
+              <small>{{
+                adminAuthenticated ? "当前浏览器已获得管理写权限" : "删除、AI、翻译和配置操作需要管理员 PIN"
+              }}</small>
+            </div>
+            <n-button v-if="adminAuthenticated" text size="small" :loading="adminLoading" @click="logoutAdmin">
+              退出
+            </n-button>
+          </div>
+          <div v-if="!adminAuthenticated" class="admin-session-form">
+            <n-input
+              v-model:value="adminPin"
+              type="password"
+              show-password-on="mousedown"
+              autocomplete="current-password"
+              placeholder="输入 ADMIN_PIN"
+              :disabled="adminLoading"
+              @keyup.enter="loginAdmin"
+            />
+            <n-button type="primary" :loading="adminLoading" :disabled="adminPin.length < 4" @click="loginAdmin">
+              解锁管理操作
+            </n-button>
+          </div>
+          <n-alert v-if="adminError" type="error" :bordered="false">{{ adminError }}</n-alert>
+        </section>
         <div class="service-list">
           <div v-for="tool in tools" :key="tool.id" class="service-row">
             <span class="service-row-icon"><component :is="iconByTool[tool.id] ?? Wrench" :size="17" /></span>
@@ -199,7 +227,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NInput, useMessage } from "naive-ui";
-import { listTools } from "@toolbox/shared";
+import {
+  ApiHealthSchema,
+  CleanupInspectionSchema,
+  CleanupResultsSchema,
+  listTools,
+  type CleanupCategory
+} from "@toolbox/shared";
 import {
   AudioLines,
   Boxes,
@@ -219,7 +253,8 @@ import {
   X,
   Wrench
 } from "lucide-vue-next";
-import { httpClient } from "../services/http";
+import { formatApiError, httpClient, isApiErrorCancelled } from "../services/http";
+import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "../services/admin-session";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
 
 const route = useRoute();
@@ -233,15 +268,12 @@ const mobileDrawerOpen = ref(false);
 const serviceDrawerOpen = ref(false);
 const apiState = ref<"checking" | "online" | "offline">("checking");
 const serviceCheckedAt = ref("");
-type CleanupCategory = {
-  id: string;
-  label: string;
-  risk: "low" | "medium" | "high";
-  requiresStop: boolean;
-  defaults: boolean;
-  files: number;
-  bytes: number;
-};
+const deploymentMode = ref<"local" | "lan">("local");
+const adminAuthenticated = ref(false);
+const adminPin = ref("");
+const adminLoading = ref(false);
+const adminError = ref("");
+let sessionRestoreAttempted = false;
 const cleanupCategories = ref<CleanupCategory[]>([]);
 const selectedCleanupIds = ref<string[]>([]);
 const cleanupLoading = ref(false);
@@ -315,11 +347,11 @@ async function loadCleanup() {
   cleanupLoading.value = true;
   cleanupError.value = "";
   try {
-    cleanupCategories.value = await httpClient.get<CleanupCategory[]>("/maintenance/cleanup");
+    cleanupCategories.value = await httpClient.get("/maintenance/cleanup", CleanupInspectionSchema);
     if (!selectedCleanupIds.value.length)
       selectedCleanupIds.value = cleanupCategories.value.filter((item) => item.defaults).map((item) => item.id);
   } catch (error) {
-    cleanupError.value = error instanceof Error ? error.message : "读取存储信息失败";
+    if (!isApiErrorCancelled(error)) cleanupError.value = formatApiError(error, "读取存储信息失败");
   } finally {
     cleanupLoading.value = false;
   }
@@ -339,12 +371,12 @@ async function executeCleanup() {
   if (!accepted) return;
   cleanupExecuting.value = true;
   try {
-    await httpClient.post("/maintenance/cleanup", { ids: selectedCleanupIds.value });
+    await httpClient.post("/maintenance/cleanup", CleanupResultsSchema, { ids: selectedCleanupIds.value });
     message.success("所选运行数据已清理");
     selectedCleanupIds.value = [];
     await loadCleanup();
   } catch (error) {
-    message.error(error instanceof Error ? error.message : "清理失败");
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "清理失败"));
   } finally {
     cleanupExecuting.value = false;
   }
@@ -360,8 +392,18 @@ function formatBytes(value: number) {
 async function loadServiceStatus() {
   apiState.value = "checking";
   try {
-    await httpClient.get<{ status: string }>("/health");
+    const health = await httpClient.get("/health", ApiHealthSchema);
+    deploymentMode.value = health.deploymentMode;
     apiState.value = "online";
+    if (deploymentMode.value === "lan" && !sessionRestoreAttempted) {
+      sessionRestoreAttempted = true;
+      try {
+        await restoreAdminSession();
+        adminAuthenticated.value = true;
+      } catch {
+        adminAuthenticated.value = false;
+      }
+    }
   } catch {
     apiState.value = "offline";
   } finally {
@@ -370,6 +412,36 @@ async function loadServiceStatus() {
       minute: "2-digit",
       second: "2-digit"
     }).format(new Date());
+  }
+}
+
+async function loginAdmin() {
+  if (adminPin.value.length < 4) return;
+  adminLoading.value = true;
+  adminError.value = "";
+  try {
+    await authenticateAdmin(adminPin.value);
+    adminPin.value = "";
+    adminAuthenticated.value = true;
+    message.success("管理员权限已解锁");
+  } catch (error) {
+    adminAuthenticated.value = false;
+    if (!isApiErrorCancelled(error)) adminError.value = formatApiError(error, "管理员 PIN 验证失败");
+  } finally {
+    adminLoading.value = false;
+  }
+}
+
+async function logoutAdmin() {
+  adminLoading.value = true;
+  adminError.value = "";
+  try {
+    await signOutAdmin();
+    adminAuthenticated.value = false;
+  } catch (error) {
+    if (!isApiErrorCancelled(error)) adminError.value = formatApiError(error, "退出管理员会话失败");
+  } finally {
+    adminLoading.value = false;
   }
 }
 
@@ -419,6 +491,33 @@ watch(
   margin-top: 22px;
   padding-top: 20px;
   border-top: 1px solid var(--border-subtle, #e7ebf1);
+}
+.admin-session-section {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 4px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle, #e7ebf1);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.admin-session-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.admin-session-heading > div {
+  display: grid;
+  gap: 3px;
+}
+.admin-session-heading small {
+  color: #657085;
+  line-height: 1.4;
+}
+.admin-session-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 .cleanup-heading {
   display: flex;

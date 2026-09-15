@@ -43,6 +43,31 @@ describe("safe remote fetch", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("resolves each redirect hostname before connecting", async () => {
+    const resolver = vi.fn(async (hostname: string) => {
+      if (hostname === "media.example" || hostname === "cdn.example") {
+        return [{ address: "93.184.216.34", family: 4 }];
+      }
+      throw new Error(`unexpected hostname: ${hostname}`);
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 302, headers: { location: "https://cdn.example/video.mp4" } })
+      )
+      .mockResolvedValueOnce(new Response("media"));
+    const remoteFetch = createRemoteFetch({ resolver, fetchImpl });
+
+    await expect(remoteFetch("https://media.example/video.mp4")).resolves.toMatchObject({ status: 200 });
+    expect(resolver).toHaveBeenNthCalledWith(1, "media.example");
+    expect(resolver).toHaveBeenNthCalledWith(2, "cdn.example");
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://cdn.example/video.mp4",
+      expect.objectContaining({ redirect: "manual" })
+    );
+  });
+
   it("uses the timeout only until remote response headers arrive", async () => {
     let requestSignal: AbortSignal | undefined;
     const response = await fetchRemoteResponse(

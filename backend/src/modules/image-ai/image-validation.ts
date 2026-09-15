@@ -1,5 +1,5 @@
 import path from "node:path";
-import sharp from "sharp";
+import sharp, { type Metadata } from "sharp";
 
 export const IMAGE_AI_MAX_FILE_BYTES = 20 * 1024 * 1024;
 export const IMAGE_AI_MAX_MASK_BYTES = 10 * 1024 * 1024;
@@ -33,7 +33,7 @@ export async function validateUploadedImage(input: {
     throw validationError("IMAGE_TOO_LARGE", "单张图片不能超过 20MB");
   }
 
-  let metadata: sharp.Metadata;
+  let metadata: Metadata;
   try {
     metadata = await sharp(input.filePath, { limitInputPixels: IMAGE_AI_MAX_PIXELS }).metadata();
   } catch {
@@ -68,7 +68,7 @@ export async function validateWatermarkMask(
   if (size > IMAGE_AI_MAX_MASK_BYTES) {
     throw validationError("MASK_TOO_LARGE", "蒙版不能超过 10MB");
   }
-  let metadata: sharp.Metadata;
+  let metadata: Metadata;
   try {
     metadata = await sharp(filePath, { limitInputPixels: IMAGE_AI_MAX_PIXELS }).metadata();
   } catch {

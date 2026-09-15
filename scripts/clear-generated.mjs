@@ -9,6 +9,12 @@ if (args.includes("--json")) {
   process.exit(0);
 }
 
+if (args.includes("--json-web")) {
+  const ids = cleanupDefinitions.filter((entry) => !["build", "packages"].includes(entry.id)).map((entry) => entry.id);
+  console.log(JSON.stringify(await inspectCleanupCategories(ids)));
+  process.exit(0);
+}
+
 const executeArg = args.find((arg) => arg.startsWith("--execute="));
 if (executeArg) {
   const ids = executeArg.slice("--execute=".length).split(",").filter(Boolean);

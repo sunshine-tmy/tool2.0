@@ -28,7 +28,7 @@ try {
   assert.equal(typeof backend.createApp, "function", "backend dist must export createApp()");
 
   app = await backend.createApp();
-  const response = await app.inject({ method: "GET", url: "/api/health" });
+  const response = await app.inject({ method: "GET", url: "/api/v1/health" });
   assert.equal(response.statusCode, 200, response.body);
 
   const payload = response.json();
@@ -44,7 +44,7 @@ try {
   await rm(temporaryStorage, { recursive: true, force: true });
 }
 
-console.log("Build smoke test passed: shared imports and backend /api/health are runnable.");
+console.log("Build smoke test passed: shared imports and backend /api/v1/health are runnable.");
 
 async function importFile(filePath) {
   await access(filePath);

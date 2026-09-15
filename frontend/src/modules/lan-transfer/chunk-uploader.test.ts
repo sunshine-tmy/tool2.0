@@ -70,6 +70,38 @@ describe("ConcurrentChunkUploader", () => {
     expect(maxActiveUploads).toBe(2);
   });
 
+  it("keeps in-flight memory bounded for a large logical file", async () => {
+    const logicalSize = 512 * 1024 * 1024;
+    const chunkSize = 4 * 1024 * 1024;
+    let activeBytes = 0;
+    let maxActiveBytes = 0;
+    const api = createFakeChunkApi({
+      uploadChunk: async (_uploadId, index, chunk) => {
+        activeBytes += chunk.size;
+        maxActiveBytes = Math.max(maxActiveBytes, activeBytes);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        activeBytes -= chunk.size;
+        return uploadStatus({ uploadedChunks: [index] });
+      }
+    });
+    const file = {
+      name: "large-logical-file.bin",
+      type: "application/octet-stream",
+      size: logicalSize,
+      slice: (start: number, end: number) => ({ size: end - start }) as Blob
+    } as unknown as File;
+    const uploader = new ConcurrentChunkUploader(file, api, {
+      chunkSize,
+      concurrency: 2,
+      maxRetries: 0
+    });
+
+    const result = await uploader.start();
+
+    expect(result.status).toBe("done");
+    expect(maxActiveBytes).toBeLessThanOrEqual(chunkSize * 2);
+  });
+
   it("pauses before scheduling additional chunks and resumes missing chunks", async () => {
     const uploadedIndexes: number[] = [];
     const api = createFakeChunkApi({
@@ -194,6 +226,19 @@ describe("ConcurrentChunkUploader", () => {
     expect(sessionInput).toMatchObject({ size: 0, chunkSize: 4, totalChunks: 0 });
     expect(uploadedIndexes).toEqual([]);
     expect(api.completedUploadId).toBe("upload-1");
+  });
+
+  it("stops without deleting the resumable session when its owning scope aborts", async () => {
+    const controller = new AbortController();
+    const api = createFakeChunkApi();
+    const uploader = new ConcurrentChunkUploader(new File(["abc"], "scope.txt"), api, {
+      chunkSize: 2,
+      signal: controller.signal
+    });
+
+    controller.abort();
+    await expect(uploader.start()).resolves.toMatchObject({ status: "canceled" });
+    expect(api.completedUploadId).toBeUndefined();
   });
 });
 

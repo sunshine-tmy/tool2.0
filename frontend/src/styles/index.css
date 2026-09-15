@@ -1,0 +1,11 @@
+/*
+ * Enterprise style loading contract.
+ * Keep the order stable: design tokens -> compatibility foundation -> visual
+ * components and responsive overrides. New styles should choose the narrowest
+ * layer instead of relying on import order across entry points.
+ */
+@layer tokens, foundation, components;
+
+@import "./tokens.css" layer(tokens);
+@import "./global.css" layer(foundation);
+@import "./redesign.css" layer(components);

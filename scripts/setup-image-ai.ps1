@@ -7,6 +7,7 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Venv = Join-Path $Root ".venv-image-ai"
 $Models = Join-Path $Root "models\image-ai"
+$LamaModel = Join-Path $Models "torch\hub\checkpoints\big-lama.pt"
 
 $PythonCommand = Get-Command $Python -ErrorAction SilentlyContinue
 if (-not $PythonCommand) {
@@ -22,9 +23,9 @@ Write-Host "Creating isolated Python 3.11 environment..." -ForegroundColor Cyan
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
 & $VenvPython -m pip install --upgrade pip wheel setuptools
 
-Write-Host "Installing CUDA-enabled PyTorch and pinned inference dependencies..." -ForegroundColor Cyan
-& $VenvPython -m pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
-& $VenvPython -m pip install -r (Join-Path $PSScriptRoot "image-ai-requirements.txt")
+Write-Host "Installing hash-locked CUDA and inference dependencies..." -ForegroundColor Cyan
+& $VenvPython -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cu124 -r (Join-Path $PSScriptRoot "image-ai.lock.txt")
+if ($LASTEXITCODE -ne 0) { throw "Unable to install Image AI dependencies" }
 
 New-Item -ItemType Directory -Path $Models -Force | Out-Null
 $env:TORCH_HOME = Join-Path $Models "torch"
@@ -34,11 +35,14 @@ if (-not $SkipModels) {
   Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth" -OutFile (Join-Path $Models "RealESRGAN_x2plus.pth")
   Invoke-WebRequest -Uri "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" -OutFile (Join-Path $Models "RealESRGAN_x4plus.pth")
 
+  Write-Host "Downloading and verifying Big-LaMa weights..." -ForegroundColor Cyan
+  & (Join-Path $PSScriptRoot "download-fixed-model-file.ps1") `
+    -Url "https://github.com/enesmsahin/simple-lama-inpainting/releases/download/v0.1.0/big-lama.pt" `
+    -Destination $LamaModel `
+    -ExpectedSha256 "7ba7aa7ac37a4d41fdbbeba3a2af7ead18058552997e3a3cd1a3b2210c9e6b4c"
+
   Write-Host "Preloading BiRefNet through rembg..." -ForegroundColor Cyan
   & $VenvPython -c "from rembg import new_session; new_session('birefnet-general'); print('BiRefNet ready')"
-
-  Write-Host "Preloading the Apache-licensed LaMa weights..." -ForegroundColor Cyan
-  & $VenvPython -c "from simple_lama_inpainting import SimpleLama; SimpleLama(); print('LaMa ready')"
 
   Write-Host "Preloading PaddleOCR PP-OCRv5 detection models..." -ForegroundColor Cyan
   & $VenvPython -c "from paddleocr import PaddleOCR; PaddleOCR(lang='ch', device='cpu', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False); print('PaddleOCR ready')"

@@ -26,8 +26,8 @@ describe("video text remote source query", () => {
   });
 
   it("creates a local preview proxy url for remote videos", () => {
-    expect(createRemoteVideoPreviewUrl("https://cdn.test/video.mp4?token=abc", "https://tool.test/api")).toBe(
-      "https://tool.test/api/tools/video-text/remote-video?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4%3Ftoken%3Dabc"
+    expect(createRemoteVideoPreviewUrl("https://cdn.test/video.mp4?token=abc", "https://tool.test/api/v1")).toBe(
+      "https://tool.test/api/v1/tools/video-text/remote-video?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4%3Ftoken%3Dabc"
     );
   });
 });

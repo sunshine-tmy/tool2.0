@@ -1,0 +1,112 @@
+name: Standalone release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-14
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - shell: pwsh
+        run: ./scripts/package-standalone.ps1 -Platform ${{ matrix.platform }}
+      - uses: anchore/sbom-action@v0
+        with:
+          # Scan only the final source tree that is actually archived. The
+          # development checkout (including its node_modules and test output)
+          # must never become part of the release SBOM.
+          path: .package/standalone/toolbox-${{ matrix.platform }}
+          output-file: .package/standalone/toolbox-${{ matrix.platform }}.spdx.json
+      - name: Hash SBOM
+        shell: pwsh
+        run: |
+          $sbom = ".package/standalone/toolbox-${{ matrix.platform }}.spdx.json"
+          $digest = (Get-FileHash -LiteralPath $sbom -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest  $(Split-Path -Leaf $sbom)" | Set-Content -LiteralPath "$sbom.sha256" -Encoding ASCII
+      - name: Verify scoped metadata
+        shell: pwsh
+        run: |
+          $staging = ".package/standalone/toolbox-${{ matrix.platform }}"
+          $license = Get-Content -LiteralPath (Join-Path $staging "third-party-licenses.json") -Raw | ConvertFrom-Json
+          $hasAbsolutePaths = @($license.PSObject.Properties.Value | ForEach-Object { $_.PSObject.Properties.Name } | Where-Object { $_ -eq "paths" }).Count -gt 0
+          if ($hasAbsolutePaths) { throw "License inventory contains builder-local paths" }
+          $sbom = Get-Content -LiteralPath ".package/standalone/toolbox-${{ matrix.platform }}.spdx.json" -Raw
+          $checkout = (Get-Location).Path.Replace("\\", "/")
+          if ($sbom.Contains("$checkout/node_modules")) { throw "SBOM contains the development checkout node_modules" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolbox-${{ matrix.platform }}
+          path: |
+            .package/standalone/*.zip
+            .package/standalone/*.tar.gz
+            .package/standalone/*.spdx.json
+            .package/standalone/*.sha256
+            .package/standalone/*.build-manifest.json
+            .package/standalone/*.third-party-licenses.json
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: toolbox-*
+          merge-multiple: true
+          path: release
+      - name: Verify release inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s release/toolbox-windows-x64.zip
+          test -s release/toolbox-macos-arm64.tar.gz
+          test -s release/toolbox-windows-x64.zip.sha256
+          test -s release/toolbox-macos-arm64.tar.gz.sha256
+          test -s release/toolbox-windows.spdx.json
+          test -s release/toolbox-windows.spdx.json.sha256
+          test -s release/toolbox-macos.spdx.json
+          test -s release/toolbox-macos.spdx.json.sha256
+          test -s release/toolbox-windows.third-party-licenses.json
+          test -s release/toolbox-windows.third-party-licenses.json.sha256
+          test -s release/toolbox-macos.third-party-licenses.json
+          test -s release/toolbox-macos.third-party-licenses.json.sha256
+          test -s release/toolbox-windows.build-manifest.json
+          test -s release/toolbox-windows.build-manifest.json.sha256
+          test -s release/toolbox-macos.build-manifest.json
+          test -s release/toolbox-macos.build-manifest.json.sha256
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" release/* --clobber
+          else
+            gh release create "$tag" release/* --verify-tag --generate-notes --title "Toolbox $tag"
+          fi

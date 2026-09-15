@@ -7,6 +7,9 @@ dist/
 *.log
 *.tsbuildinfo
 coverage/
+test-results/
+playwright-report/
+blob-report/
 .logs/
 .package/
 **/.vite/
@@ -23,6 +26,7 @@ scripts/__pycache__/
 .ruff_cache/
 .venv/
 venv/
+*.egg-info/
 .idea/
 .vscode/
 .DS_Store
@@ -48,7 +52,14 @@ storage/video-text/**
 storage/edge-tts/**
 storage/chatterbox/**
 storage/xhs-archive/**
+storage/toolbox.db
+storage/toolbox.db-shm
+storage/toolbox.db-wal
+storage/migration-backups/**
+storage/quarantine/**
 .runtime/xhs-downloader/
+.runtime/xhs-translate/
+.runtime/xhs-translation-model-cache/
 .runtime/xhs-browser-profile/
 .runtime/playwright-browsers/
 

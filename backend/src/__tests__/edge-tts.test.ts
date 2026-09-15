@@ -30,8 +30,8 @@ afterEach(async () => {
 describe("edge tts module", () => {
   it("reports health and filters the live voice list", async () => {
     const app = await createApp();
-    const health = await app.inject({ method: "GET", url: "/api/tools/edge-tts/health" });
-    const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=ms-MY" });
+    const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/health" });
+    const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices?language=ms-MY" });
 
     expect(health.statusCode).toBe(200);
     expect(health.json().data).toMatchObject({ available: true, version: "test-1.0", retentionDays: 3 });
@@ -48,10 +48,10 @@ describe("edge tts module", () => {
     { language: "pt-BR", voice: "pt-BR-AntonioNeural", text: "Bem-vindo à nossa loja. Obrigado pela preferência!" }
   ])("generates, persists, serves and deletes MP3 and SRT files for $voice", async (sample) => {
     const app = await createApp();
-    await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=ms-MY" });
+    await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices?language=ms-MY" });
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/tasks",
+      url: "/api/v1/tools/edge-tts/tasks",
       payload: {
         ...sample,
         rate: 10,
@@ -64,26 +64,29 @@ describe("edge tts module", () => {
 
     expect(created.statusCode).toBe(202);
     const taskId = created.json().data.id as string;
+    const unifiedTask = await app.inject({ method: "GET", url: `/api/v1/tasks/${taskId}` });
+    expect(unifiedTask.statusCode).toBe(200);
+    expect(unifiedTask.json().data).toMatchObject({ id: taskId, toolId: "edge-tts" });
     const completed = await waitForTask(app, taskId);
     expect(completed).toMatchObject({ status: "completed", audioBytes: 13 });
 
-    const audio = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}/audio` });
-    const download = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}/download` });
-    const subtitle = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}/subtitle` });
+    const audio = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}/audio` });
+    const download = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}/download` });
+    const subtitle = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}/subtitle` });
     expect(audio.statusCode).toBe(200);
     expect(audio.headers["content-type"]).toContain("audio/mpeg");
     expect(download.headers["content-disposition"]).toContain("produk-baharu.mp3");
     expect(subtitle.body).toContain(sample.text);
 
-    const list = await app.inject({ method: "GET", url: "/api/tools/edge-tts/tasks" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/tasks" });
     expect(list.json().data.tasks[0]).toMatchObject({ id: taskId, status: "completed" });
     expect(list.json().data.tasks[0].text).toBeUndefined();
     await app.close();
 
     const restarted = await createApp();
-    const restored = await restarted.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const restored = await restarted.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     expect(restored.json().data).toMatchObject({ id: taskId, status: "completed", ...sample });
-    const removed = await restarted.inject({ method: "DELETE", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const removed = await restarted.inject({ method: "DELETE", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     expect(removed.json().data).toEqual({ removed: true });
     expect(
       await fsp.stat(path.join(process.env.STORAGE_ROOT!, "edge-tts", "tasks", taskId)).catch(() => undefined)
@@ -95,7 +98,7 @@ describe("edge tts module", () => {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/tasks",
+      url: "/api/v1/tools/edge-tts/tasks",
       payload: {
         text: "Hello",
         language: "en-US",
@@ -112,16 +115,68 @@ describe("edge tts module", () => {
     await app.close();
   });
 
+  it("rejects requests that do not satisfy the public route schemas", async () => {
+    const app = await createApp();
+    try {
+      const invalidBody = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/edge-tts/tasks",
+        payload: {
+          text: "Hello",
+          language: "en-US",
+          voice: "en-US-JennyNeural",
+          rate: 0,
+          volume: 0,
+          pitch: 0
+        }
+      });
+      const invalidId = await app.inject({
+        method: "GET",
+        url: "/api/v1/tools/edge-tts/tasks/bad!"
+      });
+
+      expect(invalidBody.statusCode).toBe(400);
+      expect(invalidBody.json()).toMatchObject({
+        success: false,
+        error: { code: "REQUEST_INVALID" },
+        requestId: expect.any(String)
+      });
+      expect(invalidId.statusCode).toBe(400);
+      expect(invalidId.json().error.code).toBe("REQUEST_INVALID");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("applies an independent rate limit to task creation", async () => {
+    const app = await createApp();
+    try {
+      let response;
+      for (let requestNumber = 0; requestNumber < 31; requestNumber += 1) {
+        response = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/tasks", payload: {} });
+      }
+
+      expect(response?.statusCode).toBe(429);
+      expect(response?.json()).toMatchObject({
+        success: false,
+        error: { code: "RATE_LIMIT_EXCEEDED" },
+        requestId: expect.any(String)
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("filters Brazilian voices and rejects a voice from another locale", async () => {
     const app = await createApp();
     try {
-      const voices = await app.inject({ method: "GET", url: "/api/tools/edge-tts/voices?language=pt-BR" });
+      const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices?language=pt-BR" });
       expect(voices.statusCode).toBe(200);
       expect(voices.json().data.voices).toHaveLength(2);
       expect(voices.json().data.voices.every((voice: { locale: string }) => voice.locale === "pt-BR")).toBe(true);
       const result = await app.inject({
         method: "POST",
-        url: "/api/tools/edge-tts/tasks",
+        url: "/api/v1/tools/edge-tts/tasks",
         payload: {
           text: "Olá!",
           language: "pt-BR",
@@ -143,7 +198,7 @@ describe("edge tts module", () => {
     const app = await createApp();
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/edge-tts/tasks",
+      url: "/api/v1/tools/edge-tts/tasks",
       payload: {
         text: "slow generation",
         language: "en-US",
@@ -156,7 +211,7 @@ describe("edge tts module", () => {
     });
     const taskId = created.json().data.id as string;
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
 
     expect(removed.statusCode).toBe(200);
     expect(
@@ -168,7 +223,7 @@ describe("edge tts module", () => {
 
 async function waitForTask(app: Awaited<ReturnType<typeof createApp>>, taskId: string) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
-    const response = await app.inject({ method: "GET", url: `/api/tools/edge-tts/tasks/${taskId}` });
+    const response = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${taskId}` });
     const task = response.json().data;
     if (task.status === "completed" || task.status === "failed") return task;
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -181,9 +236,9 @@ function helperSource() {
 const fs = require("node:fs");
 const command = process.argv[2];
 if (command === "check") {
-  process.stdout.write(JSON.stringify({ available: true, version: "test-1.0" }));
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, available: true, version: "test-1.0" }));
 } else if (command === "voices") {
-  process.stdout.write(JSON.stringify({ voices: [
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, voices: [
     { name: "Yasmin", shortName: "ms-MY-YasminNeural", locale: "ms-MY", gender: "Female" },
     { name: "Jenny", shortName: "en-US-JennyNeural", locale: "en-US", gender: "Female" },
     { name: "Francisca", shortName: "pt-BR-FranciscaNeural", locale: "pt-BR", gender: "Female" },
@@ -192,6 +247,10 @@ if (command === "check") {
 } else if (command === "generate") {
   const value = (name) => process.argv[process.argv.indexOf(name) + 1];
   const input = JSON.parse(fs.readFileSync(value("--input"), "utf8"));
+  if (input.protocolVersion !== 1) {
+    process.stderr.write("unsupported protocol version");
+    process.exit(2);
+  }
   if (input.text.includes("slow")) {
     const handle = fs.openSync(value("--audio"), "w");
     fs.writeSync(handle, Buffer.from("ID3"));
@@ -202,7 +261,7 @@ if (command === "check") {
   if (process.argv.includes("--subtitle")) {
     fs.writeFileSync(value("--subtitle"), "1\n00:00:00,000 --> 00:00:01,000\n" + input.text + "\n", "utf8");
   }
-  process.stdout.write(JSON.stringify({ audioBytes: 13 }));
+  process.stdout.write(JSON.stringify({ protocolVersion: 1, audioBytes: 13 }));
 } else {
   process.stderr.write("unknown command");
   process.exit(1);

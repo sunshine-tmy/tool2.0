@@ -5,9 +5,9 @@ import os
 import sys
 from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-import uvicorn
 
 source_dir = Path(os.environ["XHS_SOURCE_DIR"]).resolve()
 sys.path.insert(0, str(source_dir))

@@ -3,7 +3,11 @@ import path from "node:path";
 import type { ImageAiOperation, ImageAiResult, ImageAiTask } from "@toolbox/shared";
 import sharp from "sharp";
 import type { AppConfig } from "../../config";
+import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
+import type { Task, TaskStore } from "../../tasks/task-store";
 import { createImageAiWorkerClient } from "./worker-client";
+import { commitStagedFile } from "../../storage/file-commit-gateway";
 
 export type StoredInput = {
   path: string;
@@ -23,13 +27,21 @@ type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
   cancelRequested?: boolean;
 };
 
-export function createImageAiTaskManager(config: AppConfig) {
+export function createImageAiTaskManager(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  taskStore: TaskStore,
+  fileMetadata?: FileMetadataRepository
+) {
   const worker = createImageAiWorkerClient(config);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
   let processing = false;
   let reservations = 0;
   let cleanupTimer: NodeJS.Timeout | undefined;
+  let drainPromise: Promise<void> | undefined;
+  let stopped = false;
+  const shutdownController = new AbortController();
 
   async function initialize() {
     await Promise.all([
@@ -45,7 +57,11 @@ export function createImageAiTaskManager(config: AppConfig) {
   }
 
   async function close() {
+    stopped = true;
+    queue.length = 0;
+    shutdownController.abort();
     if (cleanupTimer) clearInterval(cleanupTimer);
+    await drainPromise;
   }
 
   function activeCount() {
@@ -91,6 +107,30 @@ export function createImageAiTaskManager(config: AppConfig) {
     refreshQueuePositions();
     try {
       await persist(task);
+      await Promise.all(
+        task.inputs.map((input, index) =>
+          fileMetadata
+            ?.registerIfExists({
+              entityKind: "image-ai-input",
+              entityId: `${task.id}-${index + 1}`,
+              filePath: input.path,
+              mediaType: input.mimetype,
+              owner: "local"
+            })
+            .catch(() => undefined)
+        )
+      );
+      if (task.maskPath) {
+        await fileMetadata
+          ?.registerIfExists({
+            entityKind: "image-ai-mask",
+            entityId: task.id,
+            filePath: task.maskPath,
+            mediaType: "image/png",
+            owner: "local"
+          })
+          .catch(() => undefined);
+      }
     } catch (error) {
       tasks.delete(task.id);
       const queueIndex = queue.indexOf(task.id);
@@ -135,22 +175,33 @@ export function createImageAiTaskManager(config: AppConfig) {
       const queueIndex = queue.indexOf(task.id);
       if (queueIndex >= 0) queue.splice(queueIndex, 1);
       tasks.delete(task.id);
+      database.remove("image-ai-task", task.id);
+      fileMetadata?.removeForEntity("image-ai-input", task.id);
+      fileMetadata?.removeForEntity("image-ai-mask", task.id);
+      fileMetadata?.removeForEntity("image-ai-result", task.id);
+      taskStore.remove(task.id);
       await Promise.all([
         fs.rm(path.join(config.imageAiInputsDir, task.id), { recursive: true, force: true }),
-        fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true }),
-        fs.rm(manifestPath(task.id), { force: true })
+        fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true })
       ]);
     }
     refreshQueuePositions();
   }
 
   function scheduleDrain() {
+    if (stopped || drainPromise) return;
     queueMicrotask(() => {
-      void drain().catch(() => {
-        if (!queue.length) return;
-        const retry = setTimeout(scheduleDrain, 1000);
-        retry.unref();
-      });
+      if (stopped || drainPromise) return;
+      const operation = drain()
+        .catch(() => {
+          if (stopped || !queue.length) return;
+          const retry = setTimeout(scheduleDrain, 1000);
+          retry.unref();
+        })
+        .finally(() => {
+          if (drainPromise === operation) drainPromise = undefined;
+        });
+      drainPromise = operation;
     });
   }
 
@@ -189,7 +240,8 @@ export function createImageAiTaskManager(config: AppConfig) {
           inputPath: input.path,
           outputPath,
           maskPath: task.maskPath,
-          scale: task.scale
+          scale: task.scale,
+          signal: shutdownController.signal
         });
         await sanitizePng(outputPath);
         const metadata = await sharp(outputPath).metadata();
@@ -199,7 +251,7 @@ export function createImageAiTaskManager(config: AppConfig) {
           originalName: input.originalName,
           outputName,
           outputPath,
-          downloadUrl: `/api/tools/image-ai/tasks/${task.id}/files/${task.id}-${index + 1}`,
+          downloadUrl: `/api/v1/tools/image-ai/tasks/${task.id}/files/${task.id}-${index + 1}`,
           width: metadata.width,
           height: metadata.height,
           provider: inference.provider,
@@ -207,7 +259,26 @@ export function createImageAiTaskManager(config: AppConfig) {
           warnings: inference.warnings ?? []
         });
         task.warnings = unique([...task.warnings, ...(inference.warnings ?? [])]);
+        await fileMetadata
+          ?.registerIfExists({
+            entityKind: "image-ai-result",
+            entityId: task.id,
+            filePath: outputPath,
+            mediaType: "image/png",
+            owner: "local",
+            id: `${task.id}-${index + 1}`
+          })
+          .catch(() => undefined);
       } catch (error) {
+        if (shutdownController.signal.aborted) {
+          patchTask(task, {
+            status: "failed",
+            progress: 100,
+            error: "任务因服务关闭而中断，请手动重试"
+          });
+          await persist(task);
+          return;
+        }
         failures += 1;
         task.warnings = unique([
           ...task.warnings,
@@ -237,26 +308,35 @@ export function createImageAiTaskManager(config: AppConfig) {
   }
 
   async function loadTasks() {
-    const files = await fs.readdir(config.imageAiTasksDir).catch(() => [] as string[]);
-    for (const file of files.filter((name) => name.endsWith(".json"))) {
-      try {
-        const task = JSON.parse(
-          await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")
-        ) as StoredImageAiTask;
-        if (!task.id || !task.operation) continue;
-        if (task.status === "running") {
-          patchTask(task, {
-            status: "failed",
-            progress: 100,
-            error: "服务重启导致任务中断，请重新提交"
-          });
-          await persist(task);
+    if (!database.isDomainInitialized("image-ai-task")) {
+      const files = await fs.readdir(config.imageAiTasksDir).catch(() => [] as string[]);
+      for (const file of files.filter((name) => name.endsWith(".json"))) {
+        try {
+          const task = JSON.parse(
+            await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")
+          ) as StoredImageAiTask;
+          if (!task.id || !task.operation) continue;
+          database.upsert(toEntity(task));
+        } catch {
+          // Invalid legacy manifests stay untouched for manual recovery.
         }
-        tasks.set(task.id, task);
-        if (task.status === "pending") queue.push(task.id);
-      } catch {
-        // Ignore corrupt manifests; uploaded images remain isolated and will be cleaned manually.
       }
+      database.markDomainInitialized("image-ai-task");
+    }
+    for (const entity of database.list("image-ai-task")) {
+      const task = entity.payload as StoredImageAiTask;
+      if (!task.id || !task.operation) continue;
+      if (task.status === "pending" || task.status === "running") {
+        patchTask(task, {
+          status: "failed",
+          progress: 100,
+          queuePosition: null,
+          error: "任务因服务重启而中断，请手动重试"
+        });
+        database.upsert(toEntity(task));
+      }
+      tasks.set(task.id, task);
+      taskStore.upsert(toUnifiedTask(task));
     }
     refreshQueuePositions();
   }
@@ -269,14 +349,8 @@ export function createImageAiTaskManager(config: AppConfig) {
   }
 
   async function persist(task: StoredImageAiTask) {
-    const destination = manifestPath(task.id);
-    const temporary = `${destination}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify(task, null, 2), "utf8");
-    await fs.rename(temporary, destination);
-  }
-
-  function manifestPath(taskId: string) {
-    return path.join(config.imageAiTasksDir, `${taskId}.json`);
+    database.upsert(toEntity(task));
+    taskStore.upsert(toUnifiedTask(task));
   }
 
   return {
@@ -289,6 +363,30 @@ export function createImageAiTaskManager(config: AppConfig) {
     getStored,
     cancel,
     cleanupExpired
+  };
+}
+
+function toUnifiedTask(task: StoredImageAiTask): Task {
+  return {
+    id: task.id,
+    toolId: "image-ai",
+    status: task.status === "canceled" ? "failed" : task.status,
+    progress: task.progress,
+    outputPath: task.results[0]?.outputPath,
+    error: task.status === "canceled" ? "CANCELLED" : task.error,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  };
+}
+
+function toEntity(task: StoredImageAiTask) {
+  return {
+    id: task.id,
+    kind: "image-ai-task",
+    status: task.status,
+    payload: task,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
   };
 }
 
@@ -340,5 +438,5 @@ async function sanitizePng(outputPath: string) {
   const temporary = `${outputPath}.sanitized.png`;
   await sharp(outputPath, { limitInputPixels: 100_000_000 }).rotate().png({ compressionLevel: 9 }).toFile(temporary);
   await fs.rm(outputPath, { force: true });
-  await fs.rename(temporary, outputPath);
+  await commitStagedFile(temporary, outputPath);
 }

@@ -1,7 +1,8 @@
 export type ApiSuccess<T> = {
   success: true;
-  message: string;
+  message?: string;
   data: T;
+  requestId?: string;
 };
 
 export type ApiFailure = {
@@ -9,8 +10,10 @@ export type ApiFailure = {
   message: string;
   error: {
     code: string;
+    message: string;
     details?: unknown;
   };
+  requestId?: string;
 };
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
@@ -29,6 +32,7 @@ export function fail(code: string, message: string, details?: unknown): ApiFailu
     message,
     error: {
       code,
+      message,
       details
     }
   };

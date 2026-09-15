@@ -16,6 +16,7 @@ describe("api response helpers", () => {
       message: "Unsupported image type",
       error: {
         code: "INVALID_IMAGE",
+        message: "Unsupported image type",
         details: { ext: "gif" }
       }
     });

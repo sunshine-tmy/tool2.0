@@ -1,25 +1,13 @@
 import type { AxiosProgressEvent } from "axios";
+import { ImageCompressResultSchema, type ImageCompressResult } from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
-import type { ToolTask } from "../../types";
 
-export type ImageToolResponse = {
-  task: ToolTask;
-  downloadUrl: string;
-  originalName: string;
-  outputName: string;
-  outputFormat: "jpeg" | "png" | "webp";
-  originalSize: number;
-  outputSize: number;
-  savedBytes: number;
-  compressionRatio: number;
-  width?: number;
-  height?: number;
-};
+export type ImageToolResponse = ImageCompressResult;
 
 class ImageCompressApi {
   async upload(form: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void) {
     return withApiError(
-      () => httpClient.post<ImageToolResponse>("/tools/image-compress", form, { onUploadProgress }),
+      () => httpClient.post("/tools/image-compress", ImageCompressResultSchema, form, { onUploadProgress }),
       "图片压缩失败"
     );
   }

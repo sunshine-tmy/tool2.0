@@ -32,7 +32,7 @@ describe("image tools api", () => {
         .toBuffer();
       const response = await app.inject({
         method: "POST",
-        url: "/api/tools/image-compress",
+        url: "/api/v1/tools/image-compress",
         ...multipartPayload({
           fileName: "demo.png",
           mimeType: "image/png",
@@ -77,7 +77,7 @@ describe("image tools api", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/tools/image-compress",
+      url: "/api/v1/tools/image-compress",
       ...multipartPayload({
         fileName: "demo.png",
         mimeType: "image/png",
@@ -92,7 +92,7 @@ describe("image tools api", () => {
     expect(response.statusCode).toBe(200);
     const data = response.json().data;
     expect(data.task.status).toBe("completed");
-    expect(data.downloadUrl).toMatch(/\/api\/files\/.+\.webp$/);
+    expect(data.downloadUrl).toMatch(/\/api\/v1\/files\/.+\.webp$/);
     expect(data.originalName).toBe("demo.png");
     expect(data.outputFormat).toBe("webp");
     expect(data.originalSize).toBe(image.length);
@@ -115,7 +115,7 @@ describe("image tools api", () => {
       for (let index = 0; index < 2; index += 1) {
         const response = await app.inject({
           method: "POST",
-          url: "/api/tools/image-compress",
+          url: "/api/v1/tools/image-compress",
           ...multipartPayload({
             fileName: `demo-${index}.png`,
             mimeType: "image/png",
@@ -129,7 +129,7 @@ describe("image tools api", () => {
 
       const response = await app.inject({
         method: "POST",
-        url: "/api/tools/image-compress/download.zip",
+        url: "/api/v1/tools/image-compress/download.zip",
         payload: {
           files: taskIds.map((taskId) => ({ taskId, fileName: "商品图.jpg" }))
         }

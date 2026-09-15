@@ -43,10 +43,11 @@ os.environ.setdefault("U2NET_HOME", str(ROOT / "models" / "image-ai" / "rembg"))
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 from PIL import Image
+from pydantic import BaseModel
 
 Image.MAX_IMAGE_PIXELS = 100_000_000
+
 
 def project_path(value: str | Path) -> Path:
     candidate = Path(value)
@@ -76,6 +77,41 @@ class WorkerFailure(RuntimeError):
         super().__init__(message)
         self.code = code
         self.status = status
+
+
+class LamaInpaintingModel:
+    """Minimal adapter around the pinned Big-LaMa TorchScript model."""
+
+    model: Any
+    device: Any
+
+    def __call__(self, image: Image.Image, mask: Image.Image) -> Image.Image:
+        import numpy as np
+        import torch
+
+        def tensor_input(source: Image.Image) -> Any:
+            values = np.asarray(source, dtype=np.float32) / 255.0
+            if values.ndim == 2:
+                values = values[np.newaxis, ...]
+            else:
+                values = np.transpose(values, (2, 0, 1))
+            _, height, width = values.shape
+            padded_height = ((height + 7) // 8) * 8
+            padded_width = ((width + 7) // 8) * 8
+            values = np.pad(
+                values,
+                ((0, 0), (0, padded_height - height), (0, padded_width - width)),
+                mode="symmetric",
+            )
+            return torch.from_numpy(values).unsqueeze(0).to(self.device)
+
+        image_tensor = tensor_input(image)
+        mask_tensor = (tensor_input(mask) > 0).to(dtype=image_tensor.dtype)
+        with torch.inference_mode():
+            inpainted = self.model(image_tensor, mask_tensor)
+        output = inpainted[0].permute(1, 2, 0).detach().cpu().numpy()
+        output = np.clip(output * 255, 0, 255).astype(np.uint8)
+        return Image.fromarray(output)
 
 
 class SuggestionRequest(BaseModel):
@@ -142,7 +178,6 @@ class ModelManager:
             return self.gpu_model
         self.unload_gpu()
         try:
-            from simple_lama_inpainting import SimpleLama
             import torch
         except ImportError as exc:
             raise WorkerFailure("LAMA_UNAVAILABLE", "未安装 LaMa 推理组件，请运行图片 AI 安装脚本") from exc
@@ -159,7 +194,7 @@ class ModelManager:
         # Unicode Windows paths reliably. Loading through a Python binary stream keeps
         # all filesystem access Unicode-safe while preserving the official TorchScript.
         device = torch.device(self.device())
-        lama = SimpleLama.__new__(SimpleLama)
+        lama = LamaInpaintingModel()
         with model_path.open("rb") as model_stream:
             lama.model = torch.jit.load(model_stream, map_location=device)
         lama.model.eval()
@@ -175,6 +210,9 @@ class ModelManager:
             return self.gpu_model
         self.unload_gpu()
         try:
+            # BasicSR's optional SLURM helper can invoke a command with this
+            # environment value. This desktop worker never runs under SLURM.
+            os.environ.pop("SLURM_NODELIST", None)
             install_basicsr_torchvision_compat()
             from basicsr.archs.rrdbnet_arch import RRDBNet
             from realesrgan import RealESRGANer
@@ -210,7 +248,7 @@ class ModelManager:
         self.gpu_key = key
         return self.gpu_model
 
-    def get_bria(self) -> tuple[Any, Any]:
+    def get_bria(self) -> tuple[Any, Any, Any]:
         if self.gpu_key == "bria-rmbg-2.0":
             return self.gpu_model
         self.unload_gpu()
@@ -281,7 +319,7 @@ def install_basicsr_torchvision_compat() -> None:
     from torchvision.transforms.functional import rgb_to_grayscale
 
     compatibility_module = types.ModuleType(module_name)
-    compatibility_module.rgb_to_grayscale = rgb_to_grayscale
+    setattr(compatibility_module, "rgb_to_grayscale", rgb_to_grayscale)  # noqa: B010
     sys.modules[module_name] = compatibility_module
 
 
@@ -310,7 +348,7 @@ async def health() -> dict[str, Any]:
             "lama",
             "big-lama",
             "Apache-2.0",
-            "simple_lama_inpainting",
+            "torch",
             device,
             weight_files=[Path(os.environ["TORCH_HOME"]) / "hub" / "checkpoints" / "big-lama.pt"],
         ),
@@ -345,6 +383,7 @@ async def health() -> dict[str, Any]:
     return {
         "success": True,
         "data": {
+            "protocolVersion": 1,
             "available": any(item["available"] for item in models[:4]),
             "deploymentUsage": "internal-noncommercial" if internal else "commercial",
             "workerUrl": f"http://{HOST}:{PORT}",
@@ -401,7 +440,7 @@ def run_ocr(input_path: Path) -> dict[str, Any]:
             result = data.get("res", data) if isinstance(data, dict) else {}
             polygons = result.get("dt_polys", [])
             scores = result.get("dt_scores", [1.0] * len(polygons))
-            for polygon, score in zip(polygons, scores):
+            for polygon, score in zip(polygons, scores, strict=False):
                 suggestions.append(normalized_polygon(polygon, float(score), width, height))
     else:
         predictions = ocr.ocr(str(input_path), cls=False)
@@ -472,9 +511,7 @@ def run_realesrgan(input_path: Path, output_path: Path, scale: int) -> dict[str,
     raise WorkerFailure("REALESRGAN_FAILED", "Real-ESRGAN 推理失败")
 
 
-def run_background_removal(
-    input_path: Path, output_path: Path, deployment_usage: str
-) -> dict[str, Any]:
+def run_background_removal(input_path: Path, output_path: Path, deployment_usage: str) -> dict[str, Any]:
     warnings: list[str] = []
     if deployment_usage == "internal-noncommercial":
         try:
@@ -496,7 +533,9 @@ def run_bria(input_path: Path, output_path: Path) -> None:
         tensor = transform(image).unsqueeze(0).to(manager.device())
         with torch.no_grad():
             prediction = model(tensor)[-1].sigmoid().cpu()[0].squeeze()
-        mask = Image.fromarray((prediction.numpy() * 255).astype("uint8")).resize(original_size, Image.Resampling.LANCZOS)
+        mask = Image.fromarray((prediction.numpy() * 255).astype("uint8")).resize(
+            original_size, Image.Resampling.LANCZOS
+        )
         image.putalpha(mask)
         image.save(output_path, format="PNG", optimize=True)
 

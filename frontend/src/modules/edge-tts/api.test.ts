@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { EdgeTtsTaskListSchema, EdgeTtsTaskSchema, EdgeTtsVoicesSchema } from "@toolbox/shared";
 import { edgeTtsApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({
@@ -29,7 +30,9 @@ describe("edge tts api", () => {
 
     await edgeTtsApi.create(input);
 
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/tasks", input, { timeout: 30_000 });
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/tasks", EdgeTtsTaskSchema, input, {
+      timeout: 30_000
+    });
   });
 
   it("loads locale voices and paginated history", async () => {
@@ -37,8 +40,12 @@ describe("edge tts api", () => {
     await edgeTtsApi.voices("en-GB");
     await edgeTtsApi.list(2, 10);
 
-    expect(httpMock.get).toHaveBeenNthCalledWith(1, "/tools/edge-tts/voices", { params: { language: "en-GB" } });
-    expect(httpMock.get).toHaveBeenNthCalledWith(2, "/tools/edge-tts/tasks", { params: { page: 2, pageSize: 10 } });
+    expect(httpMock.get).toHaveBeenNthCalledWith(1, "/tools/edge-tts/voices", EdgeTtsVoicesSchema, {
+      params: { language: "en-GB" }
+    });
+    expect(httpMock.get).toHaveBeenNthCalledWith(2, "/tools/edge-tts/tasks", EdgeTtsTaskListSchema, {
+      params: { page: 2, pageSize: 10 }
+    });
   });
 
   it("requests Brazilian Portuguese voices and preserves accented text", async () => {
@@ -53,7 +60,11 @@ describe("edge tts api", () => {
     };
     await edgeTtsApi.voices("pt-BR");
     await edgeTtsApi.create(input);
-    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/voices", { params: { language: "pt-BR" } });
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/tasks", input, { timeout: 30_000 });
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/voices", EdgeTtsVoicesSchema, {
+      params: { language: "pt-BR" }
+    });
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/tasks", EdgeTtsTaskSchema, input, {
+      timeout: 30_000
+    });
   });
 });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import { createApp } from "../app";
+import { ToolboxDatabase } from "../database/toolbox-database";
 
 let storageRoot: string;
 
@@ -25,13 +26,17 @@ afterEach(async () => {
   delete process.env.LAN_TRANSFER_GUEST_MODE;
   delete process.env.LAN_TRANSFER_UPLOAD_RETENTION_HOURS;
   delete process.env.LAN_PUBLIC_BASE_URL;
+  delete process.env.DEPLOYMENT_MODE;
+  delete process.env.ADMIN_PIN;
+  delete process.env.CORS_ORIGINS;
+  delete process.env.DATABASE_PATH;
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
 
 describe("lan transfer api", () => {
   it("reports usable LAN sharing information", async () => {
     const app = await createApp();
-    const response = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/info" });
+    const response = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/info" });
 
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toMatchObject({
@@ -46,7 +51,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/tools/lan-transfer/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "route.txt", "text/plain", "new namespace")
     });
 
@@ -55,22 +60,224 @@ describe("lan transfer api", () => {
 
     const list = await app.inject({
       method: "GET",
-      url: "/api/tools/lan-transfer/files"
+      url: "/api/v1/tools/lan-transfer/files"
     });
     expect(list.json().data.files).toHaveLength(1);
 
     const preview = await app.inject({
       method: "GET",
-      url: `/api/tools/lan-transfer/files/${id}/preview`
+      url: `/api/v1/tools/lan-transfer/files/${id}/preview`
     });
     expect(preview.body).toBe("new namespace");
+  });
+
+  it("allows guest transfers but requires an administrator session for LAN management in LAN mode", async () => {
+    process.env.DEPLOYMENT_MODE = "lan";
+    process.env.ADMIN_PIN = "123456";
+    process.env.CORS_ORIGINS = "http://192.168.1.10:5173";
+    const app = await createApp();
+
+    try {
+      const upload = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/files",
+        ...multipartPayload("file", "guest.txt", "text/plain", "guest transfer")
+      });
+      expect(upload.statusCode).toBe(200);
+      const fileId = upload.json().data.file.id;
+
+      const download = await app.inject({
+        method: "GET",
+        url: `/api/v1/tools/lan-transfer/files/${fileId}/download`
+      });
+      expect(download.statusCode).toBe(200);
+      expect(download.body).toBe("guest transfer");
+
+      const note = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/notes",
+        ...noteMultipartPayload({ content: "guest note" }, [])
+      });
+      expect(note.statusCode).toBe(200);
+      const noteId = note.json().data.id;
+
+      const uploadSession = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/uploads",
+        payload: {
+          originalName: "chunked.txt",
+          mimeType: "text/plain",
+          size: 4,
+          chunkSize: 4,
+          totalChunks: 1
+        }
+      });
+      expect(uploadSession.statusCode).toBe(200);
+      const uploadId = uploadSession.json().data.uploadId;
+      const cancelled = await app.inject({
+        method: "DELETE",
+        url: `/api/v1/tools/lan-transfer/uploads/${uploadId}`
+      });
+      expect(cancelled.statusCode).toBe(200);
+
+      const deniedManagementRequests = await Promise.all([
+        app.inject({ method: "DELETE", url: `/api/v1/tools/lan-transfer/files/${fileId}` }),
+        app.inject({
+          method: "PATCH",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}/expiry`,
+          payload: { days: 30 }
+        }),
+        app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/files/batch-delete",
+          payload: { ids: [fileId] }
+        }),
+        app.inject({ method: "POST", url: "/api/v1/tools/lan-transfer/cleanup" }),
+        app.inject({ method: "DELETE", url: `/api/v1/tools/lan-transfer/notes/${noteId}` }),
+        app.inject({
+          method: "PATCH",
+          url: `/api/v1/tools/lan-transfer/notes/${noteId}/expiry`,
+          payload: { days: 30 }
+        }),
+        app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/notes/batch-delete",
+          payload: { ids: [noteId] }
+        })
+      ]);
+      for (const response of deniedManagementRequests) {
+        expect(response.statusCode).toBe(401);
+        expect(response.json().error.code).toBe("ADMIN_SESSION_REQUIRED");
+      }
+
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/session",
+        payload: { pin: "123456" }
+      });
+      const setCookie = login.headers["set-cookie"]!;
+      const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie).split(";", 1)[0];
+      const adminHeaders = {
+        cookie,
+        origin: "http://192.168.1.10:5173",
+        "x-csrf-token": login.json().data.csrfToken
+      };
+
+      const [deletedFile, deletedNote] = await Promise.all([
+        app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}`,
+          headers: adminHeaders
+        }),
+        app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/lan-transfer/notes/${noteId}`,
+          headers: adminHeaders
+        })
+      ]);
+      expect(deletedFile.statusCode).toBe(200);
+      expect(deletedNote.statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("writes LAN audit events to SQLite without modifying the legacy JSONL log", async () => {
+    process.env.LAN_TRANSFER_PIN = "2468";
+    const databasePath = path.join(storageRoot, "toolbox.db");
+    process.env.DATABASE_PATH = databasePath;
+    const legacyAuditPath = path.join(storageRoot, "lan-transfer", "audit.jsonl");
+    const legacyAudit = '{"event":"legacy.audit"}\n';
+    await fs.mkdir(path.dirname(legacyAuditPath), { recursive: true });
+    await fs.writeFile(legacyAuditPath, legacyAudit, "utf8");
+    const app = await createApp();
+
+    const deniedLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/access",
+      payload: { pin: "wrong" }
+    });
+    expect(deniedLogin.statusCode).toBe(401);
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/access",
+      payload: { pin: "2468" }
+    });
+    const cookie = String(login.headers["set-cookie"]).split(";", 1)[0];
+
+    const uploadPayload = multipartPayload("file", "audit.txt", "text/plain", "audit");
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/files",
+      headers: { ...uploadPayload.headers, cookie },
+      payload: uploadPayload.payload
+    });
+    expect(upload.statusCode).toBe(200);
+    const fileId = upload.json().data.file.id;
+    expect(
+      (
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}/download`,
+          headers: { cookie }
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}/expiry`,
+          headers: { cookie },
+          payload: { days: 30 }
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/cleanup",
+          headers: { cookie }
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/lan-transfer/files/${fileId}`,
+          headers: { cookie }
+        })
+      ).statusCode
+    ).toBe(200);
+    await app.close();
+
+    expect(await fs.readFile(legacyAuditPath, "utf8")).toBe(legacyAudit);
+    const database = new ToolboxDatabase(databasePath);
+    const actions = database.connection
+      .prepare("SELECT action FROM audit_events WHERE action LIKE 'lan.%' ORDER BY id")
+      .all()
+      .map((row) => (row as { action: string }).action);
+    database.close();
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        "lan.access.denied",
+        "lan.access.granted",
+        "lan.file.uploaded",
+        "lan.file.downloaded",
+        "lan.file.expiry-updated",
+        "lan.cleanup.completed",
+        "lan.file.deleted"
+      ])
+    );
   });
 
   it("uploads a file, stores metadata, lists it, previews it, and downloads it", async () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "note.txt", "text/plain", "hello lan")
     });
 
@@ -85,19 +292,19 @@ describe("lan transfer api", () => {
       downloadCount: 0,
       previewable: true
     });
-    expect(upload.json().data.previewUrl).toBe(`/api/lan/files/${uploaded.id}/preview`);
-    expect(upload.json().data.downloadUrl).toBe(`/api/lan/files/${uploaded.id}/download`);
+    expect(upload.json().data.previewUrl).toBe(`/api/v1/tools/lan-transfer/files/${uploaded.id}/preview`);
+    expect(upload.json().data.downloadUrl).toBe(`/api/v1/tools/lan-transfer/files/${uploaded.id}/download`);
 
     const list = await app.inject({
       method: "GET",
-      url: "/api/lan/files?keyword=note&category=text&extension=txt"
+      url: "/api/v1/tools/lan-transfer/files?keyword=note&category=text&extension=txt"
     });
     expect(list.statusCode).toBe(200);
     expect(list.json().data.files).toHaveLength(1);
 
     const preview = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${uploaded.id}/preview`
+      url: `/api/v1/tools/lan-transfer/files/${uploaded.id}/preview`
     });
     expect(preview.statusCode).toBe(200);
     expect(preview.headers["content-disposition"]).toContain("inline");
@@ -105,13 +312,13 @@ describe("lan transfer api", () => {
 
     const download = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${uploaded.id}/download`
+      url: `/api/v1/tools/lan-transfer/files/${uploaded.id}/download`
     });
     expect(download.statusCode).toBe(200);
     expect(download.headers["content-disposition"]).toContain("note.txt");
     expect(download.body).toBe("hello lan");
 
-    const afterDownload = await app.inject({ method: "GET", url: "/api/lan/files" });
+    const afterDownload = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(afterDownload.json().data.files[0].downloadCount).toBe(1);
   });
 
@@ -123,7 +330,7 @@ describe("lan transfer api", () => {
     ]);
     const created = await app.inject({
       method: "POST",
-      url: "/api/tools/lan-transfer/notes",
+      url: "/api/v1/tools/lan-transfer/notes",
       ...noteMultipartPayload({ title: "设备验证码", content: "验证码 246810\nhttps://example.com/order/1" }, [
         { fieldName: "images", fileName: "proof.png", mimeType: "image/png", content: png }
       ])
@@ -145,7 +352,7 @@ describe("lan transfer api", () => {
     });
     expect(Date.parse(note.expiresAt)).toBeGreaterThan(Date.now() + 2 * 24 * 60 * 60 * 1000);
 
-    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/notes" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/notes" });
     expect(list.statusCode).toBe(200);
     expect(list.json().data.notes).toHaveLength(1);
     expect(list.json().data.pagination.total).toBe(1);
@@ -155,13 +362,13 @@ describe("lan transfer api", () => {
     expect(preview.headers["content-type"]).toContain("image/png");
     expect(preview.rawPayload.subarray(0, 8)).toEqual(png.subarray(0, 8));
 
-    const info = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/info" });
+    const info = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/info" });
     expect(info.json().data.noteCount).toBe(1);
     expect(info.json().data.usedBytes).toBe(png.length);
 
     const expiry = await app.inject({
       method: "PATCH",
-      url: `/api/tools/lan-transfer/notes/${note.id}/expiry`,
+      url: `/api/v1/tools/lan-transfer/notes/${note.id}/expiry`,
       payload: { days: 30 }
     });
     expect(expiry.statusCode).toBe(200);
@@ -169,18 +376,57 @@ describe("lan transfer api", () => {
 
     const removed = await app.inject({
       method: "DELETE",
-      url: `/api/tools/lan-transfer/notes/${note.id}`
+      url: `/api/v1/tools/lan-transfer/notes/${note.id}`
     });
     expect(removed.statusCode).toBe(200);
-    const empty = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/notes" });
+    const empty = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/notes" });
     expect(empty.json().data.notes).toHaveLength(0);
+  });
+
+  it("batch deletes selected LAN notes and their stored images", async () => {
+    const app = await createApp();
+    const png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from("batch-note-image")
+    ]);
+    const createdNotes = await Promise.all(
+      ["第一条", "第二条"].map(async (title, index) => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/lan-transfer/notes",
+          ...noteMultipartPayload({ title, content: `批量内容 ${index + 1}` }, [
+            {
+              fieldName: "images",
+              fileName: `batch-${index + 1}.png`,
+              mimeType: "image/png",
+              content: png
+            }
+          ])
+        });
+        expect(response.statusCode).toBe(200);
+        return response.json().data;
+      })
+    );
+    const removed = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/notes/batch-delete",
+      payload: { ids: [createdNotes[0].id, createdNotes[1].id, "missing-note"] }
+    });
+
+    expect(removed.statusCode).toBe(200);
+    expect(removed.json().data.missing).toEqual(["missing-note"]);
+    expect(removed.json().data.removed).toHaveLength(2);
+    expect(removed.json().data.removed).toEqual(expect.arrayContaining(createdNotes.map((note) => note.id)));
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/notes" });
+    expect(list.json().data.notes).toHaveLength(0);
+    expect(await fs.readdir(path.join(storageRoot, "lan-transfer", "notes", "images"))).toHaveLength(0);
   });
 
   it("accepts text-only notes and rejects spoofed image content", async () => {
     const app = await createApp();
     const textOnly = await app.inject({
       method: "POST",
-      url: "/api/lan/notes",
+      url: "/api/v1/tools/lan-transfer/notes",
       ...noteMultipartPayload({ content: "从手机复制到电脑的一段文字" }, [])
     });
     expect(textOnly.statusCode).toBe(200);
@@ -188,7 +434,7 @@ describe("lan transfer api", () => {
 
     const spoofed = await app.inject({
       method: "POST",
-      url: "/api/lan/notes",
+      url: "/api/v1/tools/lan-transfer/notes",
       ...noteMultipartPayload({ content: "伪造图片" }, [
         { fieldName: "images", fileName: "fake.png", mimeType: "image/png", content: Buffer.from("<html>") }
       ])
@@ -202,7 +448,7 @@ describe("lan transfer api", () => {
     for (const name of ["one.txt", "two.txt", "three.txt", "four.txt", "five.txt"]) {
       const upload = await app.inject({
         method: "POST",
-        url: "/api/lan/files",
+        url: "/api/v1/tools/lan-transfer/files",
         ...multipartPayload("file", name, "text/plain", name)
       });
       expect(upload.statusCode).toBe(200);
@@ -210,7 +456,7 @@ describe("lan transfer api", () => {
 
     const list = await app.inject({
       method: "GET",
-      url: "/api/lan/files?page=2&pageSize=2"
+      url: "/api/v1/tools/lan-transfer/files?page=2&pageSize=2"
     });
 
     expect(list.statusCode).toBe(200);
@@ -227,14 +473,14 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "video.mp4", "video/mp4", "0123456789")
     });
     const id = upload.json().data.file.id;
 
     const preview = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${id}/preview`,
+      url: `/api/v1/tools/lan-transfer/files/${id}/preview`,
       headers: {
         range: "bytes=2-5"
       }
@@ -249,14 +495,14 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "suffix.txt", "text/plain", "hello lan")
     });
     const id = upload.json().data.file.id;
 
     const response = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${id}/preview`,
+      url: `/api/v1/tools/lan-transfer/files/${id}/preview`,
       headers: { range: "bytes=-3" }
     });
 
@@ -272,21 +518,75 @@ describe("lan transfer api", () => {
 
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "guest.txt", "text/plain", "guest upload")
     });
     expect(upload.statusCode).toBe(200);
     const id = upload.json().data.file.id;
 
-    const deniedList = await app.inject({ method: "GET", url: "/api/lan/files" });
+    const deniedList = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(deniedList.statusCode).toBe(401);
 
-    const login = await app.inject({ method: "POST", url: "/api/lan/access", payload: { pin: "2468" } });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/access",
+      payload: { pin: "2468" }
+    });
     expect(login.statusCode).toBe(200);
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
 
-    const removed = await app.inject({ method: "DELETE", url: `/api/lan/files/${id}`, headers: { cookie } });
+    const removed = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/tools/lan-transfer/files/${id}`,
+      headers: { cookie }
+    });
     expect(removed.statusCode).toBe(200);
+  });
+
+  it("rejects malformed list, entity, expiry, upload and chunk parameters at the schema boundary", async () => {
+    const app = await createApp();
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files?page=0" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files/bad!/download" }),
+      app.inject({
+        method: "PATCH",
+        url: "/api/v1/tools/lan-transfer/files/abcdef/expiry",
+        payload: { days: 0 }
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/uploads",
+        payload: { originalName: "file.txt", size: -1, chunkSize: 1, totalChunks: 0 }
+      }),
+      app.inject({ method: "PUT", url: "/api/v1/tools/lan-transfer/uploads/abcdef/chunks/-1" })
+    ]);
+
+    for (const response of responses) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: "REQUEST_INVALID" },
+        requestId: expect.any(String)
+      });
+    }
+    await app.close();
+  });
+
+  it("rate limits repeated LAN PIN attempts independently", async () => {
+    process.env.LAN_TRANSFER_PIN = "2468";
+    const app = await createApp();
+    let response;
+    for (let requestNumber = 0; requestNumber < 6; requestNumber += 1) {
+      response = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/access",
+        payload: { pin: "wrong" }
+      });
+    }
+
+    expect(response?.statusCode).toBe(429);
+    expect(response?.json().error.code).toBe("RATE_LIMIT_EXCEEDED");
+    await app.close();
   });
 
   it("enforces the configured storage quota", async () => {
@@ -294,7 +594,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const response = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "too-large.txt", "text/plain", "12345")
     });
     expect(response.statusCode).toBe(507);
@@ -310,7 +610,7 @@ describe("lan transfer api", () => {
     ]) {
       const upload = await app.inject({
         method: "POST",
-        url: "/api/lan/files",
+        url: "/api/v1/tools/lan-transfer/files",
         ...multipartPayload("file", name, "text/plain", content)
       });
       ids.push(upload.json().data.file.id);
@@ -318,7 +618,7 @@ describe("lan transfer api", () => {
 
     const expiry = await app.inject({
       method: "PATCH",
-      url: `/api/lan/files/${ids[0]}/expiry`,
+      url: `/api/v1/tools/lan-transfer/files/${ids[0]}/expiry`,
       payload: { days: 30 }
     });
     expect(expiry.statusCode).toBe(200);
@@ -326,7 +626,7 @@ describe("lan transfer api", () => {
 
     const archive = await app.inject({
       method: "POST",
-      url: "/api/lan/files/batch-download",
+      url: "/api/v1/tools/lan-transfer/files/batch-download",
       payload: { ids }
     });
     expect(archive.statusCode).toBe(200);
@@ -335,11 +635,11 @@ describe("lan transfer api", () => {
 
     const removed = await app.inject({
       method: "POST",
-      url: "/api/lan/files/batch-delete",
+      url: "/api/v1/tools/lan-transfer/files/batch-delete",
       payload: { ids }
     });
     expect(removed.json().data.removed).toEqual(expect.arrayContaining(ids));
-    const list = await app.inject({ method: "GET", url: "/api/lan/files" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(list.json().data.files).toHaveLength(0);
   });
 
@@ -347,24 +647,24 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "bundle.zip", "application/zip", "zip-content")
     });
     const id = upload.json().data.file.id;
 
     const preview = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${id}/preview`
+      url: `/api/v1/tools/lan-transfer/files/${id}/preview`
     });
     expect(preview.statusCode).toBe(415);
 
     const remove = await app.inject({
       method: "DELETE",
-      url: `/api/lan/files/${id}`
+      url: `/api/v1/tools/lan-transfer/files/${id}`
     });
     expect(remove.statusCode).toBe(200);
 
-    const list = await app.inject({ method: "GET", url: "/api/lan/files" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(list.json().data.files).toHaveLength(0);
   });
 
@@ -374,7 +674,7 @@ describe("lan transfer api", () => {
     for (const name of ["one.txt", "two.txt", "three.txt"]) {
       const upload = await app.inject({
         method: "POST",
-        url: "/api/tools/lan-transfer/files",
+        url: "/api/v1/tools/lan-transfer/files",
         ...multipartPayload("file", name, "text/plain", name)
       });
       ids.push(upload.json().data.file.id);
@@ -384,7 +684,7 @@ describe("lan transfer api", () => {
       ids.slice(0, 2).map((id) =>
         app.inject({
           method: "DELETE",
-          url: `/api/tools/lan-transfer/files/${id}`
+          url: `/api/v1/tools/lan-transfer/files/${id}`
         })
       )
     );
@@ -393,16 +693,16 @@ describe("lan transfer api", () => {
     const rawIndex = await fs.readFile(path.join(storageRoot, "lan-transfer", "index.json"), "utf8");
     expect(() => JSON.parse(rawIndex)).not.toThrow();
 
-    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/files" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(list.statusCode).toBe(200);
     expect(list.json().data.files).toHaveLength(1);
   });
 
-  it("recovers a LAN index with trailing duplicate JSON after a failed concurrent write", async () => {
+  it("continues from SQLite when the read-only legacy index is corrupted", async () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/tools/lan-transfer/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "recover.txt", "text/plain", "recover")
     });
     const file = upload.json().data.file;
@@ -410,61 +710,60 @@ describe("lan transfer api", () => {
     const validIndex = await fs.readFile(indexPath, "utf8");
     await fs.writeFile(indexPath, `${validIndex}  }\n]`, "utf8");
 
-    const list = await app.inject({ method: "GET", url: "/api/tools/lan-transfer/files" });
+    const list = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
 
     expect(list.statusCode).toBe(200);
     expect(list.json().data.files).toHaveLength(1);
     expect(list.json().data.files[0].id).toBe(file.id);
-    const recoveredIndex = await fs.readFile(indexPath, "utf8");
-    expect(() => JSON.parse(recoveredIndex)).not.toThrow();
+    expect(await fs.readFile(indexPath, "utf8")).toContain("}\n]");
   });
 
   it("cleans expired files from metadata and disk", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "old.txt", "text/plain", "old")
     });
     const file = upload.json().data.file;
-    const indexPath = path.join(storageRoot, "lan-transfer", "index.json");
-    const records = JSON.parse(await fs.readFile(indexPath, "utf8"));
-    records[0].expiresAt = new Date(Date.now() - 1000).toISOString();
-    await fs.writeFile(indexPath, JSON.stringify(records, null, 2));
+    vi.setSystemTime(new Date("2026-01-05T00:00:00.000Z"));
 
     const cleanup = await app.inject({
       method: "POST",
-      url: "/api/lan/cleanup"
+      url: "/api/v1/tools/lan-transfer/cleanup"
     });
 
     expect(cleanup.statusCode).toBe(200);
     expect(cleanup.json().data.removed).toBe(1);
     await expect(fs.access(path.join(storageRoot, "lan-transfer", "files", file.storedName))).rejects.toThrow();
+    vi.useRealTimers();
   });
 
   it("cleans expired text-image notes and their stored images", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const app = await createApp();
     const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("expired")]);
     const created = await app.inject({
       method: "POST",
-      url: "/api/lan/notes",
+      url: "/api/v1/tools/lan-transfer/notes",
       ...noteMultipartPayload({ content: "过期图文" }, [
         { fieldName: "images", fileName: "expired.png", mimeType: "image/png", content: png }
       ])
     });
     const image = created.json().data.images[0];
-    const notesIndex = path.join(storageRoot, "lan-transfer", "notes", "index.json");
-    const notes = JSON.parse(await fs.readFile(notesIndex, "utf8"));
-    notes[0].expiresAt = new Date(Date.now() - 1000).toISOString();
-    await fs.writeFile(notesIndex, JSON.stringify(notes, null, 2));
+    vi.setSystemTime(new Date("2026-01-05T00:00:00.000Z"));
 
-    const cleanup = await app.inject({ method: "POST", url: "/api/lan/cleanup" });
+    const cleanup = await app.inject({ method: "POST", url: "/api/v1/tools/lan-transfer/cleanup" });
 
     expect(cleanup.statusCode).toBe(200);
     expect(cleanup.json().data).toMatchObject({ removed: 1, filesRemoved: 0, notesRemoved: 1 });
     await expect(
       fs.access(path.join(storageRoot, "lan-transfer", "notes", "images", image.storedName))
     ).rejects.toThrow();
+    vi.useRealTimers();
   });
 
   it("returns a clear error when the uploaded file exceeds the configured limit", async () => {
@@ -472,7 +771,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const upload = await app.inject({
       method: "POST",
-      url: "/api/lan/files",
+      url: "/api/v1/tools/lan-transfer/files",
       ...multipartPayload("file", "too-large.txt", "text/plain", "12345")
     });
 
@@ -489,7 +788,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const session = await app.inject({
       method: "POST",
-      url: "/api/lan/uploads",
+      url: "/api/v1/tools/lan-transfer/uploads",
       headers: {
         "content-type": "application/json"
       },
@@ -507,28 +806,28 @@ describe("lan transfer api", () => {
 
     const chunkOne = await app.inject({
       method: "PUT",
-      url: `/api/lan/uploads/${uploadId}/chunks/1`,
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/chunks/1`,
       ...multipartPayload("chunk", "chunk-1", "application/octet-stream", "efgh")
     });
     expect(chunkOne.statusCode).toBe(200);
 
     const chunkZero = await app.inject({
       method: "PUT",
-      url: `/api/lan/uploads/${uploadId}/chunks/0`,
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/chunks/0`,
       ...multipartPayload("chunk", "chunk-0", "application/octet-stream", "abcd")
     });
     expect(chunkZero.statusCode).toBe(200);
 
     const status = await app.inject({
       method: "GET",
-      url: `/api/lan/uploads/${uploadId}`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}`
     });
     expect(status.statusCode).toBe(200);
     expect(status.json().data.uploadedChunks).toEqual([0, 1]);
 
     const incomplete = await app.inject({
       method: "POST",
-      url: `/api/lan/uploads/${uploadId}/complete`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/complete`
     });
     expect(incomplete.statusCode).toBe(409);
     expect(incomplete.json()).toMatchObject({
@@ -543,14 +842,14 @@ describe("lan transfer api", () => {
 
     const chunkTwo = await app.inject({
       method: "PUT",
-      url: `/api/lan/uploads/${uploadId}/chunks/2`,
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/chunks/2`,
       ...multipartPayload("chunk", "chunk-2", "application/octet-stream", "ij")
     });
     expect(chunkTwo.statusCode).toBe(200);
 
     const complete = await app.inject({
       method: "POST",
-      url: `/api/lan/uploads/${uploadId}/complete`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/complete`
     });
     expect(complete.statusCode).toBe(200);
     const completedFile = complete.json().data.file;
@@ -563,7 +862,7 @@ describe("lan transfer api", () => {
 
     const preview = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${completedFile.id}/preview`
+      url: `/api/v1/tools/lan-transfer/files/${completedFile.id}/preview`
     });
     expect(preview.body).toBe("abcdefghij");
   });
@@ -572,7 +871,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const session = await app.inject({
       method: "POST",
-      url: "/api/lan/uploads",
+      url: "/api/v1/tools/lan-transfer/uploads",
       headers: {
         "content-type": "application/json"
       },
@@ -590,14 +889,14 @@ describe("lan transfer api", () => {
 
     const complete = await app.inject({
       method: "POST",
-      url: `/api/lan/uploads/${session.json().data.uploadId}/complete`
+      url: `/api/v1/tools/lan-transfer/uploads/${session.json().data.uploadId}/complete`
     });
 
     expect(complete.statusCode).toBe(200);
     const file = complete.json().data.file;
     expect(file).toMatchObject({ originalName: "empty.txt", size: 0, category: "text", previewable: true });
 
-    const download = await app.inject({ method: "GET", url: `/api/lan/files/${file.id}/download` });
+    const download = await app.inject({ method: "GET", url: `/api/v1/tools/lan-transfer/files/${file.id}/download` });
     expect(download.statusCode).toBe(200);
     expect(download.body).toBe("");
   });
@@ -607,7 +906,7 @@ describe("lan transfer api", () => {
     const content = Array.from({ length: 12 }, (_, index) => String(index).padStart(2, "0")).join("");
     const session = await app.inject({
       method: "POST",
-      url: "/api/lan/uploads",
+      url: "/api/v1/tools/lan-transfer/uploads",
       headers: {
         "content-type": "application/json"
       },
@@ -625,7 +924,7 @@ describe("lan transfer api", () => {
       Array.from({ length: 12 }, async (_, index) =>
         app.inject({
           method: "PUT",
-          url: `/api/lan/uploads/${uploadId}/chunks/${index}`,
+          url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/chunks/${index}`,
           ...multipartPayload(
             "chunk",
             `chunk-${index}`,
@@ -640,19 +939,19 @@ describe("lan transfer api", () => {
 
     const status = await app.inject({
       method: "GET",
-      url: `/api/lan/uploads/${uploadId}`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}`
     });
     expect(status.json().data.uploadedChunks).toEqual(Array.from({ length: 12 }, (_, index) => index));
 
     const complete = await app.inject({
       method: "POST",
-      url: `/api/lan/uploads/${uploadId}/complete`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/complete`
     });
     expect(complete.statusCode).toBe(200);
 
     const preview = await app.inject({
       method: "GET",
-      url: `/api/lan/files/${complete.json().data.file.id}/preview`
+      url: `/api/v1/tools/lan-transfer/files/${complete.json().data.file.id}/preview`
     });
     expect(preview.body).toBe(content);
     await expect(fs.access(path.join(storageRoot, "lan-transfer", "uploads", uploadId))).rejects.toThrow();
@@ -662,7 +961,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const session = await app.inject({
       method: "POST",
-      url: "/api/lan/uploads",
+      url: "/api/v1/tools/lan-transfer/uploads",
       headers: {
         "content-type": "application/json"
       },
@@ -679,7 +978,7 @@ describe("lan transfer api", () => {
     for (const [index, content] of ["abcd", "efgh"].entries()) {
       const chunk = await app.inject({
         method: "PUT",
-        url: `/api/lan/uploads/${uploadId}/chunks/${index}`,
+        url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/chunks/${index}`,
         ...multipartPayload("chunk", `chunk-${index}`, "application/octet-stream", content)
       });
       expect(chunk.statusCode).toBe(200);
@@ -698,7 +997,7 @@ describe("lan transfer api", () => {
     try {
       const complete = await app.inject({
         method: "POST",
-        url: `/api/lan/uploads/${uploadId}/complete`
+        url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/complete`
       });
 
       expect(complete.statusCode).toBe(507);
@@ -717,7 +1016,7 @@ describe("lan transfer api", () => {
     const app = await createApp();
     const session = await app.inject({
       method: "POST",
-      url: "/api/lan/uploads",
+      url: "/api/v1/tools/lan-transfer/uploads",
       headers: {
         "content-type": "application/json"
       },
@@ -733,20 +1032,20 @@ describe("lan transfer api", () => {
 
     const chunk = await app.inject({
       method: "PUT",
-      url: `/api/lan/uploads/${uploadId}/chunks/0`,
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}/chunks/0`,
       ...multipartPayload("chunk", "chunk-0", "application/octet-stream", "ca")
     });
     expect(chunk.statusCode).toBe(200);
 
     const cancel = await app.inject({
       method: "DELETE",
-      url: `/api/lan/uploads/${uploadId}`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}`
     });
     expect(cancel.statusCode).toBe(200);
 
     const status = await app.inject({
       method: "GET",
-      url: `/api/lan/uploads/${uploadId}`
+      url: `/api/v1/tools/lan-transfer/uploads/${uploadId}`
     });
     expect(status.statusCode).toBe(404);
   });
@@ -775,7 +1074,7 @@ describe("lan transfer api", () => {
     );
 
     const app = await createApp();
-    const status = await app.inject({ method: "GET", url: "/api/lan/uploads/stale-upload" });
+    const status = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/uploads/stale-upload" });
 
     expect(status.statusCode).toBe(404);
     await expect(fs.access(path.join(uploadsDir, "stale-upload"))).rejects.toThrow();

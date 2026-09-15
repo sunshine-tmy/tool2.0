@@ -31,12 +31,14 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.7"
   },
   "dependencies": {
-    "opencc-js": "^1.4.0"
+    "@sinclair/typebox": "^0.34.52",
+    "opencc-js": "^1.4.2"
   }
 }

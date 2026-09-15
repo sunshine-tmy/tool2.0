@@ -78,7 +78,7 @@ export const cleanupDefinitions = [
     risk: "low",
     requiresStop: false,
     defaults: true,
-    targets: ["storage/xhs-archive/staging", ".runtime/xhs-downloader/cache"]
+    targets: ["storage/xhs-archive/staging", ".runtime/xhs-downloader/cache", ".runtime/xhs-translation-model-cache"]
   },
   {
     id: "xhs-archive",
@@ -90,21 +90,24 @@ export const cleanupDefinitions = [
   }
 ];
 
-export async function inspectCleanupCategories() {
+export async function inspectCleanupCategories(ids) {
+  const selected = ids ? new Set(ids) : undefined;
   return Promise.all(
-    cleanupDefinitions.map(async (definition) => {
-      const targets = await targetsFor(definition);
-      const totals = await Promise.all(targets.map((target) => inspectPath(target)));
-      return {
-        id: definition.id,
-        label: definition.label,
-        risk: definition.risk,
-        requiresStop: definition.requiresStop,
-        defaults: definition.defaults,
-        files: totals.reduce((sum, value) => sum + value.files, 0),
-        bytes: totals.reduce((sum, value) => sum + value.bytes, 0)
-      };
-    })
+    cleanupDefinitions
+      .filter((definition) => !selected || selected.has(definition.id))
+      .map(async (definition) => {
+        const targets = await targetsFor(definition);
+        const totals = await Promise.all(targets.map((target) => inspectPath(target)));
+        return {
+          id: definition.id,
+          label: definition.label,
+          risk: definition.risk,
+          requiresStop: definition.requiresStop,
+          defaults: definition.defaults,
+          files: totals.reduce((sum, value) => sum + value.files, 0),
+          bytes: totals.reduce((sum, value) => sum + value.bytes, 0)
+        };
+      })
   );
 }
 

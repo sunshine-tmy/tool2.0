@@ -6,11 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Venv = Join-Path $Root $VenvPath
-$Requirements = Join-Path $PSScriptRoot "video-transcribe-requirements.txt"
+$Requirements = Join-Path $PSScriptRoot "video-transcribe.lock.txt"
 
 Set-Location -LiteralPath $Root
-& $Python -c "import sys; assert (3, 10) <= sys.version_info[:2] < (3, 13), 'Python 3.10-3.12 is required'"
-if ($LASTEXITCODE -ne 0) { throw "Unsupported Python runtime" }
+& $Python -c "import sys; assert sys.version_info[:2] == (3, 11), 'Python 3.11 is required'"
+if ($LASTEXITCODE -ne 0) { throw "Python 3.11 is required" }
 
 if (-not (Test-Path $Venv)) {
   & $Python -m venv $Venv
@@ -20,7 +20,7 @@ if (-not (Test-Path $Venv)) {
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
 & $VenvPython -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "Unable to upgrade pip" }
-& $VenvPython -m pip install -r $Requirements
+& $VenvPython -m pip install --require-hashes -r $Requirements
 if ($LASTEXITCODE -ne 0) { throw "Unable to install video transcription dependencies" }
 
 Write-Host "Video transcription environment ready: $VenvPython" -ForegroundColor Green

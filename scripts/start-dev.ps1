@@ -20,6 +20,28 @@ function Test-CommandExists {
   return $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
+function Get-RootEnvValue {
+  param([string]$Name)
+
+  $processValue = [Environment]::GetEnvironmentVariable($Name)
+  if ($null -ne $processValue) {
+    return $processValue.Trim()
+  }
+
+  $envPath = Join-Path $Root ".env"
+  if (-not (Test-Path -LiteralPath $envPath)) {
+    return ""
+  }
+  $escapedName = [Regex]::Escape($Name)
+  $line = Get-Content -LiteralPath $envPath |
+    Where-Object { $_ -match "^\s*$escapedName\s*=" } |
+    Select-Object -Last 1
+  if (-not $line) {
+    return ""
+  }
+  return (($line -split "=", 2)[1]).Trim().Trim('"').Trim("'")
+}
+
 function Find-LanHost {
   if ($LanHost) {
     return $LanHost
@@ -295,9 +317,17 @@ function Wait-HttpOk {
 
 Set-Location -LiteralPath $Root
 $LanHost = Find-LanHost
-$FrontendUrl = "http://${LanHost}:5173"
+$ConfiguredDeploymentMode = (Get-RootEnvValue "DEPLOYMENT_MODE").ToLowerInvariant()
+$ConfiguredApiHost = (Get-RootEnvValue "API_HOST").ToLowerInvariant()
+$FrontendBindHost = if (
+  $ConfiguredDeploymentMode -eq "lan" -or
+  (-not $ConfiguredDeploymentMode -and $ConfiguredApiHost -in @("0.0.0.0", "::"))
+) { "0.0.0.0" } else { "127.0.0.1" }
+$env:VITE_DEV_HOST = $FrontendBindHost
+$FrontendDisplayHost = if ($FrontendBindHost -eq "0.0.0.0") { $LanHost } else { "127.0.0.1" }
+$FrontendUrl = "http://${FrontendDisplayHost}:5173"
 $FrontendHealthUrl = "http://127.0.0.1:5173"
-$BackendUrl = "http://127.0.0.1:3100/api/health"
+$BackendUrl = "http://127.0.0.1:3100/api/v1/health"
 $ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
 $ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"

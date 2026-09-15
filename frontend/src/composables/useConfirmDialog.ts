@@ -1,6 +1,6 @@
 import { useDialog } from "naive-ui";
 
-export interface ConfirmDialogOptions {
+interface ConfirmDialogOptions {
   title?: string;
   positiveText?: string;
   negativeText?: string;

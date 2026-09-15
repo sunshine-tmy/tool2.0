@@ -189,7 +189,9 @@ def main() -> None:
 
     output_path = Path(args.output)
     write_transcript(output_path, segments)
-    write_metadata(metadata_path_for(args), build_metadata(args, info, segments, used_model, used_device, used_compute_type))
+    write_metadata(
+        metadata_path_for(args), build_metadata(args, info, segments, used_model, used_device, used_compute_type)
+    )
 
 
 if __name__ == "__main__":
