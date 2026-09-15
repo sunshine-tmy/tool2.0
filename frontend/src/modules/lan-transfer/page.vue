@@ -245,12 +245,14 @@ const lanNotePageIds = computed(() => lanNotes.value.map((note) => note.id));
 const lanNotePageSelection = computed(() => getPageSelectionState(selectedLanNoteIds.value, lanNotePageIds.value));
 
 onMounted(async () => {
+  // 页面初始化先读取访问能力和分享地址，再并行加载文件/图文列表，避免访客权限下误显示旧数据。
   document.addEventListener("paste", onLanFilesPaste);
   await refreshLanInfo();
   await Promise.all([refreshLanFiles(), refreshLanNotes()]);
 });
 
 onUnmounted(() => {
+  // 卸载时移除全局粘贴监听并释放图文预览 Blob URL，上传任务本身由队列作用域负责收敛。
   document.removeEventListener("paste", onLanFilesPaste);
   clearNoteImages();
 });
@@ -268,6 +270,7 @@ async function refreshLanInfo() {
 }
 
 async function refreshLanTransfer() {
+  // 手动刷新保持信息、文件和图文列表的一致快照；列表请求可并行但统一完成后再更新提示。
   await refreshLanInfo();
   await Promise.all([refreshLanFiles(), refreshLanNotes()]);
 }
@@ -295,6 +298,7 @@ async function unlockLanTransfer() {
   if (!accessPin.value) return;
   unlocking.value = true;
   try {
+    // PIN 解锁成功后重新拉取权限和列表，避免仅在前端切换布尔值造成越权展示。
     await lanTransferApi.unlock(accessPin.value);
     accessPin.value = "";
     await refreshLanInfo();
@@ -315,6 +319,7 @@ function onNotePaste(event: ClipboardEvent) {
 }
 
 function addNoteImages(selected: File[]) {
+  // 图片数量、单图大小、总大小和重复文件在进入 FormData 前全部校验，降低无效上传占用。
   const allowedTypes = new Set(["image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"]);
   let totalBytes = noteImages.value.reduce((total, image) => total + image.file.size, 0);
   for (const file of selected) {
@@ -366,6 +371,7 @@ async function publishNote() {
   }
   publishingNote.value = true;
   try {
+    // 发布成功才清空编辑器；失败时保留原文本和图片，方便用户修正后重试。
     await lanTransferApi.createNote({
       title: noteTitle.value.trim(),
       content,
@@ -434,6 +440,7 @@ async function deleteSelectedLanNotes() {
 
   batchDeletingLanNotes.value = true;
   try {
+    // 复制选中 ID 后再提交，避免请求期间用户操作选择框导致删除集合变化。
     const ids = [...selectedLanNoteIds.value];
     await lanTransferApi.deleteNotes(ids);
     selectedLanNoteIds.value = [];
@@ -465,6 +472,7 @@ async function refreshLanFiles() {
     return;
   }
   try {
+    // 列表条件和分页由服务端统一计算；刷新后裁剪当前页之外的选择，避免批量操作命中过期记录。
     const result = await lanTransferApi.listFiles({
       keyword: lanQuery.keyword,
       category: lanQuery.category,
@@ -510,6 +518,7 @@ async function openPreview(file: LanFileView) {
   previewText.value = "";
   previewVisible.value = true;
   if (file.category === "text") {
+    // 只有文本文件需要额外请求正文；图片、视频、音频和 PDF 由安全预览 URL 直接加载。
     try {
       previewText.value = await lanTransferApi.getTextPreview(file.previewUrl);
     } catch (error) {

@@ -89,6 +89,7 @@ let drawing = false;
 let lastPoint: { x: number; y: number } | null = null;
 
 async function initialize(event: Event) {
+  // 画布尺寸始终采用图片原始像素，显示缩放只作用于 CSS，保证提交的蒙版与原图对齐。
   await nextTick();
   const image = event.target as HTMLImageElement;
   const canvas = maskCanvas.value;
@@ -124,6 +125,7 @@ function updateBrushCursor(event: PointerEvent) {
 function startStroke(event: PointerEvent) {
   if (!maskCanvas.value) return;
   updateBrushCursor(event);
+  // 捕获指针后即使光标离开画布也能继续收集轨迹，结束/取消时统一保存一次历史快照。
   drawing = true;
   maskCanvas.value.setPointerCapture(event.pointerId);
   lastPoint = pointFromEvent(event);
@@ -159,6 +161,7 @@ function drawLine(from: { x: number; y: number }, to: { x: number; y: number }) 
   const context = maskCanvas.value?.getContext("2d");
   if (!context) return;
   context.save();
+  // 擦除模式使用 destination-out 清除 alpha，提交时再转换为黑白蒙版供后端模型使用。
   context.globalCompositeOperation = mode.value === "paint" ? "source-over" : "destination-out";
   context.strokeStyle = "rgba(239, 68, 68, 0.82)";
   context.fillStyle = "rgba(239, 68, 68, 0.82)";
@@ -206,6 +209,7 @@ function saveHistory() {
   if (!canvas || !context) return;
   const snapshotBytes = canvas.width * canvas.height * 4;
   const historyBudgetBytes = 128 * 1024 * 1024;
+  // 历史快照受固定内存预算和最多 20 步限制，超大图片宁可关闭撤销也不拖垮页面。
   if (snapshotBytes > historyBudgetBytes) {
     history.value = [];
     historyIndex.value = -1;
@@ -239,6 +243,7 @@ function redo() {
 async function toMaskBlob() {
   const source = maskCanvas.value;
   if (!source) throw new Error("蒙版编辑器尚未准备好");
+  // 读取红色图层的 alpha 转为黑白 PNG；没有任何标记时拒绝提交空蒙版。
   const output = document.createElement("canvas");
   output.width = source.width;
   output.height = source.height;

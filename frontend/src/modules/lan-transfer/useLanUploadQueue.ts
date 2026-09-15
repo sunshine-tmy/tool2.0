@@ -37,6 +37,7 @@ export function useLanUploadQueue(options: {
   const isDraggingFiles = ref(false);
 
   async function clearPendingUploadRecords() {
+    // 清理断点记录前尽量取消服务端会话；Promise.allSettled 保证单个失效会话不会阻断其它清理。
     const sessions = listPendingUploads();
     await Promise.allSettled(sessions.map((item) => lanTransferApi.cancelUpload(item.uploadId)));
     clearPendingUploads();
@@ -45,6 +46,7 @@ export function useLanUploadQueue(options: {
   }
 
   function onLanFilesPaste(event: ClipboardEvent) {
+    // 仅在文件页且目标不是可编辑元素时接管粘贴，避免破坏文本框的正常输入行为。
     if (options.activeTab.value !== "files" || !options.canUploadFiles.value || isEditablePasteTarget(event.target)) {
       return;
     }
@@ -58,6 +60,7 @@ export function useLanUploadQueue(options: {
   }
 
   async function uploadLanFiles(files: File[]) {
+    // 浏览器端最多同时运行两个文件任务；每个任务内部再由分片上传器控制分片并发。
     const queue = [...files];
     const workerCount = Math.min(2, queue.length);
     await Promise.all(
@@ -73,6 +76,7 @@ export function useLanUploadQueue(options: {
   }
 
   async function uploadLanFile(file: File) {
+    // 优先按文件指纹恢复本地断点记录；上传器只在服务端确认分片后更新 UI 进度。
     const pending = findPendingUpload(file);
     const item = reactive<UploadItem>({
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -91,6 +95,7 @@ export function useLanUploadQueue(options: {
 
     if (pending) options.message.info(`${file.name} 将从上次进度继续上传`);
     uploader.onProgress((snapshot) => {
+      // 首次创建或服务端重建会话时保存新的 uploadId，刷新页面后仍可继续上传。
       item.progress = snapshot.progress;
       item.status = snapshot.status;
       if (snapshot.uploadId && snapshot.uploadId !== savedUploadId) {
@@ -110,6 +115,7 @@ export function useLanUploadQueue(options: {
 
     async function runUpload(resume = false) {
       try {
+        // 页面卸载产生的取消不提示失败；用户主动取消才移除本地断点记录。
         item.status = "uploading";
         const result = resume ? await uploader.resume() : await uploader.start();
         item.status = result.status;

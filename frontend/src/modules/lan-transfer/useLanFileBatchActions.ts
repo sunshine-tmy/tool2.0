@@ -27,6 +27,7 @@ export function useLanFileBatchActions(options: {
   const pageSelection = computed(() => getPageSelectionState(selectedIds.value, pageIds.value));
 
   function toggleFile(id: string, checked: boolean) {
+    // 选择状态只保存 ID，不保存文件对象，分页刷新后可安全裁剪已不存在的记录。
     selectedIds.value = toggleSelectedId(selectedIds.value, id, checked);
   }
 
@@ -44,6 +45,7 @@ export function useLanFileBatchActions(options: {
 
     deleting.value = true;
     try {
+      // 使用提交时的 ID 快照，删除成功后同步刷新容量和当前分页。
       const ids = [...selectedIds.value];
       await lanTransferApi.deleteFiles(ids);
       selectedIds.value = [];
@@ -62,6 +64,7 @@ export function useLanFileBatchActions(options: {
     if (!selectedIds.value.length) return;
     downloading.value = true;
     try {
+      // ZIP 由后端生成并通过 Blob 下载；临时 Object URL 在触发下载后立即释放。
       const { blob, contentDisposition } = await lanTransferApi.downloadFiles([...selectedIds.value]);
       const fileName = decodeDownloadFileName(contentDisposition) ?? `lan-files-${Date.now()}.zip`;
       const url = URL.createObjectURL(blob);

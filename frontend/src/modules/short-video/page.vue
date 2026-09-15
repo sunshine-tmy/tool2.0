@@ -165,6 +165,7 @@ async function parse() {
 
   loading.value = true;
   try {
+    // 解析结果通过共享 Schema 校验后才写入页面状态，失败时保留原始输入便于重试。
     result.value = await shortVideoApi.parse({
       input: inputText.value,
       platform: platform.value
@@ -188,6 +189,7 @@ async function copyUrl(url: string) {
 
 async function downloadMedia(item: ShortVideoMedia) {
   if (downloadingUrls.value.includes(item.url)) return;
+  // 以媒体 URL 去重下载按钮，避免用户重复点击创建多个隐藏下载 iframe。
   downloadingUrls.value = [...downloadingUrls.value, item.url];
   try {
     await triggerShortVideoDownload(item);
@@ -201,6 +203,7 @@ async function downloadMedia(item: ShortVideoMedia) {
 
 async function extractCopywriting(item: ShortVideoMedia) {
   if (item.type !== "video") return;
+  // 将视频地址和安全文件名交给视频文案页面，统一复用远程抓取和任务进度流程。
   await router.push({
     name: "video-text",
     query: {

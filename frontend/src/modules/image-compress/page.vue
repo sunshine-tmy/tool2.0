@@ -218,6 +218,7 @@ const totalOutputSize = computed(() =>
 );
 
 function onFileChange(event: Event) {
+  // 文件选择器和拖拽入口共用 addFiles，保证格式、数量和预览资源的处理规则一致。
   const target = event.target as HTMLInputElement;
   addFiles(Array.from(target.files ?? []));
   target.value = "";
@@ -229,6 +230,7 @@ function onDrop(event: DragEvent) {
 }
 
 function addFiles(files: File[]) {
+  // 先截取本次最多 10 张，再与已有队列合并并保留最近 30 张，超出的预览 URL 立即释放。
   const images = files.filter((file) => ["image/jpeg", "image/png", "image/webp"].includes(file.type)).slice(0, 10);
   if (!images.length) {
     message.warning("请选择 JPG、PNG 或 WebP 图片");
@@ -250,6 +252,7 @@ function addFiles(files: File[]) {
 }
 
 async function compressAll() {
+  // 按队列顺序逐张提交，单张失败不会阻断其它图片；完成后根据成功数量给出汇总提示。
   submitting.value = true;
   try {
     const batch = [...pendingItems.value];
@@ -271,6 +274,7 @@ async function compressItem(
   item: ImageItem,
   settings: { quality: number; outputFormat: OutputFormat; width: number | null }
 ) {
+  // 每张图片独立维护状态和进度，取消请求不展示为业务失败，其他失败项可再次加入 pending 队列。
   item.status = "processing";
   item.progress = 5;
   item.error = undefined;
@@ -325,6 +329,7 @@ function clearItems() {
 async function downloadAll() {
   downloading.value = true;
   try {
+    // 下载只收集已完成任务的稳定 ID，ZIP Blob URL 在触发浏览器下载后延迟释放。
     const files = completedItems.value.flatMap((item) =>
       item.result
         ? [
@@ -397,6 +402,7 @@ function formatBytes(bytes: number) {
 }
 
 onBeforeUnmount(() => {
+  // 页面离开时清理所有本地预览 URL，避免大图队列长期占用浏览器内存。
   items.value.forEach((item) => URL.revokeObjectURL(item.previewUrl));
 });
 </script>

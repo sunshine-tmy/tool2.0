@@ -323,14 +323,17 @@ const requestScope = useRequestScope();
 const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 
 watch(language, async () => {
+  // 语言变化后重新读取可用音色，并在 loadVoices 中修正已失效的选中值。
   await loadVoices();
 });
 
 onMounted(async () => {
+  // 首屏并行加载健康状态、音色和历史记录，三者互不依赖。
   await Promise.all([loadHealth(), loadVoices(), loadHistory()]);
 });
 
 watch(taskEvents.task, (task) => {
+  // 任务事件只更新当前任务；进入终态后补拉详情以获得最终媒体 URL 和错误信息。
   if (!task || task.id !== currentTask.value?.id) return;
   currentTask.value = {
     ...currentTask.value,
@@ -371,6 +374,7 @@ async function loadVoices() {
 
 async function createTask() {
   if (!text.value.trim() || !voice.value) return;
+  // 提交前使用 trim 后的文本和当前语音参数，服务端返回的任务 ID 作为后续 SSE 订阅依据。
   creating.value = true;
   errorMessage.value = "";
   try {
@@ -394,6 +398,7 @@ async function createTask() {
 
 async function finishCurrentTask(taskId: string) {
   try {
+    // 终态事件后的详情请求是幂等补偿，避免历史列表早于音频文件落盘完成。
     const task = await edgeTtsApi.task(taskId);
     if (currentTask.value?.id !== taskId) return;
     currentTask.value = task;
@@ -443,6 +448,7 @@ function reuseTask(task: EdgeTtsTask) {
 async function removeTask(id: string) {
   if (!(await confirmAction("删除这条语音记录和生成文件？", { title: "删除语音记录" }))) return;
   try {
+    // 删除成功后同步清空当前任务引用并刷新分页，避免播放器继续指向已删除文件。
     await edgeTtsApi.remove(id);
     if (currentTask.value?.id === id) currentTask.value = undefined;
     await loadHistory();

@@ -13,6 +13,7 @@ import { useChatterboxEditor } from "./useChatterboxEditor";
 import { useChatterboxVoices } from "./useChatterboxVoices";
 
 export function useChatterboxPanel() {
+  // 面板 composable 负责组装编辑器、音色、批次和任务事件，页面组件只绑定统一状态对象。
   const message = useMessage();
   const confirmAction = useConfirmDialog();
   const editor = useChatterboxEditor({ message, confirmAction });

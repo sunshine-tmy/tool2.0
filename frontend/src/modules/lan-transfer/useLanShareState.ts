@@ -9,6 +9,7 @@ import { currentWebUrl } from "../../config/runtime";
 import type { LanTransferInfo } from "./types";
 
 export function useLanShareState() {
+  // 分享地址和权限计算集中在 composable，页面组件只消费 canRead/canUpload/canManage 三类能力。
   const currentTransferUrl = new URL("/tools/lan-transfer", currentWebUrl()).toString();
   const lanInfo = ref<LanTransferInfo | null>(null);
   const selectedShareUrl = ref(currentTransferUrl);
@@ -45,6 +46,7 @@ export function useLanShareState() {
   watch(
     selectedShareUrl,
     async (url) => {
+      // QR 码随选中地址变化异步生成；失败时清空旧图片，避免展示与链接不一致的二维码。
       try {
         shareQrCode.value = await QRCode.toDataURL(url, { width: 180, margin: 1, errorCorrectionLevel: "M" });
       } catch {

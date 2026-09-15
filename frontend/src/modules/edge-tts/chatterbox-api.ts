@@ -51,6 +51,7 @@ export const chatterboxApi = {
   },
 
   create(input: ChatterboxCreateTaskInput) {
+    // multipart 字段与共享 Schema 对齐；文件保持原名，文本和数值参数显式序列化。
     const form = new FormData();
     form.append("reference", input.reference, input.reference.name);
     form.append("text", input.text);
@@ -70,6 +71,7 @@ export const chatterboxApi = {
   },
 
   createBatch(input: ChatterboxCreateBatchInput) {
+    // 批次段落作为 JSON 字段传输，服务端负责数量、文本长度和授权约束的最终校验。
     const form = new FormData();
     if (input.reference) form.append("reference", input.reference, input.reference.name);
     if (input.voiceId) form.append("voiceId", input.voiceId);
@@ -159,6 +161,7 @@ export const chatterboxApi = {
       voiceId?: string;
     }
   ) {
+    // 重生成只提交当前段的覆盖参数，未提供的值由服务端沿用批次默认值。
     const form = new FormData();
     form.append("text", input.text);
     form.append("referenceTranslation", input.referenceTranslation || "");
