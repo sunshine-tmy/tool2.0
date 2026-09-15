@@ -68,7 +68,7 @@
 | C04 | DONE | 抽取小红书获取任务服务         | B05  | 路由不再维护任务 Map、远程解析、媒体下载和 staging 提交                                    |
 | C05 | DONE | 拆分小红书运行时安装网关       | C04  | 下载、摘要校验、安装、进程启动和状态管理分离；首次使用流程不变                             |
 | C06 | DONE | 继续拆分 Chatterbox 批处理路由 | B04  | 将重生成、排序/删除、下载导出分组，主批处理路由不超过 500 行                               |
-| C07 | TODO | 拆分短视频 Provider 与缓存     | B02  | HTTP 路由、Provider、重试缓存和下载代理分层，SSRF 行为不变                                 |
+| C07 | DONE | 拆分短视频 Provider 与缓存     | B02  | HTTP 路由、Provider、重试缓存和下载代理分层，SSRF 行为不变                                 |
 | C08 | TODO | 分离图片压缩服务和文件网关     | B02  | 路由只解析 multipart 和返回 DTO；Sharp、原子输出和 ZIP 进入服务层                          |
 
 ### D. SQLite 与文件一致性
@@ -157,4 +157,5 @@
 | C04     | DONE                | 2026-09-15 | `[C04]`   | `pnpm --filter backend test -- xhs-archive`（5 项）                         | `pnpm check` 通过 | live/ready、小红书 runtime/list/get/refresh/media 流程通过 | 获取任务 Map、远程解析、媒体下载和 staging 提交移入独立任务服务；路由接口保持不变 |
 | C05     | DONE                | 2026-09-15 | `[C05]`   | `pnpm --filter backend test -- xhs-runtime`（2 项）                         | `pnpm check` 通过 | live/ready、小红书 runtime 状态和首次安装流程保持可用      | 安装网关、源码摘要校验、Worker 启停与健康检查分离；缓存复用逻辑保持不变           |
 | C06     | DONE                | 2026-09-15 | `[C06]`   | `pnpm --filter backend test -- chatterbox`（9 项）                          | `pnpm check` 通过 | live/ready、批次生成/重生成/排序/删除/取消/导出流程通过    | 下载导出与批次项操作独立；批处理入口 186 行，接口路径和文件产物保持不变           |
+| C07     | DONE                | 2026-09-15 | `[C07]`   | `pnpm --filter backend test -- short-video`（12 项）                        | `pnpm check` 通过 | live/ready、短视频解析/重试/缓存/下载代理流程通过          | Provider、缓存和下载代理独立；SSRF 校验、重试及 TikTok 兜底行为保持不变           |
 | F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                                          | 当前大规模重构合并形成新基线后启用                                                |
