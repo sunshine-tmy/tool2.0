@@ -10,6 +10,7 @@ import {
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
 
 export type BatchSegmentInput = { text: string; referenceTranslation?: string; fileName?: string };
@@ -38,7 +39,8 @@ export class ChatterboxVoiceStore {
 
   constructor(
     private readonly root: string,
-    private readonly database: ToolboxDatabase
+    private readonly database: ToolboxDatabase,
+    private readonly fileMetadata?: FileMetadataRepository
   ) {}
 
   async initialize() {
@@ -68,6 +70,15 @@ export class ChatterboxVoiceStore {
     const now = new Date().toISOString();
     const voice: StoredVoice = { ...input, createdAt: now, updatedAt: now };
     this.persist(voice);
+    await this.fileMetadata
+      ?.registerIfExists({
+        entityKind: "chatterbox-voice",
+        entityId: voice.id,
+        filePath: this.paths(voice.id).audio,
+        mediaType: "audio/wav",
+        owner: "local"
+      })
+      .catch(() => undefined);
     this.voices.set(voice.id, voice);
     return { ...voice };
   }
@@ -87,6 +98,7 @@ export class ChatterboxVoiceStore {
     if (!isSafeId(id)) return false;
     this.voices.delete(id);
     this.database.remove("chatterbox-voice", id);
+    this.fileMetadata?.removeForEntity("chatterbox-voice", id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -119,7 +131,8 @@ export class ChatterboxBatchStore {
   constructor(
     private readonly root: string,
     private readonly database: ToolboxDatabase,
-    private readonly taskStore: TaskStore
+    private readonly taskStore: TaskStore,
+    private readonly fileMetadata?: FileMetadataRepository
   ) {}
 
   async initialize() {
@@ -293,6 +306,8 @@ export class ChatterboxBatchStore {
       this.database.remove("chatterbox-batch", id);
     });
     this.taskStore.remove(id);
+    this.fileMetadata?.removeForEntity("chatterbox-batch", id);
+    for (const item of batch?.items ?? []) this.fileMetadata?.removeForEntity("chatterbox-item", item.id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
   }
@@ -378,7 +393,52 @@ export class ChatterboxBatchStore {
         });
       }
     });
+    await this.registerFiles(batch);
     this.taskStore.upsert(toUnifiedBatchTask(batch));
+  }
+
+  private async registerFiles(batch: ChatterboxBatch) {
+    if (!this.fileMetadata) return;
+    const batchPaths = this.paths(batch.id);
+    const files: Array<{ entityKind: string; entityId: string; filePath: string; mediaType: string }> = [
+      { entityKind: "chatterbox-batch", entityId: batch.id, filePath: batchPaths.reference, mediaType: "audio/wav" },
+      {
+        entityKind: "chatterbox-batch",
+        entityId: batch.id,
+        filePath: batchPaths.combinedAudio,
+        mediaType: "audio/mpeg"
+      },
+      { entityKind: "chatterbox-batch", entityId: batch.id, filePath: batchPaths.subtitle, mediaType: "text/plain" },
+      {
+        entityKind: "chatterbox-batch",
+        entityId: batch.id,
+        filePath: batchPaths.translationSubtitle,
+        mediaType: "text/plain"
+      },
+      {
+        entityKind: "chatterbox-batch",
+        entityId: batch.id,
+        filePath: batchPaths.bilingualSubtitle,
+        mediaType: "text/plain"
+      }
+    ];
+    for (const item of batch.items) {
+      const itemPaths = this.itemPaths(batch.id, item.id);
+      files.push(
+        { entityKind: "chatterbox-item", entityId: item.id, filePath: itemPaths.outputWav, mediaType: "audio/wav" },
+        {
+          entityKind: "chatterbox-item",
+          entityId: item.id,
+          filePath: itemPaths.candidateAudio,
+          mediaType: "audio/mpeg"
+        },
+        { entityKind: "chatterbox-item", entityId: item.id, filePath: itemPaths.audio, mediaType: "audio/mpeg" },
+        { entityKind: "chatterbox-item", entityId: item.id, filePath: itemPaths.timing, mediaType: "application/json" }
+      );
+    }
+    await Promise.all(
+      files.map((file) => this.fileMetadata!.registerIfExists({ ...file, owner: "local" }).catch(() => undefined))
+    );
   }
 }
 

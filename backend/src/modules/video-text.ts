@@ -19,6 +19,7 @@ import {
   type VideoTextFromUrlInputDto
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
+import type { FileMetadataRepository } from "../database/file-metadata";
 import type { TaskStore } from "../tasks/task-store";
 import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../security/remote-fetch";
 import { REQUEST_QUOTAS } from "../security/request-quotas";
@@ -47,12 +48,19 @@ type RegisterVideoTextRoutesOptions = {
   config: AppConfig;
   taskStore: TaskStore;
   remoteFetch: RemoteFetch;
+  fileMetadata?: FileMetadataRepository;
 };
 
 type StoredVideoTextResult = StoredVideoTextResultDto;
 type TaskParams = { taskId: string };
 
-export async function registerVideoTextRoutes({ app, config, taskStore, remoteFetch }: RegisterVideoTextRoutesOptions) {
+export async function registerVideoTextRoutes({
+  app,
+  config,
+  taskStore,
+  remoteFetch,
+  fileMetadata
+}: RegisterVideoTextRoutesOptions) {
   const results = new Map<string, StoredVideoTextResult>();
   const activeJobs = new Set<Promise<unknown>>();
   const shutdownController = new AbortController();
@@ -93,7 +101,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
               fileName: file.filename || "video.mp4",
               mimeType: file.mimetype
             },
-            { config, taskStore, results, signal: shutdownController.signal, trackJob }
+            { config, taskStore, results, signal: shutdownController.signal, trackJob, fileMetadata }
           )
         )
       );
@@ -141,7 +149,7 @@ export async function registerVideoTextRoutes({ app, config, taskStore, remoteFe
                 mimeType,
                 fileSize: parseContentLength(response.headers.get("content-length"))
               },
-              { config, taskStore, results, signal: shutdownController.signal, trackJob }
+              { config, taskStore, results, signal: shutdownController.signal, trackJob, fileMetadata }
             )
           )
         );

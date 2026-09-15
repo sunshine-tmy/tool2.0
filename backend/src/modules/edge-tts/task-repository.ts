@@ -8,6 +8,7 @@ import {
   type EdgeTtsTaskStatus
 } from "@toolbox/shared";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import { WORKER_PROTOCOL_VERSION } from "@toolbox/shared";
 import type { TaskPaths } from "./types";
@@ -20,7 +21,8 @@ export class EdgeTtsTaskRepository {
   constructor(
     private readonly root: string,
     private readonly database: ToolboxDatabase,
-    private readonly taskStore: TaskStore
+    private readonly taskStore: TaskStore,
+    private readonly fileMetadata?: FileMetadataRepository
   ) {}
 
   async initialize() {
@@ -107,6 +109,7 @@ export class EdgeTtsTaskRepository {
     if (!isSafeTaskId(id)) return false;
     this.tasks.delete(id);
     this.database.remove(TASK_KIND, id);
+    this.fileMetadata?.removeForEntity(TASK_KIND, id);
     this.taskStore.remove(id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
@@ -143,6 +146,31 @@ export class EdgeTtsTaskRepository {
       updatedAt: task.updatedAt
     });
     this.taskStore.upsert(toUnifiedEdgeTask(task));
+    if (task.status === "completed") {
+      const paths = this.paths(task.id);
+      await Promise.all([
+        this.fileMetadata
+          ?.registerIfExists({
+            entityKind: TASK_KIND,
+            entityId: task.id,
+            filePath: paths.audio,
+            mediaType: "audio/mpeg",
+            owner: "local"
+          })
+          .catch(() => undefined),
+        task.includeSubtitles
+          ? this.fileMetadata
+              ?.registerIfExists({
+                entityKind: TASK_KIND,
+                entityId: task.id,
+                filePath: paths.subtitle,
+                mediaType: "text/plain",
+                owner: "local"
+              })
+              .catch(() => undefined)
+          : undefined
+      ]);
+    }
   }
 }
 

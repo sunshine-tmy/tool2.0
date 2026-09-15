@@ -32,6 +32,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import { registerChatterboxBatchRoutes } from "./batch-routes";
@@ -47,9 +48,10 @@ export async function registerChatterboxRoutes(
   app: FastifyInstance,
   config: AppConfig,
   database: ToolboxDatabase,
-  taskStore: TaskStore
+  taskStore: TaskStore,
+  fileMetadata?: FileMetadataRepository
 ) {
-  const store = new ChatterboxTaskStore(config.chatterboxTasksDir, database, taskStore);
+  const store = new ChatterboxTaskStore(config.chatterboxTasksDir, database, taskStore, fileMetadata);
   const worker = createChatterboxWorkerClient(config);
   const media = new ChatterboxMediaTools(config);
   await store.initialize();
@@ -71,6 +73,7 @@ export async function registerChatterboxRoutes(
     media,
     database,
     taskStore,
+    fileMetadata,
     externalQueueStats: () => queue.stats()
   });
   for (const task of store.list()) {

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
-const DATABASE_SCHEMA_VERSION = 4;
+const DATABASE_SCHEMA_VERSION = 5;
 
 type StoredEntity = {
   id: string;
@@ -13,6 +13,18 @@ type StoredEntity = {
   updatedAt: string;
 };
 
+export type FileMetadata = {
+  id: string;
+  entityKind: string;
+  entityId: string;
+  relativePath: string;
+  byteSize: number;
+  sha256?: string;
+  mediaType?: string;
+  owner?: string;
+  createdAt: string;
+};
+
 type EntityRow = {
   id: string;
   kind: string;
@@ -20,6 +32,18 @@ type EntityRow = {
   payload_json: string;
   created_at: string;
   updated_at: string;
+};
+
+type FileMetadataRow = {
+  id: string;
+  entity_kind: string;
+  entity_id: string;
+  relative_path: string;
+  byte_size: number;
+  sha256: string | null;
+  media_type: string | null;
+  owner: string | null;
+  created_at: string;
 };
 
 type EntityTableColumn = {
@@ -111,6 +135,74 @@ export class ToolboxDatabase {
             .get(kind, id)
     ) as EntityRow | undefined;
     return row ? deserializeEntity(row) : undefined;
+  }
+
+  upsertFile(file: FileMetadata) {
+    const relativePath = normalizeRelativePath(file.relativePath);
+    if (!file.id || !file.entityKind || !file.entityId || !relativePath) {
+      throw new Error("Invalid file metadata identity");
+    }
+    if (!Number.isSafeInteger(file.byteSize) || file.byteSize < 0) {
+      throw new Error("Invalid file metadata size");
+    }
+    this.connection
+      .prepare(
+        `INSERT INTO files
+           (id, entity_kind, entity_id, relative_path, byte_size, sha256, media_type, owner, created_at)
+         VALUES (@id, @entityKind, @entityId, @relativePath, @byteSize, @sha256, @mediaType, @owner, @createdAt)
+         ON CONFLICT(id) DO UPDATE SET entity_kind = excluded.entity_kind,
+           entity_id = excluded.entity_id, relative_path = excluded.relative_path,
+           byte_size = excluded.byte_size, sha256 = excluded.sha256,
+           media_type = excluded.media_type, owner = excluded.owner
+         ON CONFLICT(relative_path) DO UPDATE SET id = excluded.id,
+           entity_kind = excluded.entity_kind, entity_id = excluded.entity_id,
+           byte_size = excluded.byte_size, sha256 = excluded.sha256,
+           media_type = excluded.media_type, owner = excluded.owner`
+      )
+      .run({
+        ...file,
+        relativePath,
+        sha256: file.sha256 ?? null,
+        mediaType: file.mediaType ?? null,
+        owner: file.owner ?? null
+      });
+  }
+
+  getFile(id: string): FileMetadata | undefined {
+    const row = this.connection.prepare("SELECT * FROM files WHERE id = ?").get(id) as FileMetadataRow | undefined;
+    return row ? deserializeFileMetadata(row) : undefined;
+  }
+
+  listFiles(filter: { entityKind?: string; entityId?: string; owner?: string } = {}) {
+    const clauses: string[] = [];
+    const values: string[] = [];
+    if (filter.entityKind) {
+      clauses.push("entity_kind = ?");
+      values.push(filter.entityKind);
+    }
+    if (filter.entityId) {
+      clauses.push("entity_id = ?");
+      values.push(filter.entityId);
+    }
+    if (filter.owner) {
+      clauses.push("owner = ?");
+      values.push(filter.owner);
+    }
+    const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.connection
+      .prepare(`SELECT * FROM files${where} ORDER BY created_at DESC, relative_path ASC`)
+      .all(...values) as FileMetadataRow[];
+    return rows.map(deserializeFileMetadata);
+  }
+
+  removeFile(id: string) {
+    return this.connection.prepare("DELETE FROM files WHERE id = ?").run(id).changes > 0;
+  }
+
+  removeFilesForEntity(entityKind: string, entityId: string) {
+    return this.connection
+      .prepare("DELETE FROM files WHERE entity_kind = ? AND entity_id = ?")
+      .run(entityKind, entityId).changes;
   }
 
   upsert(entity: StoredEntity) {
@@ -281,6 +373,7 @@ export class ToolboxDatabase {
         byte_size INTEGER NOT NULL CHECK(byte_size >= 0),
         sha256 TEXT,
         media_type TEXT,
+        owner TEXT,
         created_at TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS audit_events (
@@ -293,6 +386,7 @@ export class ToolboxDatabase {
         details_json TEXT CHECK(details_json IS NULL OR json_valid(details_json))
       );
     `);
+    this.migrateFileMetadata();
     for (const table of DOMAIN_TABLES) {
       this.connection.exec(`
         CREATE TABLE IF NOT EXISTS ${table} (
@@ -309,6 +403,17 @@ export class ToolboxDatabase {
     this.connection
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run(DATABASE_SCHEMA_VERSION, new Date().toISOString());
+  }
+
+  private migrateFileMetadata() {
+    const columns = this.connection.pragma("table_info(files)") as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "owner")) {
+      this.connection.exec("ALTER TABLE files ADD COLUMN owner TEXT");
+    }
+    this.connection.exec(`
+      CREATE INDEX IF NOT EXISTS files_entity_idx ON files(entity_kind, entity_id);
+      CREATE INDEX IF NOT EXISTS files_owner_idx ON files(owner);
+    `);
   }
 
   private migrateDomainRelations() {
@@ -479,6 +584,28 @@ function deserializeEntity(row: EntityRow): StoredEntity {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
+}
+
+function deserializeFileMetadata(row: FileMetadataRow): FileMetadata {
+  return {
+    id: row.id,
+    entityKind: row.entity_kind,
+    entityId: row.entity_id,
+    relativePath: row.relative_path,
+    byteSize: row.byte_size,
+    sha256: row.sha256 ?? undefined,
+    mediaType: row.media_type ?? undefined,
+    owner: row.owner ?? undefined,
+    createdAt: row.created_at
+  };
+}
+
+function normalizeRelativePath(value: string) {
+  const normalized = value.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (!normalized || normalized.startsWith("/") || normalized.includes("\0") || /(^|\/)\.\.(\/|$)/.test(normalized)) {
+    throw new Error("Invalid relative file path");
+  }
+  return normalized;
 }
 
 function inferLegacyEntityKind(payloadJson: string) {

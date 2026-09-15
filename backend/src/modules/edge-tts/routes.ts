@@ -21,6 +21,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import { sendTaskFile } from "./files";
@@ -32,10 +33,17 @@ type RegisterEdgeTtsRoutesOptions = {
   config: AppConfig;
   database: ToolboxDatabase;
   taskStore: TaskStore;
+  fileMetadata?: FileMetadataRepository;
 };
 
-export async function registerEdgeTtsRoutes({ app, config, database, taskStore }: RegisterEdgeTtsRoutesOptions) {
-  const service = new EdgeTtsTaskService(config, database, taskStore);
+export async function registerEdgeTtsRoutes({
+  app,
+  config,
+  database,
+  taskStore,
+  fileMetadata
+}: RegisterEdgeTtsRoutesOptions) {
+  const service = new EdgeTtsTaskService(config, database, taskStore, fileMetadata);
   await service.initialize();
 
   app.addHook("onClose", async () => {

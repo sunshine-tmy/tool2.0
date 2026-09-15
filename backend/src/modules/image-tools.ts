@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { ApiFailureSchema, ImageCompressResultSchema, apiSuccessSchema, fail, ok } from "@toolbox/shared";
 import type { AppConfig } from "../config";
+import type { FileMetadataRepository } from "../database/file-metadata";
 import type { TaskStore } from "../tasks/task-store";
 import { ImageArchiveError, ImageArchiveGateway } from "./image-compress-file-gateway";
 import { ImageInputError, readImageMultipart } from "./image-compress-input";
@@ -10,15 +11,17 @@ type RegisterImageToolRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
   taskStore: TaskStore;
+  fileMetadata?: FileMetadataRepository;
 };
 
 export function registerSingleImageToolRoute({
   app,
   config,
   taskStore,
+  fileMetadata,
   toolId
 }: RegisterImageToolRoutesOptions & { toolId: "image-compress" }) {
-  const service = new ImageCompressionService(config, taskStore);
+  const service = new ImageCompressionService(config, taskStore, fileMetadata);
   const archive = new ImageArchiveGateway(config, taskStore);
 
   app.post(

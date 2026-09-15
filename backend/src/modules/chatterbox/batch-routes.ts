@@ -16,6 +16,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import { rebuildBatchAudio, rebuildBatchSubtitles, toBatchSummary, toPublicBatch } from "./batch-artifacts";
@@ -37,11 +38,12 @@ export async function registerChatterboxBatchRoutes(options: {
   media: MediaTools;
   database: ToolboxDatabase;
   taskStore: TaskStore;
+  fileMetadata?: FileMetadataRepository;
   externalQueueStats?: () => { active: number; queued: number };
 }) {
-  const { app, config, worker, media, database, taskStore } = options;
-  const store = new ChatterboxBatchStore(path.join(config.chatterboxDir, "batches"), database, taskStore);
-  const voiceStore = new ChatterboxVoiceStore(path.join(config.chatterboxDir, "voices"), database);
+  const { app, config, worker, media, database, taskStore, fileMetadata } = options;
+  const store = new ChatterboxBatchStore(path.join(config.chatterboxDir, "batches"), database, taskStore, fileMetadata);
+  const voiceStore = new ChatterboxVoiceStore(path.join(config.chatterboxDir, "voices"), database, fileMetadata);
   await store.initialize();
   await voiceStore.initialize();
   await store.cleanupExpired();

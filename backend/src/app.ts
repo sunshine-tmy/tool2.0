@@ -40,6 +40,7 @@ import { registerAdminSecurity } from "./security/admin-session";
 import { registerConcurrencyQuotas } from "./security/request-quotas";
 import { openToolboxDatabase } from "./database/legacy-migration";
 import { reconcileLanStorage } from "./database/storage-consistency";
+import { FileMetadataRepository } from "./database/file-metadata";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
@@ -66,6 +67,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
   const config = getConfig();
   const { database } = await openToolboxDatabase(config);
+  const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
@@ -315,14 +317,14 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     }
   );
 
-  registerImageCompressRoutes(app, config, taskStore);
-  await registerImageAiRoutes(app, config, database, taskStore);
-  await registerEdgeTtsRoutes({ app, config, database, taskStore });
-  await registerChatterboxRoutes(app, config, database, taskStore);
-  await registerLanTransferRoutes({ app, config, database });
-  await registerVideoTextRoutes({ app, config, taskStore, remoteFetch });
+  registerImageCompressRoutes(app, config, taskStore, fileMetadata);
+  await registerImageAiRoutes(app, config, database, taskStore, fileMetadata);
+  await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
+  await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
+  await registerLanTransferRoutes({ app, config, database, fileMetadata });
+  await registerVideoTextRoutes({ app, config, taskStore, remoteFetch, fileMetadata });
   await registerShortVideoRoutes({ app, config, remoteFetch });
-  await registerXhsArchiveRoutes({ app, config, remoteFetch, database, taskStore });
+  await registerXhsArchiveRoutes({ app, config, remoteFetch, database, taskStore, fileMetadata });
   registerMaintenanceRoutes(app);
 
   if (config.databasePath !== ":memory:") {

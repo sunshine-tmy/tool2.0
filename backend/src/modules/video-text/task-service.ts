@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { analyzeVideoText, type VideoTextRecognitionQuality } from "@toolbox/shared/video-text";
 import type { AppConfig } from "../../config";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import { resultFilePath, type StoredVideoTextResult } from "./result-store";
 
@@ -26,9 +27,10 @@ export async function createVideoTextTaskFromSource(
     results: Map<string, StoredVideoTextResult>;
     signal: AbortSignal;
     trackJob: (job: Promise<unknown>) => void;
+    fileMetadata?: FileMetadataRepository;
   }
 ) {
-  const { config, taskStore, results, signal, trackJob } = context;
+  const { config, taskStore, results, signal, trackJob, fileMetadata } = context;
   const task = taskStore.create("video-text");
   taskStore.update(task.id, { status: "running", progress: 10 });
   const safeName = sanitizeDisplayFileName(source.fileName || "video.mp4");
@@ -44,7 +46,17 @@ export async function createVideoTextTaskFromSource(
     await pipeline(source.stream, fs.createWriteStream(videoPath));
     const running = taskStore.update(task.id, { progress: 35 }) as Task;
     trackJob(
-      processVideoTextTask({ task, videoPath, safeName, mimeType: source.mimeType, config, taskStore, results, signal })
+      processVideoTextTask({
+        task,
+        videoPath,
+        safeName,
+        mimeType: source.mimeType,
+        config,
+        taskStore,
+        results,
+        signal,
+        fileMetadata
+      })
     );
     return { task: running, result: null };
   } catch (error) {
@@ -67,8 +79,9 @@ async function processVideoTextTask(input: {
   taskStore: TaskStore;
   results: Map<string, StoredVideoTextResult>;
   signal: AbortSignal;
+  fileMetadata?: FileMetadataRepository;
 }) {
-  const { task, videoPath, safeName, mimeType, config, taskStore, results, signal } = input;
+  const { task, videoPath, safeName, mimeType, config, taskStore, results, signal, fileMetadata } = input;
   let terminalPatch: Parameters<TaskStore["update"]>[1];
   try {
     const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
@@ -99,6 +112,15 @@ async function processVideoTextTask(input: {
       results.set(task.id, result);
       const outputPath = resultFilePath(config, task.id);
       await fsp.writeFile(outputPath, JSON.stringify(result, null, 2), "utf8");
+      await fileMetadata
+        ?.registerIfExists({
+          entityKind: "video-text-result",
+          entityId: task.id,
+          filePath: outputPath,
+          mediaType: "application/json",
+          owner: "local"
+        })
+        .catch(() => undefined);
       terminalPatch = {
         status: "completed",
         progress: 100,

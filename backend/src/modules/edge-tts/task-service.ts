@@ -10,6 +10,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { TaskStore } from "../../tasks/task-store";
 import { EdgeTtsQueue } from "./queue";
 import { cloneTask, EdgeTtsTaskRepository } from "./task-repository";
@@ -34,9 +35,10 @@ export class EdgeTtsTaskService {
   constructor(
     private readonly config: AppConfig,
     database: ToolboxDatabase,
-    taskStore: TaskStore
+    taskStore: TaskStore,
+    fileMetadata?: FileMetadataRepository
   ) {
-    this.repository = new EdgeTtsTaskRepository(config.edgeTtsTasksDir, database, taskStore);
+    this.repository = new EdgeTtsTaskRepository(config.edgeTtsTasksDir, database, taskStore, fileMetadata);
     this.runner = new EdgeTtsWorkerGateway(config);
     this.queue = new EdgeTtsQueue({ config, store: this.repository, runner: this.runner });
   }

@@ -21,6 +21,7 @@ import {
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { TaskStore } from "../../tasks/task-store";
 import {
@@ -46,9 +47,10 @@ export async function registerImageAiRoutes(
   app: FastifyInstance,
   config: AppConfig,
   database: ToolboxDatabase,
-  taskStore: TaskStore
+  taskStore: TaskStore,
+  fileMetadata?: FileMetadataRepository
 ) {
-  const manager = createImageAiTaskManager(config, database, taskStore);
+  const manager = createImageAiTaskManager(config, database, taskStore, fileMetadata);
   const worker = createImageAiWorkerClient(config);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());

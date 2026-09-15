@@ -12,6 +12,7 @@ import {
   verifyMigrationBackup
 } from "../database/legacy-migration";
 import { ToolboxDatabase } from "../database/toolbox-database";
+import { FileMetadataRepository } from "../database/file-metadata";
 
 let testRoot: string | undefined;
 
@@ -67,7 +68,7 @@ describe("toolbox database", () => {
       source: "xhs-archive/index.json",
       value: { version: 2, items: [{ id: "note-1" }] }
     });
-    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 4 });
+    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
     expect(upgraded.connection.pragma("table_info(entities)")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "kind", pk: 1 }),
@@ -209,7 +210,7 @@ describe("toolbox database", () => {
     const { database, migration } = await openToolboxDatabase(config);
     expect(migration).toMatchObject({ migrated: true, atomicSwitch: true });
     expect(database.hasCompletedLegacyMigration()).toBe(true);
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 4 });
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
     database.close();
 
     expect(await exists(databasePath)).toBe(true);
@@ -259,7 +260,7 @@ describe("toolbox database", () => {
       updatedAt: now
     });
 
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 4 });
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
     expect(database.connection.pragma("table_info(chatterbox_items)")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "batch_id" }),
@@ -271,6 +272,46 @@ describe("toolbox database", () => {
     );
     database.remove("chatterbox-batch", "batch-1");
     expect(database.get("chatterbox-item", "item-1")).toBeUndefined();
+    database.close();
+  });
+
+  it("registers streamed file metadata with stable identity and safe relative paths", async () => {
+    const databasePath = await prepareDatabasePath();
+    const database = new ToolboxDatabase(databasePath);
+    const filePath = path.join(testRoot!, "outputs", "image-1.webp");
+    await fsp.mkdir(path.dirname(filePath), { recursive: true });
+    await fsp.writeFile(filePath, "metadata-test");
+    const repository = new FileMetadataRepository(database, testRoot!);
+
+    const first = await repository.register({
+      entityKind: "image-compress",
+      entityId: "task-1",
+      filePath,
+      mediaType: "image/webp",
+      owner: "local"
+    });
+    const second = await repository.register({
+      entityKind: "image-compress",
+      entityId: "task-1",
+      filePath,
+      mediaType: "image/webp",
+      owner: "local"
+    });
+
+    expect(second.id).toBe(first.id);
+    expect(first).toMatchObject({
+      entityKind: "image-compress",
+      entityId: "task-1",
+      relativePath: "outputs/image-1.webp",
+      byteSize: 13,
+      mediaType: "image/webp",
+      owner: "local"
+    });
+    expect(first.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(repository.list("image-compress", "task-1")).toHaveLength(1);
+    expect(() => database.upsertFile({ ...first, relativePath: "../outside" })).toThrow("Invalid relative file path");
+    expect(repository.remove(first.id)).toBe(true);
+    expect(repository.list("image-compress", "task-1")).toHaveLength(0);
     database.close();
   });
 });

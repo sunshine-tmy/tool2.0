@@ -10,6 +10,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
+import type { FileMetadataRepository } from "../database/file-metadata";
 import { REQUEST_QUOTAS } from "../security/request-quotas";
 import {
   createLanAccessController,
@@ -28,11 +29,17 @@ type RegisterLanTransferRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
   database: ToolboxDatabase;
+  fileMetadata?: FileMetadataRepository;
 };
 
-export async function registerLanTransferRoutes({ app, config, database }: RegisterLanTransferRoutesOptions) {
-  const store = createLanFileStore(config, database);
-  const noteStore = createLanNoteStore(config, database);
+export async function registerLanTransferRoutes({
+  app,
+  config,
+  database,
+  fileMetadata
+}: RegisterLanTransferRoutesOptions) {
+  const store = createLanFileStore(config, database, fileMetadata);
+  const noteStore = createLanNoteStore(config, database, fileMetadata);
   const uploadStore = createLanUploadStore(config, database);
   const finalizingUploads = new Set<string>();
   const access = createLanAccessController(config);

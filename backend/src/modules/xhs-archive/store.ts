@@ -8,6 +8,7 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 
 type ArchiveIndex = {
   version: 2;
@@ -21,7 +22,8 @@ export class XhsArchiveStore {
 
   constructor(
     private readonly config: AppConfig,
-    private readonly database: ToolboxDatabase
+    private readonly database: ToolboxDatabase,
+    private readonly fileMetadata?: FileMetadataRepository
   ) {}
 
   async initialize() {
@@ -122,6 +124,7 @@ export class XhsArchiveStore {
       await fsp.rename(stagingDirectory, target);
       this.items.set(item.id, cloneItem(item)!);
       await this.persistIndex();
+      await this.registerItemFiles(item, target);
       await fsp.rm(backup, { recursive: true, force: true });
     } catch (error) {
       await fsp.rm(target, { recursive: true, force: true }).catch(() => undefined);
@@ -140,6 +143,8 @@ export class XhsArchiveStore {
     const item = this.items.get(id);
     if (!item) return false;
     this.items.delete(id);
+    this.fileMetadata?.removeForEntity("xhs-archive", id);
+    for (const media of item.media) this.fileMetadata?.removeForEntity("xhs-media", media.id);
     await this.persistIndex();
     await fsp.rm(path.join(this.config.xhsArchiveItemsDir, safeId(id)), { recursive: true, force: true });
     return true;
@@ -160,6 +165,7 @@ export class XhsArchiveStore {
       await fsp.rename(temporary, manifest);
       this.items.set(id, cloneItem(next)!);
       await this.persistIndex();
+      await this.registerItemFiles(next, directory);
       await fsp.rm(backup, { force: true });
       return cloneItem(next);
     } catch (error) {
@@ -236,6 +242,30 @@ export class XhsArchiveStore {
       });
     });
     return this.writeQueue;
+  }
+
+  private async registerItemFiles(item: XhsArchiveItem, directory: string) {
+    if (!this.fileMetadata) return;
+    await this.fileMetadata
+      .registerIfExists({
+        entityKind: "xhs-archive",
+        entityId: item.id,
+        filePath: path.join(directory, "manifest.json"),
+        mediaType: "application/json",
+        owner: "local"
+      })
+      .catch(() => undefined);
+    await Promise.all(
+      item.media.map((media) =>
+        this.fileMetadata!.registerIfExists({
+          entityKind: "xhs-media",
+          entityId: media.id,
+          filePath: path.join(directory, path.basename(media.fileName)),
+          mediaType: media.mimeType,
+          owner: "local"
+        }).catch(() => undefined)
+      )
+    );
   }
 }
 

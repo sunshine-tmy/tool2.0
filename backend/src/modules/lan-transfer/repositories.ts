@@ -9,9 +9,14 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import { ensureJsonIndex, readJsonIndex } from "./repository-io";
 
-export function createLanFileStore(config: AppConfig, database: ToolboxDatabase) {
+export function createLanFileStore(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  fileMetadata?: FileMetadataRepository
+) {
   const exclusive = createExclusiveQueue();
 
   async function ensure() {
@@ -59,6 +64,15 @@ export function createLanFileStore(config: AppConfig, database: ToolboxDatabase)
         const records = await read();
         records.unshift(record);
         await write(records);
+        await fileMetadata
+          ?.registerIfExists({
+            entityKind: "lan-file",
+            entityId: record.id,
+            filePath: path.join(config.lanTransferFilesDir, record.storedName),
+            mediaType: record.mimeType,
+            owner: "lan"
+          })
+          .catch(() => undefined);
         return record;
       }),
     get: (id: string) => exclusive(async () => (await read()).find((record) => record.id === id)),
@@ -103,6 +117,7 @@ export function createLanFileStore(config: AppConfig, database: ToolboxDatabase)
         const target = records.find((record) => record.id === id);
         if (!target) return false;
         await fsp.rm(path.join(config.lanTransferFilesDir, target.storedName), { force: true });
+        fileMetadata?.removeForEntity("lan-file", target.id);
         await write(records.filter((record) => record.id !== id));
         return true;
       }),
@@ -114,6 +129,7 @@ export function createLanFileStore(config: AppConfig, database: ToolboxDatabase)
         await Promise.all(
           targets.map((record) => fsp.rm(path.join(config.lanTransferFilesDir, record.storedName), { force: true }))
         );
+        for (const record of targets) fileMetadata?.removeForEntity("lan-file", record.id);
         await write(records.filter((record) => !wanted.has(record.id)));
         return {
           removed: targets.map((record) => record.id),
@@ -137,13 +153,18 @@ export function createLanFileStore(config: AppConfig, database: ToolboxDatabase)
         await Promise.all(
           expired.map((record) => fsp.rm(path.join(config.lanTransferFilesDir, record.storedName), { force: true }))
         );
+        for (const record of expired) fileMetadata?.removeForEntity("lan-file", record.id);
         if (expired.length) await write(records.filter((record) => Date.parse(record.expiresAt) > now));
         return { removed: expired.length };
       })
   };
 }
 
-export function createLanNoteStore(config: AppConfig, database: ToolboxDatabase) {
+export function createLanNoteStore(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  fileMetadata?: FileMetadataRepository
+) {
   const notesDir = path.join(config.lanTransferDir, "notes");
   const imagesDir = path.join(notesDir, "images");
   const indexPath = path.join(notesDir, "index.json");
@@ -199,6 +220,19 @@ export function createLanNoteStore(config: AppConfig, database: ToolboxDatabase)
         const notes = await read();
         notes.unshift(note);
         await write(notes);
+        await Promise.all(
+          note.images.map((image) =>
+            fileMetadata
+              ?.registerIfExists({
+                entityKind: "lan-note-image",
+                entityId: note.id,
+                filePath: path.join(imagesDir, image.storedName),
+                mediaType: image.mimeType,
+                owner: "lan"
+              })
+              .catch(() => undefined)
+          )
+        );
         return note;
       }),
     list: () =>
@@ -237,6 +271,7 @@ export function createLanNoteStore(config: AppConfig, database: ToolboxDatabase)
         const target = notes.find((note) => note.id === id);
         if (!target) return false;
         await removeImages(target);
+        fileMetadata?.removeForEntity("lan-note-image", target.id);
         await write(notes.filter((note) => note.id !== id));
         return true;
       }),
@@ -246,6 +281,7 @@ export function createLanNoteStore(config: AppConfig, database: ToolboxDatabase)
         const wanted = new Set(ids);
         const targets = notes.filter((note) => wanted.has(note.id));
         await Promise.all(targets.map(removeImages));
+        for (const note of targets) fileMetadata?.removeForEntity("lan-note-image", note.id);
         if (targets.length) await write(notes.filter((note) => !wanted.has(note.id)));
         const removed = targets.map((note) => note.id);
         const removedSet = new Set(removed);
@@ -257,6 +293,7 @@ export function createLanNoteStore(config: AppConfig, database: ToolboxDatabase)
         const notes = await read();
         const expired = notes.filter((note) => Date.parse(note.expiresAt) <= now);
         await Promise.all(expired.map(removeImages));
+        for (const note of expired) fileMetadata?.removeForEntity("lan-note-image", note.id);
         if (expired.length) await write(notes.filter((note) => Date.parse(note.expiresAt) > now));
         return { removed: expired.length };
       })

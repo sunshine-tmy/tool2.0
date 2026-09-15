@@ -2,6 +2,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { CHATTERBOX_LANGUAGES, type ChatterboxTask, type ChatterboxTaskStatus } from "@toolbox/shared";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
 
 type ChatterboxTaskPaths = {
@@ -36,7 +37,8 @@ export class ChatterboxTaskStore {
   constructor(
     private readonly root: string,
     private readonly database: ToolboxDatabase,
-    private readonly taskStore: TaskStore
+    private readonly taskStore: TaskStore,
+    private readonly fileMetadata?: FileMetadataRepository
   ) {}
 
   async initialize() {
@@ -112,6 +114,7 @@ export class ChatterboxTaskStore {
     if (!isSafeTaskId(id)) return false;
     this.tasks.delete(id);
     this.database.remove("chatterbox-task", id);
+    this.fileMetadata?.removeForEntity("chatterbox-task", id);
     this.taskStore.remove(id);
     await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     return true;
@@ -147,6 +150,31 @@ export class ChatterboxTaskStore {
       updatedAt: task.updatedAt
     });
     this.taskStore.upsert(toUnifiedChatterboxTask(task));
+    if (task.status === "completed") {
+      const paths = this.paths(task.id);
+      await Promise.all([
+        this.fileMetadata
+          ?.registerIfExists({
+            entityKind: "chatterbox-task",
+            entityId: task.id,
+            filePath: paths.audio,
+            mediaType: "audio/mpeg",
+            owner: "local"
+          })
+          .catch(() => undefined),
+        task.includeSubtitles
+          ? this.fileMetadata
+              ?.registerIfExists({
+                entityKind: "chatterbox-task",
+                entityId: task.id,
+                filePath: paths.subtitle,
+                mediaType: "text/plain",
+                owner: "local"
+              })
+              .catch(() => undefined)
+          : undefined
+      ]);
+    }
   }
 }
 

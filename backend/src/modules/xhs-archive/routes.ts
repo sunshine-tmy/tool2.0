@@ -23,6 +23,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { TaskStore } from "../../tasks/task-store";
 import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import type { RemoteFetch } from "../../security/remote-fetch";
@@ -41,9 +42,10 @@ export async function registerXhsArchiveRoutes(options: {
   remoteFetch: RemoteFetch;
   database: ToolboxDatabase;
   taskStore: TaskStore;
+  fileMetadata?: FileMetadataRepository;
 }) {
-  const { app, config, remoteFetch, database, taskStore } = options;
-  const store = new XhsArchiveStore(config, database);
+  const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
+  const store = new XhsArchiveStore(config, database, fileMetadata);
   const runtime = new XhsRuntimeManager(config);
   const auth = new XhsAuthManager(config);
   const translationRuntime = new XhsTranslationRuntime(config);

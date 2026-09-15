@@ -4,6 +4,7 @@ import type { ImageAiOperation, ImageAiResult, ImageAiTask } from "@toolbox/shar
 import sharp from "sharp";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import { createImageAiWorkerClient } from "./worker-client";
 
@@ -25,7 +26,12 @@ type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
   cancelRequested?: boolean;
 };
 
-export function createImageAiTaskManager(config: AppConfig, database: ToolboxDatabase, taskStore: TaskStore) {
+export function createImageAiTaskManager(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  taskStore: TaskStore,
+  fileMetadata?: FileMetadataRepository
+) {
   const worker = createImageAiWorkerClient(config);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
@@ -100,6 +106,30 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
     refreshQueuePositions();
     try {
       await persist(task);
+      await Promise.all(
+        task.inputs.map((input, index) =>
+          fileMetadata
+            ?.registerIfExists({
+              entityKind: "image-ai-input",
+              entityId: `${task.id}-${index + 1}`,
+              filePath: input.path,
+              mediaType: input.mimetype,
+              owner: "local"
+            })
+            .catch(() => undefined)
+        )
+      );
+      if (task.maskPath) {
+        await fileMetadata
+          ?.registerIfExists({
+            entityKind: "image-ai-mask",
+            entityId: task.id,
+            filePath: task.maskPath,
+            mediaType: "image/png",
+            owner: "local"
+          })
+          .catch(() => undefined);
+      }
     } catch (error) {
       tasks.delete(task.id);
       const queueIndex = queue.indexOf(task.id);
@@ -145,6 +175,9 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
       if (queueIndex >= 0) queue.splice(queueIndex, 1);
       tasks.delete(task.id);
       database.remove("image-ai-task", task.id);
+      fileMetadata?.removeForEntity("image-ai-input", task.id);
+      fileMetadata?.removeForEntity("image-ai-mask", task.id);
+      fileMetadata?.removeForEntity("image-ai-result", task.id);
       taskStore.remove(task.id);
       await Promise.all([
         fs.rm(path.join(config.imageAiInputsDir, task.id), { recursive: true, force: true }),
@@ -225,6 +258,16 @@ export function createImageAiTaskManager(config: AppConfig, database: ToolboxDat
           warnings: inference.warnings ?? []
         });
         task.warnings = unique([...task.warnings, ...(inference.warnings ?? [])]);
+        await fileMetadata
+          ?.registerIfExists({
+            entityKind: "image-ai-result",
+            entityId: task.id,
+            filePath: outputPath,
+            mediaType: "image/png",
+            owner: "local",
+            id: `${task.id}-${index + 1}`
+          })
+          .catch(() => undefined);
       } catch (error) {
         if (shutdownController.signal.aborted) {
           patchTask(task, {
