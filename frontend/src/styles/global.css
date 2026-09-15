@@ -1,3 +1,4 @@
+/* Foundation: reset, document defaults, layout primitives and legacy module compatibility. */
 * {
   box-sizing: border-box;
 }
@@ -2484,6 +2485,7 @@ a {
   color: #dc2626;
 }
 
+/* Responsive foundation overrides. Visual component-specific responsive rules remain in redesign.css. */
 @media (max-width: 1180px) {
   .edge-tts-workbench {
     grid-template-columns: 1fr;
