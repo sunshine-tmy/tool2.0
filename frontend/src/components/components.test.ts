@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/components/components.test.ts 中的稳定行为、边界条件和回归场景
+ */
 // @vitest-environment happy-dom
 
 import { defineComponent, h, nextTick, reactive } from "vue";

@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 backend/src/__tests__/request-quotas.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import { registerConcurrencyQuotas } from "../security/request-quotas";

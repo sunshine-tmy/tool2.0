@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：短视频领域，负责 Provider 解析、缓存、下载和 SSRF 边界
+ */
 import type { FastifyReply } from "fastify";
 import {
   assertRemoteResponseSize,

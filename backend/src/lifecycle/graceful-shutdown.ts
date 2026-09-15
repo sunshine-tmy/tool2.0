@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端生命周期层，负责进程、队列、Worker 与资源的安全启停
+ */
 type ShutdownSignal = "SIGINT" | "SIGTERM";
 
 type Closable = {

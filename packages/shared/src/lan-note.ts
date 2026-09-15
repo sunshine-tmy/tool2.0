@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：共享契约层，负责跨前后端复用的类型、Schema、响应和领域常量
+ */
 export type LanNoteImageRecord = {
   id: string;
   originalName: string;

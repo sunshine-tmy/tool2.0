@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端数据库层，负责 旧元数据迁移、备份、回滚和故障恢复
+ */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";

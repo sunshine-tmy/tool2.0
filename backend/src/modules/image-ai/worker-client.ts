@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：AI 图片处理领域，负责 Worker 任务、输入校验和结果文件
+ */
 import {
   WORKER_PROTOCOL_VERSION,
   isImageWorkerHealth,

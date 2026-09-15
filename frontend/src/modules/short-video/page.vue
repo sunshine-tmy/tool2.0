@@ -1,3 +1,4 @@
+<!-- 中文模块说明：短视频前端模块，负责链接解析、下载和历史操作 -->
 <template>
   <ToolLayout>
     <section class="main-column short-video-main">

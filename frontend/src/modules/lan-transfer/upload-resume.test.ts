@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/lan-transfer/upload-resume.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fileFingerprint,

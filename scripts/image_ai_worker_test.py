@@ -1,3 +1,4 @@
+# 中文模块说明：测试 scripts/image_ai_worker_test.py 中的稳定行为、边界条件和回归场景
 import importlib.util
 import tempfile
 import unittest

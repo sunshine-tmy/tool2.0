@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：Chatterbox 配音领域，负责批次、音色、任务队列和音频产物
+ */
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { ZipArchive } from "archiver";

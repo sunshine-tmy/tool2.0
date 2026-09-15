@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：端到端验收场景，验证真实浏览器中的关键用户流程
+ */
 import { expect, test } from "@playwright/test";
 
 const apiPort = process.env.PLAYWRIGHT_API_PORT || "33100";

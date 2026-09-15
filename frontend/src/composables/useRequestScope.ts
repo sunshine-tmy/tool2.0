@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：前端应用层，负责 页面级 AbortController 和请求资源释放
+ */
 import { onScopeDispose } from "vue";
 
 /**

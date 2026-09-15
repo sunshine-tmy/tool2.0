@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/composables/useRequestScope.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { effectScope } from "vue";
 import { describe, expect, it } from "vitest";
 import { useRequestScope } from "./useRequestScope";

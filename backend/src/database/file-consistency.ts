@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端数据库层，负责 启动一致性检查、孤立文件隔离和审计记录
+ */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";

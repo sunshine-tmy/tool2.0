@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：项目工程文件，负责 frontend/vitest.config.ts
+ */
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig } from "vitest/config";

@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 backend/src/__tests__/graceful-shutdown.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installGracefulShutdown } from "../lifecycle/graceful-shutdown";

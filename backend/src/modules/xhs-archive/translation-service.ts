@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：小红书归档领域，负责获取、媒体、翻译、运行时和恢复
+ */
 import { createHash } from "node:crypto";
 import {
   parseXhsContentText,

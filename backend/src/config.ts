@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端应用层，负责 环境配置解析、默认值和部署模式边界
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

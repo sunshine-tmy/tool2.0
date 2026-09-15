@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：前端应用层，负责 任务 SSE、轮询回退和页面生命周期管理
+ */
 import { onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
 import { isTaskDto, TaskSchema, type TaskDto } from "@toolbox/shared";
 import { resolveApiUrl } from "../config/runtime";
@@ -18,7 +21,7 @@ type TaskEventsOptions = {
   reconnectBaseMs?: number;
   maxReconnectAttempts?: number;
   pollIntervalMs?: number;
-  /** Abort the complete transport when the owning page scope is disposed. */
+  /** 页面作用域销毁时，中止完整的 SSE/轮询传输链路。 */
   signal?: AbortSignal;
 };
 
@@ -82,6 +85,7 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
   }
 
   function connect(id: string) {
+    // 先关闭上一代连接，再创建带 generation 标记的新连接，避免旧 SSE 回调覆盖新任务状态。
     if (disposed || !isVisible()) {
       connection.value = "paused";
       return;
@@ -127,6 +131,7 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
   }
 
   function startPolling(id: string) {
+    // SSE 多次失败后才降级轮询，并沿用同一 AbortController 生命周期。
     connection.value = "polling";
     clearTimer();
     timer = setTimeout(() => void poll(id), pollIntervalMs);
@@ -166,7 +171,7 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
       const value: unknown = JSON.parse(raw);
       if (isTaskDto(value)) return value;
     } catch {
-      // The stable API error below covers malformed JSON and invalid task data.
+      // 下面的稳定错误码会覆盖 JSON 损坏或任务数据不符合共享 Schema 的情况。
     }
     error.value = new ApiRequestError("任务事件未通过 API 契约校验", { code: "INVALID_TASK_EVENT" });
     return undefined;

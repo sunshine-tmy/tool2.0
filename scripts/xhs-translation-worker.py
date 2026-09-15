@@ -1,3 +1,4 @@
+# 中文模块说明：工程与 Worker 脚本，负责 本地 AI/翻译/配音 Worker 协议和进程服务
 from __future__ import annotations
 
 import asyncio

@@ -1,3 +1,4 @@
+<!-- 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载 -->
 <template>
   <section class="mask-editor">
     <div class="mask-toolbar">

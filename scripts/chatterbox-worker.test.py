@@ -1,3 +1,4 @@
+# 中文模块说明：测试 scripts/chatterbox-worker.test.py 中的稳定行为、边界条件和回归场景
 """Worker contract tests; uses a silent fake model, never downloads weights."""
 
 import importlib.util

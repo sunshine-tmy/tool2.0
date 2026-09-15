@@ -1,3 +1,4 @@
+<!-- 中文模块说明：视频文本前端模块，负责来源、进度、结果、历史和导出 -->
 <template>
   <ToolLayout>
     <section class="main-column video-text-main">

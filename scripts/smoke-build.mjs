@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：工程与 Worker 脚本，负责 构建产物启动、健康检查和传输冒烟
+ */
 import assert from "node:assert/strict";
 import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";

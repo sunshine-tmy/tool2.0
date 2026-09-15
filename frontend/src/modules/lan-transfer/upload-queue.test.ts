@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/lan-transfer/upload-queue.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { describe, expect, it } from "vitest";
 import { removeUploadItem } from "./upload-queue";
 import type { UploadItem } from "./types";

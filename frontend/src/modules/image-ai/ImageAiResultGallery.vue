@@ -1,3 +1,4 @@
+<!-- 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载 -->
 <template>
   <section v-if="props.task.results.length" class="result-panel image-ai-results">
     <div class="panel-heading">

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 中文模块说明：工程与 Worker 脚本，负责 开发、清理、构建或发布自动化
 """Small, JSON-driven Edge-TTS adapter used by the local toolbox backend."""
 
 from __future__ import annotations

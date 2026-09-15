@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端数据库层，负责 SQLite 连接、Schema、事务和领域 Repository 能力
+ */
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -65,6 +68,8 @@ export class ToolboxDatabase {
       fileMustExist: false
     });
     try {
+      // WAL 提升读写并发；外键和 trusted_schema 关闭不可信扩展路径，busy_timeout
+      // 为本机短暂并发写入留出等待窗口，所有迁移完成后才允许应用继续启动。
       this.connection.pragma("journal_mode = WAL");
       this.connection.pragma("foreign_keys = ON");
       this.connection.pragma("busy_timeout = 5000");
@@ -100,6 +105,7 @@ export class ToolboxDatabase {
   }
 
   transaction<T>(operation: () => T): T {
+    // 领域服务通过此入口提交多表变更，保证元数据和关联记录不会半成功。
     return this.connection.transaction(operation)();
   }
 
@@ -138,6 +144,7 @@ export class ToolboxDatabase {
   }
 
   upsertFile(file: FileMetadata) {
+    // 文件表只保存相对路径和可验证摘要；媒体本身仍在 storage，避免 SQLite 膨胀。
     const relativePath = normalizeRelativePath(file.relativePath);
     if (!file.id || !file.entityKind || !file.entityId || !relativePath) {
       throw new Error("Invalid file metadata identity");
@@ -335,6 +342,7 @@ export class ToolboxDatabase {
   }
 
   private migrate() {
+    // 迁移采用幂等 DDL，并保留 payload_json 作为旧版本恢复载荷；升级失败会在构造函数中关闭连接并拒绝启动。
     this.connection.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
@@ -497,6 +505,7 @@ export class ToolboxDatabase {
   }
 
   private recoverInterruptedTasks() {
+    // 进程重启后 queued/processing 任务可能已失去 Worker 上下文，统一标记为可显式重试的 INTERRUPTED。
     const now = new Date().toISOString();
     this.transaction(() => {
       for (const { table, statuses } of INTERRUPTED_WORK) {

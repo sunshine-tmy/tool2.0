@@ -1,3 +1,4 @@
+<!-- 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载 -->
 <template>
   <div class="compare-panel" :class="{ 'is-compact': compact }">
     <div class="compare-stage" :class="{ 'is-compact': compact }">

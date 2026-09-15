@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：前端应用层，负责 路由、懒加载和页面导航配置
+ */
 import { createRouter, createWebHistory } from "vue-router";
 import ToolHomePage from "../pages/ToolHomePage.vue";
 

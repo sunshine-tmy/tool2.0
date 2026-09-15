@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端数据库层，负责 SQLite 连接、Schema、事务和领域 Repository 能力
+ */
 import fs from "node:fs";
 import { getConfig } from "../config";
 import {

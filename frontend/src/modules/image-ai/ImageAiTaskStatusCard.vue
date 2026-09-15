@@ -1,3 +1,4 @@
+<!-- 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载 -->
 <template>
   <div v-if="props.task" class="ai-task-card">
     <div class="ai-task-heading">

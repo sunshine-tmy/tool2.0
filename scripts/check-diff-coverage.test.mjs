@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 scripts/check-diff-coverage.test.mjs 中的稳定行为、边界条件和回归场景
+ */
 import { strict as assert } from "node:assert";
 import { describe, it } from "node:test";
 import path from "node:path";

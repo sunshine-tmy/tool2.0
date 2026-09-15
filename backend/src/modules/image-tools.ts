@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：图片工具领域，负责压缩、格式校验和输出文件
+ */
 import type { FastifyInstance } from "fastify";
 import { ApiFailureSchema, ImageCompressResultSchema, apiSuccessSchema, fail, ok } from "@toolbox/shared";
 import type { AppConfig } from "../config";

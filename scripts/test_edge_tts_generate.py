@@ -1,3 +1,4 @@
+# 中文模块说明：测试 scripts/test_edge_tts_generate.py 中的稳定行为、边界条件和回归场景
 import importlib.util
 import io
 import json

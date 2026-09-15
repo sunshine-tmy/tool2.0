@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/image-compress/image-id.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { describe, expect, it, vi } from "vitest";
 import { createImageItemId } from "./image-id";
 

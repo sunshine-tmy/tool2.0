@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：Chatterbox 配音领域，负责批次、音色、任务队列和音频产物
+ */
 export type ChatterboxBatchErrorStatus = 400 | 404 | 409 | 413 | 429;
 
 export class BatchInputError extends Error {

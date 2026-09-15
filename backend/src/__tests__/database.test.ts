@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 backend/src/__tests__/database.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

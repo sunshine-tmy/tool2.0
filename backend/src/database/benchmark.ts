@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端数据库层，负责 SQLite 领域查询基准和性能预算验证
+ */
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

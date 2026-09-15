@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：项目工程文件，负责 backend/vitest.config.ts
+ */
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 

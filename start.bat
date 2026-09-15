@@ -1,4 +1,5 @@
 @echo off
+REM 中文模块说明：项目工程文件，负责 start.bat
 chcp 65001 >nul
 title Ecommerce Toolbox - Web and Local AI Workers
 set "ROOT=%~dp0"

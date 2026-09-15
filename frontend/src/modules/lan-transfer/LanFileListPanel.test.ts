@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/lan-transfer/LanFileListPanel.test.ts 中的稳定行为、边界条件和回归场景
+ */
 // @vitest-environment happy-dom
 
 import { mount } from "@vue/test-utils";

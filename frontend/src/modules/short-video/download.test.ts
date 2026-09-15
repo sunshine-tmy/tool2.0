@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/short-video/download.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { describe, expect, it } from "vitest";
 import { createShortVideoDownloadName, createShortVideoDownloadUrl, triggerShortVideoDownload } from "./download";
 import type { ShortVideoMedia } from "@toolbox/shared";

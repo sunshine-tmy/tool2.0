@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端数据库层，负责 跨领域文件摘要、大小、路径和媒体类型登记
+ */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";

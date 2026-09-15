@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互
+ */
 import {
   XhsArchiveItemSchema,
   XhsArchiveListResponseSchema,

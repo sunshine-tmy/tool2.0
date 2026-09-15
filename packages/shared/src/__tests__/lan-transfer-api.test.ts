@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 packages/shared/src/__tests__/lan-transfer-api.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
 import { LanFileListSchema, LanNoteSchema, LanTransferInfoSchema, LanUploadStatusSchema } from "../index";

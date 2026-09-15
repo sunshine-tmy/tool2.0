@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 中文模块说明：工程与 Worker 脚本，负责 本地 AI/翻译/配音 Worker 协议和进程服务
 """Loopback-only Chatterbox Multilingual V3 inference worker."""
 
 from __future__ import annotations

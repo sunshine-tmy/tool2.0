@@ -1,4 +1,5 @@
 @echo off
+REM 中文模块说明：项目工程文件，负责 package-source.bat
 chcp 65001 >nul
 title Ecommerce Toolbox - Package Source Code
 set "ROOT=%~dp0"

@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载
+ */
 import { ImageAiHealthSchema, ImageAiTaskSchema, WatermarkSuggestionResponseSchema } from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
 import { resolveBackendUrl } from "../../config/runtime";

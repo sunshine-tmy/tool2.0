@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 packages/shared/src/__tests__/video-text.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { describe, expect, it } from "vitest";
 import { analyzeVideoText, parseTranscriptCues } from "../video-text";
 import { getToolById } from "../tools";

@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端应用层，负责 Fastify 插件、路由、错误处理和健康检查装配
+ */
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";

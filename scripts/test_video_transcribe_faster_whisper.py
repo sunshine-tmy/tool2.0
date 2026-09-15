@@ -1,3 +1,4 @@
+# 中文模块说明：测试 scripts/test_video_transcribe_faster_whisper.py 中的稳定行为、边界条件和回归场景
 import importlib.util
 import pathlib
 import unittest

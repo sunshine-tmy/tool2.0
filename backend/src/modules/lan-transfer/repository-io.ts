@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：局域网文件与图文传输领域，负责上传、分片、预览、下载和清理
+ */
 import fsp from "node:fs/promises";
 
 export async function ensureJsonIndex(indexPath: string) {

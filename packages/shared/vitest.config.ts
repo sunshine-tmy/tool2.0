@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：项目工程文件，负责 packages/shared/vitest.config.ts
+ */
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({

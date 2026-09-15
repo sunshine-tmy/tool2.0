@@ -1,3 +1,4 @@
+<!-- 中文模块说明：配音前端模块，负责 Edge-TTS 与 Chatterbox 的编辑、任务和音色交互 -->
 <template>
   <section class="edge-tts-workbench chatterbox-workbench">
     <div class="edge-tts-editor chatterbox-editor batch-editor">

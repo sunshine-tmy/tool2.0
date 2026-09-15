@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/services/admin-session.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminSessionSchema, EmptyResultSchema } from "@toolbox/shared";
 import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "./admin-session";

@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/edge-tts/chatterbox-segment-parser.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { describe, expect, it } from "vitest";
 import { parseChatterboxSegments } from "./chatterbox-segment-parser";
 

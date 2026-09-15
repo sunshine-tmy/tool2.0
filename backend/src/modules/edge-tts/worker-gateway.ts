@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：Edge-TTS 配音领域，负责任务、Worker 网关、文件和队列
+ */
 import fsp from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";

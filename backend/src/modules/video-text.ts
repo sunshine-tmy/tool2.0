@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：视频文本分析领域，负责上传、转写任务、历史和导出
+ */
 import fsp from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";

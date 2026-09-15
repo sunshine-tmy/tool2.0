@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 backend/src/__tests__/remote-fetch.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { describe, expect, it, vi } from "vitest";
 import {
   assertPublicRemoteUrl,

@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：前端应用层，负责 统一 HTTP 请求、Schema 解码、取消和错误映射
+ */
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { ApiFailureSchema, apiSuccessSchema, type ApiResponse } from "@toolbox/shared";
 import type { Static, TSchema } from "@sinclair/typebox";
@@ -52,6 +55,8 @@ const api = axios.create({
   withCredentials: true
 });
 let adminCsrfToken: string | undefined;
+
+// 写请求统一从当前管理员会话注入 CSRF Header；Cookie 由浏览器以 HttpOnly 方式维护。
 
 export function setAdminCsrfToken(token: string | undefined) {
   adminCsrfToken = token;
@@ -165,6 +170,7 @@ function withWriteSecurity(config?: AxiosRequestConfig): AxiosRequestConfig {
 }
 
 function unwrapResponse<T extends TSchema>(data: unknown, schema: T, status?: number): Static<T> {
+  // 先识别后端统一错误信封，再验证成功信封和业务 data，禁止调用方直接消费未经校验的 JSON。
   if (isBackendFailure(data)) {
     throw new ApiRequestError(data.message, {
       code: data.error.code,
@@ -186,9 +192,8 @@ function unwrapResponse<T extends TSchema>(data: unknown, schema: T, status?: nu
 }
 
 /**
- * Convert an API failure into a stable, user-facing message. Callers should
- * use this at UI boundaries so error codes, request IDs, cancellation and
- * retry guidance are presented consistently across tools.
+ * 将 API 失败转换为稳定的用户提示。
+ * 页面边界统一调用此函数，以便在所有工具中一致展示错误码、请求 ID、取消状态和重试建议。
  */
 export function describeApiError(error: unknown, fallbackMessage = "请求失败"): ApiErrorPresentation {
   const normalized = normalizeApiError(error, fallbackMessage);

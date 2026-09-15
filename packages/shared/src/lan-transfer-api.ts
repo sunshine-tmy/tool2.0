@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：共享契约层，负责跨前后端复用的类型、Schema、响应和领域常量
+ */
 import { Type, type Static } from "@sinclair/typebox";
 
 const LanEntityIdSchema = Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" });

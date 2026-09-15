@@ -1,3 +1,4 @@
+<!-- 中文模块说明：图片压缩前端模块，负责上传、压缩参数和结果展示 -->
 <template>
   <ToolLayout>
     <section class="main-column image-compress-main">

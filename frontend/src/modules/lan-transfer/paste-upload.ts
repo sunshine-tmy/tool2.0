@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：局域网传输前端模块，负责文件、图文、分片上传和批量管理
+ */
 type ClipboardFiles = { files?: ArrayLike<File> | null } | null | undefined;
 
 export function filesFromClipboard(data: ClipboardFiles) {

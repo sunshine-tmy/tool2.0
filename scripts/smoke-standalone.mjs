@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：工程与 Worker 脚本，负责 构建产物启动、健康检查和传输冒烟
+ */
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";

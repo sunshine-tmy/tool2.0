@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：局域网文件与图文传输领域，负责上传、分片、预览、下载和清理
+ */
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { FastifyInstance } from "fastify";
 import {

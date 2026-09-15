@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：小红书归档领域，负责获取、媒体、翻译、运行时和恢复
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";

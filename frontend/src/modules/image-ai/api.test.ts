@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 frontend/src/modules/image-ai/api.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ImageAiTaskSchema } from "@toolbox/shared";
 import { imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";

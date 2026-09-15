@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：图片压缩前端模块，负责上传、压缩参数和结果展示
+ */
 import type { AxiosProgressEvent } from "axios";
 import { ImageCompressResultSchema, type ImageCompressResult } from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";

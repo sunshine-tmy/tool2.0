@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：测试 backend/src/__tests__/worker-client.test.ts 中的稳定行为、边界条件和回归场景
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../config";
 import { createChatterboxWorkerClient } from "../modules/chatterbox/worker-client";

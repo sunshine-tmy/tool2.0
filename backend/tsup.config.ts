@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：项目工程文件，负责 backend/tsup.config.ts
+ */
 import { defineConfig } from "tsup";
 
 export default defineConfig({

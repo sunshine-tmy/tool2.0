@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：项目工程文件，负责 playwright.config.ts
+ */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

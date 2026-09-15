@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端应用层，负责 后端公共服务、配置或基础设施能力
+ */
 import path from "node:path";
 import fs from "node:fs";
 import { execFile } from "node:child_process";

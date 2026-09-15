@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：后端应用层，负责 后端公共服务、配置或基础设施能力
+ */
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 import { Readable, Transform } from "node:stream";
@@ -11,9 +14,8 @@ export type AddressResolver = (hostname: string) => Promise<ResolvedAddress[]>;
 export type RemoteFetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 /**
- * Limits only the time spent establishing a remote request and receiving its
- * response headers.  Do not leave the abort signal attached to a response body:
- * that would terminate a valid long-running media download after the timeout.
+ * 只限制建立远程连接和接收响应头的时间。
+ * 不要把超时信号继续绑定到响应 body，否则长时间媒体下载会在响应头超时后被误中止。
  */
 export async function fetchRemoteResponse(
   remoteFetch: RemoteFetch,
@@ -46,6 +48,7 @@ export function createRemoteFetch(
   const resolver = options.resolver ?? resolveAllAddresses;
   const maxRedirects = options.maxRedirects ?? 3;
   const injectedFetch = options.fetchImpl ?? (globalThis.fetch !== nativeGlobalFetch ? globalThis.fetch : undefined);
+  // 每次解析后把首个已验证地址固定到 Agent，避免 DNS 校验地址和实际连接地址发生漂移。
   const pinnedAddresses = new Map<string, ResolvedAddress>();
   const dispatcher = injectedFetch
     ? undefined
@@ -65,6 +68,7 @@ export function createRemoteFetch(
   return async (input, init = {}) => {
     let current = new URL(input);
 
+    // 重定向的每一跳都重新解析、重新做公网地址检查，并限制最大跳数。
     for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
       const addresses = await resolvePublicRemoteUrl(current, resolver);
       pinnedAddresses.set(normalizeHostname(current.hostname), addresses[0]);
@@ -145,9 +149,8 @@ export function limitedResponseStream(response: Response, maxBytes: number) {
       callback(null, chunk);
     }
   });
-  // Errors from the Web-stream source are not forwarded by Node's .pipe().
-  // Forward them to the stream handed to Fastify so they can be handled by the
-  // request lifecycle instead of becoming an unhandled process-level error.
+  // Node 的 .pipe() 不会自动转发 Web Stream 的错误；显式转发给 Fastify，
+  // 让请求生命周期处理异常，避免升级成未捕获的进程级错误。
   source.once("error", (error) => limiter.destroy(error));
   return source.pipe(limiter);
 }

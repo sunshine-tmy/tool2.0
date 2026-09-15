@@ -1,3 +1,6 @@
+/**
+ * 中文模块说明：共享契约层，负责跨前后端复用的类型、Schema、响应和领域常量
+ */
 export const lanFileCategories = ["image", "video", "audio", "text", "pdf", "archive", "document", "other"] as const;
 
 export type LanFileCategory = (typeof lanFileCategories)[number];
