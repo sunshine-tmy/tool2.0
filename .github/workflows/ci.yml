@@ -179,7 +179,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      STORAGE_ROOT: ${{ runner.temp }}/toolbox-acceptance-storage
+      STORAGE_ROOT: ${{ github.workspace }}/.acceptance-storage
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
