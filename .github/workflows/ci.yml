@@ -36,6 +36,43 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm coverage
       - run: pnpm db:benchmark
+      - name: Upload LCOV reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-coverage
+          path: |
+            backend/coverage/lcov.info
+            frontend/coverage/lcov.info
+            packages/shared/coverage/lcov.info
+          if-no-files-found: error
+
+  diff-coverage:
+    if: ${{ vars.ENABLE_DIFF_COVERAGE == 'true' && github.event_name == 'pull_request' }}
+    needs: [node-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: node-coverage
+          path: .coverage
+      - uses: pnpm/action-setup@v4
+        with: { version: "11.7.0" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - name: Check changed-line coverage
+        env:
+          DIFF_COVERAGE_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pnpm coverage:diff \
+            --base "$DIFF_COVERAGE_BASE" \
+            --threshold 90 \
+            --lcov .coverage/backend/coverage/lcov.info \
+            --lcov .coverage/frontend/coverage/lcov.info \
+            --lcov .coverage/packages/shared/coverage/lcov.info
 
   e2e:
     runs-on: ubuntu-latest
@@ -138,7 +175,7 @@ jobs:
 
   enterprise-acceptance:
     if: ${{ always() }}
-    needs: [static, node-tests, e2e, python, build-and-audit, distribution-smoke]
+    needs: [static, node-tests, e2e, python, build-and-audit, distribution-smoke, diff-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -160,6 +197,9 @@ jobs:
           test "${{ needs.python.result }}" = success
           test "${{ needs.build-and-audit.result }}" = success
           test "${{ needs.distribution-smoke.result }}" = success
+          if [[ "${{ vars.ENABLE_DIFF_COVERAGE }}" == "true" && "${{ github.event_name }}" == "pull_request" ]]; then
+            test "${{ needs.diff-coverage.result }}" = success
+          fi
       - run: git diff --check
       - run: pnpm db:migrate --dry-run
       - run: pnpm db:migrate
