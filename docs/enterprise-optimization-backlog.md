@@ -50,7 +50,7 @@
 
 | ID  | 状态 | 任务                                              | 依赖     | 验收重点                                                                                     |
 | --- | ---- | ------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
-| B01 | TODO | 接入 Fastify TypeBox 类型提供器                   | 无       | Schema 同时生成路由输入输出类型，逐步删除手工泛型和重复 DTO                                  |
+| B01 | DONE | 接入 Fastify TypeBox 类型提供器                   | 无       | Schema 同时生成路由输入输出类型，逐步删除手工泛型和重复 DTO                                  |
 | B02 | TODO | 补齐系统、图片、视频、短视频和维护接口响应 Schema | B01      | 所有 JSON 状态码具备成功/失败 Schema 和契约测试                                              |
 | B03 | TODO | 补齐 LAN 文件、图文和分片接口 Schema              | B01、A02 | LAN 全部 JSON 路由具备请求、响应和错误契约                                                   |
 | B04 | TODO | 补齐 Edge-TTS 与 Chatterbox 剩余 Schema           | B01      | 主任务、批次、音色及失败响应均由共享 Schema 导出                                             |
@@ -144,4 +144,5 @@
 | A03     | DONE                | 2026-09-14 | `[A03]`   | 生命周期、Worker 退出及受影响模块定向测试 43 项                             | `pnpm check` 通过 | live/ready/API、信号关闭与超时强退   | SSE、队列、计时器、Worker、数据库纳入关闭链路           |
 | A04     | DONE                | 2026-09-15 | `[A04]`   | `lan-transfer.test.ts` 28 项；SQLite 审计动作断言                           | `pnpm check` 通过 | live/ready、上传下载删除清理接口     | 旧 `audit.jsonl` 内容保持不变                           |
 | A05     | DONE                | 2026-09-15 | `[A05]`   | 配额及模块定向测试 50 项                                                    | `pnpm check` 通过 | live/ready、LAN/AI/配音/归档接口     | 稳定 `RATE_LIMIT_EXCEEDED`/`CONCURRENCY_LIMIT_EXCEEDED` |
+| B01     | DONE                | 2026-09-15 | `[B01]`   | `lan-transfer.test.ts` 28 项；后端 TypeScript 类型检查                      | `pnpm check` 通过 | live/ready、LAN 信息接口             | LAN 请求体、查询和路径参数由 TypeBox Schema 直接推导    |
 | F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                    | 当前大规模重构合并形成新基线后启用                      |

@@ -17,11 +17,7 @@ type LanNoteImageReader = {
   imagePath(storedName: string): string;
 };
 
-export async function getFileOr404(
-  store: LanFileReader,
-  request: FastifyRequest<{ Params: LanIdParams }>,
-  reply: FastifyReply
-) {
+export async function getFileOr404(store: LanFileReader, request: { params: LanIdParams }, reply: FastifyReply) {
   const { id } = request.params;
   const file = await store.get(id);
   if (!file) {
