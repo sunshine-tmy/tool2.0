@@ -15,6 +15,7 @@ export const router = createRouter({
     {
       path: "/tools/image-compress",
       name: "image-compress",
+      // 业务页面按路由懒加载，首屏只下载首页和布局所需代码。
       component: () => import("../modules/image-compress/page.vue")
     },
     {

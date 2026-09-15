@@ -4,19 +4,20 @@
 import { onScopeDispose } from "vue";
 
 /**
- * Owns one AbortController for a component/composable scope.
+ * 为一个组件或 composable 创建独立的 AbortController。
  *
- * Requests started by a page can share the returned signal. Vue disposes the
- * scope on route changes and component unmounts, which makes cancellation
- * deterministic and keeps late responses from outliving their owner.
+ * 页面发起的请求可以共享同一个 signal；Vue 路由切换或组件卸载时会销毁作用域，
+ * 从而确定性地中止请求，避免迟到的响应继续修改已经离开的页面。
  */
 export function useRequestScope() {
   const controller = new AbortController();
 
   const abort = () => {
+    // abort() 允许被页面卸载钩子和业务取消按钮重复调用，因此需要保持幂等。
     if (!controller.signal.aborted) controller.abort();
   };
 
+  // 将控制器绑定到当前 Vue effect scope，调用方无需单独记忆卸载时机。
   onScopeDispose(abort);
 
   return {
