@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 
-const DATABASE_SCHEMA_VERSION = 3;
+const DATABASE_SCHEMA_VERSION = 4;
 
 type StoredEntity = {
   id: string;
@@ -132,6 +132,47 @@ export class ToolboxDatabase {
              payload_json = excluded.payload_json, updated_at = excluded.updated_at`
         )
         .run(values);
+    } else if (table === "chatterbox_items") {
+      const payload = asRecord(entity.payload);
+      const batchId = textValue(payload.batchId ?? payload.batch_id);
+      const itemOrder = numberValue(payload.order ?? payload.item_order);
+      this.connection
+        .prepare(
+          `INSERT INTO chatterbox_items (id, batch_id, item_order, status, payload_json, created_at, updated_at)
+           VALUES (@id, @batchId, @itemOrder, @status, @payloadJson, @createdAt, @updatedAt)
+           ON CONFLICT(id) DO UPDATE SET batch_id = excluded.batch_id, item_order = excluded.item_order,
+             status = excluded.status, payload_json = excluded.payload_json, updated_at = excluded.updated_at`
+        )
+        .run({ ...values, batchId, itemOrder });
+    } else if (table === "xhs_media" || table === "translations") {
+      const payload = asRecord(entity.payload);
+      const archiveId = textValue(payload.archiveId ?? payload.archive_id);
+      const mediaIndex = table === "xhs_media" ? numberValue(payload.index ?? payload.mediaIndex) : undefined;
+      const columnList = table === "xhs_media" ? "archive_id, media_index, " : "archive_id, ";
+      const valueList = table === "xhs_media" ? "@archiveId, @mediaIndex, " : "@archiveId, ";
+      const relationUpdate =
+        table === "xhs_media"
+          ? "archive_id = excluded.archive_id, media_index = excluded.media_index, "
+          : "archive_id = excluded.archive_id, ";
+      this.connection
+        .prepare(
+          `INSERT INTO ${table} (id, ${columnList}status, payload_json, created_at, updated_at)
+           VALUES (@id, ${valueList}@status, @payloadJson, @createdAt, @updatedAt)
+           ON CONFLICT(id) DO UPDATE SET ${relationUpdate}status = excluded.status,
+             payload_json = excluded.payload_json, updated_at = excluded.updated_at`
+        )
+        .run({ ...values, archiveId, mediaIndex });
+    } else if (table === "chatterbox_batches") {
+      const payload = asRecord(entity.payload);
+      const voiceId = textValue(payload.voiceId ?? payload.voice_id);
+      this.connection
+        .prepare(
+          `INSERT INTO chatterbox_batches (id, voice_id, status, payload_json, created_at, updated_at)
+           VALUES (@id, @voiceId, @status, @payloadJson, @createdAt, @updatedAt)
+           ON CONFLICT(id) DO UPDATE SET voice_id = excluded.voice_id, status = excluded.status,
+             payload_json = excluded.payload_json, updated_at = excluded.updated_at`
+        )
+        .run({ ...values, voiceId });
     } else {
       this.connection
         .prepare(
@@ -264,6 +305,41 @@ export class ToolboxDatabase {
         CREATE INDEX IF NOT EXISTS ${table}_status_created_idx ON ${table}(status, created_at DESC);
       `);
     }
+    this.migrateDomainRelations();
+    this.connection
+      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+      .run(DATABASE_SCHEMA_VERSION, new Date().toISOString());
+  }
+
+  private migrateDomainRelations() {
+    const columns: Array<{ table: string; name: string; definition: string }> = [
+      { table: "xhs_media", name: "archive_id", definition: "TEXT REFERENCES xhs_archives(id) ON DELETE CASCADE" },
+      { table: "xhs_media", name: "media_index", definition: "INTEGER" },
+      { table: "translations", name: "archive_id", definition: "TEXT REFERENCES xhs_archives(id) ON DELETE CASCADE" },
+      {
+        table: "chatterbox_batches",
+        name: "voice_id",
+        definition: "TEXT REFERENCES chatterbox_voices(id) ON DELETE SET NULL"
+      },
+      {
+        table: "chatterbox_items",
+        name: "batch_id",
+        definition: "TEXT REFERENCES chatterbox_batches(id) ON DELETE CASCADE"
+      },
+      { table: "chatterbox_items", name: "item_order", definition: "INTEGER" }
+    ];
+    for (const column of columns) {
+      const existing = this.connection.pragma(`table_info(${column.table})`) as Array<{ name: string }>;
+      if (!existing.some((entry) => entry.name === column.name)) {
+        this.connection.exec(`ALTER TABLE ${column.table} ADD COLUMN ${column.name} ${column.definition}`);
+      }
+    }
+    this.connection.exec(`
+      CREATE INDEX IF NOT EXISTS xhs_media_archive_idx ON xhs_media(archive_id, media_index);
+      CREATE INDEX IF NOT EXISTS translations_archive_idx ON translations(archive_id);
+      CREATE INDEX IF NOT EXISTS chatterbox_batches_voice_idx ON chatterbox_batches(voice_id);
+      CREATE INDEX IF NOT EXISTS chatterbox_items_batch_order_idx ON chatterbox_items(batch_id, item_order);
+    `);
     this.connection
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run(DATABASE_SCHEMA_VERSION, new Date().toISOString());
@@ -380,6 +456,18 @@ const KIND_TABLE: Record<string, (typeof DOMAIN_TABLES)[number] | "entities"> = 
 
 function tableForKind(kind: string) {
   return KIND_TABLE[kind] ?? "entities";
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function textValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 
 function deserializeEntity(row: EntityRow): StoredEntity {

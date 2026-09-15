@@ -67,7 +67,7 @@ describe("toolbox database", () => {
       source: "xhs-archive/index.json",
       value: { version: 2, items: [{ id: "note-1" }] }
     });
-    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 3 });
+    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 4 });
     expect(upgraded.connection.pragma("table_info(entities)")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "kind", pk: 1 }),
@@ -209,7 +209,7 @@ describe("toolbox database", () => {
     const { database, migration } = await openToolboxDatabase(config);
     expect(migration).toMatchObject({ migrated: true, atomicSwitch: true });
     expect(database.hasCompletedLegacyMigration()).toBe(true);
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 3 });
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 4 });
     database.close();
 
     expect(await exists(databasePath)).toBe(true);
@@ -236,6 +236,42 @@ describe("toolbox database", () => {
 
     await expect(openToolboxDatabase(getConfig())).rejects.toThrow();
     expect(await fsp.readFile(databasePath)).toEqual(corruptContents);
+  });
+
+  it("creates v4 domain relationships and cascades child metadata safely", async () => {
+    const databasePath = await prepareDatabasePath();
+    const database = new ToolboxDatabase(databasePath);
+    const now = new Date().toISOString();
+    database.upsert({
+      id: "batch-1",
+      kind: "chatterbox-batch",
+      status: "queued",
+      payload: { id: "batch-1", status: "queued", createdAt: now, updatedAt: now },
+      createdAt: now,
+      updatedAt: now
+    });
+    database.upsert({
+      id: "item-1",
+      kind: "chatterbox-item",
+      status: "queued",
+      payload: { id: "item-1", batchId: "batch-1", order: 1, status: "queued" },
+      createdAt: now,
+      updatedAt: now
+    });
+
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 4 });
+    expect(database.connection.pragma("table_info(chatterbox_items)")).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "batch_id" }),
+        expect.objectContaining({ name: "item_order" })
+      ])
+    );
+    expect(database.connection.pragma("foreign_key_list(chatterbox_items)")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ table: "chatterbox_batches", from: "batch_id" })])
+    );
+    database.remove("chatterbox-batch", "batch-1");
+    expect(database.get("chatterbox-item", "item-1")).toBeUndefined();
+    database.close();
   });
 });
 

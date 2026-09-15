@@ -10,7 +10,7 @@
 - 测试：共享 41、后端 123、前端 82、Python 7；在线测试跳过 1
 - 覆盖率（行/分支）：共享 93.10%/70.39%，后端 78.79%/67.43%，前端 88.91%/78.04%
 - 生产依赖：无已知漏洞
-- SQLite：完整性正常、无外键错误、Schema v3
+- SQLite：完整性正常、无外键错误、Schema v4（D01 已完成）
 - 10,000 条数据基准：列表 P95 16.73 ms，详情 P95 0.04 ms
 - 仓库：无 standalone 业务源码副本和 Python 安装二进制
 - 当前主要大文件：LAN 页面 868 行、Edge-TTS 后端 748 行、Chatterbox composable 730 行、Chatterbox 面板 727 行
@@ -75,7 +75,7 @@
 
 | ID  | 状态 | 任务                    | 依赖     | 验收重点                                                                  |
 | --- | ---- | ----------------------- | -------- | ------------------------------------------------------------------------- |
-| D01 | TODO | 建立 Schema v4 领域关系 | C01–C06  | 为小红书媒体/翻译、Chatterbox 分段增加关联列和外键；保留旧 `payload_json` |
+| D01 | DONE | 建立 Schema v4 领域关系 | C01–C06  | 为小红书媒体/翻译、Chatterbox 分段增加关联列和外键；保留旧 `payload_json` |
 | D02 | TODO | 启用统一文件元数据表    | D01      | 各领域登记相对路径、大小、摘要、媒体类型和所有者                          |
 | D03 | TODO | 抽取原子文件提交网关    | D02      | 统一同盘 staging、校验、fsync、原子移动和数据库事务；失败清理 staging     |
 | D04 | TODO | 扩展启动一致性检查      | D02、D03 | 覆盖所有领域；异常文件移入隔离区并写审计，不永久删除                      |
@@ -159,4 +159,5 @@
 | C06     | DONE                | 2026-09-15 | `[C06]`   | `pnpm --filter backend test -- chatterbox`（9 项）                          | `pnpm check` 通过 | live/ready、批次生成/重生成/排序/删除/取消/导出流程通过    | 下载导出与批次项操作独立；批处理入口 186 行，接口路径和文件产物保持不变              |
 | C07     | DONE                | 2026-09-15 | `[C07]`   | `pnpm --filter backend test -- short-video`（12 项）                        | `pnpm check` 通过 | live/ready、短视频解析/重试/缓存/下载代理流程通过          | Provider、缓存和下载代理独立；SSRF 校验、重试及 TikTok 兜底行为保持不变              |
 | C08     | DONE                | 2026-09-15 | `[C08]`   | `pnpm --filter backend test -- image-tools`（5 项）                         | `pnpm check` 通过 | live/ready、图片压缩/原子输出/批量 ZIP 下载流程通过        | multipart 输入、Sharp 压缩、原子 staging 输出和 ZIP 网关独立；接口与字节结果保持不变 |
+| D01     | DONE                | 2026-09-15 | `[D01]`   | `pnpm --filter backend test -- database`（7 项）                            | `pnpm check` 通过 | live/ready、Schema v3→v4、外键完整性和级联行为通过         | 小红书媒体/翻译、Chatterbox 批次/分段/音色关系列和索引启用；旧 payload 保留          |
 | F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                                          | 当前大规模重构合并形成新基线后启用                                                   |
