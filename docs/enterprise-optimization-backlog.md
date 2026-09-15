@@ -13,7 +13,7 @@
 - SQLite：完整性正常、无外键错误、Schema v5（D01/D02 已完成）
 - 10,000 条数据基准：列表 P95 16.73 ms，详情 P95 0.04 ms
 - 仓库：无 standalone 业务源码副本和 Python 安装二进制
-- 当前主要大文件：LAN 页面容器 555 行、Edge-TTS 后端 748 行、Chatterbox 编辑器表单 300 行、Chatterbox 批次操作 composable 333 行
+- 当前主要大文件：LAN 页面容器 555 行、Edge-TTS 后端 748 行、小红书页面容器 470 行、Chatterbox 编辑器表单 300 行
 
 原方案状态：P0 已完成；P1 主体完成，发布可复现性和 Release 发布待收尾；P2 SQLite 基线完成，领域关系、统一文件提交和部分模块分层未完成；P3 安全基线和 `/api/v1` 完成，完整契约、LAN 管理权限和审计统一未完成；P4 工具链和全局覆盖率完成，前端拆分、请求取消、E2E 和差异覆盖率未完成。
 
@@ -90,7 +90,7 @@
 | E03 | DONE | 拆分 LAN 页面                    | C02、C03 | 页面容器不超过 600 行，队列、分享信息和批量管理进入 composable/子组件     |
 | E04 | DONE | 拆分 Chatterbox composable       | C06      | 拆为编辑器、音色、任务事件和批次操作 composable；单文件不超过 400 行      |
 | E05 | DONE | 拆分 Chatterbox 展示面板         | E04      | 表单、进度、批次列表和详情弹窗独立；主面板不超过 500 行                   |
-| E06 | TODO | 完成小红书页面拆分               | C04      | 结果区和详情抽屉独立，页面不超过 600 行                                   |
+| E06 | DONE | 完成小红书页面拆分               | C04      | 结果区和详情抽屉独立，页面不超过 600 行                                   |
 | E07 | TODO | 拆分视频文本页面                 | E01      | 来源输入、任务进度、结果和历史独立，视觉与流程不变                        |
 | E08 | TODO | 拆分 AI 图片页面                 | E01      | 输入配置、预览、结果和下载区独立，Object URL 全部正确释放                 |
 | E09 | TODO | 收敛 ToolLayout 与全局样式       | E03–E08  | CSS 按基础、布局、组件和响应式分层，保持加载顺序和视觉快照                |
@@ -170,3 +170,4 @@
 | E03     | DONE                | 2026-09-15 | `[E03]`   | `pnpm --filter frontend test -- LanSharePanel LanUploadPanel`（2 项）                                                          | `pnpm check` 通过 | LAN 页面构建、后端 smoke 与页面面板行为测试通过                              | 页面容器 555 行；分享/访问、上传队列和文件批量操作分别移入子组件与 composable，路由和视觉流程不变      |
 | E04     | DONE                | 2026-09-15 | `[E04]`   | `pnpm --filter frontend test -- useChatterboxPanel chatterbox-api`（9 项）                                                     | `pnpm check` 通过 | Chatterbox 面板、音色、批次和任务事件回归通过                                | 编辑器 312 行、音色 113 行、批次 333 行、主 composable 120 行；保留原面板返回 API 和生成流程           |
 | E05     | DONE                | 2026-09-15 | `[E05]`   | `pnpm --filter frontend test -- ChatterboxCurrentBatch`（1 项）                                                                | `pnpm check` 通过 | 前端生产构建、bundle budget、构建 smoke 通过                                 | 面板拆为编辑器表单、当前进度、批次历史和详情弹窗；主面板 34 行；共享响应式上下文避免改变现有 props/API |
+| E06     | DONE                | 2026-09-15 | `[E06]`   | `pnpm --filter frontend test -- XhsResultPanel XhsDetailDrawer`（2 项）                                                        | `pnpm check` 通过 | 小红书前端构建、后端归档/翻译回归、构建 smoke 通过                           | 结果区和详情抽屉提取为受控子组件；页面容器 470 行；路径、任务流、视觉与现有数据格式保持不变            |

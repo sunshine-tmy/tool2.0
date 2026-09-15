@@ -19,56 +19,20 @@
         @login="loginAndRetry"
       />
 
-      <section v-if="current" class="workspace-panel result-panel">
-        <div class="result-head">
-          <div>
-            <n-tag :bordered="false" type="success">已存档</n-tag>
-            <h3>获取结果</h3>
-            <p>内容和媒体已保存到本机，可随时预览或下载。</p>
-          </div>
-          <div class="result-actions">
-            <n-button secondary @click="copyDescription"
-              ><template #icon><Copy :size="15" /></template>复制正文</n-button
-            >
-            <n-button secondary @click="copyCurrent('zh')">复制中文</n-button>
-            <n-button secondary :disabled="!current.translation" @click="copyCurrent('en')">复制英文</n-button>
-            <n-button secondary @click="copyCurrent('both')">复制中英双语</n-button>
-            <n-button secondary tag="a" :href="current.canonicalUrl" target="_blank"
-              ><template #icon><ExternalLink :size="15" /></template>原链接</n-button
-            >
-            <n-button secondary tag="a" :href="zipUrl(current.id)"
-              ><template #icon><PackageOpen :size="15" /></template>下载全部 ZIP</n-button
-            >
-            <n-button secondary :loading="refreshing" @click="refreshItem(current.id)"
-              ><template #icon><RefreshCw :size="15" /></template>重新获取</n-button
-            >
-            <n-button secondary @click="translateCurrent"
-              ><template #icon><Languages :size="15" /></template
-              >{{ current.translation?.status === "ready" ? "重新翻译" : "生成英文" }}</n-button
-            >
-            <n-button secondary :disabled="!current.translation" @click="editTranslation(current)">编辑英文</n-button>
-            <n-button v-if="hasEdited(current)" secondary @click="resetTranslation(current)">恢复机器翻译</n-button>
-          </div>
-        </div>
-        <div class="result-detail-layout">
-          <MediaGallery :item="current" />
-          <div class="drawer-meta result-meta">
-            <div class="drawer-facts">
-              <p>
-                <span>作者</span><strong>{{ current.author?.name || "未知" }}</strong>
-              </p>
-              <p>
-                <span>存档时间</span><strong>{{ formatDate(current.updatedAt) }}</strong>
-              </p>
-            </div>
-            <BilingualContent :item="current" />
-          </div>
-        </div>
-        <n-alert v-for="warning in current.warnings" :key="warning" type="warning" :bordered="false">{{
-          warning
-        }}</n-alert>
-      </section>
-
+      <XhsResultPanel
+        v-if="current"
+        :current="current"
+        :refreshing="refreshing"
+        :copy-description="copyDescription"
+        :copy-current="copyCurrent"
+        :zip-url="zipUrl"
+        :refresh-item="refreshItem"
+        :translate-current="translateCurrent"
+        :edit-translation="editTranslation"
+        :reset-translation="resetTranslation"
+        :has-edited="hasEdited"
+        :format-date="formatDate"
+      />
       <ArchiveListPanel
         v-model:keyword="keyword"
         v-model:type-filter="typeFilter"
@@ -86,42 +50,18 @@
         @page-change="loadArchives"
       />
 
-      <n-drawer v-model:show="drawerOpen" class="xhs-detail-drawer" :width="drawerWidth" placement="right">
-        <n-drawer-content
-          title="存档详情"
-          closable
-          body-class="xhs-detail-drawer-body"
-          body-content-class="xhs-detail-drawer-body-content"
-          footer-class="xhs-detail-drawer-footer"
-        >
-          <template v-if="detail">
-            <MediaGallery :item="detail" compact />
-            <div class="drawer-meta">
-              <div class="drawer-facts">
-                <p>
-                  <span>作者</span><strong>{{ detail.author?.name || "未知" }}</strong>
-                </p>
-                <p>
-                  <span>存档时间</span><strong>{{ formatDate(detail.updatedAt) }}</strong>
-                </p>
-              </div>
-              <BilingualContent :item="detail" compact />
-            </div>
-          </template>
-          <template #footer
-            ><div class="drawer-actions">
-              <n-button type="error" secondary @click="removeItem"
-                ><template #icon><Trash2 :size="15" /></template>删除存档</n-button
-              ><n-button v-if="detail" secondary @click="translateDetail"
-                ><template #icon><Languages :size="15" /></template>生成英文</n-button
-              ><n-button v-if="detail?.translation" secondary @click="editTranslation(detail)">编辑英文</n-button
-              ><n-button v-if="detail && hasEdited(detail)" secondary @click="resetTranslation(detail)"
-                >恢复机器翻译</n-button
-              ><n-button v-if="detail" tag="a" :href="zipUrl(detail.id)" type="primary">下载全部 ZIP</n-button>
-            </div></template
-          >
-        </n-drawer-content>
-      </n-drawer>
+      <XhsDetailDrawer
+        v-model:open="drawerOpen"
+        :width="drawerWidth"
+        :detail="detail"
+        :format-date="formatDate"
+        :remove-item="removeItem"
+        :translate-detail="translateDetail"
+        :edit-translation="editTranslation"
+        :reset-translation="resetTranslation"
+        :has-edited="hasEdited"
+        :zip-url="zipUrl"
+      />
       <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
     </section>
   </ToolLayout>
@@ -129,8 +69,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NAlert, NButton, NDrawer, NDrawerContent, NTag, useMessage } from "naive-ui";
-import { Copy, ExternalLink, Languages, PackageOpen, RefreshCw, Trash2 } from "lucide-vue-next";
+import { NAlert, useMessage } from "naive-ui";
 import {
   normalizeXhsText,
   parseXhsContentText,
@@ -143,8 +82,8 @@ import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
-import MediaGallery from "./MediaGallery.vue";
-import BilingualContent from "./BilingualContent.vue";
+import XhsDetailDrawer from "./XhsDetailDrawer.vue";
+import XhsResultPanel from "./XhsResultPanel.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { useRequestScope } from "../../composables/useRequestScope";
@@ -525,156 +464,5 @@ onBeforeUnmount(() => {
 }
 .license-note {
   margin-top: 0;
-}
-.result-panel {
-  padding: 22px;
-}
-.result-actions,
-.drawer-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.result-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  margin-bottom: 18px;
-}
-.result-head h3 {
-  margin: 8px 0 4px;
-  font-size: 22px;
-}
-.result-head p {
-  margin: 0;
-  color: #758096;
-}
-.result-detail-layout {
-  display: grid;
-  grid-template-columns: minmax(420px, 560px) minmax(320px, 1fr);
-  align-items: start;
-  gap: 32px;
-}
-.result-meta {
-  margin-top: 0;
-  padding: 20px;
-  border: 1px solid #e6ebf2;
-  border-radius: 14px;
-  background: #fbfcfe;
-}
-.full-copy {
-  white-space: pre-wrap;
-  line-height: 1.8;
-  color: #3f495a;
-}
-.topic-text {
-  color: #2563eb;
-  font-weight: 600;
-}
-.drawer-meta {
-  display: grid;
-  gap: 18px;
-  margin-top: 20px;
-}
-.drawer-copy-section {
-  display: grid;
-  gap: 8px;
-}
-.drawer-field-label {
-  width: fit-content;
-  padding: 3px 8px;
-  color: #2563eb;
-  border-radius: 6px;
-  background: #eff6ff;
-  font-size: 12px;
-  font-weight: 700;
-}
-.drawer-title {
-  margin: 0;
-  color: #172033;
-  font-size: 19px;
-  font-weight: 750;
-  line-height: 1.45;
-}
-.drawer-facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 13px 14px;
-  border: 1px solid #e7ebf1;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-.drawer-facts p {
-  display: grid;
-  gap: 3px;
-  margin: 0;
-}
-.drawer-facts span {
-  color: #8a94a6;
-  font-size: 11px;
-}
-.drawer-facts strong {
-  overflow: hidden;
-  color: #3f495a;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.drawer-description {
-  margin: 0;
-}
-.drawer-actions {
-  min-width: 0;
-  width: 100%;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-}
-.drawer-actions > :last-child {
-  margin-left: auto;
-}
-:global(.xhs-detail-drawer),
-:global(.xhs-detail-drawer .n-drawer-content),
-:global(.xhs-detail-drawer-body),
-:global(.xhs-detail-drawer-body-content),
-:global(.xhs-detail-drawer-footer) {
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-:global(.xhs-detail-drawer-body) {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  scrollbar-width: none;
-}
-:global(.xhs-detail-drawer-body::-webkit-scrollbar) {
-  display: none;
-  width: 0;
-  height: 0;
-}
-@media (max-width: 900px) {
-  .result-head {
-    flex-direction: column;
-  }
-  .result-actions {
-    flex-wrap: wrap;
-  }
-}
-@media (max-width: 1100px) {
-  .result-detail-layout {
-    grid-template-columns: 1fr;
-  }
-  .result-meta {
-    width: min(100%, 720px);
-    box-sizing: border-box;
-    margin: 0 auto;
-  }
-}
-@media (max-width: 640px) {
-  .result-panel {
-    padding: 16px;
-  }
 }
 </style>
