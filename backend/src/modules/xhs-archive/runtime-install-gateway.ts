@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { Readable } from "node:stream";
 import type { XhsRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { validateArchiveListing, validateExtractedDirectory } from "../../security/archive-safety";
 
 export const XHS_COMMIT = "afaf2fb459980fccef9eec74e304a39af2c49cab";
 const UV_VERSION = "0.8.17";
@@ -97,14 +98,24 @@ export class XhsRuntimeInstallGateway {
     if (fs.existsSync(binary)) return binary;
     const target = uvAsset();
     const archive = path.join(this.config.xhsRuntimeDir, target.endsWith(".zip") ? "uv.zip" : "uv.tar.gz");
-    await download(`https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${target}`, archive);
-    await run("tar", ["-xf", archive, "-C", this.config.xhsRuntimeDir], this.config.xhsInstallTimeoutMs);
-    const found = await findFile(this.config.xhsRuntimeDir, process.platform === "win32" ? "uv.exe" : "uv");
-    if (!found) throw new Error("uv 解压后未找到可执行文件");
-    if (found !== binary) await fsp.copyFile(found, binary);
-    if (process.platform !== "win32") await fsp.chmod(binary, 0o755);
-    await fsp.rm(archive, { force: true });
-    return binary;
+    const staging = path.join(this.config.xhsRuntimeDir, "uv-staging");
+    await fsp.rm(staging, { recursive: true, force: true });
+    await fsp.mkdir(staging, { recursive: true });
+    try {
+      await download(`https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${target}`, archive);
+      const listing = await run("tar", ["-tf", archive], this.config.xhsInstallTimeoutMs);
+      validateArchiveListing(listing);
+      await run("tar", ["-xf", archive, "-C", staging], this.config.xhsInstallTimeoutMs);
+      await validateExtractedDirectory(staging);
+      const found = await findFile(staging, process.platform === "win32" ? "uv.exe" : "uv");
+      if (!found) throw new Error("uv 解压后未找到可执行文件");
+      if (found !== binary) await fsp.copyFile(found, binary);
+      if (process.platform !== "win32") await fsp.chmod(binary, 0o755);
+      return binary;
+    } finally {
+      await fsp.rm(staging, { recursive: true, force: true });
+      await fsp.rm(archive, { force: true });
+    }
   }
 
   private async ensureSource() {
@@ -112,11 +123,17 @@ export class XhsRuntimeInstallGateway {
     if (fs.existsSync(path.join(sourceDir, "requirements.txt"))) return sourceDir;
     this.report("installing", 40, "下载 XHS-Downloader 2.7 固定源码");
     const archive = path.join(this.config.xhsRuntimeDir, "xhs-source.zip");
-    await download(`https://codeload.github.com/JoeanAmier/XHS-Downloader/zip/${XHS_COMMIT}`, archive);
-    await run("tar", ["-xf", archive, "-C", this.config.xhsRuntimeDir], this.config.xhsInstallTimeoutMs);
-    await fsp.rm(archive, { force: true });
-    await this.verifySource(sourceDir);
-    return sourceDir;
+    try {
+      await download(`https://codeload.github.com/JoeanAmier/XHS-Downloader/zip/${XHS_COMMIT}`, archive);
+      const listing = await run("tar", ["-tf", archive], this.config.xhsInstallTimeoutMs);
+      validateArchiveListing(listing);
+      await run("tar", ["-xf", archive, "-C", this.config.xhsRuntimeDir], this.config.xhsInstallTimeoutMs);
+      await validateExtractedDirectory(sourceDir);
+      await this.verifySource(sourceDir);
+      return sourceDir;
+    } finally {
+      await fsp.rm(archive, { force: true });
+    }
   }
 
   private async verifySource(sourceDir: string) {

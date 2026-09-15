@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { XhsTranslationRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import { terminateChildProcess } from "../../lifecycle/child-process";
+import { validateArchiveListing, validateExtractedDirectory } from "../../security/archive-safety";
 
 const MODEL_REVISION = "cf109095479db38d6df799875e34039d4938aaa6";
 const MODEL_ID = "Helsinki-NLP/opus-mt-zh-en";
@@ -175,42 +176,45 @@ export class XhsTranslationRuntime {
     const staging = path.join(this.config.xhsTranslationRuntimeDir, "model-staging");
     await fsp.rm(staging, { recursive: true, force: true });
     await fsp.mkdir(staging, { recursive: true });
-    const listing = await run("tar", ["-tzf", archive], this.config.xhsTranslationInstallTimeoutMs);
-    if (listing.split(/\r?\n/).some((entry) => path.isAbsolute(entry) || entry.split("/").includes("..")))
-      throw new Error("翻译模型包包含越界路径");
-    await run("tar", ["-xzf", archive, "-C", staging], this.config.xhsTranslationInstallTimeoutMs);
-    const children = await fsp.readdir(staging, { withFileTypes: true });
-    const nested = children.find(
-      (entry) => entry.isDirectory() && fs.existsSync(path.join(staging, entry.name, "model.bin"))
-    );
-    const candidate = fs.existsSync(path.join(staging, "model.bin"))
-      ? staging
-      : nested
-        ? path.join(staging, nested.name)
-        : path.join(staging, "model");
-    if (!fs.existsSync(path.join(candidate, "model.bin")))
-      throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型包内容不完整");
-    const manifest = JSON.parse(
-      await fsp.readFile(path.join(candidate, "manifest.json"), "utf8").catch(() => "{}")
-    ) as { revision?: string; files?: Record<string, { size?: number; sha256?: string }> };
-    if (manifest.revision !== MODEL_REVISION)
-      throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型清单缺失或版本不匹配");
-    for (const [name, expected] of Object.entries(manifest.files ?? {})) {
-      const file = path.resolve(candidate, name);
-      if (!file.startsWith(`${path.resolve(candidate)}${path.sep}`))
-        throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型清单包含越界路径");
-      const bytes = await fsp.readFile(file).catch(() => undefined);
-      if (
-        !bytes ||
-        (expected.size !== undefined && bytes.byteLength !== expected.size) ||
-        (expected.sha256 && createHash("sha256").update(bytes).digest("hex") !== expected.sha256)
-      )
-        throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型文件校验失败");
+    try {
+      const listing = await run("tar", ["-tzf", archive], this.config.xhsTranslationInstallTimeoutMs);
+      validateArchiveListing(listing);
+      await run("tar", ["-xzf", archive, "-C", staging], this.config.xhsTranslationInstallTimeoutMs);
+      await validateExtractedDirectory(staging);
+      const children = await fsp.readdir(staging, { withFileTypes: true });
+      const nested = children.find(
+        (entry) => entry.isDirectory() && fs.existsSync(path.join(staging, entry.name, "model.bin"))
+      );
+      const candidate = fs.existsSync(path.join(staging, "model.bin"))
+        ? staging
+        : nested
+          ? path.join(staging, nested.name)
+          : path.join(staging, "model");
+      if (!fs.existsSync(path.join(candidate, "model.bin")))
+        throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型包内容不完整");
+      const manifest = JSON.parse(
+        await fsp.readFile(path.join(candidate, "manifest.json"), "utf8").catch(() => "{}")
+      ) as { revision?: string; files?: Record<string, { size?: number; sha256?: string }> };
+      if (manifest.revision !== MODEL_REVISION)
+        throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型清单缺失或版本不匹配");
+      for (const [name, expected] of Object.entries(manifest.files ?? {})) {
+        const file = path.resolve(candidate, name);
+        if (!file.startsWith(`${path.resolve(candidate)}${path.sep}`))
+          throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型清单包含越界路径");
+        const bytes = await fsp.readFile(file).catch(() => undefined);
+        if (
+          !bytes ||
+          (expected.size !== undefined && bytes.byteLength !== expected.size) ||
+          (expected.sha256 && createHash("sha256").update(bytes).digest("hex") !== expected.sha256)
+        )
+          throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", "翻译模型文件校验失败");
+      }
+      await fsp.rm(this.modelDir(), { recursive: true, force: true });
+      await fsp.rename(candidate, this.modelDir());
+    } finally {
+      await fsp.rm(staging, { recursive: true, force: true });
+      await fsp.rm(archive, { force: true });
     }
-    await fsp.rm(this.modelDir(), { recursive: true, force: true });
-    await fsp.rename(candidate, this.modelDir());
-    await fsp.rm(staging, { recursive: true, force: true });
-    await fsp.rm(archive, { force: true });
   }
 
   private async downloadCommunityModel(onProgress?: (status: XhsTranslationRuntimeStatus) => void) {
