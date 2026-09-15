@@ -13,7 +13,7 @@
 - SQLite：完整性正常、无外键错误、Schema v5（D01/D02 已完成）
 - 10,000 条数据基准：列表 P95 16.73 ms，详情 P95 0.04 ms
 - 仓库：无 standalone 业务源码副本和 Python 安装二进制
-- 当前主要大文件：Edge-TTS 后端 748 行、LAN 页面容器 555 行、视频文本页面容器 469 行、小红书页面容器 470 行
+- 当前主要大文件：Edge-TTS 后端 748 行、LAN 页面容器 555 行、小红书页面容器 470 行、视频文本页面容器 469 行
 
 原方案状态：P0 已完成；P1 主体完成，发布可复现性和 Release 发布待收尾；P2 SQLite 基线完成，领域关系、统一文件提交和部分模块分层未完成；P3 安全基线和 `/api/v1` 完成，完整契约、LAN 管理权限和审计统一未完成；P4 工具链和全局覆盖率完成，前端拆分、请求取消、E2E 和差异覆盖率未完成。
 
@@ -92,7 +92,7 @@
 | E05 | DONE | 拆分 Chatterbox 展示面板         | E04      | 表单、进度、批次列表和详情弹窗独立；主面板不超过 500 行                   |
 | E06 | DONE | 完成小红书页面拆分               | C04      | 结果区和详情抽屉独立，页面不超过 600 行                                   |
 | E07 | DONE | 拆分视频文本页面                 | E01      | 来源输入、任务进度、结果和历史独立，视觉与流程不变                        |
-| E08 | TODO | 拆分 AI 图片页面                 | E01      | 输入配置、预览、结果和下载区独立，Object URL 全部正确释放                 |
+| E08 | DONE | 拆分 AI 图片页面                 | E01      | 输入配置、预览、结果和下载区独立，Object URL 全部正确释放                 |
 | E09 | TODO | 收敛 ToolLayout 与全局样式       | E03–E08  | CSS 按基础、布局、组件和响应式分层，保持加载顺序和视觉快照                |
 | E10 | TODO | 统一错误体验                     | B07、E01 | 区分取消、离线、429、5xx 和不可恢复错误，展示错误码、requestId 和重试建议 |
 
@@ -172,3 +172,4 @@
 | E05     | DONE                | 2026-09-15 | `[E05]`   | `pnpm --filter frontend test -- ChatterboxCurrentBatch`（1 项）                                                                | `pnpm check` 通过 | 前端生产构建、bundle budget、构建 smoke 通过                                 | 面板拆为编辑器表单、当前进度、批次历史和详情弹窗；主面板 34 行；共享响应式上下文避免改变现有 props/API    |
 | E06     | DONE                | 2026-09-15 | `[E06]`   | `pnpm --filter frontend test -- XhsResultPanel XhsDetailDrawer`（2 项）                                                        | `pnpm check` 通过 | 小红书前端构建、后端归档/翻译回归、构建 smoke 通过                           | 结果区和详情抽屉提取为受控子组件；页面容器 470 行；路径、任务流、视觉与现有数据格式保持不变               |
 | E07     | DONE                | 2026-09-15 | `[E07]`   | `pnpm --filter frontend test -- VideoInputPanel VideoResultPanel VideoHistoryPanel`（3 项）                                    | `pnpm check` 通过 | 视频文本前端构建、上传/SSE/历史/导出回归、构建 smoke 通过                    | 来源输入与状态、历史列表、结果时间轴分别提取为子组件；页面容器 469 行；请求时序和 Object URL 生命周期不变 |
+| E08     | DONE                | 2026-09-15 | `[E08]`   | `pnpm --filter frontend test -- ImageAiBatchPicker ImageAiTaskStatusCard`（2 项）                                              | `pnpm check` 通过 | AI 图片前端构建、三种操作/任务取消/结果下载回归、构建 smoke 通过             | 拆分水印面板、通用批处理面板、批量选择器、任务卡和结果画廊；批量预览与结果源 Object URL 在卸载时释放      |
