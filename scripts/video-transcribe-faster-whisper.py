@@ -2,8 +2,13 @@ import argparse
 import gc
 import json
 from pathlib import Path
+from typing import Any
 
-from faster_whisper import WhisperModel
+# The transcriber dependency is installed in its own Worker environment. Keep
+# importing this protocol adapter possible in the lightweight CI environment so
+# unit tests can exercise argument parsing and fallback logic without pulling in
+# the full model runtime.
+WhisperModel: Any = None
 
 LOW_CONFIDENCE_LOG_PROBABILITY = -0.75
 
@@ -56,6 +61,17 @@ def unique_models(models: list[str]) -> list[str]:
     return unique
 
 
+def whisper_model_class() -> Any:
+    global WhisperModel
+    if WhisperModel is None:
+        try:
+            from faster_whisper import WhisperModel as implementation
+        except ModuleNotFoundError as error:
+            raise RuntimeError("faster-whisper is not installed in this Worker environment") from error
+        WhisperModel = implementation
+    return WhisperModel
+
+
 def model_candidates(args: argparse.Namespace) -> list[tuple[str, str, str]]:
     models = unique_models([args.model, *parse_fallback_models(args.fallback_models)])
     candidates = [(model, args.device, args.compute_type) for model in models]
@@ -64,11 +80,11 @@ def model_candidates(args: argparse.Namespace) -> list[tuple[str, str, str]]:
     return candidates
 
 
-def create_model(args: argparse.Namespace) -> tuple[WhisperModel, str, str, str]:
+def create_model(args: argparse.Namespace) -> tuple[Any, str, str, str]:
     errors: list[str] = []
     for model_name, device, compute_type in model_candidates(args):
         try:
-            model = WhisperModel(model_name, device=device, compute_type=compute_type)
+            model = whisper_model_class()(model_name, device=device, compute_type=compute_type)
             return model, model_name, device, compute_type
         except Exception as error:
             errors.append(f"{model_name}/{device}/{compute_type}: {error}")
@@ -91,7 +107,7 @@ def transcribe_with_fallback(args: argparse.Namespace) -> tuple[list, object, st
         if device in skipped_devices:
             continue
         try:
-            model = WhisperModel(model_name, device=device, compute_type=compute_type)
+            model = whisper_model_class()(model_name, device=device, compute_type=compute_type)
             segments, info = model.transcribe(
                 args.input,
                 language=language,
