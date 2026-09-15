@@ -98,14 +98,14 @@ function New-DeterministicTarGz {
   $entries = @(Get-SortedRelativeFiles -Root $Root | ForEach-Object {
     "$(Split-Path -Leaf $Root)/$_"
   })
-  $tarTimestamp = $Timestamp.ToString("yyyy-MM-dd HH:mm:ss", [Globalization.CultureInfo]::InvariantCulture)
   $tarPath = Join-Path $PackageRoot "archive-content.tar"
   # Pass the sorted file names as native arguments instead of a text file. This
   # preserves Unicode paths on Windows bsdtar (notably the Chinese launcher
-  # names) while keeping the archive order deterministic.
+  # names) while keeping the archive order deterministic. The staging tree
+  # already has every file and directory timestamp fixed to the commit time;
+  # avoid GNU tar's --mtime because Apple's bsdtar does not support it.
   $tarArguments = @(
     "-C", $PackageRoot,
-    "--mtime", $tarTimestamp,
     "--uid", "0",
     "--gid", "0",
     "--uname", "root",

@@ -155,8 +155,12 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
-        if os.name == "nt":
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        # The selector policy is only available on Windows.  Resolve it
+        # dynamically so Linux/macOS type checking does not require a
+        # platform-specific asyncio attribute.
+        windows_policy = getattr(asyncio, "WindowsSelectorEventLoopPolicy", None)
+        if os.name == "nt" and windows_policy is not None:
+            asyncio.set_event_loop_policy(windows_policy())
         asyncio.run(main())
     except Exception as error:
         sys.stderr.write(str(error))
