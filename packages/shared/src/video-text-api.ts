@@ -160,4 +160,6 @@ export const VideoTextRemovalSchema = Type.Object({ removed: Type.Literal(true) 
 
 export type StoredVideoTextResultDto = Static<typeof StoredVideoTextResultSchema>;
 export type VideoTextHistoryItemDto = Static<typeof VideoTextHistoryItemSchema>;
+export type VideoTextHistoryDto = Static<typeof VideoTextHistorySchema>;
+export type VideoTextTaskResponseDto = Static<typeof VideoTextTaskResponseSchema>;
 export type VideoTextFromUrlInputDto = Static<typeof VideoTextFromUrlInputSchema>;

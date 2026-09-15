@@ -300,7 +300,7 @@ async function translateCurrent() {
   if (!current.value) return;
   try {
     const task = await xhsArchiveApi.translate(current.value.id, current.value.translation?.status === "ready");
-    if (task?.id) trackTranslation(task.id, current.value.id, true);
+    if ("id" in task) trackTranslation(task.id, current.value.id, true);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建翻译任务失败");
   }
@@ -309,7 +309,7 @@ async function translateDetail() {
   if (!detail.value) return;
   try {
     const task = await xhsArchiveApi.translate(detail.value.id, detail.value.translation?.status === "ready");
-    if (task?.id) trackTranslation(task.id, detail.value.id, false);
+    if ("id" in task) trackTranslation(task.id, detail.value.id, false);
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建翻译任务失败");
   }
@@ -368,7 +368,7 @@ async function translateSelected() {
     const task = selectedArchiveIds.value.length
       ? await xhsArchiveApi.translateBatch({ mode: "selected", itemIds: selectedArchiveIds.value })
       : await xhsArchiveApi.translateBatch({ mode: "missing-or-stale" });
-    if (task?.id) trackTranslation(task.id, undefined, false);
+    if ("id" in task) trackTranslation(task.id, undefined, false);
     await loadArchives();
   } catch (error) {
     message.error(error instanceof Error ? error.message : "创建批量翻译任务失败");

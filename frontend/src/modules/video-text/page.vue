@@ -441,7 +441,9 @@ async function openHistory(taskId: string) {
       id: historyResult.id,
       toolId: "video-text",
       status: "completed",
-      progress: 100
+      progress: 100,
+      createdAt: historyResult.createdAt,
+      updatedAt: historyResult.createdAt
     };
     uploadProgress.value = 100;
     message.success("已打开历史解析结果");

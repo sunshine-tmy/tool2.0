@@ -46,3 +46,6 @@ export const CleanupResultSchema = Type.Object(
 export const CleanupResultsSchema = Type.Array(CleanupResultSchema);
 
 export type ImageCompressResult = Static<typeof ImageCompressResultSchema>;
+export type CleanupCategory = Static<typeof CleanupCategorySchema>;
+export type CleanupInspection = Static<typeof CleanupInspectionSchema>;
+export type CleanupResult = Static<typeof CleanupResultSchema>;

@@ -227,7 +227,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { NAlert, NButton, NCheckbox, NCheckboxGroup, NDrawer, NDrawerContent, NInput, useMessage } from "naive-ui";
-import { listTools } from "@toolbox/shared";
+import {
+  ApiHealthSchema,
+  CleanupInspectionSchema,
+  CleanupResultsSchema,
+  listTools,
+  type CleanupCategory
+} from "@toolbox/shared";
 import {
   AudioLines,
   Boxes,
@@ -268,15 +274,6 @@ const adminPin = ref("");
 const adminLoading = ref(false);
 const adminError = ref("");
 let sessionRestoreAttempted = false;
-type CleanupCategory = {
-  id: string;
-  label: string;
-  risk: "low" | "medium" | "high";
-  requiresStop: boolean;
-  defaults: boolean;
-  files: number;
-  bytes: number;
-};
 const cleanupCategories = ref<CleanupCategory[]>([]);
 const selectedCleanupIds = ref<string[]>([]);
 const cleanupLoading = ref(false);
@@ -350,7 +347,7 @@ async function loadCleanup() {
   cleanupLoading.value = true;
   cleanupError.value = "";
   try {
-    cleanupCategories.value = await httpClient.get<CleanupCategory[]>("/maintenance/cleanup");
+    cleanupCategories.value = await httpClient.get("/maintenance/cleanup", CleanupInspectionSchema);
     if (!selectedCleanupIds.value.length)
       selectedCleanupIds.value = cleanupCategories.value.filter((item) => item.defaults).map((item) => item.id);
   } catch (error) {
@@ -374,7 +371,7 @@ async function executeCleanup() {
   if (!accepted) return;
   cleanupExecuting.value = true;
   try {
-    await httpClient.post("/maintenance/cleanup", { ids: selectedCleanupIds.value });
+    await httpClient.post("/maintenance/cleanup", CleanupResultsSchema, { ids: selectedCleanupIds.value });
     message.success("所选运行数据已清理");
     selectedCleanupIds.value = [];
     await loadCleanup();
@@ -395,8 +392,8 @@ function formatBytes(value: number) {
 async function loadServiceStatus() {
   apiState.value = "checking";
   try {
-    const health = await httpClient.get<{ status: string; deploymentMode?: "local" | "lan" }>("/health");
-    deploymentMode.value = health.deploymentMode ?? "local";
+    const health = await httpClient.get("/health", ApiHealthSchema);
+    deploymentMode.value = health.deploymentMode;
     apiState.value = "online";
     if (deploymentMode.value === "lan" && !sessionRestoreAttempted) {
       sessionRestoreAttempted = true;

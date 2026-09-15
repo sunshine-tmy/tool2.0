@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminSessionSchema, EmptyResultSchema } from "@toolbox/shared";
 import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "./admin-session";
 
 const mocks = vi.hoisted(() => ({
@@ -24,7 +25,7 @@ describe("administrator session client", () => {
     await authenticateAdmin("246810");
     await restoreAdminSession();
 
-    expect(mocks.post).toHaveBeenCalledWith("/session", { pin: "246810" });
+    expect(mocks.post).toHaveBeenCalledWith("/session", AdminSessionSchema, { pin: "246810" });
     expect(mocks.setToken).toHaveBeenNthCalledWith(1, "login-token");
     expect(mocks.setToken).toHaveBeenNthCalledWith(2, "restored-token");
   });
@@ -32,7 +33,7 @@ describe("administrator session client", () => {
   it("clears the CSRF token after sign-out", async () => {
     mocks.delete.mockResolvedValue(null);
     await signOutAdmin();
-    expect(mocks.delete).toHaveBeenCalledWith("/session");
+    expect(mocks.delete).toHaveBeenCalledWith("/session", EmptyResultSchema);
     expect(mocks.setToken).toHaveBeenCalledWith(undefined);
   });
 });

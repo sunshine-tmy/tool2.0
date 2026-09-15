@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ChatterboxBatchSchema, ChatterboxRemovalSchema, ChatterboxTaskListSchema } from "@toolbox/shared";
 import { chatterboxApi } from "./chatterbox-api";
 
 const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
@@ -29,8 +30,9 @@ describe("chatterbox api", () => {
       fileName: "demo"
     });
 
-    const [url, form, config] = httpMock.post.mock.calls[0] as [string, FormData, { timeout: number }];
+    const [url, schema, form, config] = httpMock.post.mock.calls[0] as [string, unknown, FormData, { timeout: number }];
     expect(url).toBe("/tools/edge-tts/chatterbox/tasks");
+    expect(schema).toBeDefined();
     expect(form.get("reference")).toMatchObject({ name: "voice.wav", size: 3, type: "audio/wav" });
     expect(form.get("authorization")).toBe("self");
     expect(form.get("consentConfirmed")).toBe("true");
@@ -41,7 +43,7 @@ describe("chatterbox api", () => {
   it("loads paginated clone history", async () => {
     httpMock.get.mockResolvedValue({});
     await chatterboxApi.list(2, 8);
-    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/tasks", {
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/tasks", ChatterboxTaskListSchema, {
       params: { page: 2, pageSize: 8 }
     });
   });
@@ -68,7 +70,7 @@ describe("chatterbox api", () => {
       referenceRetained: true
     });
 
-    const [url, form] = httpMock.post.mock.calls[0] as [string, FormData];
+    const [url, , form] = httpMock.post.mock.calls[0] as [string, unknown, FormData];
     expect(url).toBe("/tools/edge-tts/chatterbox/batches");
     const segments = JSON.parse(String(form.get("segments")));
     expect(segments).toHaveLength(2);
@@ -94,7 +96,7 @@ describe("chatterbox api", () => {
       subtitleMode: "sentences",
       referenceRetained: false
     });
-    let [, form] = httpMock.post.mock.calls[0] as [string, FormData];
+    let [, , form] = httpMock.post.mock.calls[0] as [string, unknown, FormData];
     expect(form.get("voiceId")).toBe("voice-1");
     expect(form.get("reference")).toBeNull();
 
@@ -107,7 +109,7 @@ describe("chatterbox api", () => {
       temperature: 0.4,
       voiceId: "voice-1"
     });
-    [, form] = httpMock.post.mock.calls[1] as [string, FormData];
+    [, , form] = httpMock.post.mock.calls[1] as [string, unknown, FormData];
     expect(form.get("exaggeration")).toBe("0.9");
     expect(form.get("referenceTranslation")).toBe("重新生成的参考翻译。");
     expect(form.get("cfgWeight")).toBe("0.7");
@@ -146,11 +148,13 @@ describe("chatterbox api", () => {
       seed: 0
     });
 
-    expect(httpMock.patch).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/batches/batch-1/order", {
-      itemIds: ["item-2", "item-1"]
-    });
-    expect(httpMock.delete).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/batches/batch-1");
-    const regeneration = httpMock.post.mock.calls.at(-1)?.[1] as FormData;
+    expect(httpMock.patch).toHaveBeenCalledWith(
+      "/tools/edge-tts/chatterbox/batches/batch-1/order",
+      ChatterboxBatchSchema,
+      { itemIds: ["item-2", "item-1"] }
+    );
+    expect(httpMock.delete).toHaveBeenCalledWith("/tools/edge-tts/chatterbox/batches/batch-1", ChatterboxRemovalSchema);
+    const regeneration = httpMock.post.mock.calls.at(-1)?.[2] as FormData;
     expect(regeneration.get("reference")).toMatchObject({ name: "voice.wav" });
   });
 });

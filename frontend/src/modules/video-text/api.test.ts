@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  StoredVideoTextResultSchema,
+  VideoTextHistorySchema,
+  VideoTextRemovalSchema,
+  VideoTextTaskResponseSchema
+} from "@toolbox/shared";
 import { VIDEO_TEXT_REQUEST_TIMEOUT_MS, videoTextApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({
@@ -28,7 +34,7 @@ describe("video text api", () => {
 
     await videoTextApi.listHistory({ keyword: "coat", page: 2, pageSize: 5 });
 
-    expect(httpMock.get).toHaveBeenCalledWith("/tools/video-text/history", {
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/video-text/history", VideoTextHistorySchema, {
       params: { keyword: "coat", page: 2, pageSize: 5 }
     });
   });
@@ -43,6 +49,7 @@ describe("video text api", () => {
 
     expect(httpMock.post).toHaveBeenCalledWith(
       "/tools/video-text/tasks/from-url",
+      VideoTextTaskResponseSchema,
       {
         url: "https://cdn.test/video.mp4",
         fileName: "默认视频.mp4"
@@ -58,7 +65,7 @@ describe("video text api", () => {
     await videoTextApi.getHistoryResult("task-1");
     await videoTextApi.deleteHistory("task-1");
 
-    expect(httpMock.get).toHaveBeenCalledWith("/tools/video-text/history/task-1");
-    expect(httpMock.delete).toHaveBeenCalledWith("/tools/video-text/history/task-1");
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/video-text/history/task-1", StoredVideoTextResultSchema);
+    expect(httpMock.delete).toHaveBeenCalledWith("/tools/video-text/history/task-1", VideoTextRemovalSchema);
   });
 });

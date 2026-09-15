@@ -1,9 +1,13 @@
+import { ShortVideoParseResultSchema } from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
-import type { ShortVideoRequest, ShortVideoResult } from "./types";
+import type { ShortVideoRequest } from "./types";
 
 class ShortVideoApi {
   async parse(input: ShortVideoRequest) {
-    return withApiError(() => httpClient.post<ShortVideoResult>("/tools/short-video/parse", input), "短视频解析失败");
+    return withApiError(
+      () => httpClient.post("/tools/short-video/parse", ShortVideoParseResultSchema, input),
+      "短视频解析失败"
+    );
   }
 }
 

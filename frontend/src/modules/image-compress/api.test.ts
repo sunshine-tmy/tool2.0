@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ImageCompressResultSchema } from "@toolbox/shared";
 import { imageCompressApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({ post: vi.fn(), postBlob: vi.fn() }));
@@ -20,7 +21,9 @@ describe("image compression api", () => {
     await imageCompressApi.upload(form, progress);
     await imageCompressApi.downloadAll([{ taskId: "task-1", fileName: "result.webp" }]);
 
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/image-compress", form, { onUploadProgress: progress });
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/image-compress", ImageCompressResultSchema, form, {
+      onUploadProgress: progress
+    });
     expect(httpMock.postBlob).toHaveBeenCalledWith("/tools/image-compress/download.zip", {
       files: [{ taskId: "task-1", fileName: "result.webp" }]
     });

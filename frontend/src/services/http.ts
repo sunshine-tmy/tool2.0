@@ -1,5 +1,7 @@
 import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from "axios";
-import type { ApiResponse } from "@toolbox/shared";
+import { ApiFailureSchema, apiSuccessSchema, type ApiResponse } from "@toolbox/shared";
+import type { Static, TSchema } from "@sinclair/typebox";
+import { Value } from "@sinclair/typebox/value";
 import { apiBaseUrl } from "../config/runtime";
 
 type BackendFailure = Extract<ApiResponse<unknown>, { success: false }>;
@@ -74,14 +76,24 @@ export function normalizeApiError(error: unknown, fallbackMessage = "请求失�
 
 export function createHttpClient(instance: AxiosInstance = api) {
   return {
-    async get<T>(url: string, config?: AxiosRequestConfig) {
+    async get<T extends TSchema>(url: string, schema: T, config?: AxiosRequestConfig): Promise<Static<T>> {
       const response = await instance.get<unknown, AxiosResponse<unknown>>(url, config);
-      return unwrapResponse<T>(response.data);
+      return unwrapResponse(response.data, schema);
     },
 
-    async post<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    async getText(url: string, config?: AxiosRequestConfig) {
+      const response = await instance.get<string, AxiosResponse<string>>(url, { ...config, responseType: "text" });
+      return response.data;
+    },
+
+    async post<T extends TSchema>(
+      url: string,
+      schema: T,
+      data?: unknown,
+      config?: AxiosRequestConfig
+    ): Promise<Static<T>> {
       const response = await instance.post<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
-      return unwrapResponse<T>(response.data);
+      return unwrapResponse(response.data, schema);
     },
 
     async postBlob(url: string, data?: unknown, config?: AxiosRequestConfig) {
@@ -92,19 +104,29 @@ export function createHttpClient(instance: AxiosInstance = api) {
       };
     },
 
-    async put<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    async put<T extends TSchema>(
+      url: string,
+      schema: T,
+      data?: unknown,
+      config?: AxiosRequestConfig
+    ): Promise<Static<T>> {
       const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
-      return unwrapResponse<T>(response.data);
+      return unwrapResponse(response.data, schema);
     },
 
-    async patch<T>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    async patch<T extends TSchema>(
+      url: string,
+      schema: T,
+      data?: unknown,
+      config?: AxiosRequestConfig
+    ): Promise<Static<T>> {
       const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
-      return unwrapResponse<T>(response.data);
+      return unwrapResponse(response.data, schema);
     },
 
-    async delete<T>(url: string, config?: AxiosRequestConfig) {
+    async delete<T extends TSchema>(url: string, schema: T, config?: AxiosRequestConfig): Promise<Static<T>> {
       const response = await instance.delete<unknown, AxiosResponse<unknown>>(url, withWriteSecurity(config));
-      return unwrapResponse<T>(response.data);
+      return unwrapResponse(response.data, schema);
     }
   };
 }
@@ -122,7 +144,7 @@ function withWriteSecurity(config?: AxiosRequestConfig): AxiosRequestConfig {
   };
 }
 
-function unwrapResponse<T>(data: unknown) {
+function unwrapResponse<T extends TSchema>(data: unknown, schema: T): Static<T> {
   if (isBackendFailure(data)) {
     throw new ApiRequestError(data.message, {
       code: data.error.code,
@@ -131,28 +153,23 @@ function unwrapResponse<T>(data: unknown) {
     });
   }
 
-  if (isBackendSuccess<T>(data)) {
+  const successSchema = apiSuccessSchema(schema);
+  if (Value.Check(successSchema, data) && isBackendSuccess(data)) {
     return data.data;
   }
 
   throw new ApiRequestError("服务响应未通过 API 契约校验", {
-    code: "INVALID_API_RESPONSE"
+    code: "INVALID_API_RESPONSE",
+    details: [...Value.Errors(successSchema, data)].slice(0, 5).map(({ path, message }) => ({ path, message }))
   });
 }
 
-function isBackendSuccess<T>(value: unknown): value is Extract<ApiResponse<T>, { success: true }> {
+function isBackendSuccess(value: unknown): value is Extract<ApiResponse<unknown>, { success: true }> {
   return isRecord(value) && value.success === true && "data" in value;
 }
 
 function isBackendFailure(value: unknown): value is BackendFailure {
-  return (
-    isRecord(value) &&
-    value.success === false &&
-    typeof value.message === "string" &&
-    isRecord(value.error) &&
-    typeof value.error.code === "string" &&
-    (value.requestId === undefined || typeof value.requestId === "string")
-  );
+  return Value.Check(ApiFailureSchema, value);
 }
 
 function getErrorStatus(error: unknown) {

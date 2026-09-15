@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ImageAiTaskSchema } from "@toolbox/shared";
 import { imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
 
 const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }));
@@ -24,9 +25,11 @@ describe("image ai downloads", () => {
     await imageAiApi.getTask("task-1");
     await imageAiApi.cancelTask("task-1");
 
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/image-ai/tasks", taskForm, { timeout: 220000 });
-    expect(httpMock.get).toHaveBeenCalledWith("/tools/image-ai/tasks/task-1");
-    expect(httpMock.delete).toHaveBeenCalledWith("/tools/image-ai/tasks/task-1");
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/image-ai/tasks", ImageAiTaskSchema, taskForm, {
+      timeout: 220000
+    });
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/image-ai/tasks/task-1", ImageAiTaskSchema);
+    expect(httpMock.delete).toHaveBeenCalledWith("/tools/image-ai/tasks/task-1", ImageAiTaskSchema);
   });
 
   it("requests attachment disposition for individual PNG results", () => {

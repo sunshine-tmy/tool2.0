@@ -14,7 +14,16 @@ export default defineConfig(({ mode }) => {
   };
   return {
     envDir: repositoryRoot,
-    build: { manifest: true },
+    build: {
+      manifest: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("@sinclair/typebox")) return "schema-runtime";
+          }
+        }
+      }
+    },
     plugins: [vue()],
     resolve: {
       alias: {

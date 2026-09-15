@@ -1,5 +1,5 @@
 import { onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
-import { isTaskDto, type TaskDto } from "@toolbox/shared";
+import { isTaskDto, TaskSchema, type TaskDto } from "@toolbox/shared";
 import { resolveApiUrl } from "../config/runtime";
 import { ApiRequestError, httpClient } from "../services/http";
 
@@ -31,7 +31,7 @@ export function useTaskEvents(taskId: MaybeRefOrGetter<string | undefined>, opti
   const pollIntervalMs = options.pollIntervalMs ?? 5_000;
   const createEventSource = options.createEventSource ?? defaultEventSource;
   const fetchTask =
-    options.fetchTask ?? ((id, signal) => httpClient.get<TaskDto>(`/tasks/${encodeURIComponent(id)}`, { signal }));
+    options.fetchTask ?? ((id, signal) => httpClient.get(`/tasks/${encodeURIComponent(id)}`, TaskSchema, { signal }));
   const isVisible =
     options.isVisible ?? (() => typeof document === "undefined" || document.visibilityState !== "hidden");
   const subscribeVisibility = options.subscribeVisibility ?? defaultVisibilitySubscription;

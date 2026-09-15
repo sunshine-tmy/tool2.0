@@ -1,13 +1,15 @@
-import type {
-  ChatterboxBatch,
-  ChatterboxBatchList,
-  ChatterboxHealth,
+import {
+  ChatterboxBatchItemRemovalSchema,
+  ChatterboxBatchListSchema,
+  ChatterboxBatchSchema,
+  ChatterboxHealthSchema,
   ChatterboxLanguage,
-  ChatterboxSavedVoice,
-  ChatterboxSavedVoiceList,
+  ChatterboxRemovalSchema,
+  ChatterboxSavedVoiceListSchema,
+  ChatterboxSavedVoiceSchema,
   ChatterboxSubtitleMode,
-  ChatterboxTask,
-  ChatterboxTaskList,
+  ChatterboxTaskListSchema,
+  ChatterboxTaskSchema,
   ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
@@ -40,7 +42,7 @@ type ChatterboxCreateBatchInput = Omit<ChatterboxCreateTaskInput, "text" | "file
 export const chatterboxApi = {
   health() {
     return withApiError(
-      () => httpClient.get<ChatterboxHealth>("/tools/edge-tts/chatterbox/health"),
+      () => httpClient.get("/tools/edge-tts/chatterbox/health", ChatterboxHealthSchema),
       "无法读取声音克隆服务状态"
     );
   },
@@ -59,7 +61,7 @@ export const chatterboxApi = {
     form.append("includeSubtitles", String(input.includeSubtitles));
     if (input.fileName) form.append("fileName", input.fileName);
     return withApiError(
-      () => httpClient.post<ChatterboxTask>("/tools/edge-tts/chatterbox/tasks", form, { timeout: 120_000 }),
+      () => httpClient.post("/tools/edge-tts/chatterbox/tasks", ChatterboxTaskSchema, form, { timeout: 120_000 }),
       "创建声音克隆任务失败"
     );
   },
@@ -81,14 +83,14 @@ export const chatterboxApi = {
     form.append("referenceRetained", String(input.referenceRetained));
     if (input.name) form.append("name", input.name);
     return withApiError(
-      () => httpClient.post<ChatterboxBatch>("/tools/edge-tts/chatterbox/batches", form, { timeout: 120_000 }),
+      () => httpClient.post("/tools/edge-tts/chatterbox/batches", ChatterboxBatchSchema, form, { timeout: 120_000 }),
       "创建声音克隆批次失败"
     );
   },
 
   voices() {
     return withApiError(
-      () => httpClient.get<ChatterboxSavedVoiceList>("/tools/edge-tts/chatterbox/voices"),
+      () => httpClient.get("/tools/edge-tts/chatterbox/voices", ChatterboxSavedVoiceListSchema),
       "读取永久参考音色失败"
     );
   },
@@ -107,28 +109,34 @@ export const chatterboxApi = {
     form.append("authorization", input.authorization);
     form.append("consentConfirmed", String(input.consentConfirmed));
     return withApiError(
-      () => httpClient.post<ChatterboxSavedVoice>("/tools/edge-tts/chatterbox/voices", form, { timeout: 120_000 }),
+      () =>
+        httpClient.post("/tools/edge-tts/chatterbox/voices", ChatterboxSavedVoiceSchema, form, {
+          timeout: 120_000
+        }),
       "保存永久参考音色失败"
     );
   },
 
   removeVoice(voiceId: string) {
     return withApiError(
-      () => httpClient.delete<{ removed: boolean }>(`/tools/edge-tts/chatterbox/voices/${voiceId}`),
+      () => httpClient.delete(`/tools/edge-tts/chatterbox/voices/${voiceId}`, ChatterboxRemovalSchema),
       "删除永久参考音色失败"
     );
   },
 
   batch(batchId: string) {
     return withApiError(
-      () => httpClient.get<ChatterboxBatch>(`/tools/edge-tts/chatterbox/batches/${batchId}`),
+      () => httpClient.get(`/tools/edge-tts/chatterbox/batches/${batchId}`, ChatterboxBatchSchema),
       "读取声音克隆批次失败"
     );
   },
 
   batches(page = 1, pageSize = 10) {
     return withApiError(
-      () => httpClient.get<ChatterboxBatchList>("/tools/edge-tts/chatterbox/batches", { params: { page, pageSize } }),
+      () =>
+        httpClient.get("/tools/edge-tts/chatterbox/batches", ChatterboxBatchListSchema, {
+          params: { page, pageSize }
+        }),
       "读取声音克隆批次失败"
     );
   },
@@ -160,8 +168,9 @@ export const chatterboxApi = {
     if (input.voiceId) form.append("voiceId", input.voiceId);
     return withApiError(
       () =>
-        httpClient.post<ChatterboxBatch>(
+        httpClient.post(
           `/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}/regenerate`,
+          ChatterboxBatchSchema,
           form,
           { timeout: 120_000 }
         ),
@@ -171,7 +180,7 @@ export const chatterboxApi = {
 
   reorder(batchId: string, itemIds: string[]) {
     return withApiError(
-      () => httpClient.patch<ChatterboxBatch>(`/tools/edge-tts/chatterbox/batches/${batchId}/order`, { itemIds }),
+      () => httpClient.patch(`/tools/edge-tts/chatterbox/batches/${batchId}/order`, ChatterboxBatchSchema, { itemIds }),
       "调整文案顺序失败"
     );
   },
@@ -179,8 +188,9 @@ export const chatterboxApi = {
   removeBatchItem(batchId: string, itemId: string) {
     return withApiError(
       () =>
-        httpClient.delete<{ removed: boolean; batch?: ChatterboxBatch }>(
-          `/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}`
+        httpClient.delete(
+          `/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}`,
+          ChatterboxBatchItemRemovalSchema
         ),
       "删除文案段失败"
     );
@@ -188,42 +198,43 @@ export const chatterboxApi = {
 
   cancelBatch(batchId: string) {
     return withApiError(
-      () => httpClient.post<ChatterboxBatch>(`/tools/edge-tts/chatterbox/batches/${batchId}/cancel`),
+      () => httpClient.post(`/tools/edge-tts/chatterbox/batches/${batchId}/cancel`, ChatterboxBatchSchema),
       "取消批次失败"
     );
   },
 
   removeBatchReference(batchId: string) {
     return withApiError(
-      () => httpClient.delete<{ removed: boolean }>(`/tools/edge-tts/chatterbox/batches/${batchId}/reference`),
+      () => httpClient.delete(`/tools/edge-tts/chatterbox/batches/${batchId}/reference`, ChatterboxRemovalSchema),
       "删除参考音色失败"
     );
   },
 
   removeBatch(batchId: string) {
     return withApiError(
-      () => httpClient.delete<{ removed: boolean }>(`/tools/edge-tts/chatterbox/batches/${batchId}`),
+      () => httpClient.delete(`/tools/edge-tts/chatterbox/batches/${batchId}`, ChatterboxRemovalSchema),
       "删除声音克隆批次失败"
     );
   },
 
   task(taskId: string) {
     return withApiError(
-      () => httpClient.get<ChatterboxTask>(`/tools/edge-tts/chatterbox/tasks/${taskId}`),
+      () => httpClient.get(`/tools/edge-tts/chatterbox/tasks/${taskId}`, ChatterboxTaskSchema),
       "读取声音克隆任务失败"
     );
   },
 
   list(page = 1, pageSize = 10) {
     return withApiError(
-      () => httpClient.get<ChatterboxTaskList>("/tools/edge-tts/chatterbox/tasks", { params: { page, pageSize } }),
+      () =>
+        httpClient.get("/tools/edge-tts/chatterbox/tasks", ChatterboxTaskListSchema, { params: { page, pageSize } }),
       "读取声音克隆记录失败"
     );
   },
 
   remove(taskId: string) {
     return withApiError(
-      () => httpClient.delete<{ removed: boolean }>(`/tools/edge-tts/chatterbox/tasks/${taskId}`),
+      () => httpClient.delete(`/tools/edge-tts/chatterbox/tasks/${taskId}`, ChatterboxRemovalSchema),
       "删除声音克隆任务失败"
     );
   }

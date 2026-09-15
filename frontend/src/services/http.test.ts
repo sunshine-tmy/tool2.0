@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Type } from "@sinclair/typebox";
 import { ApiRequestError, createHttpClient, normalizeApiError, setAdminCsrfToken, withApiError } from "./http";
 
 afterEach(() => setAdminCsrfToken(undefined));
@@ -19,8 +20,10 @@ describe("api error wrapper", () => {
               message: "文件超过大小限制",
               error: {
                 code: "FILE_TOO_LARGE",
+                message: "文件超过大小限制",
                 details: { max: 4 }
-              }
+              },
+              requestId: "req-file-too-large"
             }
           }
         };
@@ -44,14 +47,15 @@ describe("api error wrapper", () => {
 
   it("adds the administrator CSRF token only to state-changing requests", async () => {
     const instance = {
-      get: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null } }),
-      post: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null } })
+      get: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null, requestId: "req-get" } }),
+      post: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null, requestId: "req-post" } })
     };
     const client = createHttpClient(instance as never);
     setAdminCsrfToken("csrf-token");
+    const emptySchema = Type.Null();
 
-    await client.get("/health");
-    await client.post("/maintenance/cleanup", { ids: [] });
+    await client.get("/health", emptySchema);
+    await client.post("/maintenance/cleanup", emptySchema, { ids: [] });
 
     expect(instance.get).toHaveBeenCalledWith("/health", undefined);
     expect(instance.post).toHaveBeenCalledWith(
@@ -59,5 +63,19 @@ describe("api error wrapper", () => {
       { ids: [] },
       expect.objectContaining({ headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
     );
+  });
+
+  it("rejects a successful envelope whose data violates the supplied schema", async () => {
+    const instance = {
+      get: vi.fn().mockResolvedValue({
+        data: { success: true, message: "ok", data: { status: "unexpected" }, requestId: "req-invalid" }
+      })
+    };
+    const client = createHttpClient(instance as never);
+
+    await expect(client.get("/health", Type.Object({ status: Type.Literal("ok") }))).rejects.toMatchObject({
+      name: "ApiRequestError",
+      code: "INVALID_API_RESPONSE"
+    });
   });
 });

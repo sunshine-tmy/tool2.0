@@ -1,4 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  XhsArchiveListResponseSchema,
+  XhsArchiveRemovalSchema,
+  XhsArchiveTaskSchema,
+  XhsArchiveTranslationResultSchema
+} from "@toolbox/shared";
 import { xhsArchiveApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
@@ -36,13 +42,17 @@ describe("XHS archive api", () => {
     await xhsArchiveApi.editTranslation("item-1", edit);
     await xhsArchiveApi.resetTranslation("item-1");
 
-    expect(httpMock.get).toHaveBeenCalledWith("/tools/xhs-archive/items", {
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/xhs-archive/items", XhsArchiveListResponseSchema, {
       params: { keyword: "咖啡", page: 2, pageSize: 10 }
     });
-    expect(httpMock.post).toHaveBeenCalledWith("/tools/xhs-archive/items", {
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/xhs-archive/items", XhsArchiveTaskSchema, {
       url: "https://www.xiaohongshu.com/explore/one"
     });
-    expect(httpMock.patch).toHaveBeenCalledWith("/tools/xhs-archive/items/item-1/translation", edit);
-    expect(httpMock.delete).toHaveBeenCalledWith("/tools/xhs-archive/items/item-1");
+    expect(httpMock.patch).toHaveBeenCalledWith(
+      "/tools/xhs-archive/items/item-1/translation",
+      XhsArchiveTranslationResultSchema,
+      edit
+    );
+    expect(httpMock.delete).toHaveBeenCalledWith("/tools/xhs-archive/items/item-1", XhsArchiveRemovalSchema);
   });
 });

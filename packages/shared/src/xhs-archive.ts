@@ -340,6 +340,7 @@ export const XhsTranslationNoopSchema = Type.Object(
   },
   { additionalProperties: false }
 );
+export const XhsTranslationSubmissionSchema = Type.Union([XhsTranslationTaskSchema, XhsTranslationNoopSchema]);
 export const XhsArchiveTranslationResultSchema = Type.Union([XhsArchiveTranslationSchema, Type.Null()]);
 
 export type XhsArchiveContentType = Static<typeof XhsArchiveContentTypeSchema>;
@@ -359,3 +360,4 @@ export type XhsArchiveTaskStage = Static<typeof XhsArchiveTaskStageSchema>;
 export type XhsArchiveTask = Static<typeof XhsArchiveTaskSchema>;
 export type XhsRuntimeStatus = Static<typeof XhsRuntimeStatusSchema>;
 export type XhsAuthSession = Static<typeof XhsAuthSessionSchema>;
+export type XhsTranslationSubmission = Static<typeof XhsTranslationSubmissionSchema>;
