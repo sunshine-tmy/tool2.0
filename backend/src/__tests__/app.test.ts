@@ -202,6 +202,19 @@ describe("api app", () => {
     await app.close();
   });
 
+  it("rejects JSON bodies above the global one MiB limit", async () => {
+    const app = await createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/session",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ pin: "x".repeat(1024 * 1024) })
+    });
+
+    expect(response.statusCode).toBe(413);
+    await app.close();
+  });
+
   it("uses the current request id for every error envelope", async () => {
     const app = await createApp();
     const notFound = await app.inject({ method: "GET", url: "/api/v1/does-not-exist" });

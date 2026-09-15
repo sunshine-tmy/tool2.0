@@ -7,7 +7,7 @@
 - 分支：`codex/enterprise-refactor`
 - 基线提交：`76c65b6`
 - `pnpm check`：通过
-- 测试：共享 50、后端 146、前端 102、Python 7；在线测试跳过 1
+- 测试：共享 50、后端 149、前端 102、Python 7；在线测试跳过 1
 - 覆盖率（行/分支）：共享 93.10%/70.39%，后端 78.79%/67.43%，前端 88.91%/78.04%
 - 生产依赖：无已知漏洞
 - SQLite：完整性正常、无外键错误、Schema v5（D01/D02 已完成）
@@ -101,7 +101,7 @@
 | ID  | 状态                | 任务                         | 依赖                     | 验收重点                                                                         |
 | --- | ------------------- | ---------------------------- | ------------------------ | -------------------------------------------------------------------------------- |
 | F01 | DONE                | 补齐小红书运行时测试         | C04、C05                 | 覆盖登录、安装失败、模型摘要、翻译批次、编辑冲突、重定向和恢复                   |
-| F02 | TODO                | 完整安全负向测试             | A02、A05、B07            | 覆盖路径穿越、CRLF、恶意文件名、超大请求、越权删除、CSRF、登录爆破和敏感日志泄漏 |
+| F02 | DONE                | 完整安全负向测试             | A02、A05、B07            | 覆盖路径穿越、CRLF、恶意文件名、超大请求、越权删除、CSRF、登录爆破和敏感日志泄漏 |
 | F03 | TODO                | SSRF 与归档供应链专项测试    | C05、C07                 | 验证连接固定到已校验 IP、逐跳重定向复验及安装包安全限制                          |
 | F04 | TODO                | 建立 Playwright 关键流程 E2E | E03–E10                  | 覆盖启动、上传/断点续传、批量删除、配音、小红书列表和任务重试；隔离 storage      |
 | F05 | TODO                | 流式与 SSE 性能验收          | D03、E02                 | 大文件上传内存稳定；任务进度 1 秒内到达；断线后轮询恢复                          |
@@ -176,3 +176,4 @@
 | E09     | DONE                | 2026-09-15 | `[E09]`   | `pnpm format:check`；`pnpm --filter frontend typecheck`                                                                                                            | `pnpm check` 通过 | 前端生产构建、bundle budget（入口 gzip 144233/153600）、构建 smoke 通过               | 新增集中式 styles/index.css，固定 tokens→foundation→components 层顺序；global/redesign 标注基础、组件和响应式职责 |
 | E10     | DONE                | 2026-09-15 | `[E10]`   | `pnpm --filter frontend exec vitest run src/services/http.test.ts src/composables/useTaskEvents.test.ts`（13 项）                                                  | `pnpm check` 通过 | 前端生产构建、bundle budget 和构建 smoke 通过；主要页面错误入口已接入统一格式化       | 新增离线/超时/429/5xx/客户端错误分类、稳定错误码与请求 ID 展示；取消请求静默处理，不显示为业务失败                |
 | F01     | DONE                | 2026-09-15 | `[F01]`   | `pnpm --filter backend exec vitest run src/__tests__/xhs-runtime.test.ts src/__tests__/xhs-archive.test.ts src/__tests__/xhs-translation-service.test.ts`（13 项） | `pnpm check` 通过 | 小红书登录会话、安装失败、源码/模型摘要、批量翻译、编辑冲突、短链重定向和中断恢复通过 | 安装失败状态显式落为 failed；测试均使用临时目录和 Provider mock，不触碰现有媒体                                   |
+| F02     | DONE                | 2026-09-15 | `[F02]`   | `pnpm --filter backend exec vitest run src/__tests__/app.test.ts src/__tests__/short-video-download.test.ts`（14 项）                                              | `pnpm check` 通过 | 全局 JSON 1 MiB 限制、路径/CRLF 文件名、越权管理、CSRF、登录爆破和限流边界回归通过    | 短视频下载文件名过滤控制字符；既有路径穿越、恶意文件名和权限防护均有负向证据                                      |

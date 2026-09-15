@@ -46,8 +46,12 @@ export async function proxyShortVideoDownload(options: {
 }
 
 export function sanitizeDownloadFilename(value: string) {
-  const filename = value
-    .trim()
+  const filename = Array.from(value.trim())
+    .filter((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint >= 32 && codePoint !== 127;
+    })
+    .join("")
     .replace(/[\\/:*?"<>|]+/g, "")
     .slice(0, 160);
   return filename || "short-video-media";
