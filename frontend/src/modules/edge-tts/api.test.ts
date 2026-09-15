@@ -19,6 +19,7 @@ vi.mock("../../services/http", () => ({
 describe("edge tts api", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // 配音任务可能运行较久，测试固定超时配置，避免后续重构意外恢复默认短超时。
   it("creates a task with bounded request timeout", async () => {
     httpMock.post.mockResolvedValue({ id: "tts-1" });
     const input = {

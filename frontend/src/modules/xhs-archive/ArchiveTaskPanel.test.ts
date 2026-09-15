@@ -63,6 +63,7 @@ function mountPanel(overrides: Partial<{ inputUrl: string; task: XhsArchiveTask;
 
 describe("XHS archive task panel", () => {
   it("renders task progress and emits submit without owning request behavior", async () => {
+    // 面板只负责展示阶段和派发事件，不应在组件内部直接发起网络请求。
     const wrapper = mountPanel({ task: task() });
 
     expect(wrapper.text()).toContain("正在处理");
@@ -81,6 +82,7 @@ describe("XHS archive task panel", () => {
   });
 
   it("routes authentication failures to the login action", async () => {
+    // 后端返回 XHS_AUTH_REQUIRED 时必须展示登录入口，并把动作交给页面任务层处理。
     const wrapper = mountPanel({
       task: task({ status: "failed", errorCode: "XHS_AUTH_REQUIRED", error: "需要登录" })
     });

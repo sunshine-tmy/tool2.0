@@ -28,6 +28,7 @@ describe("video text api", () => {
     httpMock.delete.mockReset();
   });
 
+  // 本地转写和远程抓取都可能超过普通请求时长，测试保留长超时并验证历史查询参数。
   it("allows long-running local transcription requests", () => {
     expect(VIDEO_TEXT_REQUEST_TIMEOUT_MS).toBeGreaterThanOrEqual(30 * 60 * 1000);
   });

@@ -17,6 +17,7 @@ afterEach(() => {
 });
 
 describe("image ai downloads", () => {
+  // API 合约集中验证健康检查、建议图、任务查询和取消，防止单个端点遗漏 Schema 或超时配置。
   it("delegates health, suggestion, task lookup and task cancellation operations", async () => {
     for (const method of Object.values(httpMock)) method.mockResolvedValue({});
     const file = new File(["image"], "input.png", { type: "image/png" });

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createImageItemId } from "./image-id";
 
 describe("image item id", () => {
+  // LAN 页面可能运行在非安全上下文，此时浏览器没有 randomUUID，必须仍能生成稳定格式的本地 ID。
   it("falls back when crypto.randomUUID is unavailable", () => {
     const originalCrypto = globalThis.crypto;
     vi.stubGlobal("crypto", {});

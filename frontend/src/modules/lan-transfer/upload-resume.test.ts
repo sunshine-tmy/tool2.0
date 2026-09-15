@@ -11,6 +11,7 @@ import {
 } from "./upload-resume";
 
 describe("LAN upload resume registry", () => {
+  // localStorage 是浏览器端断点索引，服务端分片状态仍由 uploadId 作为最终事实源。
   const values = new Map<string, string>();
 
   beforeEach(() => {

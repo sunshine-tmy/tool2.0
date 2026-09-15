@@ -6,6 +6,7 @@ import { parseChatterboxSegments } from "./chatterbox-segment-parser";
 
 describe("parseChatterboxSegments", () => {
   it("parses the full numbered Markdown source and Chinese translation example", () => {
+    // 真实复制文本包含 Markdown 加粗、HTML 空格实体和反斜杠换行，覆盖最常见的粘贴格式。
     const input = `1. **Nak minum teh herba, kena sediakan semua ni ke?**\\
    &#x20;想喝草本茶，就要准备这么多东西吗？&#x20;
 2. **Macam-macam bahan nak cari satu-satu.**\\
@@ -61,6 +62,7 @@ describe("parseChatterboxSegments", () => {
   });
 
   it("restores segments from alternating bilingual lines when copied list markers are missing", () => {
+    // 当来源丢失编号时按中马交替行恢复段落，保证用户仍可批量导入双语文案。
     const input = `Nak minum teh herba, kena sediakan semua ni ke?
 想喝草本茶，就要准备这么多东西吗？
 Macam-macam bahan nak cari satu-satu.

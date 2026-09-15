@@ -7,6 +7,7 @@ import type { ShortVideoMedia } from "@toolbox/shared";
 
 describe("short video downloads", () => {
   it("uses the media label and url extension for download names", () => {
+    // 下载名称必须同时满足用户可读性和文件系统安全性。
     const media: ShortVideoMedia = {
       type: "video",
       label: "Default Video",
@@ -27,6 +28,7 @@ describe("short video downloads", () => {
   });
 
   it("creates a local backend download url for remote media", () => {
+    // 浏览器不直接请求第三方媒体，统一通过本地后端代理执行安全校验和流式下载。
     const media: ShortVideoMedia = {
       type: "video",
       label: "Public Video",
@@ -39,6 +41,7 @@ describe("short video downloads", () => {
   });
 
   it("starts downloads through a hidden local download frame", () => {
+    // 隐藏 iframe 避免把大文件读入 JS 内存，并验证定时清理不会遗留 DOM 节点。
     const media: ShortVideoMedia = {
       type: "video",
       label: "默认视频",

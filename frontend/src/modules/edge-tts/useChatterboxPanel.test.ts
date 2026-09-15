@@ -225,6 +225,7 @@ beforeEach(() => {
 
 describe("useChatterboxPanel", () => {
   it("manages editor segments, references and display helpers", async () => {
+    // 面板测试使用真实 composable 组合，仅 mock API，验证编辑器、音色和展示辅助状态能协同工作。
     const { panel, wrapper } = await mountPanel();
     expect(panel.health.value?.available).toBe(true);
     expect(panel.savedVoices.value).toHaveLength(1);

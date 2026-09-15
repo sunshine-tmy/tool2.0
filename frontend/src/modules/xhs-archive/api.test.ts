@@ -23,6 +23,7 @@ describe("XHS archive api", () => {
     for (const method of Object.values(httpMock)) method.mockResolvedValue({});
   });
 
+  // 将获取、登录、翻译和编辑串成一条契约回归，确保所有操作都走正式的 /api/v1 命名空间。
   it("routes archive, authentication, and translation operations through the v1 client", async () => {
     await xhsArchiveApi.runtime();
     await xhsArchiveApi.create("https://www.xiaohongshu.com/explore/one");

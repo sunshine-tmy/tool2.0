@@ -11,6 +11,7 @@ import ImageAiTaskStatusCard from "./ImageAiTaskStatusCard.vue";
 
 describe("image AI task status card", () => {
   it("shows progress and emits cancellation for running tasks", async () => {
+    // running 任务显示队列位置和进度，并通过 cancel 事件交给页面调用后端取消接口。
     const task = {
       id: "task-1",
       status: "running",

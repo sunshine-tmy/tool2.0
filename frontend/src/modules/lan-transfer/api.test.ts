@@ -31,6 +31,7 @@ vi.mock("../../services/http", () => ({
 describe("LAN transfer text-image API", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // multipart 字段名是前后端协议的一部分，除了请求路径还要验证多图片数量和文件元数据。
   it("publishes text and multiple images as multipart data", async () => {
     httpMock.post.mockResolvedValue({ id: "note-1" });
     const first = new File(["first"], "first.png", { type: "image/png" });

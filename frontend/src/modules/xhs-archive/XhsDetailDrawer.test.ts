@@ -18,6 +18,7 @@ const item = {
 
 describe("XHS detail drawer", () => {
   it("renders detail metadata and delegates deletion", async () => {
+    // 抽屉只渲染详情并派发删除事件，删除确认和 API 调用由页面容器统一负责。
     const removeItem = vi.fn();
     const ButtonStub = defineComponent({ template: '<button v-bind="$attrs"><slot name="icon" /><slot /></button>' });
     const DrawerStub = defineComponent({ template: "<div><slot /></div>" });

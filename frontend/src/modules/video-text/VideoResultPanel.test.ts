@@ -19,6 +19,7 @@ const result = {
 
 describe("video result panel", () => {
   it("renders transcript output and delegates copy/export actions", async () => {
+    // 结果面板消费已校验的结果 DTO，并将复制、导出动作委托给页面层。
     const copyFullText = vi.fn();
     const wrapper = mount(VideoResultPanel, {
       props: {

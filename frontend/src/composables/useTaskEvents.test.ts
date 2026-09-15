@@ -7,6 +7,7 @@ import type { TaskDto } from "@toolbox/shared";
 import { useTaskEvents, type TaskEventSource } from "./useTaskEvents";
 
 class FakeEventSource implements TaskEventSource {
+  // 用可控事件源模拟浏览器 EventSource，测试不依赖真实网络也能验证连接生命周期。
   readonly listeners = new Map<string, Set<(event: MessageEvent<string>) => void>>();
   closed = false;
 
@@ -43,6 +44,7 @@ afterEach(() => {
 
 describe("useTaskEvents", () => {
   it("streams task updates and closes after a terminal state", () => {
+    // 覆盖正常建连、非法事件数据和 completed 终态自动关闭，防止 SSE 长连接泄漏。
     const sources: FakeEventSource[] = [];
     const scope = effectScope();
     const result = scope.run(() =>
@@ -87,6 +89,7 @@ describe("useTaskEvents", () => {
   });
 
   it("uses exponential reconnects, pauses while hidden, and aborts polling on dispose", async () => {
+    // 浏览器隐藏时暂停传输，重连耗尽后降级轮询；作用域销毁必须中止正在进行的轮询。
     vi.useFakeTimers();
     let visible = true;
     let visibilityListener: () => void = () => undefined;
@@ -140,6 +143,7 @@ describe("useTaskEvents", () => {
   });
 
   it("closes the stream and aborts polling when the owning request scope aborts", async () => {
+    // 外部页面 AbortSignal 是所有传输的共同生命周期边界，取消后不应再触发重连或提示。
     vi.useFakeTimers();
     const controller = new AbortController();
     const sources: FakeEventSource[] = [];

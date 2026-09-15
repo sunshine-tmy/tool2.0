@@ -15,6 +15,7 @@ vi.mock("../../services/http", () => ({
 describe("image compression api", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // 同时校验单图上传的进度回调和批量下载的文件清单，避免 HTTP 层悄然丢失业务参数。
   it("uploads one image and downloads selected results", async () => {
     httpMock.post.mockResolvedValue({});
     httpMock.postBlob.mockResolvedValue({ blob: new Blob() });

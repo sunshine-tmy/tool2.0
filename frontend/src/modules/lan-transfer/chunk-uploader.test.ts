@@ -7,6 +7,7 @@ import type { LanUploadStatus } from "./types";
 
 describe("ConcurrentChunkUploader", () => {
   it("reconnects to a persisted upload session", async () => {
+    // 刷新页面后复用 uploadId，并只上传服务端尚未确认的分片。
     let requestedUploadId = "";
     const uploadedIndexes: number[] = [];
     const api = createFakeChunkApi({
@@ -51,6 +52,7 @@ describe("ConcurrentChunkUploader", () => {
   });
 
   it("limits active chunk uploads to the configured concurrency", async () => {
+    // 并发上限是内存和带宽护栏，测试确保实现不会因队列调度失控而超额并发。
     let activeUploads = 0;
     let maxActiveUploads = 0;
     const api = createFakeChunkApi({
@@ -74,6 +76,7 @@ describe("ConcurrentChunkUploader", () => {
   });
 
   it("keeps in-flight memory bounded for a large logical file", async () => {
+    // 用虚拟的 512 MB 文件验证实际在途内存只与 chunkSize 和并发数相关，而不是文件总大小。
     const logicalSize = 512 * 1024 * 1024;
     const chunkSize = 4 * 1024 * 1024;
     let activeBytes = 0;
@@ -106,6 +109,7 @@ describe("ConcurrentChunkUploader", () => {
   });
 
   it("pauses before scheduling additional chunks and resumes missing chunks", async () => {
+    // 暂停只中止在途请求并保留确认进度，恢复时不能重复上传已完成分片。
     const uploadedIndexes: number[] = [];
     const api = createFakeChunkApi({
       uploadChunk: async (_uploadId, index) => {
@@ -160,6 +164,7 @@ describe("ConcurrentChunkUploader", () => {
   });
 
   it("retries a failed chunk before failing the upload", async () => {
+    // 单个分片的瞬时网络错误应按配置重试，达到次数后才向上层报告失败。
     const attemptsByChunk = new Map<number, number>();
     const api = createFakeChunkApi({
       uploadChunk: async (_uploadId, index) => {

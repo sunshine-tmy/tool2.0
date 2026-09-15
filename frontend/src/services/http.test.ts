@@ -57,6 +57,7 @@ describe("api error wrapper", () => {
   });
 
   it("adds the administrator CSRF token only to state-changing requests", async () => {
+    // GET 不携带 CSRF，写请求必须携带当前管理员会话 token，避免回归为全局注入或漏注入。
     const instance = {
       get: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null, requestId: "req-get" } }),
       post: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null, requestId: "req-post" } })
@@ -77,6 +78,7 @@ describe("api error wrapper", () => {
   });
 
   it("rejects a successful envelope whose data violates the supplied schema", async () => {
+    // 即使 HTTP 状态成功，业务 data 不符合共享 Schema 也必须拒绝，防止页面消费脏响应。
     const instance = {
       get: vi.fn().mockResolvedValue({
         data: { success: true, message: "ok", data: { status: "unexpected" }, requestId: "req-invalid" }
@@ -104,6 +106,7 @@ describe("api error wrapper", () => {
   });
 
   it("passes AbortSignal through every transport and treats cancellation as non-business failure", async () => {
+    // Axios 取消错误统一转换为 REQUEST_ABORTED，页面不应把用户取消显示成业务失败或重试建议。
     const controller = new AbortController();
     const instance = {
       get: vi.fn().mockRejectedValue({ code: "ERR_CANCELED", name: "CanceledError" })

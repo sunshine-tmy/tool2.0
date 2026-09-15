@@ -10,6 +10,7 @@ import VideoInputPanel from "./VideoInputPanel.vue";
 
 describe("video input panel", () => {
   it("renders source status and delegates upload actions", async () => {
+    // 输入面板只管理文件/拖拽事件的派发，实际上传和任务创建由页面容器负责。
     const submit = vi.fn();
     const wrapper = mount(VideoInputPanel, {
       props: {
