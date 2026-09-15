@@ -43,22 +43,22 @@ export const ChatterboxBatchOrderSchema = Type.Object(
 );
 
 const ChatterboxLanguageSchema = Type.Union(CHATTERBOX_LANGUAGES.map((language) => Type.Literal(language)));
-const ChatterboxAuthorizationSchema = Type.Union([Type.Literal("self"), Type.Literal("authorized")]);
-const ChatterboxTaskStatusSchema = Type.Union([
+export const ChatterboxAuthorizationSchema = Type.Union([Type.Literal("self"), Type.Literal("authorized")]);
+export const ChatterboxTaskStatusSchema = Type.Union([
   Type.Literal("queued"),
   Type.Literal("processing"),
   Type.Literal("completed"),
   Type.Literal("failed"),
   Type.Literal("cancelled")
 ]);
-const ChatterboxBatchStatusSchema = Type.Union([
+export const ChatterboxBatchStatusSchema = Type.Union([
   Type.Literal("queued"),
   Type.Literal("processing"),
   Type.Literal("partial_failed"),
   Type.Literal("completed"),
   Type.Literal("cancelled")
 ]);
-const ChatterboxSubtitleModeSchema = Type.Union([Type.Literal("sentences"), Type.Literal("segments")]);
+export const ChatterboxSubtitleModeSchema = Type.Union([Type.Literal("sentences"), Type.Literal("segments")]);
 const ChatterboxPaginationSchema = Type.Object(
   {
     page: Type.Integer({ minimum: 1 }),
@@ -253,170 +253,18 @@ export type ChatterboxVoiceIdParams = Static<typeof ChatterboxVoiceIdParamsSchem
 export type ChatterboxBatchItemParams = Static<typeof ChatterboxBatchItemParamsSchema>;
 export type ChatterboxBatchOrder = Static<typeof ChatterboxBatchOrderSchema>;
 
-export type ChatterboxVoiceAuthorization = "self" | "authorized";
-export type ChatterboxSubtitleMode = "sentences" | "segments";
-export type ChatterboxTaskStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
-export type ChatterboxBatchStatus = "queued" | "processing" | "partial_failed" | "completed" | "cancelled";
-
-export type ChatterboxTask = {
-  id: string;
-  engine: "chatterbox-multilingual-v3";
-  status: ChatterboxTaskStatus;
-  progress: number;
-  text: string;
-  language: ChatterboxLanguage;
-  referenceFileName: string;
-  referenceDurationSeconds: number;
-  authorization: ChatterboxVoiceAuthorization;
-  consentConfirmed: true;
-  exaggeration: number;
-  cfgWeight: number;
-  temperature: number;
-  seed: number;
-  includeSubtitles: boolean;
-  fileName?: string;
-  characterCount: number;
-  audioBytes?: number;
-  audioDurationSeconds?: number;
-  error?: string;
-  createdAt: string;
-  updatedAt: string;
-  expiresAt: string;
-  audioUrl?: string;
-  downloadUrl?: string;
-  subtitleUrl?: string;
-};
-
-export type ChatterboxTaskSummary = Omit<ChatterboxTask, "text"> & {
-  textPreview: string;
-};
-
-export type ChatterboxTaskList = {
-  tasks: ChatterboxTaskSummary[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
-};
-
-export type ChatterboxHealth = {
-  protocolVersion: number;
-  available: boolean;
-  workerAvailable: boolean;
-  packageVersion?: string;
-  model: "multilingual-v3";
-  modelLoaded: boolean;
-  device?: "cuda" | "cpu";
-  gpuName?: string;
-  message: string;
-  reference: {
-    maxBytes: number;
-    minSeconds: number;
-    maxSeconds: number;
-  };
-  maxTextLength: number;
-  retentionDays: number;
-  queue: {
-    active: number;
-    queued: number;
-    concurrency: 1;
-    limit: number;
-  };
-  watermarked: true;
-};
-
-export type ChatterboxBatchItem = {
-  id: string;
-  order: number;
-  text: string;
-  referenceTranslation?: string;
-  fileName?: string;
-  status: ChatterboxTaskStatus;
-  progress: number;
-  attempt: number;
-  seed?: number;
-  exaggeration?: number;
-  cfgWeight?: number;
-  temperature?: number;
-  characterCount: number;
-  audioBytes?: number;
-  audioDurationSeconds?: number;
-  error?: string;
-  createdAt: string;
-  updatedAt: string;
-  audioUrl?: string;
-  downloadUrl?: string;
-};
-
-export type ChatterboxSavedVoice = {
-  id: string;
-  name: string;
-  language: ChatterboxLanguage;
-  originalFileName: string;
-  durationSeconds: number;
-  audioBytes: number;
-  authorization: ChatterboxVoiceAuthorization;
-  consentConfirmed: true;
-  createdAt: string;
-  updatedAt: string;
-  audioUrl: string;
-};
-
-export type ChatterboxSavedVoiceList = {
-  voices: ChatterboxSavedVoice[];
-};
-
-export type ChatterboxBatchItemSummary = Omit<ChatterboxBatchItem, "text" | "referenceTranslation"> & {
-  textPreview: string;
-};
-
-export type ChatterboxBatch = {
-  id: string;
-  engine: "chatterbox-multilingual-v3";
-  status: ChatterboxBatchStatus;
-  progress: number;
-  name?: string;
-  language: ChatterboxLanguage;
-  referenceFileName: string;
-  referenceDurationSeconds: number;
-  referenceRetained: boolean;
-  referenceAvailable: boolean;
-  authorization: ChatterboxVoiceAuthorization;
-  consentConfirmed: true;
-  exaggeration: number;
-  cfgWeight: number;
-  temperature: number;
-  seed: number;
-  includeSubtitles: boolean;
-  subtitleMode: ChatterboxSubtitleMode;
-  items: ChatterboxBatchItem[];
-  totalCharacters: number;
-  totalAudioBytes?: number;
-  totalAudioDurationSeconds?: number;
-  completedItems: number;
-  failedItems: number;
-  createdAt: string;
-  updatedAt: string;
-  expiresAt: string;
-  combinedAudioUrl?: string;
-  subtitleUrl?: string;
-  translationSubtitleUrl?: string;
-  bilingualSubtitleUrl?: string;
-  archiveUrl?: string;
-};
-
-export type ChatterboxBatchSummary = Omit<ChatterboxBatch, "items"> & {
-  itemPreviews: ChatterboxBatchItemSummary[];
-};
-
-export type ChatterboxBatchList = {
-  batches: ChatterboxBatchSummary[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
-};
+export type ChatterboxVoiceAuthorization = Static<typeof ChatterboxAuthorizationSchema>;
+export type ChatterboxSubtitleMode = Static<typeof ChatterboxSubtitleModeSchema>;
+export type ChatterboxTaskStatus = Static<typeof ChatterboxTaskStatusSchema>;
+export type ChatterboxBatchStatus = Static<typeof ChatterboxBatchStatusSchema>;
+export type ChatterboxTask = Static<typeof ChatterboxTaskSchema>;
+export type ChatterboxTaskSummary = Static<typeof ChatterboxTaskSummarySchema>;
+export type ChatterboxTaskList = Static<typeof ChatterboxTaskListSchema>;
+export type ChatterboxHealth = Static<typeof ChatterboxHealthSchema>;
+export type ChatterboxBatchItem = Static<typeof ChatterboxBatchItemSchema>;
+export type ChatterboxSavedVoice = Static<typeof ChatterboxSavedVoiceSchema>;
+export type ChatterboxSavedVoiceList = Static<typeof ChatterboxSavedVoiceListSchema>;
+export type ChatterboxBatchItemSummary = Static<typeof ChatterboxBatchItemSummarySchema>;
+export type ChatterboxBatch = Static<typeof ChatterboxBatchSchema>;
+export type ChatterboxBatchSummary = Static<typeof ChatterboxBatchSummarySchema>;
+export type ChatterboxBatchList = Static<typeof ChatterboxBatchListSchema>;

@@ -93,7 +93,7 @@ export function registerChatterboxVoiceRoutes(
 
   app.get<{ Params: ChatterboxVoiceIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/voices/:voiceId/audio",
-    { schema: { params: ChatterboxVoiceIdParamsSchema } },
+    { schema: { params: ChatterboxVoiceIdParamsSchema, response: { 404: ApiFailureSchema } } },
     async (request, reply) => {
       const voiceId = voiceIdFrom(request.params);
       const voice = voiceStore.get(voiceId);

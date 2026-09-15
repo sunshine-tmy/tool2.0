@@ -93,6 +93,28 @@ afterEach(async () => {
 });
 
 describe("Chatterbox voice cloning module", () => {
+  it("returns the shared failure contract for missing task, batch and voice artifacts", async () => {
+    const app = await createApp();
+    const urls = [
+      "/api/v1/tools/edge-tts/chatterbox/tasks/task_123456/audio",
+      "/api/v1/tools/edge-tts/chatterbox/batches/batch_123456/items/item_123456/audio",
+      "/api/v1/tools/edge-tts/chatterbox/batches/batch_123456/combined-audio",
+      "/api/v1/tools/edge-tts/chatterbox/voices/voice_123456/audio"
+    ];
+
+    for (const url of urls) {
+      const response = await app.inject({ method: "GET", url });
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toMatchObject({
+        success: false,
+        message: expect.any(String),
+        error: { code: expect.any(String), message: expect.any(String) },
+        requestId: expect.any(String)
+      });
+    }
+    await app.close();
+  });
+
   it.each(["ms", "pt-BR"])("generates ordered batch audio and supports item regeneration in %s", async (language) => {
     const app = await createApp();
     const segments = [

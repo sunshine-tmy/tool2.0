@@ -204,19 +204,19 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.get<{ Params: ChatterboxBatchItemParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/audio",
-    { schema: { params: ChatterboxBatchItemParamsSchema } },
+    { schema: { params: ChatterboxBatchItemParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => sendBatchAudio(store, request.params, reply, false)
   );
 
   app.get<{ Params: ChatterboxBatchItemParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/download",
-    { schema: { params: ChatterboxBatchItemParamsSchema } },
+    { schema: { params: ChatterboxBatchItemParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => sendBatchAudio(store, request.params, reply, true)
   );
 
   app.get<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/combined-audio",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    { schema: { params: ChatterboxBatchIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -241,7 +241,7 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.get<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/subtitle",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    { schema: { params: ChatterboxBatchIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -266,7 +266,7 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.get<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/subtitle.zh-CN",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    { schema: { params: ChatterboxBatchIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -296,7 +296,7 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.get<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/subtitle.bilingual",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    { schema: { params: ChatterboxBatchIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);
@@ -324,7 +324,7 @@ export async function registerChatterboxBatchRoutes(options: {
 
   app.get<{ Params: ChatterboxBatchIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/download.zip",
-    { schema: { params: ChatterboxBatchIdParamsSchema } },
+    { schema: { params: ChatterboxBatchIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => {
       const batchId = batchIdFrom(request.params);
       const batch = store.get(batchId);

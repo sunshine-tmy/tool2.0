@@ -227,19 +227,19 @@ export async function registerChatterboxRoutes(
 
   app.get<{ Params: ChatterboxTaskIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/audio",
-    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    { schema: { params: ChatterboxTaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => sendTaskFile(store, request.params.taskId, "audio", reply, false)
   );
 
   app.get<{ Params: ChatterboxTaskIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/download",
-    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    { schema: { params: ChatterboxTaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => sendTaskFile(store, request.params.taskId, "audio", reply, true)
   );
 
   app.get<{ Params: ChatterboxTaskIdParams }>(
     "/api/v1/tools/edge-tts/chatterbox/tasks/:taskId/subtitle",
-    { schema: { params: ChatterboxTaskIdParamsSchema } },
+    { schema: { params: ChatterboxTaskIdParamsSchema, response: { 404: ApiFailureSchema, 409: ApiFailureSchema } } },
     async (request, reply) => sendTaskFile(store, request.params.taskId, "subtitle", reply, true)
   );
 
