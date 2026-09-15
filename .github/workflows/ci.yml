@@ -135,3 +135,33 @@ jobs:
         run: pnpm --dir "$env:STANDALONE_ROOT" build
       - shell: pwsh
         run: node "$env:STANDALONE_ROOT/scripts/smoke-standalone.mjs" "$env:STANDALONE_ROOT"
+
+  enterprise-acceptance:
+    if: ${{ always() }}
+    needs: [static, node-tests, e2e, python, build-and-audit, distribution-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STORAGE_ROOT: ${{ runner.temp }}/toolbox-acceptance-storage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "11.7.0" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Require upstream gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${{ needs.static.result }}" = success
+          test "${{ needs.node-tests.result }}" = success
+          test "${{ needs.e2e.result }}" = success
+          test "${{ needs.python.result }}" = success
+          test "${{ needs.build-and-audit.result }}" = success
+          test "${{ needs.distribution-smoke.result }}" = success
+      - run: git diff --check
+      - run: pnpm db:migrate --dry-run
+      - run: pnpm db:migrate
+      - run: pnpm db:verify
+      - run: pnpm db:benchmark

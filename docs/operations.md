@@ -130,6 +130,8 @@ pwsh ./scripts/package-standalone.ps1 -Platform macos
 
 发布前必须在干净 checkout 执行 `pnpm check`，再从真实 ZIP/TAR.GZ 解压目录执行 `pnpm install --frozen-lockfile`、`pnpm build` 和 `scripts/smoke-standalone.mjs`。冒烟必须覆盖 `/health/ready`、前端预览、上传、下载、删除和有界退出；不得直接把 staging 目录当成分发测试对象。
 
+CI 的 `enterprise-acceptance` job 会在所有静态检查、Node/Python 测试、E2E、构建审计和双平台归档冒烟成功后，使用隔离临时 `STORAGE_ROOT` 重跑迁移 dry-run、初始化、`db:verify` 和 10,000 条数据基准；它不会触碰开发机的现有 storage。变更行覆盖率 90%（F06）在重构分支合并形成新基线前保持阻塞。
+
 ## 8. 常见故障定位
 
 | 现象                              | 首先检查                                                                                        |
