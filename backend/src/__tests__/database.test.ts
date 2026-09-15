@@ -314,6 +314,75 @@ describe("toolbox database", () => {
     expect(repository.list("image-compress", "task-1")).toHaveLength(0);
     database.close();
   });
+
+  it("upgrades v4 file metadata in place and remains idempotent after restart", async () => {
+    const databasePath = await prepareDatabasePath();
+    const legacy = new Database(databasePath);
+    legacy.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+      INSERT INTO schema_migrations(version, applied_at) VALUES (4, '2026-01-01T00:00:00.000Z');
+      CREATE TABLE files (
+        id TEXT PRIMARY KEY,
+        entity_kind TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL UNIQUE,
+        byte_size INTEGER NOT NULL CHECK(byte_size >= 0),
+        sha256 TEXT,
+        media_type TEXT,
+        created_at TEXT NOT NULL
+      );
+    `);
+    legacy
+      .prepare(
+        "INSERT INTO files(id, entity_kind, entity_id, relative_path, byte_size, sha256, media_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      )
+      .run(
+        "legacy-file",
+        "video-text-result",
+        "task-1",
+        "video-text/results/task-1.json",
+        2,
+        "aa",
+        "application/json",
+        "2026-01-01"
+      );
+    legacy.close();
+
+    const upgraded = new ToolboxDatabase(databasePath);
+    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    expect(upgraded.connection.pragma("table_info(files)")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "owner" })])
+    );
+    expect(upgraded.getFile("legacy-file")).toMatchObject({ relativePath: "video-text/results/task-1.json" });
+    upgraded.close();
+
+    const restarted = new ToolboxDatabase(databasePath);
+    expect(restarted.listFiles()).toHaveLength(1);
+    expect(restarted.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    restarted.close();
+  });
+
+  it("rolls back a metadata transaction without leaving partial rows", async () => {
+    const databasePath = await prepareDatabasePath();
+    const database = new ToolboxDatabase(databasePath);
+    const now = new Date().toISOString();
+    expect(() =>
+      database.transaction(() => {
+        database.upsertFile({
+          id: "transaction-file",
+          entityKind: "image-ai-result",
+          entityId: "task-transaction",
+          relativePath: "image-ai/task-transaction/result.png",
+          byteSize: 1,
+          createdAt: now
+        });
+        throw new Error("simulated interruption");
+      })
+    ).toThrow("simulated interruption");
+    expect(database.getFile("transaction-file")).toBeUndefined();
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [] });
+    database.close();
+  });
 });
 
 async function prepareDatabasePath() {
