@@ -34,6 +34,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: "24", cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Install media tools for Chatterbox tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ffmpeg
+          ffmpeg -version
       - run: pnpm coverage
       - run: pnpm db:benchmark
       - name: Upload LCOV reports

@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$packageRoot = Join-Path $repositoryRoot ".package\standalone"
+$packageRoot = Join-Path (Join-Path $repositoryRoot ".package") "standalone"
 $stagingRoot = Join-Path $packageRoot "toolbox-$Platform"
 $archivePath = if ($Platform -eq "windows") {
   Join-Path $packageRoot "toolbox-windows-x64.zip"
@@ -181,7 +181,7 @@ if ($LASTEXITCODE -ne 0) { throw "git archive failed" }
 Expand-Archive -LiteralPath $sourceArchive -DestinationPath $stagingRoot -Force
 Remove-Item -LiteralPath $sourceArchive -Force
 
-$templateRoot = Join-Path $stagingRoot "packaging\standalone"
+$templateRoot = Join-Path (Join-Path $stagingRoot "packaging") "standalone"
 Get-ChildItem -LiteralPath $templateRoot -File | Where-Object {
   $_.Name -ne "README.md" -and
   (($Platform -eq "windows" -and $_.Extension -eq ".bat") -or
