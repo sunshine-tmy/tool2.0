@@ -29,6 +29,111 @@ $python = if ($Platform -eq "windows") {
   }
 }
 
+function Set-DeterministicTimestamps {
+  param(
+    [string]$Root,
+    [DateTime]$Timestamp
+  )
+
+  @(
+    Get-Item -LiteralPath $Root
+    Get-ChildItem -LiteralPath $Root -Force -Recurse
+  ) | ForEach-Object {
+    $_.LastWriteTimeUtc = $Timestamp
+    $_.CreationTimeUtc = $Timestamp
+    $_.LastAccessTimeUtc = $Timestamp
+  }
+}
+
+function Get-SortedRelativeFiles {
+  param([string]$Root)
+
+  $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd("\", "/")
+  $files = [System.Collections.Generic.List[string]]::new()
+  foreach ($file in Get-ChildItem -LiteralPath $Root -File -Force -Recurse) {
+    $relative = $file.FullName.Substring($rootPath.Length).TrimStart("\", "/").Replace("\", "/")
+    $files.Add($relative)
+  }
+  $files.Sort([StringComparer]::Ordinal)
+  return $files
+}
+
+function New-DeterministicZip {
+  param(
+    [string]$Root,
+    [string]$Destination,
+    [DateTime]$Timestamp
+  )
+
+  Add-Type -AssemblyName System.IO.Compression
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $zip = [IO.Compression.ZipFile]::Open($Destination, [IO.Compression.ZipArchiveMode]::Create)
+  try {
+    foreach ($relative in Get-SortedRelativeFiles -Root $Root) {
+      $source = Join-Path $Root ($relative.Replace("/", [IO.Path]::DirectorySeparatorChar))
+      $entry = $zip.CreateEntry($relative, [IO.Compression.CompressionLevel]::Optimal)
+      $entry.LastWriteTime = [DateTimeOffset]$Timestamp
+      $input = [IO.File]::OpenRead($source)
+      $output = $entry.Open()
+      try {
+        $input.CopyTo($output)
+      } finally {
+        $output.Dispose()
+        $input.Dispose()
+      }
+    }
+  } finally {
+    $zip.Dispose()
+  }
+}
+
+function New-DeterministicTarGz {
+  param(
+    [string]$Root,
+    [string]$PackageRoot,
+    [string]$Destination,
+    [DateTime]$Timestamp
+  )
+
+  $entries = @(Get-SortedRelativeFiles -Root $Root | ForEach-Object {
+    "$(Split-Path -Leaf $Root)/$_"
+  })
+  $tarTimestamp = $Timestamp.ToString("yyyy-MM-dd HH:mm:ss", [Globalization.CultureInfo]::InvariantCulture)
+  $tarPath = Join-Path $PackageRoot "archive-content.tar"
+  # Pass the sorted file names as native arguments instead of a text file. This
+  # preserves Unicode paths on Windows bsdtar (notably the Chinese launcher
+  # names) while keeping the archive order deterministic.
+  $tarArguments = @(
+    "-C", $PackageRoot,
+    "--mtime", $tarTimestamp,
+    "--uid", "0",
+    "--gid", "0",
+    "--uname", "root",
+    "--gname", "root",
+    "--no-recursion"
+  ) + $entries
+  try {
+    & tar -cf $tarPath @tarArguments
+    if ($LASTEXITCODE -ne 0) { throw "tar failed" }
+
+    # bsdtar's built-in gzip writer records the current time in the gzip header.
+    # Compress the deterministic tar bytes with .NET instead; GZipStream emits
+    # a stable header and therefore the same digest for the same source commit.
+    $input = [IO.File]::OpenRead($tarPath)
+    $output = [IO.File]::Create($Destination)
+    $gzip = [IO.Compression.GZipStream]::new($output, [IO.Compression.CompressionLevel]::Optimal, $false)
+    try {
+      $input.CopyTo($gzip)
+    } finally {
+      $gzip.Dispose()
+      $output.Dispose()
+      $input.Dispose()
+    }
+  } finally {
+    Remove-Item -LiteralPath $tarPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
 function Assert-PathWithin([string]$Path, [string]$Root) {
   $resolvedPath = [IO.Path]::GetFullPath($Path).TrimEnd("\", "/")
   $resolvedRoot = [IO.Path]::GetFullPath($Root).TrimEnd("\", "/")
@@ -47,6 +152,12 @@ $trackedFiles = @(& git -C $repositoryRoot -c core.quotepath=false ls-tree -r --
   -not $_.StartsWith("docs/", [StringComparison]::OrdinalIgnoreCase)
 })
 if ($LASTEXITCODE -ne 0) { throw "git ls-tree failed" }
+$commit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0) { throw "git rev-parse failed" }
+$commitTimestamp = (& git -C $repositoryRoot show -s --format=%cI HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $commitTimestamp) { throw "git could not resolve the HEAD timestamp" }
+$commitDate = [DateTimeOffset]::Parse($commitTimestamp).UtcDateTime
+$sourceDate = $commitDate.ToString("yyyy-MM-ddTHH:mm:ss.fffZ", [Globalization.CultureInfo]::InvariantCulture)
 
 if ($Preview) {
   [pscustomobject]@{
@@ -96,8 +207,8 @@ if (-not $SkipPythonInstaller) {
 $manifest = [ordered]@{
   schemaVersion = 1
   platform = $Platform
-  commit = (& git -C $repositoryRoot rev-parse HEAD).Trim()
-  createdAt = [DateTime]::UtcNow.ToString("o")
+  commit = $commit
+  createdAt = $sourceDate
   node = "24.x"
   pnpm = "11.7.x"
   pythonInstaller = if ($SkipPythonInstaller) { $null } else { $python }
@@ -108,12 +219,13 @@ $licenseOutput = & pnpm -C $repositoryRoot licenses list --prod --json
 if ($LASTEXITCODE -ne 0) { throw "pnpm license inventory failed" }
 $licenseOutput | Set-Content -LiteralPath (Join-Path $stagingRoot "third-party-licenses.json") -Encoding UTF8
 
+Set-DeterministicTimestamps -Root $stagingRoot -Timestamp $commitDate
+
 if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
 if ($Platform -eq "windows") {
-  Compress-Archive -Path (Join-Path $stagingRoot "*") -DestinationPath $archivePath -CompressionLevel Optimal
+  New-DeterministicZip -Root $stagingRoot -Destination $archivePath -Timestamp $commitDate
 } else {
-  & tar -czf $archivePath -C $packageRoot (Split-Path -Leaf $stagingRoot)
-  if ($LASTEXITCODE -ne 0) { throw "tar failed" }
+  New-DeterministicTarGz -Root $stagingRoot -PackageRoot $packageRoot -Destination $archivePath -Timestamp $commitDate
 }
 
 $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
