@@ -339,6 +339,7 @@ function closeMobileDrawer() {
 }
 
 function openServiceDrawer() {
+  // 抽屉打开时并行刷新服务状态和清理统计，主页面不因维护信息请求而阻塞。
   serviceDrawerOpen.value = true;
   void loadServiceStatus();
   void loadCleanup();
@@ -348,6 +349,7 @@ async function loadCleanup() {
   cleanupLoading.value = true;
   cleanupError.value = "";
   try {
+    // 清理统计来自后端实际文件和元数据，前端只维护选择状态，不自行推算可删除范围。
     cleanupCategories.value = await httpClient.get("/maintenance/cleanup", CleanupInspectionSchema);
     if (!selectedCleanupIds.value.length)
       selectedCleanupIds.value = cleanupCategories.value.filter((item) => item.defaults).map((item) => item.id);
@@ -360,6 +362,7 @@ async function loadCleanup() {
 
 async function executeCleanup() {
   const selected = cleanupCategories.value.filter((item) => selectedCleanupIds.value.includes(item.id));
+  // 高风险类别需要二次确认；提交后重新读取统计，避免使用已过期的字节数。
   const highRisk = selected.some((item) => item.risk === "high");
   const accepted = await confirm(
     `将清理 ${selected.map((item) => item.label).join("、")}，预计释放 ${formatBytes(cleanupSelectedBytes.value)}。未勾选的数据不会改变。`,
@@ -393,10 +396,12 @@ function formatBytes(value: number) {
 async function loadServiceStatus() {
   apiState.value = "checking";
   try {
+    // 健康检查失败只将状态标记为 offline，不影响已加载页面的本地交互。
     const health = await httpClient.get("/health", ApiHealthSchema);
     deploymentMode.value = health.deploymentMode;
     apiState.value = "online";
     if (deploymentMode.value === "lan" && !sessionRestoreAttempted) {
+      // LAN 模式仅尝试恢复一次管理员会话，避免每次打开抽屉都重复请求或触发登录限流。
       sessionRestoreAttempted = true;
       try {
         await restoreAdminSession();
@@ -421,6 +426,7 @@ async function loginAdmin() {
   adminLoading.value = true;
   adminError.value = "";
   try {
+    // PIN 只在 HTTPS/本机环境的会话请求中提交，成功后服务端通过 HttpOnly Cookie 维持会话。
     await authenticateAdmin(adminPin.value);
     adminPin.value = "";
     adminAuthenticated.value = true;
@@ -460,6 +466,7 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 onMounted(() => {
+  // 统一注册响应式布局和快捷键监听，卸载时成对移除，避免热更新叠加事件处理器。
   compactQuery = window.matchMedia("(max-width: 900px)");
   syncCompactLayout();
   compactQuery.addEventListener("change", syncCompactLayout);

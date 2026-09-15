@@ -47,6 +47,7 @@ export function createImageAiTaskManager(
   const shutdownController = new AbortController();
 
   async function initialize() {
+    // 恢复任务前先确保输入、输出和清单目录存在；启动后再清理过期任务并调度等待中的任务。
     await Promise.all([
       fs.mkdir(config.imageAiInputsDir, { recursive: true }),
       fs.mkdir(config.imageAiOutputsDir, { recursive: true }),
@@ -60,6 +61,7 @@ export function createImageAiTaskManager(
   }
 
   async function close() {
+    // 关闭时停止接收新任务、终止 Worker 信号并等待当前 drain 收敛，避免留下 running 状态。
     stopped = true;
     queue.length = 0;
     shutdownController.abort();
@@ -72,6 +74,7 @@ export function createImageAiTaskManager(
   }
 
   function tryReserveSlot() {
+    // reservation 将“即将入队”的任务也计入额度，防止并发请求同时通过检查后突破队列上限。
     if (activeCount() + reservations >= config.imageAiQueueLimit) return undefined;
     reservations += 1;
     let released = false;
@@ -89,6 +92,7 @@ export function createImageAiTaskManager(
     maskPath?: string;
     scale?: 2 | 4;
   }) {
+    // 任务先落库再启动 drain；持久化失败会从内存队列回滚，调用方不会拿到不可恢复的 taskId。
     const now = new Date();
     const task: StoredImageAiTask = {
       id: input.id,
@@ -158,6 +162,7 @@ export function createImageAiTaskManager(
     const task = tasks.get(taskId);
     if (!task) return undefined;
     if (task.status === "pending") {
+      // 未开始的任务可以立即从队列移除；运行中的任务只设置取消标记，等当前图片处理完成后终止。
       const index = queue.indexOf(taskId);
       if (index >= 0) queue.splice(index, 1);
       patchTask(task, { status: "canceled", progress: 100, queuePosition: null });
@@ -173,6 +178,7 @@ export function createImageAiTaskManager(
   }
 
   async function cleanupExpired(now = Date.now()) {
+    // 过期任务、关联元数据和结果目录一起回收；运行中的任务永不在定时清理中删除。
     for (const task of Array.from(tasks.values())) {
       if (Date.parse(task.expiresAt) > now || task.status === "running") continue;
       const queueIndex = queue.indexOf(task.id);
@@ -193,6 +199,7 @@ export function createImageAiTaskManager(
 
   function scheduleDrain() {
     if (stopped || drainPromise) return;
+    // 使用微任务合并同一事件循环内的多次入队，保证队列只有一个消费者。
     queueMicrotask(() => {
       if (stopped || drainPromise) return;
       const operation = drain()
@@ -212,6 +219,7 @@ export function createImageAiTaskManager(
     if (processing) return;
     processing = true;
     try {
+      // 串行处理队列，模型 Worker 通常占用大量显存；失败由 scheduleDrain 延迟重试而不阻塞关闭。
       while (queue.length) {
         const taskId = queue.shift()!;
         refreshQueuePositions();
@@ -225,6 +233,7 @@ export function createImageAiTaskManager(
   }
 
   async function processTask(task: StoredImageAiTask) {
+    // 每张图片独立记录结果和警告，部分失败仍可完成任务；服务关闭则显式标记为可重试的中断。
     patchTask(task, { status: "running", progress: 5, queuePosition: null });
     await persist(task);
     const outputDir = path.join(config.imageAiOutputsDir, task.id);

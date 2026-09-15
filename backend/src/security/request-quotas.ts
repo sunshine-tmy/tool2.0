@@ -7,6 +7,7 @@ import { fail } from "@toolbox/shared";
 const minute = "1 minute";
 
 export const REQUEST_QUOTAS = {
+  // 不同资源按成本设置独立限流和并发额度，避免单个上传或模型任务耗尽整个服务容量。
   login: { rateLimit: { max: 5, timeWindow: minute }, concurrencyLimit: 2 },
   lanUpload: { rateLimit: { max: 30, timeWindow: minute }, concurrencyLimit: 4 },
   lanChunk: { rateLimit: { max: 120, timeWindow: minute }, concurrencyLimit: 16 },
@@ -23,6 +24,7 @@ export function registerConcurrencyQuotas(app: FastifyInstance) {
   const acquired = new WeakMap<FastifyRequest, string>();
 
   app.addHook("preHandler", async (request, reply) => {
+    // 额度以“HTTP 方法 + 注册路由”为键，动态路由参数不会把同一类请求拆成多个桶。
     const limit = request.routeOptions.config.concurrencyLimit;
     if (!limit) return;
     const route = `${request.method} ${request.routeOptions.url}`;
@@ -37,6 +39,7 @@ export function registerConcurrencyQuotas(app: FastifyInstance) {
   });
 
   const release = (request: FastifyRequest) => {
+    // onResponse/onError 均会释放占用，WeakMap 令同一请求最多释放一次。
     const route = acquired.get(request);
     if (!route) return;
     acquired.delete(request);

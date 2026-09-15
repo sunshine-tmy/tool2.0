@@ -84,6 +84,7 @@ export class XhsArchiveTaskService {
   }
 
   async processTask(taskId: string, source: string) {
+    // 每个获取任务使用独立 staging 目录；只有全部媒体下载并校验成功后才替换旧存档。
     const staging = await this.store.createStaging(taskId);
     try {
       this.updateTask(taskId, "running", "installing", 3, "准备小红书解析环境");
@@ -137,6 +138,7 @@ export class XhsArchiveTaskService {
       const warnings: string[] = [];
       for (const sourceMedia of mediaSources) {
         try {
+          // 媒体逐个流式下载并计算摘要；与旧摘要一致时复用旧文件，减少重复流量和磁盘写入。
           let downloaded = await this.downloadMedia(
             sourceMedia.url,
             sourceMedia.kind,
@@ -217,10 +219,12 @@ export class XhsArchiveTaskService {
                 error: undefined
               };
       }
+      // store.commit 负责原子替换清单和媒体；提交前任一异常都会删除 staging，旧存档保持可用。
       await this.store.commit(item, staging);
       this.updateTask(taskId, "completed", "completed", 100, previous ? "存档已更新" : "内容已获取并存档", item.id);
       void this.translation.enqueue([item.id], false).catch(() => undefined);
     } catch (error) {
+      // 失败只更新任务状态，不覆盖已有存档；staging 清理失败也不能影响错误回传。
       await fsp.rm(staging, { recursive: true, force: true });
       const task = this.tasks.get(taskId);
       if (task) {
@@ -255,6 +259,7 @@ export class XhsArchiveTaskService {
       this.config.remoteFetchTimeoutMs
     );
     await response.body?.cancel();
+    // 短链只允许解析到官方域名，且通过统一远程抓取器逐跳执行 SSRF 校验。
     const resolved = extractXhsUrl(response.url);
     if (!resolved || !new URL(resolved).hostname.toLowerCase().endsWith("xiaohongshu.com"))
       throw new XhsError("XHS_URL_INVALID", "小红书短链未跳转到受支持的内容地址");
@@ -282,6 +287,7 @@ export class XhsArchiveTaskService {
         callback(null, chunk);
       }
     });
+    // 以流方式写入 staging 并限制响应体大小，大文件不会一次性进入内存。
     await pipeline(
       limitedResponseStream(response, this.config.remoteMediaMaxBytes),
       hasher,

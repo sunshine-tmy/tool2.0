@@ -44,6 +44,7 @@ export class XhsRuntimeInstallGateway {
 
   async install() {
     try {
+      // 安装步骤固定为“准备 Python → 固定源码 → 虚拟环境 → 依赖 → 摘要校验”，每一步都会更新可观察进度。
       await fsp.mkdir(this.config.xhsRuntimeDir, { recursive: true });
       this.report("installing", 5, "检查 Python 3.12");
       const python = (await findPython312()) ?? (await this.installManagedPython());
@@ -60,6 +61,7 @@ export class XhsRuntimeInstallGateway {
       const marker = path.join(this.config.xhsRuntimeDir, ".installed-commit");
       const installed = await fsp.readFile(marker, "utf8").catch(() => "");
       if (installed.trim() !== XHS_COMMIT) {
+        // 只有提交标记不匹配时才安装依赖，重复启动可直接复用已验证的运行时。
         this.report("installing", 65, "安装固定版本解析依赖");
         const uv = await this.ensureUv();
         await run(
@@ -105,6 +107,7 @@ export class XhsRuntimeInstallGateway {
     await fsp.rm(staging, { recursive: true, force: true });
     await fsp.mkdir(staging, { recursive: true });
     try {
+      // 第三方压缩包先检查目录清单，再解压到隔离目录，防止路径穿越或污染运行时目录。
       await download(`https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/${target}`, archive);
       const listing = await run("tar", ["-tf", archive], this.config.xhsInstallTimeoutMs);
       validateArchiveListing(listing);
@@ -116,6 +119,7 @@ export class XhsRuntimeInstallGateway {
       if (process.platform !== "win32") await fsp.chmod(binary, 0o755);
       return binary;
     } finally {
+      // 安装器只在安装期间保留压缩包和 staging，完成或失败都清理临时产物。
       await fsp.rm(staging, { recursive: true, force: true });
       await fsp.rm(archive, { force: true });
     }
@@ -127,6 +131,7 @@ export class XhsRuntimeInstallGateway {
     this.report("installing", 40, "下载 XHS-Downloader 2.7 固定源码");
     const archive = path.join(this.config.xhsRuntimeDir, "xhs-source.zip");
     try {
+      // XHS 源码固定到提交哈希，下载后先校验归档目录和必需文件，再允许运行。
       await download(`https://codeload.github.com/JoeanAmier/XHS-Downloader/zip/${XHS_COMMIT}`, archive);
       const listing = await run("tar", ["-tf", archive], this.config.xhsInstallTimeoutMs);
       validateArchiveListing(listing);
@@ -149,6 +154,7 @@ export class XhsRuntimeInstallGateway {
     const digest = await digestFiles(sourceDir, required);
     const digestFile = path.join(this.config.xhsRuntimeDir, ".source-sha256");
     const previous = await fsp.readFile(digestFile, "utf8").catch(() => "");
+    // 首次安装记录摘要，后续启动必须匹配；源码被替换时宁可阻止任务也不执行未知代码。
     if (previous && previous.trim() !== digest) throw new Error("固定版本源码摘要校验失败");
     if (!previous) {
       await fsp.writeFile(digestFile, `${digest}\n`, "utf8");

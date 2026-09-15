@@ -45,12 +45,14 @@ type LegacyMigrationResult = {
 
 export async function openToolboxDatabase(config: AppConfig) {
   if (config.databasePath === ":memory:") {
+    // 测试内存库不读取本地 JSON，直接验证 Schema，保持测试与生产初始化路径一致。
     const database = new ToolboxDatabase(config.databasePath);
     assertDatabaseHealthy(database);
     return { database, migration: emptyResult() };
   }
 
   if (fs.existsSync(config.databasePath)) {
+    // 已存在正式数据库时先做完整性检查，再执行幂等的旧数据迁移；任一步失败都关闭连接并阻止启动。
     const database = new ToolboxDatabase(config.databasePath);
     try {
       assertDatabaseHealthy(database);
@@ -64,6 +66,7 @@ export async function openToolboxDatabase(config: AppConfig) {
 
   const discovered = await discoverLegacyMetadata(config);
   if (!discovered.length) {
+    // 没有旧清单时创建空数据库，避免为了迁移而生成临时文件。
     return {
       database: new ToolboxDatabase(config.databasePath),
       migration: emptyResult()
@@ -75,6 +78,7 @@ export async function openToolboxDatabase(config: AppConfig) {
   let temporaryDatabase: ToolboxDatabase | undefined;
   let migration: LegacyMigrationResult;
   try {
+    // 迁移始终写入同目录临时库；完成校验、WAL checkpoint 和 fsync 后才原子替换正式文件。
     temporaryDatabase = new ToolboxDatabase(temporaryPath);
     migration = await migrateDiscoveredMetadata(config, temporaryDatabase, discovered, false, true);
     const verification = temporaryDatabase.verify();
@@ -91,6 +95,7 @@ export async function openToolboxDatabase(config: AppConfig) {
     await fsp.rename(temporaryPath, config.databasePath);
     await fsyncDirectory(path.dirname(config.databasePath));
   } catch (error) {
+    // 任意校验或替换失败都清理临时库及 sidecar，确保下次启动不会读取半迁移状态。
     temporaryDatabase?.close();
     await removeDatabaseFiles(temporaryPath);
     throw error;
@@ -136,6 +141,7 @@ async function migrateDiscoveredMetadata(
 ): Promise<LegacyMigrationResult> {
   if (!discovered.length) return emptyResult();
   if (database.hasCompletedLegacyMigration()) {
+    // 迁移记录是幂等闸门：已成功迁移的数据库只返回当前发现结果，不重复写入。
     return { migrated: false, backupId: null, atomicSwitch: false, sources: summarizeSources(discovered) };
   }
 
@@ -146,6 +152,7 @@ async function migrateDiscoveredMetadata(
   const manifest = await createVerifiedBackup(config, backupId, discovered);
   const now = new Date().toISOString();
 
+  // 备份清单、实体导入、结果校验和审计事件放在同一事务中，避免出现“有记录但无备份”的状态。
   database.transaction(() => {
     for (const source of discovered) {
       const id = crypto.createHash("sha256").update(source.relativePath).digest("hex").slice(0, 24);
@@ -184,6 +191,7 @@ async function migrateDiscoveredMetadata(
 }
 
 export async function rollbackDatabase(config: AppConfig, backupId: string) {
+  // 回滚先把备份文件复制到 staging 并逐个校验，再切换目标；旧文件保留到全部替换成功。
   const { manifest, backupDir } = await readVerifiedBackup(config, backupId);
   const restoreId = crypto.randomBytes(6).toString("hex");
   const staged: Array<{
@@ -210,6 +218,7 @@ export async function rollbackDatabase(config: AppConfig, backupId: string) {
       });
     }
     for (const entry of staged) {
+      // 每个目标先改名为 previous，替换失败时可按逆序恢复，避免破坏现有媒体和清单。
       if (fs.existsSync(entry.destination)) {
         await fsp.rename(entry.destination, entry.previous);
         entry.previousMoved = true;
@@ -219,6 +228,7 @@ export async function rollbackDatabase(config: AppConfig, backupId: string) {
     }
     await fsyncDirectory(config.storageRoot);
   } catch (error) {
+    // 回滚过程具备补偿逻辑：删除已替换文件并恢复 previous，最后清理未提交的 staging。
     for (const entry of [...staged].reverse()) {
       if (entry.replacementMoved) await fsp.rm(entry.destination, { force: true });
       if (entry.previousMoved && fs.existsSync(entry.previous)) await fsp.rename(entry.previous, entry.destination);

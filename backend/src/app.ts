@@ -70,18 +70,21 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     requestIdHeader: "x-request-id"
   });
   const config = getConfig();
+  // 启动阶段先打开数据库并创建共享仓储，后续所有路由都复用这些实例，避免各模块各自维护连接。
   const { database } = await openToolboxDatabase(config);
   const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
+  // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
   app.addHook("onClose", async () => database.close());
   app.addHook("preClose", async () => {
     for (const stream of taskEventStreams) stream.end();
     taskEventStreams.clear();
   });
 
+  // 基础插件集中在应用装配层注册，领域路由只关心业务，不重复配置跨域、Cookie、限流和 multipart。
   await app.register(cookie);
   await app.register(rateLimit, {
     global: true,
@@ -96,6 +99,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     })
   });
   registerConcurrencyQuotas(app);
+  // 安全响应头和精确 CORS 白名单同时启用；LAN 模式也不允许任意来源携带凭据调用接口。
   await app.register(helmet, {
     contentSecurityPolicy: {
       directives: {
@@ -126,6 +130,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
   await registerAdminSecurity(app, config, database);
 
+  // 统一把 requestId 注入 JSON 响应，确保前端能把提示、日志和审计事件关联到同一次请求。
   app.addHook("preSerialization", async (request, _reply, payload) => {
     if (typeof payload !== "object" || payload === null) return payload;
     const value = payload as Record<string, unknown>;
@@ -143,6 +148,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
 
   app.setErrorHandler((error, request, reply) => {
+    // 错误日志保留结构化字段，具体响应只暴露稳定错误码，避免泄漏堆栈、绝对路径或凭据。
     request.log.error({ err: error, requestId: request.id }, "request failed");
     const reported = error as unknown as {
       statusCode?: number;
@@ -187,8 +193,10 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     config.xhsArchiveItemsDir,
     config.xhsArchiveStagingDir
   ];
+  // 所有领域目录在注册路由前创建，保证首次启动和健康检查不会因缺失目录失败。
   await Promise.all(requiredStorageDirectories.map((directory) => fsp.mkdir(directory, { recursive: true })));
 
+  // 存活探针只回答进程是否能处理请求，不依赖数据库或业务目录，便于容器/启动器判断进程状态。
   app.get("/health/live", { schema: { response: { 200: apiSuccessSchema(LiveHealthSchema) } } }, async () =>
     ok({ status: "ok" as const })
   );
@@ -201,6 +209,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       }
     },
     async (_request, reply) => {
+      // 就绪探针检查数据库和全部必需目录；任一依赖不可用时返回 503，避免流量进入半初始化服务。
       try {
         database.ready();
         await Promise.all(
@@ -258,6 +267,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       }
     },
     async (request, reply) => {
+      // SSE 连接只订阅指定任务，并在终态或客户端断开时释放心跳和订阅，防止长连接泄漏。
       const { taskId } = request.params;
       const task = taskStore.get(taskId);
 
@@ -332,6 +342,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   registerMaintenanceRoutes(app);
 
   if (config.databasePath !== ":memory:") {
+    // 持久化启动时执行可恢复的一致性检查；异常文件进入隔离区而不是直接删除，保护本地数据。
     const consistency = await reconcileLanStorage(config, database);
     if (consistency.quarantinedFiles || consistency.quarantinedRecords || consistency.failures.length) {
       app.log.warn(

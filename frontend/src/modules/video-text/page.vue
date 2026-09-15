@@ -140,6 +140,7 @@ const historyPageIds = computed(() => historyItems.value.map((item) => item.id))
 const historyPageSelection = computed(() => getPageSelectionState(selectedHistoryIds.value, historyPageIds.value));
 
 watch(taskEvents.task, (task) => {
+  // 任务事件只更新当前页面任务；终态再请求一次完整结果，避免 SSE 快照缺少正文或导出信息。
   if (!task || task.id !== currentTask.value?.id) return;
   currentTask.value = task;
   uploadProgress.value = task.progress;
@@ -163,6 +164,7 @@ function onVideoDrop(event: DragEvent) {
 
 function setVideo(file: File | null) {
   if (!file) return;
+  // 切换来源时清空旧任务和结果，并重新创建本地预览 URL，确保界面不会展示过期内容。
   selectedVideo.value = file;
   remoteVideo.value = null;
   currentTask.value = null;
@@ -182,6 +184,7 @@ async function submit() {
   uploadProgress.value = 5;
 
   try {
+    // 本地文件走流式 multipart，远程链接走受 SSRF 保护的后端抓取；两条路径返回统一任务 DTO。
     const response = remoteVideo.value
       ? await videoTextApi.createTaskFromUrl(remoteVideo.value)
       : await createUploadTask();
@@ -204,6 +207,7 @@ async function submit() {
 
 async function finishStreamedTask(taskId: string) {
   try {
+    // 进度流进入终态后补拉详情，确保历史记录和导出链接已经持久化完成。
     const response = await videoTextApi.getTask(taskId);
     if (currentTask.value?.id !== taskId) return;
     currentTask.value = response.task;
@@ -429,10 +433,12 @@ function formatSeconds(seconds?: number) {
 }
 
 onBeforeUnmount(() => {
+  // 离开页面时释放视频 Blob URL；任务本身由后端继续运行并可从历史恢复。
   revokeLocalPreviewUrl();
 });
 
 onMounted(async () => {
+  // 支持从分享链接恢复远程来源或指定 taskId，同时加载第一页历史记录。
   const remoteSource = getRemoteVideoSourceFromQuery(route.query);
   if (remoteSource) {
     setRemoteVideo(remoteSource);

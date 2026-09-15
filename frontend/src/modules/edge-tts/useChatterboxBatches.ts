@@ -58,8 +58,10 @@ export function useChatterboxBatches(options: {
       .map((voice) => ({ label: `${voice.name} · ${voice.durationSeconds.toFixed(1)} 秒`, value: voice.id }))
   ]);
 
+  // 页面进入时并行读取新批次和旧任务历史；旧历史读取失败不阻断新批次功能。
   onMounted(() => void Promise.all([loadBatches(), loadLegacyHistory()]));
   watch(options.taskEvents.task, (task) => {
+    // SSE 只更新当前编辑批次，其他任务的进度交给各自页面或任务中心处理。
     const current = editor.currentBatch.value;
     if (!task || task.id !== current?.id) return;
     const next: ChatterboxBatch = {
@@ -86,6 +88,7 @@ export function useChatterboxBatches(options: {
   async function loadBatches() {
     loadingBatches.value = true;
     try {
+      // 列表刷新使用共享 API 和 Schema 解码，取消请求不显示为业务错误。
       batchHistory.value = await chatterboxApi.batches(1, 10);
     } catch (error) {
       if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次记录读取失败");
@@ -103,6 +106,7 @@ export function useChatterboxBatches(options: {
 
   async function createBatch() {
     if (!editor.canCreate.value) return;
+    // canCreate 已集中校验音色、授权、文本长度和模型状态，提交函数只负责组装 DTO 与刷新列表。
     editor.creating.value = true;
     errorMessage.value = "";
     try {
@@ -137,6 +141,7 @@ export function useChatterboxBatches(options: {
 
   async function finishStreamedBatch(batchId: string) {
     try {
+      // 收到终态事件后再拉取一次完整批次，确保媒体 URL、失败文案和排序信息不是旧快照。
       const batch = await chatterboxApi.batch(batchId);
       if (editor.currentBatch.value?.id !== batchId) return;
       editor.currentBatch.value = batch;
@@ -185,6 +190,7 @@ export function useChatterboxBatches(options: {
     }
     regeneratingItemId.value = itemId;
     try {
+      // 重生成沿用当前批次参数，只覆盖当前段草稿；服务端负责重新排队并保持其他段的音频。
       const draft = editor.itemDrafts[itemId];
       setDetailBatch(
         await chatterboxApi.regenerate(detailBatch.value.id, itemId, {

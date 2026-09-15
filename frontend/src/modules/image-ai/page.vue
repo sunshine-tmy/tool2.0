@@ -134,12 +134,15 @@ function setWatermarkDimensions(value: { width: number; height: number }) {
   watermarkDimensions.value = value;
 }
 
+// 页面进入时只读取一次 Worker 健康状态；任务进度由 useTaskEvents 负责订阅。
 onMounted(loadHealth);
 onBeforeUnmount(() => {
+  // 页面卸载必须释放本地预览 URL，避免反复选择大图后累积 Blob 内存。
   revokeWatermarkUrl();
 });
 
 watch(taskEvents.task, (task) => {
+  // 只接受当前 taskId 的事件，防止切换页面后旧任务覆盖新任务的进度。
   if (!task || task.id !== activeTask.value?.id) return;
   activeTask.value = {
     ...activeTask.value,
@@ -158,6 +161,7 @@ watch(taskEvents.error, (error) => {
 async function loadHealth() {
   loadingHealth.value = true;
   try {
+    // 健康接口失败只影响能力提示，不阻止页面其它静态功能渲染。
     health.value = await imageAiApi.health();
   } catch (error) {
     health.value = undefined;
@@ -171,6 +175,7 @@ function selectWatermark(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0];
   (event.target as HTMLInputElement).value = "";
   if (!file || !validateClientFile(file)) return;
+  // 新文件替换旧预览并清空上一次结果，确保结果不会误对应到当前图片。
   revokeWatermarkUrl();
   watermarkFile.value = file;
   watermarkPreviewUrl.value = URL.createObjectURL(file);
@@ -195,6 +200,7 @@ async function suggestWatermark(applySuggestions?: (suggestions: WatermarkSugges
   if (!watermarkFile.value) return;
   suggesting.value = true;
   try {
+    // 智能框选只生成蒙版建议，由用户确认后再提交去水印任务。
     const response = await imageAiApi.suggestions(watermarkFile.value);
     applySuggestions?.(response.suggestions);
     response.warnings.forEach((warning) => message.warning(warning));
@@ -210,6 +216,7 @@ async function suggestWatermark(applySuggestions?: (suggestions: WatermarkSugges
 async function submitWatermark(editor?: { toMaskBlob: () => Promise<Blob> }) {
   if (!watermarkFile.value || !editor) return;
   try {
+    // 先把画布转换为 PNG Blob，再与原图一起提交；服务端负责尺寸和像素上限校验。
     const mask = await editor.toMaskBlob();
     const form = new FormData();
     form.append("operation", "watermark_remove");
@@ -224,6 +231,7 @@ async function submitWatermark(editor?: { toMaskBlob: () => Promise<Blob> }) {
 async function submitBatch(operation: "enhance" | "background_remove") {
   const files = operation === "enhance" ? enhanceFiles.value : cutoutFiles.value;
   if (!files.length) return;
+  // 批量任务只发送用户当前选中的文件快照，提交后页面可继续选择其它文件。
   const form = new FormData();
   form.append("operation", operation);
   if (operation === "enhance") form.append("scale", String(enhanceScale.value));
@@ -243,6 +251,7 @@ function downloadWatermarkResult() {
 
 async function finishStreamedTask(taskId: string) {
   try {
+    // 收到终态事件后重新获取完整结果，确保下载 URL 和警告列表来自服务端最终快照。
     const task = await imageAiApi.getTask(taskId);
     if (activeTask.value?.id !== taskId) return;
     activeTask.value = task;
@@ -264,6 +273,7 @@ async function finishStreamedTask(taskId: string) {
 
 async function cancelActiveTask() {
   if (!activeTask.value) return;
+  // 取消请求由服务端记录终态，前端随后继续通过事件流接收最终状态。
   activeTask.value = await imageAiApi.cancelTask(activeTask.value.id);
 }
 

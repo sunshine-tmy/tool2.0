@@ -45,6 +45,7 @@ export async function createVideoTextTaskFromSource(
   const videoPath = path.join(config.videoTextUploadsDir, `${task.id}${extension}`);
 
   try {
+    // 上传流直接落盘到任务专属文件，不把视频整体读入内存；落盘成功后再异步执行识别命令。
     await fsp.mkdir(config.videoTextUploadsDir, { recursive: true });
     await pipeline(source.stream, fs.createWriteStream(videoPath));
     const running = taskStore.update(task.id, { progress: 35 }) as Task;
@@ -63,6 +64,7 @@ export async function createVideoTextTaskFromSource(
     );
     return { task: running, result: null };
   } catch (error) {
+    // 创建任务阶段失败时立即标记终态并清理视频、音频和识别中间文件。
     const failed = taskStore.update(task.id, {
       status: "failed",
       progress: 100,
@@ -87,6 +89,7 @@ async function processVideoTextTask(input: {
   const { task, videoPath, safeName, mimeType, config, taskStore, results, signal, fileMetadata } = input;
   let terminalPatch: Parameters<TaskStore["update"]>[1];
   try {
+    // 处理阶段先提取音频再调用外部识别器；结果和质量元数据写入后才将任务标记为 completed。
     const hasTranscriber = Boolean(config.videoTextTranscribeCommand);
     const transcribed = await transcribeVideo(videoPath, task.id, config, signal);
     if (!transcribed.transcript.trim()) {
@@ -131,6 +134,7 @@ async function processVideoTextTask(input: {
       };
     }
   } catch (error) {
+    // 外部命令、解析或结果持久化任一步失败都归一为稳定的 failed 状态。
     terminalPatch = {
       status: "failed",
       progress: 100,
@@ -138,6 +142,7 @@ async function processVideoTextTask(input: {
     };
   }
   try {
+    // 无论识别成功与否都回收中间文件，避免长期占用本地磁盘。
     await cleanupVideoTextWorkingFiles(config, task.id, videoPath);
   } catch (error) {
     terminalPatch = {
@@ -151,6 +156,7 @@ async function processVideoTextTask(input: {
 
 async function transcribeVideo(videoPath: string, taskId: string, config: AppConfig, signal: AbortSignal) {
   if (!config.videoTextTranscribeCommand) return { transcript: "" };
+  // 外部命令只接收经过模板替换的固定参数，AbortSignal 可在关闭服务或取消任务时终止进程。
   const audioPath = await extractAudio(videoPath, taskId, config, signal);
   const outputPath = path.join(config.videoTextResultsDir, `${taskId}.txt`);
   const { stdout } = await runCommand(
@@ -227,6 +233,7 @@ async function runCommand(
   signal: AbortSignal
 ) {
   try {
+    // 使用 execFile 而非 shell，避免把上传文件名或模板参数解释成额外命令。
     const command = parseCommandTemplate(template).map((argument) => replaceCommandPlaceholders(argument, values));
     const [executable, ...args] = command;
     if (!executable) throw new Error("Command is empty");

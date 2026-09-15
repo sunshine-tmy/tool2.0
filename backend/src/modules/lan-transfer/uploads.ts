@@ -29,6 +29,7 @@ export function createLanUploadStore(config: AppConfig, database: ToolboxDatabas
   let queue = Promise.resolve();
 
   function runExclusive<T>(operation: () => Promise<T>) {
+    // 会话清单和分片目录必须串行更新，避免并发重传互相覆盖元数据。
     const current = queue.then(operation, operation);
     queue = current.then(
       () => undefined,
@@ -38,6 +39,7 @@ export function createLanUploadStore(config: AppConfig, database: ToolboxDatabas
   }
 
   async function ensure() {
+    // 首次访问时从旧 index.json 迁移到 SQLite；解析失败则尝试只读备份，不删除原清单。
     await fsp.mkdir(uploadsDir, { recursive: true });
     await ensureJsonIndex(uploadIndexPath);
     if (!database.isDomainInitialized("upload-session")) {
@@ -66,6 +68,7 @@ export function createLanUploadStore(config: AppConfig, database: ToolboxDatabas
   }
 
   async function write(sessions: LanChunkUploadSession[]) {
+    // SQLite 是当前事实源；事务内删除已消失会话并 upsert 当前快照，保证重启后可恢复断点状态。
     database.transaction(() => {
       const active = new Set(sessions.map((session) => session.uploadId));
       for (const entity of database.list("upload-session")) {
@@ -98,6 +101,7 @@ export function createLanUploadStore(config: AppConfig, database: ToolboxDatabas
     chunkPath,
     async create(input: Omit<LanChunkUploadSession, "uploadId" | "uploadedChunks" | "createdAt" | "updatedAt">) {
       return runExclusive(async () => {
+        // 创建会话只写元数据并建立 chunks 目录，实际分片由路由按 index 独立落盘。
         const now = new Date().toISOString();
         const session: LanChunkUploadSession = {
           uploadId: nanoid(12),
@@ -125,6 +129,7 @@ export function createLanUploadStore(config: AppConfig, database: ToolboxDatabas
     },
     async markChunkUploaded(uploadId: string, chunkIndex: number) {
       return runExclusive(async () => {
+        // 分片确认采用 Set 去重并排序，重复上传不会增加已传字节或破坏重试顺序。
         const sessions = await read();
         const target = sessions.find((session) => session.uploadId === uploadId);
         if (!target) return undefined;
@@ -146,6 +151,7 @@ export function createLanUploadStore(config: AppConfig, database: ToolboxDatabas
     },
     async cleanupStale(retentionHours: number, excludedIds = new Set<string>()) {
       return runExclusive(async () => {
+        // 清理只处理超过保留期且未被活动请求引用的会话，先删目录再提交清单。
         const sessions = await read();
         const cutoff = Date.now() - retentionHours * 60 * 60 * 1000;
         const stale = sessions.filter(
@@ -218,6 +224,7 @@ export async function mergeChunks(
 ) {
   const temporaryPath = `${targetPath}.partial-${nanoid(6)}`;
   try {
+    // 按序流式合并分片到同目录临时文件，校验总大小并 fsync 后才原子提交正式文件。
     if (session.totalChunks === 0) {
       await fsp.writeFile(temporaryPath, "", { flag: "wx" });
     } else {
@@ -242,12 +249,14 @@ export async function mergeChunks(
     }
     await commitStagedFile(temporaryPath, targetPath);
   } catch (error) {
+    // 合并失败清理 partial 文件，不留下指向不完整内容的正式路径。
     await fsp.rm(temporaryPath, { force: true });
     throw error;
   }
 }
 
 export async function checkMergeHeadroom(directory: string, session: LanChunkUploadSession) {
+  // 合并阶段至少需要一份完整文件的额外空间，提前检查可把 ENOSPC 转成可理解的业务错误。
   const requiredBytes = session.size;
   if (requiredBytes === 0) {
     return { ok: true as const, requiredBytes, availableBytes: Number.POSITIVE_INFINITY };

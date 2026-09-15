@@ -84,6 +84,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const dragItemId = ref<string>();
   const errorMessage = ref("");
 
+  // 统一在 composable 计算表单约束，页面按钮只依赖 canCreate，避免出现校验分支不一致。
   const totalCharacters = computed(() => segments.value.reduce((sum, item) => sum + item.text.length, 0));
   const validSegmentCount = computed(() => segments.value.filter((item) => item.text.trim()).length);
   const parsedAutoSegments = computed(() => parseChatterboxSegments(autoSegmentText.value));
@@ -121,6 +122,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   }
 
   function addSegment() {
+    // 分段数量上限来自共享常量；前端提前提示，服务端仍会再次校验最终请求。
     if (segments.value.length < maxBatchSegments) segments.value.push(newEditorSegment());
   }
   function duplicateSegment(index: number) {
@@ -167,6 +169,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     dragItemId.value = undefined;
   }
   function splitByBlankLines() {
+    // 自动分段只修改当前编辑草稿，用户确认创建批次前不会写入服务端。
     const expanded = segments.value.flatMap((item) =>
       item.text
         .split(/\r?\n\s*\r?\n/)
@@ -186,6 +189,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     autoSegmentVisible.value = true;
   }
   async function applyAutoSegments() {
+    // 粘贴文本的解析、长度和覆盖确认都在本地完成，避免无效内容占用生成队列。
     const parsed = parsedAutoSegments.value;
     if (!parsed.length) return options.message.warning("没有识别到有效文案");
     if (parsed.length > maxBatchSegments)
@@ -219,6 +223,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   }
 
   function selectReference(event: Event) {
+    // 替换参考音频前先释放旧 Blob URL，避免多次选择文件导致浏览器内存泄漏。
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
     if (file.size > CHATTERBOX_MAX_REFERENCE_BYTES) return options.message.error("参考音频不能超过 20 MB");
@@ -233,6 +238,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     input.value = "";
   }
   function revokePreview() {
+    // 页面卸载和重新选择文件都会调用该函数，确保临时预览资源成对释放。
     if (referencePreview.value) URL.revokeObjectURL(referencePreview.value);
     referencePreview.value = "";
   }

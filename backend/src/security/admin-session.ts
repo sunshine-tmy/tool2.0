@@ -26,6 +26,7 @@ type Session = { csrfToken: string; expiresAt: number };
 export async function registerAdminSecurity(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
   const sessions = new Map<string, Session>();
 
+  // 会话只保存在当前进程内，Cookie 只承载随机 ID；CSRF token 单独返回给前端并绑定到该会话。
   app.post<{ Body: AdminLoginInput }>(
     "/api/v1/session",
     {
@@ -42,6 +43,7 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
     async (request, reply) => {
       const { pin } = request.body;
       if (!config.adminPin || !timingSafeEqual(pin, config.adminPin)) {
+        // 固定延迟和审计记录同时执行，降低 PIN 爆破的时序差异并保留追踪线索。
         await delayFailedLogin();
         database.appendAudit({ action: "admin.login", outcome: "denied", requestId: request.id });
         return reply.code(401).send(fail("INVALID_ADMIN_PIN", "Invalid administrator PIN"));
@@ -90,6 +92,7 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
   );
 
   app.addHook("preHandler", async (request, reply) => {
+    // LAN 部署下默认保护所有写请求；只有显式标记的访客传输路由可以绕过管理员会话。
     if (config.deploymentMode === "local" || SAFE_METHODS.has(request.method)) return;
     if (request.url.startsWith("/api/v1/session") && request.method === "POST") return;
     if (isGuestTransferRequest(request)) return;
@@ -102,6 +105,7 @@ export async function registerAdminSecurity(app: FastifyInstance, config: AppCon
     }
     const origin = request.headers.origin;
     const csrf = request.headers["x-csrf-token"];
+    // 同时校验精确 Origin 和会话级 CSRF token，避免仅凭 Cookie 触发跨站写操作。
     if (!origin || !config.corsOrigins.includes(origin) || csrf !== session.csrfToken) {
       return reply.code(403).send(fail("CSRF_VALIDATION_FAILED", "CSRF validation failed"));
     }

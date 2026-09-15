@@ -37,6 +37,7 @@ export class ChatterboxBatchQueue {
   ) {}
 
   enqueue(batchId: string, itemId: string) {
+    // 同一批次/分段只允许存在一个活动或排队项，避免重复点击产生重复音频。
     if (
       this.stopped ||
       this.isActive(batchId, itemId) ||
@@ -72,6 +73,7 @@ export class ChatterboxBatchQueue {
   }
 
   async close() {
+    // 停止接收新任务并中止当前 Worker；调用方等待 activeDone 后再关闭进程资源。
     this.stopped = true;
     this.pending.length = 0;
     this.activeController?.abort();
@@ -79,6 +81,7 @@ export class ChatterboxBatchQueue {
   }
 
   private pump() {
+    // 队列采用单活动项模型，保证显存占用可控且批次顺序稳定。
     if (this.stopped || this.active || !this.pending.length) return;
     const next = this.pending.shift();
     if (!next) return;
@@ -98,6 +101,7 @@ export class ChatterboxBatchQueue {
   }
 
   private async finish(entry: { batchId: string; itemId: string }) {
+    // 无论成功或失败都重新计算批次终态，然后继续处理下一项。
     if (this.active?.batchId === entry.batchId && this.active.itemId === entry.itemId) {
       this.active = undefined;
     }
@@ -106,6 +110,7 @@ export class ChatterboxBatchQueue {
   }
 
   private async process(batchId: string, itemId: string, signal: AbortSignal) {
+    // 处理前重新读取最新批次快照，防止用户删除/排序后仍使用过期参数生成音频。
     const batch = this.options.store.get(batchId);
     const item = batch?.items.find((entry) => entry.id === itemId);
     if (!batch || !item || item.status !== "queued") return;
@@ -130,6 +135,7 @@ export class ChatterboxBatchQueue {
         signal
       });
       await this.options.store.updateItem(batchId, itemId, { progress: 82 });
+      // WAV 转 MP3、时长读取和原子替换按固定顺序执行，失败时保留旧音频并标记可重试。
       await this.options.media.toMp3(itemPaths.outputWav, itemPaths.candidateAudio);
       const audioBytes = (await fsp.stat(itemPaths.candidateAudio)).size;
       // Validate the encoded file with ffprobe, but use the Worker duration for
@@ -156,6 +162,7 @@ export class ChatterboxBatchQueue {
           }
         : undefined;
       if (completedSnapshot?.items.every((entry) => entry.status === "completed")) {
+        // 全部片段完成后才重建合并音频和字幕，单段重生成不会提前覆盖批次总产物。
         if (completedSnapshot.items.length > 1) {
           await this.options.rebuildAudio(completedSnapshot);
         }

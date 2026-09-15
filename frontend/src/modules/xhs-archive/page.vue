@@ -128,6 +128,7 @@ let disposed = false;
 let taskSyncRevision = 0;
 
 watch(taskEvents.task, (event) => {
+  // 获取任务的每次 SSE 更新都通过 taskSyncRevision 串行补拉，避免旧请求覆盖新状态。
   if (event && event.id === task.value?.id) void syncArchiveTask(event.id);
 });
 
@@ -136,6 +137,7 @@ watch(taskEvents.error, (error) => {
 });
 
 watch(translationEvents.task, (event) => {
+  // 翻译任务只在进入终态时读取详情，减少轮询并确保正文与译文同时刷新。
   if (event && (event.status === "completed" || event.status === "failed")) void finishTranslation(event.id);
 });
 
@@ -160,6 +162,7 @@ function handlePagePaste(event: ClipboardEvent) {
 async function startFetch() {
   if (!inputUrl.value.trim()) return;
   try {
+    // 创建获取任务立即返回 taskId；后续进度由 SSE 驱动，不阻塞页面输入和浏览。
     task.value = await xhsArchiveApi.create(inputUrl.value);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取失败"));
@@ -178,6 +181,7 @@ async function refreshItem(id: string) {
 async function syncArchiveTask(taskId: string) {
   const revision = ++taskSyncRevision;
   try {
+    // revision 令牌保证快速连续提交时只有最后一次请求可以更新当前内容。
     const next = await xhsArchiveApi.task(taskId);
     if (revision !== taskSyncRevision || task.value?.id !== taskId) return;
     task.value = next;
@@ -204,6 +208,7 @@ async function syncArchiveTask(taskId: string) {
 async function loginAndRetry() {
   authWaiting.value = true;
   try {
+    // 登录流程由后端管理 Cookie；前端仅等待状态终止，再复用原输入重新创建获取任务。
     const session = await xhsArchiveApi.startAuth();
     let state = session;
     while (!["completed", "failed"].includes(state.status)) {
@@ -330,6 +335,7 @@ async function finishTranslation(taskId: string) {
   const target = translationTarget.value;
   if (!target || target.taskId !== taskId) return;
   try {
+    // 翻译终态后按目标 item 刷新当前抽屉和列表，失败时保留原文并展示可重试错误。
     const state = await xhsArchiveApi.translationTask(taskId);
     if (state.status === "failed") {
       if (target.itemId) {
@@ -357,6 +363,7 @@ async function finishTranslation(taskId: string) {
 }
 async function removeItem() {
   if (!detail.value) return;
+  // 删除前展示媒体数量和字节数；确认后由服务端事务同时删除元数据和文件。
   const item = detail.value;
   const accepted = await confirm(
     `将永久删除“${normalizeXhsText(item.title)}”及 ${item.media.length} 个本地媒体（${formatBytes(item.totalBytes)}）。此操作无法撤销。`,
@@ -382,6 +389,7 @@ function toggleSelectAllArchives(checked: boolean) {
 }
 async function removeSelected() {
   const selected = archives.value.items.filter((item) => selectedArchiveIds.value.includes(item.id));
+  // 批量删除只针对当前已选 ID，删除完成后清空选择并刷新分页，避免残留已删除项。
   const mediaCount = selected.reduce((sum, item) => sum + item.mediaCount, 0);
   const bytes = selected.reduce((sum, item) => sum + item.totalBytes, 0);
   const accepted = await confirm(
@@ -449,10 +457,12 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 onMounted(() => {
+  // 页面级粘贴监听便于快速输入链接；输入框和可编辑元素会主动忽略该快捷操作。
   void loadArchives();
   window.addEventListener("paste", handlePagePaste);
 });
 onBeforeUnmount(() => {
+  // 标记 disposed 让迟到的异步结果不再弹出提示或修改已卸载页面。
   disposed = true;
   window.removeEventListener("paste", handlePagePaste);
 });

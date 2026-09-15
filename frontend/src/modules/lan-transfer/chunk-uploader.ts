@@ -86,6 +86,7 @@ export class ConcurrentChunkUploader {
     this.uploadId = options.uploadId;
     this.totalChunks = Math.ceil(file.size / this.chunkSize);
     this.scopeSignal = options.signal;
+    // 外层页面的 AbortSignal 只负责停止本地任务，不取消服务端会话，便于稍后断点续传。
     if (options.signal?.aborted) {
       this.dispose();
     } else {
@@ -105,6 +106,7 @@ export class ConcurrentChunkUploader {
       return;
     }
     this.paused = true;
+    // 中止当前网络请求后保留已确认分片，resume() 会重新查询服务端状态并跳过这些分片。
     this.abortInFlight();
     this.emit("paused");
   }
@@ -118,6 +120,7 @@ export class ConcurrentChunkUploader {
     if (this.disposed) return;
     this.canceled = true;
     this.paused = false;
+    // 用户主动取消才删除服务端会话；页面卸载调用 dispose() 时刻意保留会话。
     this.abortInFlight();
     if (this.uploadId) {
       await this.api.cancelUpload(this.uploadId);
@@ -152,6 +155,7 @@ export class ConcurrentChunkUploader {
     if (this.disposed) return { status: "canceled" };
     this.paused = false;
     this.canceled = false;
+    // 每次启动先同步服务端已上传分片，避免浏览器刷新或网络重试造成重复传输。
     await this.ensureSession();
     if (this.disposed) return { status: "canceled" };
     this.emit("uploading");
@@ -175,6 +179,7 @@ export class ConcurrentChunkUploader {
     let status: LanUploadStatus;
     if (this.uploadId) {
       try {
+        // 恢复已有会话时以服务端状态为准；会话过期才创建新会话。
         status = await this.api.getUploadStatus(this.uploadId, this.scopeSignal);
       } catch (error) {
         if (!isUploadNotFoundError(error)) throw error;
@@ -241,6 +246,7 @@ export class ConcurrentChunkUploader {
           return;
         }
 
+        // 仅维持固定数量的并发分片；暂停或取消后不再发起新请求，已在途请求由 abortInFlight 收敛。
         while (!this.paused && !this.canceled && active < this.concurrency && cursor < queue.length) {
           const chunkIndex = queue[cursor];
           cursor += 1;
@@ -280,6 +286,7 @@ export class ConcurrentChunkUploader {
     const chunk = this.file.slice(start, end);
     let status: LanUploadStatus | undefined;
 
+    // 单个分片采用线性退避重试；暂停、取消和达到上限时立即把错误交给队列状态机处理。
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       try {
         const controller = new AbortController();
@@ -312,6 +319,7 @@ export class ConcurrentChunkUploader {
 
     this.syncUploadedChunks(status.uploadedChunks);
     this.inFlightBytes.delete(index);
+    // 只有服务端确认后才计入进度，避免把尚未落盘的浏览器上传字节误报为完成。
     this.emit("uploading");
   }
 
@@ -329,6 +337,7 @@ export class ConcurrentChunkUploader {
   }
 
   private snapshot(status: ChunkUploadSnapshot["status"]): ChunkUploadSnapshot {
+    // 进度由已确认分片和在途字节合并计算，并限制在文件大小以内，避免重试导致进度倒退或超过 100%。
     const confirmedBytes = Array.from(this.uploadedChunks).reduce(
       (total, index) => total + this.getChunkSize(index),
       0
