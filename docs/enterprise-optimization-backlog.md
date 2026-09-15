@@ -87,7 +87,7 @@
 | --- | ---- | -------------------------------- | -------- | ------------------------------------------------------------------------- |
 | E01 | DONE | 为全部 HTTP API 支持 AbortSignal | B06      | 所有方法与上传均可取消，取消不显示为业务失败                              |
 | E02 | DONE | 页面生命周期接入请求取消         | E01      | 路由切换、卸载和任务取消时终止请求，释放轮询与 SSE                        |
-| E03 | TODO | 拆分 LAN 页面                    | C02、C03 | 页面容器不超过 600 行，队列、分享信息和批量管理进入 composable/子组件     |
+| E03 | DONE | 拆分 LAN 页面                    | C02、C03 | 页面容器不超过 600 行，队列、分享信息和批量管理进入 composable/子组件     |
 | E04 | TODO | 拆分 Chatterbox composable       | C06      | 拆为编辑器、音色、任务事件和批次操作 composable；单文件不超过 400 行      |
 | E05 | TODO | 拆分 Chatterbox 展示面板         | E04      | 表单、进度、批次列表和详情弹窗独立；主面板不超过 500 行                   |
 | E06 | TODO | 完成小红书页面拆分               | C04      | 结果区和详情抽屉独立，页面不超过 600 行                                   |
@@ -167,3 +167,4 @@
 | D05     | DONE                | 2026-09-15 | `[D05]`   | `pnpm --filter backend test -- database`（10 项）                                                                              | `pnpm check` 通过 | v4→v5 升级、幂等重启、事务回滚、完整性和现有迁移回归通过                     | 保留旧媒体/JSON；验证异常不会留下半写入元数据；D03 原子提交测试覆盖断电式 staging 清理                 |
 | E01     | DONE                | 2026-09-15 | `[E01]`   | `pnpm --filter frontend test -- http`（7 项）                                                                                  | `pnpm check` 通过 | HTTP 客户端各方法透传 AbortSignal；取消不显示为业务失败                      | 取消统一为 `REQUEST_ABORTED`，`cancelled=true` 且不可重试；上传配置保持兼容                            |
 | E02     | DONE                | 2026-09-15 | `[E02]`   | `pnpm --filter frontend test -- useRequestScope useTaskEvents chunk-uploader`（14 项）                                         | `pnpm check` 通过 | 构建 smoke 通过；任务 SSE/轮询、作用域释放和分片上传取消测试通过             | 新增页面作用域 AbortController；路由卸载关闭 EventSource、清理重连计时器并中止轮询；上传保留可续传会话 |
+| E03     | DONE                | 2026-09-15 | `[E03]`   | `pnpm --filter frontend test -- LanSharePanel LanUploadPanel`（2 项）                                                          | `pnpm check` 通过 | LAN 页面构建、后端 smoke 与页面面板行为测试通过                               | 页面容器 555 行；分享/访问、上传队列和文件批量操作分别移入子组件与 composable，路由和视觉流程不变      |
