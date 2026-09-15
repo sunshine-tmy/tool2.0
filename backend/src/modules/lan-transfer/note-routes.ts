@@ -5,11 +5,17 @@ import { pipeline } from "node:stream/promises";
 import type { FastifyInstance } from "fastify";
 import { nanoid } from "nanoid";
 import {
+  ApiFailureSchema,
+  LanBatchRemovalSchema,
   LanExpiryInputSchema,
   LanIdParamsSchema,
   LanIdsInputSchema,
+  LanNoteListSchema,
   LanNoteImageParamsSchema,
+  LanNoteSchema,
   LanPaginationQuerySchema,
+  LanRemovalSchema,
+  apiSuccessSchema,
   fail,
   lanNoteLimits,
   ok,
@@ -55,6 +61,18 @@ class LanNoteInputError extends Error {
   }
 }
 
+const lanNoteFailureResponses = {
+  400: ApiFailureSchema,
+  401: ApiFailureSchema,
+  403: ApiFailureSchema,
+  404: ApiFailureSchema,
+  413: ApiFailureSchema,
+  415: ApiFailureSchema,
+  429: ApiFailureSchema,
+  500: ApiFailureSchema,
+  507: ApiFailureSchema
+};
+
 export function registerLanNoteRoutes({
   app,
   config,
@@ -67,7 +85,10 @@ export function registerLanNoteRoutes({
 }: RegisterLanNoteRoutesOptions) {
   app.post(
     `${basePath}/notes`,
-    { config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true } },
+    {
+      config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
+      schema: { response: { 200: apiSuccessSchema(LanNoteSchema), ...lanNoteFailureResponses } }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const noteId = nanoid(12);
@@ -180,7 +201,12 @@ export function registerLanNoteRoutes({
 
   app.get<{ Querystring: LanPaginationQuery }>(
     `${basePath}/notes`,
-    { schema: { querystring: LanPaginationQuerySchema } },
+    {
+      schema: {
+        querystring: LanPaginationQuerySchema,
+        response: { 200: apiSuccessSchema(LanNoteListSchema), ...lanNoteFailureResponses }
+      }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "read")) return reply;
       const pageSize = request.query.pageSize ?? 20;
@@ -199,7 +225,12 @@ export function registerLanNoteRoutes({
 
   app.post<{ Body: LanIdsInput }>(
     `${basePath}/notes/batch-delete`,
-    { schema: { body: LanIdsInputSchema } },
+    {
+      schema: {
+        body: LanIdsInputSchema,
+        response: { 200: apiSuccessSchema(LanBatchRemovalSchema), ...lanNoteFailureResponses }
+      }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "manage")) return reply;
       const ids = parseLanNoteIds(request.body);
@@ -214,7 +245,7 @@ export function registerLanNoteRoutes({
 
   app.get<{ Params: LanNoteImageParams }>(
     `${basePath}/notes/:id/images/:imageId/preview`,
-    { schema: { params: LanNoteImageParamsSchema } },
+    { schema: { params: LanNoteImageParamsSchema, response: lanNoteFailureResponses } },
     async (request, reply) => {
       if (!access.authorize(request, reply, "read")) return reply;
       return sendLanNoteImage(noteStore, request, reply, "inline");
@@ -223,7 +254,7 @@ export function registerLanNoteRoutes({
 
   app.get<{ Params: LanNoteImageParams }>(
     `${basePath}/notes/:id/images/:imageId/download`,
-    { schema: { params: LanNoteImageParamsSchema } },
+    { schema: { params: LanNoteImageParamsSchema, response: lanNoteFailureResponses } },
     async (request, reply) => {
       if (!access.authorize(request, reply, "read")) return reply;
       await audit.write("note.image-downloaded", request, {
@@ -236,7 +267,13 @@ export function registerLanNoteRoutes({
 
   app.patch<{ Params: LanIdParams; Body: LanExpiryInput }>(
     `${basePath}/notes/:id/expiry`,
-    { schema: { params: LanIdParamsSchema, body: LanExpiryInputSchema } },
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        body: LanExpiryInputSchema,
+        response: { 200: apiSuccessSchema(LanNoteSchema), ...lanNoteFailureResponses }
+      }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "manage")) return reply;
       const { id } = request.params;
@@ -250,7 +287,12 @@ export function registerLanNoteRoutes({
 
   app.delete<{ Params: LanIdParams }>(
     `${basePath}/notes/:id`,
-    { schema: { params: LanIdParamsSchema } },
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        response: { 200: apiSuccessSchema(LanRemovalSchema), ...lanNoteFailureResponses }
+      }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "manage")) return reply;
       const { id } = request.params;

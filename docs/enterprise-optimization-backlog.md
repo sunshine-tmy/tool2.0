@@ -52,7 +52,7 @@
 | --- | ---- | ------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
 | B01 | DONE | 接入 Fastify TypeBox 类型提供器                   | 无       | Schema 同时生成路由输入输出类型，逐步删除手工泛型和重复 DTO                                  |
 | B02 | DONE | 补齐系统、图片、视频、短视频和维护接口响应 Schema | B01      | 所有 JSON 状态码具备成功/失败 Schema 和契约测试                                              |
-| B03 | TODO | 补齐 LAN 文件、图文和分片接口 Schema              | B01、A02 | LAN 全部 JSON 路由具备请求、响应和错误契约                                                   |
+| B03 | DONE | 补齐 LAN 文件、图文和分片接口 Schema              | B01、A02 | LAN 全部 JSON 路由具备请求、响应和错误契约                                                   |
 | B04 | TODO | 补齐 Edge-TTS 与 Chatterbox 剩余 Schema           | B01      | 主任务、批次、音色及失败响应均由共享 Schema 导出                                             |
 | B05 | TODO | 补齐小红书归档、媒体和翻译 Schema                 | B01      | 获取任务、列表、详情、翻译编辑及运行时状态均受运行时校验                                     |
 | B06 | TODO | 前端共享 Schema 解码                              | B02–B05  | HTTP 层对所有 JSON 响应执行共享 Schema 校验，删除平行接口类型                                |
@@ -146,4 +146,5 @@
 | A05     | DONE                | 2026-09-15 | `[A05]`   | 配额及模块定向测试 50 项                                                    | `pnpm check` 通过 | live/ready、LAN/AI/配音/归档接口     | 稳定 `RATE_LIMIT_EXCEEDED`/`CONCURRENCY_LIMIT_EXCEEDED` |
 | B01     | DONE                | 2026-09-15 | `[B01]`   | `lan-transfer.test.ts` 28 项；后端 TypeScript 类型检查                      | `pnpm check` 通过 | live/ready、LAN 信息接口             | LAN 请求体、查询和路径参数由 TypeBox Schema 直接推导    |
 | B02     | DONE                | 2026-09-15 | `[B02]`   | 共享 Schema 2 项；系统/图片/视频/短视频定向测试 41 项                       | `pnpm check` 通过 | live/ready、维护、图片与短视频接口   | JSON 状态码补齐成功/失败 Schema；二进制流保持原契约     |
+| B03     | DONE                | 2026-09-15 | `[B03]`   | LAN 共享契约 3 项；`lan-transfer.test.ts` 28 项                             | `pnpm check` 通过 | live/ready、列表、分片创建与取消     | 文件、图文、分片及错误响应均使用共享 Schema             |
 | F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                    | 当前大规模重构合并形成新基线后启用                      |

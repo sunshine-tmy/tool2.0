@@ -7,21 +7,33 @@ import type { FastifyInstance } from "fastify";
 import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 import {
+  ApiFailureSchema,
   LanAccessInputSchema,
+  LanAccessResultSchema,
+  LanBatchRemovalSchema,
   LanChunkParamsSchema,
+  LanCleanupResultSchema,
   LanExpiryInputSchema,
+  LanFileListSchema,
   LanFileListQuerySchema,
+  LanFileUploadResultSchema,
+  LanFileWithUrlsSchema,
   LanIdParamsSchema,
   LanIdsInputSchema,
+  LanRemovalSchema,
+  LanTransferInfoSchema,
   LanUploadParamsSchema,
   LanUploadSessionInputSchema,
+  LanUploadStatusSchema,
+  apiSuccessSchema,
   classifyLanFile,
   fail,
   getLanFileExtension,
   isLanFilePreviewable,
   normalizeLanFileQuery,
   ok,
-  type LanFileRecord
+  type LanFileRecord,
+  type LanIdsInput
 } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "../database/toolbox-database";
@@ -60,6 +72,19 @@ type ListResponse = {
     total: number;
     pageCount: number;
   };
+};
+
+const lanFailureResponses = {
+  400: ApiFailureSchema,
+  401: ApiFailureSchema,
+  403: ApiFailureSchema,
+  404: ApiFailureSchema,
+  409: ApiFailureSchema,
+  413: ApiFailureSchema,
+  415: ApiFailureSchema,
+  429: ApiFailureSchema,
+  500: ApiFailureSchema,
+  507: ApiFailureSchema
 };
 
 export async function registerLanTransferRoutes({ app, config, database }: RegisterLanTransferRoutesOptions) {
@@ -124,29 +149,36 @@ function registerLanTransferNamespace(
 ) {
   const typedApp = app.withTypeProvider<TypeBoxTypeProvider>();
 
-  typedApp.get(`${basePath}/info`, async (request) => {
-    const fileBytes = await store.totalSize();
-    const noteBytes = await noteStore.totalSize();
-    const reservedUploadBytes = await uploadStore.totalDeclaredSize();
-    return ok({
-      lanUrls: getLanWebUrls(config.lanTransferWebPort),
-      retentionDays: config.lanTransferRetentionDays,
-      maxFileBytes: config.lanTransferMaxFileBytes,
-      maxStorageBytes: config.lanTransferMaxStorageBytes,
-      usedBytes: fileBytes + noteBytes,
-      noteCount: await noteStore.count(),
-      reservedUploadBytes,
-      pinRequired: Boolean(config.lanTransferPin),
-      guestMode: config.lanTransferGuestMode,
-      authenticated: access.isAuthenticated(request)
-    });
-  });
+  typedApp.get(
+    `${basePath}/info`,
+    { schema: { response: { 200: apiSuccessSchema(LanTransferInfoSchema), ...lanFailureResponses } } },
+    async (request) => {
+      const fileBytes = await store.totalSize();
+      const noteBytes = await noteStore.totalSize();
+      const reservedUploadBytes = await uploadStore.totalDeclaredSize();
+      return ok({
+        lanUrls: getLanWebUrls(config.lanTransferWebPort),
+        retentionDays: config.lanTransferRetentionDays,
+        maxFileBytes: config.lanTransferMaxFileBytes,
+        maxStorageBytes: config.lanTransferMaxStorageBytes,
+        usedBytes: fileBytes + noteBytes,
+        noteCount: await noteStore.count(),
+        reservedUploadBytes,
+        pinRequired: Boolean(config.lanTransferPin),
+        guestMode: config.lanTransferGuestMode,
+        authenticated: access.isAuthenticated(request)
+      });
+    }
+  );
 
   typedApp.post(
     `${basePath}/access`,
     {
       config: { ...REQUEST_QUOTAS.login, allowGuestTransfer: true },
-      schema: { body: LanAccessInputSchema }
+      schema: {
+        body: LanAccessInputSchema,
+        response: { 200: apiSuccessSchema(LanAccessResultSchema), ...lanFailureResponses }
+      }
     },
     async (request, reply) => {
       const token = access.login(request.body.pin);
@@ -160,17 +192,27 @@ function registerLanTransferNamespace(
     }
   );
 
-  typedApp.delete(`${basePath}/access`, { config: { allowGuestTransfer: true } }, async (request, reply) => {
-    access.logout(request);
-    reply.header("set-cookie", access.expiredSessionCookie());
-    return ok({ authenticated: false });
-  });
+  typedApp.delete(
+    `${basePath}/access`,
+    {
+      config: { allowGuestTransfer: true },
+      schema: { response: { 200: apiSuccessSchema(LanAccessResultSchema), ...lanFailureResponses } }
+    },
+    async (request, reply) => {
+      access.logout(request);
+      reply.header("set-cookie", access.expiredSessionCookie());
+      return ok({ authenticated: false });
+    }
+  );
 
   registerLanNoteRoutes({ app, config, store, noteStore, uploadStore, access, audit, basePath });
 
   app.post(
     `${basePath}/files`,
-    { config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true } },
+    {
+      config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
+      schema: { response: { 200: apiSuccessSchema(LanFileUploadResultSchema), ...lanFailureResponses } }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const file = await request.file({
@@ -248,31 +290,40 @@ function registerLanTransferNamespace(
     }
   );
 
-  typedApp.get(`${basePath}/files`, { schema: { querystring: LanFileListQuerySchema } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const query = normalizeLanFileQuery(request.query);
-    const files = await store.list(query);
-    const total = files.length;
-    const pageCount = Math.max(1, Math.ceil(total / query.pageSize));
-    const page = Math.min(query.page, pageCount);
-    const start = (page - 1) * query.pageSize;
-    const pageFiles = files.slice(start, start + query.pageSize);
-    return ok<ListResponse>({
-      files: pageFiles.map((file) => withUrls(file, basePath)),
-      pagination: {
-        page,
-        pageSize: query.pageSize,
-        total,
-        pageCount
+  typedApp.get(
+    `${basePath}/files`,
+    {
+      schema: {
+        querystring: LanFileListQuerySchema,
+        response: { 200: apiSuccessSchema(LanFileListSchema), ...lanFailureResponses }
       }
-    });
-  });
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const query = normalizeLanFileQuery(request.query);
+      const files = await store.list(query);
+      const total = files.length;
+      const pageCount = Math.max(1, Math.ceil(total / query.pageSize));
+      const page = Math.min(query.page, pageCount);
+      const start = (page - 1) * query.pageSize;
+      const pageFiles = files.slice(start, start + query.pageSize);
+      return ok<ListResponse>({
+        files: pageFiles.map((file) => withUrls(file, basePath)),
+        pagination: {
+          page,
+          pageSize: query.pageSize,
+          total,
+          pageCount
+        }
+      });
+    }
+  );
 
-  typedApp.post(
+  app.post<{ Body: LanIdsInput }>(
     `${basePath}/files/batch-download`,
     {
       config: { ...REQUEST_QUOTAS.batchDownload, allowGuestTransfer: true },
-      schema: { body: LanIdsInputSchema }
+      schema: { body: LanIdsInputSchema, response: lanFailureResponses }
     },
     async (request, reply) => {
       if (!access.authorize(request, reply, "read")) return reply;
@@ -300,55 +351,97 @@ function registerLanTransferNamespace(
     }
   );
 
-  typedApp.post(`${basePath}/files/batch-delete`, { schema: { body: LanIdsInputSchema } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const ids = parseLanFileIds(request.body);
-    if (!ids.length) {
-      return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+  typedApp.post(
+    `${basePath}/files/batch-delete`,
+    {
+      schema: {
+        body: LanIdsInputSchema,
+        response: { 200: apiSuccessSchema(LanBatchRemovalSchema), ...lanFailureResponses }
+      }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const ids = parseLanFileIds(request.body);
+      if (!ids.length) {
+        return reply.code(400).send(fail("FILE_IDS_REQUIRED", "请至少选择一个文件"));
+      }
+      const result = await store.removeMany(ids);
+      await audit.write("files.batch-deleted", request, result);
+      return ok(result);
     }
-    const result = await store.removeMany(ids);
-    await audit.write("files.batch-deleted", request, result);
-    return ok(result);
-  });
+  );
 
-  typedApp.get(`${basePath}/files/:id/preview`, { schema: { params: LanIdParamsSchema } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const file = await getFileOr404(store, request, reply);
-    if (!file) return reply;
+  typedApp.get(
+    `${basePath}/files/:id/preview`,
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        response: lanFailureResponses
+      }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const file = await getFileOr404(store, request, reply);
+      if (!file) return reply;
 
-    if (!file.previewable) {
-      return reply.code(415).send(fail("PREVIEW_UNSUPPORTED", "This file type cannot be previewed"));
+      if (!file.previewable) {
+        return reply.code(415).send(fail("PREVIEW_UNSUPPORTED", "This file type cannot be previewed"));
+      }
+
+      return sendFile(reply, config, file, "inline", request.headers.range);
     }
+  );
 
-    return sendFile(reply, config, file, "inline", request.headers.range);
-  });
+  typedApp.get(
+    `${basePath}/files/:id/download`,
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        response: lanFailureResponses
+      }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const file = await getFileOr404(store, request, reply);
+      if (!file) return reply;
 
-  typedApp.get(`${basePath}/files/:id/download`, { schema: { params: LanIdParamsSchema } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "read")) return reply;
-    const file = await getFileOr404(store, request, reply);
-    if (!file) return reply;
-
-    if (!request.headers.range || /^bytes=0-/i.test(request.headers.range)) {
-      await store.incrementDownloadCount(file.id);
-      await audit.write("file.downloaded", request, { fileId: file.id });
+      if (!request.headers.range || /^bytes=0-/i.test(request.headers.range)) {
+        await store.incrementDownloadCount(file.id);
+        await audit.write("file.downloaded", request, { fileId: file.id });
+      }
+      return sendFile(reply, config, file, "attachment", request.headers.range);
     }
-    return sendFile(reply, config, file, "attachment", request.headers.range);
-  });
+  );
 
-  typedApp.delete(`${basePath}/files/:id`, { schema: { params: LanIdParamsSchema } }, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    const { id } = request.params;
-    const removed = await store.remove(id);
-    if (!removed) {
-      return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+  typedApp.delete(
+    `${basePath}/files/:id`,
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        response: { 200: apiSuccessSchema(LanRemovalSchema), ...lanFailureResponses }
+      }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      const { id } = request.params;
+      const removed = await store.remove(id);
+      if (!removed) {
+        return reply.code(404).send(fail("LAN_FILE_NOT_FOUND", "File not found"));
+      }
+      await audit.write("file.deleted", request, { fileId: id });
+      return ok({ removed: true });
     }
-    await audit.write("file.deleted", request, { fileId: id });
-    return ok({ removed: true });
-  });
+  );
 
   typedApp.patch(
     `${basePath}/files/:id/expiry`,
-    { schema: { params: LanIdParamsSchema, body: LanExpiryInputSchema } },
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        body: LanExpiryInputSchema,
+        response: { 200: apiSuccessSchema(LanFileWithUrlsSchema), ...lanFailureResponses }
+      }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "manage")) return reply;
       const { id } = request.params;
@@ -362,22 +455,33 @@ function registerLanTransferNamespace(
     }
   );
 
-  app.post(`${basePath}/cleanup`, async (request, reply) => {
-    if (!access.authorize(request, reply, "manage")) return reply;
-    // Kept for backwards compatibility; scheduled cleanup runs automatically.
-    const [files, notes] = await Promise.all([store.cleanupExpired(), noteStore.cleanupExpired()]);
-    await audit.write("cleanup.completed", request, {
-      filesRemoved: files.removed,
-      notesRemoved: notes.removed
-    });
-    return ok({ removed: files.removed + notes.removed, filesRemoved: files.removed, notesRemoved: notes.removed });
-  });
+  app.post(
+    `${basePath}/cleanup`,
+    {
+      schema: {
+        response: { 200: apiSuccessSchema(LanCleanupResultSchema), ...lanFailureResponses }
+      }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "manage")) return reply;
+      // Kept for backwards compatibility; scheduled cleanup runs automatically.
+      const [files, notes] = await Promise.all([store.cleanupExpired(), noteStore.cleanupExpired()]);
+      await audit.write("cleanup.completed", request, {
+        filesRemoved: files.removed,
+        notesRemoved: notes.removed
+      });
+      return ok({ removed: files.removed + notes.removed, filesRemoved: files.removed, notesRemoved: notes.removed });
+    }
+  );
 
   typedApp.post(
     `${basePath}/uploads`,
     {
       config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
-      schema: { body: LanUploadSessionInputSchema }
+      schema: {
+        body: LanUploadSessionInputSchema,
+        response: { 200: apiSuccessSchema(LanUploadStatusSchema), ...lanFailureResponses }
+      }
     },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
@@ -409,7 +513,12 @@ function registerLanTransferNamespace(
 
   typedApp.get(
     `${basePath}/uploads/:uploadId`,
-    { schema: { params: LanUploadParamsSchema } },
+    {
+      schema: {
+        params: LanUploadParamsSchema,
+        response: { 200: apiSuccessSchema(LanUploadStatusSchema), ...lanFailureResponses }
+      }
+    },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
       const { uploadId } = request.params;
@@ -426,7 +535,10 @@ function registerLanTransferNamespace(
     `${basePath}/uploads/:uploadId/chunks/:index`,
     {
       config: { ...REQUEST_QUOTAS.lanChunk, allowGuestTransfer: true },
-      schema: { params: LanChunkParamsSchema }
+      schema: {
+        params: LanChunkParamsSchema,
+        response: { 200: apiSuccessSchema(LanUploadStatusSchema), ...lanFailureResponses }
+      }
     },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
@@ -497,7 +609,10 @@ function registerLanTransferNamespace(
     `${basePath}/uploads/:uploadId/complete`,
     {
       config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
-      schema: { params: LanUploadParamsSchema }
+      schema: {
+        params: LanUploadParamsSchema,
+        response: { 200: apiSuccessSchema(LanFileUploadResultSchema), ...lanFailureResponses }
+      }
     },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;
@@ -598,7 +713,10 @@ function registerLanTransferNamespace(
     `${basePath}/uploads/:uploadId`,
     {
       config: { ...REQUEST_QUOTAS.lanUpload, allowGuestTransfer: true },
-      schema: { params: LanUploadParamsSchema }
+      schema: {
+        params: LanUploadParamsSchema,
+        response: { 200: apiSuccessSchema(LanRemovalSchema), ...lanFailureResponses }
+      }
     },
     async (request, reply) => {
       if (!access.authorize(request, reply, "upload")) return reply;

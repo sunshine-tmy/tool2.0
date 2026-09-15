@@ -1,5 +1,6 @@
 import { FormatRegistry, Type, type Static, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import type { ApiFailure, ApiSuccess } from "./api-response";
 
 if (!FormatRegistry.Has("date-time")) {
   FormatRegistry.Set("date-time", (value) => !Number.isNaN(Date.parse(value)));
@@ -11,20 +12,23 @@ export const ErrorSchema = Type.Object({
   details: Type.Optional(Type.Unknown())
 });
 
-export const ApiFailureSchema = Type.Object({
+const ApiFailureObjectSchema = Type.Object({
   success: Type.Literal(false),
   message: Type.String(),
   error: ErrorSchema,
   requestId: Type.String()
 });
+export const ApiFailureSchema = Type.Unsafe<ApiFailure>(ApiFailureObjectSchema);
 
 export function apiSuccessSchema<T extends TSchema>(data: T) {
-  return Type.Object({
-    success: Type.Literal(true),
-    message: Type.String(),
-    data,
-    requestId: Type.String()
-  });
+  return Type.Unsafe<ApiSuccess<Static<T>>>(
+    Type.Object({
+      success: Type.Literal(true),
+      message: Type.String(),
+      data,
+      requestId: Type.String()
+    })
+  );
 }
 
 export const TaskStatusSchema = Type.Union([
