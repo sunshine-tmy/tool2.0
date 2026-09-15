@@ -213,13 +213,39 @@ $manifest = [ordered]@{
   pnpm = "11.7.x"
   pythonInstaller = if ($SkipPythonInstaller) { $null } else { $python }
 }
-$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stagingRoot "build-manifest.json") -Encoding UTF8
+$manifestPath = Join-Path $stagingRoot "build-manifest.json"
+$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
-$licenseOutput = & pnpm -C $repositoryRoot licenses list --prod --json
+# Resolve licenses from the final standalone tree rather than the development
+# workspace. Remove absolute installation paths so the artifact is portable
+# and does not leak the builder's local filesystem layout.
+$licenseOutput = & pnpm --dir $stagingRoot licenses list --prod --json
 if ($LASTEXITCODE -ne 0) { throw "pnpm license inventory failed" }
-$licenseOutput | Set-Content -LiteralPath (Join-Path $stagingRoot "third-party-licenses.json") -Encoding UTF8
+$licenseInventory = ($licenseOutput -join [Environment]::NewLine) | ConvertFrom-Json
+foreach ($licenseGroup in $licenseInventory.PSObject.Properties) {
+  foreach ($package in @($licenseGroup.Value)) {
+    $package.PSObject.Properties.Remove("paths")
+  }
+}
+$licensePath = Join-Path $stagingRoot "third-party-licenses.json"
+$licenseInventory | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $licensePath -Encoding UTF8
 
 Set-DeterministicTimestamps -Root $stagingRoot -Timestamp $commitDate
+
+# Publish metadata beside the archive as well as inside it. These sidecars are
+# what release jobs upload for scanners and reviewers without exposing the
+# complete staging directory as a release artifact.
+$metadata = @(
+  @{ Source = $manifestPath; Name = "toolbox-$Platform.build-manifest.json" },
+  @{ Source = $licensePath; Name = "toolbox-$Platform.third-party-licenses.json" }
+)
+foreach ($item in $metadata) {
+  $sidecar = Join-Path $packageRoot $item.Name
+  Copy-Item -LiteralPath $item.Source -Destination $sidecar -Force
+  Set-DeterministicTimestamps -Root $sidecar -Timestamp $commitDate
+  $digest = (Get-FileHash -LiteralPath $sidecar -Algorithm SHA256).Hash.ToLowerInvariant()
+  "$digest  $($item.Name)" | Set-Content -LiteralPath "$sidecar.sha256" -Encoding ASCII
+}
 
 if (Test-Path -LiteralPath $archivePath) { Remove-Item -LiteralPath $archivePath -Force }
 if ($Platform -eq "windows") {

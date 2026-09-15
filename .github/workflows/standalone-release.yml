@@ -33,9 +33,34 @@ jobs:
         run: ./scripts/package-standalone.ps1 -Platform ${{ matrix.platform }}
       - uses: anchore/sbom-action@v0
         with:
-          path: .
+          # Scan only the final source tree that is actually archived. The
+          # development checkout (including its node_modules and test output)
+          # must never become part of the release SBOM.
+          path: .package/standalone/toolbox-${{ matrix.platform }}
           output-file: .package/standalone/toolbox-${{ matrix.platform }}.spdx.json
+      - name: Hash SBOM
+        shell: pwsh
+        run: |
+          $sbom = ".package/standalone/toolbox-${{ matrix.platform }}.spdx.json"
+          $digest = (Get-FileHash -LiteralPath $sbom -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$digest  $(Split-Path -Leaf $sbom)" | Set-Content -LiteralPath "$sbom.sha256" -Encoding ASCII
+      - name: Verify scoped metadata
+        shell: pwsh
+        run: |
+          $staging = ".package/standalone/toolbox-${{ matrix.platform }}"
+          $license = Get-Content -LiteralPath (Join-Path $staging "third-party-licenses.json") -Raw | ConvertFrom-Json
+          $hasAbsolutePaths = @($license.PSObject.Properties.Value | ForEach-Object { $_.PSObject.Properties.Name } | Where-Object { $_ -eq "paths" }).Count -gt 0
+          if ($hasAbsolutePaths) { throw "License inventory contains builder-local paths" }
+          $sbom = Get-Content -LiteralPath ".package/standalone/toolbox-${{ matrix.platform }}.spdx.json" -Raw
+          $checkout = (Get-Location).Path.Replace("\\", "/")
+          if ($sbom.Contains("$checkout/node_modules")) { throw "SBOM contains the development checkout node_modules" }
       - uses: actions/upload-artifact@v4
         with:
           name: toolbox-${{ matrix.platform }}
-          path: .package/standalone/toolbox-*
+          path: |
+            .package/standalone/*.zip
+            .package/standalone/*.tar.gz
+            .package/standalone/*.spdx.json
+            .package/standalone/*.sha256
+            .package/standalone/*.build-manifest.json
+            .package/standalone/*.third-party-licenses.json
