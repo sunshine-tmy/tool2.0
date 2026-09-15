@@ -137,7 +137,8 @@ function New-DeterministicTarGz {
 function Assert-PathWithin([string]$Path, [string]$Root) {
   $resolvedPath = [IO.Path]::GetFullPath($Path).TrimEnd("\", "/")
   $resolvedRoot = [IO.Path]::GetFullPath($Root).TrimEnd("\", "/")
-  if (-not $resolvedPath.StartsWith("$resolvedRoot\", [StringComparison]::OrdinalIgnoreCase)) {
+  $rootPrefix = $resolvedRoot + [IO.Path]::DirectorySeparatorChar
+  if (-not $resolvedPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Unsafe package path: $resolvedPath"
   }
 }
