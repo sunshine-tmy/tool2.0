@@ -1,6 +1,6 @@
 export type ApiSuccess<T> = {
   success: true;
-  message: string;
+  message?: string;
   data: T;
   requestId?: string;
 };

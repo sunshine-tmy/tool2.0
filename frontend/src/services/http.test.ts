@@ -78,4 +78,17 @@ describe("api error wrapper", () => {
       code: "INVALID_API_RESPONSE"
     });
   });
+
+  it("accepts a successful envelope without a compatibility message", async () => {
+    const instance = {
+      get: vi.fn().mockResolvedValue({
+        data: { success: true, data: { status: "ok" }, requestId: "req-no-message" }
+      })
+    };
+    const client = createHttpClient(instance as never);
+
+    await expect(client.get("/health", Type.Object({ status: Type.Literal("ok") }))).resolves.toEqual({
+      status: "ok"
+    });
+  });
 });

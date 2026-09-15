@@ -1,6 +1,13 @@
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import { ApiHealthSchema, FileNameParamsSchema, LiveHealthSchema, ReadyHealthSchema } from "../api-schema";
+import {
+  ApiHealthSchema,
+  FileNameParamsSchema,
+  LiveHealthSchema,
+  ReadyHealthSchema,
+  apiSuccessSchema
+} from "../api-schema";
+import { Type } from "@sinclair/typebox";
 
 describe("core api schemas", () => {
   it("accepts safe file names and rejects separators or response splitting characters", () => {
@@ -26,5 +33,26 @@ describe("core api schemas", () => {
         chatterbox: { retentionDays: 3 }
       })
     ).toBe(true);
+  });
+
+  it("accepts success envelopes with an optional compatibility message", () => {
+    const schema = apiSuccessSchema(Type.Object({ id: Type.String() }));
+
+    expect(
+      Value.Check(schema, {
+        success: true,
+        data: { id: "task-1" },
+        requestId: "req-1"
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(schema, {
+        success: true,
+        message: "loaded",
+        data: { id: "task-1" },
+        requestId: "req-2"
+      })
+    ).toBe(true);
+    expect(Value.Check(schema, { success: true, data: { id: "task-1" } })).toBe(false);
   });
 });

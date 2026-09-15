@@ -24,7 +24,7 @@ export function apiSuccessSchema<T extends TSchema>(data: T) {
   return Type.Unsafe<ApiSuccess<Static<T>>>(
     Type.Object({
       success: Type.Literal(true),
-      message: Type.String(),
+      message: Type.Optional(Type.String()),
       data,
       requestId: Type.String()
     })

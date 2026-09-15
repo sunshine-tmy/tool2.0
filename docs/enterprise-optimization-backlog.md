@@ -56,7 +56,7 @@
 | B04 | DONE | 补齐 Edge-TTS 与 Chatterbox 剩余 Schema           | B01      | 主任务、批次、音色及失败响应均由共享 Schema 导出                                             |
 | B05 | DONE | 补齐小红书归档、媒体和翻译 Schema                 | B01      | 获取任务、列表、详情、翻译编辑及运行时状态均受运行时校验                                     |
 | B06 | DONE | 前端共享 Schema 解码                              | B02–B05  | HTTP 层对所有 JSON 响应执行共享 Schema 校验，删除平行接口类型                                |
-| B07 | TODO | 固化统一响应结构                                  | B06      | 成功为 `{success,data,message?,requestId}`；错误为 `{success:false,error,message,requestId}` |
+| B07 | DONE | 固化统一响应结构                                  | B06      | 成功为 `{success,data,message?,requestId}`；错误为 `{success:false,error,message,requestId}` |
 
 ### C. 后端四层架构收尾
 
@@ -136,18 +136,19 @@
 
 ## 5. 验收日志
 
-| 任务 ID | 状态                | 完成日期   | 提交      | 定向测试                                                                    | 全量门禁          | 实际运行验证                                             | 备注                                                               |
-| ------- | ------------------- | ---------- | --------- | --------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------- | ------------------------------------------------------------------ |
-| 基线    | DONE                | 2026-09-14 | `76c65b6` | 共享 41；后端 123；前端 82；Python 7                                        | `pnpm check` 通过 | live/ready/API 可用                                      | 在线测试跳过 1                                                     |
-| A01     | DONE                | 2026-09-14 | `[A01]`   | `python scripts/audit-worker-dependencies.py`                               | `pnpm check` 通过 | 不涉及运行时接口                                         | Python Job 不再依赖未安装的 pnpm                                   |
-| A02     | DONE                | 2026-09-14 | `[A02]`   | `pnpm --filter backend test -- src/__tests__/lan-transfer.test.ts`（27 项） | `pnpm check` 通过 | live/ready、访客上传下载、管理员删除                     | 管理操作使用全局管理员会话与 CSRF                                  |
-| A03     | DONE                | 2026-09-14 | `[A03]`   | 生命周期、Worker 退出及受影响模块定向测试 43 项                             | `pnpm check` 通过 | live/ready/API、信号关闭与超时强退                       | SSE、队列、计时器、Worker、数据库纳入关闭链路                      |
-| A04     | DONE                | 2026-09-15 | `[A04]`   | `lan-transfer.test.ts` 28 项；SQLite 审计动作断言                           | `pnpm check` 通过 | live/ready、上传下载删除清理接口                         | 旧 `audit.jsonl` 内容保持不变                                      |
-| A05     | DONE                | 2026-09-15 | `[A05]`   | 配额及模块定向测试 50 项                                                    | `pnpm check` 通过 | live/ready、LAN/AI/配音/归档接口                         | 稳定 `RATE_LIMIT_EXCEEDED`/`CONCURRENCY_LIMIT_EXCEEDED`            |
-| B01     | DONE                | 2026-09-15 | `[B01]`   | `lan-transfer.test.ts` 28 项；后端 TypeScript 类型检查                      | `pnpm check` 通过 | live/ready、LAN 信息接口                                 | LAN 请求体、查询和路径参数由 TypeBox Schema 直接推导               |
-| B02     | DONE                | 2026-09-15 | `[B02]`   | 共享 Schema 2 项；系统/图片/视频/短视频定向测试 41 项                       | `pnpm check` 通过 | live/ready、维护、图片与短视频接口                       | JSON 状态码补齐成功/失败 Schema；二进制流保持原契约                |
-| B03     | DONE                | 2026-09-15 | `[B03]`   | LAN 共享契约 3 项；`lan-transfer.test.ts` 28 项                             | `pnpm check` 通过 | live/ready、列表、分片创建与取消                         | 文件、图文、分片及错误响应均使用共享 Schema                        |
-| B04     | DONE                | 2026-09-15 | `[B04]`   | 配音共享 Schema 2 项；Edge-TTS/Chatterbox 定向测试 18 项                    | `pnpm check` 通过 | live/ready、双配音健康与缺失音频接口                     | 主任务、批次、音色类型由 Schema 推导；流式错误契约补齐             |
-| B05     | DONE                | 2026-09-15 | `[B05]`   | 小红书共享 Schema 3 项；归档、媒体与翻译定向测试 5 项                       | `pnpm check` 通过 | live/ready、双运行时、列表及缺失任务                     | 归档、媒体、翻译与任务类型由 Schema 推导；额外字段拒绝             |
-| B06     | DONE                | 2026-09-15 | `[B06]`   | HTTP 解码 5 项；前端全量 83 项                                              | `pnpm check` 通过 | 真实构建页面 200、live/ready；前端 API 调用全量带 Schema | 成功/失败信封与 data 均运行时校验；Schema 运行时独立分包且预算通过 |
-| F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                                        | 当前大规模重构合并形成新基线后启用                                 |
+| 任务 ID | 状态                | 完成日期   | 提交      | 定向测试                                                                    | 全量门禁          | 实际运行验证                                             | 备注                                                                      |
+| ------- | ------------------- | ---------- | --------- | --------------------------------------------------------------------------- | ----------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 基线    | DONE                | 2026-09-14 | `76c65b6` | 共享 41；后端 123；前端 82；Python 7                                        | `pnpm check` 通过 | live/ready/API 可用                                      | 在线测试跳过 1                                                            |
+| A01     | DONE                | 2026-09-14 | `[A01]`   | `python scripts/audit-worker-dependencies.py`                               | `pnpm check` 通过 | 不涉及运行时接口                                         | Python Job 不再依赖未安装的 pnpm                                          |
+| A02     | DONE                | 2026-09-14 | `[A02]`   | `pnpm --filter backend test -- src/__tests__/lan-transfer.test.ts`（27 项） | `pnpm check` 通过 | live/ready、访客上传下载、管理员删除                     | 管理操作使用全局管理员会话与 CSRF                                         |
+| A03     | DONE                | 2026-09-14 | `[A03]`   | 生命周期、Worker 退出及受影响模块定向测试 43 项                             | `pnpm check` 通过 | live/ready/API、信号关闭与超时强退                       | SSE、队列、计时器、Worker、数据库纳入关闭链路                             |
+| A04     | DONE                | 2026-09-15 | `[A04]`   | `lan-transfer.test.ts` 28 项；SQLite 审计动作断言                           | `pnpm check` 通过 | live/ready、上传下载删除清理接口                         | 旧 `audit.jsonl` 内容保持不变                                             |
+| A05     | DONE                | 2026-09-15 | `[A05]`   | 配额及模块定向测试 50 项                                                    | `pnpm check` 通过 | live/ready、LAN/AI/配音/归档接口                         | 稳定 `RATE_LIMIT_EXCEEDED`/`CONCURRENCY_LIMIT_EXCEEDED`                   |
+| B01     | DONE                | 2026-09-15 | `[B01]`   | `lan-transfer.test.ts` 28 项；后端 TypeScript 类型检查                      | `pnpm check` 通过 | live/ready、LAN 信息接口                                 | LAN 请求体、查询和路径参数由 TypeBox Schema 直接推导                      |
+| B02     | DONE                | 2026-09-15 | `[B02]`   | 共享 Schema 2 项；系统/图片/视频/短视频定向测试 41 项                       | `pnpm check` 通过 | live/ready、维护、图片与短视频接口                       | JSON 状态码补齐成功/失败 Schema；二进制流保持原契约                       |
+| B03     | DONE                | 2026-09-15 | `[B03]`   | LAN 共享契约 3 项；`lan-transfer.test.ts` 28 项                             | `pnpm check` 通过 | live/ready、列表、分片创建与取消                         | 文件、图文、分片及错误响应均使用共享 Schema                               |
+| B04     | DONE                | 2026-09-15 | `[B04]`   | 配音共享 Schema 2 项；Edge-TTS/Chatterbox 定向测试 18 项                    | `pnpm check` 通过 | live/ready、双配音健康与缺失音频接口                     | 主任务、批次、音色类型由 Schema 推导；流式错误契约补齐                    |
+| B05     | DONE                | 2026-09-15 | `[B05]`   | 小红书共享 Schema 3 项；归档、媒体与翻译定向测试 5 项                       | `pnpm check` 通过 | live/ready、双运行时、列表及缺失任务                     | 归档、媒体、翻译与任务类型由 Schema 推导；额外字段拒绝                    |
+| B06     | DONE                | 2026-09-15 | `[B06]`   | HTTP 解码 5 项；前端全量 83 项                                              | `pnpm check` 通过 | 真实构建页面 200、live/ready；前端 API 调用全量带 Schema | 成功/失败信封与 data 均运行时校验；Schema 运行时独立分包且预算通过        |
+| B07     | DONE                | 2026-09-15 | `[B07]`   | 共享 Schema 5 项；后端 app 11 项；前端 HTTP 6 项                            | `pnpm check` 通过 | live/ready、未知路由 404、请求校验 400 均返回统一信封    | 成功 `message` 可选且保留 `ok()` 兼容提示；所有统一信封绑定当前 requestId |
+| F06     | BLOCKED_BY_BASELINE | —          | —         | —                                                                           | —                 | —                                                        | 当前大规模重构合并形成新基线后启用                                        |

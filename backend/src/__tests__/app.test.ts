@@ -201,4 +201,28 @@ describe("api app", () => {
     });
     await app.close();
   });
+
+  it("uses the current request id for every error envelope", async () => {
+    const app = await createApp();
+    const notFound = await app.inject({ method: "GET", url: "/api/v1/does-not-exist" });
+    const invalid = await app.inject({ method: "POST", url: "/api/v1/session", payload: { pin: "123" } });
+
+    expect(notFound.statusCode).toBe(404);
+    expect(notFound.headers["x-request-id"]).toBeTruthy();
+    expect(notFound.json()).toMatchObject({
+      success: false,
+      message: expect.any(String),
+      error: { code: "ROUTE_NOT_FOUND", message: expect.any(String) },
+      requestId: notFound.headers["x-request-id"]
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.headers["x-request-id"]).toBeTruthy();
+    expect(invalid.json()).toMatchObject({
+      success: false,
+      message: expect.any(String),
+      error: { code: "REQUEST_INVALID", message: expect.any(String) },
+      requestId: invalid.headers["x-request-id"]
+    });
+    await app.close();
+  });
 });

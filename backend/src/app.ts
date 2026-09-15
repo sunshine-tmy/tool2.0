@@ -123,14 +123,17 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   app.addHook("preSerialization", async (request, _reply, payload) => {
     if (typeof payload !== "object" || payload === null) return payload;
     const value = payload as Record<string, unknown>;
-    return typeof value.success === "boolean" && typeof value.requestId !== "string"
-      ? { ...value, requestId: request.id }
-      : payload;
+    return typeof value.success === "boolean" ? { ...value, requestId: request.id } : payload;
   });
 
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     return payload;
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    request.log.info({ requestId: request.id, method: request.method, url: request.url }, "route not found");
+    return reply.code(404).send(fail("ROUTE_NOT_FOUND", "请求的接口不存在"));
   });
 
   app.setErrorHandler((error, request, reply) => {
