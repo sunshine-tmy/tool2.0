@@ -66,6 +66,23 @@ describe("useTaskEvents", () => {
     scope.stop();
   });
 
+  it("delivers a streamed task update within the one-second progress budget", () => {
+    const source = new FakeEventSource();
+    const scope = effectScope();
+    const result = scope.run(() =>
+      useTaskEvents("task/one", {
+        createEventSource: () => source
+      })
+    )!;
+    const startedAt = performance.now();
+
+    source.emit("task", JSON.stringify(task("completed")));
+
+    expect(result.task.value?.status).toBe("completed");
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+    scope.stop();
+  });
+
   it("uses exponential reconnects, pauses while hidden, and aborts polling on dispose", async () => {
     vi.useFakeTimers();
     let visible = true;

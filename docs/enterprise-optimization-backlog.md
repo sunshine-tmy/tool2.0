@@ -7,7 +7,7 @@
 - 分支：`codex/enterprise-refactor`
 - 基线提交：`76c65b6`
 - `pnpm check`：通过
-- 测试：共享 50、后端 153、前端 102、Python 7、Playwright E2E 4；在线测试跳过 1，Windows 符号链接安全测试跳过 1（Linux CI 执行）
+- 测试：共享 50、后端 153、前端 104、Python 7、Playwright E2E 4；在线测试跳过 1，Windows 符号链接安全测试跳过 1（Linux CI 执行）
 - 覆盖率（行/分支）：共享 93.10%/70.39%，后端 78.79%/67.43%，前端 88.91%/78.04%
 - 生产依赖：无已知漏洞
 - SQLite：完整性正常、无外键错误、Schema v5（D01/D02 已完成）
@@ -104,7 +104,7 @@
 | F02 | DONE                | 完整安全负向测试             | A02、A05、B07            | 覆盖路径穿越、CRLF、恶意文件名、超大请求、越权删除、CSRF、登录爆破和敏感日志泄漏 |
 | F03 | DONE                | SSRF 与归档供应链专项测试    | C05、C07                 | 验证连接固定到已校验 IP、逐跳重定向复验及安装包安全限制                          |
 | F04 | DONE                | 建立 Playwright 关键流程 E2E | E03–E10                  | 覆盖启动、上传/断点续传、批量删除、配音、小红书列表和任务重试；隔离 storage      |
-| F05 | TODO                | 流式与 SSE 性能验收          | D03、E02                 | 大文件上传内存稳定；任务进度 1 秒内到达；断线后轮询恢复                          |
+| F05 | DONE                | 流式与 SSE 性能验收          | D03、E02                 | 大文件上传内存稳定；任务进度 1 秒内到达；断线后轮询恢复                          |
 | F06 | BLOCKED_BY_BASELINE | 启用变更行覆盖率 90%         | 当前分支合并形成新基线后 | 从 PR base 与 LCOV 计算新增/修改可执行行，低于 90% 阻止 CI                       |
 
 ### G. 可复现分发与发布
@@ -179,3 +179,4 @@
 | F02     | DONE                | 2026-09-15 | `[F02]`   | `pnpm --filter backend exec vitest run src/__tests__/app.test.ts src/__tests__/short-video-download.test.ts`（14 项）                                                             | `pnpm check` 通过 | 全局 JSON 1 MiB 限制、路径/CRLF 文件名、越权管理、CSRF、登录爆破和限流边界回归通过    | 短视频下载文件名过滤控制字符；既有路径穿越、恶意文件名和权限防护均有负向证据                                             |
 | F03     | DONE                | 2026-09-15 | `[F03]`   | `pnpm --filter backend exec vitest run src/__tests__/archive-safety.test.ts src/__tests__/remote-fetch.test.ts src/__tests__/xhs-runtime.test.ts`（21 项通过，1 项 Windows 跳过） | `pnpm check` 通过 | live/ready、XHS runtime 状态接口和归档安装边界验证通过                                | SSRF 每次重定向重新解析；XHS/uv/翻译模型归档统一执行路径、文件数、解压体积和符号链接校验；摘要不匹配保持拒绝             |
 | F04     | DONE                | 2026-09-15 | `[F04]`   | `pnpm test:e2e`（4 项）                                                                                                                                                           | `pnpm check` 通过 | Playwright 实际浏览器完成启动、LAN 分片恢复/批量删除、配音任务和小红书重试流程        | `playwright.config.ts` 使用独立临时 storage 与隔离端口；CI 安装 Chromium 并上传失败报告；复杂 Worker 通过浏览器路由 mock |
+| F05     | DONE                | 2026-09-15 | `[F05]`   | `pnpm --filter frontend exec vitest run src/modules/lan-transfer/chunk-uploader.test.ts src/composables/useTaskEvents.test.ts`（14 项）                                           | `pnpm check` 通过 | 512 MiB 逻辑文件在途分片内存受并发上限约束；SSE 进度事件 <1 秒；断线后轮询恢复通过    | 大文件只按分片调度，不构造全文件副本；现有指数重连、页面隐藏暂停、AbortSignal 释放测试继续通过                           |
