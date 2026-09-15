@@ -41,6 +41,7 @@ import { repairLegacySubtitle } from "./subtitle";
 import { ChatterboxQueue } from "./task-queue";
 import { ChatterboxTaskStore, type ChatterboxCreateInput } from "./task-store";
 import { createChatterboxWorkerClient } from "./worker-client";
+import { commitStagedFile, createStagingPath } from "../../storage/file-commit-gateway";
 
 const HEALTH_CACHE_MS = 10_000;
 
@@ -303,7 +304,13 @@ async function receiveMultipartTask(
           callback(null, chunk);
         }
       });
-      await pipeline(part.file, limiter, fs.createWriteStream(targetPath));
+      const stagingPath = createStagingPath(targetPath, `${process.pid}-${Date.now()}`);
+      try {
+        await pipeline(part.file, limiter, fs.createWriteStream(stagingPath, { flags: "wx" }));
+        await commitStagedFile(stagingPath, targetPath);
+      } finally {
+        await fsp.rm(stagingPath, { force: true });
+      }
       if (part.file.truncated) throw new ChatterboxInputError("CHATTERBOX_REFERENCE_TOO_LARGE", "参考音频过大", 413);
     } else if (typeof part.value === "string" && part.value.length <= CHATTERBOX_MAX_TEXT_LENGTH + 200) {
       fields[part.fieldname] = part.value;

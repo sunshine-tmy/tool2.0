@@ -7,6 +7,7 @@ import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import { createImageAiWorkerClient } from "./worker-client";
+import { commitStagedFile } from "../../storage/file-commit-gateway";
 
 export type StoredInput = {
   path: string;
@@ -437,5 +438,5 @@ async function sanitizePng(outputPath: string) {
   const temporary = `${outputPath}.sanitized.png`;
   await sharp(outputPath, { limitInputPixels: 100_000_000 }).rotate().png({ compressionLevel: 9 }).toFile(temporary);
   await fs.rm(outputPath, { force: true });
-  await fs.rename(temporary, outputPath);
+  await commitStagedFile(temporary, outputPath);
 }

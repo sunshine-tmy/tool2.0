@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
+import { commitStagedFile } from "../../storage/file-commit-gateway";
 import { ensureJsonIndex, readJsonIndex } from "./repository-io";
 
 type LanChunkUploadSession = {
@@ -236,7 +237,7 @@ export async function mergeChunks(
     } finally {
       await handle.close();
     }
-    await fsp.rename(temporaryPath, targetPath);
+    await commitStagedFile(temporaryPath, targetPath);
   } catch (error) {
     await fsp.rm(temporaryPath, { force: true });
     throw error;

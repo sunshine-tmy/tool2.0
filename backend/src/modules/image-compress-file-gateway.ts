@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { ZipArchive } from "archiver";
 import { nanoid } from "nanoid";
 import type { AppConfig } from "../config";
+import { commitStagedFile, createStagingPath } from "../storage/file-commit-gateway";
 import type { TaskStore } from "../tasks/task-store";
 import { IMAGE_COMPRESS_MAX_PIXELS, SUPPORTED_IMAGE_MIME_TYPES } from "./image-compress-input";
 
@@ -27,11 +28,11 @@ export class ImageFileGateway {
     else if (options.outputFormat === "png") pipeline = pipeline.png({ quality: options.quality });
     else pipeline = pipeline.webp({ quality: options.quality });
 
-    const stagingPath = `${outputPath}.staging-${nanoid(8)}`;
+    const stagingPath = createStagingPath(outputPath, nanoid(8));
     try {
       await pipeline.toFile(stagingPath);
       const outputStat = await fs.stat(stagingPath);
-      await fs.rename(stagingPath, outputPath);
+      await commitStagedFile(stagingPath, outputPath);
       return { outputSize: outputStat.size, width: metadata.width, height: metadata.height };
     } finally {
       await fs.rm(stagingPath, { force: true }).catch(() => undefined);

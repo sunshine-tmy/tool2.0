@@ -34,6 +34,7 @@ import type { createLanAccessController, createLanAuditLog } from "./access";
 import type { createLanFileStore, createLanNoteStore } from "./repositories";
 import type { createLanUploadStore } from "./uploads";
 import { lanFailureResponses, type LanFileListResponse } from "./route-contract";
+import { commitStagedFile, createStagingPath } from "../../storage/file-commit-gateway";
 
 type RegisterLanFileRoutesOptions = {
   app: FastifyInstance;
@@ -74,14 +75,15 @@ export function registerLanFileRoutes({
       const id = nanoid(12);
       const storedName = extension ? `${id}.${extension}` : id;
       const targetPath = path.join(config.lanTransferFilesDir, storedName);
+      const stagingPath = createStagingPath(targetPath, nanoid(8));
 
       try {
         await fsp.mkdir(config.lanTransferFilesDir, { recursive: true });
-        await pipeline(file.file, fs.createWriteStream(targetPath));
+        await pipeline(file.file, fs.createWriteStream(stagingPath, { flags: "wx" }));
 
-        const stat = await fsp.stat(targetPath);
+        const stat = await fsp.stat(stagingPath);
         if (file.file.truncated || stat.size > config.lanTransferMaxFileBytes) {
-          await fsp.rm(targetPath, { force: true });
+          await fsp.rm(stagingPath, { force: true });
           return reply.code(413).send(fail("FILE_TOO_LARGE", "Uploaded file exceeds the configured limit"));
         }
         if (
@@ -91,13 +93,13 @@ export function registerLanFileRoutes({
             stat.size >
           config.lanTransferMaxStorageBytes
         ) {
-          await fsp.rm(targetPath, { force: true });
+          await fsp.rm(stagingPath, { force: true });
           return reply.code(507).send(fail("LAN_STORAGE_QUOTA_EXCEEDED", "局域网文件存储配额不足"));
         }
 
         const classifiedCategory = classifyLanFile(originalName, file.mimetype);
         const category =
-          classifiedCategory === "pdf" && !(await hasPdfSignature(targetPath)) ? "other" : classifiedCategory;
+          classifiedCategory === "pdf" && !(await hasPdfSignature(stagingPath)) ? "other" : classifiedCategory;
         const createdAt = new Date().toISOString();
         const expiresAt = new Date(Date.now() + config.lanTransferRetentionDays * 24 * 60 * 60 * 1000).toISOString();
         const record: LanFileRecord = {
@@ -114,6 +116,7 @@ export function registerLanFileRoutes({
           previewable: isLanFilePreviewable(category)
         };
 
+        await commitStagedFile(stagingPath, targetPath);
         await store.add(record);
         await audit.write("file.uploaded", request, {
           fileId: record.id,
@@ -126,6 +129,7 @@ export function registerLanFileRoutes({
           downloadUrl: `${basePath}/files/${record.id}/download`
         });
       } catch (error) {
+        await fsp.rm(stagingPath, { force: true });
         await fsp.rm(targetPath, { force: true });
         const message = error instanceof Error ? error.message : "File upload failed";
         return reply.code(500).send(fail("UPLOAD_FAILED", message));

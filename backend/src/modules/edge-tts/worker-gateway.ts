@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { WORKER_PROTOCOL_VERSION, type EdgeTtsTask, type EdgeTtsVoice } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { commitStagedFile } from "../../storage/file-commit-gateway";
 import type { RuntimeInfo, TaskPaths } from "./types";
 
 const execFileAsync = promisify(execFile);
@@ -47,10 +48,10 @@ export class EdgeTtsWorkerGateway {
     if (!stat.isFile() || stat.size <= 0 || !(await isMp3File(paths.audioTemp))) {
       throw new Error("生成结果不是有效的 MP3 文件");
     }
-    await fsp.rename(paths.audioTemp, paths.audio);
+    await commitStagedFile(paths.audioTemp, paths.audio);
     if (task.includeSubtitles) {
       await fsp.access(paths.subtitleTemp);
-      await fsp.rename(paths.subtitleTemp, paths.subtitle);
+      await commitStagedFile(paths.subtitleTemp, paths.subtitle);
     }
     return {
       audioBytes: typeof result.audioBytes === "number" ? result.audioBytes : stat.size

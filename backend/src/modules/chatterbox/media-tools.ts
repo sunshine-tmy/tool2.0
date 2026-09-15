@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { CHATTERBOX_MAX_REFERENCE_SECONDS, CHATTERBOX_MIN_REFERENCE_SECONDS } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { commitStagedFile } from "../../storage/file-commit-gateway";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,7 +49,7 @@ export class ChatterboxMediaTools {
     );
     const stat = await fsp.stat(tempPath);
     if (stat.size <= 0 || !(await isMp3File(tempPath))) throw new Error("Chatterbox MP3 输出无效");
-    await fsp.rename(tempPath, outputPath);
+    await commitStagedFile(tempPath, outputPath);
   }
 
   async concatMp3(inputPaths: string[], outputPath: string) {
@@ -119,18 +120,5 @@ async function isMp3File(filePath: string) {
 }
 
 async function replaceFile(source: string, target: string) {
-  const backup = `${target}.backup`;
-  await fsp.rm(backup, { force: true });
-  const targetExists = await fsp.stat(target).then(
-    (stat) => stat.isFile(),
-    () => false
-  );
-  if (targetExists) await fsp.rename(target, backup);
-  try {
-    await fsp.rename(source, target);
-    await fsp.rm(backup, { force: true });
-  } catch (error) {
-    if (targetExists) await fsp.rename(backup, target);
-    throw error;
-  }
+  await commitStagedFile(source, target);
 }

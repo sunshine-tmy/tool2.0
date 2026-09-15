@@ -39,6 +39,7 @@ import {
 } from "./files";
 import type { createLanFileStore, createLanNoteStore } from "./repositories";
 import type { createLanUploadStore } from "./uploads";
+import { commitStagedFile, createStagingPath } from "../../storage/file-commit-gateway";
 
 type RegisterLanNoteRoutesOptions = {
   app: FastifyInstance;
@@ -129,15 +130,20 @@ export function registerLanNoteRoutes({
           const extension = extensionForLanNoteImage(part.mimetype);
           const storedName = `${noteId}-${imageId}.${extension}`;
           const targetPath = noteStore.imagePath(storedName);
+          const stagingPath = createStagingPath(targetPath, nanoid(8));
           writtenNames.push(storedName);
-          await pipeline(part.file, fs.createWriteStream(targetPath));
-          const stat = await fsp.stat(targetPath);
+          writtenNames.push(path.basename(stagingPath));
+          await pipeline(part.file, fs.createWriteStream(stagingPath, { flags: "wx" }));
+          const stat = await fsp.stat(stagingPath);
           if (part.file.truncated || stat.size > lanNoteLimits.maxImageBytes) {
+            await fsp.rm(stagingPath, { force: true });
             throw new LanNoteInputError("LAN_NOTE_IMAGE_TOO_LARGE", 413, "单张图片不能超过 10 MB");
           }
-          if (!(await hasLanNoteImageSignature(targetPath, part.mimetype))) {
+          if (!(await hasLanNoteImageSignature(stagingPath, part.mimetype))) {
+            await fsp.rm(stagingPath, { force: true });
             throw new LanNoteInputError("LAN_NOTE_IMAGE_INVALID", 415, "图片内容与文件类型不匹配");
           }
+          await commitStagedFile(stagingPath, targetPath);
           images.push({
             id: imageId,
             originalName: path.basename(part.filename || `image.${extension}`),

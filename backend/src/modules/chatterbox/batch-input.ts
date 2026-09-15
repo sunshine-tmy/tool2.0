@@ -15,6 +15,7 @@ import {
 } from "@toolbox/shared";
 import { BatchInputError, type ChatterboxBatchErrorStatus } from "./errors";
 import type { BatchCreateInput, BatchSegmentInput } from "./stores";
+import { commitStagedFile, createStagingPath } from "../../storage/file-commit-gateway";
 
 export async function receiveBatchMultipart(
   parts: AsyncIterableIterator<import("@fastify/multipart").Multipart>,
@@ -44,7 +45,13 @@ export async function receiveBatchMultipart(
           );
         }
       });
-      await pipeline(part.file, limiter, fs.createWriteStream(targetPath));
+      const stagingPath = createStagingPath(targetPath, `${process.pid}-${Date.now()}`);
+      try {
+        await pipeline(part.file, limiter, fs.createWriteStream(stagingPath, { flags: "wx" }));
+        await commitStagedFile(stagingPath, targetPath);
+      } finally {
+        await fs.promises.rm(stagingPath, { force: true });
+      }
       if (part.file.truncated) throw new BatchInputError("CHATTERBOX_REFERENCE_TOO_LARGE", "参考音频过大", 413);
     } else if (
       typeof part.value === "string" &&
