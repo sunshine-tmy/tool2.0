@@ -79,6 +79,20 @@ export const cleanupDefinitions = [
     targets: ["storage/short-video"]
   },
   {
+    id: "metadata",
+    label: "本地数据库与恢复隔离区",
+    risk: "high",
+    requiresStop: true,
+    defaults: false,
+    targets: [
+      "storage/toolbox.db",
+      "storage/toolbox.db-wal",
+      "storage/toolbox.db-shm",
+      "storage/migration-backups",
+      "storage/quarantine"
+    ]
+  },
+  {
     id: "xhs-temp",
     label: "小红书临时数据",
     risk: "low",

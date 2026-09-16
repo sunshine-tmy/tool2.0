@@ -6,6 +6,7 @@ import { stdin, stdout } from "node:process";
 import { cleanupDefinitions, executeCleanup, inspectCleanupCategories } from "./cleanup-engine.mjs";
 
 const args = process.argv.slice(2);
+const clearAll = args.includes("--all");
 
 if (args.includes("--json")) {
   console.log(JSON.stringify(await inspectCleanupCategories()));
@@ -27,9 +28,13 @@ if (executeArg) {
 
 const categories = await inspectCleanupCategories();
 const interactive = args.includes("--interactive");
-let selected = cleanupDefinitions.filter((entry) => entry.defaults).map((entry) => entry.id);
+// --all 供一键清理器使用：它会删除每个已登记的可清理分类，包括运行数据库和永久归档；
+// 默认命令仍只选择低风险分类，避免命令行误操作清空本地业务数据。
+let selected = clearAll
+  ? cleanupDefinitions.map((entry) => entry.id)
+  : cleanupDefinitions.filter((entry) => entry.defaults).map((entry) => entry.id);
 
-if (interactive) {
+if (interactive && !clearAll) {
   console.log("请选择要清理的分类（输入编号，多个用逗号分隔）：\n");
   categories.forEach((entry, index) =>
     console.log(
@@ -56,6 +61,10 @@ if (interactive) {
     console.log("已取消，未删除任何文件。");
     process.exit(0);
   }
+}
+
+if (clearAll) {
+  console.log(`全量清理模式：将处理全部 ${selected.length} 个已登记分类。`);
 }
 
 const results = await executeCleanup(selected, { dryRun: args.includes("--dry-run") });

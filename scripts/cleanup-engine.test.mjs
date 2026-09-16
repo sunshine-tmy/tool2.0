@@ -6,7 +6,7 @@ import { after, describe, it } from "node:test";
 import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { executeCleanup, inspectCleanupCategories, removeWithSkips } from "./cleanup-engine.mjs";
+import { cleanupDefinitions, executeCleanup, inspectCleanupCategories, removeWithSkips } from "./cleanup-engine.mjs";
 
 const tempDirs = [];
 
@@ -98,6 +98,59 @@ describe("removeWithSkips", () => {
 });
 
 describe("executeCleanup", () => {
+  it("registers database and recovery artifacts as a high-risk full-cleanup category", () => {
+    const metadata = cleanupDefinitions.find((definition) => definition.id === "metadata");
+    assert.deepEqual(metadata?.targets, [
+      "storage/toolbox.db",
+      "storage/toolbox.db-wal",
+      "storage/toolbox.db-shm",
+      "storage/migration-backups",
+      "storage/quarantine"
+    ]);
+    assert.equal(metadata?.risk, "high");
+    assert.equal(metadata?.requiresStop, true);
+  });
+
+  it("removes every registered runtime category from an isolated full-cleanup root", async () => {
+    const tmpRoot = await makeTempDir();
+    const fixtures = [
+      "backend/dist/app.js",
+      ".tmp/cache.bin",
+      ".logs/backend.log",
+      ".package/standalone/archive.zip",
+      "storage/uploads/image.jpg",
+      "storage/image-ai/tasks/job.json",
+      "storage/lan-transfer/files/shared.txt",
+      "storage/video-text/results/task.json",
+      "storage/edge-tts/tasks/task.json",
+      "storage/chatterbox/batches/batch/meta.json",
+      "storage/short-video/cache.json",
+      "storage/toolbox.db",
+      "storage/migration-backups/backup.db",
+      "storage/quarantine/recoverable.bin",
+      "storage/xhs-archive/staging/job/manifest.json",
+      "storage/xhs-archive/items/archive/manifest.json",
+      "storage/xhs-archive/index.json"
+    ];
+    for (const relative of fixtures) {
+      const target = path.join(tmpRoot, relative);
+      await mkdir(path.dirname(target), { recursive: true });
+      await writeFile(target, "runtime-data");
+    }
+
+    const results = await executeCleanup(
+      cleanupDefinitions.map((definition) => definition.id),
+      { root: tmpRoot, retryDelayMs: 0 }
+    );
+
+    assert.equal(results.length, cleanupDefinitions.length);
+    for (const relative of fixtures) await assert.rejects(stat(path.join(tmpRoot, relative)), { code: "ENOENT" });
+    // 即使运行数据全清，也恢复版本库需要保留的空目录占位文件。
+    await stat(path.join(tmpRoot, "storage/uploads/.gitkeep"));
+    await stat(path.join(tmpRoot, "storage/outputs/.gitkeep"));
+    await stat(path.join(tmpRoot, "storage/lan-transfer/files/.gitkeep"));
+  });
+
   it("reports deleted and skipped files within a sandbox root", async () => {
     const tmpRoot = await makeTempDir();
     const tempDir = path.join(tmpRoot, "storage", "temp");
