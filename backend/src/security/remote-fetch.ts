@@ -3,6 +3,7 @@
  */
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
+import type { LookupAddress, LookupOptions } from "node:dns";
 import { Readable, Transform } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { Agent, fetch as undiciFetch } from "undici";
@@ -12,6 +13,11 @@ const nativeGlobalFetch = globalThis.fetch;
 export type ResolvedAddress = { address: string; family: number };
 export type AddressResolver = (hostname: string) => Promise<ResolvedAddress[]>;
 export type RemoteFetch = (url: string, init?: RequestInit) => Promise<Response>;
+type PinnedLookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address: string | LookupAddress[],
+  family: number
+) => void;
 
 /**
  * 只限制建立远程连接和接收响应头的时间。
@@ -54,14 +60,7 @@ export function createRemoteFetch(
     ? undefined
     : new Agent({
         connect: {
-          lookup(hostname, _options, callback) {
-            const selected = pinnedAddresses.get(normalizeHostname(hostname));
-            if (!selected) {
-              callback(new Error("Remote hostname was not resolved through the SSRF policy"), "", 4);
-              return;
-            }
-            callback(null, selected.address, selected.family as 4 | 6);
-          }
+          lookup: createPinnedLookup(pinnedAddresses)
         }
       });
 
@@ -89,6 +88,25 @@ export function createRemoteFetch(
     }
 
     throw new Error("Remote URL exceeded the redirect limit");
+  };
+}
+
+/**
+ * 创建只允许使用已通过 SSRF 校验地址的 DNS 回调。
+ * Node 24 的自动地址选择会要求 all=true 时返回对象数组，普通模式仍使用字符串地址。
+ */
+export function createPinnedLookup(pinnedAddresses: ReadonlyMap<string, ResolvedAddress>) {
+  return (hostname: string, options: LookupOptions, callback: PinnedLookupCallback) => {
+    const selected = pinnedAddresses.get(normalizeHostname(hostname));
+    if (!selected) {
+      callback(new Error("Remote hostname was not resolved through the SSRF policy"), "", 4);
+      return;
+    }
+    if (options?.all) {
+      callback(null, [{ address: selected.address, family: selected.family }], selected.family);
+    } else {
+      callback(null, selected.address, selected.family as 4 | 6);
+    }
   };
 }
 

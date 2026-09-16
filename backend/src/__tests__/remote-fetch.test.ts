@@ -4,6 +4,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   assertPublicRemoteUrl,
+  createPinnedLookup,
   createRemoteFetch,
   fetchRemoteResponse,
   limitedResponseStream
@@ -14,6 +15,17 @@ import { Writable } from "node:stream";
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
 
 describe("safe remote fetch", () => {
+  it("returns the Node 24 lookup shape for scalar and all-address callbacks", () => {
+    const lookup = createPinnedLookup(new Map([["media.example", { address: "93.184.216.34", family: 4 }]]));
+    const callback = vi.fn();
+
+    lookup("media.example", { all: true }, callback);
+    expect(callback).toHaveBeenLastCalledWith(null, [{ address: "93.184.216.34", family: 4 }], 4);
+
+    lookup("media.example", { all: false }, callback);
+    expect(callback).toHaveBeenLastCalledWith(null, "93.184.216.34", 4);
+  });
+
   it.each([
     "http://127.0.0.1/resource",
     "http://10.0.0.1/resource",
