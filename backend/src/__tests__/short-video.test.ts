@@ -551,6 +551,31 @@ describe("short video api", () => {
     );
   });
 
+  it("keeps browser preview probes separate from the low remote-fetch quota", async () => {
+    // video 元数据和拖动进度条会产生多次 Range 请求；第 11 次不能被解析接口的 10 次/分钟额度阻断。
+    globalThis.fetch = vi
+      .fn()
+      .mockImplementation(
+        () =>
+          new Response("video-bytes", { status: 200, headers: { "content-type": "video/mp4", "content-length": "11" } })
+      );
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const responses = [];
+    for (let requestNumber = 0; requestNumber < 12; requestNumber += 1) {
+      responses.push(
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/tools/short-video/preview?url=${encodeURIComponent(
+            "https://cdn.test/video.mp4"
+          )}&mediaType=video`
+        })
+      );
+    }
+
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+  });
+
   it("refuses to inline non-media response types", async () => {
     globalThis.fetch = vi
       .fn()

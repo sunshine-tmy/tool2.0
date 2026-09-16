@@ -116,7 +116,8 @@ export async function registerShortVideoRoutes({
   app.get<{ Querystring: { url: string; filename?: string; mediaType: "video" | "image" } }>(
     "/api/v1/tools/short-video/preview",
     {
-      config: REQUEST_QUOTAS.remoteFetch,
+      // 视频播放器会并发探测元数据和 Range 分片，使用独立额度避免挤占解析或下载操作。
+      config: REQUEST_QUOTAS.mediaPreview,
       schema: {
         querystring: ShortVideoPreviewQuerySchema,
         response: { 400: ApiFailureSchema, 502: ApiFailureSchema }

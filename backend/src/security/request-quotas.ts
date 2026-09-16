@@ -13,6 +13,8 @@ export const REQUEST_QUOTAS = {
   lanChunk: { rateLimit: { max: 120, timeWindow: minute }, concurrencyLimit: 16 },
   batchDownload: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 2 },
   remoteFetch: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 4 },
+  // 浏览器会为视频元数据、Range 分片和拖动进度条并发发起多个只读请求，不能复用解析/下载的低额度。
+  mediaPreview: { rateLimit: { max: 240, timeWindow: minute }, concurrencyLimit: 8 },
   ai: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 2 },
   translation: { rateLimit: { max: 20, timeWindow: minute }, concurrencyLimit: 2 },
   translationBatch: { rateLimit: { max: 5, timeWindow: minute }, concurrencyLimit: 1 },
