@@ -15,7 +15,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-choice /C YN /N /M "Stop services and run full cleanup"
+echo.
+echo [Y] Yes: stop project services and run the full cleanup.
+echo [N] No : cancel and keep all current data.
+choice /C YN /N /M "Enter Y or N"
 if errorlevel 2 (
   echo Cancelled. No services were stopped and no data was deleted.
   exit /b 0
