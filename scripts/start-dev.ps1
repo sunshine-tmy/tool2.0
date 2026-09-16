@@ -1,4 +1,4 @@
-# 中文模块说明：工程与 Worker 脚本，负责 开发、清理、构建或发布自动化
+﻿# 中文模块说明：工程与 Worker 脚本，负责 开发、清理、构建或发布自动化
 param(
   [switch]$NoInstall,
   [switch]$NoBrowser,
@@ -384,6 +384,7 @@ $ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
 $ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"
 $ChatterboxScript = Join-Path $Root "scripts\chatterbox-worker.py"
+$ChatterboxSetup = Join-Path $Root "scripts\setup-chatterbox.ps1"
 
 Write-Step "Checking for an existing Ecommerce Toolbox instance"
 $processes = Get-ProcessSnapshot
@@ -395,12 +396,16 @@ $existingInstanceIsOwned =
   @($backendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0 -and
   @($frontendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0
 
-$ChatterboxInstalled = (Test-Path $ChatterboxPython) -and (Test-Path $ChatterboxScript)
+$ChatterboxInstalled = $false
+if ((Test-Path $ChatterboxPython) -and (Test-Path $ChatterboxScript)) {
+  & $ChatterboxPython $ChatterboxScript --check | Out-Null
+  $ChatterboxInstalled = $LASTEXITCODE -eq 0
+}
 if (
   $existingInstanceIsOwned -and
   (Test-HttpOk $BackendUrl) -and
   (Test-HttpOk $FrontendHealthUrl) -and
-  ((-not $ChatterboxInstalled) -or (Test-HttpOk $ChatterboxHealthUrl))
+  ($NoInstall -or (Test-HttpOk $ChatterboxHealthUrl))
 ) {
   Write-Host "Ecommerce Toolbox is already running; reusing the existing instance." -ForegroundColor Green
   Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
@@ -422,6 +427,24 @@ if (-not $NoInstall) {
   pnpm install --frozen-lockfile --prefer-offline
   if ($LASTEXITCODE -ne 0) {
     throw "Dependency installation failed with exit code $LASTEXITCODE"
+  }
+}
+
+if (-not $ChatterboxInstalled -and -not $NoInstall) {
+  Write-Step "Preparing Chatterbox Multilingual V3 for first use"
+  Write-Host "The first startup installs the local runtime and downloads the model; later startups reuse it." -ForegroundColor Cyan
+  try {
+    & $ChatterboxSetup -DownloadModel
+    $ChatterboxInstalled =
+      $LASTEXITCODE -eq 0 -and
+      (Test-Path $ChatterboxPython) -and
+      (Test-Path $ChatterboxScript)
+    if ($ChatterboxInstalled) {
+      & $ChatterboxPython $ChatterboxScript --check | Out-Null
+      $ChatterboxInstalled = $LASTEXITCODE -eq 0
+    }
+  } catch {
+    Write-Host "Automatic Chatterbox setup did not complete: $($_.Exception.Message)" -ForegroundColor Yellow
   }
 }
 
@@ -540,7 +563,7 @@ if ($ChatterboxInstalled -and -not (Test-PortBusy 3220)) {
     $ChatterboxWorker = $null
   }
 } elseif (-not $ChatterboxInstalled) {
-  Write-Host "Chatterbox runtime is not installed; run scripts\setup-chatterbox.ps1 -DownloadModel to enable voice cloning." -ForegroundColor Yellow
+  Write-Host "Chatterbox could not be prepared automatically; review the startup output and retry one-click startup." -ForegroundColor Yellow
 }
 
 if ((Test-PortBusy 3220) -and (Test-HttpOk $ChatterboxHealthUrl)) {

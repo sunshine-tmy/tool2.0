@@ -22,4 +22,10 @@ def replace_idle_unload_task(
         current.cancel()
     if idle_minutes <= 0:
         return None
-    return asyncio.create_task(create_unload_task())
+    # eager-load 发生在 Uvicorn 启动前时还不存在 running loop；此时由 FastAPI lifespan
+    # 钩子稍后重新调度，不能直接 create_task 导致 Worker 在启动阶段崩溃。
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+    return loop.create_task(create_unload_task())

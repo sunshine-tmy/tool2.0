@@ -280,7 +280,7 @@
         批次结束后会删除参考音色；以后重新生成单段时需要再次上传。
       </p>
       <p v-if="!panel.health?.available" class="edge-tts-error">
-        请运行 <code>scripts\setup-chatterbox.ps1 -DownloadModel</code>，然后重新一键启动。
+        克隆服务正在准备或启动失败。首次一键启动会自动安装环境和下载模型；请保持启动窗口开启并查看其中的错误提示。
       </p>
       <p v-if="panel.errorMessage" class="edge-tts-error">{{ panel.errorMessage }}</p>
     </aside>

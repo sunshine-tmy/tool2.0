@@ -17,6 +17,7 @@ class ChatterboxLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         task = replace_idle_unload_task(None, 10, unload)
         self.assertIsNotNone(task)
+        assert task is not None
         await task
         self.assertTrue(unloaded.is_set())
 
@@ -40,6 +41,7 @@ class ChatterboxLifecycleTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         second = replace_idle_unload_task(first, 10, next_unload)
         self.assertIsNotNone(second)
+        assert second is not None
         await asyncio.sleep(0)
         await second
         self.assertTrue(first_cancelled.is_set())
@@ -47,3 +49,15 @@ class ChatterboxLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_zero_idle_minutes_keeps_model_resident_without_a_timer(self) -> None:
         self.assertIsNone(replace_idle_unload_task(None, 0, lambda: asyncio.sleep(0)))
+
+
+class ChatterboxLifecycleStartupTests(unittest.TestCase):
+    def test_startup_without_a_running_event_loop_defers_timer_creation(self) -> None:
+        created = False
+
+        async def unload() -> None:
+            nonlocal created
+            created = True
+
+        self.assertIsNone(replace_idle_unload_task(None, 10, unload))
+        self.assertFalse(created)

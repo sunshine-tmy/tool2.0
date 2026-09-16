@@ -12,6 +12,7 @@ import logging
 import os
 import random
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -378,7 +379,20 @@ def load_multilingual_model(device: str) -> Any:
 
 manager = ModelManager()
 idle_unload_task: asyncio.Task[None] | None = None
-app = FastAPI(title="Chatterbox Multilingual V3 Worker", docs_url=None, redoc_url=None)
+
+
+@asynccontextmanager
+async def worker_lifespan(_: FastAPI):
+    """在 HTTP 服务事件循环就绪后，为预加载模型安排空闲释放。"""
+    if manager.model is not None:
+        schedule_idle_unload()
+    try:
+        yield
+    finally:
+        cancel_idle_unload_timer()
+
+
+app = FastAPI(title="Chatterbox Multilingual V3 Worker", docs_url=None, redoc_url=None, lifespan=worker_lifespan)
 
 
 @app.exception_handler(WorkerFailure)
@@ -496,6 +510,5 @@ if __name__ == "__main__":
 
         if arguments.eager_load:
             manager.load()
-            # 启动器为就绪检查提前加载模型后，仍需在长期空闲时释放显存和主存。
-            schedule_idle_unload()
+            # 空闲卸载定时器必须等 Uvicorn 创建事件循环后由 startup 钩子建立。
         uvicorn.run(app, host=arguments.host, port=arguments.port, log_level="warning")
