@@ -316,7 +316,58 @@ function Wait-HttpOk {
   return Test-HttpOk $Url
 }
 
+function Test-ChatterboxReady {
+  param([string]$Url)
+
+  try {
+    $response = Invoke-RestMethod -Uri $Url -TimeoutSec 3
+    return (
+      $response.success -eq $true -and
+      $response.data.available -eq $true -and
+      $response.data.modelLoaded -eq $true
+    )
+  } catch {
+    return $false
+  }
+}
+
+function Wait-ChatterboxReady {
+  param(
+    [string]$Url,
+    [System.Diagnostics.Process]$Process,
+    [int]$TimeoutSeconds = 180
+  )
+
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  while ((Get-Date) -lt $deadline) {
+    if ($Process -and $Process.HasExited) {
+      return $false
+    }
+    if (Test-ChatterboxReady $Url) {
+      return $true
+    }
+    Start-Sleep -Seconds 1
+  }
+
+  return Test-ChatterboxReady $Url
+}
+
 Set-Location -LiteralPath $Root
+Write-Host "Ecommerce Toolbox launcher" -ForegroundColor Green
+Write-Host "Project root: $Root"
+
+if (-not (Test-CommandExists "pnpm")) {
+  Write-Host ""
+  Write-Host "pnpm was not found. Install pnpm first, or run: corepack enable" -ForegroundColor Red
+  exit 1
+}
+
+if ($CheckOnly) {
+  Write-Step "Script check passed"
+  Write-Host "pnpm: $(pnpm -v)"
+  exit 0
+}
+
 $LanHost = Find-LanHost
 $ConfiguredDeploymentMode = (Get-RootEnvValue "DEPLOYMENT_MODE").ToLowerInvariant()
 $ConfiguredApiHost = (Get-RootEnvValue "API_HOST").ToLowerInvariant()
@@ -333,21 +384,6 @@ $ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
 $ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"
 $ChatterboxScript = Join-Path $Root "scripts\chatterbox-worker.py"
-
-Write-Host "Ecommerce Toolbox launcher" -ForegroundColor Green
-Write-Host "Project root: $Root"
-
-if (-not (Test-CommandExists "pnpm")) {
-  Write-Host ""
-  Write-Host "pnpm was not found. Install pnpm first, or run: corepack enable" -ForegroundColor Red
-  exit 1
-}
-
-if ($CheckOnly) {
-  Write-Step "Script check passed"
-  Write-Host "pnpm: $(pnpm -v)"
-  exit 0
-}
 
 Write-Step "Checking for an existing Ecommerce Toolbox instance"
 $processes = Get-ProcessSnapshot
@@ -486,7 +522,7 @@ if ($ChatterboxInstalled -and -not (Test-PortBusy 3220)) {
   New-Item -ItemType Directory -Path $ChatterboxLogDir -Force | Out-Null
   $ChatterboxWorker = Start-Process `
     -FilePath $ChatterboxPython `
-    -ArgumentList @("`"$ChatterboxScript`"", "--host", "127.0.0.1", "--port", "3220") `
+    -ArgumentList @("-X", "faulthandler", "`"$ChatterboxScript`"", "--host", "127.0.0.1", "--port", "3220", "--eager-load") `
     -WorkingDirectory $Root `
     -WindowStyle Hidden `
     -RedirectStandardOutput $ChatterboxOutputLog `
@@ -494,7 +530,7 @@ if ($ChatterboxInstalled -and -not (Test-PortBusy 3220)) {
     -PassThru
   Write-Host "Chatterbox worker PID: $($ChatterboxWorker.Id)" -ForegroundColor Green
 
-  if (Wait-HttpOk $ChatterboxHealthUrl 60) {
+  if (Wait-ChatterboxReady $ChatterboxHealthUrl $ChatterboxWorker 180) {
     Write-Host "Chatterbox V3 worker ready: $ChatterboxHealthUrl" -ForegroundColor Green
   } else {
     Write-Host "Chatterbox worker did not become ready. See $ChatterboxErrorLog" -ForegroundColor Red

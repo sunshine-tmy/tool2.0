@@ -51,5 +51,40 @@ class LanguageTests(unittest.TestCase):
             worker.GenerateRequest(text="Hello", language="xx", reference_path="unused", output_path="unused")
 
 
+class MetaTensorRecoveryTests(unittest.TestCase):
+    def test_restores_non_registered_runtime_tensors_created_on_meta_device(self):
+        """上游 S3Gen 把位置编码作为普通属性保存。
+
+        它们不会出现在 state_dict 或 named_buffers 中，因此要在 meta 加载后单独恢复，否则首次生成才会报
+        "Cannot copy out of meta tensor"。
+        """
+
+        class RuntimeTensorOwner(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                with torch.device("meta"):
+                    self.freqs_cis = torch.empty((2048, 64), dtype=torch.complex64)
+                    self.pe = torch.empty((1, 9, 4), dtype=torch.float32)
+
+        class FakeS3Gen(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.tokenizer = RuntimeTensorOwner()
+
+        model = FakeS3Gen()
+        self.assertEqual(
+            worker.plain_meta_tensor_names(model),
+            ["tokenizer.freqs_cis", "tokenizer.pe"],
+        )
+
+        worker.restore_s3gen_runtime_tensors(model, "cpu")
+
+        self.assertEqual(worker.plain_meta_tensor_names(model), [])
+        self.assertEqual(tuple(model.tokenizer.freqs_cis.shape), (2048, 64))
+        self.assertEqual(tuple(model.tokenizer.pe.shape), (1, 9, 4))
+        self.assertEqual(model.tokenizer.freqs_cis.device.type, "cpu")
+        self.assertEqual(model.tokenizer.pe.device.type, "cpu")
+
+
 if __name__ == "__main__":
     unittest.main()

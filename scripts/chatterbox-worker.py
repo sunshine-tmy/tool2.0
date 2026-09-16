@@ -8,6 +8,7 @@ import argparse
 import asyncio
 import importlib.metadata
 import json
+import logging
 import os
 import random
 import re
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 ROOT = Path(__file__).resolve().parents[1]
+logger = logging.getLogger("chatterbox-worker")
 
 
 def load_repo_env() -> None:
@@ -123,6 +125,50 @@ def split_text(text: str, limit: int = 280) -> list[str]:
     return chunks
 
 
+def plain_meta_tensor_names(model: Any) -> list[str]:
+    """查找没有注册为 parameter/buffer 的 meta 张量。
+
+    部分上游模块把位置编码作为普通属性保存，PyTorch 的 named_buffers() 不会发现它们。
+    """
+    import torch
+
+    names: list[str] = []
+    for module_name, module in model.named_modules():
+        registered = set(module._parameters) | set(module._buffers)
+        for attribute, value in vars(module).items():
+            if attribute not in registered and isinstance(value, torch.Tensor) and value.is_meta:
+                names.append(f"{module_name}.{attribute}".strip("."))
+    return names
+
+
+def restore_s3gen_runtime_tensors(s3gen: Any, device: str) -> None:
+    """恢复 S3Gen 检查点不保存的运行时张量。"""
+    import math
+
+    import torch
+    from s3tokenizer.model_v2 import precompute_freqs_cis
+
+    for module in s3gen.modules():
+        freqs_cis = getattr(module, "freqs_cis", None)
+        if isinstance(freqs_cis, torch.Tensor) and freqs_cis.is_meta:
+            module.freqs_cis = precompute_freqs_cis(64, 1024 * 2).to(device)
+
+        positional_encoding = getattr(module, "pe", None)
+        if not isinstance(positional_encoding, torch.Tensor) or not positional_encoding.is_meta:
+            continue
+        if positional_encoding.ndim != 3 or positional_encoding.shape[0] != 1:
+            raise RuntimeError(f"无法恢复未知位置编码形状：{tuple(positional_encoding.shape)}")
+        max_len, d_model = positional_encoding.shape[1:]
+        position = torch.arange(max_len, dtype=torch.float32, device=device).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float32, device=device) * -(math.log(10000.0) / d_model)
+        )
+        restored = torch.zeros((max_len, d_model), dtype=torch.float32, device=device)
+        restored[:, 0::2] = torch.sin(position * div_term)
+        restored[:, 1::2] = torch.cos(position * div_term)
+        module.pe = restored.unsqueeze(0)
+
+
 class ModelManager:
     def __init__(self) -> None:
         self.model: Any = None
@@ -207,6 +253,7 @@ class ModelManager:
         except WorkerFailure:
             raise
         except Exception as exc:
+            logger.exception("Chatterbox generation failed")
             raise WorkerFailure("CHATTERBOX_GENERATION_FAILED", f"声音克隆生成失败：{exc}", 422) from exc
 
     def unload(self) -> None:
@@ -224,7 +271,7 @@ class ModelManager:
 
 
 def load_multilingual_model(device: str) -> Any:
-    """加载 V3 模型，并在 CUDA 上避免主内存中同时保留两份 2 GiB T3 权重。"""
+    """加载 V3 模型，并在 CUDA 上避免主内存或显存中同时保留两份权重。"""
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
     if device != "cuda":
@@ -265,29 +312,57 @@ def load_multilingual_model(device: str) -> Any:
     voice_encoder.load_state_dict(torch.load(checkpoint_dir / "ve.pt", map_location="cpu", weights_only=True))
     voice_encoder.to(device).eval()
 
-    # 上游实现会先在 CPU 创建完整 T3，再读取同等大小的 safetensors，再复制一次给模型。
-    # 对 16 GiB 内存主机而言，这会在模型真正开始推理前触发原生访问冲突。meta 避开空参数分配，
-    # safetensors 直接落到 GPU，assign 则把已加载权重绑定到模型，而非再复制一份。
+    # 上游实现会先创建完整 T3，再读取同等大小的 safetensors。即使空模型直接
+    # 放在 GPU，加载权重时仍会短暂保留两份约 2 GiB 的 T3，在 8 GiB 显存上会触发原生访问冲突。
+    # 因此先在 meta 设备上建立结构，再把直接加载到 GPU 的权重绑定给模型，全程只保留一份。
     with torch.device("meta"):
         t3 = T3(T3Config.multilingual())
-    t3.to_empty(device=device)
     t3_state = load_safetensors(checkpoint_dir / t3_model, device=0)
     if "model" in t3_state:
         t3_state = t3_state["model"][0]
     t3.load_state_dict(t3_state, assign=True)
     del t3_state
+
+    # RoPE 的频率是非持久化 buffer，不在检查点中。只重建这两个很小的 buffer，
+    # 不能对整个模型调用 to_empty，否则会覆盖刚绑定的权重。
+    rotary = t3.tfmr.rotary_emb
+    inv_freq, attention_scaling = rotary.compute_default_rope_parameters(rotary.config, torch.device(device))
+    rotary._buffers["inv_freq"] = inv_freq
+    rotary._buffers["original_inv_freq"] = inv_freq.clone()
+    rotary.attention_scaling = attention_scaling
     gc.collect()
     t3.eval()
 
     # S3Gen 约 1 GiB，亦不能先完整落在 CPU；否则即使 T3 已转入显存，低内存主机仍会失败。
     with torch.device("meta"):
         s3gen = S3Gen()
-    s3gen.to_empty(device=device)
     s3gen_state = torch.load(checkpoint_dir / "s3gen.pt", map_location=device, weights_only=True)
     s3gen.load_state_dict(s3gen_state, assign=True)
     del s3gen_state
+
+    # trim_fade 同样是非持久化 buffer，按上游构造公式在目标设备上恢复。
+    n_trim = 480
+    trim_fade = torch.zeros(2 * n_trim, device=device)
+    trim_fade[n_trim:] = (torch.cos(torch.linspace(torch.pi, 0, n_trim, device=device)) + 1) / 2
+    s3gen._buffers["trim_fade"] = trim_fade
+    restore_s3gen_runtime_tensors(s3gen, device)
     gc.collect()
-    s3gen.to(device).eval()
+    s3gen.eval()
+
+    meta_tensors = [
+        name
+        for name, tensor in (
+            *t3.named_parameters(),
+            *t3.named_buffers(),
+            *s3gen.named_parameters(),
+            *s3gen.named_buffers(),
+        )
+        if tensor.is_meta
+    ]
+    meta_tensors.extend(plain_meta_tensor_names(t3))
+    meta_tensors.extend(plain_meta_tensor_names(s3gen))
+    if meta_tensors:
+        raise RuntimeError(f"模型仍包含未实体化张量：{', '.join(meta_tensors[:5])}")
 
     tokenizer = MTLTokenizer(str(checkpoint_dir / "grapheme_mtl_merged_expanded_v1.json"))
     conds = None
@@ -372,6 +447,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--preload", action="store_true")
+    parser.add_argument(
+        "--eager-load",
+        action="store_true",
+        help="在开放 HTTP 端口前加载模型，避免启动器把未就绪的 Worker 当作可用",
+    )
     return parser.parse_args()
 
 
@@ -399,4 +479,6 @@ if __name__ == "__main__":
     else:
         import uvicorn
 
+        if arguments.eager_load:
+            manager.load()
         uvicorn.run(app, host=arguments.host, port=arguments.port, log_level="warning")
