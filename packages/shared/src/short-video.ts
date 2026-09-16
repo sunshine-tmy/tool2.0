@@ -92,6 +92,19 @@ export const ShortVideoDownloadQuerySchema = Type.Object(
   { additionalProperties: false }
 );
 
+/**
+ * 浏览器预览时还需声明媒体类别：后端据此拒绝将远程 HTML 等非媒体内容以内联形式返回，
+ * 同时可为未声明 MIME 类型的 CDN 响应提供安全的播放回退类型。
+ */
+export const ShortVideoPreviewQuerySchema = Type.Object(
+  {
+    url: Type.String({ minLength: 1, maxLength: 4096 }),
+    filename: Type.Optional(Type.String({ maxLength: 255 })),
+    mediaType: Type.Union([Type.Literal("video"), Type.Literal("image")])
+  },
+  { additionalProperties: false }
+);
+
 export type ShortVideoPlatform = Static<typeof ShortVideoPlatformSchema>;
 export type ShortVideoMedia = Static<typeof ShortVideoMediaSchema>;
 export type ShortVideoAuthor = Static<typeof ShortVideoAuthorSchema>;

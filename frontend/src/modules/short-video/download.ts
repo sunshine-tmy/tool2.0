@@ -38,6 +38,16 @@ export function createShortVideoDownloadUrl(media: ShortVideoMedia, apiBase = ap
   return `${apiBase.replace(/\/$/, "")}/tools/short-video/download?${params.toString()}`;
 }
 
+export function createShortVideoPreviewUrl(media: ShortVideoMedia, apiBase = apiBaseUrl) {
+  // 预览同样经过本地代理：保留 Range、Referer 与 SSRF 校验，避免浏览器直连第三方 CDN 失败。
+  const params = new URLSearchParams({
+    url: media.url,
+    filename: createShortVideoDownloadName(media),
+    mediaType: media.type
+  });
+  return `${apiBase.replace(/\/$/, "")}/tools/short-video/preview?${params.toString()}`;
+}
+
 export function triggerShortVideoDownload(media: ShortVideoMedia, options: ShortVideoDownloadOptions = {}) {
   // 使用隐藏 iframe 触发跨域/大文件下载，不把视频内容读入前端内存；完成后定时移除 iframe。
   const deps = options.deps ?? browserDownloadDeps();

@@ -514,6 +514,60 @@ describe("short video api", () => {
     expect(response.body).toBe("video-bytes");
   });
 
+  it("proxies media previews inline and preserves browser Range requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("2345", {
+        status: 206,
+        headers: {
+          "content-type": "video/mp4",
+          "content-length": "4",
+          "content-range": "bytes 2-5/10",
+          "accept-ranges": "bytes"
+        }
+      })
+    );
+    globalThis.fetch = fetchMock;
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/short-video/preview?url=${encodeURIComponent(
+        "https://sns-video-hw.xhscdn.com/video.mp4"
+      )}&filename=preview.mp4&mediaType=video`,
+      headers: { range: "bytes=2-5" }
+    });
+
+    expect(response.statusCode).toBe(206);
+    expect(response.headers["content-type"]).toContain("video/mp4");
+    expect(response.headers["content-disposition"]).toContain("inline;");
+    expect(response.headers["content-range"]).toBe("bytes 2-5/10");
+    expect(response.headers["accept-ranges"]).toBe("bytes");
+    expect(response.body).toBe("2345");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://sns-video-hw.xhscdn.com/video.mp4",
+      expect.objectContaining({
+        headers: expect.objectContaining({ range: "bytes=2-5", referer: "https://www.xiaohongshu.com/" })
+      })
+    );
+  });
+
+  it("refuses to inline non-media response types", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response("<html>not media</html>", { status: 200, headers: { "content-type": "text/html" } })
+      );
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/short-video/preview?url=${encodeURIComponent("https://cdn.test/video")}&mediaType=video`
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({ success: false, error: { code: "SHORT_VIDEO_PREVIEW_FAILED" } });
+  });
+
   it("keeps parsing available after a proxied media stream times out", async () => {
     globalThis.fetch = vi.fn(async (url) => {
       if (String(url).startsWith("https://cdn.test/")) {

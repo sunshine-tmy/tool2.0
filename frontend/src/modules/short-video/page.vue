@@ -60,9 +60,30 @@
               allowfullscreen
               referrerpolicy="strict-origin-when-cross-origin"
             />
+            <!-- 本地预览代理透传 Range，请求元数据或拖动进度条时不会下载整个视频。 -->
+            <video
+              v-else-if="previewMedia?.type === 'video' && !previewLoadFailed"
+              :key="previewMedia.url"
+              class="short-video-preview"
+              :src="createShortVideoPreviewUrl(previewMedia)"
+              controls
+              preload="metadata"
+              playsinline
+              @error="previewLoadFailed = true"
+            />
+            <img
+              v-else-if="previewMedia?.type === 'image' && !previewLoadFailed"
+              :key="previewMedia.url"
+              :src="createShortVideoPreviewUrl(previewMedia)"
+              alt="解析图片预览"
+              loading="lazy"
+              decoding="async"
+              @error="previewLoadFailed = true"
+            />
             <img v-else-if="result.coverUrl" :src="result.coverUrl" alt="封面" loading="lazy" decoding="async" />
             <div v-else class="empty-cover">
               <Clapperboard :size="32" />
+              <span v-if="previewMedia">媒体预览加载失败，可尝试下载</span>
             </div>
           </div>
 
@@ -95,6 +116,12 @@
               <span>{{ item.type === "video" ? "视频" : "图片" }} {{ mediaMeta(item) }}</span>
             </div>
             <div class="file-actions short-video-actions">
+              <n-button secondary size="small" @click="selectPreview(item)">
+                <template #icon>
+                  <Play :size="14" />
+                </template>
+                预览
+              </n-button>
               <n-button v-if="item.type === 'video'" secondary size="small" @click="extractCopywriting(item)">
                 <template #icon>
                   <FileText :size="14" />
@@ -128,17 +155,17 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { NButton, NInput, NTag, useMessage } from "naive-ui";
-import { Clapperboard, Download, FileText, Link2 } from "lucide-vue-next";
+import { Clapperboard, Download, FileText, Link2, Play } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import { ApiRequestError, formatApiError, isApiErrorCancelled } from "../../services/http";
 import { copyTextToClipboard } from "../../utils/clipboard";
 import { xhsArchiveApi } from "../xhs-archive/api";
 import { shortVideoApi } from "./api";
-import { createShortVideoDownloadName, triggerShortVideoDownload } from "./download";
+import { createShortVideoDownloadName, createShortVideoPreviewUrl, triggerShortVideoDownload } from "./download";
 import type { ShortVideoResult } from "./types";
 import type { ShortVideoMedia, ShortVideoPlatform } from "@toolbox/shared";
 
@@ -156,6 +183,15 @@ const authWaiting = ref(false);
 const xhsAuthRequired = ref(false);
 const result = ref<ShortVideoResult | null>(null);
 const downloadingUrls = ref<string[]>([]);
+const selectedPreviewMedia = ref<ShortVideoMedia | null>(null);
+const previewLoadFailed = ref(false);
+const previewMedia = computed(() => {
+  const media = result.value?.media ?? [];
+  const selected = selectedPreviewMedia.value;
+  if (selected && media.some((item) => item.url === selected.url && item.type === selected.type)) return selected;
+  // 视频优先，确保解析到视频时结果区第一时间展示播放器；图集则展示首张图片。
+  return media.find((item) => item.type === "video") ?? media[0] ?? null;
+});
 const platformOptions: PlatformOption[] = [
   { label: "自动识别", value: "auto" },
   { label: "抖音", value: "douyin" },
@@ -172,10 +208,13 @@ async function parse() {
   loading.value = true;
   try {
     // 解析结果通过共享 Schema 校验后才写入页面状态，失败时保留原始输入便于重试。
-    result.value = await shortVideoApi.parse({
+    const parsed = await shortVideoApi.parse({
       input: inputText.value,
       platform: platform.value
     });
+    result.value = parsed;
+    selectedPreviewMedia.value = parsed.media.find((item) => item.type === "video") ?? parsed.media[0] ?? null;
+    previewLoadFailed.value = false;
     xhsAuthRequired.value = false;
     message.success("解析完成");
   } catch (error) {
@@ -184,6 +223,15 @@ async function parse() {
   } finally {
     loading.value = false;
   }
+}
+
+function selectPreview(item: ShortVideoMedia) {
+  selectedPreviewMedia.value = item;
+  previewLoadFailed.value = false;
+  // 备选清晰度或图集切换后让播放器回到可见区域，避免用户误以为按钮无响应。
+  requestAnimationFrame(() =>
+    document.querySelector(".short-video-cover")?.scrollIntoView({ behavior: "smooth", block: "center" })
+  );
 }
 
 async function loginAndRetry() {

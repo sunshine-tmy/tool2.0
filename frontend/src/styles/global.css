@@ -1789,12 +1789,18 @@ a {
   border-radius: 8px;
 }
 
-.short-video-cover img {
+.short-video-cover img,
+.short-video-preview {
   display: block;
   width: 100%;
   height: 100%;
   min-height: 220px;
   object-fit: cover;
+}
+
+.short-video-preview {
+  background: #0f1115;
+  object-fit: contain;
 }
 
 .short-video-embed {
@@ -1810,6 +1816,12 @@ a {
   min-height: 220px;
   place-items: center;
   color: #64748b;
+}
+
+.empty-cover span {
+  padding: 0 20px;
+  text-align: center;
+  font-size: 13px;
 }
 
 .short-video-desc {

@@ -2,7 +2,12 @@
  * 中文模块说明：测试 frontend/src/modules/short-video/download.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it } from "vitest";
-import { createShortVideoDownloadName, createShortVideoDownloadUrl, triggerShortVideoDownload } from "./download";
+import {
+  createShortVideoDownloadName,
+  createShortVideoDownloadUrl,
+  createShortVideoPreviewUrl,
+  triggerShortVideoDownload
+} from "./download";
 import type { ShortVideoMedia } from "@toolbox/shared";
 
 describe("short video downloads", () => {
@@ -37,6 +42,19 @@ describe("short video downloads", () => {
 
     expect(createShortVideoDownloadUrl(media, "https://tool.test/api/v1")).toBe(
       "https://tool.test/api/v1/tools/short-video/download?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4%3Ftoken%3Dabc&filename=Public-Video.mp4"
+    );
+  });
+
+  it("creates a local media preview url with the expected media type", () => {
+    // 预览地址必须声明视频类型，后端才能拒绝把任意远程文档以内联形式返回。
+    const media: ShortVideoMedia = {
+      type: "video",
+      label: "Public Video",
+      url: "https://cdn.test/video.mp4?token=abc"
+    };
+
+    expect(createShortVideoPreviewUrl(media, "https://tool.test/api/v1")).toBe(
+      "https://tool.test/api/v1/tools/short-video/preview?url=https%3A%2F%2Fcdn.test%2Fvideo.mp4%3Ftoken%3Dabc&filename=Public-Video.mp4&mediaType=video"
     );
   });
 

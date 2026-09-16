@@ -7,6 +7,7 @@ import {
   ShortVideoDownloadQuerySchema,
   ShortVideoParseInputSchema,
   ShortVideoParseResultSchema,
+  ShortVideoPreviewQuerySchema,
   apiSuccessSchema,
   detectShortVideoPlatform,
   extractFirstUrl,
@@ -32,7 +33,7 @@ import {
   requestTikTokOEmbed,
   type ProviderResponse
 } from "./short-video-provider";
-import { proxyShortVideoDownload, sanitizeDownloadFilename } from "./short-video-download";
+import { proxyShortVideoDownload, proxyShortVideoPreview, sanitizeDownloadFilename } from "./short-video-download";
 import type { XhsAuthManager } from "./xhs-archive/auth";
 import type { XhsRuntimeManager } from "./xhs-archive/runtime";
 
@@ -108,6 +109,30 @@ export async function registerShortVideoRoutes({
         remoteFetch,
         url: mediaUrl,
         filename: sanitizeDownloadFilename(request.query.filename || "short-video-media")
+      });
+    }
+  );
+
+  app.get<{ Querystring: { url: string; filename?: string; mediaType: "video" | "image" } }>(
+    "/api/v1/tools/short-video/preview",
+    {
+      config: REQUEST_QUOTAS.remoteFetch,
+      schema: {
+        querystring: ShortVideoPreviewQuerySchema,
+        response: { 400: ApiFailureSchema, 502: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      const mediaUrl = request.query.url.trim();
+      if (!isHttpUrl(mediaUrl)) return reply.code(400).send(fail("INVALID_SHORT_VIDEO_MEDIA_URL", "预览地址无效"));
+      return proxyShortVideoPreview({
+        reply,
+        config,
+        remoteFetch,
+        url: mediaUrl,
+        filename: sanitizeDownloadFilename(request.query.filename || "short-video-media"),
+        mediaType: request.query.mediaType,
+        range: request.headers.range
       });
     }
   );
