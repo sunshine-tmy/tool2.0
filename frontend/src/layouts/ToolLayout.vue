@@ -375,8 +375,18 @@ async function executeCleanup() {
   if (!accepted) return;
   cleanupExecuting.value = true;
   try {
-    await httpClient.post("/maintenance/cleanup", CleanupResultsSchema, { ids: selectedCleanupIds.value });
-    message.success("所选运行数据已清理");
+    const results = await httpClient.post("/maintenance/cleanup", CleanupResultsSchema, {
+      ids: selectedCleanupIds.value
+    });
+    const skippedItems = results.filter((item) => (item.skippedFiles ?? 0) > 0);
+    if (skippedItems.length) {
+      const summary = skippedItems
+        .map((item) => `${item.label} ${item.skippedFiles} 个（${formatBytes(item.skippedBytes ?? 0)}）`)
+        .join("、");
+      message.warning(`部分文件被运行中的服务占用已跳过：${summary}`);
+    } else {
+      message.success("所选运行数据已清理");
+    }
     selectedCleanupIds.value = [];
     await loadCleanup();
   } catch (error) {

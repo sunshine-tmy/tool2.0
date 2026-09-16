@@ -153,6 +153,15 @@ export class XhsArchiveStore {
     return true;
   }
 
+  async purgeAll() {
+    // 清理分类「小红书永久存档」使用：逐条走 remove 复用完整删除语义（内存 + 元数据 + 磁盘）。
+    await this.initialize();
+    const ids = [...this.items.keys()];
+    for (const id of ids) await this.remove(id);
+    await this.persistIndex();
+    return ids.length;
+  }
+
   async updateTranslation(id: string, updater: (item: XhsArchiveItem) => XhsArchiveItem) {
     await this.initialize();
     const current = this.items.get(id);

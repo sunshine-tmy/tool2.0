@@ -41,7 +41,9 @@ export const CleanupResultSchema = Type.Object(
     id: Type.String({ minLength: 1 }),
     label: Type.String({ minLength: 1 }),
     files: Type.Integer({ minimum: 0 }),
-    bytes: Type.Integer({ minimum: 0 })
+    bytes: Type.Integer({ minimum: 0 }),
+    skippedFiles: Type.Optional(Type.Integer({ minimum: 1 })),
+    skippedBytes: Type.Optional(Type.Integer({ minimum: 0 }))
   },
   { additionalProperties: false }
 );

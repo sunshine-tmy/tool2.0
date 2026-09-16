@@ -59,7 +59,11 @@ if (interactive) {
 }
 
 const results = await executeCleanup(selected, { dryRun: args.includes("--dry-run") });
-results.forEach((entry) => console.log(`- ${entry.label}：${formatBytes(entry.bytes)} / ${entry.files} 个文件`));
+results.forEach((entry) => {
+  console.log(`- ${entry.label}：${formatBytes(entry.bytes)} / ${entry.files} 个文件`);
+  if (entry.skippedFiles)
+    console.log(`  其中 ${entry.skippedFiles} 个文件被运行中的服务占用已跳过（${formatBytes(entry.skippedBytes)}）`);
+});
 console.log(
   args.includes("--dry-run")
     ? "演练完成：未删除任何文件。"

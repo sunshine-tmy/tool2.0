@@ -38,6 +38,7 @@ import { registerVideoTextRoutes } from "./modules/video-text";
 import { registerXhsArchiveRoutes } from "./modules/xhs-archive/routes";
 import { XhsAuthManager } from "./modules/xhs-archive/auth";
 import { XhsRuntimeManager } from "./modules/xhs-archive/runtime";
+import { XhsArchiveStore } from "./modules/xhs-archive/store";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
@@ -47,6 +48,7 @@ import { openToolboxDatabase } from "./database/legacy-migration";
 import { reconcileLanStorage } from "./database/storage-consistency";
 import { FileMetadataRepository } from "./database/file-metadata";
 import { reconcileFileMetadataStorage } from "./database/file-consistency";
+import { reconcileDomainRecords } from "./database/domain-consistency";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
   const app = fastify({
@@ -79,6 +81,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
   const xhsRuntime = new XhsRuntimeManager(config);
   const xhsAuth = new XhsAuthManager(config);
+  const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
@@ -199,6 +202,19 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   ];
   // 所有领域目录在注册路由前创建，保证首次启动和健康检查不会因缺失目录失败。
   await Promise.all(requiredStorageDirectories.map((directory) => fsp.mkdir(directory, { recursive: true })));
+
+  // 领域路由会从数据库把记录载入内存，先移除指向已删除工件的孤儿记录，避免幽灵数据被载入或展示。
+  const domainConsistency = await reconcileDomainRecords(config, database);
+  if (domainConsistency.removed > 0 || domainConsistency.failures.length > 0) {
+    app.log.warn(
+      {
+        checked: domainConsistency.checked,
+        removed: domainConsistency.removed,
+        failures: domainConsistency.failures.length
+      },
+      "Domain record consistency check removed orphaned records"
+    );
+  }
 
   // 存活探针只回答进程是否能处理请求，不依赖数据库或业务目录，便于容器/启动器判断进程状态。
   app.get("/health/live", { schema: { response: { 200: apiSuccessSchema(LiveHealthSchema) } } }, async () =>
@@ -350,9 +366,10 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     taskStore,
     fileMetadata,
     runtime: xhsRuntime,
-    auth: xhsAuth
+    auth: xhsAuth,
+    store: xhsStore
   });
-  registerMaintenanceRoutes(app);
+  registerMaintenanceRoutes(app, { config, database, xhsStore });
 
   if (config.databasePath !== ":memory:") {
     // 持久化启动时执行可恢复的一致性检查；异常文件进入隔离区而不是直接删除，保护本地数据。

@@ -14,6 +14,11 @@ import {
   fail,
   ok
 } from "@toolbox/shared";
+import type { AppConfig } from "../config";
+import { reconcileDomainRecords } from "../database/domain-consistency";
+import { reconcileLanStorage } from "../database/storage-consistency";
+import type { ToolboxDatabase } from "../database/toolbox-database";
+import type { XhsArchiveStore } from "./xhs-archive/store";
 
 const execFileAsync = promisify(execFile);
 
@@ -27,7 +32,10 @@ type CleanupCategory = {
   bytes: number;
 };
 
-export function registerMaintenanceRoutes(app: FastifyInstance) {
+export function registerMaintenanceRoutes(
+  app: FastifyInstance,
+  deps: { config: AppConfig; database: ToolboxDatabase; xhsStore?: XhsArchiveStore }
+) {
   app.get(
     "/api/v1/maintenance/cleanup",
     { schema: { response: { 200: apiSuccessSchema(CleanupInspectionSchema), 500: ApiFailureSchema } } },
@@ -61,12 +69,35 @@ export function registerMaintenanceRoutes(app: FastifyInstance) {
           `--execute=${ids.join(",")}`,
           ...(body.dryRun === true ? ["--dry-run"] : [])
         ]);
+        // 文件清理成功后同步领域元数据；同步失败不影响已完成的清理结果。
+        await syncMetadataAfterCleanup(app, deps, ids);
         return ok(results);
       } catch (error) {
         return reply.code(400).send(fail("CLEANUP_FAILED", message(error)));
       }
     }
   );
+}
+
+async function syncMetadataAfterCleanup(
+  app: FastifyInstance,
+  deps: { config: AppConfig; database: ToolboxDatabase; xhsStore?: XhsArchiveStore },
+  ids: string[]
+) {
+  const steps: Array<() => Promise<unknown>> = [];
+  if (ids.includes("xhs-archive") && deps.xhsStore) {
+    const store = deps.xhsStore;
+    steps.push(() => store.purgeAll());
+  }
+  steps.push(() => reconcileLanStorage(deps.config, deps.database));
+  steps.push(() => reconcileDomainRecords(deps.config, deps.database));
+  for (const step of steps) {
+    try {
+      await step();
+    } catch (error) {
+      app.log.warn({ err: error }, "清理后的元数据同步失败，剩余不一致将在下次启动对账时修复");
+    }
+  }
 }
 
 async function runCleanup(args: string[]) {
@@ -88,5 +119,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function message(error: unknown) {
-  return error instanceof Error ? error.message : "清理失败";
+  const stderrLine = errorOutput((error as { stderr?: unknown } | null)?.stderr)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.startsWith("Error:"));
+  const messageLine =
+    error instanceof Error
+      ? error.message
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find((line) => line.length > 0)
+      : undefined;
+  const text = stderrLine ?? messageLine ?? "清理失败";
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
+}
+
+function errorOutput(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value instanceof Uint8Array) return Buffer.from(value).toString("utf8");
+  return "";
 }

@@ -48,4 +48,16 @@ describe("system operation schemas", () => {
     ).toBe(true);
     expect(Value.Check(CleanupResultsSchema, [{ id: "temp", label: "临时文件", files: 2, bytes: 128 }])).toBe(true);
   });
+
+  it("accepts optional skip counts and rejects invalid skip values", () => {
+    expect(Value.Check(CleanupResultsSchema, [{ id: "temp", label: "临时文件", files: 2, bytes: 128 }])).toBe(true);
+    expect(
+      Value.Check(CleanupResultsSchema, [
+        { id: "temp", label: "临时文件", files: 1, bytes: 64, skippedFiles: 1, skippedBytes: 64 }
+      ])
+    ).toBe(true);
+    expect(
+      Value.Check(CleanupResultsSchema, [{ id: "temp", label: "临时文件", files: 2, bytes: 128, skippedFiles: 0 }])
+    ).toBe(false);
+  });
 });

@@ -1,11 +1,14 @@
 /**
  * 中文模块说明：工程与 Worker 脚本，负责 开发、清理、构建或发布自动化
  */
-import { mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+// 运行中的进程可能独占锁定日志等文件，删除时命中这些错误码需要跳过而非整体失败。
+const LOCK_CODES = new Set(["EBUSY", "EPERM", "EACCES", "ENOTEMPTY"]);
 
 export const cleanupDefinitions = [
   {
@@ -93,13 +96,13 @@ export const cleanupDefinitions = [
   }
 ];
 
-export async function inspectCleanupCategories(ids) {
+export async function inspectCleanupCategories(ids, root = repoRoot) {
   const selected = ids ? new Set(ids) : undefined;
   return Promise.all(
     cleanupDefinitions
       .filter((definition) => !selected || selected.has(definition.id))
       .map(async (definition) => {
-        const targets = await targetsFor(definition);
+        const targets = await targetsFor(definition, root);
         const totals = await Promise.all(targets.map((target) => inspectPath(target)));
         return {
           id: definition.id,
@@ -115,31 +118,101 @@ export async function inspectCleanupCategories(ids) {
 }
 
 export async function executeCleanup(ids, options = {}) {
+  const root = options.root ?? repoRoot;
   const selected = new Set(ids);
   const unknown = [...selected].filter((id) => !cleanupDefinitions.some((definition) => definition.id === id));
   if (unknown.length) throw new Error(`未知清理分类：${unknown.join(", ")}`);
   const results = [];
   for (const definition of cleanupDefinitions.filter((entry) => selected.has(entry.id))) {
-    const targets = await targetsFor(definition);
+    const targets = await targetsFor(definition, root);
     const before = await Promise.all(targets.map((target) => inspectPath(target)));
+    const skipped = [];
     if (!options.dryRun) {
-      for (const target of targets) await rm(target, { recursive: true, force: true });
-      await restoreKeepFiles(definition.id);
+      for (const target of targets) await removeWithSkips(target, skipped, options);
+      await restoreKeepFiles(definition.id, root);
     }
-    results.push({
+    const beforeFiles = before.reduce((sum, value) => sum + value.files, 0);
+    const beforeBytes = before.reduce((sum, value) => sum + value.bytes, 0);
+    const skippedFiles = skipped.length;
+    const skippedBytes = skipped.reduce((sum, value) => sum + value.bytes, 0);
+    const result = {
       id: definition.id,
       label: definition.label,
-      files: before.reduce((sum, value) => sum + value.files, 0),
-      bytes: before.reduce((sum, value) => sum + value.bytes, 0)
-    });
+      files: beforeFiles - skippedFiles,
+      bytes: beforeBytes - skippedBytes
+    };
+    if (skippedFiles > 0) {
+      result.skippedFiles = skippedFiles;
+      result.skippedBytes = skippedBytes;
+    }
+    results.push(result);
   }
   return results;
 }
 
-async function targetsFor(definition) {
-  const targets = definition.targets.map(resolveTarget);
+// 删除单个目标：先整体删除，命中锁类错误则短暂重试后逐项跳过，非锁类错误照常抛出。
+export async function removeWithSkips(target, skipped, options = {}) {
+  const rmImpl = options.rmImpl ?? rm;
+  const retries = options.retries ?? 2;
+  const retryDelayMs = options.retryDelayMs ?? 300;
+  const outcome = await attemptRemove(target, rmImpl, retries, retryDelayMs);
+  if (outcome.ok) return;
+  if (!isLockError(outcome.error)) throw outcome.error;
+
+  const info = await stat(target).catch(() => undefined);
+  if (info?.isFile()) {
+    skipped.push({ path: target, bytes: info.size });
+    return;
+  }
+  if (info?.isDirectory() || (await readdir(target, { withFileTypes: true }).catch(() => undefined))) {
+    await removeChildren(target, skipped, { rmImpl, retries, retryDelayMs });
+    await rmdir(target).catch(() => {});
+    return;
+  }
+  // stat 与 readdir 均失败：无法按目录处理，按被锁文件记账（字节数不可知记 0）。
+  skipped.push({ path: target, bytes: 0 });
+}
+
+async function attemptRemove(target, rmImpl, retries, retryDelayMs) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rmImpl(target, { recursive: true, force: true });
+      return { ok: true };
+    } catch (error) {
+      if (!isLockError(error) || attempt >= retries) return { ok: false, error };
+      if (retryDelayMs > 0) await delay(retryDelayMs);
+    }
+  }
+}
+
+async function removeChildren(directory, skipped, { rmImpl, retries, retryDelayMs }) {
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    const child = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      await removeWithSkips(child, skipped, { rmImpl, retries, retryDelayMs });
+      continue;
+    }
+    const outcome = await attemptRemove(child, rmImpl, retries, retryDelayMs);
+    if (outcome.ok) continue;
+    if (!isLockError(outcome.error)) throw outcome.error;
+    const info = await stat(child).catch(() => undefined);
+    skipped.push({ path: child, bytes: info?.size ?? 0 });
+  }
+}
+
+function isLockError(error) {
+  return LOCK_CODES.has(error?.code);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function targetsFor(definition, root) {
+  const targets = definition.targets.map((relative) => resolveTarget(relative, root));
   if (definition.id !== "dev-cache" && definition.id !== "logs") return uniqueParents(targets);
-  await discoverGenerated(repoRoot, definition.id, targets);
+  await discoverGenerated(root, definition.id, targets);
   return uniqueParents(targets);
 }
 
@@ -181,9 +254,9 @@ function uniqueParents(paths) {
   );
 }
 
-function resolveTarget(relative) {
-  const absolute = path.resolve(repoRoot, relative);
-  if (absolute !== repoRoot && !absolute.startsWith(`${repoRoot}${path.sep}`)) throw new Error("清理路径超出项目目录");
+function resolveTarget(relative, root) {
+  const absolute = path.resolve(root, relative);
+  if (absolute !== root && !absolute.startsWith(`${root}${path.sep}`)) throw new Error("清理路径超出项目目录");
   return absolute;
 }
 
@@ -199,12 +272,12 @@ async function inspectPath(target) {
   };
 }
 
-async function restoreKeepFiles(id) {
+async function restoreKeepFiles(id, root) {
   const files = [];
   if (id === "image-compress") files.push("storage/uploads/.gitkeep", "storage/outputs/.gitkeep");
   if (id === "lan-transfer") files.push("storage/lan-transfer/files/.gitkeep");
   for (const relative of files) {
-    const target = resolveTarget(relative);
+    const target = resolveTarget(relative, root);
     await mkdir(path.dirname(target), { recursive: true });
     await writeFile(target, "");
   }

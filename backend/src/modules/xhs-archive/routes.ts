@@ -48,9 +48,10 @@ export async function registerXhsArchiveRoutes(options: {
   fileMetadata?: FileMetadataRepository;
   runtime?: XhsRuntimeManager;
   auth?: XhsAuthManager;
+  store?: XhsArchiveStore;
 }) {
   const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
-  const store = new XhsArchiveStore(config, database, fileMetadata);
+  const store = options.store ?? new XhsArchiveStore(config, database, fileMetadata);
   const runtime = options.runtime ?? new XhsRuntimeManager(config);
   const auth = options.auth ?? new XhsAuthManager(config);
   const translationRuntime = new XhsTranslationRuntime(config);
