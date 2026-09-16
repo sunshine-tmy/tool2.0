@@ -41,6 +41,7 @@ export type AppConfig = {
   shortVideoCacheTtlMs: number;
   shortVideoParseRetries: number;
   shortVideoTikTokOembedFallback: boolean;
+  shortVideoXhsLocalFallback: boolean;
   xhsArchiveDir: string;
   xhsArchiveItemsDir: string;
   xhsArchiveStagingDir: string;
@@ -191,6 +192,11 @@ export function getConfig(): AppConfig {
     shortVideoTikTokOembedFallback: readBoolean(
       "SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK",
       getEnv("SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK", fileEnv),
+      true
+    ),
+    shortVideoXhsLocalFallback: readBoolean(
+      "SHORT_VIDEO_XHS_LOCAL_FALLBACK",
+      getEnv("SHORT_VIDEO_XHS_LOCAL_FALLBACK", fileEnv),
       true
     ),
     xhsArchiveDir,

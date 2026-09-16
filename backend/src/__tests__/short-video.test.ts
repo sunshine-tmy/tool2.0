@@ -17,6 +17,8 @@ beforeEach(async () => {
   process.env.SHORT_VIDEO_PARSE_API_URL = "https://provider.test/api/v1/short_videos";
   process.env.SHORT_VIDEO_PARSE_TIMEOUT_MS = "5000";
   process.env.SHORT_VIDEO_PARSE_RETRIES = "0";
+  process.env.SHORT_VIDEO_XHS_LOCAL_FALLBACK = "false";
+  process.env.XHS_RUNTIME_DIR = path.join(storageRoot, "xhs-runtime");
 });
 
 afterEach(async () => {
@@ -25,6 +27,9 @@ afterEach(async () => {
   delete process.env.SHORT_VIDEO_PARSE_API_URL;
   delete process.env.SHORT_VIDEO_PARSE_TIMEOUT_MS;
   delete process.env.SHORT_VIDEO_PARSE_RETRIES;
+  delete process.env.SHORT_VIDEO_XHS_LOCAL_FALLBACK;
+  delete process.env.XHS_RUNTIME_DIR;
+  delete process.env.XHS_PROVIDER_URL;
   vi.restoreAllMocks();
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
@@ -147,6 +152,92 @@ describe("short video api", () => {
       "https://api.bugpk.com/api/xhsjx?url=https%3A%2F%2Fwww.xiaohongshu.com%2Fdiscovery%2Fitem%2Fabc123",
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
+    await app.close();
+  });
+
+  it("falls back to the local XHS runtime when the public provider cannot parse the note", async () => {
+    process.env.SHORT_VIDEO_XHS_LOCAL_FALLBACK = "true";
+    process.env.XHS_PROVIDER_URL = "https://xhs-provider.test";
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.startsWith("https://provider.test/api/v1/short_videos")) {
+        return new Response(JSON.stringify({ code: 404, msg: "未找到有效内容" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url === "https://xhs-provider.test/extract") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            items: [
+              {
+                作品ID: "note-local",
+                作品标题: "本机解析结果",
+                作品描述: "本机解析正文",
+                作品类型: "视频",
+                作者ID: "author-local",
+                作者昵称: "本机作者",
+                下载地址: ["https://cdn.test/local-video.mp4"]
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/short-video/parse",
+      payload: { input: "https://www.xiaohongshu.com/discovery/item/note-local" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      provider: "xhs-downloader",
+      title: "本机解析结果",
+      author: { id: "author-local", name: "本机作者" },
+      media: [{ type: "video", url: "https://cdn.test/local-video.mp4" }]
+    });
+    await app.close();
+  });
+
+  it("asks for Xiaohongshu login when both public and anonymous local parsing fail", async () => {
+    process.env.SHORT_VIDEO_XHS_LOCAL_FALLBACK = "true";
+    process.env.XHS_PROVIDER_URL = "https://xhs-provider.test";
+    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.startsWith("https://provider.test/api/v1/short_videos")) {
+        return new Response(JSON.stringify({ code: 404, msg: "未找到有效内容" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url === "https://xhs-provider.test/extract") {
+        return new Response(JSON.stringify({ success: true, items: [{}] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/short-video/parse",
+      payload: { input: "https://www.xiaohongshu.com/discovery/item/login-required" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: { code: "SHORT_VIDEO_XHS_AUTH_REQUIRED" },
+      message: "小红书限制了未登录访问，请登录小红书后自动重试"
+    });
     await app.close();
   });
 

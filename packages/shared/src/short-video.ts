@@ -67,7 +67,7 @@ export const ShortVideoParseResultSchema = Type.Object(
     coverUrl: Type.Optional(Type.String()),
     media: Type.Array(ShortVideoMediaSchema),
     music: Type.Optional(ShortVideoMusicSchema),
-    provider: Type.Union([Type.Literal("bugpk"), Type.Literal("tiktok-oembed")]),
+    provider: Type.Union([Type.Literal("bugpk"), Type.Literal("tiktok-oembed"), Type.Literal("xhs-downloader")]),
     embedUrl: Type.Optional(Type.String()),
     providerMessage: Type.Optional(Type.String()),
     cacheStatus: Type.Optional(Type.String()),

@@ -5,6 +5,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { AppConfig } from "../config";
 import { detectShortVideoPlatform, type ShortVideoParseResult } from "@toolbox/shared";
+import type { XhsAuthManager } from "./xhs-archive/auth";
+import type { XhsRuntimeManager } from "./xhs-archive/runtime";
+import { normalizeXhsProviderItem } from "./xhs-archive/task-service";
 
 const execFileAsync = promisify(execFile);
 
@@ -17,6 +20,8 @@ export type ProviderResponse = {
 };
 
 export class ProviderResultError extends Error {}
+
+export class XhsAuthenticationRequiredError extends ProviderResultError {}
 
 class ProviderHttpError extends Error {
   constructor(
@@ -48,6 +53,54 @@ export async function requestProvider(config: AppConfig, sourceUrl: string) {
     if (fallbackResult) return fallbackResult;
   }
   throw lastError instanceof Error ? lastError : new Error("短视频解析请求失败");
+}
+
+export async function requestLocalXhsProvider(
+  config: AppConfig,
+  sourceUrl: string,
+  runtime: XhsRuntimeManager,
+  auth: XhsAuthManager
+): Promise<ShortVideoParseResult> {
+  const providerBaseUrl = await runtime.ensureReady();
+  const cookie = await auth.cookieHeader();
+  const response = await fetch(`${providerBaseUrl}/extract`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: sourceUrl, cookie }),
+    signal: AbortSignal.timeout(Math.max(config.shortVideoParseTimeoutMs, 90_000))
+  });
+  const payload = (await response.json().catch(() => ({}))) as {
+    success?: boolean;
+    items?: unknown[];
+    detail?: string;
+  };
+  const raw = Array.isArray(payload.items) ? recordValue(payload.items[0]) : {};
+  if (!response.ok || !payload.success || !Object.keys(raw).length) {
+    if (!cookie) {
+      throw new XhsAuthenticationRequiredError("小红书限制了未登录访问，请登录小红书后自动重试");
+    }
+    throw new ProviderResultError(payload.detail || "本机小红书解析器未返回有效内容");
+  }
+
+  const normalized = normalizeXhsProviderItem(raw, sourceUrl);
+  return {
+    platform: "xiaohongshu",
+    sourceUrl,
+    type: normalized.type,
+    title: normalized.title,
+    description: normalized.description,
+    author: normalized.author,
+    coverUrl: normalized.media.find((item) => item.kind === "image")?.url,
+    media: normalized.media.map((item, index) => ({
+      type: item.kind === "image" || item.kind === "cover" ? "image" : "video",
+      url: item.url,
+      label:
+        item.kind === "live-photo" ? `实况视频 ${index + 1}` : `${item.kind === "video" ? "视频" : "图片"} ${index + 1}`
+    })),
+    provider: "xhs-downloader",
+    providerMessage: cookie ? "本机 XHS-Downloader（已登录）" : "本机 XHS-Downloader",
+    warnings: []
+  };
 }
 
 function normalizeProviderEndpoint(value: string, sourceUrl: string) {
@@ -187,4 +240,8 @@ function tiktokAuthorId(authorUrl: string) {
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }

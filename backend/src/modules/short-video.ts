@@ -24,21 +24,33 @@ import type { RemoteFetch } from "../security/remote-fetch";
 import { cacheResult, readCachedResult } from "./short-video-cache";
 import {
   ProviderResultError,
+  XhsAuthenticationRequiredError,
   providerErrorMessage,
   providerMessage,
+  requestLocalXhsProvider,
   requestProvider,
   requestTikTokOEmbed,
   type ProviderResponse
 } from "./short-video-provider";
 import { proxyShortVideoDownload, sanitizeDownloadFilename } from "./short-video-download";
+import type { XhsAuthManager } from "./xhs-archive/auth";
+import type { XhsRuntimeManager } from "./xhs-archive/runtime";
 
 type RegisterShortVideoRoutesOptions = {
   app: FastifyInstance;
   config: AppConfig;
   remoteFetch: RemoteFetch;
+  xhsRuntime: XhsRuntimeManager;
+  xhsAuth: XhsAuthManager;
 };
 
-export async function registerShortVideoRoutes({ app, config, remoteFetch }: RegisterShortVideoRoutesOptions) {
+export async function registerShortVideoRoutes({
+  app,
+  config,
+  remoteFetch,
+  xhsRuntime,
+  xhsAuth
+}: RegisterShortVideoRoutesOptions) {
   app.post<{ Body: ShortVideoParseInput }>(
     "/api/v1/tools/short-video/parse",
     {
@@ -66,9 +78,11 @@ export async function registerShortVideoRoutes({ app, config, remoteFetch }: Reg
           .send(fail("SHORT_VIDEO_PLATFORM_MISMATCH", "选择的平台与分享链接不匹配，请切换平台或使用自动识别"));
       }
       try {
-        return ok(await resolveShortVideo(config, sourceUrl, requestedPlatform));
+        return ok(await resolveShortVideo(config, sourceUrl, requestedPlatform, xhsRuntime, xhsAuth));
       } catch (error) {
         const message = error instanceof Error ? error.message : "短视频解析请求失败";
+        if (error instanceof XhsAuthenticationRequiredError)
+          return reply.code(400).send(fail("SHORT_VIDEO_XHS_AUTH_REQUIRED", message));
         if (error instanceof ProviderResultError)
           return reply.code(400).send(fail("SHORT_VIDEO_PARSE_FAILED", message));
         return reply.code(502).send(fail("SHORT_VIDEO_PROVIDER_UNAVAILABLE", message));
@@ -102,7 +116,9 @@ export async function registerShortVideoRoutes({ app, config, remoteFetch }: Reg
 async function resolveShortVideo(
   config: AppConfig,
   sourceUrl: string,
-  requestedPlatform: Exclude<ShortVideoPlatform, "unknown">
+  requestedPlatform: Exclude<ShortVideoPlatform, "unknown">,
+  xhsRuntime: XhsRuntimeManager,
+  xhsAuth: XhsAuthManager
 ): Promise<ShortVideoParseResult> {
   const cached = readCachedResult(config, sourceUrl, requestedPlatform);
   if (cached) return cached;
@@ -118,6 +134,17 @@ async function resolveShortVideo(
     providerFailure = new ProviderResultError(providerMessage(providerResponse) || "短视频解析失败");
   } catch (error) {
     providerFailure = error;
+  }
+
+  if (detectShortVideoPlatform(sourceUrl) === "xiaohongshu" && config.shortVideoXhsLocalFallback) {
+    try {
+      const result = await requestLocalXhsProvider(config, sourceUrl, xhsRuntime, xhsAuth);
+      cacheResult(config, sourceUrl, requestedPlatform, result);
+      return result;
+    } catch (error) {
+      // 公共 Provider 不可用时，本机解析器的登录提示或具体错误更能指导用户恢复。
+      throw error instanceof Error ? error : providerFailure;
+    }
   }
 
   if (detectShortVideoPlatform(sourceUrl) === "tiktok" && config.shortVideoTikTokOembedFallback) {

@@ -29,6 +29,9 @@
                 {{ option.label }}
               </n-button>
             </div>
+            <n-button v-if="xhsAuthRequired" type="warning" :loading="authWaiting" @click="loginAndRetry">
+              登录小红书并重试
+            </n-button>
             <n-button type="primary" :loading="loading" :disabled="!inputText.trim()" @click="parse">
               <template #icon>
                 <Link2 :size="16" />
@@ -131,8 +134,9 @@ import { NButton, NInput, NTag, useMessage } from "naive-ui";
 import { Clapperboard, Download, FileText, Link2 } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
-import { formatApiError, isApiErrorCancelled } from "../../services/http";
+import { ApiRequestError, formatApiError, isApiErrorCancelled } from "../../services/http";
 import { copyTextToClipboard } from "../../utils/clipboard";
+import { xhsArchiveApi } from "../xhs-archive/api";
 import { shortVideoApi } from "./api";
 import { createShortVideoDownloadName, triggerShortVideoDownload } from "./download";
 import type { ShortVideoResult } from "./types";
@@ -148,6 +152,8 @@ const router = useRouter();
 const inputText = ref("");
 const platform = ref<PlatformOption["value"]>("auto");
 const loading = ref(false);
+const authWaiting = ref(false);
+const xhsAuthRequired = ref(false);
 const result = ref<ShortVideoResult | null>(null);
 const downloadingUrls = ref<string[]>([]);
 const platformOptions: PlatformOption[] = [
@@ -170,11 +176,33 @@ async function parse() {
       input: inputText.value,
       platform: platform.value
     });
+    xhsAuthRequired.value = false;
     message.success("解析完成");
   } catch (error) {
+    xhsAuthRequired.value = error instanceof ApiRequestError && error.code === "SHORT_VIDEO_XHS_AUTH_REQUIRED";
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "短视频解析失败"));
   } finally {
     loading.value = false;
+  }
+}
+
+async function loginAndRetry() {
+  authWaiting.value = true;
+  try {
+    // 登录窗口由后端托管，页面只轮询会话终态；Cookie 不会暴露给前端脚本。
+    const session = await xhsArchiveApi.startAuth();
+    let state = session;
+    while (!["completed", "failed"].includes(state.status)) {
+      await delay(1200);
+      state = await xhsArchiveApi.auth(session.id);
+    }
+    if (state.status === "failed") throw new Error(state.error || state.message);
+    message.success("登录成功，正在重新解析");
+    await parse();
+  } catch (error) {
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "小红书登录失败"));
+  } finally {
+    authWaiting.value = false;
   }
 }
 
@@ -223,5 +251,9 @@ function platformName(value: ShortVideoResult["platform"]) {
 function mediaMeta(item: ShortVideoMedia) {
   const parts = [item.quality, item.width && item.height ? `${item.width}x${item.height}` : ""].filter(Boolean);
   return parts.length ? parts.join(" | ") : "";
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 </script>

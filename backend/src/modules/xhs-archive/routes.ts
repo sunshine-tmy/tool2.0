@@ -46,11 +46,13 @@ export async function registerXhsArchiveRoutes(options: {
   database: ToolboxDatabase;
   taskStore: TaskStore;
   fileMetadata?: FileMetadataRepository;
+  runtime?: XhsRuntimeManager;
+  auth?: XhsAuthManager;
 }) {
   const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
   const store = new XhsArchiveStore(config, database, fileMetadata);
-  const runtime = new XhsRuntimeManager(config);
-  const auth = new XhsAuthManager(config);
+  const runtime = options.runtime ?? new XhsRuntimeManager(config);
+  const auth = options.auth ?? new XhsAuthManager(config);
   const translationRuntime = new XhsTranslationRuntime(config);
   const translation = new XhsTranslationService(config, store, translationRuntime, taskStore);
   const service = new XhsArchiveTaskService(config, remoteFetch, store, runtime, auth, translation, taskStore);

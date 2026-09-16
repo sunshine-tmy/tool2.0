@@ -124,7 +124,7 @@ export class XhsArchiveTaskService {
               : "内容不完整或触发访问限制，请登录小红书后重试"
         );
       }
-      const normalized = normalize(raw, source);
+      const normalized = normalizeXhsProviderItem(raw, source);
       const previous = await this.store.findByNoteId(normalized.noteId);
       const itemId = previous?.id ?? nanoid(14);
       const mediaSources = normalized.media;
@@ -397,7 +397,7 @@ function list(value: unknown) {
       ? [value]
       : [];
 }
-function normalize(raw: Upstream, source: string) {
+export function normalizeXhsProviderItem(raw: Upstream, source: string) {
   const noteId = String(raw["作品ID"] ?? raw.id ?? "").trim();
   if (!noteId) throw new XhsError("XHS_PARSE_FAILED", "解析结果缺少笔记 ID");
   const downloads = list(raw["下载地址"] ?? raw.downloads);
