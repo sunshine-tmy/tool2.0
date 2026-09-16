@@ -77,6 +77,35 @@ describe("short video api", () => {
     );
   });
 
+  it("migrates the retired BugPk v1 endpoint from existing environment files", async () => {
+    process.env.SHORT_VIDEO_PARSE_API_URL = "https://api.bugpk.com/api/v1/short_videos";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 200,
+          platform: "douyin",
+          data: { type: "video", title: "Migrated", url: "https://cdn.test/video.mp4" }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    globalThis.fetch = fetchMock;
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/short-video/parse",
+      payload: { input: "https://v.douyin.com/abc123/" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.bugpk.com/api/short_videos?url=https%3A%2F%2Fv.douyin.com%2Fabc123%2F",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    await app.close();
+  });
+
   it("rejects unsupported hosts before calling the provider", async () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock;

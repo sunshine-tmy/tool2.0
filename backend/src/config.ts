@@ -166,7 +166,7 @@ export function getConfig(): AppConfig {
       "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}",
     videoTextTranscribeCommand: getEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND", fileEnv)?.trim() || undefined,
     shortVideoParseApiUrl:
-      getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv)?.trim() || "https://api.bugpk.com/api/v1/short_videos",
+      getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv)?.trim() || "https://api.bugpk.com/api/short_videos",
     shortVideoParseTimeoutMs: readInteger(
       "SHORT_VIDEO_PARSE_TIMEOUT_MS",
       getEnv("SHORT_VIDEO_PARSE_TIMEOUT_MS", fileEnv),

@@ -30,7 +30,7 @@ class ProviderHttpError extends Error {
 class ProviderTimeoutError extends Error {}
 
 export async function requestProvider(config: AppConfig, sourceUrl: string) {
-  const apiUrl = new URL(config.shortVideoParseApiUrl);
+  const apiUrl = normalizeProviderEndpoint(config.shortVideoParseApiUrl);
   apiUrl.searchParams.set("url", sourceUrl);
   const providerUrl = apiUrl.toString();
   let lastError: unknown;
@@ -48,6 +48,19 @@ export async function requestProvider(config: AppConfig, sourceUrl: string) {
     if (fallbackResult) return fallbackResult;
   }
   throw lastError instanceof Error ? lastError : new Error("短视频解析请求失败");
+}
+
+function normalizeProviderEndpoint(value: string) {
+  const apiUrl = new URL(value);
+  // BugPk 已将旧的 /api/v1/short_videos 路径迁移到 /api/short_videos；
+  // 自动修正历史 .env，避免升级后必须手工删除旧配置才能恢复解析。
+  if (
+    apiUrl.hostname.toLowerCase() === "api.bugpk.com" &&
+    apiUrl.pathname.replace(/\/+$/, "") === "/api/v1/short_videos"
+  ) {
+    apiUrl.pathname = "/api/short_videos";
+  }
+  return apiUrl;
 }
 
 export async function requestTikTokOEmbed(
