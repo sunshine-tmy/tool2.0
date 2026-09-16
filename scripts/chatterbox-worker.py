@@ -46,6 +46,9 @@ HOST = os.getenv("CHATTERBOX_WORKER_HOST", "127.0.0.1")
 PORT = int(os.getenv("CHATTERBOX_WORKER_PORT", "3220"))
 DEVICE_SETTING = os.getenv("CHATTERBOX_DEVICE", "auto").strip().lower()
 MODEL_IDLE_MINUTES = max(0, int(os.getenv("CHATTERBOX_MODEL_IDLE_MINUTES", "10")))
+# 使用不可变的 Hugging Face commit 而非 main，避免上游权重或清单更新后在未发布代码的情况下
+# 改变推理行为。升级模型必须显式修改此值并经过完整 Worker 回归验证。
+CHATTERBOX_MODEL_REVISION = os.getenv("CHATTERBOX_MODEL_REVISION", "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18").strip()
 MAX_TEXT_LENGTH = 1200
 
 os.environ.setdefault("HF_HOME", str(MODELS_ROOT / "huggingface"))
@@ -54,6 +57,7 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from worker_lifecycle import replace_idle_unload_task
 
 
 class WorkerFailure(RuntimeError):
@@ -295,7 +299,7 @@ def load_multilingual_model(device: str) -> Any:
         snapshot_download(
             repo_id="ResembleAI/chatterbox",
             repo_type="model",
-            revision="main",
+            revision=CHATTERBOX_MODEL_REVISION,
             allow_patterns=[
                 "ve.pt",
                 t3_model,
@@ -422,13 +426,10 @@ async def health() -> dict[str, Any]:
 
 @app.post("/generate")
 async def generate(payload: GenerateRequest) -> dict[str, Any]:
-    global idle_unload_task
-    if idle_unload_task and not idle_unload_task.done():
-        idle_unload_task.cancel()
+    cancel_idle_unload_timer()
     async with manager.lock:
         result = await asyncio.to_thread(manager.generate, payload)
-    if MODEL_IDLE_MINUTES > 0:
-        idle_unload_task = asyncio.create_task(unload_after_idle())
+    schedule_idle_unload()
     return {"success": True, "data": result}
 
 
@@ -439,6 +440,20 @@ async def unload_after_idle() -> None:
             await asyncio.to_thread(manager.unload)
     except asyncio.CancelledError:
         return
+
+
+def schedule_idle_unload() -> None:
+    """模型进入空闲状态后开始倒计时，eager-load 也必须进入同一释放路径。"""
+    global idle_unload_task
+    idle_unload_task = replace_idle_unload_task(idle_unload_task, MODEL_IDLE_MINUTES, unload_after_idle)
+
+
+def cancel_idle_unload_timer() -> None:
+    """新生成请求接管模型时取消旧计时，避免推理中被后台任务卸载。"""
+    global idle_unload_task
+    if idle_unload_task and not idle_unload_task.done():
+        idle_unload_task.cancel()
+    idle_unload_task = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -481,4 +496,6 @@ if __name__ == "__main__":
 
         if arguments.eager_load:
             manager.load()
+            # 启动器为就绪检查提前加载模型后，仍需在长期空闲时释放显存和主存。
+            schedule_idle_unload()
         uvicorn.run(app, host=arguments.host, port=arguments.port, log_level="warning")

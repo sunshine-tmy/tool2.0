@@ -9,7 +9,16 @@ import type { ToolboxDatabase } from "./toolbox-database";
 type DomainConsistencyResult = {
   checked: number;
   removed: number;
+  missing: number;
   failures: Array<{ kind: string; id: string; reason: string }>;
+};
+
+type DomainName = "xhs-archive" | "chatterbox" | "edge-tts" | "image-ai";
+type ReconcileDomainOptions = {
+  /** 启动期间只能报告问题；只有显式清理任务才允许删除已确认被清除的元数据。 */
+  mode?: "report" | "remove";
+  /** 将破坏性同步严格限制在用户刚刚清理的领域，避免影响未勾选的数据。 */
+  domains?: readonly DomainName[];
 };
 
 // 运行中的任务可能尚未落盘工件，对账时不能视为孤儿记录。
@@ -25,26 +34,34 @@ const SAFE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
  */
 export async function reconcileDomainRecords(
   config: AppConfig,
-  database: ToolboxDatabase
+  database: ToolboxDatabase,
+  options: ReconcileDomainOptions = {}
 ): Promise<DomainConsistencyResult> {
-  const result: DomainConsistencyResult = { checked: 0, removed: 0, failures: [] };
+  const result: DomainConsistencyResult = { checked: 0, removed: 0, missing: 0, failures: [] };
+  const mode = options.mode ?? "remove";
+  const domains = new Set(options.domains ?? ["xhs-archive", "chatterbox", "edge-tts", "image-ai"]);
 
-  await reconcileXhsArchive(config, database, result);
-  await reconcileChatterbox(config, database, result);
-  await reconcileEdgeTts(config, database, result);
-  await reconcileImageAi(config, database, result);
+  if (domains.has("xhs-archive")) await reconcileXhsArchive(config, database, result, mode);
+  if (domains.has("chatterbox")) await reconcileChatterbox(config, database, result, mode);
+  if (domains.has("edge-tts")) await reconcileEdgeTts(config, database, result, mode);
+  if (domains.has("image-ai")) await reconcileImageAi(config, database, result, mode);
 
   if (result.removed > 0 || result.failures.length > 0) {
     database.appendAudit({
       action: "storage.domain_record_consistency",
       outcome: result.failures.length ? "partial" : "success",
-      details: { checked: result.checked, removed: result.removed, failures: result.failures }
+      details: { checked: result.checked, removed: result.removed, missing: result.missing, failures: result.failures }
     });
   }
   return result;
 }
 
-async function reconcileXhsArchive(config: AppConfig, database: ToolboxDatabase, result: DomainConsistencyResult) {
+async function reconcileXhsArchive(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  result: DomainConsistencyResult,
+  mode: "report" | "remove"
+) {
   // 根目录整体缺失说明存储被移动或未挂载，保守跳过而不是清空全部元数据。
   if (!(await directoryExists(config.xhsArchiveDir))) return;
   // 先取媒体行快照：归档行被删除时，media 行会被外键级联一起删除，事后无法再枚举。
@@ -58,9 +75,9 @@ async function reconcileXhsArchive(config: AppConfig, database: ToolboxDatabase,
     }
     const manifestPath = path.join(config.xhsArchiveItemsDir, entity.id, "manifest.json");
     if (await fileExists(manifestPath)) continue;
-    database.remove("xhs-archive", entity.id);
-    removedArchives.add(entity.id);
-    result.removed += 1;
+    if (removeOrReport(database, result, mode, "xhs-archive", entity.id, "MANIFEST_MISSING")) {
+      removedArchives.add(entity.id);
+    }
   }
   for (const entity of mediaEntities) {
     result.checked += 1;
@@ -76,14 +93,17 @@ async function reconcileXhsArchive(config: AppConfig, database: ToolboxDatabase,
     if (typeof payload?.fileName !== "string") continue;
     const mediaPath = path.join(config.xhsArchiveItemsDir, archiveId, path.basename(payload.fileName));
     if (await fileExists(mediaPath)) continue;
-    if (database.get("xhs-media", entity.id)) {
-      database.remove("xhs-media", entity.id);
-      result.removed += 1;
-    }
+    if (database.get("xhs-media", entity.id))
+      removeOrReport(database, result, mode, "xhs-media", entity.id, "MEDIA_MISSING");
   }
 }
 
-async function reconcileChatterbox(config: AppConfig, database: ToolboxDatabase, result: DomainConsistencyResult) {
+async function reconcileChatterbox(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  result: DomainConsistencyResult,
+  mode: "report" | "remove"
+) {
   if (!(await directoryExists(config.chatterboxDir))) return;
   const batchesRoot = path.join(config.chatterboxDir, "batches");
   const voicesRoot = path.join(config.chatterboxDir, "voices");
@@ -101,15 +121,15 @@ async function reconcileChatterbox(config: AppConfig, database: ToolboxDatabase,
     if (isActive(entity.status)) continue;
     const metaPath = path.join(batchesRoot, entity.id, "meta.json");
     if (await fileExists(metaPath)) continue;
-    database.remove("chatterbox-batch", entity.id);
-    // 批次的统一任务随批次一起回收，与批次存储自身的删除行为保持一致。
-    database.remove("task", entity.id);
-    removedBatches.add(entity.id);
-    result.removed += 1;
-    for (const item of itemEntities) {
-      const payload = item.payload as { batchId?: string } | null;
-      if (payload?.batchId !== entity.id) continue;
-      removedItemIds.add(item.id);
+    if (removeOrReport(database, result, mode, "chatterbox-batch", entity.id, "MANIFEST_MISSING")) {
+      // 批次的统一任务随批次一起回收，与批次存储自身的删除行为保持一致。
+      database.remove("task", entity.id);
+      removedBatches.add(entity.id);
+      for (const item of itemEntities) {
+        const payload = item.payload as { batchId?: string } | null;
+        if (payload?.batchId !== entity.id) continue;
+        removedItemIds.add(item.id);
+      }
     }
   }
   result.removed += removedItemIds.size;
@@ -124,10 +144,8 @@ async function reconcileChatterbox(config: AppConfig, database: ToolboxDatabase,
     }
     const itemDir = path.join(batchesRoot, payload.batchId, "items", entity.id);
     if (await directoryExists(itemDir)) continue;
-    if (database.get("chatterbox-item", entity.id)) {
-      database.remove("chatterbox-item", entity.id);
-      result.removed += 1;
-    }
+    if (database.get("chatterbox-item", entity.id))
+      removeOrReport(database, result, mode, "chatterbox-item", entity.id, "ITEM_DIRECTORY_MISSING");
   }
 
   for (const entity of database.list("chatterbox-voice")) {
@@ -138,12 +156,16 @@ async function reconcileChatterbox(config: AppConfig, database: ToolboxDatabase,
     }
     const metaPath = path.join(voicesRoot, entity.id, "meta.json");
     if (await fileExists(metaPath)) continue;
-    database.remove("chatterbox-voice", entity.id);
-    result.removed += 1;
+    removeOrReport(database, result, mode, "chatterbox-voice", entity.id, "MANIFEST_MISSING");
   }
 }
 
-async function reconcileEdgeTts(config: AppConfig, database: ToolboxDatabase, result: DomainConsistencyResult) {
+async function reconcileEdgeTts(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  result: DomainConsistencyResult,
+  mode: "report" | "remove"
+) {
   if (!(await directoryExists(config.edgeTtsDir))) return;
   for (const entity of database.list("edge-tts-task")) {
     result.checked += 1;
@@ -154,13 +176,18 @@ async function reconcileEdgeTts(config: AppConfig, database: ToolboxDatabase, re
     if (isActive(entity.status)) continue;
     const metaPath = path.join(config.edgeTtsTasksDir, entity.id, "meta.json");
     if (await fileExists(metaPath)) continue;
-    database.remove("edge-tts-task", entity.id);
-    database.remove("task", entity.id);
-    result.removed += 1;
+    if (removeOrReport(database, result, mode, "edge-tts-task", entity.id, "MANIFEST_MISSING")) {
+      database.remove("task", entity.id);
+    }
   }
 }
 
-async function reconcileImageAi(config: AppConfig, database: ToolboxDatabase, result: DomainConsistencyResult) {
+async function reconcileImageAi(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  result: DomainConsistencyResult,
+  mode: "report" | "remove"
+) {
   if (!(await directoryExists(config.imageAiDir))) return;
   for (const entity of database.list("image-ai-task")) {
     result.checked += 1;
@@ -175,10 +202,27 @@ async function reconcileImageAi(config: AppConfig, database: ToolboxDatabase, re
     if ((await pathExists(inputsDir)) || (await pathExists(outputsDir)) || (await fileExists(manifestPath))) {
       continue;
     }
-    database.remove("image-ai-task", entity.id);
-    database.remove("task", entity.id);
-    result.removed += 1;
+    if (removeOrReport(database, result, mode, "image-ai-task", entity.id, "ARTIFACTS_MISSING")) {
+      database.remove("task", entity.id);
+    }
   }
+}
+
+function removeOrReport(
+  database: ToolboxDatabase,
+  result: DomainConsistencyResult,
+  mode: "report" | "remove",
+  kind: string,
+  id: string,
+  reason: string
+) {
+  result.missing += 1;
+  if (mode === "report") {
+    result.failures.push({ kind, id, reason });
+    return false;
+  }
+  if (database.remove(kind, id)) result.removed += 1;
+  return true;
 }
 
 function isActive(status: string | null | undefined) {

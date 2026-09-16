@@ -33,7 +33,13 @@ import {
   requestTikTokOEmbed,
   type ProviderResponse
 } from "./short-video-provider";
-import { proxyShortVideoDownload, proxyShortVideoPreview, sanitizeDownloadFilename } from "./short-video-download";
+import {
+  InvalidPreviewRangeError,
+  normalizePreviewRange,
+  proxyShortVideoDownload,
+  proxyShortVideoPreview,
+  sanitizeDownloadFilename
+} from "./short-video-download";
 import type { XhsAuthManager } from "./xhs-archive/auth";
 import type { XhsRuntimeManager } from "./xhs-archive/runtime";
 
@@ -120,12 +126,21 @@ export async function registerShortVideoRoutes({
       config: REQUEST_QUOTAS.mediaPreview,
       schema: {
         querystring: ShortVideoPreviewQuerySchema,
-        response: { 400: ApiFailureSchema, 502: ApiFailureSchema }
+        response: { 400: ApiFailureSchema, 416: ApiFailureSchema, 502: ApiFailureSchema }
       }
     },
     async (request, reply) => {
       const mediaUrl = request.query.url.trim();
       if (!isHttpUrl(mediaUrl)) return reply.code(400).send(fail("INVALID_SHORT_VIDEO_MEDIA_URL", "预览地址无效"));
+      let range: string | undefined;
+      try {
+        range = normalizePreviewRange(request.headers.range);
+      } catch (error) {
+        if (error instanceof InvalidPreviewRangeError) {
+          return reply.code(416).send(fail("INVALID_SHORT_VIDEO_RANGE", error.message));
+        }
+        throw error;
+      }
       return proxyShortVideoPreview({
         reply,
         config,
@@ -133,7 +148,7 @@ export async function registerShortVideoRoutes({
         url: mediaUrl,
         filename: sanitizeDownloadFilename(request.query.filename || "short-video-media"),
         mediaType: request.query.mediaType,
-        range: request.headers.range
+        range
       });
     }
   );

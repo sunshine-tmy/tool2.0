@@ -62,7 +62,10 @@ export async function requestLocalXhsProvider(
   auth: XhsAuthManager
 ): Promise<ShortVideoParseResult> {
   const providerBaseUrl = await runtime.ensureReady();
-  const cookie = await auth.cookieHeader();
+  const localProvider = isLoopbackProviderUrl(providerBaseUrl);
+  // 登录 Cookie 只能交给本机 XHS-Downloader。即使管理员误配了外部 Provider，也不能把
+  // 小红书会话凭据作为“回退解析”参数外发；远端 Provider 仍可匿名解析公开内容。
+  const cookie = localProvider ? await auth.cookieHeader() : undefined;
   const response = await fetch(`${providerBaseUrl}/extract`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -77,6 +80,9 @@ export async function requestLocalXhsProvider(
   const raw = Array.isArray(payload.items) ? recordValue(payload.items[0]) : {};
   if (!response.ok || !payload.success || !Object.keys(raw).length) {
     if (!cookie) {
+      if (!localProvider) {
+        throw new ProviderResultError("外部小红书解析服务未接收登录信息，请改用本机解析器或检查其匿名访问能力");
+      }
       throw new XhsAuthenticationRequiredError("小红书限制了未登录访问，请登录小红书后自动重试");
     }
     throw new ProviderResultError(payload.detail || "本机小红书解析器未返回有效内容");
@@ -97,10 +103,26 @@ export async function requestLocalXhsProvider(
       label:
         item.kind === "live-photo" ? `实况视频 ${index + 1}` : `${item.kind === "video" ? "视频" : "图片"} ${index + 1}`
     })),
+    // provider 字段是共享 API 的固定枚举，统一标记解析适配器；是否本机执行由 providerMessage 明确区分。
     provider: "xhs-downloader",
-    providerMessage: cookie ? "本机 XHS-Downloader（已登录）" : "本机 XHS-Downloader",
+    providerMessage: localProvider
+      ? cookie
+        ? "本机 XHS-Downloader（已登录）"
+        : "本机 XHS-Downloader"
+      : "外部 XHS 解析服务（未传递登录信息）",
     warnings: []
   };
+}
+
+/** 仅允许回环 HTTP 服务接收本地会话 Cookie。 */
+function isLoopbackProviderUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    return url.protocol === "http:" && (host === "127.0.0.1" || host === "::1" || host === "localhost");
+  } catch {
+    return false;
+  }
 }
 
 function normalizeProviderEndpoint(value: string, sourceUrl: string) {

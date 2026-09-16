@@ -54,17 +54,17 @@ export function createRemoteFetch(
   const resolver = options.resolver ?? resolveAllAddresses;
   const maxRedirects = options.maxRedirects ?? 3;
   const injectedFetch = options.fetchImpl ?? (globalThis.fetch !== nativeGlobalFetch ? globalThis.fetch : undefined);
-  // 每次解析后把首个已验证地址固定到 Agent，避免 DNS 校验地址和实际连接地址发生漂移。
-  const pinnedAddresses = new Map<string, ResolvedAddress>();
-  const dispatcher = injectedFetch
-    ? undefined
-    : new Agent({
-        connect: {
-          lookup: createPinnedLookup(pinnedAddresses)
-        }
-      });
-
   return async (input, init = {}) => {
+    // 地址固定表和 Agent 必须是单个顶层请求私有的。若全局复用 hostname -> IP 表，并发请求
+    // 同一域名时会相互覆盖已校验地址，重新引入 DNS rebinding 时间窗口。
+    const pinnedAddresses = new Map<string, ResolvedAddress>();
+    const dispatcher = injectedFetch
+      ? undefined
+      : new Agent({
+          connect: {
+            lookup: createPinnedLookup(pinnedAddresses)
+          }
+        });
     let current = new URL(input);
 
     // 重定向的每一跳都重新解析、重新做公网地址检查，并限制最大跳数。

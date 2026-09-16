@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
+import { XhsAuthManager } from "../modules/xhs-archive/auth";
 
 const originalFetch = globalThis.fetch;
 const publicTestResolver = async () => [{ address: "93.184.216.34", family: 4 }];
@@ -206,10 +207,11 @@ describe("short video api", () => {
     await app.close();
   });
 
-  it("asks for Xiaohongshu login when both public and anonymous local parsing fail", async () => {
+  it("never forwards a Xiaohongshu login cookie to an externally configured fallback provider", async () => {
     process.env.SHORT_VIDEO_XHS_LOCAL_FALLBACK = "true";
     process.env.XHS_PROVIDER_URL = "https://xhs-provider.test";
-    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
+    vi.spyOn(XhsAuthManager.prototype, "cookieHeader").mockResolvedValue("session=private-value");
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith("https://provider.test/api/v1/short_videos")) {
         return new Response(JSON.stringify({ code: 404, msg: "未找到有效内容" }), {
@@ -218,6 +220,55 @@ describe("short video api", () => {
         });
       }
       if (url === "https://xhs-provider.test/extract") {
+        // 外部 Provider 只能获得公开链接，绝不能获得本机浏览器会话。
+        expect(JSON.parse(String(init?.body))).toEqual({ url: "https://www.xiaohongshu.com/discovery/item/note-safe" });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            items: [
+              {
+                作品ID: "note-safe",
+                作品标题: "匿名解析结果",
+                作品类型: "视频",
+                下载地址: ["https://cdn.test/anonymous.mp4"]
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/short-video/parse",
+      payload: { input: "https://www.xiaohongshu.com/discovery/item/note-safe" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      provider: "xhs-downloader",
+      providerMessage: "外部 XHS 解析服务（未传递登录信息）"
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await app.close();
+  });
+
+  it("asks for Xiaohongshu login when both public and anonymous local parsing fail", async () => {
+    process.env.SHORT_VIDEO_XHS_LOCAL_FALLBACK = "true";
+    process.env.XHS_PROVIDER_URL = "http://127.0.0.1:3221";
+    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.startsWith("https://provider.test/api/v1/short_videos")) {
+        return new Response(JSON.stringify({ code: 404, msg: "未找到有效内容" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url === "http://127.0.0.1:3221/extract") {
         return new Response(JSON.stringify({ success: true, items: [{}] }), {
           status: 200,
           headers: { "content-type": "application/json" }
@@ -574,6 +625,70 @@ describe("short video api", () => {
     }
 
     expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+  });
+
+  it("rejects multi-range preview probes before they reach the remote media host", async () => {
+    const fetchMock = vi.fn();
+    globalThis.fetch = fetchMock;
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/short-video/preview?url=${encodeURIComponent("https://cdn.test/video.mp4")}&mediaType=video`,
+      headers: { range: "bytes=0-99,200-299" }
+    });
+
+    expect(response.statusCode).toBe(416);
+    expect(response.json()).toMatchObject({ success: false, error: { code: "INVALID_SHORT_VIDEO_RANGE" } });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it("caps open-ended browser preview ranges before forwarding them upstream", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response("bytes", { status: 206, headers: { "content-type": "video/mp4", "content-length": "5" } })
+      );
+    globalThis.fetch = fetchMock;
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/short-video/preview?url=${encodeURIComponent("https://cdn.test/video.mp4")}&mediaType=video`,
+      headers: { range: "bytes=100-" }
+    });
+
+    expect(response.statusCode).toBe(206);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cdn.test/video.mp4",
+      expect.objectContaining({ headers: expect.objectContaining({ range: "bytes=100-8388707" }) })
+    );
+    await app.close();
+  });
+
+  it("does not send platform Referer headers to lookalike media domains", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response("bytes", { status: 200, headers: { "content-type": "video/mp4", "content-length": "5" } })
+      );
+    globalThis.fetch = fetchMock;
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/short-video/preview?url=${encodeURIComponent(
+        "https://evil-xhscdn.example/video.mp4"
+      )}&mediaType=video`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://evil-xhscdn.example/video.mp4",
+      expect.objectContaining({ headers: expect.objectContaining({ referer: "https://evil-xhscdn.example/" }) })
+    );
+    await app.close();
   });
 
   it("refuses to inline non-media response types", async () => {

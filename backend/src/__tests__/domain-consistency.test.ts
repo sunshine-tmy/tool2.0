@@ -136,6 +136,20 @@ describe("domain record consistency", () => {
     expect(result.removed).toBe(0);
   });
 
+  it("reports missing artifacts without deleting metadata in startup-safe mode", async () => {
+    const { config, database } = await createEnv();
+    // createApp 会创建空目录以保证健康检查可用；该场景不能因此删除已有 SQLite 记录。
+    await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });
+    upsert(database, "xhs-archive", "recoverable", { id: "recoverable", noteId: "n", media: [] }, "ready");
+
+    const result = await reconcileDomainRecords(config, database, { mode: "report" });
+
+    expect(result.removed).toBe(0);
+    expect(result.missing).toBe(1);
+    expect(result.failures).toContainEqual({ kind: "xhs-archive", id: "recoverable", reason: "MANIFEST_MISSING" });
+    expect(database.get("xhs-archive", "recoverable")).toBeDefined();
+  });
+
   it("records an audit event when orphaned records are removed", async () => {
     const { config, database } = await createEnv();
     await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });

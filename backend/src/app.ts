@@ -203,16 +203,17 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   // 所有领域目录在注册路由前创建，保证首次启动和健康检查不会因缺失目录失败。
   await Promise.all(requiredStorageDirectories.map((directory) => fsp.mkdir(directory, { recursive: true })));
 
-  // 领域路由会从数据库把记录载入内存，先移除指向已删除工件的孤儿记录，避免幽灵数据被载入或展示。
-  const domainConsistency = await reconcileDomainRecords(config, database);
-  if (domainConsistency.removed > 0 || domainConsistency.failures.length > 0) {
+  // 启动阶段只报告缺失工件，绝不删除领域记录。这样存储盘暂时不可用、挂载为空或路径被误改时，
+  // 都不会把仍可恢复的本地数据误判为孤儿；破坏性同步仅能由明确选择的维护清理触发。
+  const domainConsistency = await reconcileDomainRecords(config, database, { mode: "report" });
+  if (domainConsistency.missing > 0 || domainConsistency.failures.length > 0) {
     app.log.warn(
       {
         checked: domainConsistency.checked,
-        removed: domainConsistency.removed,
+        missing: domainConsistency.missing,
         failures: domainConsistency.failures.length
       },
-      "Domain record consistency check removed orphaned records"
+      "Domain record consistency check found missing artifacts without deleting metadata"
     );
   }
 

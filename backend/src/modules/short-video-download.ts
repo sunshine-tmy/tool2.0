@@ -11,6 +11,12 @@ import {
 import type { AppConfig } from "../config";
 import { fail } from "@toolbox/shared";
 
+// 浏览器拖动进度条不需要无限制代理 CDN 内容；单次预览读取保持在 8 MiB 内，既能覆盖常见
+// MP4 moov/关键帧，也避免恶意多 Range 或超大范围请求占用本机带宽和并发连接。
+const MAX_PREVIEW_RANGE_BYTES = 8 * 1024 * 1024;
+
+export class InvalidPreviewRangeError extends Error {}
+
 export async function proxyShortVideoDownload(options: {
   reply: FastifyReply;
   config: AppConfig;
@@ -35,6 +41,32 @@ export async function proxyShortVideoPreview(options: {
   range?: string;
 }) {
   return proxyShortVideoMedia({ ...options, disposition: "inline" });
+}
+
+/**
+ * 仅接受单一 bytes Range，并把开放结尾与后缀 Range 收敛为固定上限。
+ * 代理不能安全判断远端总长度，因此不接受浏览器之外的多段 Range 组合请求。
+ */
+export function normalizePreviewRange(value: string | undefined) {
+  if (!value) return undefined;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) throw new InvalidPreviewRangeError("预览 Range 格式无效");
+  const start = match[1] ? Number(match[1]) : undefined;
+  const end = match[2] ? Number(match[2]) : undefined;
+  if ((start !== undefined && !Number.isSafeInteger(start)) || (end !== undefined && !Number.isSafeInteger(end))) {
+    throw new InvalidPreviewRangeError("预览 Range 超出支持范围");
+  }
+  if (start !== undefined && end !== undefined) {
+    if (end < start || end - start + 1 > MAX_PREVIEW_RANGE_BYTES) {
+      throw new InvalidPreviewRangeError("单次预览读取不能超过 8 MiB");
+    }
+    return `bytes=${start}-${end}`;
+  }
+  if (start !== undefined) return `bytes=${start}-${start + MAX_PREVIEW_RANGE_BYTES - 1}`;
+  if (end === undefined || end < 1 || end > MAX_PREVIEW_RANGE_BYTES) {
+    throw new InvalidPreviewRangeError("单次预览读取不能超过 8 MiB");
+  }
+  return `bytes=-${end}`;
 }
 
 type ProxyShortVideoMediaOptions = {
@@ -111,16 +143,20 @@ function refererFromMediaUrl(value: string) {
     const url = new URL(value);
     const hostname = url.hostname.toLowerCase();
     // 小红书 CDN 会校验来源页；经本地代理转发后仍保留平台规定的 Referer。
-    if (hostname.includes("xiaohongshu") || hostname.includes("xhscdn") || hostname.includes("xhslink")) {
+    if (hostnameMatches(hostname, ["xiaohongshu.com", "xhscdn.com", "xhslink.com", "xhslink.cn"])) {
       return "https://www.xiaohongshu.com/";
     }
-    if (hostname.includes("douyin") || hostname.includes("zjcdn") || hostname.includes("amemv")) {
+    if (hostnameMatches(hostname, ["douyin.com", "zjcdn.com", "amemv.com"])) {
       return "https://www.douyin.com/";
     }
     return `${url.protocol}//${url.hostname}/`;
   } catch {
     return "https://www.douyin.com/";
   }
+}
+
+function hostnameMatches(hostname: string, domains: string[]) {
+  return domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
 }
 
 function selectMediaContentType(value: string | null, expectedType?: "video" | "image") {

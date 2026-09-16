@@ -145,11 +145,13 @@ export class XhsArchiveStore {
     await this.initialize();
     const item = this.items.get(id);
     if (!item) return false;
+    // 先删除工件，再更新内存和 SQLite。文件被服务锁定或磁盘异常时，索引必须保持不变，
+    // 让用户能够在停止相关服务后安全重试，而不是留下无法从界面访问的存档目录。
+    await fsp.rm(path.join(this.config.xhsArchiveItemsDir, safeId(id)), { recursive: true, force: true });
     this.items.delete(id);
     this.fileMetadata?.removeForEntity("xhs-archive", id);
     for (const media of item.media) this.fileMetadata?.removeForEntity("xhs-media", media.id);
     await this.persistIndex();
-    await fsp.rm(path.join(this.config.xhsArchiveItemsDir, safeId(id)), { recursive: true, force: true });
     return true;
   }
 
