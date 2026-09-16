@@ -112,10 +112,13 @@ type ProviderData = {
   title?: unknown;
   desc?: unknown;
   author?: unknown;
+  userId?: unknown;
+  avatar?: unknown;
   cover?: unknown;
   coverUrl?: unknown;
   url?: unknown;
   images?: unknown;
+  imgurl?: unknown;
   video_backup?: unknown;
   music?: unknown;
   duration?: unknown;
@@ -186,7 +189,10 @@ export function normalizeShortVideoProviderResult(
     });
   }
 
-  const images = Array.isArray(data.images) ? data.images : [];
+  const images = [
+    ...(Array.isArray(data.images) ? data.images : []),
+    ...(Array.isArray(data.imgurl) ? data.imgurl : [])
+  ];
   images.forEach((item, index) => {
     const url = asString(item);
     if (url) {
@@ -222,7 +228,7 @@ export function normalizeShortVideoProviderResult(
     type: asString(data.type) || "unknown",
     title,
     description: description || undefined,
-    author: normalizeAuthor(data.author),
+    author: normalizeAuthor(data.author, data.userId, data.avatar),
     coverUrl,
     media,
     music: normalizeMusic(data.music),
@@ -241,11 +247,18 @@ function normalizePlatform(value: string): ShortVideoPlatform {
   return "unknown";
 }
 
-function normalizeAuthor(value: unknown): ShortVideoAuthor | undefined {
+function normalizeAuthor(value: unknown, fallbackId?: unknown, fallbackAvatar?: unknown): ShortVideoAuthor | undefined {
+  if (typeof value === "string" || typeof value === "number") {
+    const name = asString(value);
+    const id = asString(fallbackId);
+    const avatarUrl = asString(fallbackAvatar);
+    if (!name && !id && !avatarUrl) return undefined;
+    return { name: name || undefined, id: id || undefined, avatarUrl: avatarUrl || undefined };
+  }
   if (!isRecord(value)) return undefined;
   const name = asString(value.name);
-  const id = asString(value.id);
-  const avatarUrl = asString(value.avatar);
+  const id = asString(value.id) || asString(fallbackId);
+  const avatarUrl = asString(value.avatar) || asString(fallbackAvatar);
   if (!name && !id && !avatarUrl) return undefined;
   return { name: name || undefined, id: id || undefined, avatarUrl: avatarUrl || undefined };
 }

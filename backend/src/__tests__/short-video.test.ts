@@ -106,6 +106,50 @@ describe("short video api", () => {
     await app.close();
   });
 
+  it("uses BugPk's dedicated Xiaohongshu endpoint and normalizes its image fields", async () => {
+    process.env.SHORT_VIDEO_PARSE_API_URL = "https://api.bugpk.com/api/short_videos";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 200,
+          msg: "解析成功",
+          platform: "xiaohongshu",
+          data: {
+            type: "image",
+            title: "XHS note",
+            author: "creator",
+            userId: "creator-id",
+            avatar: "https://cdn.test/avatar.jpg",
+            cover: "https://cdn.test/cover.jpg",
+            imgurl: ["https://cdn.test/image-1.jpg"]
+          }
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+    globalThis.fetch = fetchMock;
+
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/short-video/parse",
+      payload: { input: "https://www.xiaohongshu.com/discovery/item/abc123" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      platform: "xiaohongshu",
+      title: "XHS note",
+      author: { name: "creator", id: "creator-id" },
+      media: [{ type: "image", url: "https://cdn.test/image-1.jpg" }]
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.bugpk.com/api/xhsjx?url=https%3A%2F%2Fwww.xiaohongshu.com%2Fdiscovery%2Fitem%2Fabc123",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    await app.close();
+  });
+
   it("rejects unsupported hosts before calling the provider", async () => {
     const fetchMock = vi.fn();
     globalThis.fetch = fetchMock;
