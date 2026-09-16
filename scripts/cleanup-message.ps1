@@ -12,7 +12,7 @@ $messages = @{
   introduction = @(
     "将停止本项目的本地服务，并清理全部可清理的缓存、构建产物和运行数据。",
     "将删除本地数据库、隔离区、任务产物和小红书存档。",
-    "会保留依赖、Python 虚拟环境、模型、.env 配置与登录状态。"
+    "会保留依赖、Python 虚拟环境、模型、.env 配置、登录状态与永久音色库。"
   )
   node_missing = @("未找到 Node.js，请先安装 Node.js 后再运行此脚本。")
   confirmation = @(
@@ -25,7 +25,7 @@ $messages = @{
   cancelled = @("已取消，未停止服务，也未删除任何数据。")
   stop_failed = @("未能停止全部项目服务；为避免出现被锁定文件，已取消清理。")
   cleanup_failed = @("清理未完成，请查看上方提示。")
-  completed = @("清理完成：全部可清理的运行数据已删除，依赖、模型、.env 与登录状态未被删除。")
+  completed = @("清理完成：全部可清理的运行数据已删除，依赖、模型、.env、登录状态与永久音色库未被删除。")
 }
 
 $messages[$Message] | ForEach-Object { Write-Host $_ }

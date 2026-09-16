@@ -111,9 +111,15 @@ describe("executeCleanup", () => {
     assert.equal(metadata?.requiresStop, true);
   });
 
+  it("keeps the permanent Chatterbox voice library out of full cleanup", () => {
+    const voice = cleanupDefinitions.find((definition) => definition.id === "voice");
+    assert.deepEqual(voice?.targets, ["storage/edge-tts", "storage/chatterbox/tasks", "storage/chatterbox/batches"]);
+    assert.equal(voice?.targets.includes("storage/chatterbox/voices"), false);
+  });
+
   it("removes every registered runtime category from an isolated full-cleanup root", async () => {
     const tmpRoot = await makeTempDir();
-    const fixtures = [
+    const cleanableFixtures = [
       "backend/dist/app.js",
       ".tmp/cache.bin",
       ".logs/backend.log",
@@ -124,6 +130,7 @@ describe("executeCleanup", () => {
       "storage/video-text/results/task.json",
       "storage/edge-tts/tasks/task.json",
       "storage/chatterbox/batches/batch/meta.json",
+      "storage/chatterbox/tasks/task/meta.json",
       "storage/short-video/cache.json",
       "storage/toolbox.db",
       "storage/migration-backups/backup.db",
@@ -132,7 +139,11 @@ describe("executeCleanup", () => {
       "storage/xhs-archive/items/archive/manifest.json",
       "storage/xhs-archive/index.json"
     ];
-    for (const relative of fixtures) {
+    const permanentVoiceFixtures = [
+      "storage/chatterbox/voices/voice-kept/meta.json",
+      "storage/chatterbox/voices/voice-kept/reference.wav"
+    ];
+    for (const relative of [...cleanableFixtures, ...permanentVoiceFixtures]) {
       const target = path.join(tmpRoot, relative);
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, "runtime-data");
@@ -144,7 +155,9 @@ describe("executeCleanup", () => {
     );
 
     assert.equal(results.length, cleanupDefinitions.length);
-    for (const relative of fixtures) await assert.rejects(stat(path.join(tmpRoot, relative)), { code: "ENOENT" });
+    for (const relative of cleanableFixtures)
+      await assert.rejects(stat(path.join(tmpRoot, relative)), { code: "ENOENT" });
+    for (const relative of permanentVoiceFixtures) await stat(path.join(tmpRoot, relative));
     // 即使运行数据全清，也恢复版本库需要保留的空目录占位文件。
     await stat(path.join(tmpRoot, "storage/uploads/.gitkeep"));
     await stat(path.join(tmpRoot, "storage/outputs/.gitkeep"));

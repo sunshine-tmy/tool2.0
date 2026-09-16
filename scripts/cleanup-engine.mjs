@@ -64,11 +64,12 @@ export const cleanupDefinitions = [
   },
   {
     id: "voice",
-    label: "多国语言配音运行数据",
+    // 保存音色是可复用的用户资产；全量清理只删除可重新生成的任务和批次产物。
+    label: "多国语言配音任务数据",
     risk: "medium",
     requiresStop: true,
     defaults: false,
-    targets: ["storage/edge-tts", "storage/chatterbox"]
+    targets: ["storage/edge-tts", "storage/chatterbox/tasks", "storage/chatterbox/batches"]
   },
   {
     id: "short-video",
