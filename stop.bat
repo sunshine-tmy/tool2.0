@@ -1,5 +1,5 @@
 @echo off
-REM 中文模块说明：项目工程文件，负责 stop.bat
+REM Project shutdown launcher.
 chcp 65001 >nul
 title Ecommerce Toolbox - Stop All Services
 set "ROOT=%~dp0"

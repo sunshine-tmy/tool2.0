@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 chcp 65001 >nul
 title Ecommerce Toolbox - Clear Generated Files
 set "ROOT=%~dp0"
