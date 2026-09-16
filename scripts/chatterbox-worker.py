@@ -134,9 +134,7 @@ class ModelManager:
             return self.model
         device = selected_device()
         try:
-            from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-
-            self.model = ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model="v3")
+            self.model = load_multilingual_model(device)
             self.device = device
             return self.model
         except Exception as exc:
@@ -223,6 +221,80 @@ class ModelManager:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+
+def load_multilingual_model(device: str) -> Any:
+    """加载 V3 模型，并在 CUDA 上避免主内存中同时保留两份 2 GiB T3 权重。"""
+    from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+
+    if device != "cuda":
+        # CPU/MPS 路径保留上游实现，确保非 CUDA 环境仍使用项目支持的加载行为。
+        return ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model="v3")
+
+    import gc
+
+    import torch
+    from chatterbox.models.s3gen import S3Gen
+    from chatterbox.models.t3 import T3
+    from chatterbox.models.t3.modules.t3_config import T3Config
+    from chatterbox.models.tokenizers import MTLTokenizer
+    from chatterbox.models.voice_encoder import VoiceEncoder
+    from chatterbox.mtl_tts import Conditionals
+    from huggingface_hub import snapshot_download
+    from safetensors.torch import load_file as load_safetensors
+
+    t3_model = "t3_mtl23ls_v3.safetensors"
+    checkpoint_dir = Path(
+        snapshot_download(
+            repo_id="ResembleAI/chatterbox",
+            repo_type="model",
+            revision="main",
+            allow_patterns=[
+                "ve.pt",
+                t3_model,
+                "s3gen.pt",
+                "grapheme_mtl_merged_expanded_v1.json",
+                "conds.pt",
+                "Cangjie5_TC.json",
+            ],
+            token=os.getenv("HF_TOKEN"),
+        )
+    )
+
+    voice_encoder = VoiceEncoder()
+    voice_encoder.load_state_dict(torch.load(checkpoint_dir / "ve.pt", map_location="cpu", weights_only=True))
+    voice_encoder.to(device).eval()
+
+    # 上游实现会先在 CPU 创建完整 T3，再读取同等大小的 safetensors，再复制一次给模型。
+    # 对 16 GiB 内存主机而言，这会在模型真正开始推理前触发原生访问冲突。meta 避开空参数分配，
+    # safetensors 直接落到 GPU，assign 则把已加载权重绑定到模型，而非再复制一份。
+    with torch.device("meta"):
+        t3 = T3(T3Config.multilingual())
+    t3.to_empty(device=device)
+    t3_state = load_safetensors(checkpoint_dir / t3_model, device=0)
+    if "model" in t3_state:
+        t3_state = t3_state["model"][0]
+    t3.load_state_dict(t3_state, assign=True)
+    del t3_state
+    gc.collect()
+    t3.eval()
+
+    # S3Gen 约 1 GiB，亦不能先完整落在 CPU；否则即使 T3 已转入显存，低内存主机仍会失败。
+    with torch.device("meta"):
+        s3gen = S3Gen()
+    s3gen.to_empty(device=device)
+    s3gen_state = torch.load(checkpoint_dir / "s3gen.pt", map_location=device, weights_only=True)
+    s3gen.load_state_dict(s3gen_state, assign=True)
+    del s3gen_state
+    gc.collect()
+    s3gen.to(device).eval()
+
+    tokenizer = MTLTokenizer(str(checkpoint_dir / "grapheme_mtl_merged_expanded_v1.json"))
+    conds = None
+    if (conditionals_path := checkpoint_dir / "conds.pt").exists():
+        conds = Conditionals.load(conditionals_path, map_location="cpu").to(device)
+
+    return ChatterboxMultilingualTTS(t3, s3gen, voice_encoder, tokenizer, device, conds=conds)
 
 
 manager = ModelManager()
