@@ -748,10 +748,6 @@ body {
   border: 1px solid #e8edf4;
 }
 
-.short-video-panel {
-  max-width: 980px;
-}
-
 .short-video-form {
   gap: var(--space-4);
 }
