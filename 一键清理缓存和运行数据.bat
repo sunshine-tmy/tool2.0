@@ -3,43 +3,48 @@ chcp 65001 >nul
 title Ecommerce Toolbox - Clear Generated Files
 set "ROOT=%~dp0"
 
-echo This will stop local project services and remove all cleanable cache, build output and runtime data.
-echo It removes the local database, quarantine, task artifacts and XHS archives.
-echo Dependencies, virtual environments, models, .env and sign-in state are kept.
+where pwsh.exe >nul 2>nul
+if errorlevel 1 (
+  set "PS_EXE=powershell.exe"
+) else (
+  set "PS_EXE=pwsh.exe"
+)
+
+call :show_message introduction
 echo.
 
 where node >nul 2>nul
 if errorlevel 1 (
-  echo Node.js was not found. Install Node.js before running this script.
+  call :show_message node_missing
   pause
   exit /b 1
 )
 
-echo.
-echo [Y] Yes: stop project services and run the full cleanup.
-echo [N] No : cancel and keep all current data.
-choice /C YN /N /M "Enter Y or N"
+call :show_message confirmation
+choice /C YN /N >nul
 if errorlevel 2 (
-  echo Cancelled. No services were stopped and no data was deleted.
+  call :show_message cancelled
   exit /b 0
 )
 
 call "%ROOT%stop.bat"
 if errorlevel 1 (
-  echo.
-  echo Could not stop every project service. Cleanup was cancelled to avoid locked files.
+  call :show_message stop_failed
   pause
   exit /b 1
 )
 
 node "%ROOT%scripts\clear-generated.mjs" --all
 if errorlevel 1 (
-  echo.
-  echo Cleanup did not complete. Review the output above.
+  call :show_message cleanup_failed
   pause
   exit /b 1
 )
 
-echo.
-echo Cleanup completed. Dependencies, models, .env and sign-in state were kept.
+call :show_message completed
 pause
+exit /b 0
+
+:show_message
+"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\cleanup-message.ps1" -Message "%~1"
+exit /b %ERRORLEVEL%
