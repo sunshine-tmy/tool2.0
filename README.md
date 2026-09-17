@@ -169,7 +169,7 @@ pnpm dev
 
 局域网部署必须设置 `DEPLOYMENT_MODE=lan` 和 `ADMIN_PIN`，否则 API 拒绝启动。`LAN_TRANSFER_PIN` 与 `LAN_TRANSFER_GUEST_MODE` 只控制访客文件传输能力；删除、清理、AI、翻译、配音、归档和配置写操作始终要求管理员会话。
 
-局域网传输中的图片、视频和 PDF 由浏览器直接安全预览；Word、Excel 和 PowerPoint 使用本机部署的 kkFileView。不要使用停更的旧容器镜像：请部署当前维护版本，并在 kkFileView 中仅信任 `LAN_OFFICE_PREVIEW_SOURCE_BASE_URL` 的主机、禁用文件上传。Windows 直接运行 kkFileView 时 source 地址可填写 `http://127.0.0.1:3100`；若在 Docker Desktop 中运行，填写 `http://host.docker.internal:3100`。局域网设备访问预览时，`LAN_OFFICE_PREVIEW_URL` 必须填写本机 LAN IP（例如 `http://192.168.1.10:8012`）。应用会为每次 Office 预览签发一个仅绑定该文件、默认 5 分钟过期的源地址，不会暴露存储目录或管理员 Cookie。
+局域网传输中的图片、视频和 PDF 由浏览器直接安全预览；Word、Excel 和 PowerPoint 使用 kkFileView。Windows 的 `start.bat` 会在 Docker Desktop 可用时自动启动受限的官方 kkFileView `5.0.2` 容器：首次会下载镜像，并将自动生成的 `LAN_OFFICE_PREVIEW_URL` 与 `LAN_OFFICE_PREVIEW_SOURCE_BASE_URL` 写入 `.env`，无需额外运行命令；`stop.bat` 会停止该容器但保留镜像和转换缓存。容器只信任 Docker 网关上的短时源地址，并关闭上传入口。若 Docker Desktop 无法拉取镜像，启动输出会提示配置其 Containers proxy；若需接入已有 kkFileView，再手动设置上述两个变量；局域网设备访问预览时，`LAN_OFFICE_PREVIEW_URL` 必须填写本机 LAN IP（例如 `http://192.168.1.10:8012`）。应用会为每次 Office 预览签发一个仅绑定该文件、默认 5 分钟过期的源地址，不会暴露存储目录或管理员 Cookie。
 
 ## 可选能力安装
 

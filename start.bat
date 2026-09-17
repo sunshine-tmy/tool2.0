@@ -4,7 +4,7 @@ chcp 65001 >nul
 title Ecommerce Toolbox - Web and Local AI Workers
 set "ROOT=%~dp0"
 
-echo Starting frontend, backend, and installed local AI workers...
+echo Starting frontend, backend, kkFileView Office preview, and installed local AI workers...
 where pwsh.exe >nul 2>nul
 if errorlevel 1 (
   echo PowerShell 7 was not found; using Windows PowerShell 5.1.
