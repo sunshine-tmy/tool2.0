@@ -47,7 +47,9 @@ export async function sendFile(
   const encodedName = encodeURIComponent(file.originalName);
   reply.header("accept-ranges", "bytes");
   reply.header("x-content-type-options", "nosniff");
-  if (disposition === "inline") {
+  if (disposition === "inline" && shouldSandboxInlineFile(file)) {
+    // Chrome 的内置 PDF 查看器属于插件型内容；对 PDF 下发 CSP sandbox 会令它在 iframe 中被浏览器拦截。
+    // 文本和 SVG 等仍保留沙箱，避免用户上传的主动内容获得当前站点上下文。
     reply.header("content-security-policy", "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'");
   }
   reply.header("content-type", safeResponseContentType(file, disposition));
@@ -197,6 +199,10 @@ function safeResponseContentType(file: LanFileRecord, disposition: "inline" | "a
   if (file.category === "video" && file.mimeType.startsWith("video/")) return file.mimeType;
   if (file.category === "audio" && file.mimeType.startsWith("audio/")) return file.mimeType;
   return "application/octet-stream";
+}
+
+function shouldSandboxInlineFile(file: LanFileRecord) {
+  return file.category === "text" || (file.category === "image" && file.mimeType.toLowerCase() === "image/svg+xml");
 }
 
 function parseRange(rangeHeader: string, size: number) {

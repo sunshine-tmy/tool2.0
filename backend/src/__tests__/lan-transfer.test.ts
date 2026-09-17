@@ -555,6 +555,25 @@ describe("lan transfer api", () => {
     expect(preview.body).toBe("2345");
   });
 
+  it("keeps PDF previews compatible with Chrome's built-in viewer", async () => {
+    const app = await createApp();
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/files",
+      ...multipartPayload("file", "说明.pdf", "application/pdf", "%PDF-1.7\nminimal pdf")
+    });
+    const id = upload.json().data.file.id;
+
+    const preview = await app.inject({ method: "GET", url: `/api/v1/tools/lan-transfer/files/${id}/preview` });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.headers["content-type"]).toContain("application/pdf");
+    expect(preview.headers["content-disposition"]).toContain("inline");
+    // CSP sandbox 会禁用 PDF viewer 所需的插件上下文，导致 Chrome 显示“此页面已被屏蔽”。
+    // Helmet 仍会提供通用 CSP；关键是不能向 PDF 响应添加 sandbox，
+    // 否则 Chrome 的内置 PDF 查看器会被当作插件内容拦截。
+    expect(preview.headers["content-security-policy"] ?? "").not.toContain("sandbox");
+  });
+
   it("supports suffix byte ranges", async () => {
     const app = await createApp();
     const upload = await app.inject({

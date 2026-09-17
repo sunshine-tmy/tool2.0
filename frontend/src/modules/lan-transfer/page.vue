@@ -124,7 +124,7 @@
         <iframe
           v-else-if="previewFile.category === 'pdf'"
           :src="previewFile.previewUrl"
-          sandbox=""
+          referrerpolicy="no-referrer"
           title="PDF preview"
         />
         <div v-else-if="previewFile.category === 'document' && officePreviewLoading" class="office-preview-status">
