@@ -2,7 +2,6 @@
 param(
   [switch]$NoInstall,
   [switch]$NoBrowser,
-  [switch]$NoOfficePreview,
   [switch]$CheckOnly,
   [switch]$ForceRestart,
   [string]$LanHost = ""
@@ -353,140 +352,6 @@ function Wait-ChatterboxReady {
   return Test-ChatterboxReady $Url
 }
 
-# kkFileView 以受限的 Docker 容器运行：它只允许拉取 Docker 网关上的短时 Office 源地址，
-# 不开放上传入口。这样局域网浏览器能访问预览页，但不能把它变成任意 URL 的转换代理。
-function Test-DockerDaemon {
-  if (-not (Test-CommandExists "docker")) {
-    return $false
-  }
-
-  & docker version --format "{{.Server.Version}}" 2>$null | Out-Null
-  return $LASTEXITCODE -eq 0
-}
-
-function Wait-DockerDaemon {
-  param([int]$TimeoutSeconds = 120)
-
-  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    if (Test-DockerDaemon) {
-      return $true
-    }
-    Start-Sleep -Seconds 2
-  }
-
-  return Test-DockerDaemon
-}
-
-function Start-DockerDesktop {
-  $candidates = @()
-  if ($env:ProgramFiles) {
-    $candidates += Join-Path $env:ProgramFiles "Docker\Docker\Docker Desktop.exe"
-  }
-  if ($env:LOCALAPPDATA) {
-    $candidates += Join-Path $env:LOCALAPPDATA "Docker\Docker Desktop.exe"
-  }
-
-  $executable = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-  if (-not $executable) {
-    Write-Host "未安装 Docker Desktop，Office 预览将暂不可用。" -ForegroundColor Yellow
-    return $false
-  }
-
-  Write-Host "正在启动 Docker Desktop，以运行 Office 预览服务…" -ForegroundColor Cyan
-  Start-Process -FilePath $executable -WindowStyle Hidden
-  Write-Host "正在等待 Docker Desktop 就绪（首次启动最多约 2 分钟）…" -ForegroundColor Cyan
-  return Wait-DockerDaemon
-}
-
-function Set-RootEnvValue {
-  param(
-    [string]$Name,
-    [string]$Value
-  )
-
-  $envPath = Join-Path $Root ".env"
-  $content = if (Test-Path -LiteralPath $envPath) { [System.IO.File]::ReadAllText($envPath) } else { "" }
-  $lineBreak = if ($content.Contains("`r`n")) { "`r`n" } else { "`n" }
-  $pattern = "(?m)^\\s*$([Regex]::Escape($Name))\\s*=.*$"
-
-  if ([Regex]::IsMatch($content, $pattern)) {
-    $content = [Regex]::Replace($content, $pattern, { param($match) "$Name=$Value" })
-  } else {
-    if ($content.Length -gt 0 -and -not ($content.EndsWith("`n") -or $content.EndsWith("`r"))) {
-      $content += $lineBreak
-    }
-    $content += "# 由 start.bat 自动维护，用于本机 kkFileView Office 预览。$lineBreak$Name=$Value$lineBreak"
-  }
-
-  # 显式使用 UTF-8 无 BOM，避免 Windows PowerShell 与 Node 读取 .env 时出现编码差异。
-  [System.IO.File]::WriteAllText($envPath, $content, [System.Text.UTF8Encoding]::new($false))
-}
-
-function Write-DockerRegistryHelp {
-  # Docker Desktop 的镜像拉取由 Containers proxy 控制；它与浏览器或 Node 的代理配置相互独立。
-  $settings = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -ErrorAction SilentlyContinue
-  if ($settings.ProxyEnable -eq 1 -and $settings.ProxyServer) {
-    Write-Host "检测到系统代理 $($settings.ProxyServer)，但 Docker Desktop 未能连接 Docker Hub。请在 Docker Desktop 的 Settings > Resources > Proxies 中选择“System proxy”，然后重新运行 start.bat。" -ForegroundColor Yellow
-    return
-  }
-
-  Write-Host "Docker Desktop 无法连接 Docker Hub。请检查网络，或在 Docker Desktop 的 Settings > Resources > Proxies 中配置可用代理后重新运行 start.bat。" -ForegroundColor Yellow
-}
-
-function Start-ManagedOfficePreview {
-  param(
-    [string]$LanHost,
-    [int]$ApiPort
-  )
-
-  $containerName = "ecommerce-toolbox-kkfileview"
-  # 使用官方已修复安全问题的 5.0.2 标签，不回退到长期未更新的 latest 镜像。
-  $image = "keking/kkfileview:5.0.2"
-  $healthUrl = "http://127.0.0.1:8012/"
-
-  if (-not (Test-DockerDaemon) -and -not (Start-DockerDesktop)) {
-    return $null
-  }
-
-  $state = ([string](& docker container inspect --format "{{.State.Running}}" $containerName 2>$null)).Trim()
-  if ($LASTEXITCODE -eq 0 -and $state -ne "true") {
-    Write-Host "正在启动已有的 kkFileView Office 预览容器…" -ForegroundColor Cyan
-    & docker start $containerName | Out-Null
-  } elseif ($LASTEXITCODE -ne 0) {
-    Write-Host "正在准备 kkFileView Office 预览容器（首次会下载镜像）…" -ForegroundColor Cyan
-    # Out-Host 保留拉取进度，同时不把原生命令输出混入函数的 PSCustomObject 返回值。
-    & docker pull $image | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "kkFileView 镜像下载失败，Office 预览将暂不可用。" -ForegroundColor Yellow
-      Write-DockerRegistryHelp
-      return $null
-    }
-
-    # 仅绑定当前局域网地址，使同网段浏览器能加载 iframe；容器内部仅信任 host.docker.internal。
-    & docker run --detach --name $containerName --restart unless-stopped `
-      --publish "${LanHost}:8012:8012" `
-      --env "KK_TRUST_HOST=host.docker.internal" `
-      --env "KK_FILE_UPLOAD_DISABLE=true" `
-      $image | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "kkFileView 容器无法启动，Office 预览将暂不可用。" -ForegroundColor Yellow
-      return $null
-    }
-  }
-
-  if (-not (Wait-HttpOk $healthUrl 90)) {
-    Write-Host "kkFileView 未能在 8012 端口就绪，Office 预览将暂不可用。" -ForegroundColor Yellow
-    return $null
-  }
-
-  return [PSCustomObject]@{
-    ViewerUrl = "http://${LanHost}:8012"
-    SourceBaseUrl = "http://host.docker.internal:${ApiPort}"
-    HealthUrl = $healthUrl
-  }
-}
-
 Set-Location -LiteralPath $Root
 Write-Host "Ecommerce Toolbox launcher" -ForegroundColor Green
 Write-Host "Project root: $Root"
@@ -517,12 +382,6 @@ $FrontendHealthUrl = "http://127.0.0.1:5173"
 $BackendUrl = "http://127.0.0.1:3100/api/v1/health"
 $ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
-$ConfiguredOfficePreviewUrl = Get-RootEnvValue "LAN_OFFICE_PREVIEW_URL"
-$ConfiguredOfficePreviewSourceBaseUrl = Get-RootEnvValue "LAN_OFFICE_PREVIEW_SOURCE_BASE_URL"
-$ConfiguredApiPort = Get-RootEnvValue "API_PORT"
-$OfficePreviewApiPort = if ($ConfiguredApiPort) { [int]$ConfiguredApiPort } else { 3100 }
-$OfficePreviewSettingsChanged = $false
-$OfficePreview = $null
 $ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"
 $ChatterboxScript = Join-Path $Root "scripts\chatterbox-worker.py"
 $ChatterboxSetup = Join-Path $Root "scripts\setup-chatterbox.ps1"
@@ -537,27 +396,6 @@ $existingInstanceIsOwned =
   @($backendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0 -and
   @($frontendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0
 
-if (-not $NoOfficePreview) {
-  if ($ConfiguredOfficePreviewUrl -and $ConfiguredOfficePreviewSourceBaseUrl) {
-    Write-Host "正在使用已配置的 Office 预览服务：$ConfiguredOfficePreviewUrl" -ForegroundColor Green
-  } elseif ($ConfiguredOfficePreviewUrl -or $ConfiguredOfficePreviewSourceBaseUrl) {
-    Write-Host "Office 预览配置不完整：必须同时设置 LAN_OFFICE_PREVIEW_URL 和 LAN_OFFICE_PREVIEW_SOURCE_BASE_URL。" -ForegroundColor Yellow
-  } else {
-    Write-Step "准备本机 kkFileView Office 预览服务"
-    $OfficePreview = Start-ManagedOfficePreview $LanHost $OfficePreviewApiPort
-    if ($OfficePreview) {
-      Set-RootEnvValue "LAN_OFFICE_PREVIEW_URL" $OfficePreview.ViewerUrl
-      Set-RootEnvValue "LAN_OFFICE_PREVIEW_SOURCE_BASE_URL" $OfficePreview.SourceBaseUrl
-      $env:LAN_OFFICE_PREVIEW_URL = $OfficePreview.ViewerUrl
-      $env:LAN_OFFICE_PREVIEW_SOURCE_BASE_URL = $OfficePreview.SourceBaseUrl
-      $OfficePreviewSettingsChanged = $true
-      Write-Host "Office 预览已就绪：$($OfficePreview.ViewerUrl)" -ForegroundColor Green
-    }
-  }
-} else {
-  Write-Host "已按 -NoOfficePreview 跳过 Office 预览服务启动。" -ForegroundColor Yellow
-}
-
 $ChatterboxInstalled = $false
 if ((Test-Path $ChatterboxPython) -and (Test-Path $ChatterboxScript)) {
   & $ChatterboxPython $ChatterboxScript --check | Out-Null
@@ -567,8 +405,7 @@ if (
   $existingInstanceIsOwned -and
   (Test-HttpOk $BackendUrl) -and
   (Test-HttpOk $FrontendHealthUrl) -and
-  ($NoInstall -or (Test-HttpOk $ChatterboxHealthUrl)) -and
-  -not $OfficePreviewSettingsChanged
+  ($NoInstall -or (Test-HttpOk $ChatterboxHealthUrl))
 ) {
   Write-Host "Ecommerce Toolbox is already running; reusing the existing instance." -ForegroundColor Green
   Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
@@ -578,9 +415,6 @@ if (
   }
   if (Test-HttpOk $ChatterboxHealthUrl) {
     Write-Host "Chatterbox V3 worker: $ChatterboxHealthUrl" -ForegroundColor Green
-  }
-  if ($OfficePreview) {
-    Write-Host "Office 预览：$($OfficePreview.ViewerUrl)" -ForegroundColor Green
   }
   if (-not $NoBrowser) {
     Start-Process $FrontendUrl
@@ -769,9 +603,6 @@ Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
 Write-Host "Backend health: $BackendUrl" -ForegroundColor Green
 Write-Host "Image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
 Write-Host "Chatterbox V3 worker: $ChatterboxHealthUrl" -ForegroundColor Green
-if ($OfficePreview) {
-  Write-Host "Office 预览：$($OfficePreview.ViewerUrl)" -ForegroundColor Green
-}
 Write-Host "Press Ctrl+C in this terminal to stop frontend, backend, and local AI workers." -ForegroundColor Green
 Write-Host ""
 

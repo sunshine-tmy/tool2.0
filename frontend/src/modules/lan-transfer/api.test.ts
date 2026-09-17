@@ -6,7 +6,6 @@ import {
   LanBatchRemovalSchema,
   LanFileListSchema,
   LanFileWithUrlsSchema,
-  LanOfficePreviewSchema,
   LanNoteListSchema,
   LanNoteSchema,
   LanRemovalSchema,
@@ -16,7 +15,6 @@ import { lanTransferApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({
   get: vi.fn(),
-  getText: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
   delete: vi.fn(),
@@ -74,7 +72,7 @@ describe("LAN transfer text-image API", () => {
     });
   });
 
-  it("covers resumable upload, file listing, preview, expiry, deletion and download operations", async () => {
+  it("covers resumable upload, file listing, expiry, deletion and download operations", async () => {
     for (const method of Object.values(httpMock)) method.mockResolvedValue({});
     const file = new File(["payload"], "payload.txt", { type: "text/plain" });
     const chunk = file.slice(0, 3);
@@ -96,8 +94,6 @@ describe("LAN transfer text-image API", () => {
     await lanTransferApi.completeUpload("upload-1");
     await lanTransferApi.cancelUpload("upload-1");
     await lanTransferApi.listFiles({ page: 2, pageSize: 10 });
-    await lanTransferApi.getTextPreview("/tools/lan-transfer/files/file-1/preview");
-    await lanTransferApi.createOfficePreview("file-1", controller.signal);
     await lanTransferApi.updateExpiry("file-1", 30);
     await lanTransferApi.deleteFile("file-1");
     await lanTransferApi.deleteFiles(["file-1", "file-2"]);
@@ -112,13 +108,6 @@ describe("LAN transfer text-image API", () => {
     expect(httpMock.get).toHaveBeenCalledWith("/tools/lan-transfer/files", LanFileListSchema, {
       params: { page: 2, pageSize: 10 }
     });
-    expect(httpMock.getText).toHaveBeenCalledWith("/tools/lan-transfer/files/file-1/preview");
-    expect(httpMock.post).toHaveBeenCalledWith(
-      "/tools/lan-transfer/files/file-1/office-preview",
-      LanOfficePreviewSchema,
-      undefined,
-      { signal: controller.signal }
-    );
     expect(httpMock.patch).toHaveBeenCalledWith("/tools/lan-transfer/files/file-1/expiry", LanFileWithUrlsSchema, {
       days: 30
     });

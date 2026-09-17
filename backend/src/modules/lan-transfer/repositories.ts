@@ -4,6 +4,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import {
+  isLanFilePreviewable,
   lanFileCategories,
   normalizeLanFileQuery,
   type LanFileRecord,
@@ -34,11 +35,13 @@ export function createLanFileStore(
   async function read(): Promise<LanFileRecord[]> {
     await ensure();
     if (database.isDomainInitialized("lan-file")) {
-      return database.list("lan-file").map((entity) => entity.payload as LanFileRecord);
+      // 旧记录可能保留了过去的预览标记；始终按当前白名单派生，避免历史 Office、文本或音频文件被内联返回。
+      return database.list("lan-file").map((entity) => normalizeLanFilePreviewPolicy(entity.payload as LanFileRecord));
     }
     const parsed = await readRecoverableIndex(config.lanTransferIndexPath, parseLanFileIndex);
-    if (parsed.repaired) await write(parsed.records);
-    return parsed.records;
+    const records = parsed.records.map(normalizeLanFilePreviewPolicy);
+    if (parsed.repaired) await write(records);
+    return records;
   }
 
   async function write(records: LanFileRecord[]) {
@@ -400,6 +403,11 @@ function isLanNoteImageRecord(value: unknown): value is LanNoteImageRecord {
 
 function sanitizeLanFileRecords(value: unknown): LanFileRecord[] {
   return Array.isArray(value) ? value.filter(isLanFileRecord) : [];
+}
+
+function normalizeLanFilePreviewPolicy(record: LanFileRecord): LanFileRecord {
+  const previewable = isLanFilePreviewable(record.category);
+  return record.previewable === previewable ? record : { ...record, previewable };
 }
 
 function isLanFileRecord(value: unknown): value is LanFileRecord {

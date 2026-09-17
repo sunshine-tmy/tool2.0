@@ -120,28 +120,12 @@
           decoding="async"
         />
         <video v-else-if="previewFile.category === 'video'" :src="previewFile.previewUrl" controls />
-        <audio v-else-if="previewFile.category === 'audio'" :src="previewFile.previewUrl" controls />
         <iframe
           v-else-if="previewFile.category === 'pdf'"
           :src="previewFile.previewUrl"
           referrerpolicy="no-referrer"
           title="PDF preview"
         />
-        <div v-else-if="previewFile.category === 'document' && officePreviewLoading" class="office-preview-status">
-          正在准备 Word、Excel 或 PPT 预览…
-        </div>
-        <iframe
-          v-else-if="previewFile.category === 'document' && officePreviewUrl"
-          :src="officePreviewUrl"
-          sandbox="allow-scripts allow-same-origin allow-downloads"
-          referrerpolicy="no-referrer"
-          title="Office document preview"
-        />
-        <n-empty
-          v-else-if="previewFile.category === 'document'"
-          :description="officePreviewError || 'Office 预览暂不可用，请下载后查看。'"
-        />
-        <pre v-else-if="previewFile.category === 'text'">{{ previewText }}</pre>
         <n-empty v-else description="该文件类型不支持预览，请下载查看。" />
       </div>
       <template #footer>
@@ -185,10 +169,6 @@ const activeLanTab = ref<"files" | "notes">("files");
 const lanFiles = ref<LanFileView[]>([]);
 const previewVisible = ref(false);
 const previewFile = ref<LanFileView | null>(null);
-const previewText = ref("");
-const officePreviewUrl = ref("");
-const officePreviewLoading = ref(false);
-const officePreviewError = ref("");
 const noteTitle = ref("");
 const noteContent = ref("");
 const noteImages = ref<Array<{ id: string; file: File; previewUrl: string }>>([]);
@@ -530,34 +510,10 @@ async function onLanPageSizeChange(pageSize: number) {
   await refreshLanFiles();
 }
 
-async function openPreview(file: LanFileView) {
+function openPreview(file: LanFileView) {
+  if (!file.previewable) return;
   previewFile.value = file;
-  previewText.value = "";
-  officePreviewUrl.value = "";
-  officePreviewError.value = "";
   previewVisible.value = true;
-  if (file.category === "text") {
-    // 只有文本文件需要额外请求正文；图片、视频、音频和 PDF 由安全预览 URL 直接加载。
-    try {
-      previewText.value = await lanTransferApi.getTextPreview(file.previewUrl);
-    } catch (error) {
-      if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取预览失败"));
-    }
-  }
-  if (file.category === "document") {
-    officePreviewLoading.value = true;
-    try {
-      // Office 文件由本机 kkFileView 转为安全预览页；后端签发的源地址只在短时间内对该文件有效。
-      const preview = await lanTransferApi.createOfficePreview(file.id);
-      officePreviewUrl.value = preview.viewerUrl;
-    } catch (error) {
-      if (!isApiErrorCancelled(error)) {
-        officePreviewError.value = formatApiError(error, "创建 Office 预览失败");
-      }
-    } finally {
-      officePreviewLoading.value = false;
-    }
-  }
 }
 
 async function deleteLanFile(file: LanFileView) {

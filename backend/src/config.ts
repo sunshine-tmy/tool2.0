@@ -31,9 +31,6 @@ export type AppConfig = {
   lanTransferWebPort: number;
   lanTransferPin?: string;
   lanTransferGuestMode: "full" | "upload-only" | "download-only" | "disabled";
-  lanOfficePreviewUrl?: string;
-  lanOfficePreviewSourceBaseUrl?: string;
-  lanOfficePreviewTicketLifetimeSeconds: number;
   videoTextUploadsDir: string;
   videoTextAudioDir: string;
   videoTextResultsDir: string;
@@ -162,17 +159,6 @@ export function getConfig(): AppConfig {
     lanTransferWebPort: readInteger("LAN_TRANSFER_WEB_PORT", getEnv("LAN_TRANSFER_WEB_PORT", fileEnv), 5173, 1, 65535),
     lanTransferPin: getEnv("LAN_TRANSFER_PIN", fileEnv)?.trim() || undefined,
     lanTransferGuestMode: readLanTransferGuestMode(getEnv("LAN_TRANSFER_GUEST_MODE", fileEnv)),
-    // kkFileView 是独立的本地转换服务。留空时 Office 预览会明确报不可用，不会退化为把原文档暴露给浏览器。
-    lanOfficePreviewUrl: normalizeHttpUrl(getEnv("LAN_OFFICE_PREVIEW_URL", fileEnv)),
-    // Docker Desktop 下应配置为 host.docker.internal；本机直接运行 kkFileView 时可改为 127.0.0.1。
-    lanOfficePreviewSourceBaseUrl: normalizeHttpUrl(getEnv("LAN_OFFICE_PREVIEW_SOURCE_BASE_URL", fileEnv)),
-    lanOfficePreviewTicketLifetimeSeconds: readInteger(
-      "LAN_OFFICE_PREVIEW_TICKET_LIFETIME_SECONDS",
-      getEnv("LAN_OFFICE_PREVIEW_TICKET_LIFETIME_SECONDS", fileEnv),
-      300,
-      30,
-      3600
-    ),
     videoTextUploadsDir: path.join(storageRoot, "video-text", "uploads"),
     videoTextAudioDir: path.join(storageRoot, "video-text", "audio"),
     videoTextResultsDir: path.join(storageRoot, "video-text", "results"),
@@ -425,23 +411,6 @@ function normalizeOrigin(value: string) {
     return new URL(value.trim()).origin;
   } catch {
     return "";
-  }
-}
-
-function normalizeHttpUrl(value: string | undefined) {
-  const candidate = value?.trim();
-  if (!candidate) return undefined;
-  try {
-    const url = new URL(candidate);
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-      throw new Error("unsupported protocol");
-    }
-    if (url.username || url.password) {
-      throw new Error("credentials are not allowed");
-    }
-    return url.toString().replace(/\/$/, "");
-  } catch {
-    throw new Error("LAN_OFFICE_PREVIEW_URL and LAN_OFFICE_PREVIEW_SOURCE_BASE_URL must be valid HTTP(S) URLs");
   }
 }
 

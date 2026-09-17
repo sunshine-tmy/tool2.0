@@ -71,15 +71,8 @@ export function classifyLanFile(fileName: string, mimeType = ""): LanFileCategor
 }
 
 export function isLanFilePreviewable(category: LanFileCategory): boolean {
-  return (
-    category === "image" ||
-    category === "video" ||
-    category === "audio" ||
-    category === "text" ||
-    category === "pdf" ||
-    // Office 二进制文件需要交给受限的本地 kkFileView 转换，不能直接以内嵌方式响应给浏览器。
-    category === "document"
-  );
+  // 仅保留浏览器可直接、安全呈现的类型；其他文件仍可上传、分类和下载。
+  return category === "image" || category === "video" || category === "pdf";
 }
 
 export function normalizeLanFileQuery(raw: RawLanFileQuery): LanFileQuery {

@@ -8,7 +8,6 @@ import {
   LanFileListSchema,
   LanFileUploadResultSchema,
   LanFileWithUrlsSchema,
-  LanOfficePreviewSchema,
   LanNoteListSchema,
   LanNoteSchema,
   LanRemovalSchema,
@@ -136,21 +135,6 @@ class LanTransferApi {
     return withApiError(
       () => httpClient.patch(`/tools/lan-transfer/notes/${id}/expiry`, LanNoteSchema, { days }),
       "更新图文有效期失败"
-    );
-  }
-
-  async getTextPreview(previewUrl: string) {
-    return withApiError(() => httpClient.getText(previewUrl), "获取预览失败");
-  }
-
-  async createOfficePreview(id: string, signal?: AbortSignal) {
-    // 由后端签发短时转换票据，前端只接收 kkFileView 的 iframe 地址，不拼接文件源 URL。
-    return withApiError(
-      () =>
-        httpClient.post(`/tools/lan-transfer/files/${id}/office-preview`, LanOfficePreviewSchema, undefined, {
-          signal
-        }),
-      "创建 Office 预览失败"
     );
   }
 

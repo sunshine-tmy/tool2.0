@@ -11,7 +11,6 @@ $KnownServices = @(
   [PSCustomObject]@{ Name = "image AI worker"; Port = 3210 },
   [PSCustomObject]@{ Name = "Chatterbox worker"; Port = 3220 }
 )
-$OfficePreviewContainerName = "ecommerce-toolbox-kkfileview"
 
 function Write-Step {
   param([string]$Message)
@@ -182,25 +181,6 @@ function Wait-PortFree {
   return @(Get-PortListenerProcessIds $Port).Count -eq 0
 }
 
-function Stop-ManagedOfficePreview {
-  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    return
-  }
-
-  $running = ([string](& docker container inspect --format "{{.State.Running}}" $OfficePreviewContainerName 2>$null)).Trim()
-  if ($LASTEXITCODE -ne 0 -or $running -ne "true") {
-    return
-  }
-
-  Write-Step "停止 kkFileView Office 预览服务"
-  & docker stop $OfficePreviewContainerName | Out-Null
-  if ($LASTEXITCODE -eq 0) {
-    Write-Host "  Office 预览容器已停止。" -ForegroundColor Green
-  } else {
-    Write-Host "  Office 预览容器无法停止，已保持原状。" -ForegroundColor Yellow
-  }
-}
-
 Set-Location -LiteralPath $Root
 Write-Host "Ecommerce Toolbox shutdown" -ForegroundColor Green
 Write-Host "Project root: $Root"
@@ -262,10 +242,6 @@ if ($treeRoots.Count -eq 0) {
   foreach ($treeRoot in @($treeRoots)) {
     Stop-ProcessTree $treeRoot $processes $protectedProcessIds
   }
-}
-
-if (-not $CheckOnly) {
-  Stop-ManagedOfficePreview
 }
 
 Write-Step "Verifying service ports"

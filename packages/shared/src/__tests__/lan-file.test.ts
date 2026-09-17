@@ -19,13 +19,14 @@ describe("lan file contracts", () => {
     expect(classifyLanFile(fileName, mimeType)).toBe(expected);
   });
 
-  it("marks browser-native file categories as previewable", () => {
+  it("marks only required browser preview categories as previewable", () => {
     expect(isLanFilePreviewable("image")).toBe(true);
     expect(isLanFilePreviewable("video")).toBe(true);
-    expect(isLanFilePreviewable("audio")).toBe(true);
-    expect(isLanFilePreviewable("text")).toBe(true);
     expect(isLanFilePreviewable("pdf")).toBe(true);
+    expect(isLanFilePreviewable("audio")).toBe(false);
+    expect(isLanFilePreviewable("text")).toBe(false);
     expect(isLanFilePreviewable("archive")).toBe(false);
+    expect(isLanFilePreviewable("document")).toBe(false);
   });
 
   it("normalizes query defaults and rejects unsupported enum values", () => {
