@@ -7,15 +7,15 @@
 
 ## 功能矩阵
 
-| 模块           | 前端路由                | API 命名空间                   | 能力                                                   |
-| -------------- | ----------------------- | ------------------------------ | ------------------------------------------------------ |
-| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress` | JPEG/PNG/WebP 批量压缩、缩放和格式转换                 |
-| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`     | 去水印、清晰度增强、商品图抠图，本地模型推理           |
-| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*` | 文件断点续传、剪贴板粘贴上传、图文快传、预览和过期清理 |
-| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出   |
-| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆         |
-| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理      |
-| 小红书内容归档 | `/tools/xhs-archive`    | `/api/v1/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地归档、预览与中英翻译  |
+| 模块           | 前端路由                | API 命名空间                   | 能力                                                                        |
+| -------------- | ----------------------- | ------------------------------ | --------------------------------------------------------------------------- |
+| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress` | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                      |
+| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`     | 去水印、清晰度增强、商品图抠图，本地模型推理                                |
+| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*` | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理 |
+| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                        |
+| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                              |
+| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                           |
+| 小红书内容归档 | `/tools/xhs-archive`    | `/api/v1/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地归档、预览与中英翻译                       |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
@@ -114,57 +114,62 @@ pnpm dev
 
 复制 `.env.example` 为 `.env`。常用变量如下：
 
-| 变量                                    | 默认值                  | 说明                                                 |
-| --------------------------------------- | ----------------------- | ---------------------------------------------------- |
-| `API_HOST`                              | `127.0.0.1`             | API 监听地址；仅在明确需要直连 API 时改为 `0.0.0.0`  |
-| `API_PORT`                              | `3100`                  | API 端口，启动时校验范围                             |
-| `DEPLOYMENT_MODE`                       | `local`                 | `local` 仅本机；`lan` 面向可信局域网并强制管理员 PIN |
-| `ADMIN_PIN`                             | 空                      | `lan` 模式必填；用于建立浏览器管理员会话             |
-| `VITE_API_BASE`                         | 空                      | 空值使用同源 `/api`；分离部署时填写完整 API 地址     |
-| `VITE_API_PROXY_TARGET`                 | `http://127.0.0.1:3100` | Vite 开发/预览代理目标                               |
-| `CORS_ORIGINS`                          | localhost/127.0.0.1     | 允许直连 API 的精确浏览器 Origin，逗号分隔           |
-| `STORAGE_ROOT`                          | `./storage`             | 运行数据目录；相对路径始终基于仓库根目录解析         |
-| `DATABASE_PATH`                         | `storage/toolbox.db`    | SQLite 元数据数据库；通常无需覆盖                    |
-| `LAN_TRANSFER_MAX_FILE_BYTES`           | `21474836480`           | 局域网单文件上限，默认 20 GiB                        |
-| `LAN_TRANSFER_RETENTION_DAYS`           | `3`                     | 局域网文件和图文便签保留天数                         |
-| `LAN_TRANSFER_UPLOAD_RETENTION_HOURS`   | `24`                    | 未完成分片上传的保留时间                             |
-| `LAN_TRANSFER_CLEANUP_INTERVAL_MINUTES` | `15`                    | 过期文件和废弃分片的自动清理周期                     |
-| `LAN_TRANSFER_MAX_STORAGE_BYTES`        | `107374182400`          | 文件、图文图片与活动上传总配额，默认 100 GiB         |
-| `LAN_TRANSFER_WEB_PORT`                 | `5173`                  | 生成局域网分享地址时使用的前端端口                   |
-| `LAN_TRANSFER_PIN`                      | 空                      | 可选管理 PIN；留空保持免登录模式                     |
-| `LAN_TRANSFER_GUEST_MODE`               | `full`                  | `full`、`upload-only`、`download-only` 或 `disabled` |
-| `REMOTE_FETCH_TIMEOUT_MS`               | `120000`                | 远程媒体建立连接并收到响应头的超时                   |
-| `REMOTE_MEDIA_MAX_BYTES`                | `2147483648`            | 远程媒体最大 2 GiB；同时校验响应头和实际流量         |
-| `SHORT_VIDEO_PARSE_API_URL`             | BugPk 示例地址          | 可信的短视频解析服务                                 |
-| `SHORT_VIDEO_PARSE_TIMEOUT_MS`          | `20000`                 | 单次短视频解析请求超时                               |
-| `SHORT_VIDEO_CACHE_TTL_MS`              | `300000`                | 解析结果本地短缓存时间；`0` 表示关闭                 |
-| `SHORT_VIDEO_PARSE_RETRIES`             | `1`                     | 网络、限流或 5xx 的额外重试次数                      |
-| `SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK`    | `true`                  | 主解析失败时启用 TikTok 官方预览降级                 |
-| `XHS_PROVIDER_URL`                      | 空                      | 可选的兼容解析适配器地址；留空使用隔离本机运行时     |
-| `XHS_PROVIDER_PORT`                     | `5556`                  | 本机小红书解析 Worker 端口，仅监听 `127.0.0.1`       |
-| `XHS_INSTALL_TIMEOUT_MS`                | `1200000`               | 首次安装小红书解析环境的最长等待时间                 |
-| `XHS_ARCHIVE_MAX_STORAGE_BYTES`         | `107374182400`          | 小红书永久存档配额，默认 100 GiB                     |
-| `XHS_TRANSLATION_MODEL_URL`             | 固定 Release Asset      | 本地 OPUS-MT CTranslate2 INT8 模型地址               |
-| `XHS_TRANSLATION_PROVIDER_PORT`         | `5557`                  | 本地翻译 Worker 端口，仅监听 `127.0.0.1`             |
-| `EDGE_TTS_RETENTION_DAYS`               | `3`                     | 生成语音、字幕和任务记录的保留天数                   |
-| `EDGE_TTS_QUEUE_LIMIT`                  | `20`                    | 等待和执行中的语音任务总上限                         |
-| `EDGE_TTS_CONCURRENCY`                  | `2`                     | 同时生成的语音任务数量                               |
-| `CHATTERBOX_WORKER_URL`                 | `http://127.0.0.1:3220` | 本机 Chatterbox Worker，保持 loopback                |
-| `CHATTERBOX_WORKER_TIMEOUT_MS`          | `1200000`               | 单次本地声音克隆超时                                 |
-| `CHATTERBOX_RETENTION_DAYS`             | `3`                     | 克隆结果与任务记录保留天数                           |
-| `CHATTERBOX_QUEUE_LIMIT`                | `50`                    | 等待和执行中的克隆文案段总上限                       |
-| `CHATTERBOX_DEVICE`                     | `auto`                  | 自动选择 CUDA，或显式设置 `cuda` / `cpu`             |
-| `CHATTERBOX_MODEL_IDLE_MINUTES`         | `10`                    | 空闲多久后卸载模型并释放显存；`0` 表示常驻           |
-| `IMAGE_AI_WORKER_URL`                   | `http://127.0.0.1:3210` | 本地 AI Worker，必须保持 loopback                    |
-| `IMAGE_AI_QUEUE_LIMIT`                  | `20`                    | AI 活跃任务与预留槽总上限                            |
-| `IMAGE_AI_RETENTION_HOURS`              | `24`                    | AI 输入、结果和任务保留时间                          |
-| `DEPLOYMENT_USAGE`                      | `commercial`            | `internal-noncommercial` 才允许使用 BRIA RMBG 2.0    |
+| 变量                                         | 默认值                  | 说明                                                 |
+| -------------------------------------------- | ----------------------- | ---------------------------------------------------- |
+| `API_HOST`                                   | `127.0.0.1`             | API 监听地址；仅在明确需要直连 API 时改为 `0.0.0.0`  |
+| `API_PORT`                                   | `3100`                  | API 端口，启动时校验范围                             |
+| `DEPLOYMENT_MODE`                            | `local`                 | `local` 仅本机；`lan` 面向可信局域网并强制管理员 PIN |
+| `ADMIN_PIN`                                  | 空                      | `lan` 模式必填；用于建立浏览器管理员会话             |
+| `VITE_API_BASE`                              | 空                      | 空值使用同源 `/api`；分离部署时填写完整 API 地址     |
+| `VITE_API_PROXY_TARGET`                      | `http://127.0.0.1:3100` | Vite 开发/预览代理目标                               |
+| `CORS_ORIGINS`                               | localhost/127.0.0.1     | 允许直连 API 的精确浏览器 Origin，逗号分隔           |
+| `STORAGE_ROOT`                               | `./storage`             | 运行数据目录；相对路径始终基于仓库根目录解析         |
+| `DATABASE_PATH`                              | `storage/toolbox.db`    | SQLite 元数据数据库；通常无需覆盖                    |
+| `LAN_TRANSFER_MAX_FILE_BYTES`                | `21474836480`           | 局域网单文件上限，默认 20 GiB                        |
+| `LAN_TRANSFER_RETENTION_DAYS`                | `3`                     | 局域网文件和图文便签保留天数                         |
+| `LAN_TRANSFER_UPLOAD_RETENTION_HOURS`        | `24`                    | 未完成分片上传的保留时间                             |
+| `LAN_TRANSFER_CLEANUP_INTERVAL_MINUTES`      | `15`                    | 过期文件和废弃分片的自动清理周期                     |
+| `LAN_TRANSFER_MAX_STORAGE_BYTES`             | `107374182400`          | 文件、图文图片与活动上传总配额，默认 100 GiB         |
+| `LAN_TRANSFER_WEB_PORT`                      | `5173`                  | 生成局域网分享地址时使用的前端端口                   |
+| `LAN_TRANSFER_PIN`                           | 空                      | 可选管理 PIN；留空保持免登录模式                     |
+| `LAN_TRANSFER_GUEST_MODE`                    | `full`                  | `full`、`upload-only`、`download-only` 或 `disabled` |
+| `LAN_OFFICE_PREVIEW_URL`                     | 空                      | kkFileView 对浏览器公开的预览根地址                  |
+| `LAN_OFFICE_PREVIEW_SOURCE_BASE_URL`         | 空                      | kkFileView 拉取本项目临时 Office 源文件的后端地址    |
+| `LAN_OFFICE_PREVIEW_TICKET_LIFETIME_SECONDS` | `300`                   | 单文件 Office 源地址的有效期（30–3600 秒）           |
+| `REMOTE_FETCH_TIMEOUT_MS`                    | `120000`                | 远程媒体建立连接并收到响应头的超时                   |
+| `REMOTE_MEDIA_MAX_BYTES`                     | `2147483648`            | 远程媒体最大 2 GiB；同时校验响应头和实际流量         |
+| `SHORT_VIDEO_PARSE_API_URL`                  | BugPk 示例地址          | 可信的短视频解析服务                                 |
+| `SHORT_VIDEO_PARSE_TIMEOUT_MS`               | `20000`                 | 单次短视频解析请求超时                               |
+| `SHORT_VIDEO_CACHE_TTL_MS`                   | `300000`                | 解析结果本地短缓存时间；`0` 表示关闭                 |
+| `SHORT_VIDEO_PARSE_RETRIES`                  | `1`                     | 网络、限流或 5xx 的额外重试次数                      |
+| `SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK`         | `true`                  | 主解析失败时启用 TikTok 官方预览降级                 |
+| `XHS_PROVIDER_URL`                           | 空                      | 可选的兼容解析适配器地址；留空使用隔离本机运行时     |
+| `XHS_PROVIDER_PORT`                          | `5556`                  | 本机小红书解析 Worker 端口，仅监听 `127.0.0.1`       |
+| `XHS_INSTALL_TIMEOUT_MS`                     | `1200000`               | 首次安装小红书解析环境的最长等待时间                 |
+| `XHS_ARCHIVE_MAX_STORAGE_BYTES`              | `107374182400`          | 小红书永久存档配额，默认 100 GiB                     |
+| `XHS_TRANSLATION_MODEL_URL`                  | 固定 Release Asset      | 本地 OPUS-MT CTranslate2 INT8 模型地址               |
+| `XHS_TRANSLATION_PROVIDER_PORT`              | `5557`                  | 本地翻译 Worker 端口，仅监听 `127.0.0.1`             |
+| `EDGE_TTS_RETENTION_DAYS`                    | `3`                     | 生成语音、字幕和任务记录的保留天数                   |
+| `EDGE_TTS_QUEUE_LIMIT`                       | `20`                    | 等待和执行中的语音任务总上限                         |
+| `EDGE_TTS_CONCURRENCY`                       | `2`                     | 同时生成的语音任务数量                               |
+| `CHATTERBOX_WORKER_URL`                      | `http://127.0.0.1:3220` | 本机 Chatterbox Worker，保持 loopback                |
+| `CHATTERBOX_WORKER_TIMEOUT_MS`               | `1200000`               | 单次本地声音克隆超时                                 |
+| `CHATTERBOX_RETENTION_DAYS`                  | `3`                     | 克隆结果与任务记录保留天数                           |
+| `CHATTERBOX_QUEUE_LIMIT`                     | `50`                    | 等待和执行中的克隆文案段总上限                       |
+| `CHATTERBOX_DEVICE`                          | `auto`                  | 自动选择 CUDA，或显式设置 `cuda` / `cpu`             |
+| `CHATTERBOX_MODEL_IDLE_MINUTES`              | `10`                    | 空闲多久后卸载模型并释放显存；`0` 表示常驻           |
+| `IMAGE_AI_WORKER_URL`                        | `http://127.0.0.1:3210` | 本地 AI Worker，必须保持 loopback                    |
+| `IMAGE_AI_QUEUE_LIMIT`                       | `20`                    | AI 活跃任务与预留槽总上限                            |
+| `IMAGE_AI_RETENTION_HOURS`                   | `24`                    | AI 输入、结果和任务保留时间                          |
+| `DEPLOYMENT_USAGE`                           | `commercial`            | `internal-noncommercial` 才允许使用 BRIA RMBG 2.0    |
 
 小红书翻译模型默认先尝试固定 Release Asset；当该资源不可用时，会自动切换到固定提交的 Hugging Face CTranslate2 预转换恢复源，并逐文件校验摘要。Windows 上如果 Node 无法继承系统代理或 PAC 设置，模型下载会自动改用系统网络通道。若自行设置 `XHS_TRANSLATION_MODEL_URL`，则只使用该地址，不会静默替换自定义配置。
 
 完整变量及注释见 [.env.example](./.env.example)。所有整数配置都会在 API 启动时校验，非法值会直接终止启动，避免带错误配置运行。
 
 局域网部署必须设置 `DEPLOYMENT_MODE=lan` 和 `ADMIN_PIN`，否则 API 拒绝启动。`LAN_TRANSFER_PIN` 与 `LAN_TRANSFER_GUEST_MODE` 只控制访客文件传输能力；删除、清理、AI、翻译、配音、归档和配置写操作始终要求管理员会话。
+
+局域网传输中的图片、视频和 PDF 由浏览器直接安全预览；Word、Excel 和 PowerPoint 使用本机部署的 kkFileView。不要使用停更的旧容器镜像：请部署当前维护版本，并在 kkFileView 中仅信任 `LAN_OFFICE_PREVIEW_SOURCE_BASE_URL` 的主机、禁用文件上传。Windows 直接运行 kkFileView 时 source 地址可填写 `http://127.0.0.1:3100`；若在 Docker Desktop 中运行，填写 `http://host.docker.internal:3100`。局域网设备访问预览时，`LAN_OFFICE_PREVIEW_URL` 必须填写本机 LAN IP（例如 `http://192.168.1.10:8012`）。应用会为每次 Office 预览签发一个仅绑定该文件、默认 5 分钟过期的源地址，不会暴露存储目录或管理员 Cookie。
 
 ## 可选能力安装
 

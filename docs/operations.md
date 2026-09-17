@@ -52,6 +52,8 @@ ADMIN_PIN=请替换为高熵本地 PIN
 
 局域网文件传输的 `POST /api/v1/tools/lan-transfer/access` 使用独立的可选 `LAN_TRANSFER_PIN`，只解锁访客传输能力，不授予删除、清理、延期或其他管理员权限。`LAN_TRANSFER_GUEST_MODE=disabled` 时未认证设备不具备传输能力。PIN、Cookie、Authorization、CSRF token、文本内容和本地路径不会写入结构化日志。
 
+Office 预览由独立的本机 kkFileView 负责转换。`LAN_OFFICE_PREVIEW_URL` 配置浏览器可访问的 kkFileView 地址，`LAN_OFFICE_PREVIEW_SOURCE_BASE_URL` 配置该服务看到的后端地址。仅配置当前维护版本；在 kkFileView 中将 `trust.host` 收紧到该 source 主机、关闭文件上传，绝不使用 `trust.host=*`。应用的 `office-source` 地址只接受随机短时票据，按文件绑定，不接受浏览器 Cookie，也不暴露本地存储路径。
+
 ## 3. 限流与并发
 
 所有请求共享每个来源默认 `300 次/分钟` 的全局限流；下表是高成本路由的独立额度。触发任一额度都返回 `429`，稳定错误码为 `RATE_LIMIT_EXCEEDED` 或 `CONCURRENCY_LIMIT_EXCEEDED`，客户端应依据 `requestId` 和 `details.limit` 展示重试提示。

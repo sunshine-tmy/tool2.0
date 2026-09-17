@@ -1689,6 +1689,16 @@ a {
   background: #ffffff;
 }
 
+.office-preview-status {
+  display: grid;
+  min-height: 240px;
+  place-items: center;
+  color: #475569;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .preview-body pre {
   max-height: 70vh;
   padding: 14px;

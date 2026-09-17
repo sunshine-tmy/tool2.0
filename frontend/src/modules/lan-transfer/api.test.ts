@@ -6,6 +6,7 @@ import {
   LanBatchRemovalSchema,
   LanFileListSchema,
   LanFileWithUrlsSchema,
+  LanOfficePreviewSchema,
   LanNoteListSchema,
   LanNoteSchema,
   LanRemovalSchema,
@@ -96,6 +97,7 @@ describe("LAN transfer text-image API", () => {
     await lanTransferApi.cancelUpload("upload-1");
     await lanTransferApi.listFiles({ page: 2, pageSize: 10 });
     await lanTransferApi.getTextPreview("/tools/lan-transfer/files/file-1/preview");
+    await lanTransferApi.createOfficePreview("file-1", controller.signal);
     await lanTransferApi.updateExpiry("file-1", 30);
     await lanTransferApi.deleteFile("file-1");
     await lanTransferApi.deleteFiles(["file-1", "file-2"]);
@@ -111,6 +113,12 @@ describe("LAN transfer text-image API", () => {
       params: { page: 2, pageSize: 10 }
     });
     expect(httpMock.getText).toHaveBeenCalledWith("/tools/lan-transfer/files/file-1/preview");
+    expect(httpMock.post).toHaveBeenCalledWith(
+      "/tools/lan-transfer/files/file-1/office-preview",
+      LanOfficePreviewSchema,
+      undefined,
+      { signal: controller.signal }
+    );
     expect(httpMock.patch).toHaveBeenCalledWith("/tools/lan-transfer/files/file-1/expiry", LanFileWithUrlsSchema, {
       days: 30
     });

@@ -69,6 +69,8 @@
 
 - `POST /files`：字段 `file`，默认上限 20 GiB。
 - `GET /files`：查询、排序和分页。
+- `POST /files/:id/office-preview`：为 Word、Excel、PowerPoint 创建短时 kkFileView 预览地址；需要文件读取权限。
+- `GET /files/:id/office-source/:fileName?ticket=…`：仅供 kkFileView 拉取已签发的单文件转换源；无有效票据不能访问，票据默认 5 分钟失效。
 - `GET /files/:id/preview`：安全内联预览，支持 Range。
 - `GET /files/:id/download`：附件下载并增加下载次数。
 - `DELETE /files/:id`：删除文件和元数据。

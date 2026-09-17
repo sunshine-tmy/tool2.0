@@ -26,6 +26,7 @@ import { registerLanNoteRoutes } from "./lan-transfer/note-routes";
 import { registerLanChunkRoutes } from "./lan-transfer/chunk-routes";
 import { createLanFileStore, createLanNoteStore } from "./lan-transfer/repositories";
 import { createLanUploadStore } from "./lan-transfer/uploads";
+import { createLanOfficePreviewService } from "./lan-transfer/office-preview";
 import { lanFailureResponses } from "./lan-transfer/route-contract";
 
 type RegisterLanTransferRoutesOptions = {
@@ -47,6 +48,7 @@ export async function registerLanTransferRoutes({
   const finalizingUploads = new Set<string>();
   const access = createLanAccessController(config);
   const audit = createLanAuditLog(database);
+  const officePreview = createLanOfficePreviewService(config, "/api/v1/tools/lan-transfer");
   await store.ensure();
   await noteStore.ensure();
   await uploadStore.ensure();
@@ -63,6 +65,7 @@ export async function registerLanTransferRoutes({
     finalizingUploads,
     access,
     audit,
+    officePreview,
     "/api/v1/tools/lan-transfer"
   );
 
@@ -86,7 +89,10 @@ export async function registerLanTransferRoutes({
     config.lanTransferCleanupIntervalMinutes * 60 * 1000
   );
   cleanupTimer.unref();
-  app.addHook("onClose", async () => clearInterval(cleanupTimer));
+  app.addHook("onClose", async () => {
+    clearInterval(cleanupTimer);
+    officePreview.close();
+  });
 }
 
 function registerLanTransferNamespace(
@@ -98,6 +104,7 @@ function registerLanTransferNamespace(
   finalizingUploads: Set<string>,
   access: LanAccessController,
   audit: ReturnType<typeof createLanAuditLog>,
+  officePreview: ReturnType<typeof createLanOfficePreviewService>,
   basePath: string
 ) {
   const typedApp = app.withTypeProvider<TypeBoxTypeProvider>();
@@ -160,6 +167,6 @@ function registerLanTransferNamespace(
 
   registerLanNoteRoutes({ app, config, store, noteStore, uploadStore, access, audit, basePath });
 
-  registerLanFileRoutes({ app, config, store, noteStore, uploadStore, access, audit, basePath });
+  registerLanFileRoutes({ app, config, store, noteStore, uploadStore, access, audit, officePreview, basePath });
   registerLanChunkRoutes({ app, config, store, noteStore, uploadStore, finalizingUploads, access, audit, basePath });
 }

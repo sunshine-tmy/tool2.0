@@ -29,6 +29,9 @@ afterEach(async () => {
   delete process.env.LAN_TRANSFER_GUEST_MODE;
   delete process.env.LAN_TRANSFER_UPLOAD_RETENTION_HOURS;
   delete process.env.LAN_PUBLIC_BASE_URL;
+  delete process.env.LAN_OFFICE_PREVIEW_URL;
+  delete process.env.LAN_OFFICE_PREVIEW_SOURCE_BASE_URL;
+  delete process.env.LAN_OFFICE_PREVIEW_TICKET_LIFETIME_SECONDS;
   delete process.env.DEPLOYMENT_MODE;
   delete process.env.ADMIN_PIN;
   delete process.env.CORS_ORIGINS;
@@ -323,6 +326,64 @@ describe("lan transfer api", () => {
 
     const afterDownload = await app.inject({ method: "GET", url: "/api/v1/tools/lan-transfer/files" });
     expect(afterDownload.json().data.files[0].downloadCount).toBe(1);
+  });
+
+  it("uses a short-lived, file-scoped ticket when handing Office documents to kkFileView", async () => {
+    process.env.LAN_OFFICE_PREVIEW_URL = "http://127.0.0.1:8012";
+    process.env.LAN_OFFICE_PREVIEW_SOURCE_BASE_URL = "http://host.docker.internal:3100";
+    const app = await createApp();
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/files",
+      ...multipartPayload(
+        "file",
+        "季度复盘.docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "office payload"
+      )
+    });
+    const file = upload.json().data.file;
+    expect(file).toMatchObject({ category: "document", previewable: true });
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/lan-transfer/files/${file.id}/office-preview`
+    });
+    expect(created.statusCode).toBe(200);
+    const viewerUrl = new URL(created.json().data.viewerUrl);
+    expect(viewerUrl.pathname).toBe("/onlinePreview");
+    const sourceUrl = new URL(Buffer.from(viewerUrl.searchParams.get("url") ?? "", "base64").toString("utf8"));
+    expect(sourceUrl.origin).toBe("http://host.docker.internal:3100");
+    expect(sourceUrl.pathname).toContain(`/files/${file.id}/office-source/`);
+
+    const unauthenticated = await app.inject({ method: "GET", url: sourceUrl.pathname });
+    expect(unauthenticated.statusCode).toBe(400);
+
+    const source = await app.inject({ method: "GET", url: `${sourceUrl.pathname}${sourceUrl.search}` });
+    expect(source.statusCode).toBe(200);
+    expect(source.body).toBe("office payload");
+    expect(source.headers["content-disposition"]).toContain("inline");
+  });
+
+  it("does not issue an Office source URL while kkFileView is unconfigured", async () => {
+    const app = await createApp();
+    const upload = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/lan-transfer/files",
+      ...multipartPayload(
+        "file",
+        "计划.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "sheet"
+      )
+    });
+
+    const preview = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/lan-transfer/files/${upload.json().data.file.id}/office-preview`
+    });
+    expect(preview.statusCode).toBe(503);
+    expect(preview.json().error.code).toBe("OFFICE_PREVIEW_UNAVAILABLE");
   });
 
   it("publishes, lists, previews, extends and deletes LAN text-image notes", async () => {

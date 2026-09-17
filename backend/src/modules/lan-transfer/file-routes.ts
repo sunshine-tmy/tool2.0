@@ -14,6 +14,9 @@ import {
   LanExpiryInputSchema,
   LanFileListSchema,
   LanFileListQuerySchema,
+  LanOfficePreviewSchema,
+  LanOfficePreviewSourceParamsSchema,
+  LanOfficePreviewSourceQuerySchema,
   LanFileUploadResultSchema,
   LanFileWithUrlsSchema,
   LanIdParamsSchema,
@@ -38,6 +41,7 @@ import type { createLanFileStore, createLanNoteStore } from "./repositories";
 import type { createLanUploadStore } from "./uploads";
 import { lanFailureResponses, type LanFileListResponse } from "./route-contract";
 import { commitStagedFile, createStagingPath } from "../../storage/file-commit-gateway";
+import type { LanOfficePreviewService } from "./office-preview";
 
 type RegisterLanFileRoutesOptions = {
   app: FastifyInstance;
@@ -47,6 +51,7 @@ type RegisterLanFileRoutesOptions = {
   uploadStore: ReturnType<typeof createLanUploadStore>;
   access: ReturnType<typeof createLanAccessController>;
   audit: ReturnType<typeof createLanAuditLog>;
+  officePreview: LanOfficePreviewService;
   basePath: string;
 };
 
@@ -58,6 +63,7 @@ export function registerLanFileRoutes({
   uploadStore,
   access,
   audit,
+  officePreview,
   basePath
 }: RegisterLanFileRoutesOptions) {
   const typedApp = app.withTypeProvider<TypeBoxTypeProvider>();
@@ -206,6 +212,57 @@ export function registerLanFileRoutes({
       const result = await store.removeMany(ids);
       await audit.write("files.batch-deleted", request, result);
       return ok(result);
+    }
+  );
+
+  typedApp.post(
+    `${basePath}/files/:id/office-preview`,
+    {
+      schema: {
+        params: LanIdParamsSchema,
+        response: { 200: apiSuccessSchema(LanOfficePreviewSchema), ...lanFailureResponses }
+      }
+    },
+    async (request, reply) => {
+      if (!access.authorize(request, reply, "read")) return reply;
+      const file = await getFileOr404(store, request, reply);
+      if (!file) return reply;
+      if (file.category !== "document") {
+        return reply.code(415).send(fail("OFFICE_PREVIEW_UNSUPPORTED", "该文件不是可转换的 Office 文档"));
+      }
+      const preview = officePreview.issue(file);
+      if (!preview) {
+        return reply
+          .code(503)
+          .send(fail("OFFICE_PREVIEW_UNAVAILABLE", "Office 预览服务未配置或尚未启动，请检查 kkFileView 设置"));
+      }
+      await audit.write("file.office-previewed", request, { fileId: file.id, extension: file.extension });
+      return ok(preview);
+    }
+  );
+
+  typedApp.get(
+    `${basePath}/files/:id/office-source/:fileName`,
+    {
+      schema: {
+        params: LanOfficePreviewSourceParamsSchema,
+        querystring: LanOfficePreviewSourceQuerySchema,
+        response: lanFailureResponses
+      }
+    },
+    async (request, reply) => {
+      // 此路由只供本机 kkFileView 拉取转换源。绝不读取 Cookie，也不接受常规 LAN 访问权限替代票据。
+      const { id } = request.params;
+      if (!officePreview.allows(id, request.query.ticket)) {
+        return reply
+          .code(404)
+          .send(fail("OFFICE_PREVIEW_TICKET_INVALID", "Office preview ticket is invalid or expired"));
+      }
+      const file = await getFileOr404(store, request, reply);
+      if (!file) return reply;
+      if (file.category !== "document")
+        return reply.code(415).send(fail("OFFICE_PREVIEW_UNSUPPORTED", "Office preview unavailable"));
+      return sendFile(reply, config, file, "inline", request.headers.range);
     }
   );
 

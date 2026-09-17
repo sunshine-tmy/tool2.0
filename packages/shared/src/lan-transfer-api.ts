@@ -47,6 +47,16 @@ export const LanFileListQuerySchema = Type.Object(
 
 export const LanIdParamsSchema = Type.Object({ id: LanEntityIdSchema }, { additionalProperties: false });
 
+// source 路由中的文件名只用于让 kkFileView 识别扩展名，实际文件选择只相信 id + 短时票据。
+export const LanOfficePreviewSourceParamsSchema = Type.Object(
+  { id: LanEntityIdSchema, fileName: Type.String({ minLength: 1, maxLength: 255 }) },
+  { additionalProperties: false }
+);
+export const LanOfficePreviewSourceQuerySchema = Type.Object(
+  { ticket: Type.String({ minLength: 32, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" }) },
+  { additionalProperties: false }
+);
+
 export const LanNoteImageParamsSchema = Type.Object(
   { id: LanEntityIdSchema, imageId: LanEntityIdSchema },
   { additionalProperties: false }
@@ -114,6 +124,11 @@ export const LanFileWithUrlsSchema = Type.Composite([
   LanFileRecordSchema,
   Type.Object({ previewUrl: Type.String(), downloadUrl: Type.String() })
 ]);
+// Office 预览地址由后端即时签发；浏览器只能嵌入 kkFileView 页面，不能拿到存储目录或长期源地址。
+export const LanOfficePreviewSchema = Type.Object({
+  viewerUrl: Type.String(),
+  expiresAt: Type.String({ format: "date-time" })
+});
 export const LanFileUploadResultSchema = Type.Object({
   file: LanFileRecordSchema,
   previewUrl: Type.String(),
@@ -189,6 +204,8 @@ export type LanAccessInput = Static<typeof LanAccessInputSchema>;
 export type LanPaginationQuery = Static<typeof LanPaginationQuerySchema>;
 export type LanFileListQuery = Static<typeof LanFileListQuerySchema>;
 export type LanIdParams = Static<typeof LanIdParamsSchema>;
+export type LanOfficePreviewSourceParams = Static<typeof LanOfficePreviewSourceParamsSchema>;
+export type LanOfficePreviewSourceQuery = Static<typeof LanOfficePreviewSourceQuerySchema>;
 export type LanNoteImageParams = Static<typeof LanNoteImageParamsSchema>;
 export type LanUploadParams = Static<typeof LanUploadParamsSchema>;
 export type LanChunkParams = Static<typeof LanChunkParamsSchema>;
@@ -198,6 +215,7 @@ export type LanUploadSessionInput = Static<typeof LanUploadSessionInputSchema>;
 export type LanPagination = Static<typeof LanPaginationSchema>;
 export type LanFileRecordDto = Static<typeof LanFileRecordSchema>;
 export type LanFileWithUrls = Static<typeof LanFileWithUrlsSchema>;
+export type LanOfficePreview = Static<typeof LanOfficePreviewSchema>;
 export type LanFileUploadResult = Static<typeof LanFileUploadResultSchema>;
 export type LanFileList = Static<typeof LanFileListSchema>;
 export type LanNoteImage = Static<typeof LanNoteImageSchema>;

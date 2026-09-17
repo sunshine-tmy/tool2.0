@@ -23,5 +23,6 @@ export const lanFailureResponses = {
   415: ApiFailureSchema,
   429: ApiFailureSchema,
   500: ApiFailureSchema,
+  503: ApiFailureSchema,
   507: ApiFailureSchema
 };
