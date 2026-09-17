@@ -111,7 +111,13 @@
       </section>
     </section>
 
-    <n-modal v-model:show="previewVisible" preset="card" :title="previewFile?.originalName" class="preview-modal">
+    <n-modal
+      v-model:show="previewVisible"
+      preset="card"
+      :title="previewFile?.originalName"
+      class="preview-modal"
+      :style="{ width: '900px', maxWidth: 'calc(100vw - 32px)' }"
+    >
       <div v-if="previewFile" class="preview-body">
         <img
           v-if="previewFile.category === 'image'"

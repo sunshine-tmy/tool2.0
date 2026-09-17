@@ -1661,7 +1661,9 @@ a {
 }
 
 .preview-modal {
-  width: min(920px, calc(100vw - 32px));
+  /* Naive UI 会为 preset 卡片写入内联尺寸；固定预览卡片，避免在宽屏上占满视口。 */
+  width: 900px !important;
+  max-width: calc(100vw - 32px) !important;
 }
 
 .preview-body {
