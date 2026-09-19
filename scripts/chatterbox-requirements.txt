@@ -2,16 +2,16 @@
 # package also declares Gradio, which is not imported by our loopback FastAPI
 # worker and would unnecessarily expose a second web stack.
 fastapi==0.141.1
-uvicorn==0.52.4
+uvicorn==0.53.0
 pydantic==2.13.5
 starlette==1.6.0
-numpy==1.26.4
+numpy==2.4.6
 librosa==0.11.0
 s3tokenizer==0.3.0
-torch==2.6.0
-torchaudio==2.6.0
+torch==2.14.0
+torchaudio==2.11.0
 transformers==5.17.0
-diffusers==0.38.0
+diffusers==0.40.0
 resemble-perth==1.0.1
 conformer==0.3.2
 safetensors==0.8.0
