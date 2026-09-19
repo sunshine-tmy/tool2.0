@@ -15,17 +15,17 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",
     "@fastify/helmet": "^13.1.1",
-    "@fastify/multipart": "^9.4.0",
-    "@fastify/rate-limit": "^10.3.0",
-    "@fastify/type-provider-typebox": "5.2.0",
+    "@fastify/multipart": "^10.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "@fastify/type-provider-typebox": "6.1.0",
     "@toolbox/shared": "workspace:*",
     "archiver": "^8.0.0",
     "better-sqlite3": "13.0.3",
     "fastify": "^5.12.4",
-    "nanoid": "^5.1.16",
+    "nanoid": "^6.0.1",
     "playwright-core": "^1.63.0",
     "sharp": "^0.35.4",
-    "undici": "^7.29.1"
+    "undici": "^8.10.2"
   },
   "devDependencies": {
     "@types/archiver": "^7.0.0",
