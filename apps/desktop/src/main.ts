@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { app, autoUpdater, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { BackendSupervisor } from "./backend-supervisor";
 import {
   importDesktopData,
@@ -11,19 +12,32 @@ import {
   type DesktopDataMigrationOptions
 } from "./desktop-data-migration";
 import { readDesktopSettings, updateDesktopSettings } from "./desktop-settings";
+import { createDesktopUpdater, scheduleAutomaticUpdateCheck, type DesktopUpdater } from "./desktop-updater";
 import { createDesktopRuntimeLayout, desktopBackendEntrypoint, desktopDataRoot } from "./runtime-layout";
+import { squirrelLifecycleCommand } from "./squirrel-events";
 import { isSafeExternalUrl, isTrustedBackendUrl } from "./window-security";
 
 let mainWindow: BrowserWindow | undefined;
 let backend: BackendSupervisor | undefined;
 let backendOrigin: string | undefined;
+let updater: DesktopUpdater | undefined;
+let automaticUpdateTimer: NodeJS.Timeout | undefined;
 let quitting = false;
 
 const dataRoot = desktopDataRoot(process.env.LOCALAPPDATA, app.getPath("appData"));
 fs.mkdirSync(path.join(dataRoot, "profile"), { recursive: true });
 app.setPath("userData", path.join(dataRoot, "profile"));
+app.setAppUserModelId("com.squirrel.EcommerceToolbox.EcommerceToolbox");
 
-if (!app.requestSingleInstanceLock()) {
+const squirrelCommand =
+  process.platform === "win32" ? squirrelLifecycleCommand(process.argv, process.execPath) : undefined;
+if (squirrelCommand) {
+  if (squirrelCommand.args.length) {
+    const child = spawn(squirrelCommand.executable, squirrelCommand.args, { detached: true, stdio: "ignore" });
+    child.unref();
+  }
+  app.quit();
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -58,6 +72,21 @@ async function boot() {
     backendOrigin = await backend.start();
     backend.monitorUnexpectedExit();
     createWindow(backendOrigin);
+    updater = createDesktopUpdater({
+      appPath: app.getAppPath(),
+      packaged: app.isPackaged,
+      platform: process.platform,
+      argv: process.argv,
+      executablePath: process.execPath,
+      getWindow: () => mainWindow,
+      installDownloadedUpdate,
+      log: (entry, error) => console.warn(entry, error)
+    });
+    try {
+      scheduleConfiguredUpdateCheck(updater, await readDesktopSettings(layout.configRoot));
+    } catch (error) {
+      console.warn("Desktop update preference is unavailable", error);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
     dialog.showErrorBox("电商工具箱无法启动", message);
@@ -84,8 +113,13 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
     assertTrustedSender(event);
     if (!isSettingsUpdate(value)) throw new Error("设置参数无效");
     if (value.startAtLogin !== undefined) app.setLoginItemSettings({ openAtLogin: value.startAtLogin });
-    await updateDesktopSettings(layout.configRoot, value);
+    const settings = await updateDesktopSettings(layout.configRoot, value);
+    scheduleConfiguredUpdateCheck(updater ?? disabledUpdater, settings);
     return currentSettings();
+  });
+  ipcMain.handle("desktop:check-for-updates", async (event) => {
+    assertTrustedSender(event);
+    return (updater ?? disabledUpdater).checkForUpdates();
   });
   ipcMain.handle("desktop:reveal-data-directory", async (event) => {
     assertTrustedSender(event);
@@ -169,6 +203,18 @@ async function withBackendStopped<T>(operation: () => Promise<T>) {
   return result!;
 }
 
+async function installDownloadedUpdate() {
+  if (!backend) throw new Error("本地服务尚未启动");
+  await backend.stop();
+  quitting = true;
+  autoUpdater.quitAndInstall();
+}
+
+function scheduleConfiguredUpdateCheck(currentUpdater: DesktopUpdater, settings: { automaticUpdateChecks: boolean }) {
+  if (automaticUpdateTimer) clearTimeout(automaticUpdateTimer);
+  automaticUpdateTimer = scheduleAutomaticUpdateCheck(currentUpdater, settings);
+}
+
 function migrationOptions(layout: ReturnType<typeof createDesktopRuntimeLayout>): DesktopDataMigrationOptions {
   return { dataRoot, storageRoot: layout.storageRoot, configRoot: layout.configRoot };
 }
@@ -186,6 +232,11 @@ function isSettingsUpdate(value: unknown): value is { startAtLogin?: boolean; au
 function message(error: unknown) {
   return error instanceof Error && error.message ? error.message : "未知错误";
 }
+
+const disabledUpdater: DesktopUpdater = {
+  isEnabled: false,
+  checkForUpdates: async () => ({ enabled: false, checking: false })
+};
 
 function createWindow(origin: string) {
   const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs");

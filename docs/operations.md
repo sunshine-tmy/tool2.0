@@ -126,7 +126,15 @@ Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\Ecomme
 
 如需撤销，使用同一页面“回滚到导入前数据”。该操作会验证备份摘要并先把当前数据保留为 `rollback-current-data`，因此不要通过资源管理器手工移动、修改或删除迁移备份。若应用报告迁移日志不一致或备份摘要不匹配，应停止操作并完整复制 `%LOCALAPPDATA%\\EcommerceToolbox` 后再排查；不要删除 `data`、迁移日志或备份目录。
 
-## 8. standalone 构建与发布
+## 8. Windows 签名安装器与自动更新
+
+正式 Windows 桌面版本只能通过 `v<major>.<minor>.<patch>` tag 触发 `.github/workflows/desktop-release.yml`。工作流需要 repository secrets `WINDOWS_SIGNING_CERTIFICATE_BASE64`、`WINDOWS_SIGNING_CERTIFICATE_PASSWORD`，以及 repository variable `WINDOWS_SIGNING_SUBJECT`；任一项未配置都会失败，不会发布未签名安装器。
+
+发布后，GitHub Release 必须同时含有 `EcommerceToolboxSetup.exe`、`EcommerceToolbox-<version>-full.nupkg`、`RELEASES` 及其 `.sha256` 文件。安装版将其更新源固定为当前仓库的 `releases/latest/download`；Squirrel 会读取其中的 `RELEASES` 决定下载哪个 full package。不要手工替换同名资产、修改 `RELEASES` 或省略 `.nupkg`，否则已有用户的更新检查会失败。
+
+桌面设置页可启用/停用自动检查或手动检查。只有从已签名 Squirrel 安装器安装的包会检查更新；开发启动、直接解压的输出目录以及首次安装启动均不会检查。下载完成后用户可选择立即重启安装，应用会先停止本地后端。发布 CI 会检查安装器和更新包中的所有 `.exe` Authenticode Subject，必须与受控 `WINDOWS_SIGNING_SUBJECT` 完全一致。
+
+## 9. standalone 构建与发布
 
 standalone 源码始终从当前提交的 `git archive HEAD` 生成，不包含未提交或未跟踪文件。构建命令：
 
@@ -141,7 +149,7 @@ pwsh ./scripts/package-standalone.ps1 -Platform macos
 
 CI 的 `enterprise-acceptance` job 会在所有静态检查、Node/Python 测试、E2E、构建审计和双平台归档冒烟成功后，使用隔离临时 `STORAGE_ROOT` 重跑迁移 dry-run、初始化、`db:verify` 和 10,000 条数据基准；它不会触碰开发机的现有 storage。重构分支已合并到 main，F06 变更行覆盖率 90% 已对每个 Pull Request 生效。
 
-## 9. 常见故障定位
+## 10. 常见故障定位
 
 | 现象                              | 首先检查                                                                                        |
 | --------------------------------- | ----------------------------------------------------------------------------------------------- |

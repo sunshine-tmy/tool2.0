@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  # Desktop release publishes Squirrel assets to the same tag release.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   package:
     strategy:

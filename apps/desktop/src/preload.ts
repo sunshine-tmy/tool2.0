@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld("toolboxDesktop", {
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),
   updateSettings: (settings: { startAtLogin?: boolean; automaticUpdateChecks?: boolean }) =>
     ipcRenderer.invoke("desktop:update-settings", settings),
+  checkForUpdates: () =>
+    ipcRenderer.invoke("desktop:check-for-updates") as Promise<{ enabled: boolean; checking: boolean }>,
   revealDataDirectory: () => ipcRenderer.invoke("desktop:reveal-data-directory") as Promise<void>,
   selectLegacyDataDirectory: () => ipcRenderer.invoke("desktop:select-legacy-data-directory"),
   importLegacyData: (selectionId: string) => ipcRenderer.invoke("desktop:import-legacy-data", selectionId),

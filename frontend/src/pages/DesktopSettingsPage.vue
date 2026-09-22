@@ -18,9 +18,16 @@
           <div class="panel-heading">
             <div>
               <h3>启动与更新</h3>
-              <p class="panel-description">偏好将原子写入用户配置目录；更新检查开关将在自动更新阶段接入更新器。</p>
+              <p class="panel-description">
+                偏好将原子写入用户配置目录；只在已签名安装版中从固定 HTTPS 更新源检查更新。
+              </p>
             </div>
-            <n-button tertiary :loading="loading" @click="loadSettings">刷新</n-button>
+            <n-space>
+              <n-button tertiary :loading="loading" @click="loadSettings">刷新</n-button>
+              <n-button tertiary :loading="checkingUpdates" :disabled="loading" @click="checkForUpdates"
+                >检查更新</n-button
+              >
+            </n-space>
           </div>
           <n-space vertical :size="18">
             <n-space justify="space-between" align="center">
@@ -37,7 +44,7 @@
             <n-space justify="space-between" align="center">
               <div>
                 <strong>自动检查更新</strong>
-                <p class="setting-copy">默认开启；阶段 8 接入已签名更新源后生效。</p>
+                <p class="setting-copy">默认开启；下载完成后会询问是否重启安装。</p>
               </div>
               <n-switch
                 :value="settings?.automaticUpdateChecks"
@@ -137,6 +144,7 @@ const selectedLegacyDirectory = ref<{ selectionId: string; displayName: string }
 const loading = ref(false);
 const saving = ref(false);
 const migrating = ref(false);
+const checkingUpdates = ref(false);
 const error = ref("");
 
 onMounted(() => void loadSettings());
@@ -182,6 +190,21 @@ async function revealDataDirectory() {
     await desktop.value.revealDataDirectory();
   } catch (cause) {
     error.value = formatApiError(cause, "打开用户数据目录失败");
+  }
+}
+
+async function checkForUpdates() {
+  if (!desktop.value) return;
+  checkingUpdates.value = true;
+  error.value = "";
+  try {
+    const result = await desktop.value.checkForUpdates();
+    if (!result.enabled) message.info("当前不是已配置更新源的 Squirrel 安装版，无法检查更新");
+    else message.success("正在检查更新；如有新版本，下载完成后会提示安装");
+  } catch (cause) {
+    error.value = formatApiError(cause, "检查更新失败");
+  } finally {
+    checkingUpdates.value = false;
   }
 }
 

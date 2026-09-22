@@ -26,6 +26,7 @@ declare global {
         startAtLogin?: boolean;
         automaticUpdateChecks?: boolean;
       }): Promise<DesktopSettingsState>;
+      checkForUpdates(): Promise<{ enabled: boolean; checking: boolean }>;
       revealDataDirectory(): Promise<void>;
       selectLegacyDataDirectory(): Promise<
         { canceled: true } | { canceled: false; selectionId: string; displayName: string }
