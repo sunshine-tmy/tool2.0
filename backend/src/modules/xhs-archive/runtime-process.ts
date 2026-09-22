@@ -37,7 +37,8 @@ export class XhsProviderProcess {
     if (await this.isHealthy()) return;
     this.stopping = false;
     this.onStatus("installing", "正在启动本机解析服务");
-    const workerScript = findProjectFile("scripts/xhs-provider-worker.py");
+    const workerScript = path.join(this.config.runtime.scriptsRoot, "xhs-provider-worker.py");
+    if (!fs.existsSync(workerScript)) throw new Error("找不到小红书解析 Worker 脚本");
     this.worker = spawn(venvPython, [workerScript], {
       cwd: sourceDir,
       env: { ...process.env, XHS_PROVIDER_PORT: String(this.config.xhsProviderPort), XHS_SOURCE_DIR: sourceDir },
@@ -74,11 +75,4 @@ export class XhsProviderProcess {
       this.stopping = false;
     }
   }
-}
-
-function findProjectFile(relativePath: string) {
-  const candidates = [path.resolve(process.cwd(), relativePath), path.resolve(process.cwd(), "..", relativePath)];
-  const found = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!found) throw new Error(`找不到项目文件：${relativePath}`);
-  return found;
 }

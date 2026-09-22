@@ -27,7 +27,7 @@ import {
   type FileNameParams,
   type TaskIdParams
 } from "@toolbox/shared";
-import { getConfig } from "./config";
+import { getConfig, type AppConfig } from "./config";
 import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerImageAiRoutes } from "./modules/image-ai/routes";
 import { registerEdgeTtsRoutes } from "./modules/edge-tts";
@@ -50,7 +50,7 @@ import { FileMetadataRepository } from "./database/file-metadata";
 import { reconcileFileMetadataStorage } from "./database/file-consistency";
 import { reconcileDomainRecords } from "./database/domain-consistency";
 
-export async function createApp(options: { remoteAddressResolver?: AddressResolver } = {}) {
+export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
   const app = fastify({
     logger:
       process.env.NODE_ENV === "test"
@@ -73,7 +73,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     bodyLimit: 1024 * 1024,
     requestIdHeader: "x-request-id"
   });
-  const config = getConfig();
+  const config = options.config ?? getConfig();
   // 启动阶段先打开数据库并创建共享仓储，后续所有路由都复用这些实例，避免各模块各自维护连接。
   const { database } = await openToolboxDatabase(config);
   const fileMetadata = new FileMetadataRepository(database, config.storageRoot);

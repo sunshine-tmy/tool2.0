@@ -235,7 +235,7 @@ export class XhsTranslationRuntime {
         );
         const url = `https://huggingface.co/${COMMUNITY_MODEL_REPOSITORY}/resolve/${COMMUNITY_MODEL_REVISION}/${file.name}`;
         const target = path.join(staging, file.name);
-        await downloadFixedModelFile(url, target, file.name, this.config.xhsTranslationInstallTimeoutMs);
+        await downloadFixedModelFile(this.config, url, target, file.name, this.config.xhsTranslationInstallTimeoutMs);
         const bytes = await fsp.readFile(target);
         if (bytes.byteLength > 1024 * 1024 * 1024 || (file.size !== undefined && bytes.byteLength !== file.size))
           throw new XhsTranslationRuntimeError("XHS_TRANSLATION_MODEL_INVALID", `模型文件大小校验失败（${file.name}）`);
@@ -275,7 +275,7 @@ export class XhsTranslationRuntime {
 
   private async startWorker() {
     if (await this.isHealthy()) return;
-    const script = findProjectFile("scripts/xhs-translation-worker.py");
+    const script = findRuntimeScript(this.config, "xhs-translation-worker.py");
     this.worker = spawn(this.venvPython(), [script], {
       cwd: path.dirname(script),
       env: {
@@ -352,7 +352,13 @@ export class XhsTranslationRuntimeError extends Error {
   }
 }
 
-async function downloadFixedModelFile(url: string, target: string, name: string, timeoutMs: number): Promise<void> {
+async function downloadFixedModelFile(
+  config: AppConfig,
+  url: string,
+  target: string,
+  name: string,
+  timeoutMs: number
+): Promise<void> {
   await fsp.rm(target, { force: true });
   try {
     const response = await fetch(url, {
@@ -382,7 +388,7 @@ async function downloadFixedModelFile(url: string, target: string, name: string,
   // not inherited by Node's built-in fetch. The URL is a fixed, pinned model
   // source and the destination is a runtime staging path.
   try {
-    const script = findProjectFile("scripts/download-fixed-model-file.ps1");
+    const script = findRuntimeScript(config, "download-fixed-model-file.ps1");
     await run(
       "powershell.exe",
       [
@@ -463,11 +469,10 @@ async function findFile(root: string, names: string[]): Promise<string | undefin
   return undefined;
 }
 
-function findProjectFile(relativePath: string) {
-  const candidates = [path.resolve(process.cwd(), relativePath), path.resolve(process.cwd(), "..", relativePath)];
-  const found = candidates.find((candidate) => fs.existsSync(candidate));
-  if (!found) throw new Error(`找不到项目文件：${relativePath}`);
-  return found;
+function findRuntimeScript(config: AppConfig, fileName: string) {
+  const script = path.join(config.runtime.scriptsRoot, fileName);
+  if (!fs.existsSync(script)) throw new Error(`找不到运行时脚本：${fileName}`);
+  return script;
 }
 
 function findUv(root: string) {

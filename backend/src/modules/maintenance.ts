@@ -1,8 +1,8 @@
 /**
  * 中文模块说明：后端应用层，负责 后端公共服务、配置或基础设施能力
  */
-import path from "node:path";
 import fs from "node:fs";
+import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
@@ -48,7 +48,9 @@ export function registerMaintenanceRoutes(app: FastifyInstance, deps: Maintenanc
     { schema: { response: { 200: apiSuccessSchema(CleanupInspectionSchema), 500: ApiFailureSchema } } },
     async (_request, reply) => {
       try {
-        const categories = (await runCleanup(["--json-web"])) as CleanupCategory[];
+        const categories = (await (deps.cleanupRunner ?? ((args) => runCleanup(deps.config, args)))([
+          "--json-web"
+        ])) as CleanupCategory[];
         return ok(categories);
       } catch (error) {
         return reply.code(500).send(fail("CLEANUP_INSPECTION_FAILED", message(error)));
@@ -73,7 +75,7 @@ export function registerMaintenanceRoutes(app: FastifyInstance, deps: Maintenanc
           .send(fail("CLEANUP_BUILD_REQUIRES_TERMINAL", "网页运行期间不能清理构建产物，请停止服务后使用终端清理脚本"));
       try {
         const dryRun = body.dryRun === true;
-        const results = (await (deps.cleanupRunner ?? runCleanup)([
+        const results = (await (deps.cleanupRunner ?? ((args) => runCleanup(deps.config, args)))([
           `--execute=${ids.join(",")}`,
           ...(dryRun ? ["--dry-run"] : [])
         ])) as CleanupCategory[];
@@ -114,13 +116,11 @@ async function syncMetadataAfterCleanup(
   }
 }
 
-async function runCleanup(args: string[]) {
-  const roots = [process.cwd(), path.resolve(process.cwd(), "..")];
-  const root = roots.find((candidate) => fs.existsSync(path.join(candidate, "scripts", "clear-generated.mjs")));
-  if (!root) throw new Error("找不到项目清理脚本");
-  const script = path.join(root, "scripts", "clear-generated.mjs");
+async function runCleanup(config: AppConfig, args: string[]) {
+  const script = path.join(config.runtime.scriptsRoot, "clear-generated.mjs");
+  if (!fs.existsSync(script)) throw new Error("找不到项目清理脚本");
   const { stdout } = await execFileAsync(process.execPath, [script, ...args], {
-    cwd: root,
+    cwd: config.runtime.appRoot,
     windowsHide: true,
     timeout: 120_000,
     maxBuffer: 2 * 1024 * 1024
