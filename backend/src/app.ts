@@ -49,6 +49,7 @@ import { reconcileLanStorage } from "./database/storage-consistency";
 import { FileMetadataRepository } from "./database/file-metadata";
 import { reconcileFileMetadataStorage } from "./database/file-consistency";
 import { reconcileDomainRecords } from "./database/domain-consistency";
+import { registerFrontendAssets } from "./plugins/frontend-assets";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
   const app = fastify({
@@ -371,6 +372,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     store: xhsStore
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
+  await registerFrontendAssets(app, { root: config.runtime.frontendDistRoot });
 
   if (config.databasePath !== ":memory:") {
     // 持久化启动时执行可恢复的一致性检查；异常文件进入隔离区而不是直接删除，保护本地数据。

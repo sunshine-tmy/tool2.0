@@ -6,6 +6,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     app: "src/app.ts",
+    bootstrap: "src/bootstrap.ts",
     server: "src/server.ts"
   },
   outDir: "dist",
