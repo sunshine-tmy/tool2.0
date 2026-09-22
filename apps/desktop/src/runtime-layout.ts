@@ -31,6 +31,6 @@ export function desktopDataRoot(localAppData: string | undefined, fallback: stri
 export function desktopBackendEntrypoint(packaged: boolean, resourcesPath?: string) {
   const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
   return packaged
-    ? path.join(resourcesPath ?? process.resourcesPath, "backend", "desktop-entry.js")
+    ? path.join(resourcesPath ?? process.resourcesPath, "backend", "dist", "desktop-entry.js")
     : path.join(workspaceRoot, "backend", "dist", "desktop-entry.js");
 }

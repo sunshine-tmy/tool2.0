@@ -9,17 +9,16 @@
   "scripts": {
     "build": "tsup --config tsup.config.ts && tsup src/preload.ts --format cjs --platform node --target node24 --out-dir dist --clean false",
     "start": "electron .",
-    "package": "electron-forge package --arch=x64",
-    "make": "electron-forge make --arch=x64",
+    "package": "node scripts/package-desktop.mjs",
+    "make": "node scripts/package-desktop.mjs --make",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --exclude .stage/** --exclude out/**"
   },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.2",
-    "@electron-forge/maker-squirrel": "^7.11.2",
-    "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+    "@electron/packager": "^18.4.4",
     "@electron/rebuild": "^4.2.0",
     "electron": "^44.4.3",
+    "electron-winstaller": "^5.4.4",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

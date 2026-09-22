@@ -1,5 +1,8 @@
 node_modules/
 dist/
+apps/desktop/.stage/
+apps/desktop/out/
+apps/desktop/.electron-cache/
 .env
 .env.local
 .env.*

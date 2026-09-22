@@ -19,7 +19,7 @@ describe("desktop runtime layout", () => {
 
   it("selects the copied backend entrypoint in a packaged application", () => {
     expect(desktopBackendEntrypoint(true, "C:\\app\\resources")).toBe(
-      path.join("C:\\app\\resources", "backend", "desktop-entry.js")
+      path.join("C:\\app\\resources", "backend", "dist", "desktop-entry.js")
     );
   });
 });
