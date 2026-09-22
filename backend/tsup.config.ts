@@ -7,6 +7,7 @@ export default defineConfig({
   entry: {
     app: "src/app.ts",
     bootstrap: "src/bootstrap.ts",
+    "desktop-entry": "src/desktop-entry.ts",
     server: "src/server.ts"
   },
   outDir: "dist",

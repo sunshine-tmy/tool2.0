@@ -1,13 +1,24 @@
 packages:
+  - apps/*
   - frontend
   - backend
   - packages/*
 
 onlyBuiltDependencies:
   - better-sqlite3
+  - electron
+  - electron-winstaller
   - esbuild
   - sharp
 allowBuilds:
   better-sqlite3: true
+  electron: true
+  electron-winstaller: true
   esbuild: true
   sharp: true
+
+# Electron Forge 7.11 transitively pins @electron/node-gyp to a reviewed,
+# commit-addressed Git source. pnpm 11 has no package-scoped allowlist for
+# this setting, so keep the source pinned in pnpm-lock.yaml and review it on
+# dependency updates rather than replacing the entire desktop toolchain.
+blockExoticSubdeps: false
