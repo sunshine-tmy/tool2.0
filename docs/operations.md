@@ -118,7 +118,15 @@ pnpm db:rollback --backup <backup-id>
 
 如果隔离目录或数据库备份本身损坏，停止自动清理并保留现场，使用最近一次迁移备份回滚；不要用“清空 storage”作为修复手段。
 
-## 7. standalone 构建与发布
+## 7. Windows 桌面数据与迁移
+
+Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\EcommerceToolbox`；安装目录、`resources` 和 `app.asar` 不保存数据库、素材、模型、能力包、设置或备份。桌面应用的“桌面设置与数据迁移”页是唯一支持导入完整旧版数据目录的图形入口。
+
+导入前请先退出其他可能使用旧 `storage` 的进程。选择旧版 `storage` 目录后，应用会停止本地服务、复制到用户目录临时区并逐文件校验 SHA-256，随后原子切换数据目录。导入不改写源目录；原有 `data` 会保存在 `%LOCALAPPDATA%\\EcommerceToolbox\\migration-backups\\desktop\\<id>\\previous-data`。
+
+如需撤销，使用同一页面“回滚到导入前数据”。该操作会验证备份摘要并先把当前数据保留为 `rollback-current-data`，因此不要通过资源管理器手工移动、修改或删除迁移备份。若应用报告迁移日志不一致或备份摘要不匹配，应停止操作并完整复制 `%LOCALAPPDATA%\\EcommerceToolbox` 后再排查；不要删除 `data`、迁移日志或备份目录。
+
+## 8. standalone 构建与发布
 
 standalone 源码始终从当前提交的 `git archive HEAD` 生成，不包含未提交或未跟踪文件。构建命令：
 
@@ -133,7 +141,7 @@ pwsh ./scripts/package-standalone.ps1 -Platform macos
 
 CI 的 `enterprise-acceptance` job 会在所有静态检查、Node/Python 测试、E2E、构建审计和双平台归档冒烟成功后，使用隔离临时 `STORAGE_ROOT` 重跑迁移 dry-run、初始化、`db:verify` 和 10,000 条数据基准；它不会触碰开发机的现有 storage。重构分支已合并到 main，F06 变更行覆盖率 90% 已对每个 Pull Request 生效。
 
-## 8. 常见故障定位
+## 9. 常见故障定位
 
 | 现象                              | 首先检查                                                                                        |
 | --------------------------------- | ----------------------------------------------------------------------------------------------- |

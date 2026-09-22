@@ -20,6 +20,7 @@ export class BackendSupervisor {
   async start() {
     if (this.origin) return this.origin;
     if (this.child) throw new Error("Backend is already starting");
+    this.stopping = false;
     const child = utilityProcess.fork(this.options.entrypoint, [], {
       cwd: this.options.runtimeLayout.appRoot,
       env: {

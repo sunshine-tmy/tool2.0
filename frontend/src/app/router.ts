@@ -13,6 +13,11 @@ export const router = createRouter({
       component: ToolHomePage
     },
     {
+      path: "/settings",
+      name: "desktop-settings",
+      component: () => import("../pages/DesktopSettingsPage.vue")
+    },
+    {
       path: "/tools/image-compress",
       name: "image-compress",
       // 业务页面按路由懒加载，首屏只下载首页和布局所需代码。

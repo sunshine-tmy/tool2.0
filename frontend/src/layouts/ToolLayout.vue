@@ -48,6 +48,10 @@
         </n-input>
       </div>
 
+      <n-button quaternary circle aria-label="桌面设置" title="桌面设置" @click="$router.push('/settings')">
+        <Settings :size="19" />
+      </n-button>
+
       <button
         type="button"
         class="topbar-status"
@@ -251,6 +255,7 @@ import {
   Search,
   SearchX,
   ServerCog,
+  Settings,
   X,
   Wrench
 } from "lucide-vue-next";
