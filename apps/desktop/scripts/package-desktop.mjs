@@ -16,9 +16,7 @@ const makeInstaller = process.argv.includes("--make");
 const electronCache = process.env.ELECTRON_DOWNLOAD_CACHE ?? path.join(desktopRoot, ".electron-cache");
 const electronMirror = process.env.ELECTRON_MIRROR;
 
-await Promise.all(
-  ["backend", "frontend", "scripts"].map((name) => access(path.join(stageRoot, name)))
-);
+await Promise.all(["backend", "frontend", "scripts"].map((name) => access(path.join(stageRoot, name))));
 await rm(outputRoot, { recursive: true, force: true });
 
 const [packagedApp] = await packager({
@@ -32,11 +30,7 @@ const [packagedApp] = await packager({
   // outputRoot was cleared above. Avoid a second recursive deletion inside
   // Electron Packager, which can race with Windows antivirus file scanning.
   overwrite: false,
-  extraResource: [
-    path.join(stageRoot, "backend"),
-    path.join(stageRoot, "frontend"),
-    path.join(stageRoot, "scripts")
-  ],
+  extraResource: [path.join(stageRoot, "backend"), path.join(stageRoot, "frontend"), path.join(stageRoot, "scripts")],
   download: {
     cacheRoot: electronCache,
     mirrorOptions: electronMirror ? { mirror: electronMirror } : undefined

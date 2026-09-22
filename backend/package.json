@@ -29,6 +29,7 @@
     "nanoid": "^5.1.16",
     "playwright-core": "^1.63.0",
     "sharp": "^0.35.4",
+    "tar": "^7.5.7",
     "undici": "^7.29.1"
   },
   "devDependencies": {

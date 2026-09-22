@@ -12,15 +12,15 @@ Worker 只监听 loopback 动态端口，启动时由主程序传入随机令牌
 
 能力包分为以下类别：
 
-| 类别 | 包 | 安装策略 |
-| --- | --- | --- |
-| 媒体基础 | ffmpeg、ffprobe | 可随核心安装器携带，或首次使用安装 |
-| 小型在线能力 | edge-tts runner | 核心安装器或首次使用安装 |
-| 转写 | faster-whisper 和模型 | CPU/CUDA 与模型拆分，按需安装 |
-| 图片 AI | Python Worker、依赖和模型 | CPU/CUDA 拆分，按需安装 |
-| 声音克隆 | Chatterbox Worker、依赖和模型 | CPU/CUDA 拆分，按需安装 |
-| XHS 归档 | XHS-Downloader、受管 Python、登录浏览器 | 首次使用安装；受 GPL 和平台条款约束 |
-| XHS 翻译 | CTranslate2、OPUS-MT 模型 | 首次翻译安装或离线导入 |
+| 类别         | 包                                      | 安装策略                            |
+| ------------ | --------------------------------------- | ----------------------------------- |
+| 媒体基础     | ffmpeg、ffprobe                         | 可随核心安装器携带，或首次使用安装  |
+| 小型在线能力 | edge-tts runner                         | 核心安装器或首次使用安装            |
+| 转写         | faster-whisper 和模型                   | CPU/CUDA 与模型拆分，按需安装       |
+| 图片 AI      | Python Worker、依赖和模型               | CPU/CUDA 拆分，按需安装             |
+| 声音克隆     | Chatterbox Worker、依赖和模型           | CPU/CUDA 拆分，按需安装             |
+| XHS 归档     | XHS-Downloader、受管 Python、登录浏览器 | 首次使用安装；受 GPL 和平台条款约束 |
+| XHS 翻译     | CTranslate2、OPUS-MT 模型               | 首次翻译安装或离线导入              |
 
 ## 禁止事项
 

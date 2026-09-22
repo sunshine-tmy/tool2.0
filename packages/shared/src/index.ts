@@ -17,3 +17,4 @@ export * from "./short-video";
 export * from "./xhs-archive";
 export * from "./xhs-text";
 export * from "./video-text-api";
+export * from "./component-packages";

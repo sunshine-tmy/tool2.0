@@ -40,6 +40,9 @@ import { XhsAuthManager } from "./modules/xhs-archive/auth";
 import { XhsRuntimeManager } from "./modules/xhs-archive/runtime";
 import { XhsArchiveStore } from "./modules/xhs-archive/store";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
+import { bundledComponentCatalog } from "./modules/components/catalog";
+import { ComponentManager } from "./modules/components/component-manager";
+import { registerComponentRoutes } from "./modules/components/routes";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
 import { registerAdminSecurity } from "./security/admin-session";
@@ -83,6 +86,10 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const xhsRuntime = new XhsRuntimeManager(config);
   const xhsAuth = new XhsAuthManager(config);
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
+  const componentManager = new ComponentManager({
+    root: path.join(config.runtime.runtimeRoot, "packages"),
+    catalog: bundledComponentCatalog
+  });
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
@@ -372,6 +379,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     store: xhsStore
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
+  registerComponentRoutes(app, componentManager);
   await registerFrontendAssets(app, { root: config.runtime.frontendDistRoot });
 
   if (config.databasePath !== ":memory:") {

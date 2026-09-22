@@ -10,7 +10,7 @@ export type DesktopRuntimeLayoutOptions = {
 
 export function createDesktopRuntimeLayout(options: DesktopRuntimeLayoutOptions): RuntimeLayout {
   const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
-  const resourceRoot = options.packaged ? options.resourcesPath ?? process.resourcesPath : workspaceRoot;
+  const resourceRoot = options.packaged ? (options.resourcesPath ?? process.resourcesPath) : workspaceRoot;
   const dataRoot = path.resolve(options.userDataRoot);
 
   return createRuntimeLayout({

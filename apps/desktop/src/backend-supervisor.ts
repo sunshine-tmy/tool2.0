@@ -2,9 +2,7 @@ import { utilityProcess, type UtilityProcess } from "electron";
 import type { RuntimeLayout } from "../../../backend/src/runtime/runtime-layout";
 
 type BackendMessage =
-  | { type: "ready"; origin: string }
-  | { type: "startup-error"; message: string }
-  | { type: "stopped" };
+  { type: "ready"; origin: string } | { type: "startup-error"; message: string } | { type: "stopped" };
 
 export class BackendSupervisor {
   private child?: UtilityProcess;
