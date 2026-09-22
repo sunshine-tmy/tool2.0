@@ -18,7 +18,8 @@ export type ImageOptions = {
 };
 
 export function normalizeImageOptions(options: RawImageOptions): ImageOptions {
-  const outputFormat = options.outputFormat ?? "webp";
+  // 未显式指定格式时统一输出 PNG，确保前端与直接调用 API 的默认行为一致。
+  const outputFormat = options.outputFormat ?? "png";
 
   if (!imageOutputFormats.includes(outputFormat as ImageOutputFormat)) {
     throw new Error("Unsupported image format");

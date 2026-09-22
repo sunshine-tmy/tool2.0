@@ -193,11 +193,11 @@ const submitting = ref(false);
 const downloading = ref(false);
 const quality = ref(78);
 const width = ref<number | null>(null);
-const outputFormat = ref<OutputFormat>("webp");
+const outputFormat = ref<OutputFormat>("png");
 const activePreset = ref<PresetValue>("balanced");
 
 const presets: Array<{ label: string; value: PresetValue; quality: number; format: OutputFormat }> = [
-  { label: "均衡", value: "balanced", quality: 78, format: "webp" },
+  { label: "均衡", value: "balanced", quality: 78, format: "png" },
   { label: "高清", value: "clear", quality: 88, format: "webp" },
   { label: "极小", value: "small", quality: 60, format: "webp" }
 ];

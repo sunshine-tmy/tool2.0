@@ -86,8 +86,7 @@ describe("image tools api", () => {
         mimeType: "image/png",
         content: image,
         fields: {
-          quality: "60",
-          outputFormat: "webp"
+          quality: "60"
         }
       })
     });
@@ -95,9 +94,9 @@ describe("image tools api", () => {
     expect(response.statusCode).toBe(200);
     const data = response.json().data;
     expect(data.task.status).toBe("completed");
-    expect(data.downloadUrl).toMatch(/\/api\/v1\/files\/.+\.webp$/);
+    expect(data.downloadUrl).toMatch(/\/api\/v1\/files\/.+\.png$/);
     expect(data.originalName).toBe("demo.png");
-    expect(data.outputFormat).toBe("webp");
+    expect(data.outputFormat).toBe("png");
     expect(data.originalSize).toBe(image.length);
     expect(data.outputSize).toBeGreaterThan(0);
     expect(data.savedBytes).toBe(data.originalSize - data.outputSize);

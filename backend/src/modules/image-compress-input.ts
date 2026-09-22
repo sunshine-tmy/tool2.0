@@ -44,7 +44,8 @@ export async function readImageMultipart(request: FastifyRequest) {
 export function parseImageOptions(fields: Record<string, unknown>) {
   return {
     quality: Number(fields.quality ?? 78),
-    outputFormat: String(fields.outputFormat ?? "webp"),
+    // multipart 调用方未传格式时也必须落到 PNG，不能绕过共享层默认值。
+    outputFormat: String(fields.outputFormat ?? "png"),
     width: fields.width ? Number(fields.width) : undefined
   };
 }
