@@ -10,6 +10,7 @@ import {
   type ChatterboxWorkerHealth
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { workerAuthHeaders } from "../../security/worker-auth";
 
 let generationTail: Promise<void> = Promise.resolve();
 
@@ -104,8 +105,12 @@ async function requestWorker<T>(
   externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
 
   try {
+    const headers = new Headers(init.headers);
+    for (const [name, value] of Object.entries(workerAuthHeaders(config.chatterboxWorkerToken)))
+      headers.set(name, value);
     const response = await fetch(new URL(pathname, `${config.chatterboxWorkerUrl}/`), {
       ...init,
+      headers,
       signal: controller.signal
     });
     const payload: unknown = await response.json().catch(() => null);

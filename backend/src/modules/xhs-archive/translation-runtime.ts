@@ -9,6 +9,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { XhsTranslationRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import { terminateChildProcess } from "../../lifecycle/child-process";
+import { workerAuthHeaders } from "../../security/worker-auth";
 import { validateArchiveListing, validateExtractedDirectory } from "../../security/archive-safety";
 
 const MODEL_REVISION = "cf109095479db38d6df799875e34039d4938aaa6";
@@ -281,6 +282,7 @@ export class XhsTranslationRuntime {
       env: {
         ...process.env,
         XHS_TRANSLATION_PORT: String(this.config.xhsTranslationProviderPort),
+        XHS_TRANSLATION_TOKEN: this.config.xhsTranslationToken ?? "",
         XHS_TRANSLATION_MODEL_DIR: this.modelDir()
       },
       stdio: ["ignore", "ignore", "pipe"],
@@ -303,7 +305,10 @@ export class XhsTranslationRuntime {
 
   private async isHealthy() {
     try {
-      const response = await fetch(`${this.baseUrl()}/health`, { signal: AbortSignal.timeout(1500) });
+      const response = await fetch(`${this.baseUrl()}/health`, {
+        headers: workerAuthHeaders(this.config.xhsTranslationToken),
+        signal: AbortSignal.timeout(1500)
+      });
       return response.ok;
     } catch {
       return false;

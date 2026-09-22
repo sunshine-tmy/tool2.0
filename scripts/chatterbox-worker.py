@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hmac
 import importlib.metadata
 import json
 import logging
@@ -45,6 +46,7 @@ STORAGE_ROOT = project_path(os.getenv("CHATTERBOX_STORAGE_ROOT", str(BASE_STORAG
 MODELS_ROOT = project_path(os.getenv("CHATTERBOX_MODELS_ROOT", "models/chatterbox"))
 HOST = os.getenv("CHATTERBOX_WORKER_HOST", "127.0.0.1")
 PORT = int(os.getenv("CHATTERBOX_WORKER_PORT", "3220"))
+WORKER_TOKEN = os.getenv("CHATTERBOX_WORKER_TOKEN", "")
 DEVICE_SETTING = os.getenv("CHATTERBOX_DEVICE", "auto").strip().lower()
 MODEL_IDLE_MINUTES = max(0, int(os.getenv("CHATTERBOX_MODEL_IDLE_MINUTES", "10")))
 # 使用不可变的 Hugging Face commit 而非 main，避免上游权重或清单更新后在未发布代码的情况下
@@ -395,6 +397,16 @@ async def worker_lifespan(_: FastAPI):
 app = FastAPI(title="Chatterbox Multilingual V3 Worker", docs_url=None, redoc_url=None, lifespan=worker_lifespan)
 
 
+@app.middleware("http")
+async def require_worker_token(request: Request, call_next: Any) -> Any:
+    if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+        )
+    return await call_next(request)
+
+
 @app.exception_handler(WorkerFailure)
 async def worker_failure_handler(_: Request, exc: WorkerFailure) -> JSONResponse:
     return JSONResponse(
@@ -508,6 +520,8 @@ if __name__ == "__main__":
     else:
         import uvicorn
 
+        if arguments.host not in {"127.0.0.1", "localhost", "::1"}:
+            raise SystemExit("The Chatterbox worker must only listen on loopback")
         if arguments.eager_load:
             manager.load()
             # 空闲卸载定时器必须等 Uvicorn 创建事件循环后由 startup 钩子建立。

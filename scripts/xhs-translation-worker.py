@@ -2,21 +2,34 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import os
 from pathlib import Path
 
 import ctranslate2
 import sentencepiece as spm
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 MODEL_DIR = Path(os.environ.get("XHS_TRANSLATION_MODEL_DIR", ".runtime/xhs-translate/model"))
 PORT = int(os.environ.get("XHS_TRANSLATION_PORT", "5557"))
 app = FastAPI(title="xhs-translation-worker")
+WORKER_TOKEN = os.environ.get("XHS_TRANSLATION_TOKEN", "")
 translator: ctranslate2.Translator | None = None
 source_processor: spm.SentencePieceProcessor | None = None
 target_processor: spm.SentencePieceProcessor | None = None
 lock = asyncio.Lock()
+
+
+@app.middleware("http")
+async def require_worker_token(request: Request, call_next):
+    if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+        )
+    return await call_next(request)
 
 
 class TranslateRequest(BaseModel):

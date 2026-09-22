@@ -47,12 +47,14 @@ export type AppConfig = {
   xhsArchiveIndexPath: string;
   xhsRuntimeDir: string;
   xhsProviderUrl?: string;
+  xhsProviderToken?: string;
   xhsProviderPort: number;
   xhsInstallTimeoutMs: number;
   xhsArchiveMaxStorageBytes: number;
   xhsTranslationRuntimeDir: string;
   xhsTranslationModelDir: string;
   xhsTranslationProviderUrl?: string;
+  xhsTranslationToken?: string;
   xhsTranslationProviderPort: number;
   xhsTranslationInstallTimeoutMs: number;
   xhsTranslationModelUrl: string;
@@ -64,6 +66,7 @@ export type AppConfig = {
   imageAiOutputsDir: string;
   imageAiTasksDir: string;
   imageAiWorkerUrl: string;
+  imageAiWorkerToken?: string;
   imageAiWorkerTimeoutMs: number;
   imageAiRetentionHours: number;
   imageAiQueueLimit: number;
@@ -78,6 +81,7 @@ export type AppConfig = {
   chatterboxDir: string;
   chatterboxTasksDir: string;
   chatterboxWorkerUrl: string;
+  chatterboxWorkerToken?: string;
   chatterboxWorkerTimeoutMs: number;
   chatterboxRetentionDays: number;
   chatterboxQueueLimit: number;
@@ -228,6 +232,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
       getEnv("XHS_RUNTIME_DIR", fileEnv, environment)?.trim() || path.join(runtime.runtimeRoot, "xhs-downloader")
     ),
     xhsProviderUrl: getEnv("XHS_PROVIDER_URL", fileEnv, environment)?.trim() || undefined,
+    xhsProviderToken: getEnv("XHS_PROVIDER_TOKEN", fileEnv, environment)?.trim() || undefined,
     xhsProviderPort: readInteger(
       "XHS_PROVIDER_PORT",
       getEnv("XHS_PROVIDER_PORT", fileEnv, environment),
@@ -254,6 +259,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
       getEnv("XHS_TRANSLATION_MODEL_DIR", fileEnv, environment)?.trim() || path.join(xhsTranslationRuntimeDir, "model")
     ),
     xhsTranslationProviderUrl: getEnv("XHS_TRANSLATION_PROVIDER_URL", fileEnv, environment)?.trim() || undefined,
+    xhsTranslationToken: getEnv("XHS_TRANSLATION_TOKEN", fileEnv, environment)?.trim() || undefined,
     xhsTranslationProviderPort: readInteger(
       "XHS_TRANSLATION_PROVIDER_PORT",
       getEnv("XHS_TRANSLATION_PROVIDER_PORT", fileEnv, environment),
@@ -289,7 +295,12 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     imageAiInputsDir: path.join(imageAiDir, "inputs"),
     imageAiOutputsDir: path.join(imageAiDir, "outputs"),
     imageAiTasksDir: path.join(imageAiDir, "tasks"),
-    imageAiWorkerUrl: getEnv("IMAGE_AI_WORKER_URL", fileEnv, environment)?.trim() || "http://127.0.0.1:3210",
+    imageAiWorkerUrl: readLoopbackWorkerUrl(
+      "IMAGE_AI_WORKER_URL",
+      getEnv("IMAGE_AI_WORKER_URL", fileEnv, environment),
+      "http://127.0.0.1:3210"
+    ),
+    imageAiWorkerToken: getEnv("IMAGE_AI_WORKER_TOKEN", fileEnv, environment)?.trim() || undefined,
     imageAiWorkerTimeoutMs: readInteger(
       "IMAGE_AI_WORKER_TIMEOUT_MS",
       getEnv("IMAGE_AI_WORKER_TIMEOUT_MS", fileEnv, environment),
@@ -351,7 +362,12 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     ),
     chatterboxDir,
     chatterboxTasksDir: path.join(chatterboxDir, "tasks"),
-    chatterboxWorkerUrl: getEnv("CHATTERBOX_WORKER_URL", fileEnv, environment)?.trim() || "http://127.0.0.1:3220",
+    chatterboxWorkerUrl: readLoopbackWorkerUrl(
+      "CHATTERBOX_WORKER_URL",
+      getEnv("CHATTERBOX_WORKER_URL", fileEnv, environment),
+      "http://127.0.0.1:3220"
+    ),
+    chatterboxWorkerToken: getEnv("CHATTERBOX_WORKER_TOKEN", fileEnv, environment)?.trim() || undefined,
     chatterboxWorkerTimeoutMs: readInteger(
       "CHATTERBOX_WORKER_TIMEOUT_MS",
       getEnv("CHATTERBOX_WORKER_TIMEOUT_MS", fileEnv, environment),
@@ -459,6 +475,18 @@ function readBoolean(name: string, value: string | undefined, fallback: boolean)
   if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
   if (normalized === "false" || normalized === "0" || normalized === "no") return false;
   throw new Error(`${name} must be true or false`);
+}
+
+function readLoopbackWorkerUrl(name: string, value: string | undefined, fallback: string) {
+  const candidate = value?.trim() || fallback;
+  try {
+    const url = new URL(candidate);
+    const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (url.protocol !== "http:" || !["127.0.0.1", "localhost", "::1"].includes(host)) throw new Error();
+    return url.origin;
+  } catch {
+    throw new Error(`${name} must be an http loopback URL`);
+  }
 }
 
 function readCorsOrigins(fileEnv: Record<string, string>, environment: Record<string, string | undefined>) {

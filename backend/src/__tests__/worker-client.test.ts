@@ -8,8 +8,10 @@ import { createImageAiWorkerClient } from "../modules/image-ai/worker-client";
 
 const config = {
   chatterboxWorkerUrl: "http://worker.test",
+  chatterboxWorkerToken: "chatterbox-token",
   chatterboxWorkerTimeoutMs: 1_000,
   imageAiWorkerUrl: "http://worker.test",
+  imageAiWorkerToken: "image-token",
   imageAiWorkerTimeoutMs: 1_000,
   deploymentUsage: "commercial"
 } as AppConfig;
@@ -67,6 +69,27 @@ describe("Worker clients", () => {
       code: "CHATTERBOX_WORKER_INVALID_RESPONSE",
       status: 502
     });
+  });
+
+  it("sends a configured token only through the local Worker request", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        success: true,
+        data: {
+          protocolVersion: 1,
+          available: true,
+          deploymentUsage: "commercial",
+          workerUrl: "http://127.0.0.1:3210",
+          models: []
+        }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createImageAiWorkerClient(config).health();
+
+    const init = (fetchMock.mock.calls[0] as unknown as [RequestInfo, RequestInit])[1];
+    expect(new Headers(init.headers).get("x-toolbox-worker-token")).toBe("image-token");
   });
 });
 

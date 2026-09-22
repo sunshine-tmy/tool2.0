@@ -8,6 +8,7 @@ import { detectShortVideoPlatform, type ShortVideoParseResult } from "@toolbox/s
 import type { XhsAuthManager } from "./xhs-archive/auth";
 import type { XhsRuntimeManager } from "./xhs-archive/runtime";
 import { normalizeXhsProviderItem } from "./xhs-archive/task-service";
+import { workerAuthHeaders } from "../security/worker-auth";
 
 const execFileAsync = promisify(execFile);
 
@@ -68,7 +69,10 @@ export async function requestLocalXhsProvider(
   const cookie = localProvider ? await auth.cookieHeader() : undefined;
   const response = await fetch(`${providerBaseUrl}/extract`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...workerAuthHeaders(localProvider ? config.xhsProviderToken : undefined)
+    },
     body: JSON.stringify({ url: sourceUrl, cookie }),
     signal: AbortSignal.timeout(Math.max(config.shortVideoParseTimeoutMs, 90_000))
   });

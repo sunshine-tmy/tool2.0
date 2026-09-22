@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import hmac
 import importlib.util
 import os
 import sys
@@ -71,6 +72,7 @@ TRUSTED_STORAGE_ROOTS = tuple(
 MODELS_ROOT = project_path(os.getenv("IMAGE_AI_MODELS_ROOT", "models/image-ai"))
 PORT = int(os.getenv("IMAGE_AI_WORKER_PORT", "3210"))
 HOST = os.getenv("IMAGE_AI_WORKER_HOST", "127.0.0.1")
+WORKER_TOKEN = os.getenv("IMAGE_AI_WORKER_TOKEN", "")
 
 
 class WorkerFailure(RuntimeError):
@@ -298,6 +300,16 @@ class ModelManager:
 
 manager = ModelManager()
 app = FastAPI(title="Toolbox Image AI Worker", docs_url=None, redoc_url=None)
+
+
+@app.middleware("http")
+async def require_worker_token(request: Request, call_next: Any) -> Any:
+    if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+        )
+    return await call_next(request)
 _SHA256_CACHE: dict[tuple[str, ...], str | None] = {}
 
 

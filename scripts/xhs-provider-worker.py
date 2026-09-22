@@ -2,12 +2,14 @@
 """Local-only adapter for the pinned XHS-Downloader source tree."""
 
 import asyncio
+import hmac
 import os
 import sys
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 source_dir = Path(os.environ["XHS_SOURCE_DIR"]).resolve()
@@ -23,6 +25,17 @@ class ExtractRequest(BaseModel):
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 lock = asyncio.Lock()
+WORKER_TOKEN = os.environ.get("XHS_PROVIDER_TOKEN", "")
+
+
+@app.middleware("http")
+async def require_worker_token(request: Request, call_next):
+    if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
+        return JSONResponse(
+            status_code=401,
+            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+        )
+    return await call_next(request)
 
 
 @app.get("/health")

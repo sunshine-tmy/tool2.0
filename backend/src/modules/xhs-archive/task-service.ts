@@ -16,6 +16,7 @@ import {
   type XhsArchiveTask
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { workerAuthHeaders } from "../../security/worker-auth";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import {
   assertRemoteResponseSize,
@@ -102,7 +103,10 @@ export class XhsArchiveTaskService {
       const providerInput = await this.resolveShortLink(extractXhsUrl(source)!);
       const response = await fetch(`${provider}/extract`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...workerAuthHeaders(isLoopbackProvider(provider) ? this.config.xhsProviderToken : undefined)
+        },
         body: JSON.stringify({ url: providerInput, cookie }),
         signal: AbortSignal.timeout(90_000)
       });
@@ -329,6 +333,15 @@ export class XhsArchiveTaskService {
       this.tasks.set(id, next);
       this.taskStore.upsert(toUnifiedArchiveTask(next));
     }
+  }
+}
+
+function isLoopbackProvider(value: string) {
+  try {
+    const url = new URL(value);
+    return ["127.0.0.1", "localhost", "::1"].includes(url.hostname.replace(/^\[|\]$/g, ""));
+  } catch {
+    return false;
   }
 }
 

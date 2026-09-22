@@ -4,6 +4,7 @@
 import { startBackend } from "./bootstrap";
 import { getConfig } from "./config";
 import { createRuntimeLayout, type RuntimeLayout } from "./runtime/runtime-layout";
+import { createDesktopWorkerSession, workerSessionEnvironment } from "./runtime/worker-session";
 
 type ParentMessage = { type?: unknown };
 type ParentPort = {
@@ -15,6 +16,7 @@ const parentPort = (process as NodeJS.Process & { parentPort?: ParentPort }).par
 if (!parentPort) throw new Error("desktop-entry must run in an Electron utility process");
 
 const layout = readRuntimeLayout(process.env.TOOLBOX_RUNTIME_LAYOUT);
+Object.assign(process.env, workerSessionEnvironment(await createDesktopWorkerSession()));
 const config = getConfig({ layout, dotenvPath: false });
 
 try {

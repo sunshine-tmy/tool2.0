@@ -11,6 +11,7 @@ import {
   type XhsTranslationTaskStage
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { workerAuthHeaders } from "../../security/worker-auth";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import { XhsArchiveStore } from "./store";
 import { XhsTranslationRuntime, XhsTranslationRuntimeError } from "./translation-runtime";
@@ -315,7 +316,7 @@ export class XhsTranslationService {
             : "正在翻译正文"
       );
       for (let offset = 0; offset < pending.length; offset += 64) {
-        translations.push(...(await translateProviderBatch(provider, pending.slice(offset, offset + 64))));
+        translations.push(...(await translateProviderBatch(this.config, provider, pending.slice(offset, offset + 64))));
       }
     }
     plans.forEach((chunks, index) => {
@@ -523,10 +524,13 @@ function joinTranslationParts(parts: Array<string | undefined>): string {
     .trim();
 }
 
-async function translateProviderBatch(provider: string, texts: string[]): Promise<string[]> {
+async function translateProviderBatch(config: AppConfig, provider: string, texts: string[]): Promise<string[]> {
   const response = await fetch(`${provider}/translate`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...workerAuthHeaders(isLoopbackProvider(provider) ? config.xhsTranslationToken : undefined)
+    },
     body: JSON.stringify({ texts }),
     signal: AbortSignal.timeout(120_000)
   });
@@ -542,4 +546,13 @@ async function translateProviderBatch(provider: string, texts: string[]): Promis
   )
     throw new Error("本地翻译服务返回结果无效");
   return payload.translations as string[];
+}
+
+function isLoopbackProvider(value: string) {
+  try {
+    const url = new URL(value);
+    return ["127.0.0.1", "localhost", "::1"].includes(url.hostname.replace(/^\[|\]$/g, ""));
+  } catch {
+    return false;
+  }
 }

@@ -67,6 +67,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
                 "req.headers.cookie",
                 "req.headers.x-csrf-token",
                 "req.headers.x-lan-transfer-pin",
+                "req.headers.x-toolbox-worker-token",
                 "pin",
                 "text",
                 "path"

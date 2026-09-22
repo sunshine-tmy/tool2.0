@@ -27,6 +27,10 @@ describe("runtime layout", () => {
         STORAGE_ROOT: "用户数据",
         XHS_RUNTIME_DIR: "xhs-runtime",
         XHS_TRANSLATION_RUNTIME_DIR: "translate-runtime",
+        XHS_PROVIDER_TOKEN: "provider-token",
+        XHS_TRANSLATION_TOKEN: "translation-token",
+        IMAGE_AI_WORKER_TOKEN: "image-token",
+        CHATTERBOX_WORKER_TOKEN: "chatterbox-token",
         EDGE_TTS_PYTHON: "components/edge-tts/python.exe",
         EDGE_TTS_SCRIPT: "workers/edge-tts-generate.py"
       }
@@ -37,6 +41,10 @@ describe("runtime layout", () => {
     expect(config.databasePath).toBe(":memory:");
     expect(config.xhsRuntimeDir).toBe(path.join(layout.configRoot, "xhs-runtime"));
     expect(config.xhsTranslationRuntimeDir).toBe(path.join(layout.configRoot, "translate-runtime"));
+    expect(config.xhsProviderToken).toBe("provider-token");
+    expect(config.xhsTranslationToken).toBe("translation-token");
+    expect(config.imageAiWorkerToken).toBe("image-token");
+    expect(config.chatterboxWorkerToken).toBe("chatterbox-token");
     expect(config.edgeTtsPythonPath).toBe(path.join(layout.configRoot, "components", "edge-tts", "python.exe"));
     expect(config.edgeTtsScriptPath).toBe(path.join(layout.configRoot, "workers", "edge-tts-generate.py"));
   });

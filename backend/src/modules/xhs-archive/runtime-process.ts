@@ -7,6 +7,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { XhsRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import { terminateChildProcess } from "../../lifecycle/child-process";
+import { workerAuthHeaders } from "../../security/worker-auth";
 
 type StatusCallback = (status: XhsRuntimeStatus["status"], message: string) => void;
 
@@ -26,7 +27,10 @@ export class XhsProviderProcess {
 
   async isHealthy() {
     try {
-      const response = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(1500) });
+      const response = await fetch(`${this.baseUrl}/health`, {
+        headers: workerAuthHeaders(this.config.xhsProviderToken),
+        signal: AbortSignal.timeout(1500)
+      });
       return response.ok;
     } catch {
       return false;
@@ -41,7 +45,12 @@ export class XhsProviderProcess {
     if (!fs.existsSync(workerScript)) throw new Error("找不到小红书解析 Worker 脚本");
     this.worker = spawn(venvPython, [workerScript], {
       cwd: sourceDir,
-      env: { ...process.env, XHS_PROVIDER_PORT: String(this.config.xhsProviderPort), XHS_SOURCE_DIR: sourceDir },
+      env: {
+        ...process.env,
+        XHS_PROVIDER_PORT: String(this.config.xhsProviderPort),
+        XHS_PROVIDER_TOKEN: this.config.xhsProviderToken ?? "",
+        XHS_SOURCE_DIR: sourceDir
+      },
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true
     });
