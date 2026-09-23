@@ -44,4 +44,6 @@ test("Windows installation acceptance has explicit signed and unsigned-test mode
   expect(workflow).toContain("-AllowUnsignedTestArtifact");
   expect(workflow).not.toContain("gh release");
   expect(workflow).not.toContain("WINDOWS_SIGNING_CERTIFICATE");
+  expect(acceptance).toContain('"/D=$installRoot"');
+  expect(acceptance).not.toContain("Join-Path $installBaseRoot 'Ecommerce Toolbox'");
 });

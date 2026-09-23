@@ -11,7 +11,7 @@
 验收从签名 job 上传的产物开始，而不是从源码输出目录开始，按以下顺序执行：
 
 1. 校验每个发布资产的 SHA-256、`latest.yml` 的安装器 SHA-512 条目、安装器 Authenticode Subject。
-2. 确认虚机不存在旧版 `%LOCALAPPDATA%\\EcommerceToolboxData`，然后用 `/S /D=<无空格的测试基目录>` 静默执行 `EcommerceToolboxSetup.exe`；NSIS 会将产品目录追加到基目录，脚本随后核对最终目录。NSIS 的 [`/D` 参数规则](https://nsis.sourceforge.io/Docs/Chapter3.html#3.2)要求它是命令行最后一个参数且不带引号，即使路径含空格也如此。
+2. 确认虚机不存在旧版 `%LOCALAPPDATA%\\EcommerceToolboxData`，然后用 `/S /D=<无空格的最终测试安装目录>` 静默执行 `EcommerceToolboxSetup.exe`；静默模式下 `/D` 指定最终目录，不会再追加产品目录。交互安装则由自定义目录确认页显示最终路径并追加产品目录。NSIS 的 [`/D` 参数规则](https://nsis.sourceforge.io/Docs/Chapter3.html#3.2)要求它是命令行最后一个参数且不带引号，即使路径含空格也如此。
 3. 验证该 NSIS 指定安装目录包含预期版本的应用和卸载器，并再次验证安装目录中所有 `.exe` 的签名。
 4. 启动已安装的 `EcommerceToolbox.exe`；通过 Chromium remote-debugging 仅观察其窗口实际加载的 `127.0.0.1` 后端，并请求 `/health/ready` 与 `/api/v1/health`。
 5. 在安装根的 `data/` 写入用户数据哨兵，调用 NSIS 卸载器的 `/S` 模式，确认程序文件已移除、安装根因 `data/` 保留，并验证哨兵字节不变。

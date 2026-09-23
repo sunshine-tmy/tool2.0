@@ -18,7 +18,7 @@ param(
   [Parameter(ParameterSetName = 'UnsignedTest')]
   [switch]$TestLegacyMigration,
 
-  [string]$InstallBaseRoot = (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxAcceptance\EcommerceToolbox'),
+  [string]$InstallDirectory = (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxAcceptance\EcommerceToolbox'),
 
   [ValidateRange(15, 180)]
   [int]$TimeoutSeconds = 90,
@@ -30,11 +30,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
-$installBaseRoot = [IO.Path]::GetFullPath($InstallBaseRoot)
-$installRoot = Join-Path $installBaseRoot 'Ecommerce Toolbox'
+$installRoot = [IO.Path]::GetFullPath($InstallDirectory)
 $dataRoot = Join-Path $installRoot 'data'
-if (Test-Path -LiteralPath $installBaseRoot) {
-  throw "Clean VM acceptance requires no existing NSIS install base: $installBaseRoot"
+if (Test-Path -LiteralPath $installRoot) {
+  throw "Clean VM acceptance requires no existing NSIS install directory: $installRoot"
 }
 if (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxData')) {
   throw 'Clean VM acceptance requires no legacy EcommerceToolboxData folder so the first-run migration choice is deterministic.'
@@ -49,7 +48,7 @@ if ($TestLegacyMigration) {
 }
 
 try {
-  $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installBaseRoot") -Wait -PassThru
+  $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installRoot") -Wait -PassThru
   if ($install.ExitCode -ne 0) { throw "NSIS installer failed with exit code $($install.ExitCode)" }
 
   $application = Join-Path $installRoot 'EcommerceToolbox.exe'
