@@ -4,7 +4,7 @@
 
 ## 决策
 
-桌面应用的所有可写内容必须位于 `%LOCALAPPDATA%\\EcommerceToolbox`（或 Electron 提供的等价当前用户目录）内：
+桌面应用的所有可写内容必须位于 `%LOCALAPPDATA%\\EcommerceToolboxData`（或 Electron 提供的等价当前用户目录）内。该目录与 Squirrel 的 `%LOCALAPPDATA%\\EcommerceToolbox` 安装根目录并列，安装、升级和卸载均不可操作用户数据：
 
 | 用途                   | 目录                         |
 | ---------------------- | ---------------------------- |

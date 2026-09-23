@@ -120,11 +120,11 @@ pnpm db:rollback --backup <backup-id>
 
 ## 7. Windows 桌面数据与迁移
 
-Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\EcommerceToolbox`；安装目录、`resources` 和 `app.asar` 不保存数据库、素材、模型、能力包、设置或备份。桌面应用的“桌面设置与数据迁移”页是唯一支持导入完整旧版数据目录的图形入口。
+Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\EcommerceToolboxData`；Squirrel 安装程序使用相邻的 `%LOCALAPPDATA%\\EcommerceToolbox`。两个根目录不得混用：安装目录、`resources` 和 `app.asar` 不保存数据库、素材、模型、能力包、设置或备份。桌面应用的“桌面设置与数据迁移”页是唯一支持导入完整旧版数据目录的图形入口。
 
-导入前请先退出其他可能使用旧 `storage` 的进程。选择旧版 `storage` 目录后，应用会停止本地服务、复制到用户目录临时区并逐文件校验 SHA-256，随后原子切换数据目录。导入不改写源目录；原有 `data` 会保存在 `%LOCALAPPDATA%\\EcommerceToolbox\\migration-backups\\desktop\\<id>\\previous-data`。
+导入前请先退出其他可能使用旧 `storage` 的进程。选择旧版 `storage` 目录后，应用会停止本地服务、复制到用户目录临时区并逐文件校验 SHA-256，随后原子切换数据目录。导入不改写源目录；原有 `data` 会保存在 `%LOCALAPPDATA%\\EcommerceToolboxData\\migration-backups\\desktop\\<id>\\previous-data`。
 
-如需撤销，使用同一页面“回滚到导入前数据”。该操作会验证备份摘要并先把当前数据保留为 `rollback-current-data`，因此不要通过资源管理器手工移动、修改或删除迁移备份。若应用报告迁移日志不一致或备份摘要不匹配，应停止操作并完整复制 `%LOCALAPPDATA%\\EcommerceToolbox` 后再排查；不要删除 `data`、迁移日志或备份目录。
+如需撤销，使用同一页面“回滚到导入前数据”。该操作会验证备份摘要并先把当前数据保留为 `rollback-current-data`，因此不要通过资源管理器手工移动、修改或删除迁移备份。若应用报告迁移日志不一致或备份摘要不匹配，应停止操作并完整复制 `%LOCALAPPDATA%\\EcommerceToolboxData` 后再排查；不要删除 `data`、迁移日志或备份目录。
 
 ## 8. Windows 签名安装器与自动更新
 
@@ -133,6 +133,8 @@ Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\Ecomme
 发布后，GitHub Release 必须同时含有 `EcommerceToolboxSetup.exe`、`EcommerceToolbox-<version>-full.nupkg`、`RELEASES` 及其 `.sha256` 文件。安装版将其更新源固定为当前仓库的 `releases/latest/download`；Squirrel 会读取其中的 `RELEASES` 决定下载哪个 full package。不要手工替换同名资产、修改 `RELEASES` 或省略 `.nupkg`，否则已有用户的更新检查会失败。
 
 桌面设置页可启用/停用自动检查或手动检查。只有从已签名 Squirrel 安装器安装的包会检查更新；开发启动、直接解压的输出目录以及首次安装启动均不会检查。下载完成后用户可选择立即重启安装，应用会先停止本地后端。发布 CI 会检查安装器和更新包中的所有 `.exe` Authenticode Subject，必须与受控 `WINDOWS_SIGNING_SUBJECT` 完全一致。
+
+发布 job 还会在全新的 Windows runner 中从上传的签名产物执行静默安装、启动已安装应用、验证实际窗口的回环后端 `/health/ready` 和 `/api/v1/health`、静默卸载，并确认安装前写入 `%LOCALAPPDATA%\\EcommerceToolboxData` 的数据哨兵未被改动。该 `clean-vm-acceptance` job 是创建 GitHub Release 的前置门禁；失败时不得手工绕过后发布。首次正式版本没有可升级的前序版本，后续版本另须保留一次从上一稳定版升级到当前版的人工演练报告。
 
 ## 9. standalone 构建与发布
 

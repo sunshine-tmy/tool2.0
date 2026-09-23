@@ -23,7 +23,7 @@ const LEGACY_MARKERS = [
 ];
 
 export type DesktopDataMigrationOptions = {
-  /** Electron 的 userData 父目录，例如 %LOCALAPPDATA%\\EcommerceToolbox。 */
+  /** Electron 的 userData 父目录，例如 %LOCALAPPDATA%\\EcommerceToolboxData。 */
   dataRoot: string;
   /** 当前实际数据目录，必须位于 dataRoot 内。 */
   storageRoot: string;

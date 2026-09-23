@@ -76,8 +76,48 @@ jobs:
           path: desktop-release/
           if-no-files-found: error
 
-  release:
+  clean-vm-acceptance:
     needs: package
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-windows-desktop-release
+          path: desktop-release
+      - name: Verify downloaded signed artifacts
+        shell: pwsh
+        run: |
+          $release = "desktop-release"
+          $version = "${{ github.ref_name }}".Substring(1)
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Release tag must be v<major>.<minor>.<patch>" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_SUBJECT)) { throw "WINDOWS_SIGNING_SUBJECT repository variable is required" }
+          $checksums = @(Get-ChildItem -LiteralPath $release -Filter "*.sha256")
+          if ($checksums.Count -lt 3) { throw "Expected checksums for setup, RELEASES, and full package" }
+          $checksums | ForEach-Object {
+            $line = (Get-Content -LiteralPath $_.FullName -Raw).Trim()
+            if ($line -notmatch '^([0-9a-fA-F]{64})  (.+)$') { throw "Invalid SHA-256 file: $($_.Name)" }
+            if ([IO.Path]::GetFileName($Matches[2]) -ne $Matches[2]) { throw "Checksum target must be a release filename: $($_.Name)" }
+            $asset = Join-Path $release $Matches[2]
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Checksum target is missing: $asset" }
+            $actual = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "SHA-256 mismatch: $asset" }
+          }
+          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $release
+          ./scripts/verify-windows-signatures.ps1 -Directory $release -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+      - name: Install, launch, health-check, uninstall, and preserve user data
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".Substring(1)
+          ./scripts/accept-windows-desktop-install.ps1 -InstallerPath "desktop-release/EcommerceToolboxSetup.exe" -ExpectedVersion $version -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+
+  release:
+    needs: [package, clean-vm-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

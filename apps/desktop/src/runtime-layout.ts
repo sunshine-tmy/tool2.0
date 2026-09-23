@@ -25,7 +25,10 @@ export function createDesktopRuntimeLayout(options: DesktopRuntimeLayoutOptions)
 }
 
 export function desktopDataRoot(localAppData: string | undefined, fallback: string) {
-  return path.join(localAppData || fallback, "EcommerceToolbox");
+  // Squirrel installs the application itself into %LOCALAPPDATA%\EcommerceToolbox.
+  // Keeping mutable user data in a sibling directory is what makes an uninstall
+  // unable to remove the database, media, components, or migration backups.
+  return path.join(localAppData || fallback, "EcommerceToolboxData");
 }
 
 export function desktopBackendEntrypoint(packaged: boolean, resourcesPath?: string) {

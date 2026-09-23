@@ -12,7 +12,8 @@
     "package": "node scripts/package-desktop.mjs",
     "make": "node scripts/package-desktop.mjs --make",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --exclude .stage/** --exclude out/**"
+    "test": "vitest run --exclude .stage/** --exclude out/** --exclude scripts/** && node --test scripts/smoke-installed-desktop.test.mjs",
+    "test:installed-smoke": "node --test scripts/smoke-installed-desktop.test.mjs"
   },
   "devDependencies": {
     "@electron/packager": "^18.4.4",
