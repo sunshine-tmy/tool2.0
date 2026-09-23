@@ -8,5 +8,5 @@ export default defineConfig({
   target: "node24",
   sourcemap: true,
   clean: true,
-  external: ["electron"]
+  external: ["electron", "electron-updater"]
 });

@@ -199,7 +199,7 @@ async function checkForUpdates() {
   error.value = "";
   try {
     const result = await desktop.value.checkForUpdates();
-    if (!result.enabled) message.info("当前不是已配置更新源的 Squirrel 安装版，无法检查更新");
+    if (!result.enabled) message.info("当前不是已配置更新源的 NSIS 安装版，无法检查更新");
     else message.success("正在检查更新；如有新版本，下载完成后会提示安装");
   } catch (cause) {
     error.value = formatApiError(cause, "检查更新失败");

@@ -1,58 +1,51 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { access, readFile, stat } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const outputDirectory = readDirectory(process.argv.slice(2));
-  await verifyReleaseArtifacts(outputDirectory);
-  console.log(`Verified Squirrel release artifacts: ${outputDirectory}`);
+  const options = readOptions(process.argv.slice(2));
+  await verifyReleaseArtifacts(options.directory, options.expectedVersion);
+  console.log(`Verified NSIS release artifacts: ${options.directory}`);
 }
 
-export async function verifyReleaseArtifacts(directory) {
+export async function verifyReleaseArtifacts(directory, expectedVersion) {
   const root = path.resolve(directory);
-  await access(path.join(root, "EcommerceToolboxSetup.exe"));
-  const releases = (await readFile(path.join(root, "RELEASES"), "utf8"))
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  assert.ok(releases.length > 0, "RELEASES must contain at least one full package");
-  for (const line of releases) {
-    const [sha1, name, sizeText, ...rest] = line.split(/\s+/);
-    assert.equal(rest.length, 0, `Invalid RELEASES entry: ${line}`);
-    assert.match(sha1, /^[A-Fa-f0-9]{40}$/, `Invalid package SHA-1: ${line}`);
-    assert.match(name, /^EcommerceToolbox-\d+\.\d+\.\d+-full\.nupkg$/, `Unexpected package name: ${line}`);
-    assert.ok(Number.isSafeInteger(Number(sizeText)) && Number(sizeText) > 0, `Invalid package size: ${line}`);
-    const packagePath = safeChildPath(root, name);
-    const packageStat = await stat(packagePath);
-    assert.equal(packageStat.size, Number(sizeText), `Package size mismatch: ${name}`);
-    assert.equal((await sha1File(packagePath)).toUpperCase(), sha1.toUpperCase(), `Package digest mismatch: ${name}`);
-  }
+  const setupName = "EcommerceToolboxSetup.exe";
+  await access(path.join(root, setupName));
+  await access(path.join(root, `${setupName}.blockmap`));
+  const latest = await readFile(path.join(root, "latest.yml"), "utf8");
+  const version = latest.match(/^version:\s*(\d+\.\d+\.\d+)\s*$/m)?.[1];
+  const url = latest.match(/^\s*(?:-\s*)?url:\s*(\S+)\s*$/m)?.[1];
+  const sha512 = latest.match(/^\s*sha512:\s*(\S+)\s*$/m)?.[1];
+  assert.ok(version, "latest.yml must declare a stable version");
+  if (expectedVersion) assert.equal(version, expectedVersion, "latest.yml version must match the release tag");
+  assert.equal(url, setupName, "latest.yml must point to the signed NSIS setup executable");
+  assert.ok(sha512, "latest.yml must contain the setup SHA-512");
+  assert.equal(await sha512File(path.join(root, setupName)), sha512, "Setup SHA-512 mismatch");
 }
 
-function readDirectory(args) {
+function readOptions(args) {
   const index = args.indexOf("--directory");
   const value = index >= 0 ? args[index + 1] : undefined;
-  if (!value) throw new Error("Usage: node verify-release-artifacts.mjs --directory <squirrel-output>");
-  return value;
+  if (!value) throw new Error("Usage: node verify-release-artifacts.mjs --directory <nsis-output>");
+  const expectedVersionIndex = args.indexOf("--expected-version");
+  const expectedVersion = expectedVersionIndex >= 0 ? args[expectedVersionIndex + 1] : undefined;
+  if (expectedVersion && !/^\d+\.\d+\.\d+$/.test(expectedVersion)) {
+    throw new Error("--expected-version must be a stable major.minor.patch version");
+  }
+  return { directory: value, expectedVersion };
 }
 
-function safeChildPath(root, name) {
-  const resolvedRoot = path.resolve(root);
-  const resolved = path.resolve(resolvedRoot, name);
-  if (!resolved.startsWith(`${resolvedRoot}${path.sep}`)) throw new Error("Unsafe RELEASES package path");
-  return resolved;
-}
-
-async function sha1File(filePath) {
-  const digest = createHash("sha1");
+async function sha512File(filePath) {
+  const digest = createHash("sha512");
   await new Promise((resolve, reject) => {
     const stream = createReadStream(filePath);
     stream.on("data", (chunk) => digest.update(chunk));
     stream.once("error", reject);
     stream.once("end", resolve);
   });
-  return digest.digest("hex");
+  return digest.digest("base64");
 }

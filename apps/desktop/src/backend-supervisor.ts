@@ -2,7 +2,9 @@ import { utilityProcess, type UtilityProcess } from "electron";
 import type { RuntimeLayout } from "../../../backend/src/runtime/runtime-layout";
 
 type BackendMessage =
-  { type: "ready"; origin: string } | { type: "startup-error"; message: string } | { type: "stopped" };
+  | { type: "ready"; origin: string }
+  | { type: "startup-error"; message: string; details?: string }
+  | { type: "stopped" };
 
 export class BackendSupervisor {
   private child?: UtilityProcess;
@@ -50,7 +52,12 @@ export class BackendSupervisor {
       };
       const onMessage = (message: BackendMessage) => {
         if (message.type === "ready" && typeof message.origin === "string") finish(undefined, message.origin);
-        if (message.type === "startup-error") finish(new Error(message.message));
+        if (message.type === "startup-error") {
+          const error = new Error(message.message);
+          if (message.details)
+            error.stack = `${error.stack ?? error.message}\nCaused by utility process:\n${message.details}`;
+          finish(error);
+        }
       };
       const onExit = (code: number) => finish(new Error(`本地服务启动失败（退出码 ${code}）`));
       child.on("message", onMessage);

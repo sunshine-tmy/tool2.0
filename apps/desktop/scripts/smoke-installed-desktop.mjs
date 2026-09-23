@@ -99,7 +99,7 @@ export async function smokeInstalledDesktop(options) {
   await access(options.executable);
   const debugPort = await reserveLoopbackPort();
   const startedAt = new Date().toISOString();
-  const child = spawn(options.executable, ["--squirrel-firstrun", `--remote-debugging-port=${debugPort}`], {
+  const child = spawn(options.executable, [`--remote-debugging-port=${debugPort}`], {
     detached: false,
     stdio: "ignore",
     windowsHide: true

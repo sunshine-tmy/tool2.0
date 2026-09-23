@@ -1,18 +1,25 @@
-/** 中文模块说明：桌面壳更新层，负责只从构建时固定的 HTTPS Squirrel feed 检查和安装更新。 */
+/** 中文模块说明：桌面壳更新层，负责只从 electron-builder 写入的 HTTPS feed 检查和安装更新。 */
 import fs from "node:fs";
-import path from "node:path";
-import { autoUpdater, dialog, type BrowserWindow } from "electron";
+import { createRequire } from "node:module";
+import { dialog, type BrowserWindow } from "electron";
+import type { AppUpdater } from "electron-updater";
 import { readDesktopUpdateFeed } from "./desktop-update-feed";
-import { isSquirrelFirstRun } from "./squirrel-events";
+
+// electron-updater is CommonJS. Loading it through createRequire keeps the
+// packaged ESM main process compatible with Node's strict CJS named-export rules.
+const require = createRequire(import.meta.url);
+let updaterModule: typeof import("electron-updater") | undefined;
+
+export function getDesktopAutoUpdater(): AppUpdater {
+  return (updaterModule ??= require("electron-updater")).autoUpdater;
+}
 
 export type DesktopUpdateSettings = { automaticUpdateChecks: boolean };
 
 type DesktopUpdaterOptions = {
-  appPath: string;
+  resourcesPath: string;
   packaged: boolean;
   platform: NodeJS.Platform;
-  argv: string[];
-  executablePath: string;
   getWindow: () => BrowserWindow | undefined;
   installDownloadedUpdate: () => Promise<void>;
   log: (message: string, error?: unknown) => void;
@@ -24,14 +31,10 @@ export type DesktopUpdater = {
 };
 
 export function createDesktopUpdater(options: DesktopUpdaterOptions): DesktopUpdater {
-  const feedUrl = readDesktopUpdateFeed(options.appPath);
-  const updateExecutable = path.resolve(path.dirname(options.executablePath), "..", "Update.exe");
+  const autoUpdater = getDesktopAutoUpdater();
+  const feedUrl = readDesktopUpdateFeed(options.resourcesPath);
   const isEnabled = Boolean(
-    options.packaged &&
-    options.platform === "win32" &&
-    feedUrl &&
-    fs.existsSync(updateExecutable) &&
-    !isSquirrelFirstRun(options.argv)
+    options.packaged && options.platform === "win32" && feedUrl && fs.existsSync(options.resourcesPath)
   );
   let checking = false;
   let downloaded = false;
@@ -40,7 +43,8 @@ export function createDesktopUpdater(options: DesktopUpdaterOptions): DesktopUpd
     return { isEnabled: false, checkForUpdates: async () => ({ enabled: false, checking: false }) };
   }
 
-  autoUpdater.setFeedURL({ url: feedUrl });
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on("error", (error) => {
     checking = false;
     options.log("Desktop update check failed", error);
@@ -51,7 +55,7 @@ export function createDesktopUpdater(options: DesktopUpdaterOptions): DesktopUpd
   autoUpdater.on("update-available", () => {
     checking = false;
   });
-  autoUpdater.on("update-downloaded", (_event, _releaseNotes, releaseName) => {
+  autoUpdater.on("update-downloaded", (event) => {
     checking = false;
     if (downloaded) return;
     downloaded = true;
@@ -61,7 +65,7 @@ export function createDesktopUpdater(options: DesktopUpdaterOptions): DesktopUpd
       .showMessageBox(window, {
         type: "info",
         title: "更新已准备就绪",
-        message: `已下载${releaseName ? ` ${releaseName}` : "新版本"}，是否立即重启并安装？`,
+        message: `已下载${event.version ? ` ${event.version}` : "新版本"}，是否立即重启并安装？`,
         detail: "稍后退出应用时也会应用此更新。",
         buttons: ["立即重启并安装", "稍后"],
         defaultId: 0,
@@ -93,7 +97,7 @@ export function scheduleAutomaticUpdateCheck(
   settings: DesktopUpdateSettings
 ): NodeJS.Timeout | undefined {
   if (!updater.isEnabled || !settings.automaticUpdateChecks) return;
-  // Squirrel holds an install lock on first run; this delay also keeps the first interactive paint fast.
+  // Leave the first interactive paint fast before opening the release feed.
   const timer = setTimeout(() => void updater.checkForUpdates(), 10_000);
   timer.unref();
   return timer;

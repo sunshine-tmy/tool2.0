@@ -43,29 +43,24 @@ jobs:
           "DESKTOP_UPDATE_FEED_URL=${{ github.server_url }}/${{ github.repository }}/releases/latest/download" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Verify desktop sources
         run: pnpm --filter desktop test
-      - name: Build signed Squirrel installer and update feed
+      - name: Build signed NSIS installer and update feed
         run: pnpm desktop:make
       - name: Verify signed update artifacts
         shell: pwsh
         run: |
-          $output = "apps/desktop/out/make/squirrel.windows/x64"
-          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $output
+          $output = "apps/desktop/out/make/nsis"
+          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $output --expected-version $env:DESKTOP_VERSION
           ./scripts/verify-windows-signatures.ps1 -Directory "apps/desktop/out/EcommerceToolbox-win32-x64" -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
-          $package = Get-ChildItem -LiteralPath $output -Filter "EcommerceToolbox-*-full.nupkg" | Select-Object -First 1
-          if (-not $package) { throw "Missing Squirrel full package" }
-          $expanded = Join-Path $env:RUNNER_TEMP "squirrel-package"
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          [System.IO.Compression.ZipFile]::ExtractToDirectory($package.FullName, $expanded)
-          ./scripts/verify-windows-signatures.ps1 -Directory $expanded -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+          ./scripts/verify-windows-signatures.ps1 -Directory $output -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
       - name: Stage release files and checksums
         shell: pwsh
         run: |
-          $source = "apps/desktop/out/make/squirrel.windows/x64"
+          $source = "apps/desktop/out/make/nsis"
           $release = "desktop-release"
           New-Item -ItemType Directory -Path $release -Force | Out-Null
           Copy-Item -LiteralPath (Join-Path $source "EcommerceToolboxSetup.exe") -Destination $release
-          Copy-Item -LiteralPath (Join-Path $source "RELEASES") -Destination $release
-          Get-ChildItem -LiteralPath $source -Filter "EcommerceToolbox-*-full.nupkg" | Copy-Item -Destination $release
+          Copy-Item -LiteralPath (Join-Path $source "EcommerceToolboxSetup.exe.blockmap") -Destination $release
+          Copy-Item -LiteralPath (Join-Path $source "latest.yml") -Destination $release
           Get-ChildItem -LiteralPath $release -File | ForEach-Object {
             $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             "$digest  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ASCII
@@ -98,7 +93,7 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Release tag must be v<major>.<minor>.<patch>" }
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_SUBJECT)) { throw "WINDOWS_SIGNING_SUBJECT repository variable is required" }
           $checksums = @(Get-ChildItem -LiteralPath $release -Filter "*.sha256")
-          if ($checksums.Count -lt 3) { throw "Expected checksums for setup, RELEASES, and full package" }
+          if ($checksums.Count -lt 3) { throw "Expected checksums for setup, blockmap, and latest.yml" }
           $checksums | ForEach-Object {
             $line = (Get-Content -LiteralPath $_.FullName -Raw).Trim()
             if ($line -notmatch '^([0-9a-fA-F]{64})  (.+)$') { throw "Invalid SHA-256 file: $($_.Name)" }
@@ -108,7 +103,7 @@ jobs:
             $actual = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "SHA-256 mismatch: $asset" }
           }
-          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $release
+          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $release --expected-version $version
           ./scripts/verify-windows-signatures.ps1 -Directory $release -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
       - name: Install, launch, health-check, uninstall, and preserve user data
         shell: pwsh
@@ -130,8 +125,8 @@ jobs:
         run: |
           set -euo pipefail
           test -s release/EcommerceToolboxSetup.exe
-          test -s release/RELEASES
-          test -n "$(find release -maxdepth 1 -name 'EcommerceToolbox-*-full.nupkg' -print -quit)"
+          test -s release/EcommerceToolboxSetup.exe.blockmap
+          test -s release/latest.yml
           sha256sum -c release/*.sha256
       - name: Create or update signed desktop release
         env:

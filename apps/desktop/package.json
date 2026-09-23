@@ -2,10 +2,15 @@
   "name": "desktop",
   "private": true,
   "version": "0.1.0",
+  "author": "Ecommerce Toolbox",
   "type": "module",
   "productName": "Ecommerce Toolbox",
   "description": "Ecommerce Toolbox desktop application",
   "main": "dist/main.js",
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "tslib": "2.8.1"
+  },
   "scripts": {
     "build": "tsup --config tsup.config.ts && tsup src/preload.ts --format cjs --platform node --target node24 --out-dir dist --clean false",
     "start": "electron .",
@@ -19,7 +24,7 @@
     "@electron/packager": "^18.4.4",
     "@electron/rebuild": "^4.2.0",
     "electron": "^44.4.3",
-    "electron-winstaller": "^5.4.4",
+    "electron-builder": "26.15.3",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

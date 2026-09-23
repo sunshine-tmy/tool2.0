@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, autoUpdater, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { BackendSupervisor } from "./backend-supervisor";
 import {
   importDesktopData,
@@ -12,9 +11,13 @@ import {
   type DesktopDataMigrationOptions
 } from "./desktop-data-migration";
 import { readDesktopSettings, updateDesktopSettings } from "./desktop-settings";
-import { createDesktopUpdater, scheduleAutomaticUpdateCheck, type DesktopUpdater } from "./desktop-updater";
+import {
+  createDesktopUpdater,
+  getDesktopAutoUpdater,
+  scheduleAutomaticUpdateCheck,
+  type DesktopUpdater
+} from "./desktop-updater";
 import { createDesktopRuntimeLayout, desktopBackendEntrypoint, desktopDataRoot } from "./runtime-layout";
-import { squirrelLifecycleCommand } from "./squirrel-events";
 import { isSafeExternalUrl, isTrustedBackendUrl } from "./window-security";
 
 let mainWindow: BrowserWindow | undefined;
@@ -27,17 +30,9 @@ let quitting = false;
 const dataRoot = desktopDataRoot(process.env.LOCALAPPDATA, app.getPath("appData"));
 fs.mkdirSync(path.join(dataRoot, "profile"), { recursive: true });
 app.setPath("userData", path.join(dataRoot, "profile"));
-app.setAppUserModelId("com.squirrel.EcommerceToolbox.EcommerceToolbox");
+app.setAppUserModelId("com.ecommercetoolbox.desktop");
 
-const squirrelCommand =
-  process.platform === "win32" ? squirrelLifecycleCommand(process.argv, process.execPath) : undefined;
-if (squirrelCommand) {
-  if (squirrelCommand.args.length) {
-    const child = spawn(squirrelCommand.executable, squirrelCommand.args, { detached: true, stdio: "ignore" });
-    child.unref();
-  }
-  app.quit();
-} else if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
@@ -73,11 +68,9 @@ async function boot() {
     backend.monitorUnexpectedExit();
     createWindow(backendOrigin);
     updater = createDesktopUpdater({
-      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
       packaged: app.isPackaged,
       platform: process.platform,
-      argv: process.argv,
-      executablePath: process.execPath,
       getWindow: () => mainWindow,
       installDownloadedUpdate,
       log: (entry, error) => console.warn(entry, error)
@@ -89,6 +82,14 @@ async function boot() {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "未知错误";
+    const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
+    const logsRoot = path.join(dataRoot, "logs");
+    fs.mkdirSync(logsRoot, { recursive: true });
+    fs.appendFileSync(path.join(logsRoot, "desktop-startup.log"), `${new Date().toISOString()} ${details}\n\n`, "utf8");
+    console.error("Desktop boot failed", error);
+    process.stderr.write(
+      `Desktop boot failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`
+    );
     dialog.showErrorBox("电商工具箱无法启动", message);
     app.exit(1);
   }
@@ -207,7 +208,7 @@ async function installDownloadedUpdate() {
   if (!backend) throw new Error("本地服务尚未启动");
   await backend.stop();
   quitting = true;
-  autoUpdater.quitAndInstall();
+  getDesktopAutoUpdater().quitAndInstall();
 }
 
 function scheduleConfiguredUpdateCheck(currentUpdater: DesktopUpdater, settings: { automaticUpdateChecks: boolean }) {

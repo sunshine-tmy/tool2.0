@@ -17,15 +17,15 @@ describe("desktop runtime layout", () => {
     expect(layout.frontendDistRoot).toBe(path.join(layout.appRoot, "frontend"));
   });
 
-  it("keeps Squirrel installation files and mutable data in sibling directories", () => {
+  it("keeps mutable data outside a selectable NSIS installation directory", () => {
     const localAppData = "C:\\Users\\demo\\AppData\\Local";
     const dataRoot = desktopDataRoot(localAppData, "C:\\fallback");
-    const squirrelInstallRoot = path.join(localAppData, "EcommerceToolbox");
+    const nsisInstallRoot = "D:\\Applications\\Ecommerce Toolbox";
 
     expect(dataRoot).toBe(path.join(localAppData, "EcommerceToolboxData"));
-    expect(dataRoot).not.toBe(squirrelInstallRoot);
-    expect(dataRoot.startsWith(`${squirrelInstallRoot}${path.sep}`)).toBe(false);
-    expect(squirrelInstallRoot.startsWith(`${dataRoot}${path.sep}`)).toBe(false);
+    expect(dataRoot).not.toBe(nsisInstallRoot);
+    expect(dataRoot.startsWith(`${nsisInstallRoot}${path.sep}`)).toBe(false);
+    expect(nsisInstallRoot.startsWith(`${dataRoot}${path.sep}`)).toBe(false);
   });
 
   it("selects the copied backend entrypoint in a packaged application", () => {

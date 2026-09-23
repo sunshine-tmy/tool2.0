@@ -25,9 +25,9 @@ export function createDesktopRuntimeLayout(options: DesktopRuntimeLayoutOptions)
 }
 
 export function desktopDataRoot(localAppData: string | undefined, fallback: string) {
-  // Squirrel installs the application itself into %LOCALAPPDATA%\EcommerceToolbox.
-  // Keeping mutable user data in a sibling directory is what makes an uninstall
-  // unable to remove the database, media, components, or migration backups.
+  // NSIS lets the user select an installation directory. Keeping mutable data
+  // in this dedicated per-user root makes installation and uninstall unable to
+  // remove the database, media, components, or migration backups.
   return path.join(localAppData || fallback, "EcommerceToolboxData");
 }
 

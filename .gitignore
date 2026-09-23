@@ -3,6 +3,7 @@ dist/
 apps/desktop/.stage/
 apps/desktop/out/
 apps/desktop/.electron-cache/
+apps/desktop/.electron-builder-cache/
 .env
 .env.local
 .env.*

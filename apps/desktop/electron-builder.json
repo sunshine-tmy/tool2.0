@@ -1,0 +1,20 @@
+{
+  "appId": "com.ecommercetoolbox.desktop",
+  "productName": "Ecommerce Toolbox",
+  "directories": {
+    "output": "out/make/nsis"
+  },
+  "win": {
+    "target": ["nsis"],
+    "artifactName": "EcommerceToolboxSetup.exe"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "allowElevation": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "runAfterFinish": false
+  }
+}

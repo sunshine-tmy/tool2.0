@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { spawn } from "node:child_process";
+import { access, cp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import packager from "@electron/packager";
-import { createWindowsInstaller } from "electron-winstaller";
 
 const desktopRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputRoot = path.join(desktopRoot, "out");
@@ -30,20 +29,15 @@ const [packagedApp] = await packager({
   appVersion: release.version,
   buildVersion: release.version,
   asar: true,
-  prune: true,
+  // Pnpm represents direct dependencies as junctions. Electron Packager's
+  // pruning walker cannot follow electron-updater's nested junctions, so the
+  // small runtime dependency tree is copied explicitly in afterCopy below.
+  prune: false,
   // outputRoot was cleared above. Avoid a second recursive deletion inside
   // Electron Packager, which can race with Windows antivirus file scanning.
   overwrite: false,
   extraResource: [path.join(stageRoot, "backend"), path.join(stageRoot, "frontend"), path.join(stageRoot, "scripts")],
-  afterCopy: [embedReleaseMetadata(release)],
-  ...(release.signing
-    ? {
-        windowsSign: {
-          certificateFile: release.signing.certificateFile,
-          certificatePassword: release.signing.certificatePassword
-        }
-      }
-    : {}),
+  afterCopy: [embedReleaseMetadata(release), copyDesktopRuntimeDependencies()],
   download: {
     cacheRoot: electronCache,
     mirrorOptions: electronMirror ? { mirror: electronMirror } : undefined
@@ -57,35 +51,18 @@ await access(path.join(packagedApp, "resources", "backend", "dist", "desktop-ent
 await access(path.join(packagedApp, "resources", "frontend", "index.html"));
 
 if (makeInstaller) {
-  const installerOutput = path.join(outputRoot, "make", "squirrel.windows", "x64");
-  // Squirrel's bundled rcedit cannot always reopen Setup.exe from a Unicode
-  // workspace path. Build in the ASCII system temp directory, then copy the
-  // verified artifacts back to the repository output directory.
-  const temporaryInstallerOutput = await mkdtemp(path.join(tmpdir(), "ecommerce-toolbox-squirrel-"));
+  const installerOutput = path.join(outputRoot, "make", "nsis");
+  await writeUpdateConfiguration(packagedApp, release);
   await rm(installerOutput, { recursive: true, force: true });
+  const builderConfig = await writeElectronBuilderConfig(release);
   try {
-    await createWindowsInstaller({
-      appDirectory: packagedApp,
-      outputDirectory: temporaryInstallerOutput,
-      name: appName,
-      authors: packageJson.author || "Ecommerce Toolbox",
-      exe: `${appName}.exe`,
-      setupExe: `${appName}Setup.exe`,
-      version: release.version,
-      ...(release.signing
-        ? {
-            certificateFile: release.signing.certificateFile,
-            certificatePassword: release.signing.certificatePassword
-          }
-        : {}),
-      noMsi: true
-    });
-    await mkdir(installerOutput, { recursive: true });
-    await cp(temporaryInstallerOutput, installerOutput, { recursive: true });
+    await runElectronBuilder(packagedApp, release, builderConfig.path);
   } finally {
-    await rm(temporaryInstallerOutput, { recursive: true, force: true });
+    await builderConfig.dispose();
   }
   await access(path.join(installerOutput, `${appName}Setup.exe`));
+  await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
+  if (release.updateFeed) await access(path.join(installerOutput, "latest.yml"));
   console.log(`Windows installer created: ${installerOutput}`);
 } else {
   console.log(`Windows application packaged: ${packagedApp}`);
@@ -135,12 +112,176 @@ function embedReleaseMetadata(release) {
       const metadataPath = path.join(buildPath, "package.json");
       const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
       metadata.version = release.version;
-      if (release.updateFeed) metadata.desktopUpdateFeed = release.updateFeed;
-      else delete metadata.desktopUpdateFeed;
+      delete metadata.desktopUpdateFeed;
       await writeFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
     })().then(
       () => done(),
       (error) => done(error instanceof Error ? error : new Error("Unable to embed desktop release metadata"))
     );
   };
+}
+
+function copyDesktopRuntimeDependencies() {
+  return (buildPath, _electronVersion, _platform, _arch, done) => {
+    void (async () => {
+      const sourceRoot = path.join(desktopRoot, "node_modules");
+      const destinationRoot = path.join(buildPath, "node_modules");
+      const copied = new Set();
+      for (const dependency of ["electron-updater", "tslib"]) {
+        await copyRuntimeDependency(path.join(sourceRoot, dependency), path.join(destinationRoot, dependency), copied);
+      }
+    })().then(
+      () => done(),
+      (error) => done(error instanceof Error ? error : new Error("Unable to copy desktop runtime dependencies"))
+    );
+  };
+}
+
+async function copyRuntimeDependency(sourceDirectory, destinationDirectory, copied) {
+  const source = await realpath(sourceDirectory);
+  const key = `${source}\u0000${destinationDirectory}`;
+  if (copied.has(key)) return;
+  copied.add(key);
+
+  const metadata = JSON.parse(await readFile(path.join(source, "package.json"), "utf8"));
+  await cp(source, destinationDirectory, { recursive: true, dereference: true, force: true });
+  const dependencies = { ...(metadata.dependencies ?? {}), ...(metadata.optionalDependencies ?? {}) };
+  for (const dependency of Object.keys(dependencies)) {
+    const dependencySource = await resolveRuntimeDependency(source, dependency);
+    await copyRuntimeDependency(dependencySource, path.join(destinationDirectory, "node_modules", dependency), copied);
+  }
+}
+
+async function resolveRuntimeDependency(fromDirectory, dependency) {
+  let current = fromDirectory;
+  while (true) {
+    const candidate = path.join(current, "node_modules", dependency);
+    try {
+      await access(path.join(candidate, "package.json"));
+      return candidate;
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+  throw new Error(`Unable to resolve packaged runtime dependency ${dependency} from ${fromDirectory}`);
+}
+
+async function writeUpdateConfiguration(packagedApp, release) {
+  const updateConfigPath = path.join(packagedApp, "resources", "app-update.yml");
+  if (!release.updateFeed) {
+    await rm(updateConfigPath, { force: true });
+    return;
+  }
+  // The feed is validated before packaging. Keeping the YAML generated here
+  // avoids accepting renderer-provided or user-editable update endpoints.
+  await writeFile(
+    updateConfigPath,
+    ["provider: generic", `url: ${release.updateFeed}`, "updaterCacheDirName: ecommerce-toolbox-updater", ""].join(
+      "\n"
+    ),
+    "utf8"
+  );
+}
+
+async function writeElectronBuilderConfig(release) {
+  const configPath = path.join(outputRoot, "electron-builder.release.json");
+  if (!release.updateFeed) {
+    return { path: path.join(desktopRoot, "electron-builder.json"), dispose: async () => {} };
+  }
+
+  const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
+  config.publish = [{ provider: "generic", url: release.updateFeed }];
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  return { path: configPath, dispose: () => rm(configPath, { force: true }) };
+}
+
+async function runElectronBuilder(packagedApp, release, configPath) {
+  const builderContext = await createBuilderContext(packagedApp, configPath);
+  const environment = {
+    ...process.env,
+    CSC_IDENTITY_AUTO_DISCOVERY: "false",
+    ...(release.signing
+      ? {
+          CSC_LINK: release.signing.certificateFile,
+          CSC_KEY_PASSWORD: release.signing.certificatePassword
+        }
+      : {})
+  };
+  try {
+    await runElectronBuilderProcess(builderContext, environment);
+  } finally {
+    await builderContext.dispose();
+  }
+}
+
+function runElectronBuilderProcess(builderContext, environment) {
+  const builderCli = path.join(builderContext.root, "node_modules", "electron-builder", "cli.js");
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        builderCli,
+        "--win",
+        "nsis",
+        "--x64",
+        "--prepackaged",
+        builderContext.packagedApp,
+        "--config",
+        builderContext.configPath,
+        "--publish",
+        "never"
+      ],
+      { cwd: builderContext.root, env: environment, stdio: "inherit", windowsHide: true }
+    );
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`electron-builder exited with code ${code ?? "unknown"}`));
+    });
+  });
+}
+
+async function createBuilderContext(packagedApp, configPath) {
+  if (process.platform !== "win32" || isAsciiPath(desktopRoot)) {
+    return { root: desktopRoot, packagedApp, configPath, dispose: async () => {} };
+  }
+
+  const drive = await findUnusedDriveLetter();
+  await runProcess("subst", [drive, desktopRoot]);
+  const root = `${drive}\\`;
+  return {
+    root,
+    packagedApp: path.join(root, path.relative(desktopRoot, packagedApp)),
+    configPath: path.join(root, path.relative(desktopRoot, configPath)),
+    dispose: () => runProcess("subst", [drive, "/D"])
+  };
+}
+
+function isAsciiPath(value) {
+  return /^[\x20-\x7E]+$/.test(value);
+}
+
+async function findUnusedDriveLetter() {
+  for (const letter of "ZYXWVUTSRQPONMLKJIHGFED") {
+    const drive = `${letter}:`;
+    try {
+      await access(`${drive}\\`);
+    } catch {
+      return drive;
+    }
+  }
+  throw new Error("No unused drive letter is available for the NSIS packaging path");
+}
+
+function runProcess(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true });
+    child.once("error", reject);
+    child.once("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${command} exited with code ${code ?? "unknown"}`));
+    });
+  });
 }

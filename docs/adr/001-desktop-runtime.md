@@ -12,8 +12,8 @@
 2. 使用 Electron 作为桌面壳，保留 Vue + Fastify HTTP 架构；不将既有业务 API 批量改造成 Electron IPC。
 3. Electron 主进程负责单实例、窗口、托盘、更新、下载、目录选择和子进程监管。Fastify 在 Electron utility process 中运行，桌面窗口通过同源 HTTP 访问它。
 4. Fastify 必须同时提供生产版 Vue 静态资源和 `/api/v1`。本机桌面模式监听 `127.0.0.1` 随机端口；局域网模式由用户显式启用并使用固定端口。
-5. Windows 分发使用 Electron Packager + electron-winstaller（Squirrel），面向用户交付 `EcommerceToolboxSetup.exe`。应用升级、能力包升级和用户数据相互隔离。
-6. 安装目录和 `app.asar` 视为只读。Squirrel 的安装根目录为 `%LOCALAPPDATA%\\EcommerceToolbox`；配置、SQLite、媒体、日志、模型和可选运行时全部写入相邻且独立的 `%LOCALAPPDATA%\\EcommerceToolboxData` 或用户选择的数据目录。
+5. Windows 分发使用 Electron Packager + Electron Builder 的 NSIS 目标，面向用户交付 `EcommerceToolboxSetup.exe`。安装器为非一键模式，用户可选择安装目录；应用升级、能力包升级和用户数据相互隔离。
+6. 安装目录和 `app.asar` 视为只读。无论用户将 NSIS 安装器放到哪个目录，配置、SQLite、媒体、日志、模型和可选运行时全部写入独立的 `%LOCALAPPDATA%\\EcommerceToolboxData` 或用户选择的数据目录。
 7. 主安装器仅携带核心 UI/API 和必要的 Node 原生模块。FFmpeg、转写、图片 AI、Chatterbox、小红书运行时、浏览器和模型以版本化能力包形式按需安装。
 8. 打包桌面模式下，浏览器窗口使用一次性 bootstrap nonce 建立 HttpOnly 本机会话；renderer 不获得 Node、文件系统、子进程或任意 IPC 权限。
 

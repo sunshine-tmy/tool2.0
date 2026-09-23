@@ -38,7 +38,8 @@ try {
   for (const signal of ["SIGINT", "SIGTERM"] as const) process.once(signal, () => void close());
 } catch (error) {
   const message = error instanceof Error ? error.message : "Backend startup failed";
-  parentPort.postMessage({ type: "startup-error", message });
+  const details = error instanceof Error ? error.stack : undefined;
+  parentPort.postMessage({ type: "startup-error", message, details });
   process.exitCode = 1;
 }
 

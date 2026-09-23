@@ -12,9 +12,9 @@ afterEach(async () => {
 });
 
 describe("desktop update feed", () => {
-  it("accepts only build-embedded HTTPS feed origins without credentials or query fragments", async () => {
-    const appRoot = await writePackage({ desktopUpdateFeed: "https://updates.example.test/win32/x64/" });
-    expect(readDesktopUpdateFeed(appRoot)).toBe("https://updates.example.test/win32/x64");
+  it("accepts only electron-builder generic HTTPS feed origins without credentials or query fragments", async () => {
+    const resourcesRoot = await writeUpdateConfig("provider: generic\nurl: https://updates.example.test/win32/x64/\n");
+    expect(readDesktopUpdateFeed(resourcesRoot)).toBe("https://updates.example.test/win32/x64");
   });
 
   it.each([
@@ -22,14 +22,19 @@ describe("desktop update feed", () => {
     "https://user:password@updates.example.test/releases",
     "https://updates.example.test/releases?channel=beta",
     "https://updates.example.test/releases#fragment"
-  ])("rejects mutable or credential-bearing feed value %s", async (desktopUpdateFeed) => {
-    const appRoot = await writePackage({ desktopUpdateFeed });
-    expect(readDesktopUpdateFeed(appRoot)).toBeUndefined();
+  ])("rejects mutable or credential-bearing feed value %s", async (updateFeed) => {
+    const resourcesRoot = await writeUpdateConfig(`provider: generic\nurl: ${updateFeed}\n`);
+    expect(readDesktopUpdateFeed(resourcesRoot)).toBeUndefined();
+  });
+
+  it("requires electron-builder's generic provider declaration", async () => {
+    const resourcesRoot = await writeUpdateConfig("provider: github\nurl: https://updates.example.test/releases\n");
+    expect(readDesktopUpdateFeed(resourcesRoot)).toBeUndefined();
   });
 });
 
-async function writePackage(value: unknown) {
+async function writeUpdateConfig(contents: string) {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-desktop-updater-"));
-  await fs.writeFile(path.join(root, "package.json"), JSON.stringify(value), "utf8");
+  await fs.writeFile(path.join(root, "app-update.yml"), contents, "utf8");
   return root;
 }

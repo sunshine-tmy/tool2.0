@@ -1,5 +1,6 @@
 {
   "ignoreBinaries": ["python", "pwsh"],
+  "ignoreDependencies": ["electron-builder", "tslib"],
   "workspaces": {
     "backend": {
       "entry": ["src/database/cli.ts", "src/database/benchmark.ts"]
