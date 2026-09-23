@@ -38,6 +38,7 @@ test("Windows installation acceptance has explicit signed and unsigned-test mode
   expect(acceptance).toContain("ParameterSetName = 'Signed'");
   expect(acceptance).toContain("ParameterSetName = 'UnsignedTest'");
   expect(workflow).toContain("workflow_dispatch:");
+  expect(workflow).toContain("push:");
   expect(workflow).toContain("pull_request:");
   expect(workflow).toContain("-TestLegacyMigration");
   expect(workflow).toContain("-AllowUnsignedTestArtifact");

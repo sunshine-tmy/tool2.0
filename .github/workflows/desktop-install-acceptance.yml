@@ -1,6 +1,20 @@
 name: Windows desktop install acceptance
 
 on:
+  push:
+    paths:
+      - ".github/workflows/desktop-install-acceptance.yml"
+      - ".github/workflows/desktop-release.yml"
+      - "apps/desktop/**"
+      - "backend/**"
+      - "frontend/**"
+      - "packages/**"
+      - "packaging/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
   pull_request:
     paths:
       - ".github/workflows/desktop-install-acceptance.yml"
