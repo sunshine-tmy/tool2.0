@@ -46,6 +46,7 @@ jobs:
           ./scripts/accept-windows-desktop-install.ps1 `
             -InstallerPath "apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe" `
             -ExpectedVersion $version `
+            -TestLegacyMigration `
             -AllowUnsignedTestArtifact
       - name: Upload acceptance report
         if: always()

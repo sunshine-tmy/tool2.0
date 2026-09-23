@@ -11,6 +11,22 @@ test("installed desktop smoke command requires explicit bounded arguments", () =
   });
 });
 
+test("installed desktop smoke can select an explicit first-run migration scenario", () => {
+  assert.deepEqual(
+    parseSmokeArguments(["--exe", "app.exe", "--report", "result.json", "--startup-migration", "migrate"]),
+    {
+      executable: path.resolve("app.exe"),
+      report: path.resolve("result.json"),
+      timeoutSeconds: 90,
+      startupMigration: "migrate"
+    }
+  );
+  assert.throws(
+    () => parseSmokeArguments(["--exe", "app.exe", "--report", "result.json", "--startup-migration", "fresh"]),
+    /only supports the explicit value 'migrate'/
+  );
+});
+
 test("installed desktop smoke command rejects unsafe or incomplete arguments", () => {
   assert.throws(() => parseSmokeArguments(["--exe", "app.exe"]), /Usage/);
   assert.throws(

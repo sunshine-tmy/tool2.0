@@ -15,6 +15,9 @@ param(
   [Parameter(Mandatory = $true, ParameterSetName = 'UnsignedTest')]
   [switch]$AllowUnsignedTestArtifact,
 
+  [Parameter(ParameterSetName = 'UnsignedTest')]
+  [switch]$TestLegacyMigration,
+
   [string]$InstallBaseRoot = (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxAcceptance\EcommerceToolbox'),
 
   [ValidateRange(15, 180)]
@@ -37,6 +40,14 @@ if (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxData'))
   throw 'Clean VM acceptance requires no legacy EcommerceToolboxData folder so the first-run migration choice is deterministic.'
 }
 
+$legacyRoot = Join-Path $env:LOCALAPPDATA 'EcommerceToolboxData'
+$legacySentinelPath = Join-Path $legacyRoot 'data\acceptance-legacy-migration-sentinel.txt'
+$legacySentinel = [Guid]::NewGuid().ToString('N')
+if ($TestLegacyMigration) {
+  New-Item -ItemType Directory -Path (Split-Path -Parent $legacySentinelPath) -Force | Out-Null
+  [IO.File]::WriteAllText($legacySentinelPath, $legacySentinel, [Text.UTF8Encoding]::new($false))
+}
+
 try {
   $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installBaseRoot") -Wait -PassThru
   if ($install.ExitCode -ne 0) { throw "NSIS installer failed with exit code $($install.ExitCode)" }
@@ -55,9 +66,23 @@ try {
   Start-Sleep -Milliseconds 500
   $reportDirectory = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
   $reportPath = Join-Path $reportDirectory 'desktop-installed-smoke.json'
-  & node (Join-Path $PSScriptRoot '..\apps\desktop\scripts\smoke-installed-desktop.mjs') --exe $application --report $reportPath --timeout-seconds $TimeoutSeconds
+  $smokeArguments = @('--exe', $application, '--report', $reportPath, '--timeout-seconds', $TimeoutSeconds.ToString())
+  if ($TestLegacyMigration) { $smokeArguments += @('--startup-migration', 'migrate') }
+  & node (Join-Path $PSScriptRoot '..\apps\desktop\scripts\smoke-installed-desktop.mjs') @smokeArguments
   if ($LASTEXITCODE -ne 0) { throw "Installed desktop smoke failed with exit code $LASTEXITCODE" }
   if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'Installed desktop smoke did not write a report' }
+
+  if ($TestLegacyMigration) {
+    $migratedSentinelPath = Join-Path $dataRoot 'data\acceptance-legacy-migration-sentinel.txt'
+    if (-not (Test-Path -LiteralPath $migratedSentinelPath -PathType Leaf)) { throw 'Legacy migration did not copy the data sentinel into the selected install root' }
+    if ([IO.File]::ReadAllText($migratedSentinelPath, [Text.UTF8Encoding]::new($false)) -ne $legacySentinel) {
+      throw 'Legacy migration changed the data sentinel'
+    }
+    if (-not (Test-Path -LiteralPath $legacySentinelPath -PathType Leaf)) { throw 'Legacy migration removed the source sentinel' }
+    if ([IO.File]::ReadAllText($legacySentinelPath, [Text.UTF8Encoding]::new($false)) -ne $legacySentinel) {
+      throw 'Legacy migration changed the source sentinel'
+    }
+  }
 
   $sentinelPath = Join-Path $dataRoot 'acceptance-user-data-sentinel.txt'
   $sentinel = [Guid]::NewGuid().ToString('N')
@@ -78,7 +103,8 @@ try {
     throw 'Uninstall changed user data sentinel'
   }
   $signatureMode = if ($AllowUnsignedTestArtifact) { 'unsigned test' } else { 'signed' }
-  Write-Host "Clean VM desktop acceptance passed: $signatureMode install, launch, health checks, program-only uninstall, and install-root data preservation."
+  $migrationMode = if ($TestLegacyMigration) { 'legacy migration with source preservation, ' } else { '' }
+  Write-Host "Clean VM desktop acceptance passed: $signatureMode install, ${migrationMode}launch, health checks, program-only uninstall, and install-root data preservation."
 } finally {
   if (-not $KeepInstalled -and (Test-Path -LiteralPath $installRoot)) {
     $remainingUninstaller = Get-ChildItem -LiteralPath $installRoot -Filter 'Uninstall*.exe' -File | Select-Object -First 1

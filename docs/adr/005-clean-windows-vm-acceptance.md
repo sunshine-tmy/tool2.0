@@ -18,7 +18,7 @@
 
 打包版完整数据根必须是 `dirname(EcommerceToolbox.exe)\\data`，且被测最终安装根应由安装向导明确展示。安装根不可写或与旧数据根重叠时必须拒绝启动，不得通过提权放宽目录权限。当前自动化脚本覆盖静默卸载保留；交互卸载删除数据的双重确认另做 UI 验收，静默和升级路径不得删除任何数据。
 
-PR 和手动测试使用独立的 `desktop-install-acceptance.yml`：它在全新 `windows-latest` runner 上构建未签名测试安装包，并执行安装、启动、健康检查和静默卸载数据保留；不发布 Release，也不需要签名密钥。该流程验证安装生命周期，不替代 tag Release 流程中的 Authenticode 与资产校验；Release 工作流仍必须先通过签名虚机验收才可发布。
+PR 和手动测试使用独立的 `desktop-install-acceptance.yml`：它在全新 `windows-latest` runner 上创建一份旧版数据哨兵，构建未签名测试安装包，通过 Electron DevTools 在首次启动迁移页实际选择“迁移”，检查安装目录副本与旧源均完整，再执行静默卸载并检查安装目录数据保留；不发布 Release，也不需要签名密钥。该流程验证安装和旧数据迁移生命周期，不替代 tag Release 流程中的 Authenticode 与资产校验；Release 工作流仍必须先通过签名虚机验收才可发布。
 
 ## 后果
 
