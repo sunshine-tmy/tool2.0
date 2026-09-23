@@ -1,4 +1,4 @@
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = 'Signed')]
 param(
   [Parameter(Mandatory = $true)]
   [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
@@ -8,13 +8,14 @@ param(
   [ValidatePattern('^\d+\.\d+\.\d+$')]
   [string]$ExpectedVersion,
 
-  [Parameter(Mandatory = $true)]
+  [Parameter(Mandatory = $true, ParameterSetName = 'Signed')]
   [ValidateNotNullOrEmpty()]
   [string]$ExpectedSubject,
 
-  [string]$DataRoot = (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxData'),
+  [Parameter(Mandatory = $true, ParameterSetName = 'UnsignedTest')]
+  [switch]$AllowUnsignedTestArtifact,
 
-  [string]$InstallRoot = (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxAcceptance\\app'),
+  [string]$InstallBaseRoot = (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxAcceptance\EcommerceToolbox'),
 
   [ValidateRange(15, 180)]
   [int]$TimeoutSeconds = 90,
@@ -26,43 +27,28 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
-$installRoot = [IO.Path]::GetFullPath($InstallRoot)
-$dataRoot = [IO.Path]::GetFullPath($DataRoot)
-$installRootFull = [IO.Path]::GetFullPath($installRoot)
-$dataPrefix = $dataRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-$installPrefix = $installRootFull.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
-if (
-  $dataPrefix.Equals($installPrefix, [StringComparison]::OrdinalIgnoreCase) -or
-  $dataPrefix.StartsWith("$installPrefix$([IO.Path]::DirectorySeparatorChar)", [StringComparison]::OrdinalIgnoreCase) -or
-  $installPrefix.StartsWith("$dataPrefix$([IO.Path]::DirectorySeparatorChar)", [StringComparison]::OrdinalIgnoreCase)
-) {
-  throw "Data root must not overlap NSIS install root: $dataRoot"
+$installBaseRoot = [IO.Path]::GetFullPath($InstallBaseRoot)
+$installRoot = Join-Path $installBaseRoot 'Ecommerce Toolbox'
+$dataRoot = Join-Path $installRoot 'data'
+if (Test-Path -LiteralPath $installBaseRoot) {
+  throw "Clean VM acceptance requires no existing NSIS install base: $installBaseRoot"
 }
-if (Test-Path -LiteralPath $installRoot) {
-  throw "Clean VM acceptance requires no existing NSIS installation: $installRoot"
+if (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'EcommerceToolboxData')) {
+  throw 'Clean VM acceptance requires no legacy EcommerceToolboxData folder so the first-run migration choice is deterministic.'
 }
-if (Test-Path -LiteralPath $dataRoot) {
-  throw "Clean VM acceptance requires no existing desktop data root: $dataRoot"
-}
-
-New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
-$sentinelPath = Join-Path $dataRoot 'acceptance-user-data-sentinel.txt'
-$sentinel = [Guid]::NewGuid().ToString('N')
-[IO.File]::WriteAllText($sentinelPath, $sentinel, [Text.UTF8Encoding]::new($false))
 
 try {
-  $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installRoot") -Wait -PassThru
+  $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installBaseRoot") -Wait -PassThru
   if ($install.ExitCode -ne 0) { throw "NSIS installer failed with exit code $($install.ExitCode)" }
 
   $application = Join-Path $installRoot 'EcommerceToolbox.exe'
   $uninstaller = Get-ChildItem -LiteralPath $installRoot -Filter 'Uninstall*.exe' -File | Select-Object -First 1
   if (-not (Test-Path -LiteralPath $application -PathType Leaf)) { throw "Installed application is missing: $application" }
   if (-not $uninstaller) { throw "NSIS uninstaller is missing from: $installRoot" }
-  if ([IO.File]::ReadAllText($sentinelPath, [Text.UTF8Encoding]::new($false)) -ne $sentinel) {
-    throw 'Installer changed existing user data sentinel'
-  }
 
-  & (Join-Path $PSScriptRoot 'verify-windows-signatures.ps1') -Directory $installRoot -ExpectedSubject $ExpectedSubject
+  if (-not $AllowUnsignedTestArtifact) {
+    & (Join-Path $PSScriptRoot 'verify-windows-signatures.ps1') -Directory $installRoot -ExpectedSubject $ExpectedSubject
+  }
   # Setup.exe may launch the first-run application. Stop it so the smoke process
   # owns the singleton lock and its remote-debugging endpoint deterministically.
   @(Get-Process -Name 'EcommerceToolbox' -ErrorAction SilentlyContinue) | Stop-Process -Force
@@ -73,6 +59,10 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "Installed desktop smoke failed with exit code $LASTEXITCODE" }
   if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { throw 'Installed desktop smoke did not write a report' }
 
+  $sentinelPath = Join-Path $dataRoot 'acceptance-user-data-sentinel.txt'
+  $sentinel = [Guid]::NewGuid().ToString('N')
+  [IO.File]::WriteAllText($sentinelPath, $sentinel, [Text.UTF8Encoding]::new($false))
+
   if ($KeepInstalled) {
     Write-Host "Clean VM install acceptance passed; installation retained at $installRoot"
     return
@@ -80,18 +70,17 @@ try {
 
   $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList @('/S') -Wait -PassThru
   if ($uninstall.ExitCode -ne 0) { throw "NSIS uninstaller failed with exit code $($uninstall.ExitCode)" }
-  $deadline = [DateTime]::UtcNow.AddSeconds(30)
-  while ((Test-Path -LiteralPath $installRoot) -and [DateTime]::UtcNow -lt $deadline) {
-    Start-Sleep -Milliseconds 500
-  }
-  if (Test-Path -LiteralPath $installRoot) { throw "NSIS installation was not removed: $installRoot" }
+  if (-not (Test-Path -LiteralPath $installRoot -PathType Container)) { throw "Installation root should remain to preserve data: $installRoot" }
+  if (Test-Path -LiteralPath $application) { throw "Program files were not removed from: $installRoot" }
+  if (Test-Path -LiteralPath $uninstaller.FullName) { throw 'Uninstaller executable remains after uninstall' }
   if (-not (Test-Path -LiteralPath $sentinelPath -PathType Leaf)) { throw 'Uninstall deleted user data sentinel' }
   if ([IO.File]::ReadAllText($sentinelPath, [Text.UTF8Encoding]::new($false)) -ne $sentinel) {
     throw 'Uninstall changed user data sentinel'
   }
-  Write-Host 'Clean VM desktop acceptance passed: signed install, launch, health checks, uninstall, and user-data preservation.'
+  $signatureMode = if ($AllowUnsignedTestArtifact) { 'unsigned test' } else { 'signed' }
+  Write-Host "Clean VM desktop acceptance passed: $signatureMode install, launch, health checks, program-only uninstall, and install-root data preservation."
 } finally {
-  if (Test-Path -LiteralPath $installRoot) {
+  if (-not $KeepInstalled -and (Test-Path -LiteralPath $installRoot)) {
     $remainingUninstaller = Get-ChildItem -LiteralPath $installRoot -Filter 'Uninstall*.exe' -File | Select-Object -First 1
     if ($remainingUninstaller) {
       Start-Process -FilePath $remainingUninstaller.FullName -ArgumentList @('/S') -Wait -ErrorAction SilentlyContinue | Out-Null

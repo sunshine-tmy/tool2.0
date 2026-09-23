@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, cp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, cp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import packager from "@electron/packager";
@@ -14,6 +14,16 @@ const makeInstaller = process.argv.includes("--make");
 // cannot make an otherwise reproducible package build fail.
 const electronCache = process.env.ELECTRON_DOWNLOAD_CACHE ?? path.join(desktopRoot, ".electron-cache");
 const electronMirror = process.env.ELECTRON_MIRROR;
+const electronPackage = JSON.parse(
+  await readFile(path.join(desktopRoot, "node_modules", "electron", "package.json"), "utf8")
+);
+const electronZipName = `electron-v${electronPackage.version}-win32-x64.zip`;
+const cachedElectronZipDirectory = await findCachedElectronZipDirectory(electronCache, electronZipName);
+if (cachedElectronZipDirectory) {
+  console.log(`Using cached Electron runtime archive: ${path.join(cachedElectronZipDirectory, electronZipName)}`);
+} else {
+  console.log(`Electron runtime archive is not cached; downloading ${electronZipName}`);
+}
 
 await Promise.all(["backend", "frontend", "scripts"].map((name) => access(path.join(stageRoot, name))));
 const packageJson = JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8"));
@@ -38,10 +48,14 @@ const [packagedApp] = await packager({
   overwrite: false,
   extraResource: [path.join(stageRoot, "backend"), path.join(stageRoot, "frontend"), path.join(stageRoot, "scripts")],
   afterCopy: [embedReleaseMetadata(release), copyDesktopRuntimeDependencies()],
-  download: {
-    cacheRoot: electronCache,
-    mirrorOptions: electronMirror ? { mirror: electronMirror } : undefined
-  },
+  ...(cachedElectronZipDirectory
+    ? { electronZipDir: cachedElectronZipDirectory }
+    : {
+        download: {
+          cacheRoot: electronCache,
+          mirrorOptions: electronMirror ? { mirror: electronMirror } : undefined
+        }
+      }),
   ignore: [/(^|[\\/])(\.stage|node_modules|out|src|test-results)([\\/]|$)/]
 });
 
@@ -54,11 +68,14 @@ if (makeInstaller) {
   const installerOutput = path.join(outputRoot, "make", "nsis");
   await writeUpdateConfiguration(packagedApp, release);
   await rm(installerOutput, { recursive: true, force: true });
+  const customIncludePath = path.join(stageRoot, "installer-custom.nsh");
+  await writeInstallerInclude(packagedApp, customIncludePath);
   const builderConfig = await writeElectronBuilderConfig(release);
   try {
     await runElectronBuilder(packagedApp, release, builderConfig.path);
   } finally {
     await builderConfig.dispose();
+    await rm(customIncludePath, { force: true });
   }
   await access(path.join(installerOutput, `${appName}Setup.exe`));
   await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
@@ -137,6 +154,24 @@ function copyDesktopRuntimeDependencies() {
   };
 }
 
+async function findCachedElectronZipDirectory(cacheRoot, zipName, depth = 0) {
+  if (depth > 4) return undefined;
+  let entries;
+  try {
+    entries = await readdir(cacheRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  }
+  if (entries.some((entry) => entry.isFile() && entry.name === zipName)) return cacheRoot;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const result = await findCachedElectronZipDirectory(path.join(cacheRoot, entry.name), zipName, depth + 1);
+    if (result) return result;
+  }
+  return undefined;
+}
+
 async function copyRuntimeDependency(sourceDirectory, destinationDirectory, copied) {
   const source = await realpath(sourceDirectory);
   const key = `${source}\u0000${destinationDirectory}`;
@@ -187,14 +222,51 @@ async function writeUpdateConfiguration(packagedApp, release) {
 
 async function writeElectronBuilderConfig(release) {
   const configPath = path.join(outputRoot, "electron-builder.release.json");
-  if (!release.updateFeed) {
-    return { path: path.join(desktopRoot, "electron-builder.json"), dispose: async () => {} };
-  }
-
   const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
-  config.publish = [{ provider: "generic", url: release.updateFeed }];
+  config.directories = { ...config.directories, buildResources: ".stage" };
+  config.nsis = { ...config.nsis, include: "installer-custom.nsh", allowElevation: false };
+  if (release.updateFeed) config.publish = [{ provider: "generic", url: release.updateFeed }];
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return { path: configPath, dispose: () => rm(configPath, { force: true }) };
+}
+
+async function writeInstallerInclude(packagedApp, includePath) {
+  const files = [];
+  const directories = [];
+  async function walk(directory, relative = "") {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const childRelative = relative ? path.join(relative, entry.name) : entry.name;
+      if (childRelative.split(path.sep)[0].toLowerCase() === "data") continue;
+      const childPath = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) throw new Error(`Packaged installer tree cannot contain symlinks: ${childRelative}`);
+      if (entry.isDirectory()) {
+        directories.push(childRelative);
+        await walk(childPath, childRelative);
+      } else if (entry.isFile()) {
+        files.push(childRelative);
+      } else {
+        throw new Error(`Unsupported packaged installer entry: ${childRelative}`);
+      }
+    }
+  }
+  await walk(packagedApp);
+  files.sort((left, right) => left.localeCompare(right));
+  directories.sort(
+    (left, right) => right.split(path.sep).length - left.split(path.sep).length || right.localeCompare(left)
+  );
+  const removals = [
+    ...files.map((file) => `  Delete /REBOOTOK "$INSTDIR\\${toNsisPath(file)}"`),
+    ...directories.map((directory) => `  RMDir "$INSTDIR\\${toNsisPath(directory)}"`)
+  ].join("\n");
+  const template = await readFile(path.join(desktopRoot, "installer-custom.nsh"), "utf8");
+  const marker = "  ; @@GENERATED_PROGRAM_FILE_REMOVALS@@";
+  if (!template.includes(marker)) throw new Error("Installer removal manifest marker is missing");
+  await writeFile(includePath, template.replace(marker, removals || "  ; No packaged application files"), "utf8");
+}
+
+function toNsisPath(value) {
+  if (/[\r\n$";]/.test(value)) throw new Error(`Unsafe NSIS file path in packaged tree: ${value}`);
+  return value.split(path.sep).join("\\");
 }
 
 async function runElectronBuilder(packagedApp, release, configPath) {

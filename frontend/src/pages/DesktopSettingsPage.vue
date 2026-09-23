@@ -4,8 +4,8 @@
     <section class="main-column">
       <ToolPageHeader
         title="桌面设置与数据迁移"
-        description="所有运行数据、备份和设置都保存在当前 Windows 用户的数据目录；安装目录不会写入用户文件。"
-        kicker="DESKTOP · LOCAL DATA"
+        description="程序安装位置与持久数据位置分开显示；桌面版的数据库、素材、能力、模型与登录状态保存在安装目录下的 data 文件夹。"
+        kicker="DESKTOP · STORAGE"
       />
 
       <n-alert v-if="!desktop" type="info" :bordered="false">
@@ -58,12 +58,21 @@
         <section class="workspace-panel">
           <div class="panel-heading">
             <div>
-              <h3>本机数据目录</h3>
-              <p class="panel-description">此处包含数据库、素材、可选能力包、模型、迁移备份和桌面设置。</p>
+              <h3>存储位置</h3>
+              <p class="panel-description">应用管理的持久数据默认跟随本次选择的安装目录；卸载时默认保留。</p>
             </div>
             <n-button secondary :disabled="loading" @click="revealDataDirectory">在资源管理器中打开</n-button>
           </div>
-          <n-code v-if="settings" :code="settings.dataDirectory" language="text" word-wrap />
+          <div v-if="settings" class="storage-paths">
+            <div>
+              <p class="setting-copy">安装目录</p>
+              <n-code :code="settings.installDirectory" language="text" word-wrap />
+            </div>
+            <div>
+              <p class="setting-copy">完整数据目录</p>
+              <n-code :code="settings.dataDirectory" language="text" word-wrap />
+            </div>
+          </div>
         </section>
 
         <section class="workspace-panel">
@@ -132,6 +141,7 @@ type DesktopMigrationSummary = {
 type DesktopSettingsState = {
   startAtLogin: boolean;
   automaticUpdateChecks: boolean;
+  installDirectory: string;
   dataDirectory: string;
   lastMigration?: DesktopMigrationSummary;
 };
@@ -274,6 +284,11 @@ function formatBytes(value: number) {
   color: #64748b;
   font-size: 13px;
   line-height: 1.6;
+}
+
+.storage-paths {
+  display: grid;
+  gap: 14px;
 }
 
 .settings-alert {

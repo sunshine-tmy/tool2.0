@@ -3,6 +3,10 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("toolboxDesktop", {
   getVersion: () => ipcRenderer.invoke("desktop:get-version") as Promise<string>,
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),
+  getStartupDataMigrationState: () => ipcRenderer.invoke("desktop:get-startup-data-migration"),
+  migrateStartupData: () => ipcRenderer.invoke("desktop:migrate-startup-data"),
+  chooseFreshStartupData: () => ipcRenderer.invoke("desktop:choose-fresh-startup-data"),
+  exitStartupMigration: () => ipcRenderer.invoke("desktop:exit-startup-migration"),
   updateSettings: (settings: { startAtLogin?: boolean; automaticUpdateChecks?: boolean }) =>
     ipcRenderer.invoke("desktop:update-settings", settings),
   checkForUpdates: () =>

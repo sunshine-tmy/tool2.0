@@ -11,12 +11,14 @@
 验收从签名 job 上传的产物开始，而不是从源码输出目录开始，按以下顺序执行：
 
 1. 校验每个发布资产的 SHA-256、`latest.yml` 的安装器 SHA-512 条目、安装器 Authenticode Subject。
-2. 创建 `%LOCALAPPDATA%\\EcommerceToolboxData` 用户数据哨兵，然后用 `/S /D=<临时安装目录>` 静默执行 `EcommerceToolboxSetup.exe`。
+2. 确认虚机不存在旧版 `%LOCALAPPDATA%\\EcommerceToolboxData`，然后用 `/S /D=<无空格的测试基目录>` 静默执行 `EcommerceToolboxSetup.exe`；NSIS 会将产品目录追加到基目录，脚本随后核对最终目录。NSIS 的 [`/D` 参数规则](https://nsis.sourceforge.io/Docs/Chapter3.html#3.2)要求它是命令行最后一个参数且不带引号，即使路径含空格也如此。
 3. 验证该 NSIS 指定安装目录包含预期版本的应用和卸载器，并再次验证安装目录中所有 `.exe` 的签名。
 4. 启动已安装的 `EcommerceToolbox.exe`；通过 Chromium remote-debugging 仅观察其窗口实际加载的 `127.0.0.1` 后端，并请求 `/health/ready` 与 `/api/v1/health`。
-5. 调用 NSIS 卸载器的 `/S` 模式，确认安装根已删除、数据哨兵仍存在且字节不变。
+5. 在安装根的 `data/` 写入用户数据哨兵，调用 NSIS 卸载器的 `/S` 模式，确认程序文件已移除、安装根因 `data/` 保留，并验证哨兵字节不变。
 
-`EcommerceToolboxData` 是唯一桌面可写根；它必须与用户选择的 NSIS 安装根分离。这样安装、升级和卸载操作没有理由访问 SQLite、媒体、模型、能力包或迁移备份。
+打包版完整数据根必须是 `dirname(EcommerceToolbox.exe)\\data`，且被测最终安装根应由安装向导明确展示。安装根不可写或与旧数据根重叠时必须拒绝启动，不得通过提权放宽目录权限。当前自动化脚本覆盖静默卸载保留；交互卸载删除数据的双重确认另做 UI 验收，静默和升级路径不得删除任何数据。
+
+PR 和手动测试使用独立的 `desktop-install-acceptance.yml`：它在全新 `windows-latest` runner 上构建未签名测试安装包，并执行安装、启动、健康检查和静默卸载数据保留；不发布 Release，也不需要签名密钥。该流程验证安装生命周期，不替代 tag Release 流程中的 Authenticode 与资产校验；Release 工作流仍必须先通过签名虚机验收才可发布。
 
 ## 后果
 

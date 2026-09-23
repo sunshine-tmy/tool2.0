@@ -1,0 +1,56 @@
+name: Windows desktop install acceptance
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-install-acceptance.yml"
+      - ".github/workflows/desktop-release.yml"
+      - "apps/desktop/**"
+      - "backend/**"
+      - "frontend/**"
+      - "packages/**"
+      - "packaging/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-install-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install-acceptance:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "11.7.0" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Verify desktop sources
+        run: pnpm --filter desktop test
+      - name: Build unsigned test installer
+        run: pnpm desktop:make
+      - name: Install, launch, health-check, uninstall, and preserve user data
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath "apps/desktop/package.json" -Raw | ConvertFrom-Json).version
+          ./scripts/accept-windows-desktop-install.ps1 `
+            -InstallerPath "apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe" `
+            -ExpectedVersion $version `
+            -AllowUnsignedTestArtifact
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-desktop-install-acceptance-${{ github.run_id }}
+          path: ${{ runner.temp }}/desktop-installed-smoke.json
+          if-no-files-found: ignore

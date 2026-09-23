@@ -4,6 +4,7 @@ import { createRuntimeLayout, type RuntimeLayout } from "../../../backend/src/ru
 
 export type DesktopRuntimeLayoutOptions = {
   packaged: boolean;
+  installRoot?: string;
   userDataRoot: string;
   resourcesPath?: string;
 };
@@ -24,11 +25,21 @@ export function createDesktopRuntimeLayout(options: DesktopRuntimeLayoutOptions)
   });
 }
 
-export function desktopDataRoot(localAppData: string | undefined, fallback: string) {
-  // NSIS lets the user select an installation directory. Keeping mutable data
-  // in this dedicated per-user root makes installation and uninstall unable to
-  // remove the database, media, components, or migration backups.
-  return path.join(localAppData || fallback, "EcommerceToolboxData");
+export function desktopInstallRoot(packaged: boolean, executablePath: string, developmentRoot: string) {
+  return path.resolve(packaged ? path.dirname(executablePath) : developmentRoot);
+}
+
+export function desktopDataRoot(
+  packaged: boolean,
+  executablePath: string,
+  localAppData: string | undefined,
+  fallback: string
+) {
+  // In packaged builds the installer-selected directory owns every persistent
+  // app file. Development/Web keeps the historical per-user data location.
+  return packaged
+    ? path.join(desktopInstallRoot(true, executablePath, fallback), "data")
+    : path.join(localAppData || fallback, "EcommerceToolboxData");
 }
 
 export function desktopBackendEntrypoint(packaged: boolean, resourcesPath?: string) {
