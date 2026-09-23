@@ -89,7 +89,11 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
   const componentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
-    catalog: bundledComponentCatalog
+    catalog: bundledComponentCatalog,
+    isInUse: (_componentId, taskToolIds) =>
+      taskStore
+        .list()
+        .some((task) => taskToolIds.includes(task.toolId) && (task.status === "pending" || task.status === "running"))
   });
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
