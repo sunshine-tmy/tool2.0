@@ -109,6 +109,7 @@ describe("api app", () => {
     await app.close();
   });
 
+  // 清理接口会启动受控子进程，Windows CI 冷启动可能超过 Vitest 默认的 5 秒。
   it("exposes only whitelisted cleanup categories and rejects paths", async () => {
     const app = await createApp();
     const inspected = await app.inject({ method: "GET", url: "/api/v1/maintenance/cleanup" });
@@ -125,7 +126,7 @@ describe("api app", () => {
     expect(rejected.statusCode).toBe(400);
     expect(rejected.json().error.code).toBe("CLEANUP_FAILED");
     await app.close();
-  });
+  }, 15_000);
 
   it("allows CORS preflight requests for chunk upload PUT requests", async () => {
     process.env.CORS_ORIGINS = "http://192.168.1.241:5173";
