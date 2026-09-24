@@ -465,6 +465,57 @@ describe("ComponentManager", () => {
     expect(calls[3].environment?.TEMP).toBe(path.join(root, "edge-tts", "versions", "1.0.0", ".python-build-temp"));
   });
 
+  it("builds a dependent Python environment from its separately signed shared runtime", async () => {
+    const runtime = await createFixture("3.11.16-20260901", { id: "python-311" });
+    const dependent = await createFixture("7.2.8-1", {
+      id: "edge-tts",
+      dependencyIds: ["python-311"],
+      pythonEnvironment: "python-311"
+    });
+    const archives = new Map([
+      ["python-311", runtime.archivePath],
+      ["edge-tts", dependent.archivePath]
+    ]);
+    const root = path.join(temporaryRoot, "shared-python-packages");
+    const calls: Array<{ executable: string; args: string[]; cwd: string }> = [];
+    const manager = new ComponentManager({
+      root,
+      catalog: {
+        manifests: [runtime.manifest, dependent.manifest],
+        trustedPublicKeys: { "test-ed25519": publicKey }
+      },
+      downloadArchive: async (manifest, destination) => fs.copyFile(archives.get(manifest.id)!, destination),
+      runPythonProcess: async (executable, args, cwd) => {
+        calls.push({ executable, args, cwd });
+        if (args[0] === "-m" && args[1] === "venv") {
+          const scriptsDirectory = path.join(args[2], "Scripts");
+          await fs.mkdir(scriptsDirectory, { recursive: true });
+          await fs.writeFile(path.join(scriptsDirectory, "python.exe"), "test venv interpreter");
+        }
+        return args[0] === "-c" ? "3.11\n" : "";
+      }
+    });
+
+    const blocked = await manager.startInstall("edge-tts");
+    await expect(waitForJob(manager, blocked.id)).resolves.toMatchObject({
+      state: "failed",
+      errorCode: "COMPONENT_DEPENDENCY_MISSING"
+    });
+    await manager.install("python-311");
+    const runtimePython = path.join(root, "python-311", "versions", "3.11.16-20260901", "python", "python.exe");
+    const job = await manager.startInstall("edge-tts");
+    await expect(waitForJob(manager, job.id)).resolves.toMatchObject({ state: "completed" });
+    expect(calls[0]).toMatchObject({
+      executable: runtimePython,
+      args: ["-c", expect.any(String)],
+      cwd: path.join(root, "edge-tts", "versions", "7.2.8-1")
+    });
+    expect(calls[1].args).toEqual(["-m", "venv", path.join(root, "edge-tts", "versions", "7.2.8-1", "venv")]);
+    await expect(manager.resolveInstalledPython("edge-tts")).resolves.toMatchObject({
+      path: path.join(root, "edge-tts", "versions", "7.2.8-1", "venv", "Scripts", "python.exe")
+    });
+  });
+
   it("blocks dependents until dependencies are installed and refuses dependency removal", async () => {
     const dependency = await createFixture("1.0.0", { id: "ffmpeg", displayName: "FFmpeg" });
     const dependent = await createFixture("1.0.0", {
@@ -754,7 +805,7 @@ async function createFixture(
     id?: string;
     displayName?: string;
     dependencyIds?: string[];
-    pythonEnvironment?: boolean;
+    pythonEnvironment?: boolean | string;
     license?: ComponentPackageManifest["license"] | null;
   } = {}
 ) {
@@ -766,16 +817,27 @@ async function createFixture(
   await fs.writeFile(path.join(source, "bin", "runner.exe"), `runner-${version}`);
   await fs.writeFile(path.join(source, "LICENSE"), "MIT");
   const relativeFiles = ["bin/runner.exe", "LICENSE"];
+  if (componentId === "python-311") {
+    await fs.mkdir(path.join(source, "python"), { recursive: true });
+    await fs.writeFile(path.join(source, "python", "python.exe"), "signed test interpreter");
+    relativeFiles.push("python/python.exe");
+  }
   let pythonEnvironment: ComponentPackageManifest["pythonEnvironment"];
   if (overrides.pythonEnvironment) {
     await fs.mkdir(path.join(source, "wheelhouse"));
-    await fs.writeFile(path.join(source, "python.exe"), "signed test interpreter");
+    const pythonComponentId = typeof overrides.pythonEnvironment === "string" ? overrides.pythonEnvironment : undefined;
+    if (!pythonComponentId) {
+      await fs.mkdir(path.join(source, "python"), { recursive: true });
+      await fs.writeFile(path.join(source, "python", "python.exe"), "signed test interpreter");
+    }
     await fs.writeFile(path.join(source, "wheelhouse", "sample.whl"), "wheel");
     const lock = "sample==1.2.3 --hash=sha256:" + "a".repeat(64) + "\n";
     await fs.writeFile(path.join(source, "requirements.lock"), lock);
-    relativeFiles.push("python.exe", "wheelhouse/sample.whl", "requirements.lock");
+    if (!pythonComponentId) relativeFiles.push("python/python.exe");
+    relativeFiles.push("wheelhouse/sample.whl", "requirements.lock");
     pythonEnvironment = {
-      pythonExecutablePath: "python.exe",
+      ...(pythonComponentId ? { pythonComponentId } : {}),
+      pythonExecutablePath: "python/python.exe",
       wheelhousePath: "wheelhouse",
       requirementsLockPath: "requirements.lock",
       requirementsLockSha256: crypto.createHash("sha256").update(lock).digest("hex"),

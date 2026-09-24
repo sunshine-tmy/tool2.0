@@ -13,6 +13,7 @@ type ProcessRunner = (
 
 const requiredFiles: Record<string, string[]> = {
   ffmpeg: ["bin/ffmpeg.exe", "bin/ffprobe.exe"],
+  "python-311": ["python/python.exe"],
   "video-text": ["scripts/video-transcribe-faster-whisper.py"],
   "whisper-small": ["model/config.json", "model/model.bin", "model/tokenizer.json"],
   "edge-tts": ["scripts/edge-tts-generate.py"],
@@ -54,6 +55,17 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
         generationRoot,
         cleanEnvironment()
       );
+      return;
+    }
+
+    if (manifest.id === "python-311") {
+      const output = await runProcess(
+        path.join(generationRoot, "python", "python.exe"),
+        ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+        generationRoot,
+        cleanEnvironment()
+      );
+      if (output.trim() !== "3.11") throw new Error("Python 3.11 共享运行时自检失败");
       return;
     }
 

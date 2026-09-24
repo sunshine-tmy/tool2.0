@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { after, describe, it } from "node:test";
 import { buildComponentPackage, canonicalManifest } from "./build-component-package.mjs";
 import { assembleComponentCatalog, writeGeneratedCatalog } from "./assemble-component-catalog.mjs";
+import { preparePython311Runtime } from "./prepare-python-311-runtime.mjs";
 
 const repositoryRoot = process.cwd();
 const require = createRequire(path.join(repositoryRoot, "backend", "package.json"));
@@ -55,6 +56,16 @@ after(async () => {
 });
 
 describe("buildComponentPackage", () => {
+  it("rejects an unpinned Python runtime archive before creating a staging directory", async () => {
+    const root = await makeRoot();
+    const archivePath = path.join(root, "python-runtime.tar.gz");
+    const stagingDirectory = path.join(root, "python-stage");
+    await fs.writeFile(archivePath, "not the pinned Python runtime");
+
+    await assert.rejects(preparePython311Runtime({ archivePath, stagingDirectory }), /归档大小不匹配/);
+    await assert.rejects(fs.access(stagingDirectory), { code: "ENOENT" });
+  });
+
   it("creates a deterministic archive, signed manifest, public key and SPDX inventory", async () => {
     const root = await makeRoot();
     const stage = path.join(root, "stage");
@@ -181,9 +192,7 @@ describe("buildComponentPackage", () => {
   it("hashes the Python lock into the signed manifest and lists pinned packages in the SBOM", async () => {
     const root = await makeRoot();
     const stage = path.join(root, "stage");
-    await fs.mkdir(path.join(stage, "python"), { recursive: true });
     await fs.mkdir(path.join(stage, "wheelhouse"), { recursive: true });
-    await fs.writeFile(path.join(stage, "python", "python.exe"), "runtime");
     await fs.writeFile(path.join(stage, "worker.py"), "print('worker')\n");
     await fs.writeFile(path.join(stage, "wheelhouse", "torch-2.6.0+cpu.whl"), "wheel");
     await fs.writeFile(
@@ -196,8 +205,10 @@ describe("buildComponentPackage", () => {
       definition({
         id: "video-text",
         groupId: "media",
+        dependencyIds: ["python-311"],
         taskToolIds: ["video-text"],
         pythonEnvironment: {
+          pythonComponentId: "python-311",
           pythonExecutablePath: "python/python.exe",
           wheelhousePath: "wheelhouse",
           requirementsLockPath: "requirements.lock",
@@ -222,6 +233,7 @@ describe("buildComponentPackage", () => {
       crypto.createHash("sha256").update(lock).digest("hex")
     );
     assert.equal(manifest.pythonEnvironment.expectedPythonVersion, "3.11");
+    assert.equal(manifest.pythonEnvironment.pythonComponentId, "python-311");
     assert.ok(sbom.packages.some((item) => item.name === "torch" && item.versionInfo === "2.6.0+cpu"));
   });
 
@@ -275,6 +287,27 @@ describe("buildComponentPackage", () => {
       buildComponentPackage({
         ...options,
         definitionPath: unsafeDefinitionPath,
+        assetBaseUrl: "https://packages.example.test/"
+      }),
+      /pythonEnvironment/
+    );
+
+    const undeclaredPythonDependency = await writeDefinition(
+      root,
+      definition({
+        pythonEnvironment: {
+          pythonComponentId: "python-311",
+          pythonExecutablePath: "python/python.exe",
+          wheelhousePath: "wheelhouse",
+          requirementsLockPath: "requirements.lock",
+          expectedPythonVersion: "3.11"
+        }
+      })
+    );
+    await assert.rejects(
+      buildComponentPackage({
+        ...options,
+        definitionPath: undeclaredPythonDependency,
         assetBaseUrl: "https://packages.example.test/"
       }),
       /pythonEnvironment/

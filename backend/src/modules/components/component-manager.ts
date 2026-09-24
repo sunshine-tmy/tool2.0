@@ -58,6 +58,8 @@ export type ComponentPackageManifest = {
   installedBytes: number;
   files: ComponentManifestFile[];
   pythonEnvironment?: {
+    /** Set when the interpreter belongs to a separately installed signed dependency. */
+    pythonComponentId?: string;
     pythonExecutablePath: string;
     wheelhousePath: string;
     requirementsLockPath: string;
@@ -504,9 +506,14 @@ export class ComponentManager {
       targetCreated = true;
       if (manifest.pythonEnvironment) {
         this.updateJob(internal, { phase: "building-python" });
+        const { pythonComponentId, ...pythonEnvironment } = manifest.pythonEnvironment;
+        const pythonRuntime = pythonComponentId
+          ? await this.resolveInstalledAsset(pythonComponentId, pythonEnvironment.pythonExecutablePath)
+          : undefined;
         await buildPythonEnvironment({
           packageRoot: target,
-          ...manifest.pythonEnvironment,
+          ...pythonEnvironment,
+          ...(pythonRuntime ? { pythonRuntimeRoot: pythonRuntime.generationRoot } : {}),
           runProcess: this.runPythonProcess
         });
       }
@@ -768,8 +775,15 @@ export class ComponentManager {
         (condition) => typeof condition !== "string" || !condition.trim() || condition.length > 300
       ) ||
       (manifest.pythonEnvironment !== undefined &&
-        (!SHA256.test(manifest.pythonEnvironment.requirementsLockSha256) ||
-          !["3.11", "3.12"].includes(manifest.pythonEnvironment.expectedPythonVersion)))
+        (!manifest.pythonEnvironment ||
+          !SHA256.test(manifest.pythonEnvironment.requirementsLockSha256) ||
+          !["3.11", "3.12"].includes(manifest.pythonEnvironment.expectedPythonVersion) ||
+          !isSafeRelativePath(manifest.pythonEnvironment.pythonExecutablePath) ||
+          !isSafeRelativePath(manifest.pythonEnvironment.wheelhousePath) ||
+          !isSafeRelativePath(manifest.pythonEnvironment.requirementsLockPath) ||
+          (manifest.pythonEnvironment.pythonComponentId !== undefined &&
+            (!COMPONENT_ID.test(manifest.pythonEnvironment.pythonComponentId) ||
+              !manifest.dependencyIds.includes(manifest.pythonEnvironment.pythonComponentId)))))
     )
       throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包 manifest 不符合安全约束");
     const names = new Set<string>();

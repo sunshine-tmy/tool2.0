@@ -13,6 +13,8 @@ export type PythonRuntimeVersion = "3.11" | "3.12";
 
 export type PythonEnvironmentBuildOptions = {
   packageRoot: string;
+  /** Optional immutable, separately signed Python runtime generation. */
+  pythonRuntimeRoot?: string;
   pythonExecutablePath: string;
   wheelhousePath: string;
   requirementsLockPath: string;
@@ -29,7 +31,8 @@ export type PythonEnvironmentBuildOptions = {
 export async function buildPythonEnvironment(options: PythonEnvironmentBuildOptions) {
   if (!SHA256.test(options.requirementsLockSha256)) throw new Error("Python 依赖锁文件摘要格式无效");
   const packageRoot = await fs.realpath(options.packageRoot);
-  const pythonExecutable = await resolvePackageAsset(packageRoot, options.pythonExecutablePath, "Python 解释器");
+  const pythonRoot = options.pythonRuntimeRoot ? await fs.realpath(options.pythonRuntimeRoot) : packageRoot;
+  const pythonExecutable = await resolvePackageAsset(pythonRoot, options.pythonExecutablePath, "Python 解释器");
   const wheelhouse = await resolvePackageAsset(packageRoot, options.wheelhousePath, "wheelhouse");
   const requirementsLock = await resolvePackageAsset(packageRoot, options.requirementsLockPath, "Python 依赖锁文件");
   const pythonStat = await fs.stat(pythonExecutable);

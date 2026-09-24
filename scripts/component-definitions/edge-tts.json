@@ -1,0 +1,18 @@
+{
+  "id": "edge-tts",
+  "groupId": "audio",
+  "displayName": "在线自然配音（Edge-TTS）",
+  "purpose": "使用 Microsoft Edge 在线语音服务生成配音；需要联网，语音服务本身不随应用分发。",
+  "dependencyIds": ["python-311"],
+  "taskToolIds": ["edge-tts"],
+  "installConditions": ["安装前需有 Python 3.11 共享运行时；生成语音时需要联网访问在线语音服务。"],
+  "version": "7.2.8-1",
+  "installedBytes": 180000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-311",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.11"
+  }
+}

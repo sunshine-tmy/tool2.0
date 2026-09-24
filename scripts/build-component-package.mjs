@@ -205,6 +205,10 @@ function validateDefinition(value) {
     if (
       !environment ||
       !["3.11", "3.12"].includes(environment.expectedPythonVersion) ||
+      (environment.pythonComponentId !== undefined &&
+        (typeof environment.pythonComponentId !== "string" ||
+          !COMPONENT_ID.test(environment.pythonComponentId) ||
+          !value.dependencyIds.includes(environment.pythonComponentId))) ||
       !isSimpleRelativePath(environment.pythonExecutablePath) ||
       !isSimpleRelativePath(environment.wheelhousePath) ||
       !isSimpleRelativePath(environment.requirementsLockPath)
@@ -216,17 +220,20 @@ function validateDefinition(value) {
 
 async function validatePythonEnvironment(environment, stageRoot) {
   if (!environment) return undefined;
-  const python = await resolveStagedAsset(stageRoot, environment.pythonExecutablePath, "Python 解释器");
+  const python = environment.pythonComponentId
+    ? undefined
+    : await resolveStagedAsset(stageRoot, environment.pythonExecutablePath, "Python 解释器");
   const wheelhouse = await resolveStagedAsset(stageRoot, environment.wheelhousePath, "wheelhouse");
   const lock = await resolveStagedAsset(stageRoot, environment.requirementsLockPath, "Python 锁文件");
   if (
-    !(await fs.stat(python)).isFile() ||
+    (python && !(await fs.stat(python)).isFile()) ||
     !(await fs.stat(wheelhouse)).isDirectory() ||
     !(await fs.stat(lock)).isFile()
   ) {
     throw new Error("Python 环境资产类型无效");
   }
   return {
+    ...(environment.pythonComponentId ? { pythonComponentId: environment.pythonComponentId } : {}),
     pythonExecutablePath: environment.pythonExecutablePath,
     wheelhousePath: environment.wheelhousePath,
     requirementsLockPath: environment.requirementsLockPath,
