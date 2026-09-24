@@ -48,6 +48,18 @@ describe("ComponentManager", () => {
     await expect(manager.list()).resolves.toMatchObject([{ installed: true, installedVersion: "1.0.0" }]);
   });
 
+  it("allows an internal package without license metadata and labels it as internal", async () => {
+    const fixture = await createFixture("1.0.0", { license: null });
+    const manager = createManager(fixture.manifest, fixture.archivePath);
+
+    const installed = await manager.install("edge-tts");
+    expect(installed).toMatchObject({
+      installed: true,
+      licenseName: "内部使用"
+    });
+    expect(installed).not.toHaveProperty("licenseUrl");
+  });
+
   it("resolves only current-generation files listed in the trusted manifest and detects tampering", async () => {
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath);
@@ -235,13 +247,18 @@ describe("ComponentManager", () => {
   it("builds hash-locked Python environments only after the package reaches its immutable final path", async () => {
     const fixture = await createFixture("1.0.0", { pythonEnvironment: true });
     const root = path.join(temporaryRoot, "packages");
-    const calls: Array<{ executable: string; args: string[]; cwd: string }> = [];
+    const calls: Array<{
+      executable: string;
+      args: string[];
+      cwd: string;
+      environment?: Record<string, string>;
+    }> = [];
     const manager = new ComponentManager({
       root,
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
       downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
-      runPythonProcess: async (executable, args, cwd) => {
-        calls.push({ executable, args, cwd });
+      runPythonProcess: async (executable, args, cwd, environment) => {
+        calls.push({ executable, args, cwd, environment });
         return args[0] === "-c" ? "3.11\n" : "";
       },
       selfTest: async (_manifest, generationRoot) => {
@@ -255,6 +272,8 @@ describe("ComponentManager", () => {
     expect(calls.length).toBe(5);
     expect(calls.every((call) => call.cwd === path.join(root, "edge-tts", "versions", "1.0.0"))).toBe(true);
     expect(calls[3].args).toContain("--no-index");
+    expect(calls[3].args).toContain("--no-cache-dir");
+    expect(calls[3].environment?.TEMP).toBe(path.join(root, "edge-tts", "versions", "1.0.0", ".python-build-temp"));
   });
 
   it("blocks dependents until dependencies are installed and refuses dependency removal", async () => {
@@ -547,6 +566,7 @@ async function createFixture(
     displayName?: string;
     dependencyIds?: string[];
     pythonEnvironment?: boolean;
+    license?: ComponentPackageManifest["license"] | null;
   } = {}
 ) {
   if (!temporaryRoot) temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-manager-"));
@@ -608,7 +628,9 @@ async function createFixture(
     installedBytes: allFiles.reduce((total, file) => total + file.bytes, 0),
     ...(pythonEnvironment ? { pythonEnvironment } : {}),
     files: allFiles.filter((file) => file.path !== overrides.omitManifestPath),
-    license: { name: "MIT", url: "https://licenses.example.test/mit" },
+    ...(overrides.license === null
+      ? {}
+      : { license: overrides.license ?? { name: "MIT", url: "https://licenses.example.test/mit" } }),
     sbom: { url: "https://packages.example.test/" + componentId + ".sbom.json", sha256: "1".repeat(64) },
     keyId: "test-ed25519"
   };

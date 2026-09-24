@@ -63,7 +63,7 @@ export const ComponentPackageStatusSchema = Type.Object(
     previousVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
     installedAt: Type.Optional(Type.String({ pattern: COMPONENT_TIMESTAMP_PATTERN })),
     licenseName: Type.String({ minLength: 1, maxLength: 160 }),
-    licenseUrl: Type.String({ pattern: "^https://[^\\s]+$" }),
+    licenseUrl: Type.Optional(Type.String({ pattern: "^https://[^\\s]+$" })),
     failureReason: Type.Optional(Type.String({ maxLength: 240 })),
     blockedReason: Type.Optional(Type.String({ maxLength: 300 }))
   },

@@ -41,7 +41,7 @@
     "audit:python": "python scripts/audit-worker-dependencies.py",
     "coverage:diff": "node scripts/check-diff-coverage.mjs",
     "test:python": "python -m pytest",
-    "test:scripts": "node --test scripts/cleanup-engine.test.mjs scripts/check-diff-coverage.test.mjs",
+    "test:scripts": "node --test scripts/cleanup-engine.test.mjs scripts/check-diff-coverage.test.mjs scripts/worker-locks.test.mjs",
     "test:diff-coverage": "node --test scripts/check-diff-coverage.test.mjs",
     "test:e2e": "playwright test",
     "lint:python": "python -m ruff format --check scripts && python -m ruff check scripts && python -m mypy",

@@ -33,7 +33,7 @@ $VenvPython = Join-Path $Venv "Scripts\python.exe"
 & $VenvPython -m pip install --disable-pip-version-check --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "Unable to upgrade pip" }
 
-& $VenvPython -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cu124 -r $Requirements
+& $VenvPython -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r $Requirements
 if ($LASTEXITCODE -ne 0) { throw "Unable to install Chatterbox dependencies" }
 
 # The current 0.1.7 PyPI wheel predates the V3 loader argument. Install the

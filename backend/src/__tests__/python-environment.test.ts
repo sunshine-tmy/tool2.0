@@ -21,11 +21,18 @@ describe("buildPythonEnvironment", () => {
     const lockPath = path.join(temporaryRoot, "requirements.lock");
     const lock = "sample==1.2.3 --hash=sha256:" + "a".repeat(64) + "\n";
     await fs.writeFile(lockPath, lock);
-    const invocations: Array<{ executable: string; args: string[]; cwd: string }> = [];
-    const runProcess = vi.fn(async (executable: string, args: string[], cwd: string) => {
-      invocations.push({ executable, args, cwd });
-      return args[0] === "-c" ? "3.11\n" : "";
-    });
+    const invocations: Array<{
+      executable: string;
+      args: string[];
+      cwd: string;
+      environment?: Record<string, string>;
+    }> = [];
+    const runProcess = vi.fn(
+      async (executable: string, args: string[], cwd: string, environment?: Record<string, string>) => {
+        invocations.push({ executable, args, cwd, environment });
+        return args[0] === "-c" ? "3.11\n" : "";
+      }
+    );
 
     const result = await buildPythonEnvironment({
       packageRoot: temporaryRoot,
@@ -43,8 +50,15 @@ describe("buildPythonEnvironment", () => {
       cwd: temporaryRoot
     });
     expect(invocations[3].args).toContain("--no-index");
+    expect(invocations[3].args).toContain("--no-cache-dir");
     expect(invocations[3].args).toContain("--require-hashes");
     expect(invocations[3].args).toContain(path.join(temporaryRoot, "wheelhouse"));
+    expect(invocations[3].environment).toMatchObject({
+      TEMP: path.join(temporaryRoot, ".python-build-temp"),
+      TMP: path.join(temporaryRoot, ".python-build-temp"),
+      TMPDIR: path.join(temporaryRoot, ".python-build-temp")
+    });
+    await expect(fs.access(path.join(temporaryRoot, ".python-build-temp"))).rejects.toThrow();
     expect(invocations[4].args).toEqual(["-m", "pip", "--isolated", "check"]);
   });
 

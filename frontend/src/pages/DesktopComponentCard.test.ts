@@ -67,6 +67,12 @@ describe("DesktopComponentCard", () => {
     expect(wrapper.emitted("install")?.[0]?.[0]).toMatchObject({ id: "ffmpeg" });
   });
 
+  it("shows internal-use metadata when license details are omitted", () => {
+    const wrapper = mountCard({ component: component({ licenseName: "内部使用", licenseUrl: undefined }) });
+    expect(wrapper.text()).toContain("内部使用");
+    expect(wrapper.find("a").exists()).toBe(false);
+  });
+
   it("prevents an unresolved dependency installation", () => {
     const wrapper = mountCard({
       component: component({ state: "blocked", blockedReason: "缺少依赖：python-311" })

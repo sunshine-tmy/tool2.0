@@ -80,7 +80,7 @@
             <div>
               <h3>能力管理</h3>
               <p class="panel-description">
-                按需安装本地运行时与模型。安装前会展示体积、用途和许可；后端会在下载前检查磁盘空间，失败不会替换可用版本。
+                按需安装本地运行时与模型。安装前会展示体积、用途和来源信息；后端会在下载前检查磁盘空间，失败不会替换可用版本。
               </p>
               <p v-if="componentTotalLabel" class="setting-copy">{{ componentTotalLabel }}（共享依赖只计一次）</p>
             </div>
@@ -114,7 +114,7 @@
               </section>
             </template>
             <n-alert v-else type="info" :bordered="false">
-              当前版本没有已审核并签名的可安装能力包。获得许可与供应链审核的能力包发布后会显示在这里；本阶段不会从未审核来源安装能力包，现有业务运行方式保持不变。
+              当前版本尚未配置固定版本、内部包源和受信任签名的能力资产；完成这些工程配置后，可安装能力会显示在这里。来源说明仅供参考，不作为内部使用门槛。
             </n-alert>
           </template>
           <p class="setting-copy capability-retention-note">
@@ -289,8 +289,10 @@ async function loadComponents() {
 }
 
 async function installComponent(component: ComponentPackageStatus) {
+  const packageInfo =
+    component.licenseName === "内部使用" ? "该能力包用于组织内部。" : `许可信息：${component.licenseName}。`;
   const accepted = await confirm(
-    `将下载“${component.displayName}”约 ${formatBytes(component.downloadBytes)}，安装后约占用 ${formatBytes(component.installedBytes)}。许可：${component.licenseName}。后端会在下载前复核磁盘空间，安装失败不会替换健康版本。${formatInstallConditions(component)}`,
+    `将下载“${component.displayName}”约 ${formatBytes(component.downloadBytes)}，安装后约占用 ${formatBytes(component.installedBytes)}。${packageInfo}后端会在下载前复核磁盘空间，安装失败不会替换健康版本。${formatInstallConditions(component)}`,
     { title: "确认安装能力", positiveText: "开始安装" }
   );
   if (accepted) await startComponentOperation(component, "install");

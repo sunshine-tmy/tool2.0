@@ -58,7 +58,10 @@
       <span>版本 {{ component.installedVersion || component.version }}</span>
       <span>下载 {{ formatBytes(component.downloadBytes) }}</span>
       <span>安装后约 {{ formatBytes(component.installedBytes) }}</span>
-      <a :href="component.licenseUrl" target="_blank" rel="noreferrer">许可：{{ component.licenseName }}</a>
+      <a v-if="component.licenseUrl" :href="component.licenseUrl" target="_blank" rel="noreferrer">
+        许可信息：{{ component.licenseName }}
+      </a>
+      <span v-else>{{ component.licenseName }}</span>
     </div>
 
     <p v-if="component.dependencyIds.length" class="component-note">依赖：{{ component.dependencyIds.join("、") }}</p>

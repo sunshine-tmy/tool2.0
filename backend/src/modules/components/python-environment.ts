@@ -18,7 +18,12 @@ export type PythonEnvironmentBuildOptions = {
   requirementsLockPath: string;
   requirementsLockSha256: string;
   expectedPythonVersion: PythonRuntimeVersion;
-  runProcess?: (executable: string, args: string[], cwd: string) => Promise<string>;
+  runProcess?: (
+    executable: string,
+    args: string[],
+    cwd: string,
+    environment?: Record<string, string>
+  ) => Promise<string>;
 };
 
 export async function buildPythonEnvironment(options: PythonEnvironmentBuildOptions) {
@@ -39,41 +44,57 @@ export async function buildPythonEnvironment(options: PythonEnvironmentBuildOpti
 
   const environmentDirectory = path.join(packageRoot, "venv");
   if (await pathExists(environmentDirectory)) throw new Error("Python 环境目标目录已存在，拒绝覆盖");
+  const temporaryDirectory = path.join(packageRoot, ".python-build-temp");
+  if (await pathExists(temporaryDirectory)) throw new Error("Python 构建临时目录已存在，拒绝覆盖");
+  await fs.mkdir(temporaryDirectory);
   const run = options.runProcess ?? runProcess;
-  const baseVersion = await run(
-    pythonExecutable,
-    ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-    packageRoot
-  );
-  assertExpectedVersion(baseVersion, options.expectedPythonVersion);
-  await run(pythonExecutable, ["-m", "venv", environmentDirectory], packageRoot);
+  const temporaryEnvironment = {
+    TEMP: temporaryDirectory,
+    TMP: temporaryDirectory,
+    TMPDIR: temporaryDirectory
+  };
+  try {
+    const baseVersion = await run(
+      pythonExecutable,
+      ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+      packageRoot,
+      temporaryEnvironment
+    );
+    assertExpectedVersion(baseVersion, options.expectedPythonVersion);
+    await run(pythonExecutable, ["-m", "venv", environmentDirectory], packageRoot, temporaryEnvironment);
 
-  const environmentPython = path.join(environmentDirectory, "Scripts", "python.exe");
-  const environmentVersion = await run(
-    environmentPython,
-    ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-    packageRoot
-  );
-  assertExpectedVersion(environmentVersion, options.expectedPythonVersion);
-  await run(
-    environmentPython,
-    [
-      "-m",
-      "pip",
-      "--isolated",
-      "install",
-      "--disable-pip-version-check",
-      "--no-index",
-      "--require-hashes",
-      "--find-links",
-      wheelhouse,
-      "-r",
-      requirementsLock
-    ],
-    packageRoot
-  );
-  await run(environmentPython, ["-m", "pip", "--isolated", "check"], packageRoot);
-  return { environmentDirectory, pythonExecutable: environmentPython, pythonVersion: options.expectedPythonVersion };
+    const environmentPython = path.join(environmentDirectory, "Scripts", "python.exe");
+    const environmentVersion = await run(
+      environmentPython,
+      ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+      packageRoot,
+      temporaryEnvironment
+    );
+    assertExpectedVersion(environmentVersion, options.expectedPythonVersion);
+    await run(
+      environmentPython,
+      [
+        "-m",
+        "pip",
+        "--isolated",
+        "--no-cache-dir",
+        "install",
+        "--disable-pip-version-check",
+        "--no-index",
+        "--require-hashes",
+        "--find-links",
+        wheelhouse,
+        "-r",
+        requirementsLock
+      ],
+      packageRoot,
+      temporaryEnvironment
+    );
+    await run(environmentPython, ["-m", "pip", "--isolated", "check"], packageRoot, temporaryEnvironment);
+    return { environmentDirectory, pythonExecutable: environmentPython, pythonVersion: options.expectedPythonVersion };
+  } finally {
+    await fs.rm(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 async function resolvePackageAsset(packageRoot: string, relative: string, label: string) {
@@ -106,7 +127,7 @@ async function sha256File(filePath: string) {
   return digest.digest("hex");
 }
 
-async function runProcess(executable: string, args: string[], cwd: string) {
+async function runProcess(executable: string, args: string[], cwd: string, environment?: Record<string, string>) {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
@@ -114,6 +135,7 @@ async function runProcess(executable: string, args: string[], cwd: string) {
       stdio: ["ignore", "pipe", "pipe"],
       env: {
         ...process.env,
+        ...environment,
         PIP_CONFIG_FILE: process.platform === "win32" ? "NUL" : os.devNull,
         PIP_DISABLE_PIP_VERSION_CHECK: "1",
         PYTHONNOUSERSITE: "1"

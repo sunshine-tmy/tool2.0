@@ -48,7 +48,7 @@ export type ComponentPackageManifest = {
     requirementsLockSha256: string;
     expectedPythonVersion: PythonRuntimeVersion;
   };
-  license: { name: string; url: string };
+  license?: { name: string; url?: string };
   sbom: { url: string; sha256: string };
   keyId: string;
   signature: string;
@@ -677,8 +677,8 @@ export class ComponentManager {
       health,
       ...(current ? { installedVersion: current.version, installedAt: current.installedAt } : {}),
       ...(current?.previousVersion ? { previousVersion: current.previousVersion } : {}),
-      licenseName: manifest.license.name,
-      licenseUrl: manifest.license.url
+      licenseName: manifest.license?.name ?? "内部使用",
+      ...(manifest.license?.url ? { licenseUrl: manifest.license.url } : {})
     };
   }
 
@@ -692,8 +692,12 @@ export class ComponentManager {
       manifest.platform !== "win32-x64" ||
       !manifest.displayName.trim() ||
       !manifest.purpose.trim() ||
-      !manifest.license.name.trim() ||
-      !isHttpsUrl(manifest.license.url) ||
+      (manifest.license !== undefined &&
+        (!manifest.license ||
+          typeof manifest.license.name !== "string" ||
+          !manifest.license.name.trim() ||
+          (manifest.license.url !== undefined &&
+            (typeof manifest.license.url !== "string" || !isHttpsUrl(manifest.license.url))))) ||
       !isHttpsUrl(manifest.sbom.url) ||
       !SHA256.test(manifest.sbom.sha256) ||
       !isHttpsUrl(manifest.archive.url) ||

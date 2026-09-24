@@ -18,7 +18,7 @@ AUDITS = [
     ("image-ai.lock.txt", ["PYSEC-2026-1215"]),
 ]
 PYTORCH_EXCEPTIONS = [
-    # Chatterbox V3 and the existing CUDA 12.4 deployment require Torch 2.6.
+    # Chatterbox V3 and the pinned CPU workers require Torch 2.6.
     # The worker is loopback-only, never enables distributed/training APIs, and
     # loads only administrator-installed model files. Keep this explicit list so
     # any newly published advisory still fails CI.

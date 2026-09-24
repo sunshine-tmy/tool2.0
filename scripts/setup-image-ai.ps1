@@ -16,7 +16,7 @@ if (-not $PythonCommand) {
 }
 $PythonVersion = & $PythonCommand.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 if ($PythonVersion -ne "3.11") {
-  throw "Image AI requires Python 3.11 for the pinned CUDA dependencies; found Python $PythonVersion. Pass a Python 3.11 python.exe path with -Python."
+  throw "Image AI requires Python 3.11 for the pinned CPU dependencies; found Python $PythonVersion. Pass a Python 3.11 python.exe path with -Python."
 }
 
 Write-Host "Creating isolated Python 3.11 environment..." -ForegroundColor Cyan
@@ -24,8 +24,8 @@ Write-Host "Creating isolated Python 3.11 environment..." -ForegroundColor Cyan
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
 & $VenvPython -m pip install --upgrade pip wheel setuptools
 
-Write-Host "Installing hash-locked CUDA and inference dependencies..." -ForegroundColor Cyan
-& $VenvPython -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cu124 -r (Join-Path $PSScriptRoot "image-ai.lock.txt")
+Write-Host "Installing hash-locked CPU and inference dependencies..." -ForegroundColor Cyan
+& $VenvPython -m pip install --require-hashes --extra-index-url https://download.pytorch.org/whl/cpu -r (Join-Path $PSScriptRoot "image-ai.lock.txt")
 if ($LASTEXITCODE -ne 0) { throw "Unable to install Image AI dependencies" }
 
 New-Item -ItemType Directory -Path $Models -Force | Out-Null
@@ -51,4 +51,4 @@ if (-not $SkipModels) {
 
 Write-Host "Image AI runtime is ready." -ForegroundColor Green
 Write-Host "Worker command: $VenvPython $PSScriptRoot\image-ai-worker.py"
-Write-Host "BRIA RMBG 2.0 is not downloaded automatically because its license requires explicit acceptance." -ForegroundColor Yellow
+Write-Host "Optional BRIA RMBG 2.0 weights are not included by this setup script. Set IMAGE_AI_BRIA_MODEL_DIR to a local model directory to enable the provider; otherwise the worker uses BiRefNet." -ForegroundColor Yellow
