@@ -399,9 +399,21 @@ export class ComponentManager {
       }
       internal.controller = new AbortController();
       this.updateJob(internal, { state: "running", phase: "downloading" });
-      await this.installGeneration(manifest, operation === "reinstall", internal);
+      const generation = await this.installGeneration(manifest, operation === "reinstall", internal);
+      try {
+        await this.notifyAfterMutation(manifest.id, operation);
+      } catch (error) {
+        await this.restoreCurrent(manifest.id, generation.previous);
+        await this.notifyAfterMutation(manifest.id, "uninstall").catch(() => undefined);
+        await fsp
+          .rm(safeChildPath(path.join(this.componentRoot(manifest.id), "versions"), generation.directory), {
+            recursive: true,
+            force: true
+          })
+          .catch(() => undefined);
+        throw error;
+      }
       this.lastFailures.delete(manifest.id);
-      await this.notifyAfterMutation(manifest.id, operation);
       this.updateJob(internal, { state: "completed", phase: "complete" });
     } catch (error) {
       if (operation === "uninstall" && uninstallRuntimeStopped) {
@@ -427,10 +439,12 @@ export class ComponentManager {
     try {
       await this.onAfterMutation?.(componentId, operation);
     } catch (error) {
-      // Package installation remains valid even if an optional runtime cannot start.
       console.warn(
         `Installed component runtime refresh failed for ${componentId}: ${error instanceof Error ? error.message : "unknown error"}`
       );
+      if (operation !== "uninstall") {
+        throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力运行时健康检查失败，已恢复原版本");
+      }
     }
   }
 
@@ -488,6 +502,7 @@ export class ComponentManager {
       this.updateJob(internal, { phase: "switching" });
       await this.switchCurrent(componentRoot, manifest, generationName, oldCurrent);
       targetCreated = false;
+      return { previous: oldCurrent, directory: generationName };
     } catch (error) {
       if (targetCreated) await fsp.rm(target, { recursive: true, force: true }).catch(() => undefined);
       throw error;
@@ -496,6 +511,23 @@ export class ComponentManager {
         fsp.rm(archivePath, { force: true }).catch(() => undefined),
         fsp.rm(staging, { recursive: true, force: true }).catch(() => undefined)
       ]);
+    }
+  }
+
+  private async restoreCurrent(componentId: string, previous?: CurrentRecord) {
+    const componentRoot = this.componentRoot(componentId);
+    const currentPath = path.join(componentRoot, "current.json");
+    if (!previous) {
+      await fsp.rm(currentPath, { force: true });
+      return;
+    }
+    const pendingPath = path.join(componentRoot, ".current-rollback." + crypto.randomUUID() + ".partial");
+    await fsp.writeFile(pendingPath, JSON.stringify(previous, null, 2) + "\n", { encoding: "utf8", flag: "wx" });
+    try {
+      await fsp.rename(pendingPath, currentPath);
+    } catch (error) {
+      await fsp.rm(pendingPath, { force: true });
+      throw error;
     }
   }
 

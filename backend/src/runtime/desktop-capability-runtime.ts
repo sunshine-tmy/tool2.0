@@ -7,6 +7,7 @@ import fsp from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+import type { ComponentJobOperation } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import { ComponentManager, ComponentManagerError } from "../modules/components/component-manager";
 import { workerAuthHeaders } from "../security/worker-auth";
@@ -288,7 +289,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
         config.chatterboxWorkerToken = undefined;
       }
     },
-    afterMutation: async (componentId: string) => {
+    afterMutation: async (componentId: string, operation: ComponentJobOperation) => {
       const refresh = refreshQueue.then(async () => {
         if (closed) return;
         await initializing.catch(() => undefined);
@@ -298,6 +299,13 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
         controllers.set(componentId, controller);
         if (["ffmpeg", "video-text", "whisper-small"].includes(componentId)) {
           await configureVideo(controller.signal, (await resolveMediaTools())[0]);
+          if (
+            operation !== "uninstall" &&
+            (await areInstalled(components, ["ffmpeg", "video-text", "whisper-small"])) &&
+            !config.videoTextCapabilityReady
+          ) {
+            throw new Error("视频文本解析依赖已安装，但运行时自检未就绪");
+          }
           if (componentId === "ffmpeg" && config.chatterboxCapabilityReady) {
             const [ffmpeg, ffprobe] = await resolveMediaTools();
             if (ffmpeg && ffprobe) {
@@ -307,13 +315,34 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
           }
         } else if (componentId === "edge-tts") {
           await configureEdgeTts(controller.signal);
+          if (
+            operation !== "uninstall" &&
+            (await isInstalled(components, componentId)) &&
+            !config.edgeTtsCapabilityReady
+          ) {
+            throw new Error("Edge-TTS 依赖已安装，但运行时自检未就绪");
+          }
         } else if (componentId === "image-ai") {
           await stopManagedWorker(componentId);
           await configureImageAi(controller.signal);
+          if (
+            operation !== "uninstall" &&
+            (await isInstalled(components, componentId)) &&
+            !config.imageAiCapabilityReady
+          ) {
+            throw new Error("AI 图片处理依赖已安装，但 Worker 健康检查未通过");
+          }
         } else if (componentId === "chatterbox") {
           await stopManagedWorker(componentId);
           const [ffmpeg, ffprobe] = await resolveMediaTools();
           await configureChatterbox(controller.signal, ffmpeg, ffprobe);
+          if (
+            operation !== "uninstall" &&
+            (await isInstalled(components, componentId)) &&
+            !config.chatterboxCapabilityReady
+          ) {
+            throw new Error("参考音色克隆依赖已安装，但 Worker 健康检查未通过");
+          }
         }
       });
       refreshQueue = refresh.catch(() => undefined);
@@ -326,6 +355,17 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
       await Promise.allSettled(workers.splice(0).map((worker) => worker.stop()));
     }
   };
+}
+
+async function isInstalled(components: ComponentManager, componentId: string) {
+  return (await components.list()).some((component) => component.id === componentId && component.installed);
+}
+
+async function areInstalled(components: ComponentManager, componentIds: string[]) {
+  const statuses = await components.list();
+  return componentIds.every((componentId) =>
+    statuses.some((component) => component.id === componentId && component.installed)
+  );
 }
 
 async function optionalAsset(components: ComponentManager, componentId: string, assetPath: string) {

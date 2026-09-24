@@ -21,6 +21,7 @@ let temporaryRoot = "";
 afterEach(async () => {
   if (temporaryRoot) await fs.rm(temporaryRoot, { recursive: true, force: true });
   temporaryRoot = "";
+  vi.restoreAllMocks();
 });
 
 describe("ComponentManager", () => {
@@ -218,6 +219,32 @@ describe("ComponentManager", () => {
     await expect(
       fs.readFile(path.join(root, "edge-tts", "versions", "1.0.0", "bin", "runner.exe"), "utf8")
     ).resolves.toBe("runner-1.0.0");
+  });
+
+  it("restores the previous generation when the installed runtime fails its health check", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fixture = await createFixture("1.0.0");
+    const root = path.join(temporaryRoot, "packages");
+    await createManager(fixture.manifest, fixture.archivePath).install("edge-tts");
+    const currentPath = path.join(root, "edge-tts", "current.json");
+    const before = await fs.readFile(currentPath, "utf8");
+    const manager = new ComponentManager({
+      root,
+      catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
+      downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
+      onAfterMutation: async (_componentId, operation) => {
+        if (operation !== "uninstall") throw new Error("worker failed health check");
+      }
+    });
+
+    const job = await manager.startReinstall("edge-tts");
+    await expect(waitForJob(manager, job.id)).resolves.toMatchObject({
+      operation: "reinstall",
+      state: "failed",
+      errorCode: "COMPONENT_INSTALL_FAILED"
+    });
+    await expect(fs.readFile(currentPath, "utf8")).resolves.toBe(before);
+    await expect(fs.readdir(path.join(root, "edge-tts", "versions"))).resolves.toEqual(["1.0.0"]);
   });
 
   it("blocks reinstall while its runtime is used by an active task", async () => {

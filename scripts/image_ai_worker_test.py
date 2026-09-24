@@ -1,5 +1,7 @@
 # 中文模块说明：测试 scripts/image_ai_worker_test.py 中的稳定行为、边界条件和回归场景
 import importlib.util
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,6 +35,28 @@ class TrustedPathTests(unittest.TestCase):
             with self.assertRaises(worker.WorkerFailure) as raised:
                 worker.trusted_path(str(candidate), must_exist=True)
             self.assertEqual(raised.exception.code, "UNTRUSTED_PATH")
+
+
+class DesktopInstallCheckTests(unittest.TestCase):
+    def test_check_reports_missing_packaged_models_without_starting_the_worker(self):
+        with tempfile.TemporaryDirectory(prefix="image-ai-check-") as directory:
+            root = Path(directory)
+            environment = {
+                "U2NET_HOME": str(root / "rembg"),
+                "IMAGE_AI_OCR_DETECTION_MODEL_DIR": str(root / "ocr" / "detection"),
+                "IMAGE_AI_OCR_RECOGNITION_MODEL_DIR": str(root / "ocr" / "recognition"),
+            }
+            with (
+                patch.object(worker, "MODELS_ROOT", root / "models"),
+                patch.object(worker.importlib.util, "find_spec", return_value=object()),
+                patch.dict(os.environ, environment, clear=False),
+                patch.object(sys, "argv", [str(WORKER_PATH), "--check"]),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                worker.main()
+
+            self.assertIn("missingModels", str(raised.exception))
+            self.assertIn("big-lama.pt", str(raised.exception))
 
 
 class RealEsrganInputTests(unittest.TestCase):

@@ -25,8 +25,8 @@ def format_timestamp(seconds: float) -> str:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Transcribe audio with faster-whisper and write SRT text.")
-    parser.add_argument("--input", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--input")
+    parser.add_argument("--output")
     parser.add_argument("--metadata-output", default="")
     parser.add_argument("--model", default="large-v3-turbo")
     parser.add_argument("--language", default="zh")
@@ -37,7 +37,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--best-of", type=int, default=5)
     parser.add_argument("--temperature", default="0")
     parser.add_argument("--low-confidence-log-probability", type=float, default=LOW_CONFIDENCE_LOG_PROBABILITY)
-    return parser.parse_args(argv)
+    parser.add_argument("--check", action="store_true", help="检查 faster-whisper 安装且不下载模型")
+    args = parser.parse_args(argv)
+    if not args.check and (not args.input or not args.output):
+        parser.error("--input 和 --output 在转写时必填")
+    return args
 
 
 def metadata_path_for(args: argparse.Namespace) -> Path:
@@ -207,6 +211,10 @@ def write_metadata(metadata_path: Path, metadata: dict) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.check:
+        whisper_model_class()
+        print(json.dumps({"available": True, "version": "faster-whisper"}))
+        return
 
     segments, info, used_model, used_device, used_compute_type = transcribe_with_fallback(args)
 

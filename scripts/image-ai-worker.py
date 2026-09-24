@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import hmac
 import importlib.util
+import json
 import os
 import sys
 import types
@@ -704,9 +705,35 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the local image AI worker")
     parser.add_argument("--host", default=HOST)
     parser.add_argument("--port", default=PORT, type=int)
+    parser.add_argument("--check", action="store_true", help="检查 CPU 运行时、模型和 Worker 依赖")
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         raise SystemExit("The image AI worker must only listen on loopback")
+    if args.check:
+        required_packages = ("torch", "realesrgan", "rembg", "paddleocr", "onnxruntime", "uvicorn")
+        missing_packages = [name for name in required_packages if importlib.util.find_spec(name) is None]
+        model_root = MODELS_ROOT
+        required_models = [
+            model_root / "torch" / "hub" / "checkpoints" / "big-lama.pt",
+            model_root / "RealESRGAN_x2plus.pth",
+            model_root / "RealESRGAN_x4plus.pth",
+            Path(os.environ.get("U2NET_HOME", "models/rembg"))
+            / "models"
+            / "birefnet-general"
+            / "birefnet-general.onnx",
+            Path(os.environ.get("IMAGE_AI_OCR_DETECTION_MODEL_DIR", "")) / "inference.yml",
+            Path(os.environ.get("IMAGE_AI_OCR_RECOGNITION_MODEL_DIR", "")) / "inference.yml",
+        ]
+        missing_models = [str(item) for item in required_models if not item.is_file()]
+        if missing_packages or missing_models:
+            raise SystemExit(
+                json.dumps(
+                    {"available": False, "missingPackages": missing_packages, "missingModels": missing_models},
+                    ensure_ascii=False,
+                )
+            )
+        print(json.dumps({"available": True, "device": "cpu", "models": len(required_models)}))
+        return
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
     try:
         import uvicorn

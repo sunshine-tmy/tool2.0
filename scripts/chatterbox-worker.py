@@ -520,10 +520,26 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def verify_desktop_model_assets() -> None:
+    if not DESKTOP_MANAGED:
+        return
+    required = [
+        "ve.pt",
+        "t3_mtl23ls_v3.safetensors",
+        "s3gen.pt",
+        "grapheme_mtl_merged_expanded_v1.json",
+    ]
+    missing = [name for name in required if not (MODELS_ROOT / name).is_file()]
+    if missing:
+        raise FileNotFoundError("能力包模型文件缺失：" + ", ".join(missing))
+
+
 if __name__ == "__main__":
     arguments = parse_args()
     if arguments.check:
         import inspect
+
+        verify_desktop_model_assets()
 
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 

@@ -41,7 +41,7 @@ import { XhsRuntimeManager } from "./modules/xhs-archive/runtime";
 import { XhsArchiveStore } from "./modules/xhs-archive/store";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { bundledComponentCatalog } from "./modules/components/catalog";
-import { ComponentManager } from "./modules/components/component-manager";
+import { ComponentManager, type ComponentManagerOptions } from "./modules/components/component-manager";
 import { registerComponentRoutes } from "./modules/components/routes";
 import { createTaskStore } from "./tasks/task-store";
 import { createRemoteFetch, type AddressResolver } from "./security/remote-fetch";
@@ -54,6 +54,7 @@ import { reconcileFileMetadataStorage } from "./database/file-consistency";
 import { reconcileDomainRecords } from "./database/domain-consistency";
 import { registerFrontendAssets } from "./plugins/frontend-assets";
 import { configureDesktopCapabilityRuntime } from "./runtime/desktop-capability-runtime";
+import { createDesktopComponentSelfTest } from "./modules/components/desktop-component-self-test";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
   const app = fastify({
@@ -89,12 +90,13 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const xhsAuth = new XhsAuthManager(config);
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
   let stopCapabilityBeforeUninstall: (componentId: string) => Promise<void> = async () => undefined;
-  let refreshDesktopCapabilities: (componentId: string) => Promise<void> = async () => undefined;
+  let refreshDesktopCapabilities: NonNullable<ComponentManagerOptions["onAfterMutation"]> = async () => undefined;
   const componentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
     catalog: bundledComponentCatalog,
+    selfTest: config.desktopManagedCapabilities ? createDesktopComponentSelfTest() : undefined,
     onBeforeUninstall: (componentId) => stopCapabilityBeforeUninstall(componentId),
-    onAfterMutation: (componentId) => refreshDesktopCapabilities(componentId),
+    onAfterMutation: (componentId, operation) => refreshDesktopCapabilities(componentId, operation),
     isInUse: (_componentId, taskToolIds) =>
       taskStore
         .list()

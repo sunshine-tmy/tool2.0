@@ -1,6 +1,7 @@
 # 中文模块说明：测试 scripts/test_video_transcribe_faster_whisper.py 中的稳定行为、边界条件和回归场景
 import importlib.util
 import pathlib
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -24,6 +25,19 @@ class FasterWhisperScriptTest(unittest.TestCase):
         self.assertEqual(args.device, "cuda")
         self.assertEqual(args.compute_type, "int8_float16")
         self.assertEqual(args.beam_size, 5)
+
+    def test_install_check_does_not_require_task_paths_or_load_a_model(self):
+        args = module.parse_args(["--check"])
+
+        self.assertTrue(args.check)
+        self.assertIsNone(args.input)
+        self.assertIsNone(args.output)
+
+    def test_install_check_fails_when_faster_whisper_is_missing(self):
+        with patch.object(sys, "argv", [str(SCRIPT_PATH), "--check"]):
+            with patch.object(module, "whisper_model_class", side_effect=RuntimeError("missing faster-whisper")):
+                with self.assertRaisesRegex(RuntimeError, "missing faster-whisper"):
+                    module.main()
 
     def test_local_desktop_model_does_not_add_downloadable_fallback_ids(self):
         with tempfile.TemporaryDirectory(prefix="whisper-model-") as directory:

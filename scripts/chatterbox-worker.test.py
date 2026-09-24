@@ -87,6 +87,15 @@ class MetaTensorRecoveryTests(unittest.TestCase):
 
 
 class DesktopModelLoadingTests(unittest.TestCase):
+    def test_installer_check_requires_the_complete_local_model_set(self):
+        with (
+            tempfile.TemporaryDirectory(prefix="chatterbox-model-check-") as directory,
+            patch.object(worker, "DESKTOP_MANAGED", True),
+            patch.object(worker, "MODELS_ROOT", Path(directory)),
+        ):
+            with self.assertRaisesRegex(FileNotFoundError, "能力包模型文件缺失"):
+                worker.verify_desktop_model_assets()
+
     def test_managed_desktop_loads_only_the_installed_local_model(self):
         with tempfile.TemporaryDirectory(prefix="chatterbox-model-") as directory:
             root = Path(directory)

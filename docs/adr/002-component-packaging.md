@@ -8,6 +8,8 @@
 
 安装顺序固定为：下载到 `.partial`、验证大小和摘要、验证签名、在隔离目录安全解压、验证文件清单和自检、原子切换 `current.json`、保留上一版本。安装失败不得覆盖当前健康版本。
 
+桌面安装自检在最终 generation 目录运行，并只使用随包构建的 Python、脚本及模型：FFmpeg/ffprobe 执行版本探测；转写检查 faster-whisper 导入和 Whisper 模型文件；Edge-TTS 执行协议 `check`；图片处理校验 CPU 推理依赖和固定模型；Chatterbox 校验 V3 API 与四个模型文件。图片和 Chatterbox 的 Loopback Worker 还须通过运行时健康检查。自检或 Worker 健康检查失败时，安装器不切换或恢复 `current.json` 到旧 generation，并保留原有可用版本。
+
 Worker 只监听 loopback 动态端口，启动时由主程序传入随机令牌。主 API 与 Worker 的请求必须携带该令牌；不能把 Worker URL、命令或任意下载 URL 暴露给 renderer 配置。
 
 能力包分为以下类别：
