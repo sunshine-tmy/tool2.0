@@ -1,0 +1,17 @@
+{
+  "id": "edge-tts",
+  "groupId": "audio",
+  "displayName": "Edge-TTS",
+  "purpose": "在线自然配音",
+  "dependencyIds": [],
+  "taskToolIds": ["edge-tts"],
+  "installConditions": ["生成语音时需要联网"],
+  "version": "1.0.0",
+  "installedBytes": 1200000000,
+  "pythonEnvironment": {
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.11"
+  }
+}

@@ -36,3 +36,17 @@ Worker 只监听 loopback 动态端口，启动时由主程序传入随机令牌
 3. 代码签名证书和更新源尚未提供，不能形成正式签名安装器。
 
 当前项目范围为组织内部使用；许可或再分发逐项审批不阻断内部实现、CI 与验收。BRIA 权重当前尚未加入受管模型源，是资产接入工作而非许可门槛。若将来需要对外分发，再另行评估该范围。
+
+## 内部包构建
+
+`pnpm components:package` 从已准备好的 staging 目录生成固定时间戳的 `.tar.gz`、文件 SHA-256 清单、SPDX 2.3 SBOM 和 Ed25519 签名 manifest。定义文件可选提供 Python 解释器、wheelhouse、锁文件及 Python 版本；锁文件的摘要会写入签名 manifest，并把锁中的固定包名/版本记录到 SBOM。私钥仅从 `--signing-key-file` 或 `COMPONENT_SIGNING_KEY_FILE` 读取，禁止放入 staging 目录；公钥按 key ID 输出到 `trusted-keys/`。
+
+示例：
+
+```powershell
+$env:COMPONENT_SIGNING_KEY_FILE = 'D:\internal-secrets\component-signing-private.pem'
+pnpm components:package -- --definition scripts/component-package-definition.example.json --stage .package/stage/edge-tts --output .package/component-feed --asset-base-url https://packages.example.internal/components/
+pnpm components:catalog -- --feed .package/component-feed
+```
+
+包目录和应用目录组装会验证签名、归档大小/摘要、SBOM 摘要、受信任公钥 ID、重复模块 ID 与缺失依赖。生成的 `backend/src/modules/components/catalog.generated.ts` 只包含 manifest 和公钥；签名私钥永不输出。实际用户安装前，仍需将版本目录中的归档/SBOM 上传到 `--asset-base-url` 对应的受控 HTTPS 静态源，并将最终生成的 catalog 随桌面应用构建。
