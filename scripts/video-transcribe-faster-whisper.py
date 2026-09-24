@@ -74,7 +74,13 @@ def whisper_model_class() -> Any:
 
 
 def model_candidates(args: argparse.Namespace) -> list[tuple[str, str, str]]:
-    models = unique_models([args.model, *parse_fallback_models(args.fallback_models)])
+    # A signed desktop package supplies a local model directory. Do not retry
+    # public model identifiers in this mode: faster-whisper would download them.
+    models = (
+        [args.model]
+        if Path(args.model).is_dir()
+        else unique_models([args.model, *parse_fallback_models(args.fallback_models)])
+    )
     candidates = [(model, args.device, args.compute_type) for model in models]
     if args.device != "cpu":
         candidates.extend((model, "cpu", "int8") for model in models)

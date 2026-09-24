@@ -59,6 +59,14 @@ export type ComponentCatalog = {
   trustedPublicKeys: Record<string, string>;
 };
 
+export type VerifiedComponentAsset = {
+  /** The canonical path of a file listed in the signed package manifest. */
+  path: string;
+  /** The immutable generation containing the verified file. */
+  generationRoot: string;
+  manifest: ComponentPackageManifest;
+};
+
 export type ComponentManagerOptions = {
   root: string;
   catalog: ComponentCatalog;
@@ -72,6 +80,8 @@ export type ComponentManagerOptions = {
   availableDiskBytes?: (root: string) => Promise<number>;
   selfTest?: (manifest: ComponentPackageManifest, generationRoot: string) => Promise<void>;
   runPythonProcess?: PythonEnvironmentBuildOptions["runProcess"];
+  onBeforeUninstall?: (componentId: string) => Promise<void>;
+  onAfterMutation?: (componentId: string, operation: ComponentJob["operation"]) => Promise<void>;
 };
 
 type CurrentRecord = {
@@ -124,6 +134,8 @@ export class ComponentManager {
   private readonly availableDiskBytes: NonNullable<ComponentManagerOptions["availableDiskBytes"]>;
   private readonly selfTest?: ComponentManagerOptions["selfTest"];
   private readonly runPythonProcess?: ComponentManagerOptions["runPythonProcess"];
+  private readonly onBeforeUninstall?: ComponentManagerOptions["onBeforeUninstall"];
+  private readonly onAfterMutation?: ComponentManagerOptions["onAfterMutation"];
   private readonly jobs = new Map<string, InternalJob>();
   private readonly activeByComponent = new Map<string, string>();
   private readonly listeners = new Map<string, Set<(job: ComponentJob) => void>>();
@@ -142,6 +154,8 @@ export class ComponentManager {
     this.availableDiskBytes = options.availableDiskBytes ?? getAvailableDiskBytes;
     this.selfTest = options.selfTest;
     this.runPythonProcess = options.runPythonProcess;
+    this.onBeforeUninstall = options.onBeforeUninstall;
+    this.onAfterMutation = options.onAfterMutation;
     this.validateDependencyGraph();
   }
 
@@ -182,6 +196,81 @@ export class ComponentManager {
     const job = this.jobs.get(jobId)?.value;
     if (!job) throw new ComponentManagerError("COMPONENT_JOB_NOT_FOUND", "未找到能力管理作业");
     return job;
+  }
+
+  /**
+   * Resolve a runtime file only from the current generation of a trusted package.
+   * Callers provide a fixed package id and relative asset path; renderer input is
+   * never accepted here. The current record, manifest signature, file allowlist,
+   * real path, file size, and SHA-256 are checked before returning an executable
+   * or script path.
+   */
+  async resolveInstalledAsset(componentId: string, relativePath: string): Promise<VerifiedComponentAsset> {
+    await this.initialize();
+    const manifest = this.getManifest(componentId);
+    this.verifyManifest(manifest);
+    if (!isSafeRelativePath(relativePath)) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包运行时资产路径无效");
+    }
+    const expected = manifest.files.find((file) => file.path === relativePath);
+    if (!expected) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "运行时资产未列入签名文件清单");
+    }
+
+    const componentRoot = this.componentRoot(componentId);
+    const current = await this.readCurrent(componentRoot, componentId);
+    if (!current) throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "该能力尚未安装");
+    if (current.version !== manifest.version || current.manifestSha256 !== sha256Text(canonicalManifest(manifest))) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "当前安装版本与受信任能力目录不匹配");
+    }
+
+    try {
+      const versionsRoot = await fsp.realpath(path.join(componentRoot, "versions"));
+      const generationRoot = await fsp.realpath(safeChildPath(versionsRoot, current.directory));
+      if (!isPathWithin(versionsRoot, generationRoot)) throw new Error("generation path escaped versions root");
+      const candidate = safeChildPath(generationRoot, relativePath);
+      const resolvedPath = await fsp.realpath(candidate);
+      if (!isPathWithin(generationRoot, resolvedPath)) throw new Error("asset path escaped generation root");
+      const stat = await fsp.stat(resolvedPath);
+      if (!stat.isFile() || stat.size !== expected.bytes || (await sha256File(resolvedPath)) !== expected.sha256) {
+        throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包运行时文件完整性校验失败");
+      }
+      return { path: resolvedPath, generationRoot, manifest };
+    } catch (error) {
+      if (error instanceof ComponentManagerError) throw error;
+      throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包运行时文件不可用或路径越界");
+    }
+  }
+
+  /** Resolve the venv generated from a signed Python base runtime and lock file. */
+  async resolveInstalledPython(componentId: string): Promise<VerifiedComponentAsset> {
+    await this.initialize();
+    const manifest = this.getManifest(componentId);
+    this.verifyManifest(manifest);
+    if (!manifest.pythonEnvironment) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "该能力包没有受信任的 Python 环境声明");
+    }
+
+    const componentRoot = this.componentRoot(componentId);
+    const current = await this.readCurrent(componentRoot, componentId);
+    if (!current) throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "该能力尚未安装");
+    if (current.version !== manifest.version || current.manifestSha256 !== sha256Text(canonicalManifest(manifest))) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "当前安装版本与受信任能力目录不匹配");
+    }
+
+    try {
+      const versionsRoot = await fsp.realpath(path.join(componentRoot, "versions"));
+      const generationRoot = await fsp.realpath(safeChildPath(versionsRoot, current.directory));
+      if (!isPathWithin(versionsRoot, generationRoot)) throw new Error("generation path escaped versions root");
+      const pythonPath = await fsp.realpath(safeChildPath(generationRoot, "venv/Scripts/python.exe"));
+      if (!isPathWithin(generationRoot, pythonPath) || !(await fsp.stat(pythonPath)).isFile()) {
+        throw new Error("generated Python runtime is unavailable");
+      }
+      return { path: pythonPath, generationRoot, manifest };
+    } catch (error) {
+      if (error instanceof ComponentManagerError) throw error;
+      throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包 Python 环境不可用或路径越界");
+    }
   }
 
   subscribe(jobId: string, listener: (job: ComponentJob) => void) {
@@ -266,12 +355,16 @@ export class ComponentManager {
 
   private async runJob(internal: InternalJob, manifest: ComponentPackageManifest) {
     const operation = internal.value.operation;
+    let uninstallRuntimeStopped = false;
     try {
       if (operation === "uninstall") {
         this.updateJob(internal, { state: "running", phase: "uninstalling" });
         await this.assertCanUninstall(manifest.id);
+        await this.onBeforeUninstall?.(manifest.id);
+        uninstallRuntimeStopped = true;
         await fsp.rm(this.componentRoot(manifest.id), { recursive: true, force: true });
         this.lastFailures.delete(manifest.id);
+        await this.notifyAfterMutation(manifest.id, operation);
         this.updateJob(internal, { state: "completed", phase: "complete", progress: zeroProgress() });
         return;
       }
@@ -279,6 +372,12 @@ export class ComponentManager {
       const current = await this.readCurrent(this.componentRoot(manifest.id), manifest.id);
       if (operation === "reinstall" && !current) {
         throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "该能力尚未安装，无法重装");
+      }
+      if (
+        (operation === "reinstall" || current) &&
+        (await this.isInUse(manifest.id, this.affectedTaskToolIds(manifest.id)))
+      ) {
+        throw new ComponentManagerError("COMPONENT_IN_USE", "能力正在被运行任务使用，暂时无法安装或重装");
       }
       if (operation === "install" && current?.version === manifest.version) {
         try {
@@ -302,8 +401,12 @@ export class ComponentManager {
       this.updateJob(internal, { state: "running", phase: "downloading" });
       await this.installGeneration(manifest, operation === "reinstall", internal);
       this.lastFailures.delete(manifest.id);
+      await this.notifyAfterMutation(manifest.id, operation);
       this.updateJob(internal, { state: "completed", phase: "complete" });
     } catch (error) {
+      if (operation === "uninstall" && uninstallRuntimeStopped) {
+        await this.notifyAfterMutation(manifest.id, operation);
+      }
       if (internal.controller?.signal.aborted) {
         this.updateJob(internal, {
           state: "cancelled",
@@ -317,6 +420,17 @@ export class ComponentManager {
     } finally {
       this.activeByComponent.delete(manifest.id);
       internal.controller = undefined;
+    }
+  }
+
+  private async notifyAfterMutation(componentId: string, operation: ComponentJob["operation"]) {
+    try {
+      await this.onAfterMutation?.(componentId, operation);
+    } catch (error) {
+      // Package installation remains valid even if an optional runtime cannot start.
+      console.warn(
+        `Installed component runtime refresh failed for ${componentId}: ${error instanceof Error ? error.message : "unknown error"}`
+      );
     }
   }
 
@@ -405,6 +519,23 @@ export class ComponentManager {
         throw new ComponentManagerError("COMPONENT_IN_USE", "已安装能力 " + dependent.displayName + " 依赖此组件");
       }
     }
+  }
+
+  private affectedTaskToolIds(componentId: string) {
+    const affectedComponents = new Set([componentId]);
+    const taskToolIds = new Set(this.manifests.get(componentId)?.taskToolIds ?? []);
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      for (const candidate of this.manifests.values()) {
+        if (affectedComponents.has(candidate.id) || !candidate.dependencyIds.some((id) => affectedComponents.has(id)))
+          continue;
+        affectedComponents.add(candidate.id);
+        for (const taskToolId of candidate.taskToolIds) taskToolIds.add(taskToolId);
+        expanded = true;
+      }
+    }
+    return [...taskToolIds];
   }
 
   private async assertDependenciesReady(manifest: ComponentPackageManifest) {
@@ -815,6 +946,11 @@ function safeChildPath(root: string, child: string) {
     throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包路径越界");
   }
   return resolved;
+}
+
+function isPathWithin(parent: string, candidate: string) {
+  const relative = path.relative(parent, candidate);
+  return relative !== "" && relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
 }
 
 function isSafeRelativePath(value: string) {

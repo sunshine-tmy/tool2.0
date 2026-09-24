@@ -52,6 +52,7 @@ MODEL_IDLE_MINUTES = max(0, int(os.getenv("CHATTERBOX_MODEL_IDLE_MINUTES", "10")
 # 使用不可变的 Hugging Face commit 而非 main，避免上游权重或清单更新后在未发布代码的情况下
 # 改变推理行为。升级模型必须显式修改此值并经过完整 Worker 回归验证。
 CHATTERBOX_MODEL_REVISION = os.getenv("CHATTERBOX_MODEL_REVISION", "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18").strip()
+DESKTOP_MANAGED = os.getenv("TOOLBOX_DESKTOP_MANAGED") == "1"
 MAX_TEXT_LENGTH = 1200
 
 os.environ.setdefault("HF_HOME", str(MODELS_ROOT / "huggingface"))
@@ -282,7 +283,20 @@ def load_multilingual_model(device: str) -> Any:
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
     if device != "cuda":
-        # CPU/MPS 路径保留上游实现，确保非 CUDA 环境仍使用项目支持的加载行为。
+        if DESKTOP_MANAGED:
+            required = [
+                "ve.pt",
+                "t3_mtl23ls_v3.safetensors",
+                "s3gen.pt",
+                "grapheme_mtl_merged_expanded_v1.json",
+            ]
+            missing = [name for name in required if not (MODELS_ROOT / name).is_file()]
+            if missing:
+                raise FileNotFoundError("能力包模型文件缺失：" + ", ".join(missing))
+            # Desktop models are installed by the signed capability package. Loading
+            # from_local prevents a hidden Hugging Face download on first generation.
+            return ChatterboxMultilingualTTS.from_local(MODELS_ROOT, device=device, t3_model="v3")
+        # Web/development keeps the existing upstream download behavior.
         return ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model="v3")
 
     import gc
@@ -298,22 +312,29 @@ def load_multilingual_model(device: str) -> Any:
     from safetensors.torch import load_file as load_safetensors
 
     t3_model = "t3_mtl23ls_v3.safetensors"
-    checkpoint_dir = Path(
-        snapshot_download(
-            repo_id="ResembleAI/chatterbox",
-            repo_type="model",
-            revision=CHATTERBOX_MODEL_REVISION,
-            allow_patterns=[
-                "ve.pt",
-                t3_model,
-                "s3gen.pt",
-                "grapheme_mtl_merged_expanded_v1.json",
-                "conds.pt",
-                "Cangjie5_TC.json",
-            ],
-            token=os.getenv("HF_TOKEN"),
+    if DESKTOP_MANAGED:
+        checkpoint_dir = MODELS_ROOT
+        required = ["ve.pt", t3_model, "s3gen.pt", "grapheme_mtl_merged_expanded_v1.json"]
+        missing = [name for name in required if not (checkpoint_dir / name).is_file()]
+        if missing:
+            raise FileNotFoundError("能力包模型文件缺失：" + ", ".join(missing))
+    else:
+        checkpoint_dir = Path(
+            snapshot_download(
+                repo_id="ResembleAI/chatterbox",
+                repo_type="model",
+                revision=CHATTERBOX_MODEL_REVISION,
+                allow_patterns=[
+                    "ve.pt",
+                    t3_model,
+                    "s3gen.pt",
+                    "grapheme_mtl_merged_expanded_v1.json",
+                    "conds.pt",
+                    "Cangjie5_TC.json",
+                ],
+                token=os.getenv("HF_TOKEN"),
+            )
         )
-    )
 
     voice_encoder = VoiceEncoder()
     voice_encoder.load_state_dict(torch.load(checkpoint_dir / "ve.pt", map_location="cpu", weights_only=True))
@@ -402,7 +423,10 @@ async def require_worker_token(request: Request, call_next: Any) -> Any:
     if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
         return JSONResponse(
             status_code=401,
-            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+            content={
+                "success": False,
+                "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"},
+            },
         )
     return await call_next(request)
 

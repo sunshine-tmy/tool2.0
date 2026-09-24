@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 ROOT = Path(__file__).resolve().parents[1]
+DESKTOP_MANAGED = os.getenv("TOOLBOX_DESKTOP_MANAGED") == "1"
 
 
 def load_repo_env() -> None:
@@ -149,10 +150,15 @@ class ModelManager:
             pass
 
     def device(self) -> str:
+        configured_device = os.getenv("IMAGE_AI_DEVICE", "auto").strip().lower()
+        if configured_device == "cpu":
+            return "cpu"
         try:
             import torch
 
-            return "cuda" if torch.cuda.is_available() else "cpu"
+            if configured_device == "cuda" and not torch.cuda.is_available():
+                raise WorkerFailure("IMAGE_AI_CUDA_UNAVAILABLE", "当前设备没有可用的 CUDA 运行时")
+            return "cuda" if configured_device == "cuda" or torch.cuda.is_available() else "cpu"
         except ImportError:
             return "cpu"
 
@@ -165,15 +171,33 @@ class ModelManager:
             raise WorkerFailure("PADDLEOCR_UNAVAILABLE", "未安装 PaddleOCR，暂时不能生成水印智能提示") from exc
 
         try:
-            self.ocr = PaddleOCR(
-                lang="ch",
-                device="cpu",
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=False,
-            )
+            if DESKTOP_MANAGED:
+                detection_dir = Path(os.environ["IMAGE_AI_OCR_DETECTION_MODEL_DIR"]).resolve()
+                recognition_dir = Path(os.environ["IMAGE_AI_OCR_RECOGNITION_MODEL_DIR"]).resolve()
+                if not (detection_dir / "inference.yml").is_file() or not (recognition_dir / "inference.yml").is_file():
+                    raise WorkerFailure("OCR_MODELS_MISSING", "缺少已安装的 OCR 检测或识别模型")
+                self.ocr = PaddleOCR(
+                    lang="ch",
+                    text_detection_model_dir=str(detection_dir),
+                    text_recognition_model_dir=str(recognition_dir),
+                    use_textline_orientation=False,
+                    device="cpu",
+                    show_log=False,
+                )
+            else:
+                self.ocr = PaddleOCR(
+                    lang="ch",
+                    device="cpu",
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
+                    use_textline_orientation=False,
+                )
         except TypeError:
+            if DESKTOP_MANAGED:
+                raise WorkerFailure("OCR_MODELS_MISSING", "当前 OCR 运行时不支持已审核的离线模型配置") from None
             self.ocr = PaddleOCR(lang="ch", use_angle_cls=False, use_gpu=False, show_log=False)
+        except WorkerFailure:
+            raise
         return self.ocr
 
     def get_lama(self) -> Any:
@@ -289,8 +313,16 @@ class ModelManager:
         except ImportError as exc:
             raise WorkerFailure("BIREFNET_UNAVAILABLE", "未安装 rembg/BiRefNet 推理组件") from exc
         try:
-            self.gpu_model = new_session("birefnet-general")
+            if DESKTOP_MANAGED:
+                model_file = Path(os.environ["U2NET_HOME"]) / "models" / "birefnet-general" / "birefnet-general.onnx"
+                if not model_file.is_file():
+                    raise WorkerFailure("BIREFNET_WEIGHTS_MISSING", "BiRefNet 权重未安装，请前往设置安装图像模型")
+                self.gpu_model = new_session("birefnet-general", providers=["CPUExecutionProvider"])
+            else:
+                self.gpu_model = new_session("birefnet-general")
         except Exception as exc:
+            if isinstance(exc, WorkerFailure):
+                raise
             raise WorkerFailure(
                 "BIREFNET_WEIGHTS_MISSING", "BiRefNet 权重不可用；请在联网安装阶段预下载后再离线运行"
             ) from exc
@@ -307,9 +339,14 @@ async def require_worker_token(request: Request, call_next: Any) -> Any:
     if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
         return JSONResponse(
             status_code=401,
-            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+            content={
+                "success": False,
+                "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"},
+            },
         )
     return await call_next(request)
+
+
 _SHA256_CACHE: dict[tuple[str, ...], str | None] = {}
 
 

@@ -53,6 +53,7 @@ import { FileMetadataRepository } from "./database/file-metadata";
 import { reconcileFileMetadataStorage } from "./database/file-consistency";
 import { reconcileDomainRecords } from "./database/domain-consistency";
 import { registerFrontendAssets } from "./plugins/frontend-assets";
+import { configureDesktopCapabilityRuntime } from "./runtime/desktop-capability-runtime";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
   const app = fastify({
@@ -87,17 +88,25 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const xhsRuntime = new XhsRuntimeManager(config);
   const xhsAuth = new XhsAuthManager(config);
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
+  let stopCapabilityBeforeUninstall: (componentId: string) => Promise<void> = async () => undefined;
+  let refreshDesktopCapabilities: (componentId: string) => Promise<void> = async () => undefined;
   const componentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
     catalog: bundledComponentCatalog,
+    onBeforeUninstall: (componentId) => stopCapabilityBeforeUninstall(componentId),
+    onAfterMutation: (componentId) => refreshDesktopCapabilities(componentId),
     isInUse: (_componentId, taskToolIds) =>
       taskStore
         .list()
         .some((task) => taskToolIds.includes(task.toolId) && (task.status === "pending" || task.status === "running"))
   });
+  const desktopCapabilityRuntime = await configureDesktopCapabilityRuntime(config, componentManager);
+  stopCapabilityBeforeUninstall = desktopCapabilityRuntime.beforeUninstall;
+  refreshDesktopCapabilities = desktopCapabilityRuntime.afterMutation;
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
+  app.addHook("onClose", async () => desktopCapabilityRuntime.close());
   app.addHook("onClose", async () => database.close());
   app.addHook("preClose", async () => {
     for (const stream of taskEventStreams) stream.end();

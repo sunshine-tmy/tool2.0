@@ -108,7 +108,12 @@ export class EdgeTtsTaskService {
   async create(input: EdgeTtsCreateTaskInput): Promise<EdgeTtsCreateResult> {
     const runtime = await this.getRuntimeInfo();
     if (!runtime.available)
-      return { success: false, statusCode: 409, code: "EDGE_TTS_NOT_INSTALLED", message: runtime.message };
+      return {
+        success: false,
+        statusCode: 409,
+        code: this.config.desktopManagedCapabilities ? "COMPONENT_NOT_INSTALLED" : "EDGE_TTS_NOT_INSTALLED",
+        message: runtime.message
+      };
     const stats = this.queue.stats();
     if (stats.active + stats.queued >= this.config.edgeTtsQueueLimit) {
       return { success: false, statusCode: 429, code: "EDGE_TTS_QUEUE_FULL", message: "语音生成队列已满，请稍后重试" };

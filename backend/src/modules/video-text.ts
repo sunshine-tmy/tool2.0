@@ -83,10 +83,20 @@ export async function registerVideoTextRoutes({
     {
       config: REQUEST_QUOTAS.remoteFetch,
       schema: {
-        response: { 202: apiSuccessSchema(VideoTextTaskResponseSchema), 400: ApiFailureSchema, 413: ApiFailureSchema }
+        response: {
+          202: apiSuccessSchema(VideoTextTaskResponseSchema),
+          400: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema
+        }
       }
     },
     async (request, reply) => {
+      if (config.desktopManagedCapabilities && !config.videoTextCapabilityReady) {
+        return reply
+          .code(409)
+          .send(fail("COMPONENT_NOT_INSTALLED", "视频转写能力尚未安装，请前往设置 → 能力管理安装。"));
+      }
       const file = await request.file();
       if (!file) {
         return reply.code(400).send(fail("FILE_REQUIRED", "Please upload a video file"));
@@ -120,11 +130,17 @@ export async function registerVideoTextRoutes({
         response: {
           202: apiSuccessSchema(VideoTextTaskResponseSchema),
           400: ApiFailureSchema,
+          409: ApiFailureSchema,
           502: ApiFailureSchema
         }
       }
     },
     async (request, reply) => {
+      if (config.desktopManagedCapabilities && !config.videoTextCapabilityReady) {
+        return reply
+          .code(409)
+          .send(fail("COMPONENT_NOT_INSTALLED", "视频转写能力尚未安装，请前往设置 → 能力管理安装。"));
+      }
       const body = request.body;
       const sourceUrl = body.url.trim();
 

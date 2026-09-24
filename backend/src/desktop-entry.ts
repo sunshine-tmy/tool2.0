@@ -17,7 +17,7 @@ if (!parentPort) throw new Error("desktop-entry must run in an Electron utility 
 
 const layout = readRuntimeLayout(process.env.TOOLBOX_RUNTIME_LAYOUT);
 Object.assign(process.env, workerSessionEnvironment(await createDesktopWorkerSession()));
-const config = getConfig({ layout, dotenvPath: false });
+const config = getConfig({ layout, dotenvPath: false, desktopManagedCapabilities: true });
 
 try {
   const backend = await startBackend({ config, host: "127.0.0.1", port: 0 });

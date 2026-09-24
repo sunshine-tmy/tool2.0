@@ -67,12 +67,20 @@ export async function registerImageAiRoutes(
       } catch (error) {
         const workerError = toWorkerError(error);
         return reply.code(503).send(
-          fail(workerError.code, workerError.message, {
-            available: false,
-            deploymentUsage: config.deploymentUsage,
-            workerUrl: config.imageAiWorkerUrl,
-            models: []
-          })
+          fail(
+            config.desktopManagedCapabilities && !config.imageAiCapabilityReady
+              ? "COMPONENT_NOT_INSTALLED"
+              : workerError.code,
+            config.desktopManagedCapabilities && !config.imageAiCapabilityReady
+              ? "AI 图片处理能力尚未安装，请前往设置 → 能力管理安装。"
+              : workerError.message,
+            {
+              available: false,
+              deploymentUsage: config.deploymentUsage,
+              workerUrl: config.imageAiWorkerUrl,
+              models: []
+            }
+          )
         );
       }
     }
@@ -86,6 +94,7 @@ export async function registerImageAiRoutes(
         response: {
           200: apiSuccessSchema(WatermarkSuggestionResponseSchema),
           400: ApiFailureSchema,
+          409: ApiFailureSchema,
           413: ApiFailureSchema,
           422: ApiFailureSchema,
           503: ApiFailureSchema
@@ -93,6 +102,11 @@ export async function registerImageAiRoutes(
       }
     },
     async (request, reply) => {
+      if (config.desktopManagedCapabilities && !config.imageAiCapabilityReady) {
+        return reply
+          .code(409)
+          .send(fail("COMPONENT_NOT_INSTALLED", "AI 图片处理能力尚未安装，请前往设置 → 能力管理安装。"));
+      }
       const tempId = `suggestion-${nanoid(12)}`;
       const tempDir = path.join(config.imageAiInputsDir, tempId);
       await fs.mkdir(tempDir, { recursive: true });
@@ -124,6 +138,7 @@ export async function registerImageAiRoutes(
         response: {
           202: apiSuccessSchema(ImageAiTaskSchema),
           400: ApiFailureSchema,
+          409: ApiFailureSchema,
           413: ApiFailureSchema,
           422: ApiFailureSchema,
           429: ApiFailureSchema,
@@ -132,6 +147,11 @@ export async function registerImageAiRoutes(
       }
     },
     async (request, reply) => {
+      if (config.desktopManagedCapabilities && !config.imageAiCapabilityReady) {
+        return reply
+          .code(409)
+          .send(fail("COMPONENT_NOT_INSTALLED", "AI 图片处理能力尚未安装，请前往设置 → 能力管理安装。"));
+      }
       const releaseReservation = manager.tryReserveSlot();
       if (!releaseReservation) {
         return reply.code(429).send(fail("IMAGE_AI_QUEUE_FULL", "AI 任务队列已满，请稍后再试"));

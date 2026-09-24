@@ -48,6 +48,48 @@ describe("ComponentManager", () => {
     await expect(manager.list()).resolves.toMatchObject([{ installed: true, installedVersion: "1.0.0" }]);
   });
 
+  it("resolves only current-generation files listed in the trusted manifest and detects tampering", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manager = createManager(fixture.manifest, fixture.archivePath);
+    await manager.install("edge-tts");
+
+    const asset = await manager.resolveInstalledAsset("edge-tts", "bin/runner.exe");
+    expect(asset.path).toBe(path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0", "bin", "runner.exe"));
+    expect(asset.generationRoot).toBe(path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0"));
+    expect(asset.manifest.signature).toBe(fixture.manifest.signature);
+    await expect(manager.resolveInstalledAsset("edge-tts", "../outside.exe")).rejects.toMatchObject({
+      code: "COMPONENT_MANIFEST_INVALID"
+    });
+    await expect(manager.resolveInstalledAsset("edge-tts", "not-in-manifest.exe")).rejects.toMatchObject({
+      code: "COMPONENT_MANIFEST_INVALID"
+    });
+
+    await fs.writeFile(asset.path, "modified runner");
+    await expect(manager.resolveInstalledAsset("edge-tts", "bin/runner.exe")).rejects.toMatchObject({
+      code: "COMPONENT_INSTALL_FAILED"
+    });
+  });
+
+  it("resolves only the Python environment built from a signed manifest lock", async () => {
+    const fixture = await createFixture("1.0.0", { pythonEnvironment: true });
+    const manager = createManager(fixture.manifest, fixture.archivePath, undefined, {
+      runPythonProcess: async (_executable, args) => {
+        if (args[0] === "-m" && args[1] === "venv") {
+          const pythonPath = path.join(args[2], "Scripts", "python.exe");
+          await fs.mkdir(path.dirname(pythonPath), { recursive: true });
+          await fs.writeFile(pythonPath, "generated venv interpreter");
+        }
+        return "3.11";
+      }
+    });
+    await manager.install("edge-tts");
+
+    await expect(manager.resolveInstalledPython("edge-tts")).resolves.toMatchObject({
+      path: path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0", "venv", "Scripts", "python.exe"),
+      generationRoot: path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0")
+    });
+  });
+
   it("keeps the healthy current version when a later archive fails verification", async () => {
     const first = await createFixture("1.0.0");
     const firstManager = createManager(first.manifest, first.archivePath);
@@ -164,6 +206,30 @@ describe("ComponentManager", () => {
     await expect(
       fs.readFile(path.join(root, "edge-tts", "versions", "1.0.0", "bin", "runner.exe"), "utf8")
     ).resolves.toBe("runner-1.0.0");
+  });
+
+  it("blocks reinstall while its runtime is used by an active task", async () => {
+    const fixture = await createFixture("1.0.0");
+    const root = path.join(temporaryRoot, "packages");
+    await createManager(fixture.manifest, fixture.archivePath).install("edge-tts");
+    const refreshRuntime = vi.fn(async () => undefined);
+    const manager = new ComponentManager({
+      root,
+      catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
+      downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
+      onAfterMutation: refreshRuntime,
+      isInUse: async (componentId, taskToolIds) => componentId === "edge-tts" && taskToolIds.includes("edge-tts")
+    });
+    const currentPath = path.join(root, "edge-tts", "current.json");
+    const before = await fs.readFile(currentPath, "utf8");
+
+    const job = await manager.startReinstall("edge-tts");
+    await expect(waitForJob(manager, job.id)).resolves.toMatchObject({
+      state: "failed",
+      errorCode: "COMPONENT_IN_USE"
+    });
+    await expect(fs.readFile(currentPath, "utf8")).resolves.toBe(before);
+    expect(refreshRuntime).not.toHaveBeenCalled();
   });
 
   it("builds hash-locked Python environments only after the package reaches its immutable final path", async () => {
@@ -355,9 +421,11 @@ describe("ComponentManager", () => {
     const fixture = await createFixture("1.0.0");
     const root = path.join(temporaryRoot, "packages");
     await createManager(fixture.manifest, fixture.archivePath).install("edge-tts");
+    const onBeforeUninstall = vi.fn(async () => undefined);
     const manager = new ComponentManager({
       root,
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
+      onBeforeUninstall,
       isInUse: async (componentId, taskToolIds) => componentId === "edge-tts" && taskToolIds.includes("edge-tts")
     });
 
@@ -366,6 +434,35 @@ describe("ComponentManager", () => {
       state: "failed",
       errorCode: "COMPONENT_IN_USE"
     });
+    expect(onBeforeUninstall).not.toHaveBeenCalled();
+  });
+
+  it("stops a managed runtime only after uninstall preflight succeeds", async () => {
+    const fixture = await createFixture("1.0.0");
+    const stopRuntime = vi.fn(async () => undefined);
+    const manager = createManager(fixture.manifest, fixture.archivePath, undefined, {
+      onBeforeUninstall: stopRuntime
+    });
+    await manager.install("edge-tts");
+    const job = await manager.startUninstall("edge-tts");
+    await expect(waitForJob(manager, job.id)).resolves.toMatchObject({ state: "completed" });
+    expect(stopRuntime).toHaveBeenCalledWith("edge-tts");
+  });
+
+  it("refreshes the managed runtime after each successful install, reinstall and uninstall", async () => {
+    const fixture = await createFixture("1.0.0");
+    const onAfterMutation = vi.fn(async () => undefined);
+    const manager = createManager(fixture.manifest, fixture.archivePath, undefined, { onAfterMutation });
+
+    await manager.install("edge-tts");
+    expect(onAfterMutation).toHaveBeenNthCalledWith(1, "edge-tts", "install");
+    const reinstall = await manager.startReinstall("edge-tts");
+    await expect(waitForJob(manager, reinstall.id)).resolves.toMatchObject({ state: "completed" });
+    expect(onAfterMutation).toHaveBeenNthCalledWith(2, "edge-tts", "reinstall");
+    const uninstall = await manager.startUninstall("edge-tts");
+    await expect(waitForJob(manager, uninstall.id)).resolves.toMatchObject({ state: "completed" });
+    expect(onAfterMutation).toHaveBeenNthCalledWith(3, "edge-tts", "uninstall");
+    expect(onAfterMutation).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -527,7 +624,10 @@ function createManager(
   archivePath: string,
   downloadArchive: NonNullable<ComponentManagerOptions["downloadArchive"]> = async (_manifest, destination) =>
     fs.copyFile(archivePath, destination),
-  extra: Pick<ComponentManagerOptions, "availableDiskBytes"> = {}
+  extra: Pick<
+    ComponentManagerOptions,
+    "availableDiskBytes" | "runPythonProcess" | "onBeforeUninstall" | "onAfterMutation" | "isInUse"
+  > = {}
 ) {
   return new ComponentManager({
     root: path.join(temporaryRoot, "packages"),

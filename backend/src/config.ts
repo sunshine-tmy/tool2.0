@@ -7,6 +7,12 @@ import { createDevelopmentRuntimeLayout, resolveRuntimePath, type RuntimeLayout 
 
 export type AppConfig = {
   runtime: RuntimeLayout;
+  /** When true, optional desktop runtimes may only come from verified component generations. */
+  desktopManagedCapabilities: boolean;
+  videoTextCapabilityReady: boolean;
+  edgeTtsCapabilityReady: boolean;
+  imageAiCapabilityReady: boolean;
+  chatterboxCapabilityReady: boolean;
   deploymentMode: "local" | "lan";
   adminPin?: string;
   host: string;
@@ -94,14 +100,20 @@ export type ConfigOptions = {
   layout?: RuntimeLayout;
   environment?: Record<string, string | undefined>;
   dotenvPath?: string | false;
+  desktopManagedCapabilities?: boolean;
 };
 
 export function getConfig(options: ConfigOptions = {}): AppConfig {
   const runtime = options.layout ?? createDevelopmentRuntimeLayout();
   const environment = options.environment ?? process.env;
+  const desktopManagedCapabilities = options.desktopManagedCapabilities === true;
   const dotenvPath = options.dotenvPath === undefined ? path.join(runtime.configRoot, ".env") : options.dotenvPath;
   const fileEnv = dotenvPath ? loadDotEnv([dotenvPath]) : {};
-  const storageRoot = resolveConfigPath(runtime, getEnv("STORAGE_ROOT", fileEnv, environment) ?? runtime.storageRoot);
+  const runtimeEnv = (key: string) => (desktopManagedCapabilities ? undefined : getEnv(key, fileEnv, environment));
+  const pathEnv = (key: string) => (desktopManagedCapabilities ? undefined : getEnv(key, fileEnv, environment));
+  const storageRoot = desktopManagedCapabilities
+    ? runtime.storageRoot
+    : resolveConfigPath(runtime, getEnv("STORAGE_ROOT", fileEnv, environment) ?? runtime.storageRoot);
 
   const imageAiDir = path.join(storageRoot, "image-ai");
   const edgeTtsDir = path.join(storageRoot, "edge-tts");
@@ -109,8 +121,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
   const xhsArchiveDir = path.join(storageRoot, "xhs-archive");
   const xhsTranslationRuntimeDir = resolveConfigPath(
     runtime,
-    getEnv("XHS_TRANSLATION_RUNTIME_DIR", fileEnv, environment)?.trim() ||
-      path.join(runtime.runtimeRoot, "xhs-translate")
+    pathEnv("XHS_TRANSLATION_RUNTIME_DIR")?.trim() || path.join(runtime.runtimeRoot, "xhs-translate")
   );
   const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv, environment)?.trim();
   const deploymentMode = readDeploymentMode(getEnv("DEPLOYMENT_MODE", fileEnv, environment));
@@ -121,18 +132,18 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
 
   return {
     runtime,
+    desktopManagedCapabilities,
+    videoTextCapabilityReady: false,
+    edgeTtsCapabilityReady: false,
+    imageAiCapabilityReady: false,
+    chatterboxCapabilityReady: false,
     deploymentMode,
     adminPin,
     host: getEnv("API_HOST", fileEnv, environment)?.trim() || (deploymentMode === "lan" ? "0.0.0.0" : "127.0.0.1"),
     port: readInteger("API_PORT", getEnv("API_PORT", fileEnv, environment), 3100, 1, 65535),
     corsOrigins: readCorsOrigins(fileEnv, environment),
     storageRoot,
-    databasePath: resolveDatabasePath(
-      runtime,
-      getEnv("DATABASE_PATH", fileEnv, environment),
-      environment.NODE_ENV,
-      storageRoot
-    ),
+    databasePath: resolveDatabasePath(runtime, pathEnv("DATABASE_PATH"), environment.NODE_ENV, storageRoot),
     migrationBackupDir: path.join(storageRoot, "migration-backups"),
     quarantineDir: path.join(storageRoot, "quarantine"),
     uploadDir: path.join(storageRoot, "uploads"),
@@ -187,9 +198,9 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     videoTextAudioDir: path.join(storageRoot, "video-text", "audio"),
     videoTextResultsDir: path.join(storageRoot, "video-text", "results"),
     videoTextAudioExtractCommand:
-      getEnv("VIDEO_TEXT_AUDIO_EXTRACT_COMMAND", fileEnv, environment)?.trim() ||
-      "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}",
-    videoTextTranscribeCommand: getEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND", fileEnv, environment)?.trim() || undefined,
+      runtimeEnv("VIDEO_TEXT_AUDIO_EXTRACT_COMMAND")?.trim() ||
+      (desktopManagedCapabilities ? "" : "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}"),
+    videoTextTranscribeCommand: runtimeEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND")?.trim() || undefined,
     shortVideoParseApiUrl:
       getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv, environment)?.trim() || "https://api.bugpk.com/api/short_videos",
     shortVideoParseTimeoutMs: readInteger(
@@ -229,7 +240,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     xhsArchiveIndexPath: path.join(xhsArchiveDir, "index.json"),
     xhsRuntimeDir: resolveConfigPath(
       runtime,
-      getEnv("XHS_RUNTIME_DIR", fileEnv, environment)?.trim() || path.join(runtime.runtimeRoot, "xhs-downloader")
+      pathEnv("XHS_RUNTIME_DIR")?.trim() || path.join(runtime.runtimeRoot, "xhs-downloader")
     ),
     xhsProviderUrl: getEnv("XHS_PROVIDER_URL", fileEnv, environment)?.trim() || undefined,
     xhsProviderToken: getEnv("XHS_PROVIDER_TOKEN", fileEnv, environment)?.trim() || undefined,
@@ -256,7 +267,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     xhsTranslationRuntimeDir,
     xhsTranslationModelDir: resolveConfigPath(
       runtime,
-      getEnv("XHS_TRANSLATION_MODEL_DIR", fileEnv, environment)?.trim() || path.join(xhsTranslationRuntimeDir, "model")
+      pathEnv("XHS_TRANSLATION_MODEL_DIR")?.trim() || path.join(xhsTranslationRuntimeDir, "model")
     ),
     xhsTranslationProviderUrl: getEnv("XHS_TRANSLATION_PROVIDER_URL", fileEnv, environment)?.trim() || undefined,
     xhsTranslationToken: getEnv("XHS_TRANSLATION_TOKEN", fileEnv, environment)?.trim() || undefined,
@@ -297,10 +308,10 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     imageAiTasksDir: path.join(imageAiDir, "tasks"),
     imageAiWorkerUrl: readLoopbackWorkerUrl(
       "IMAGE_AI_WORKER_URL",
-      getEnv("IMAGE_AI_WORKER_URL", fileEnv, environment),
-      "http://127.0.0.1:3210"
+      runtimeEnv("IMAGE_AI_WORKER_URL"),
+      desktopManagedCapabilities ? "http://127.0.0.1:1" : "http://127.0.0.1:3210"
     ),
-    imageAiWorkerToken: getEnv("IMAGE_AI_WORKER_TOKEN", fileEnv, environment)?.trim() || undefined,
+    imageAiWorkerToken: runtimeEnv("IMAGE_AI_WORKER_TOKEN")?.trim() || undefined,
     imageAiWorkerTimeoutMs: readInteger(
       "IMAGE_AI_WORKER_TIMEOUT_MS",
       getEnv("IMAGE_AI_WORKER_TIMEOUT_MS", fileEnv, environment),
@@ -323,15 +334,18 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     ),
     edgeTtsDir,
     edgeTtsTasksDir: path.join(edgeTtsDir, "tasks"),
-    edgeTtsPythonPath: resolveConfigPath(
-      runtime,
-      getEnv("EDGE_TTS_PYTHON", fileEnv, environment)?.trim() ||
-        path.join(runtime.appRoot, ".venv-edge-tts", "Scripts", "python.exe")
-    ),
-    edgeTtsScriptPath: resolveConfigPath(
-      runtime,
-      getEnv("EDGE_TTS_SCRIPT", fileEnv, environment)?.trim() || path.join(runtime.scriptsRoot, "edge-tts-generate.py")
-    ),
+    edgeTtsPythonPath: desktopManagedCapabilities
+      ? ""
+      : resolveConfigPath(
+          runtime,
+          runtimeEnv("EDGE_TTS_PYTHON")?.trim() || path.join(runtime.appRoot, ".venv-edge-tts", "Scripts", "python.exe")
+        ),
+    edgeTtsScriptPath: desktopManagedCapabilities
+      ? ""
+      : resolveConfigPath(
+          runtime,
+          runtimeEnv("EDGE_TTS_SCRIPT")?.trim() || path.join(runtime.scriptsRoot, "edge-tts-generate.py")
+        ),
     edgeTtsTimeoutMs: readInteger(
       "EDGE_TTS_TIMEOUT_MS",
       getEnv("EDGE_TTS_TIMEOUT_MS", fileEnv, environment),
@@ -364,10 +378,10 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     chatterboxTasksDir: path.join(chatterboxDir, "tasks"),
     chatterboxWorkerUrl: readLoopbackWorkerUrl(
       "CHATTERBOX_WORKER_URL",
-      getEnv("CHATTERBOX_WORKER_URL", fileEnv, environment),
-      "http://127.0.0.1:3220"
+      runtimeEnv("CHATTERBOX_WORKER_URL"),
+      desktopManagedCapabilities ? "http://127.0.0.1:1" : "http://127.0.0.1:3220"
     ),
-    chatterboxWorkerToken: getEnv("CHATTERBOX_WORKER_TOKEN", fileEnv, environment)?.trim() || undefined,
+    chatterboxWorkerToken: runtimeEnv("CHATTERBOX_WORKER_TOKEN")?.trim() || undefined,
     chatterboxWorkerTimeoutMs: readInteger(
       "CHATTERBOX_WORKER_TIMEOUT_MS",
       getEnv("CHATTERBOX_WORKER_TIMEOUT_MS", fileEnv, environment),
@@ -389,8 +403,9 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
       1,
       100
     ),
-    chatterboxFfmpegPath: getEnv("CHATTERBOX_FFMPEG_PATH", fileEnv, environment)?.trim() || "ffmpeg",
-    chatterboxFfprobePath: getEnv("CHATTERBOX_FFPROBE_PATH", fileEnv, environment)?.trim() || "ffprobe",
+    chatterboxFfmpegPath: runtimeEnv("CHATTERBOX_FFMPEG_PATH")?.trim() || (desktopManagedCapabilities ? "" : "ffmpeg"),
+    chatterboxFfprobePath:
+      runtimeEnv("CHATTERBOX_FFPROBE_PATH")?.trim() || (desktopManagedCapabilities ? "" : "ffprobe"),
     deploymentUsage: configuredUsage === "internal-noncommercial" ? "internal-noncommercial" : "commercial"
   };
 }

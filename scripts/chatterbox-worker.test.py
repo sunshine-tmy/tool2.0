@@ -86,5 +86,41 @@ class MetaTensorRecoveryTests(unittest.TestCase):
         self.assertEqual(model.tokenizer.pe.device.type, "cpu")
 
 
+class DesktopModelLoadingTests(unittest.TestCase):
+    def test_managed_desktop_loads_only_the_installed_local_model(self):
+        with tempfile.TemporaryDirectory(prefix="chatterbox-model-") as directory:
+            root = Path(directory)
+            for name in [
+                "ve.pt",
+                "t3_mtl23ls_v3.safetensors",
+                "s3gen.pt",
+                "grapheme_mtl_merged_expanded_v1.json",
+            ]:
+                (root / name).touch()
+            upstream = Mock()
+            upstream.ChatterboxMultilingualTTS.from_local.return_value = "local-model"
+            with (
+                patch.object(worker, "DESKTOP_MANAGED", True),
+                patch.object(worker, "MODELS_ROOT", root),
+                patch.dict(sys.modules, {"chatterbox.mtl_tts": upstream}),
+            ):
+                self.assertEqual(worker.load_multilingual_model("cpu"), "local-model")
+
+            upstream.ChatterboxMultilingualTTS.from_local.assert_called_once_with(root, device="cpu", t3_model="v3")
+            upstream.ChatterboxMultilingualTTS.from_pretrained.assert_not_called()
+
+    def test_managed_desktop_reports_missing_model_files_without_network_fallback(self):
+        upstream = Mock()
+        with (
+            tempfile.TemporaryDirectory(prefix="chatterbox-model-") as directory,
+            patch.object(worker, "DESKTOP_MANAGED", True),
+            patch.object(worker, "MODELS_ROOT", Path(directory)),
+            patch.dict(sys.modules, {"chatterbox.mtl_tts": upstream}),
+        ):
+            with self.assertRaisesRegex(FileNotFoundError, "能力包模型文件缺失"):
+                worker.load_multilingual_model("cpu")
+        upstream.ChatterboxMultilingualTTS.from_pretrained.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,4 +62,47 @@ describe("runtime layout", () => {
 
     expect(config.databasePath).toBe(path.join(layout.configRoot, "state", "toolbox.db"));
   });
+
+  it("ignores arbitrary desktop Worker commands, paths, endpoints, and credentials until signed assets are resolved", () => {
+    const layout = createRuntimeLayout({ appRoot: path.join(process.cwd(), "desktop-app") });
+    const config = getConfig({
+      layout,
+      dotenvPath: false,
+      desktopManagedCapabilities: true,
+      environment: {
+        NODE_ENV: "test",
+        STORAGE_ROOT: "untrusted-storage",
+        DATABASE_PATH: "outside-toolbox.db",
+        XHS_RUNTIME_DIR: "outside-xhs",
+        XHS_TRANSLATION_MODEL_DIR: "outside-translation-model",
+        VIDEO_TEXT_TRANSCRIBE_COMMAND: "untrusted-transcriber.exe",
+        EDGE_TTS_PYTHON: "untrusted-python.exe",
+        EDGE_TTS_SCRIPT: "untrusted-runner.py",
+        IMAGE_AI_WORKER_URL: "http://127.0.0.1:45678",
+        IMAGE_AI_WORKER_TOKEN: "untrusted-token",
+        CHATTERBOX_WORKER_URL: "http://127.0.0.1:45679",
+        CHATTERBOX_WORKER_TOKEN: "untrusted-token",
+        CHATTERBOX_FFMPEG_PATH: "untrusted-ffmpeg.exe"
+      }
+    });
+
+    expect(config.desktopManagedCapabilities).toBe(true);
+    expect(config.storageRoot).toBe(layout.storageRoot);
+    expect(config.databasePath).toBe(":memory:");
+    expect(config.xhsRuntimeDir).toBe(path.join(layout.runtimeRoot, "xhs-downloader"));
+    expect(config.xhsTranslationModelDir).toBe(path.join(layout.runtimeRoot, "xhs-translate", "model"));
+    expect(config.videoTextCapabilityReady).toBe(false);
+    expect(config.edgeTtsCapabilityReady).toBe(false);
+    expect(config.imageAiCapabilityReady).toBe(false);
+    expect(config.chatterboxCapabilityReady).toBe(false);
+    expect(config.videoTextAudioExtractCommand).toBe("");
+    expect(config.videoTextTranscribeCommand).toBeUndefined();
+    expect(config.edgeTtsPythonPath).toBe("");
+    expect(config.edgeTtsScriptPath).toBe("");
+    expect(config.imageAiWorkerUrl).toBe("http://127.0.0.1:1");
+    expect(config.imageAiWorkerToken).toBeUndefined();
+    expect(config.chatterboxWorkerUrl).toBe("http://127.0.0.1:1");
+    expect(config.chatterboxWorkerToken).toBeUndefined();
+    expect(config.chatterboxFfmpegPath).toBe("");
+  });
 });

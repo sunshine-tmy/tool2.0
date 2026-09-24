@@ -1,6 +1,7 @@
 # 中文模块说明：测试 scripts/test_video_transcribe_faster_whisper.py 中的稳定行为、边界条件和回归场景
 import importlib.util
 import pathlib
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -23,6 +24,27 @@ class FasterWhisperScriptTest(unittest.TestCase):
         self.assertEqual(args.device, "cuda")
         self.assertEqual(args.compute_type, "int8_float16")
         self.assertEqual(args.beam_size, 5)
+
+    def test_local_desktop_model_does_not_add_downloadable_fallback_ids(self):
+        with tempfile.TemporaryDirectory(prefix="whisper-model-") as directory:
+            args = module.parse_args(
+                [
+                    "--input",
+                    "input.wav",
+                    "--output",
+                    "output.srt",
+                    "--model",
+                    directory,
+                    "--fallback-models",
+                    "small,base",
+                    "--device",
+                    "cpu",
+                    "--compute-type",
+                    "int8",
+                ]
+            )
+
+            self.assertEqual(module.model_candidates(args), [(directory, "cpu", "int8")])
 
     def test_metadata_path_defaults_to_output_sidecar(self):
         args = module.parse_args(["--input", "input.wav", "--output", "output.srt"])

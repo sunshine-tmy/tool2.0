@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createApp } from "../app";
+import { getConfig } from "../config";
 
 describe("api app", () => {
   it("returns health information", async () => {
@@ -40,6 +41,39 @@ describe("api app", () => {
       requestId: expect.any(String),
       error: { code: "TASK_NOT_FOUND", message: "Task not found" }
     });
+    await app.close();
+  });
+
+  it("blocks new desktop capability jobs before accepting input when signed runtimes are absent", async () => {
+    const app = await createApp({
+      config: getConfig({ desktopManagedCapabilities: true, dotenvPath: false, environment: { NODE_ENV: "test" } })
+    });
+    const [video, image, edgeTts, chatterbox] = await Promise.all([
+      app.inject({ method: "POST", url: "/api/v1/tools/video-text/tasks" }),
+      app.inject({ method: "POST", url: "/api/v1/tools/image-ai/tasks" }),
+      app.inject({
+        method: "POST",
+        url: "/api/v1/tools/edge-tts/tasks",
+        payload: {
+          text: "hello",
+          language: "en-US",
+          voice: "en-US-JennyNeural",
+          rate: 0,
+          volume: 0,
+          pitch: 0,
+          includeSubtitles: false
+        }
+      }),
+      app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks" })
+    ]);
+
+    for (const response of [video, image, edgeTts, chatterbox]) {
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: "COMPONENT_NOT_INSTALLED", message: expect.stringContaining("设置 → 能力管理") }
+      });
+    }
     await app.close();
   });
 

@@ -61,6 +61,24 @@ export async function registerChatterboxRoutes(
   await store.initialize();
   await store.cleanupExpired();
 
+  const generationRoutes = new Set([
+    "/api/v1/tools/edge-tts/chatterbox/tasks",
+    "/api/v1/tools/edge-tts/chatterbox/batches",
+    "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/regenerate"
+  ]);
+  app.addHook("preHandler", async (request, reply) => {
+    if (
+      config.desktopManagedCapabilities &&
+      !config.chatterboxCapabilityReady &&
+      request.method === "POST" &&
+      generationRoutes.has(request.routeOptions.url ?? "")
+    ) {
+      return reply
+        .code(409)
+        .send(fail("COMPONENT_NOT_INSTALLED", "参考音色克隆能力尚未安装，请前往设置 → 能力管理安装。"));
+    }
+  });
+
   let healthCache: { value: Awaited<ReturnType<typeof worker.health>>; expiresAt: number } | undefined;
   const workerHealth = async (force = false) => {
     if (!force && healthCache && healthCache.expiresAt > Date.now()) return healthCache.value;
@@ -114,11 +132,15 @@ export async function registerChatterboxRoutes(
         device: status?.device,
         gpuName: status?.gpuName,
         message:
-          status?.available === true
-            ? status.modelLoaded
-              ? "Chatterbox Multilingual V3 已加载"
-              : "运行环境已就绪，首次生成会下载并加载模型"
-            : "Chatterbox Worker 未启动，请先安装并重新一键启动",
+          config.desktopManagedCapabilities && !config.chatterboxCapabilityReady
+            ? "参考音色克隆能力尚未安装，请前往设置 → 能力管理安装。"
+            : status?.available === true
+              ? status.modelLoaded
+                ? "Chatterbox Multilingual V3 已加载"
+                : config.desktopManagedCapabilities
+                  ? "运行环境已就绪，将从已安装的本地模型加载"
+                  : "运行环境已就绪，首次生成会下载并加载模型"
+              : "Chatterbox Worker 未启动，请先安装并重新一键启动",
         reference: {
           maxBytes: CHATTERBOX_MAX_REFERENCE_BYTES,
           minSeconds: CHATTERBOX_MIN_REFERENCE_SECONDS,

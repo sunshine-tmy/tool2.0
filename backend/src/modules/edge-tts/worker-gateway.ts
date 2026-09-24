@@ -26,7 +26,9 @@ export class EdgeTtsWorkerGateway {
     } catch {
       return {
         available: false,
-        message: "Edge-TTS 尚未安装，请运行 scripts/setup-edge-tts.ps1"
+        message: this.config.desktopManagedCapabilities
+          ? "Edge-TTS 尚未安装，请前往设置 → 能力管理安装。"
+          : "Edge-TTS 尚未安装，请运行 scripts/setup-edge-tts.ps1"
       };
     }
   }
