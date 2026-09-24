@@ -298,6 +298,7 @@ async function expectGeneratedCatalog(feedDirectory, outputPath) {
   const result = await writeGeneratedCatalog(feedDirectory, outputPath);
   assert.equal(result.manifestCount, 1);
   const source = await fs.readFile(outputPath, "utf8");
+  assert.match(source, /\/\/ prettier-ignore/);
   assert.match(source, /"id": "edge-tts"/);
   assert.match(source, /"ed25519-[a-f0-9]{24}": "-----BEGIN PUBLIC KEY-----/);
   assert.doesNotMatch(source, /PRIVATE KEY/);
