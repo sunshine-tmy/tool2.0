@@ -43,7 +43,7 @@ Worker 只监听 loopback 动态端口，启动时由主程序传入随机令牌
 
 `pnpm components:package` 从已准备好的 staging 目录生成固定时间戳的 `.tar.gz`、文件 SHA-256 清单、SPDX 2.3 SBOM 和 Ed25519 签名 manifest。定义文件可选提供 Python 解释器、wheelhouse、锁文件及 Python 版本；锁文件的摘要会写入签名 manifest，并把锁中的固定包名/版本记录到 SBOM。私钥仅从 `--signing-key-file` 或 `COMPONENT_SIGNING_KEY_FILE` 读取，禁止放入 staging 目录；公钥按 key ID 输出到 `trusted-keys/`。
 
-示例：
+静态 HTTPS 文件源仍可用 `--asset-base-url`，产物 URL 沿用 `<id>/<version>/<filename>` 目录布局：
 
 ```powershell
 $env:COMPONENT_SIGNING_KEY_FILE = 'D:\internal-secrets\component-signing-private.pem'
@@ -51,4 +51,16 @@ pnpm components:package -- --definition scripts/component-package-definition.exa
 pnpm components:catalog -- --feed .package/component-feed
 ```
 
-包目录和应用目录组装会验证签名、归档大小/摘要、SBOM 摘要、受信任公钥 ID、重复模块 ID 与缺失依赖。生成的 `backend/src/modules/components/catalog.generated.ts` 只包含 manifest 和公钥；签名私钥永不输出。实际用户安装前，仍需将版本目录中的归档/SBOM 上传到 `--asset-base-url` 对应的受控 HTTPS 静态源，并将最终生成的 catalog 随桌面应用构建。
+也可将能力包直接托管在 GitHub Release，无需自建静态文件服务器。先创建固定且不可复用的 Release tag，再以 Release 下载目录作为 URL 前缀：
+
+```powershell
+pnpm components:package -- --definition scripts/component-package-definition.example.json --stage .package/stage/edge-tts --output .package/component-feed --github-release-url https://github.com/<owner>/<repo>/releases/download/components-v1/
+gh release upload components-v1 .package/component-feed/edge-tts/1.0.0/edge-tts-1.0.0.tar.gz .package/component-feed/edge-tts/1.0.0/edge-tts-1.0.0.spdx.json --repo <owner>/<repo>
+pnpm components:catalog -- --feed .package/component-feed
+```
+
+`--asset-base-url` 与 `--github-release-url` 必须且只能使用一个。Release 模式生成 GitHub 使用的扁平资产 URL（文件名带有模块 ID 和版本），而本地 feed 仍按模块/版本目录存放；SBOM 的下载位置与签名 manifest 使用同一个直链。上传时归档与 SBOM 的文件名必须保持原样。Release manifest 可作为审计附件上传，但运行客户端只使用随应用编译的 catalog；不要在客户端内置 GitHub 上传凭据。
+
+包目录和应用目录组装会验证签名、归档大小/摘要、SBOM 摘要、受信任公钥 ID、重复模块 ID 与缺失依赖。生成的 `backend/src/modules/components/catalog.generated.ts` 只包含 manifest 和公钥；签名私钥永不输出。将能力包资产上传成功后，再将最终生成的 catalog 随桌面应用构建。
+
+GitHub Release 下载会从 `github.com` 重定向到资产 CDN。客户端最多跟随 5 次重定向；每一跳都要求 HTTPS、重新解析并验证目标为公网地址，拒绝 HTTPS 降级、本机/内网目标及超出跳转上限。最后仍按签名 manifest 校验字节数、SHA-256 和解包文件清单；重定向不会改变受信任清单或校验标准。

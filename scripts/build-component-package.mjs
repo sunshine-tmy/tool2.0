@@ -21,7 +21,7 @@ export async function buildComponentPackage(options) {
   const definition = await readJson(options.definitionPath, "能力包定义");
   const stageRoot = await fs.realpath(options.stagingDirectory);
   const outputPath = path.resolve(options.outputDirectory);
-  const baseUrl = parseBaseUrl(options.assetBaseUrl);
+  const assetUrl = createAssetUrlResolver(options);
   validateDefinition(definition);
   const stageStat = await fs.stat(stageRoot);
   if (!stageStat.isDirectory()) throw new Error("能力目录必须是文件夹");
@@ -85,8 +85,8 @@ export async function buildComponentPackage(options) {
 
     const archiveBytes = (await fs.stat(archivePath)).size;
     const archiveSha256 = await sha256File(archivePath);
-    const archiveUrl = new URL(`${definition.id}/${definition.version}/${archiveName}`, baseUrl).href;
-    const sbomUrl = new URL(`${definition.id}/${definition.version}/${sbomName}`, baseUrl).href;
+    const archiveUrl = assetUrl(archiveName, definition);
+    const sbomUrl = assetUrl(sbomName, definition);
     const lockText = pythonEnvironment
       ? await fs.readFile(path.join(stageRoot, ...pythonEnvironment.requirementsLockPath.split("/")), "utf8")
       : "";
@@ -351,6 +351,51 @@ function parseBaseUrl(value) {
   return parsed;
 }
 
+function parseGitHubReleaseUrl(value) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("GitHub Release URL 无效");
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname.toLowerCase() !== "github.com" || parsed.port) {
+    throw new Error("GitHub Release URL 必须是 github.com 上的 HTTPS 发布资产目录");
+  }
+  if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error("GitHub Release URL 不得包含凭据、查询参数或片段");
+  }
+  const segments = parsed.pathname.split("/");
+  if (segments[0] === "") segments.shift();
+  if (segments.at(-1) === "") segments.pop();
+  if (
+    segments.length !== 5 ||
+    !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(segments[0]) ||
+    !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(segments[1]) ||
+    segments[2] !== "releases" ||
+    segments[3] !== "download" ||
+    !SAFE_VERSION.test(segments[4])
+  ) {
+    throw new Error("GitHub Release URL 格式必须为 https://github.com/<owner>/<repo>/releases/download/<固定 tag>/");
+  }
+  parsed.pathname = `/${segments.join("/")}/`;
+  return parsed;
+}
+
+function createAssetUrlResolver(options) {
+  const hasAssetBaseUrl = typeof options.assetBaseUrl === "string" && options.assetBaseUrl.length > 0;
+  const hasGitHubReleaseUrl = typeof options.githubReleaseUrl === "string" && options.githubReleaseUrl.length > 0;
+  if (hasAssetBaseUrl === hasGitHubReleaseUrl) {
+    throw new Error("必须且只能指定 --asset-base-url 或 --github-release-url 其中之一");
+  }
+  if (hasAssetBaseUrl) {
+    const baseUrl = parseBaseUrl(options.assetBaseUrl);
+    return (filename, definition) => new URL(`${definition.id}/${definition.version}/${filename}`, baseUrl).href;
+  }
+  const releaseUrl = parseGitHubReleaseUrl(options.githubReleaseUrl);
+  // GitHub Release 资产名不能包含目录；模块 ID 和版本已编码在文件名中，避免同一 Release 冲突。
+  return (filename) => new URL(filename, releaseUrl).href;
+}
+
 function isHttpsUrl(value) {
   try {
     const parsed = new URL(value);
@@ -437,17 +482,28 @@ function parseArguments(argv) {
     values.set(key.slice(2), value);
   }
   const signingKeyPath = values.get("signing-key-file") || process.env.COMPONENT_SIGNING_KEY_FILE;
-  for (const required of ["definition", "stage", "output", "asset-base-url"]) {
+  for (const required of ["definition", "stage", "output"]) {
     if (!values.has(required)) throw new Error(`缺少参数 --${required}`);
   }
+  if (values.has("asset-base-url") === values.has("github-release-url")) {
+    throw new Error("必须且只能指定 --asset-base-url 或 --github-release-url 其中之一");
+  }
   if (!signingKeyPath) throw new Error("请通过 --signing-key-file 或 COMPONENT_SIGNING_KEY_FILE 提供内部签名私钥");
-  const allowed = new Set(["definition", "stage", "output", "asset-base-url", "signing-key-file"]);
+  const allowed = new Set([
+    "definition",
+    "stage",
+    "output",
+    "asset-base-url",
+    "github-release-url",
+    "signing-key-file"
+  ]);
   for (const key of values.keys()) if (!allowed.has(key)) throw new Error(`未知参数 --${key}`);
   return {
     definitionPath: path.resolve(values.get("definition")),
     stagingDirectory: path.resolve(values.get("stage")),
     outputDirectory: path.resolve(values.get("output")),
-    assetBaseUrl: values.get("asset-base-url"),
+    ...(values.has("asset-base-url") ? { assetBaseUrl: values.get("asset-base-url") } : {}),
+    ...(values.has("github-release-url") ? { githubReleaseUrl: values.get("github-release-url") } : {}),
     signingKeyPath: path.resolve(signingKeyPath)
   };
 }

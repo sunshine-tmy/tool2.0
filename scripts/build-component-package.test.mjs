@@ -138,6 +138,46 @@ describe("buildComponentPackage", () => {
     await assert.rejects(fs.access(path.join(first.artifactDirectory, path.basename(key.privateKeyPath))));
   });
 
+  it("creates flat, immutable GitHub Release asset URLs and verifies the signed feed locally", async () => {
+    const root = await makeRoot();
+    const stage = path.join(root, "stage");
+    await fs.mkdir(path.join(stage, "scripts"), { recursive: true });
+    await fs.writeFile(path.join(stage, "scripts", "edge-tts-generate.py"), "print('release')\n");
+    const key = await createSigningKey(root);
+    const definitionPath = await writeDefinition(root, definition());
+    const options = {
+      definitionPath,
+      stagingDirectory: stage,
+      outputDirectory: path.join(root, "out"),
+      githubReleaseUrl: "https://github.com/example/toolbox/releases/download/components-v1/",
+      signingKeyPath: key.privateKeyPath
+    };
+
+    const artifact = await buildComponentPackage(options);
+    const manifest = JSON.parse(await fs.readFile(artifact.manifestPath, "utf8"));
+    const publicKey = await fs.readFile(artifact.publicKeyPath, "utf8");
+    assert.equal(
+      manifest.archive.url,
+      "https://github.com/example/toolbox/releases/download/components-v1/edge-tts-1.0.0.tar.gz"
+    );
+    assert.equal(
+      manifest.sbom.url,
+      "https://github.com/example/toolbox/releases/download/components-v1/edge-tts-1.0.0.spdx.json"
+    );
+    assert.equal(
+      crypto.verify(
+        null,
+        Buffer.from(canonicalManifest(manifest)),
+        publicKey,
+        Buffer.from(manifest.signature, "base64")
+      ),
+      true
+    );
+    assert.deepEqual((await assembleComponentCatalog(options.outputDirectory)).manifests, [manifest]);
+    const sbom = JSON.parse(await fs.readFile(artifact.sbomPath, "utf8"));
+    assert.equal(sbom.packages[0].downloadLocation, manifest.archive.url);
+  });
+
   it("hashes the Python lock into the signed manifest and lists pinned packages in the SBOM", async () => {
     const root = await makeRoot();
     const stage = path.join(root, "stage");
@@ -201,6 +241,25 @@ describe("buildComponentPackage", () => {
     };
 
     await assert.rejects(buildComponentPackage(options), /HTTPS/);
+    const badReleaseUrl = await writeDefinition(root, definition());
+    await assert.rejects(
+      buildComponentPackage({
+        ...options,
+        definitionPath: badReleaseUrl,
+        assetBaseUrl: undefined,
+        githubReleaseUrl: "https://github.com/example/toolbox/releases/latest/download/"
+      }),
+      /固定 tag/
+    );
+    await assert.rejects(
+      buildComponentPackage({
+        ...options,
+        definitionPath: badReleaseUrl,
+        githubReleaseUrl: "https://github.com/example/toolbox/releases/download/v1/",
+        assetBaseUrl: "https://packages.example.test/"
+      }),
+      /只能指定/
+    );
     const unsafeDefinitionPath = await writeDefinition(
       root,
       definition({

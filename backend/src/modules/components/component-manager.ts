@@ -18,12 +18,15 @@ import type {
   ComponentJobState,
   ComponentPackageStatus
 } from "@toolbox/shared";
+import { createRemoteFetch, type RemoteFetch } from "../../security/remote-fetch";
 
 const COMPONENT_PROTOCOL_VERSION = 1;
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const MAX_MANIFEST_FILES = 100_000;
+// GitHub Release 下载会从 github.com 跳转至资产 CDN；每一跳都校验 HTTPS 和公网 DNS，最多允许 5 次跳转。
+const fetchComponentAsset = createRemoteFetch({ maxRedirects: 5, requireHttps: true });
 
 export type ComponentManifestFile = { path: string; bytes: number; sha256: string };
 export type ComponentPackageManifest = {
@@ -149,7 +152,7 @@ export class ComponentManager {
       throw new Error("Component catalog contains duplicate ids");
     this.trustedPublicKeys = { ...options.catalog.trustedPublicKeys };
     this.maxArchiveBytes = options.maxArchiveBytes ?? 20 * 1024 * 1024 * 1024;
-    this.downloadArchive = options.downloadArchive ?? downloadArchive;
+    this.downloadArchive = options.downloadArchive ?? downloadComponentArchive;
     this.isInUse = options.isInUse ?? (() => false);
     this.availableDiskBytes = options.availableDiskBytes ?? getAvailableDiskBytes;
     this.selfTest = options.selfTest;
@@ -894,13 +897,13 @@ function verifyManifestSignature(manifest: ComponentPackageManifest, publicKey: 
   }
 }
 
-async function downloadArchive(
+export async function downloadComponentArchive(
   manifest: ComponentPackageManifest,
   destination: string,
-  options: { signal?: AbortSignal; onProgress?: (downloadedBytes: number) => void } = {}
+  options: { signal?: AbortSignal; onProgress?: (downloadedBytes: number) => void } = {},
+  remoteFetch: RemoteFetch = fetchComponentAsset
 ) {
-  const response = await fetch(manifest.archive.url, {
-    redirect: "error",
+  const response = await remoteFetch(manifest.archive.url, {
     signal: options.signal ?? AbortSignal.timeout(10 * 60 * 1000)
   });
   if (!response.ok || !response.body) throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包下载失败");

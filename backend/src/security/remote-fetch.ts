@@ -49,10 +49,12 @@ export function createRemoteFetch(
     resolver?: AddressResolver;
     fetchImpl?: typeof fetch;
     maxRedirects?: number;
+    requireHttps?: boolean;
   } = {}
 ): RemoteFetch {
   const resolver = options.resolver ?? resolveAllAddresses;
   const maxRedirects = options.maxRedirects ?? 3;
+  const requireHttps = options.requireHttps ?? false;
   const injectedFetch = options.fetchImpl ?? (globalThis.fetch !== nativeGlobalFetch ? globalThis.fetch : undefined);
   return async (input, init = {}) => {
     // 地址固定表和 Agent 必须是单个顶层请求私有的。若全局复用 hostname -> IP 表，并发请求
@@ -69,7 +71,7 @@ export function createRemoteFetch(
 
     // 重定向的每一跳都重新解析、重新做公网地址检查，并限制最大跳数。
     for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-      const addresses = await resolvePublicRemoteUrl(current, resolver);
+      const addresses = await resolvePublicRemoteUrl(current, resolver, requireHttps);
       pinnedAddresses.set(normalizeHostname(current.hostname), addresses[0]);
       const response = (injectedFetch
         ? await injectedFetch(current.toString(), { ...init, redirect: "manual" })
@@ -110,14 +112,19 @@ export function createPinnedLookup(pinnedAddresses: ReadonlyMap<string, Resolved
   };
 }
 
-export async function assertPublicRemoteUrl(url: URL, resolver: AddressResolver = resolveAllAddresses) {
-  await resolvePublicRemoteUrl(url, resolver);
+export async function assertPublicRemoteUrl(
+  url: URL,
+  resolver: AddressResolver = resolveAllAddresses,
+  requireHttps = false
+) {
+  await resolvePublicRemoteUrl(url, resolver, requireHttps);
 }
 
-async function resolvePublicRemoteUrl(url: URL, resolver: AddressResolver) {
+async function resolvePublicRemoteUrl(url: URL, resolver: AddressResolver, requireHttps = false) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Only HTTP and HTTPS remote URLs are allowed");
   }
+  if (requireHttps && url.protocol !== "https:") throw new Error("HTTPS is required for every remote URL hop");
   if (url.username || url.password) throw new Error("Remote URLs cannot contain credentials");
   if (url.port && url.port !== "80" && url.port !== "443") {
     throw new Error("Remote URLs can only use ports 80 and 443");

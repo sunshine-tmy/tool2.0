@@ -9,10 +9,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ComponentManager,
   canonicalManifest,
+  downloadComponentArchive,
   type ComponentManagerOptions,
   type ComponentPackageManifest
 } from "../modules/components/component-manager";
 import { registerComponentRoutes } from "../modules/components/routes";
+import { createRemoteFetch } from "../security/remote-fetch";
 
 const keyPair = crypto.generateKeyPairSync("ed25519");
 const publicKey = keyPair.publicKey.export({ format: "pem", type: "spki" }).toString();
@@ -25,6 +27,34 @@ afterEach(async () => {
 });
 
 describe("ComponentManager", () => {
+  it("downloads a GitHub Release asset through verified HTTPS redirects and reports exact progress", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "redirected-download.partial");
+    const bytes = await fs.readFile(fixture.archivePath);
+    const resolver = async () => [{ address: "93.184.216.34", family: 4 }];
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, { status: 302, headers: { location: "https://release-assets.example/asset.tar.gz" } })
+      )
+      .mockResolvedValueOnce(
+        new Response(bytes, { headers: { "content-length": String(fixture.manifest.archive.bytes) } })
+      );
+    const remoteFetch = createRemoteFetch({ resolver, fetchImpl, requireHttps: true, maxRedirects: 5 });
+    const progress: number[] = [];
+
+    await downloadComponentArchive(
+      fixture.manifest,
+      destination,
+      { onProgress: (downloaded) => progress.push(downloaded) },
+      remoteFetch
+    );
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    await expect(fs.readFile(destination)).resolves.toEqual(bytes);
+    expect(progress.at(-1)).toBe(fixture.manifest.archive.bytes);
+  });
+
   it("installs a signed package, verifies every file and atomically records the current version", async () => {
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath);

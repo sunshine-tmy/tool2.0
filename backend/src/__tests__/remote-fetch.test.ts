@@ -83,6 +83,43 @@ describe("safe remote fetch", () => {
     );
   });
 
+  it("rejects an HTTPS downgrade on a redirect when the caller requires HTTPS", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "http://cdn.example/file" } }));
+    const remoteFetch = createRemoteFetch({ resolver: publicResolver, fetchImpl, requireHttps: true });
+
+    await expect(remoteFetch("https://github.com/example/tool/releases/download/v1/file.zip")).rejects.toThrow(
+      /HTTPS is required/
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("follows bounded HTTPS redirects when HTTPS is required", async () => {
+    const resolver = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://cdn.example/file" } }))
+      .mockResolvedValueOnce(new Response("asset"));
+    const remoteFetch = createRemoteFetch({ resolver, fetchImpl, requireHttps: true });
+
+    await expect(remoteFetch("https://github.com/example/tool/releases/download/v1/file.zip")).resolves.toMatchObject({
+      status: 200
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(resolver).toHaveBeenNthCalledWith(2, "cdn.example");
+  });
+
+  it("stops a redirect chain after the configured limit", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 302, headers: { location: "/next" } }));
+    const remoteFetch = createRemoteFetch({ resolver: publicResolver, fetchImpl, requireHttps: true, maxRedirects: 1 });
+
+    await expect(remoteFetch("https://github.com/example/tool/releases/download/v1/file.zip")).rejects.toThrow(
+      /redirect limit/
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("uses the timeout only until remote response headers arrive", async () => {
     let requestSignal: AbortSignal | undefined;
     const response = await fetchRemoteResponse(
