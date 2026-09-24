@@ -124,6 +124,21 @@
       />
 
       <div class="content">
+        <n-alert v-if="desktopCapabilityHint" type="info" :bordered="false" class="desktop-capability-hint">
+          <div class="desktop-capability-hint-content">
+            <div>
+              <strong>{{ desktopCapabilityHint.title }}：{{ desktopCapabilityHint.heading }}</strong>
+              <p>{{ desktopCapabilityHint.message }}</p>
+            </div>
+            <n-button
+              v-if="desktopCapabilityHint.actionVisible"
+              size="small"
+              secondary
+              @click="$router.push('/settings')"
+              >{{ desktopCapabilityHint.actionLabel }}</n-button
+            >
+          </div>
+        </n-alert>
         <slot />
       </div>
     </section>
@@ -237,7 +252,8 @@ import {
   CleanupInspectionSchema,
   CleanupResultsSchema,
   listTools,
-  type CleanupCategory
+  type CleanupCategory,
+  type ComponentPackageStatus
 } from "@toolbox/shared";
 import {
   AudioLines,
@@ -262,6 +278,7 @@ import {
 import { formatApiError, httpClient, isApiErrorCancelled } from "../services/http";
 import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "../services/admin-session";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
+import { componentApi, getToolComponentReadiness } from "../services/components";
 
 const route = useRoute();
 const message = useMessage();
@@ -285,6 +302,8 @@ const selectedCleanupIds = ref<string[]>([]);
 const cleanupLoading = ref(false);
 const cleanupExecuting = ref(false);
 const cleanupError = ref("");
+const componentStatuses = ref<ComponentPackageStatus[]>();
+const componentStatusError = ref(false);
 const tools = listTools();
 const cleanupSelectedBytes = computed(() =>
   cleanupCategories.value
@@ -326,6 +345,60 @@ const sidebarToggleLabel = computed(() => {
 });
 
 const sidebarHidden = computed(() => isCompact.value && !mobileDrawerOpen.value);
+const desktopCapabilityHint = computed(() => {
+  if (!window.toolboxDesktop) return undefined;
+  const titles: Record<string, string> = {
+    "/tools/video-text": "视频转写能力",
+    "/tools/edge-tts": "配音与参考音色能力",
+    "/tools/image-ai": "AI 图片处理能力",
+    "/tools/xhs-archive": "归档、翻译与登录浏览器能力"
+  };
+  const title = titles[route.path];
+  if (!title) return undefined;
+  const toolId = tools.find((tool) => tool.routePath === route.path)?.id;
+  if (!toolId) return undefined;
+  if (componentStatusError.value) {
+    return {
+      title,
+      heading: "暂时无法读取能力状态",
+      message: "现有功能不受影响；可在设置中重试读取能力目录。",
+      actionVisible: true,
+      actionLabel: "查看能力管理"
+    };
+  }
+  if (!componentStatuses.value) {
+    return {
+      title,
+      heading: "正在读取能力状态",
+      message: "正在检查此功能所需的已审核本地能力。",
+      actionVisible: false,
+      actionLabel: "查看能力管理"
+    };
+  }
+  const readiness = getToolComponentReadiness(toolId, componentStatuses.value);
+  if (!readiness.registered) {
+    return {
+      title,
+      heading: "尚无已审核安装包",
+      message:
+        "能力目录目前没有为此功能登记已审核并签名的安装包。现有功能仍按当前版本运行；后续接入阶段会将依赖状态与安装入口逐项迁到设置。",
+      actionVisible: true,
+      actionLabel: "查看能力管理"
+    };
+  }
+  if (!readiness.missing.length && !readiness.unresolvedIds.length) return undefined;
+  const missingLabels = readiness.missing.map((component) =>
+    component.installed ? `${component.displayName}（需要修复或重装）` : `${component.displayName}（未安装）`
+  );
+  missingLabels.push(...readiness.unresolvedIds.map((id) => `${id}（目录未提供）`));
+  return {
+    title,
+    heading: "所需本地能力尚未就绪",
+    message: `请先安装或修复：${missingLabels.join("、")}。页面不会在处理任务时自动下载能力。`,
+    actionVisible: true,
+    actionLabel: "前往设置安装"
+  };
+});
 
 let compactQuery: MediaQueryList | undefined;
 
@@ -487,7 +560,22 @@ onMounted(() => {
   compactQuery.addEventListener("change", syncCompactLayout);
   window.addEventListener("keydown", onWindowKeydown);
   void loadServiceStatus();
+  if (
+    window.toolboxDesktop &&
+    ["/tools/video-text", "/tools/edge-tts", "/tools/image-ai", "/tools/xhs-archive"].includes(route.path)
+  ) {
+    void loadDesktopComponentStatuses();
+  }
 });
+
+async function loadDesktopComponentStatuses() {
+  componentStatusError.value = false;
+  try {
+    componentStatuses.value = await componentApi.list();
+  } catch {
+    componentStatusError.value = true;
+  }
+}
 
 onBeforeUnmount(() => {
   compactQuery?.removeEventListener("change", syncCompactLayout);
@@ -600,5 +688,27 @@ watch(
 }
 .cleanup-total strong {
   color: #243047;
+}
+.desktop-capability-hint {
+  width: min(100%, 1280px);
+  margin: 0 auto 14px;
+}
+.desktop-capability-hint-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.desktop-capability-hint-content p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.55;
+}
+@media (max-width: 640px) {
+  .desktop-capability-hint-content {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

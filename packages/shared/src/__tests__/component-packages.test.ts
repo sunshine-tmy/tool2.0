@@ -9,6 +9,7 @@ const packageStatus = {
   displayName: "在线自然配音",
   groupId: "audio",
   purpose: "生成联网语音",
+  taskToolIds: ["edge-tts"],
   dependencyIds: ["python-311"],
   dependentIds: [],
   installConditions: ["需要联网"],
@@ -33,10 +34,17 @@ describe("component package contracts", () => {
     expect(
       Value.Check(ComponentPackageStatusSchema, {
         ...packageStatus,
+        activeJobId: "019c6e27-e55b-73d1-87d8-4e01f1f75043"
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(ComponentPackageStatusSchema, {
+        ...packageStatus,
         archiveUrl: "https://attacker.example/package.tar.gz"
       })
     ).toBe(false);
     expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, state: "available" })).toBe(false);
+    expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, activeJobId: "not-a-uuid" })).toBe(false);
   });
 
   it("validates progress jobs and UUID job routes", () => {

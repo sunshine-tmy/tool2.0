@@ -75,6 +75,53 @@
           </div>
         </section>
 
+        <section class="workspace-panel capability-panel">
+          <div class="panel-heading">
+            <div>
+              <h3>能力管理</h3>
+              <p class="panel-description">
+                按需安装本地运行时与模型。安装前会展示体积、用途和许可；后端会在下载前检查磁盘空间，失败不会替换可用版本。
+              </p>
+              <p v-if="componentTotalLabel" class="setting-copy">{{ componentTotalLabel }}（共享依赖只计一次）</p>
+            </div>
+            <n-button secondary :loading="componentsLoading" @click="loadComponents">刷新能力状态</n-button>
+          </div>
+          <n-alert v-if="componentsError" type="error" :bordered="false" class="settings-alert">
+            {{ componentsError }}
+          </n-alert>
+          <template v-else>
+            <n-alert v-if="componentsNotice" type="warning" :bordered="false" class="settings-alert">
+              {{ componentsNotice }}
+            </n-alert>
+            <n-spin v-if="componentsLoading && !components.length" />
+            <template v-else-if="components.length">
+              <section v-for="group in componentGroups" :key="group.id" class="component-group">
+                <h4>{{ group.label }}</h4>
+                <div class="component-list">
+                  <DesktopComponentCard
+                    v-for="component in group.items"
+                    :key="component.id"
+                    :component="component"
+                    :job="componentJobs[component.id]"
+                    :canceling="cancelingJobId === componentJobs[component.id]?.id"
+                    :operation-loading="startingComponentId === component.id"
+                    @install="installComponent"
+                    @reinstall="reinstallComponent"
+                    @uninstall="uninstallComponent"
+                    @cancel="cancelComponentJob"
+                  />
+                </div>
+              </section>
+            </template>
+            <n-alert v-else type="info" :bordered="false">
+              当前版本没有已审核并签名的可安装能力包。获得许可与供应链审核的能力包发布后会显示在这里；本阶段不会从未审核来源安装能力包，现有业务运行方式保持不变。
+            </n-alert>
+          </template>
+          <p class="setting-copy capability-retention-note">
+            卸载只移除该能力的运行时、依赖和模型，不删除作品、历史任务、个人素材或登录状态；被其他已安装能力依赖的共享组件必须先解除依赖。
+          </p>
+        </section>
+
         <section class="workspace-panel">
           <div class="panel-heading">
             <div>
@@ -123,12 +170,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { NAlert, NButton, NCode, NSpace, NSwitch, useMessage } from "naive-ui";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { NAlert, NButton, NCode, NSpin, NSpace, NSwitch, useMessage } from "naive-ui";
+import type { ComponentGroup, ComponentJob, ComponentPackageStatus } from "@toolbox/shared";
 import ToolLayout from "../layouts/ToolLayout.vue";
 import ToolPageHeader from "../components/tool/ToolPageHeader.vue";
+import DesktopComponentCard from "./DesktopComponentCard.vue";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
 import { formatApiError } from "../services/http";
+import { componentApi, subscribeComponentJob } from "../services/components";
 
 type DesktopMigrationSummary = {
   id: string;
@@ -156,8 +206,49 @@ const saving = ref(false);
 const migrating = ref(false);
 const checkingUpdates = ref(false);
 const error = ref("");
+const components = ref<ComponentPackageStatus[]>([]);
+const componentJobs = ref<Record<string, ComponentJob>>({});
+const componentsLoading = ref(false);
+const componentsError = ref("");
+const componentsNotice = ref("");
+const startingComponentId = ref("");
+const cancelingJobId = ref("");
+const jobSubscriptions = new Map<string, () => void>();
 
-onMounted(() => void loadSettings());
+const componentGroupLabels: Record<ComponentGroup, string> = {
+  shared: "共享基础能力",
+  media: "视频与媒体",
+  audio: "语音与配音",
+  image: "AI 图片处理",
+  archive: "内容归档",
+  translation: "翻译"
+};
+const componentGroups = computed(() => {
+  const order: ComponentGroup[] = ["shared", "media", "audio", "image", "archive", "translation"];
+  return order
+    .map((id) => ({
+      id,
+      label: componentGroupLabels[id],
+      items: components.value.filter((item) => item.groupId === id)
+    }))
+    .filter((group) => group.items.length);
+});
+const componentTotalLabel = computed(() => {
+  if (!components.value.length) return "";
+  const totalDownloadBytes = components.value.reduce((sum, item) => sum + item.downloadBytes, 0);
+  const totalInstalledBytes = components.value.reduce((sum, item) => sum + item.installedBytes, 0);
+  return `已审核 ${components.value.length} 项 · 下载合计 ${formatBytes(totalDownloadBytes)} · 全部安装后约 ${formatBytes(totalInstalledBytes)}`;
+});
+
+onMounted(() => {
+  void loadSettings();
+  void loadComponents();
+});
+
+onBeforeUnmount(() => {
+  for (const unsubscribe of jobSubscriptions.values()) unsubscribe();
+  jobSubscriptions.clear();
+});
 
 async function loadSettings() {
   if (!desktop.value) return;
@@ -170,6 +261,138 @@ async function loadSettings() {
   } finally {
     loading.value = false;
   }
+}
+
+async function loadComponents() {
+  if (!desktop.value) return;
+  componentsLoading.value = true;
+  componentsError.value = "";
+  try {
+    components.value = await componentApi.list();
+    // 组件卡片在页面刷新后通过服务端公开的 activeJobId 恢复进度订阅。
+    await Promise.all(
+      components.value
+        .filter((component) => component.activeJobId && !componentJobs.value[component.id])
+        .map(async (component) => {
+          try {
+            trackComponentJob(await componentApi.getJob(component.activeJobId!));
+          } catch {
+            // 作业可能刚完成或服务刚重启；重新读取目录即可显示实际已安装状态。
+          }
+        })
+    );
+  } catch (cause) {
+    componentsError.value = formatApiError(cause, "读取能力目录失败");
+  } finally {
+    componentsLoading.value = false;
+  }
+}
+
+async function installComponent(component: ComponentPackageStatus) {
+  const accepted = await confirm(
+    `将下载“${component.displayName}”约 ${formatBytes(component.downloadBytes)}，安装后约占用 ${formatBytes(component.installedBytes)}。许可：${component.licenseName}。后端会在下载前复核磁盘空间，安装失败不会替换健康版本。${formatInstallConditions(component)}`,
+    { title: "确认安装能力", positiveText: "开始安装" }
+  );
+  if (accepted) await startComponentOperation(component, "install");
+}
+
+async function reinstallComponent(component: ComponentPackageStatus) {
+  const accepted = await confirm(
+    `将重新下载并校验“${component.displayName}”。新版本通过自检前会保留当前版本，失败时不会破坏现有可用能力。作品与历史数据不受影响。`,
+    { title: "确认重装能力", positiveText: "开始重装" }
+  );
+  if (accepted) await startComponentOperation(component, "reinstall");
+}
+
+async function uninstallComponent(component: ComponentPackageStatus) {
+  if (component.dependentIds.length) {
+    message.warning(`该组件仍被 ${component.dependentIds.join("、")} 依赖，请先卸载依赖能力`);
+    return;
+  }
+  const accepted = await confirm(
+    `将删除“${component.displayName}”的运行时、依赖和模型。作品、历史任务、个人素材、登录状态及其他应用数据均会保留。`,
+    { title: "确认卸载能力", positiveText: "仅卸载能力", danger: true }
+  );
+  if (accepted) await startComponentOperation(component, "uninstall");
+}
+
+async function startComponentOperation(component: ComponentPackageStatus, operation: ComponentJob["operation"]) {
+  if (startingComponentId.value) return;
+  startingComponentId.value = component.id;
+  componentsError.value = "";
+  componentsNotice.value = "";
+  try {
+    const job =
+      operation === "install"
+        ? await componentApi.install(component.id)
+        : operation === "reinstall"
+          ? await componentApi.reinstall(component.id)
+          : await componentApi.uninstall(component.id);
+    trackComponentJob(job);
+  } catch (cause) {
+    componentsError.value = formatApiError(cause, "能力管理操作失败");
+  } finally {
+    startingComponentId.value = "";
+  }
+}
+
+function trackComponentJob(job: ComponentJob) {
+  if (["completed", "failed", "cancelled"].includes(job.state)) {
+    finishComponentJob(job, false);
+    return;
+  }
+  componentJobs.value = { ...componentJobs.value, [job.componentId]: job };
+  if (jobSubscriptions.has(job.id)) return;
+  const unsubscribe = subscribeComponentJob(
+    job.id,
+    (updated) => {
+      if (["completed", "failed", "cancelled"].includes(updated.state)) {
+        finishComponentJob(updated, true);
+        return;
+      }
+      componentJobs.value = { ...componentJobs.value, [updated.componentId]: updated };
+      componentsError.value = "";
+      componentsNotice.value = "";
+    },
+    () => {
+      componentsNotice.value = "进度连接暂时中断，正在自动重连；安装状态不会因此丢失。";
+    }
+  );
+  jobSubscriptions.set(job.id, unsubscribe);
+}
+
+function finishComponentJob(job: ComponentJob, announce: boolean) {
+  jobSubscriptions.get(job.id)?.();
+  jobSubscriptions.delete(job.id);
+  const { [job.componentId]: _finished, ...remainingJobs } = componentJobs.value;
+  componentJobs.value = remainingJobs;
+  if (announce) {
+    if (job.state === "completed") message.success(`${operationName(job.operation)}已完成`);
+    else if (job.state === "cancelled") message.info("能力下载已取消；当前可用版本未受影响");
+    else message.error(job.errorMessage || `${operationName(job.operation)}失败`);
+  }
+  void loadComponents();
+}
+
+async function cancelComponentJob(job: ComponentJob) {
+  cancelingJobId.value = job.id;
+  componentsError.value = "";
+  componentsNotice.value = "";
+  try {
+    trackComponentJob(await componentApi.cancel(job.id));
+  } catch (cause) {
+    componentsError.value = formatApiError(cause, "取消下载失败");
+  } finally {
+    cancelingJobId.value = "";
+  }
+}
+
+function formatInstallConditions(component: ComponentPackageStatus) {
+  return component.installConditions.length ? ` 安装条件：${component.installConditions.join("；")}。` : "";
+}
+
+function operationName(operation: ComponentJob["operation"]) {
+  return { install: "安装", reinstall: "重装", uninstall: "卸载" }[operation];
 }
 
 async function saveStartAtLogin(value: boolean) {

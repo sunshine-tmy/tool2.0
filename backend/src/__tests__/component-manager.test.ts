@@ -28,7 +28,14 @@ describe("ComponentManager", () => {
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath);
 
-    await expect(manager.list()).resolves.toMatchObject([{ id: "edge-tts", installed: false }]);
+    await expect(manager.list()).resolves.toMatchObject([
+      {
+        id: "edge-tts",
+        taskToolIds: ["edge-tts"],
+        installed: false,
+        installedBytes: fixture.manifest.installedBytes
+      }
+    ]);
     await expect(manager.install("edge-tts")).resolves.toMatchObject({
       id: "edge-tts",
       installed: true,
@@ -96,7 +103,13 @@ describe("ComponentManager", () => {
 
   it("runs a background install job, deduplicates repeated clicks and reports terminal state", async () => {
     const fixture = await createFixture("1.0.0");
+    let releaseDownload!: () => void;
+    let notifyDownloadStarted!: () => void;
+    const downloadStarted = new Promise<void>((resolve) => (notifyDownloadStarted = resolve));
+    const downloadGate = new Promise<void>((resolve) => (releaseDownload = resolve));
     const manager = createManager(fixture.manifest, fixture.archivePath, async (manifest, destination, options) => {
+      notifyDownloadStarted();
+      await downloadGate;
       options?.onProgress?.(Math.ceil(manifest.archive.bytes / 2));
       await fs.copyFile(fixture.archivePath, destination);
       options?.onProgress?.(manifest.archive.bytes);
@@ -107,6 +120,14 @@ describe("ComponentManager", () => {
     manager.subscribe(firstJob.id, (job) => progressUpdates.push(job.phase + ":" + job.progress.percentage));
 
     expect(repeatedJob.id).toBe(firstJob.id);
+    await downloadStarted;
+    try {
+      await expect(manager.list()).resolves.toMatchObject([
+        { id: "edge-tts", taskToolIds: ["edge-tts"], state: "downloading", activeJobId: firstJob.id }
+      ]);
+    } finally {
+      releaseDownload();
+    }
     await expect(waitForJob(manager, firstJob.id)).resolves.toMatchObject({
       operation: "install",
       state: "completed",

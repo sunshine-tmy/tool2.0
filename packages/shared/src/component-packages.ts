@@ -41,6 +41,7 @@ export const ComponentPackageStatusSchema = Type.Object(
     displayName: Type.String({ minLength: 1, maxLength: 120 }),
     groupId: ComponentGroupSchema,
     purpose: Type.String({ minLength: 1, maxLength: 500 }),
+    taskToolIds: Type.Array(Type.String({ minLength: 1, maxLength: 80 })),
     dependencyIds: Type.Array(Type.String({ minLength: 1, maxLength: 80 })),
     dependentIds: Type.Array(Type.String({ minLength: 1, maxLength: 80 })),
     installConditions: Type.Array(Type.String({ minLength: 1, maxLength: 300 })),
@@ -51,6 +52,13 @@ export const ComponentPackageStatusSchema = Type.Object(
     installed: Type.Boolean(),
     state: ComponentLifecycleSchema,
     health: ComponentHealthSchema,
+    activeJobId: Type.Optional(
+      Type.String({
+        minLength: 36,
+        maxLength: 36,
+        pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      })
+    ),
     installedVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
     previousVersion: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
     installedAt: Type.Optional(Type.String({ pattern: COMPONENT_TIMESTAMP_PATTERN })),

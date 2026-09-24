@@ -164,7 +164,12 @@ export class ComponentManager {
       return {
         ...status,
         dependentIds: dependents,
-        ...(active ? { state: active.phase === "downloading" ? "downloading" : "installing" } : {}),
+        ...(active
+          ? {
+              state: active.phase === "downloading" ? "downloading" : "installing",
+              activeJobId: active.id
+            }
+          : {}),
         ...(failure ? { failureReason: failure.message } : {}),
         ...(failure && !status.installed && !active ? { state: "failed" } : {}),
         ...(missing.length && !active ? { state: "blocked", blockedReason: "缺少依赖：" + missing.join("、") } : {})
@@ -511,8 +516,6 @@ export class ComponentManager {
 
   private async status(manifest: ComponentPackageManifest): Promise<ComponentPackageStatus> {
     const current = await this.readCurrent(this.componentRoot(manifest.id), manifest.id);
-    const installedBytes =
-      current?.installedBytes ?? (current?.version === manifest.version ? manifest.installedBytes : 0);
     let health: ComponentPackageStatus["health"] =
       current && current.manifestSha256 === sha256Text(canonicalManifest(manifest)) ? "healthy" : "unknown";
     if (current) {
@@ -529,13 +532,15 @@ export class ComponentManager {
       displayName: manifest.displayName,
       groupId: manifest.groupId,
       purpose: manifest.purpose,
+      taskToolIds: [...manifest.taskToolIds],
       dependencyIds: [...manifest.dependencyIds],
       dependentIds: [],
       installConditions: [...manifest.installConditions],
       version: manifest.version,
       platform: manifest.platform,
       downloadBytes: manifest.archive.bytes,
-      installedBytes: current ? installedBytes : 0,
+      // UI 在安装前也需要展示签名 manifest 提供的目标占用估值，而不是返回无意义的 0。
+      installedBytes: manifest.installedBytes,
       installed: Boolean(current),
       state: current ? "ready" : "not-installed",
       health,
