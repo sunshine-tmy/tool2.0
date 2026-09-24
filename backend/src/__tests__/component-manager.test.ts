@@ -55,6 +55,138 @@ describe("ComponentManager", () => {
     expect(progress.at(-1)).toBe(fixture.manifest.archive.bytes);
   });
 
+  it("downloads signed assets in verified byte ranges and retries an interrupted chunk", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "ranged-download.partial");
+    const bytes = await fs.readFile(fixture.archivePath);
+    const contentRange = `bytes 0-${bytes.length - 1}/${bytes.length}`;
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(bytes.subarray(0, Math.max(1, Math.floor(bytes.length / 2))), {
+          status: 206,
+          headers: { "content-range": contentRange }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(bytes, {
+          status: 206,
+          headers: { "content-length": String(bytes.length), "content-range": contentRange }
+        })
+      );
+    const remoteFetch = createRemoteFetch({
+      resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+      fetchImpl,
+      requireHttps: true
+    });
+    const progress: number[] = [];
+
+    await downloadComponentArchive(
+      fixture.manifest,
+      destination,
+      { onProgress: (downloaded) => progress.push(downloaded) },
+      remoteFetch
+    );
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Range: `bytes=0-${bytes.length - 1}` });
+    await expect(fs.readFile(destination)).resolves.toEqual(bytes);
+    expect(progress).toEqual([bytes.length]);
+  });
+
+  it("assembles concurrent ranges at their verified offsets", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "concurrent-ranges.partial");
+    const bytes = Buffer.alloc(2 * 1024 * 1024 + 37, 0x5a);
+    fixture.manifest.archive.bytes = bytes.length;
+    const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
+      const range = new Headers(init?.headers).get("range");
+      const match = /^bytes=(\d+)-(\d+)$/.exec(range || "");
+      if (!match) throw new Error("Range header was not sent");
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      const body = bytes.subarray(start, end + 1);
+      return new Response(body, {
+        status: 206,
+        headers: {
+          "content-length": String(body.length),
+          "content-range": `bytes ${start}-${end}/${bytes.length}`
+        }
+      });
+    });
+    const remoteFetch = createRemoteFetch({
+      resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+      fetchImpl,
+      requireHttps: true
+    });
+
+    await downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    await expect(fs.readFile(destination)).resolves.toEqual(bytes);
+  });
+
+  it("retries transient connection resets before receiving a byte-range response", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "reset-download.partial");
+    const bytes = await fs.readFile(fixture.archivePath);
+    const fetchFailure = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockRejectedValueOnce(fetchFailure)
+      .mockResolvedValueOnce(
+        new Response(bytes, {
+          status: 206,
+          headers: {
+            "content-length": String(bytes.length),
+            "content-range": `bytes 0-${bytes.length - 1}/${bytes.length}`
+          }
+        })
+      );
+    const remoteFetch = createRemoteFetch({
+      resolver: async () => [{ address: "93.184.216.34", family: 4 }],
+      fetchImpl,
+      requireHttps: true
+    });
+
+    await downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    await expect(fs.readFile(destination)).resolves.toEqual(bytes);
+  });
+
+  it("rejects incorrect Content-Range metadata and removes the partial archive", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "invalid-range.partial");
+    const bytes = await fs.readFile(fixture.archivePath);
+    const remoteFetch = vi.fn().mockResolvedValue(
+      new Response(bytes, {
+        status: 206,
+        headers: { "content-range": `bytes 1-${bytes.length}/${bytes.length + 1}` }
+      })
+    );
+
+    await expect(downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch)).rejects.toThrow(
+      "能力包分段范围校验失败"
+    );
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not remove a pre-existing destination when exclusive creation fails", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "existing-download.partial");
+    await fs.writeFile(destination, "keep-existing-file");
+    const remoteFetch = vi.fn();
+
+    await expect(downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch)).rejects.toMatchObject({
+      code: "EEXIST"
+    });
+    await expect(fs.readFile(destination, "utf8")).resolves.toBe("keep-existing-file");
+    expect(remoteFetch).not.toHaveBeenCalled();
+  });
+
   it("installs a signed package, verifies every file and atomically records the current version", async () => {
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath);
