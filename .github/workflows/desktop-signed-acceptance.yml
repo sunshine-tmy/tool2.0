@@ -1,0 +1,222 @@
+name: Windows signed desktop acceptance (no Release)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-signed-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.prepare.outputs.version }}
+      previous_version: ${{ steps.previous.outputs.version }}
+    env:
+      WINDOWS_SIGNING_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_BASE64 }}
+      WINDOWS_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERTIFICATE_PASSWORD }}
+      WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "11.7.0" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Validate version and signing material
+        id: prepare
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath "apps/desktop/package.json" -Raw | ConvertFrom-Json).version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Desktop package version must be <major>.<minor>.<patch>" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_BASE64)) { throw "WINDOWS_SIGNING_CERTIFICATE_BASE64 is required" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD)) { throw "WINDOWS_SIGNING_CERTIFICATE_PASSWORD is required" }
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_SUBJECT)) { throw "WINDOWS_SIGNING_SUBJECT repository variable is required" }
+          $certificatePath = Join-Path $env:RUNNER_TEMP "ecommerce-toolbox-signing.pfx"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERTIFICATE_BASE64))
+          "DESKTOP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WINDOWS_CERTIFICATE_FILE=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "DESKTOP_RELEASE=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "DESKTOP_UPDATE_FEED_URL=${{ github.server_url }}/${{ github.repository }}/releases/latest/download" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - name: Verify desktop sources
+        run: pnpm --filter desktop test
+      - name: Build signed NSIS installer and update feed
+        run: pnpm desktop:make
+      - name: Verify signed update artifacts
+        shell: pwsh
+        run: |
+          $output = "apps/desktop/out/make/nsis"
+          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $output --expected-version $env:DESKTOP_VERSION
+          ./scripts/verify-windows-signatures.ps1 -Directory "apps/desktop/out/EcommerceToolbox-win32-x64" -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+          ./scripts/verify-windows-signatures.ps1 -Directory $output -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+      - name: Stage signed installer artifact and checksums
+        shell: pwsh
+        run: |
+          $source = "apps/desktop/out/make/nsis"
+          $acceptance = "desktop-signed-acceptance"
+          New-Item -ItemType Directory -Path $acceptance -Force | Out-Null
+          Copy-Item -LiteralPath (Join-Path $source "EcommerceToolboxSetup.exe") -Destination $acceptance
+          Copy-Item -LiteralPath (Join-Path $source "EcommerceToolboxSetup.exe.blockmap") -Destination $acceptance
+          Copy-Item -LiteralPath (Join-Path $source "latest.yml") -Destination $acceptance
+          Get-ChildItem -LiteralPath $acceptance -File | ForEach-Object {
+            $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$digest  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ASCII
+          }
+      - name: Stage previous stable installer for upgrade acceptance
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $currentVersion = [version]$env:DESKTOP_VERSION
+          $releaseJson = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "Could not query previous GitHub Releases" }
+          $releases = @($releaseJson | ConvertFrom-Json)
+          $candidates = @(
+            $releases |
+              Where-Object {
+                $assetNames = @($_.assets | ForEach-Object { $_.name })
+                -not $_.draft -and
+                  -not $_.prerelease -and
+                  $_.tag_name -match '^v\d+\.\d+\.\d+$' -and
+                  $assetNames -contains 'EcommerceToolboxSetup.exe' -and
+                  $assetNames -contains 'EcommerceToolboxSetup.exe.sha256'
+              } |
+              ForEach-Object {
+                [pscustomobject]@{ Tag = $_.tag_name; Version = [version]$_.tag_name.Substring(1) }
+              } |
+              Where-Object { $_.Version -lt $currentVersion } |
+              Sort-Object -Property Version -Descending
+          )
+          $previous = $candidates | Select-Object -First 1
+          $versionOutput = if ($previous) { $previous.Version.ToString() } else { '' }
+          "version=$versionOutput" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          if (-not $previous) {
+            Write-Host "No previous stable desktop installer exists; upgrade acceptance will be skipped."
+            exit 0
+          }
+
+          $upgradeDirectory = "desktop-upgrade/previous"
+          New-Item -ItemType Directory -Path $upgradeDirectory -Force | Out-Null
+          gh release download $previous.Tag --repo $env:GITHUB_REPOSITORY --pattern "EcommerceToolboxSetup.exe" --pattern "EcommerceToolboxSetup.exe.sha256" --dir $upgradeDirectory
+          if ($LASTEXITCODE -ne 0) { throw "Could not download the previous stable installer from $($previous.Tag)" }
+          $previousInstaller = Join-Path $upgradeDirectory "EcommerceToolboxSetup.exe"
+          $checksumPath = "$previousInstaller.sha256"
+          if (-not (Test-Path -LiteralPath $previousInstaller -PathType Leaf) -or -not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
+            throw "Previous stable release $($previous.Tag) is missing the installer or its SHA-256 sidecar"
+          }
+          $line = (Get-Content -LiteralPath $checksumPath -Raw).Trim()
+          if ($line -notmatch '^([0-9a-fA-F]{64})  EcommerceToolboxSetup\.exe$') { throw "Invalid previous installer checksum file: $checksumPath" }
+          $actual = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "Previous installer SHA-256 mismatch: $previousInstaller" }
+          ./scripts/verify-windows-signatures.ps1 -Directory $upgradeDirectory -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+          $observedVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($previousInstaller).ProductVersion
+          if ($observedVersion -notmatch ('^' + [regex]::Escape($versionOutput) + '(?:\.0)?(?:\+.*)?$')) {
+            throw "Previous installer version '$observedVersion' does not match release tag $($previous.Tag)"
+          }
+          Write-Host "Staged signed previous stable installer $($previous.Tag) for upgrade acceptance."
+      - uses: actions/upload-artifact@v4
+        if: steps.previous.outputs.version != ''
+        with:
+          name: previous-stable-windows-installer
+          path: |
+            desktop-upgrade/previous/EcommerceToolboxSetup.exe
+            desktop-upgrade/previous/EcommerceToolboxSetup.exe.sha256
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-windows-desktop-acceptance
+          path: desktop-signed-acceptance/
+          if-no-files-found: error
+      - name: Remove temporary signing certificate
+        if: always()
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_FILE) -and (Test-Path -LiteralPath $env:WINDOWS_CERTIFICATE_FILE)) {
+            Remove-Item -LiteralPath $env:WINDOWS_CERTIFICATE_FILE -Force
+          }
+
+  clean-vm-acceptance:
+    needs: package
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      DESKTOP_VERSION: ${{ needs.package.outputs.version }}
+      PREVIOUS_DESKTOP_VERSION: ${{ needs.package.outputs.previous_version }}
+      WINDOWS_SIGNING_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "24" }
+      - uses: actions/download-artifact@v4
+        with:
+          name: signed-windows-desktop-acceptance
+          path: desktop-signed-acceptance
+      - uses: actions/download-artifact@v4
+        if: needs.package.outputs.previous_version != ''
+        with:
+          name: previous-stable-windows-installer
+          path: previous-stable
+      - name: Verify signed artifacts
+        shell: pwsh
+        run: |
+          $release = "desktop-signed-acceptance"
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_SUBJECT)) { throw "WINDOWS_SIGNING_SUBJECT repository variable is required" }
+          $checksums = @(Get-ChildItem -LiteralPath $release -Filter "*.sha256")
+          if ($checksums.Count -lt 3) { throw "Expected checksums for setup, blockmap, and latest.yml" }
+          $checksums | ForEach-Object {
+            $line = (Get-Content -LiteralPath $_.FullName -Raw).Trim()
+            if ($line -notmatch '^([0-9a-fA-F]{64})  (.+)$') { throw "Invalid SHA-256 file: $($_.Name)" }
+            if ([IO.Path]::GetFileName($Matches[2]) -ne $Matches[2]) { throw "Checksum target must be a release filename: $($_.Name)" }
+            $asset = Join-Path $release $Matches[2]
+            if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) { throw "Checksum target is missing: $asset" }
+            $actual = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "SHA-256 mismatch: $asset" }
+          }
+          node apps/desktop/scripts/verify-release-artifacts.mjs --directory $release --expected-version $env:DESKTOP_VERSION
+          ./scripts/verify-windows-signatures.ps1 -Directory $release -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+          if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_DESKTOP_VERSION)) {
+            $previousInstaller = "previous-stable/EcommerceToolboxSetup.exe"
+            $previousChecksumPath = "$previousInstaller.sha256"
+            if (-not (Test-Path -LiteralPath $previousInstaller -PathType Leaf) -or -not (Test-Path -LiteralPath $previousChecksumPath -PathType Leaf)) {
+              throw "Previous stable installer artifact is incomplete"
+            }
+            $line = (Get-Content -LiteralPath $previousChecksumPath -Raw).Trim()
+            if ($line -notmatch '^([0-9a-fA-F]{64})  EcommerceToolboxSetup\.exe$') { throw "Invalid previous installer checksum file" }
+            $actual = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "Previous stable installer SHA-256 mismatch" }
+            ./scripts/verify-windows-signatures.ps1 -Directory "previous-stable" -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
+          }
+      - name: Install, launch, test capabilities, uninstall, and preserve user data
+        shell: pwsh
+        run: |
+          $acceptanceArguments = @(
+            "-InstallerPath", "desktop-signed-acceptance/EcommerceToolboxSetup.exe",
+            "-ExpectedVersion", $env:DESKTOP_VERSION,
+            "-ExpectedSubject", $env:WINDOWS_SIGNING_SUBJECT,
+            "-InstallDirectory", (Join-Path $env:RUNNER_TEMP "Ecommerce Toolbox Signed Acceptance"),
+            "-TestComponentLifecycle",
+            "-TestExplicitDataDeletion"
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_DESKTOP_VERSION)) {
+            $acceptanceArguments += @(
+              "-PreviousInstallerPath", "previous-stable/EcommerceToolboxSetup.exe",
+              "-PreviousExpectedVersion", $env:PREVIOUS_DESKTOP_VERSION
+            )
+          }
+          ./scripts/accept-windows-desktop-install.ps1 @acceptanceArguments
+      - name: Upload signed acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-signed-desktop-acceptance-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/desktop-install-acceptance-report.json
+            ${{ runner.temp }}/desktop-installed-smoke.json
+          if-no-files-found: ignore

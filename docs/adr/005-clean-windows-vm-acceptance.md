@@ -22,6 +22,8 @@
 
 PR 和手动测试使用独立的 `desktop-install-acceptance.yml`：它在全新 `windows-latest` runner 上创建一份旧版数据哨兵，构建未签名测试安装包，通过 Electron DevTools 在首次启动迁移页实际选择“迁移”，检查安装目录副本与旧源均完整，再验收默认卸载与重装保留安装目录数据；不发布 Release，也不需要签名密钥。该流程验证安装与旧数据迁移生命周期，不替代 tag Release 流程中的 Authenticode、签名能力包、前版升级和显式删除验收。
 
+签名生命周期可通过独立的 `desktop-signed-acceptance.yml` 手动触发。它只申请 `contents: read`，复用 Release 所需的 Windows 证书 secrets 与 Subject repository variable，构建并验证签名安装包，然后在干净 runner 上执行能力包安装/卸载、数据保留和显式删除验收；它没有 Release job，不会创建或更新 GitHub Release。该工作流文件合入默认分支后，用户可在 GitHub Actions 中选择此工作流并点击 **Run workflow**，再选择待验收分支；不需要创建版本标签。若尚无符合条件的稳定版安装器 Release，前版升级场景会跳过并在日志中说明。
+
 ## 后果
 
 - Windows tag release 的发布 job 显式要求 `package` 和 `clean-vm-acceptance` 均成功；验收失败或被跳过时，Release job 不会创建或更新 GitHub Release。

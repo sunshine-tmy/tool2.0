@@ -87,3 +87,23 @@ test("a signed desktop release cannot be created or updated before clean-VM acce
   expect(releaseJob).toContain("gh release upload");
   expect(releaseJob).toContain("gh release create");
 });
+
+test("signed Windows acceptance is manual, read-only, and never publishes a Release", async () => {
+  const repositoryRoot = path.resolve(desktopRoot, "../..");
+  const workflow = await readFile(
+    path.join(repositoryRoot, ".github", "workflows", "desktop-signed-acceptance.yml"),
+    "utf8"
+  );
+  const releaseMentions = workflow.match(/gh\s+release\s+(?:create|upload|edit|delete)/gi) ?? [];
+
+  expect(workflow).toContain("workflow_dispatch:");
+  expect(workflow).toContain("permissions:\n  contents: read");
+  expect(workflow).toContain("WINDOWS_SIGNING_CERTIFICATE_BASE64");
+  expect(workflow).toContain("WINDOWS_SIGNING_CERTIFICATE_PASSWORD");
+  expect(workflow).toContain("WINDOWS_SIGNING_SUBJECT");
+  expect(workflow).toContain("-TestComponentLifecycle");
+  expect(workflow).toContain("-TestExplicitDataDeletion");
+  expect(workflow).toContain("gh release download");
+  expect(releaseMentions).toHaveLength(0);
+  expect(workflow).not.toMatch(/contents:\s*write/);
+});
