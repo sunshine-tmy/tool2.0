@@ -15,6 +15,7 @@ export class BackendSupervisor {
     private readonly options: {
       entrypoint: string;
       runtimeLayout: RuntimeLayout;
+      componentProxyUrl?: string;
       onUnexpectedExit?: (message: string) => void;
     }
   ) {}
@@ -23,12 +24,16 @@ export class BackendSupervisor {
     if (this.origin) return this.origin;
     if (this.child) throw new Error("Backend is already starting");
     this.stopping = false;
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      TOOLBOX_RUNTIME_LAYOUT: JSON.stringify(this.options.runtimeLayout)
+    };
+    const componentProxyUrl = this.options.componentProxyUrl ?? process.env.TOOLBOX_COMPONENT_HTTPS_PROXY;
+    if (componentProxyUrl) environment.TOOLBOX_COMPONENT_HTTPS_PROXY = componentProxyUrl;
+    else delete environment.TOOLBOX_COMPONENT_HTTPS_PROXY;
     const child = utilityProcess.fork(this.options.entrypoint, [], {
       cwd: this.options.runtimeLayout.appRoot,
-      env: {
-        ...process.env,
-        TOOLBOX_RUNTIME_LAYOUT: JSON.stringify(this.options.runtimeLayout)
-      }
+      env: environment
     });
     this.child = child;
 

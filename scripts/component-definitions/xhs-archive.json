@@ -1,0 +1,25 @@
+{
+  "id": "xhs-archive",
+  "groupId": "archive",
+  "displayName": "小红书内容归档运行时",
+  "purpose": "固定版本的 XHS-Downloader 本地解析 Worker 与离线依赖；只在设置中安装，不会在提交归档任务时下载。",
+  "dependencyIds": ["python-312"],
+  "taskToolIds": ["xhs-archive"],
+  "installConditions": [
+    "需要 Python 3.12 共享运行时；安装后独立构建虚拟环境。",
+    "归档时需要联网访问小红书及媒体源；登录浏览器可复用系统 Chrome/Edge，或在设置中单独安装。"
+  ],
+  "version": "2.7-afaf2fb",
+  "installedBytes": 800000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "GPL-3.0",
+    "url": "https://www.gnu.org/licenses/gpl-3.0.html"
+  }
+}

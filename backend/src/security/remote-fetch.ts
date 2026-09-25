@@ -6,7 +6,7 @@ import { lookup } from "node:dns/promises";
 import type { LookupAddress, LookupOptions } from "node:dns";
 import { Readable, Transform } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import { Agent, fetch as undiciFetch } from "undici";
+import { Agent, ProxyAgent, fetch as undiciFetch } from "undici";
 
 const nativeGlobalFetch = globalThis.fetch;
 
@@ -50,11 +50,13 @@ export function createRemoteFetch(
     fetchImpl?: typeof fetch;
     maxRedirects?: number;
     requireHttps?: boolean;
+    proxyUrl?: string;
   } = {}
 ): RemoteFetch {
   const resolver = options.resolver ?? resolveAllAddresses;
   const maxRedirects = options.maxRedirects ?? 3;
   const requireHttps = options.requireHttps ?? false;
+  const proxyUrl = options.proxyUrl ? validateProxyUrl(options.proxyUrl) : undefined;
   const injectedFetch = options.fetchImpl ?? (globalThis.fetch !== nativeGlobalFetch ? globalThis.fetch : undefined);
   return async (input, init = {}) => {
     // 地址固定表和 Agent 必须是单个顶层请求私有的。若全局复用 hostname -> IP 表，并发请求
@@ -62,11 +64,13 @@ export function createRemoteFetch(
     const pinnedAddresses = new Map<string, ResolvedAddress>();
     const dispatcher = injectedFetch
       ? undefined
-      : new Agent({
-          connect: {
-            lookup: createPinnedLookup(pinnedAddresses)
-          }
-        });
+      : proxyUrl
+        ? new ProxyAgent(proxyUrl)
+        : new Agent({
+            connect: {
+              lookup: createPinnedLookup(pinnedAddresses)
+            }
+          });
     let current = new URL(input);
 
     // 重定向的每一跳都重新解析、重新做公网地址检查，并限制最大跳数。
@@ -91,6 +95,27 @@ export function createRemoteFetch(
 
     throw new Error("Remote URL exceeded the redirect limit");
   };
+}
+
+function validateProxyUrl(value: string) {
+  let proxy: URL;
+  try {
+    proxy = new URL(value);
+  } catch {
+    throw new Error("Component download proxy URL is invalid");
+  }
+  if (
+    !["http:", "https:"].includes(proxy.protocol) ||
+    !proxy.hostname ||
+    proxy.username ||
+    proxy.password ||
+    proxy.pathname !== "/" ||
+    proxy.search ||
+    proxy.hash
+  ) {
+    throw new Error("Component download proxy must be an HTTP(S) proxy without credentials or a URL path");
+  }
+  return proxy.toString();
 }
 
 /**

@@ -33,3 +33,60 @@ node scripts/assemble-component-catalog.mjs --feed .package/component-feed
 ```
 
 该步骤会核验本地归档、SBOM、公钥 ID 和 Ed25519 签名，并更新后端嵌入式能力目录。合并目录变更前，先确认 GitHub Release 中存在清单引用的同名资产。
+
+## 小红书归档、翻译与登录浏览器（阶段 6）
+
+小红书桌面能力仅由“设置 → 能力管理”显式安装，不会因打开页面、提交任务或点击登录而下载运行时。Python 3.12 固定为 Astral `3.12.14+20260901` Windows x64 stripped build；XHS-Downloader 固定提交 `afaf2fb459980fccef9eec74e304a39af2c49cab`（2.7）；离线翻译固定 OPUS-MT `cf109095479db38d6df799875e34039d4938aaa6`；可选登录浏览器固定 Playwright 1.63.0 对应的 Chromium revision 1243 / `153.0.8010.12`。所有入包文件均经固定长度、SHA-256 或逐模型文件摘要验证。
+
+Python 与 Chromium 上游归档固定信息：
+
+| 资产                     |              大小 | SHA-256                                                            | 来源                                                                                                                                                                              |
+| ------------------------ | ----------------: | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Python 3.12 Windows x64  |  21,980,728 bytes | `7c45c9622400d578709a9b2cddbe8124cc21d382409d9f13406d706d28e31b14` | [Astral 20260901](https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14%2B20260901-x86_64-pc-windows-msvc-install_only_stripped.tar.gz) |
+| XHS-Downloader 源码 zip  |   3,470,287 bytes | `58155970bd3a246bb6bd692f6833ef4645c44a4d39c1080e93ce9c2a4d651004` | [固定提交归档](https://codeload.github.com/JoeanAmier/XHS-Downloader/zip/afaf2fb459980fccef9eec74e304a39af2c49cab)                                                                |
+| Chromium Windows x64 zip | 205,123,748 bytes | `415968b02065d4a9e2c10b85f0ae9f489b8fba500e94d9d0a7b7c4852a7234c1` | [Chrome for Testing 153.0.8010.12](https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.12/win64/chrome-win64.zip)                                                 |
+
+锁文件由 `scripts/lock-xhs-dependencies.ps1` 从固定 XHS 源码 `uv.lock` 导出，并为归档与翻译分别生成 Python 3.12 / Windows x64 哈希锁。需要更新依赖时先审核固定提交与锁差异，再重新准备包；不要手改锁文件，也不要把构建机虚拟环境打进能力包。一次性准备命令如下（归档路径必须使用上述同名文件）：
+
+```powershell
+Invoke-WebRequest `
+  -Uri 'https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14%2B20260901-x86_64-pc-windows-msvc-install_only_stripped.tar.gz' `
+  -OutFile '.package/python-312-upstream-stripped.tar.gz'
+Invoke-WebRequest `
+  -Uri 'https://codeload.github.com/JoeanAmier/XHS-Downloader/zip/afaf2fb459980fccef9eec74e304a39af2c49cab' `
+  -OutFile '.package/xhs-downloader-afaf2fb459980fccef9eec74e304a39af2c49cab.zip'
+Invoke-WebRequest `
+  -Uri 'https://storage.googleapis.com/chrome-for-testing-public/153.0.8010.12/win64/chrome-win64.zip' `
+  -OutFile '.package/chrome-for-testing-153.0.8010.12-win64.zip'
+
+pnpm components:prepare-python-312 -- `
+  --archive .package/python-312-upstream-stripped.tar.gz `
+  --stage .package/stage/python-312
+pnpm components:lock-xhs-dependencies -- `
+  -SourceArchive .package/xhs-downloader-afaf2fb459980fccef9eec74e304a39af2c49cab.zip `
+  -PythonExecutable .package/stage/python-312/python/python.exe
+pnpm components:prepare-xhs-archive -- `
+  --python .package/stage/python-312/python/python.exe `
+  --archive .package/xhs-downloader-afaf2fb459980fccef9eec74e304a39af2c49cab.zip `
+  --stage .package/stage/xhs-archive
+pnpm components:prepare-xhs-translation -- `
+  --python .package/stage/python-312/python/python.exe `
+  --model <已准备并通过 manifest 校验的 opus-mt-zh-en-ct2-int8 模型目录> `
+  --stage .package/stage/xhs-translation
+pnpm components:prepare-xhs-browser -- `
+  --archive .package/chrome-for-testing-153.0.8010.12-win64.zip `
+  --stage .package/stage/xhs-browser
+```
+
+模型目录由 `pnpm prepare:xhs-model` 准备；准备脚本按固定 Hugging Face revision 下载并转换成 CPU int8 CTranslate2 格式。翻译验收必须以阶段暂存的 Python 创建全新 venv，从离线 wheelhouse 执行 `pip install --no-index --require-hashes`、`pip check`，再运行 `pnpm components:test-xhs-translation-smoke` 做中文→英文真实样例，不要用开发机已有 venv 代替。
+
+四项签名包上传并登记目录后，在 Windows x64 构建机运行 `pnpm components:test-xhs-lifecycle`。该离线集成脚本会从本地签名 feed 经 `ComponentManager` 安装 Python 3.12、归档、翻译和 Chromium，执行安装自检；启动归档 Worker 两次并核对回环令牌与数据目录；用安装后新建的翻译 venv 做真实翻译；随后重装、验证共享 Python 依赖阻止卸载、卸载全部能力并检查独立数据哨兵未被删除。脚本在系统临时目录建立隔离测试根并于结束时清理，不访问小红书账号，也不修改用户现存数据。增加 `--online` 可从签名 manifest 的 GitHub Release URL 实际下载（需要出网；桌面应用启动时自动解析 Windows 系统 HTTPS 代理，独立手工运行时可通过临时环境变量 `TOOLBOX_COMPONENT_HTTPS_PROXY` 指定 HTTP(S) 代理）：
+
+```powershell
+$env:TOOLBOX_COMPONENT_HTTPS_PROXY = 'http://代理主机:端口'
+pnpm components:test-xhs-lifecycle -- --online
+```
+
+签名包定义分别是 `python-312.json`、`xhs-archive.json`、`xhs-translation.json`、`xhs-browser.json`。沿用本目录前文的 `pnpm components:package` 命令格式，将四个包分别输出到 `.package/component-feed`，版本/清单文件名由定义文件决定；每个包都要上传 `.manifest.json`、`.spdx.json` 与清单引用的 `.tar.gz` 到既有 `components-v1` GitHub Release。最后核对远端资产清单与本地 feed 一致，再运行 `pnpm components:catalog -- --feed .package/component-feed` 更新嵌入目录。不能在资产尚未上传时发布引用它们的目录。
+
+能力卸载不会删除归档、任务历史、翻译结果、Cookie 或浏览器 profile。归档 Worker 的上游 `Volume` 强制通过 `XHS_VOLUME_DIR` 指向用户数据目录；登录 Cookie 与持久化浏览器 profile 写入 `data/profile/xhs-archive`。浏览器包可选：检测到已安装 Chrome/Edge 或可复用的既有 Playwright 浏览器时，无需另装 Chromium；能力包只为没有现成浏览器的用户提供固定 Chromium，不会触发 Playwright 在线下载。

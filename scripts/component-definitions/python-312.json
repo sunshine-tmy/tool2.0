@@ -1,0 +1,15 @@
+{
+  "id": "python-312",
+  "groupId": "shared",
+  "displayName": "Python 3.12 共享运行时",
+  "purpose": "为小红书归档与翻译能力提供固定版本的 Python 基础运行时；各能力在自己的不可变版本目录中构建独立虚拟环境。",
+  "dependencyIds": [],
+  "taskToolIds": [],
+  "installConditions": ["被依赖的能力需要 Python 3.12 时安装；已安装的依赖能力会阻止卸载。"],
+  "version": "3.12.14-20260901",
+  "installedBytes": 300000000,
+  "license": {
+    "name": "Python Software Foundation License Version 2",
+    "url": "https://docs.python.org/3/license.html"
+  }
+}

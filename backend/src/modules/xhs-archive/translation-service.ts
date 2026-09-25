@@ -54,8 +54,8 @@ export class XhsTranslationService {
     }
   }
 
-  getRuntimeStatus() {
-    return this.runtime.getStatus();
+  async getRuntimeStatus() {
+    return this.runtime.refreshCapabilityStatus();
   }
   getTask(id: string) {
     return this.tasks.get(id);

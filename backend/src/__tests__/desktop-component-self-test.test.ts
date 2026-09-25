@@ -49,7 +49,10 @@ describe("desktop component self-test", () => {
       "models/image-ai/ocr/detection/inference.yml"
     ];
     await Promise.all(files.map(writeAsset));
-    const runProcess = vi.fn(async () => '{"available":true}');
+    const runProcess = vi.fn(
+      async (_executable: string, _args: string[], _cwd: string, _environment: Record<string, string>) =>
+        '{"available":true}'
+    );
     const selfTest = createDesktopComponentSelfTest(runProcess);
 
     await expect(selfTest(manifest("image-ai", files), temporaryRoot)).rejects.toThrow(
@@ -87,6 +90,69 @@ describe("desktop component self-test", () => {
       })
     );
   });
+
+  it("keeps the XHS upstream runtime Volume outside the signed package generation", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = ["source/requirements.txt", "source/source/__init__.py"];
+    await Promise.all(files.map(writeAsset));
+    const runProcess = vi.fn(
+      async (_executable: string, _args: string[], _cwd: string, _environment: Record<string, string>) =>
+        '{"available":true}'
+    );
+    const selfTest = createDesktopComponentSelfTest(runProcess);
+
+    await selfTest(manifest("xhs-archive", files, "3.12"), temporaryRoot);
+
+    const environment = runProcess.mock.calls[0]?.[3];
+    expect(environment).toBeDefined();
+    if (!environment) throw new Error("XHS self-test did not receive an environment");
+    expect(environment.XHS_VOLUME_DIR).toContain("toolbox-xhs-selftest-");
+    await expect(fs.access(environment.XHS_VOLUME_DIR)).rejects.toThrow();
+  });
+
+  it("self-tests the packaged translation worker with its signed model directory", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = [
+      "scripts/xhs-translation-worker.py",
+      "model/model.bin",
+      "model/source.spm",
+      "model/target.spm",
+      "model/manifest.json"
+    ];
+    await Promise.all(files.map(writeAsset));
+    const runProcess = vi.fn(async () => '{"available":true}');
+    const selfTest = createDesktopComponentSelfTest(runProcess);
+
+    await selfTest(manifest("xhs-translation", files, "3.12"), temporaryRoot);
+
+    expect(runProcess).toHaveBeenCalledWith(
+      path.join(temporaryRoot, "venv", "Scripts", "python.exe"),
+      [path.join(temporaryRoot, "scripts", "xhs-translation-worker.py"), "--check"],
+      temporaryRoot,
+      expect.objectContaining({
+        XHS_TRANSLATION_MODEL_DIR: path.join(temporaryRoot, "model"),
+        HF_HUB_OFFLINE: "1",
+        TRANSFORMERS_OFFLINE: "1"
+      })
+    );
+  });
+
+  it("headless-smoke-tests the optional Chromium package without requiring Python", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = ["browser/chrome.exe"];
+    await Promise.all(files.map(writeAsset));
+    const runProcess = vi.fn(async () => "<html><body></body></html>");
+    const selfTest = createDesktopComponentSelfTest(runProcess);
+
+    await selfTest(manifest("xhs-browser", files), temporaryRoot);
+
+    expect(runProcess).toHaveBeenCalledWith(
+      path.join(temporaryRoot, "browser", "chrome.exe"),
+      ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
+      temporaryRoot,
+      expect.any(Object)
+    );
+  });
 });
 
 async function writeAsset(relativePath: string) {
@@ -95,7 +161,11 @@ async function writeAsset(relativePath: string) {
   await fs.writeFile(target, "verified test asset");
 }
 
-function manifest(id: string, files: string[]): ComponentPackageManifest {
+function manifest(
+  id: string,
+  files: string[],
+  expectedPythonVersion: "3.11" | "3.12" = "3.11"
+): ComponentPackageManifest {
   return {
     id,
     moduleId: id,
@@ -104,7 +174,7 @@ function manifest(id: string, files: string[]): ComponentPackageManifest {
       wheelhousePath: "wheelhouse",
       requirementsLockPath: "requirements.lock",
       requirementsLockSha256: "0".repeat(64),
-      expectedPythonVersion: "3.11"
+      expectedPythonVersion
     },
     files: files.map((filePath) => ({ path: filePath, bytes: 1, sha256: "0".repeat(64) }))
   } as unknown as ComponentPackageManifest;

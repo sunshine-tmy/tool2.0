@@ -88,7 +88,7 @@ defineEmits<{
 
 const inputUrl = defineModel<string>("inputUrl", { required: true });
 const stages: Array<{ key: XhsArchiveTaskStage; label: string; icon: unknown }> = [
-  { key: "installing", label: "环境安装", icon: HardDriveDownload },
+  { key: "installing", label: "准备解析环境", icon: HardDriveDownload },
   { key: "parsing", label: "链接解析", icon: FileSearch },
   { key: "downloading", label: "媒体下载", icon: Download },
   { key: "archiving", label: "写入存档", icon: Box }

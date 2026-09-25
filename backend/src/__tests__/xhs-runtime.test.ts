@@ -10,6 +10,7 @@ import { XhsRuntimeManager } from "../modules/xhs-archive/runtime";
 import { XHS_COMMIT, XhsRuntimeInstallGateway } from "../modules/xhs-archive/runtime-install-gateway";
 import { XhsProviderProcess } from "../modules/xhs-archive/runtime-process";
 import { XhsTranslationRuntime } from "../modules/xhs-archive/translation-runtime";
+import { XhsAuthManager } from "../modules/xhs-archive/auth";
 
 let runtimeDir = "";
 const originalFetch = globalThis.fetch;
@@ -80,6 +81,46 @@ describe("xhs runtime validation", () => {
 
     await expect(manager.ensureReady()).rejects.toThrow("安装依赖失败");
     expect(manager.getStatus()).toMatchObject({ status: "failed", message: "安装依赖失败" });
+  });
+
+  it("never auto-installs the archive runtime in managed desktop mode", async () => {
+    const install = vi.spyOn(XhsRuntimeInstallGateway.prototype, "install");
+    const manager = new XhsRuntimeManager(getConfig({ desktopManagedCapabilities: true }));
+
+    await expect(manager.ensureReady()).rejects.toMatchObject({ code: "XHS_ARCHIVE_NOT_INSTALLED" });
+    expect(install).not.toHaveBeenCalled();
+    expect(manager.getStatus()).toMatchObject({
+      status: "not-installed",
+      message: "请在桌面设置的能力管理中安装小红书归档运行时"
+    });
+  });
+
+  it("never downloads translation runtime or model in managed desktop mode", async () => {
+    const fetchMock = vi.fn() as typeof fetch;
+    globalThis.fetch = fetchMock;
+    const runtime = new XhsTranslationRuntime(getConfig({ desktopManagedCapabilities: true }));
+
+    await expect(runtime.ensureReady()).rejects.toMatchObject({
+      code: "XHS_TRANSLATION_NOT_INSTALLED"
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runtime.getStatus()).toMatchObject({
+      status: "not-installed",
+      message: "请在桌面设置的能力管理中安装小红书翻译运行时与模型"
+    });
+  });
+
+  it("guides to Settings instead of invoking Playwright browser installation", async () => {
+    runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-auth-"));
+    process.env.XHS_RUNTIME_DIR = runtimeDir;
+    const auth = new XhsAuthManager(getConfig({ desktopManagedCapabilities: true }), undefined, () => undefined);
+    const resolveBrowser = (
+      auth as unknown as { resolveBrowser: (sessionId: string, playwrightPath: string) => Promise<string> }
+    ).resolveBrowser.bind(auth);
+
+    await expect(resolveBrowser("session-1", path.join(runtimeDir, "missing-browser.exe"))).rejects.toThrow(
+      "前往设置的能力管理中安装登录浏览器"
+    );
   });
 
   it("rejects a translation model whose pinned digest does not match", async () => {

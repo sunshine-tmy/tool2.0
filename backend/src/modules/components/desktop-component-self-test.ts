@@ -1,5 +1,6 @@
 /** 中文模块说明：桌面能力包安装前的固定自检，禁止依赖 PATH、用户 Python 或联网下载。 */
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type { ComponentPackageManifest } from "./component-manager";
@@ -14,6 +15,7 @@ type ProcessRunner = (
 const requiredFiles: Record<string, string[]> = {
   ffmpeg: ["bin/ffmpeg.exe", "bin/ffprobe.exe"],
   "python-311": ["python/python.exe"],
+  "python-312": ["python/python.exe"],
   "video-text": ["scripts/video-transcribe-faster-whisper.py"],
   "whisper-small": ["model/config.json", "model/model.bin", "model/tokenizer.json"],
   "edge-tts": ["scripts/edge-tts-generate.py"],
@@ -35,7 +37,16 @@ const requiredFiles: Record<string, string[]> = {
     "models/chatterbox/t3_mtl23ls_v3.safetensors",
     "models/chatterbox/s3gen.pt",
     "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
-  ]
+  ],
+  "xhs-archive": ["source/requirements.txt", "source/source/__init__.py"],
+  "xhs-translation": [
+    "scripts/xhs-translation-worker.py",
+    "model/model.bin",
+    "model/source.spm",
+    "model/target.spm",
+    "model/manifest.json"
+  ],
+  "xhs-browser": ["browser/chrome.exe"]
 };
 
 export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runProcessDefault) {
@@ -60,19 +71,31 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
       return;
     }
 
-    if (manifest.id === "python-311") {
+    if (manifest.id === "python-311" || manifest.id === "python-312") {
+      const expectedVersion = manifest.id === "python-311" ? "3.11" : "3.12";
       const output = await runProcess(
         path.join(generationRoot, "python", "python.exe"),
         ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
         generationRoot,
         cleanEnvironment()
       );
-      if (output.trim() !== "3.11") throw new Error("Python 3.11 共享运行时自检失败");
+      if (output.trim() !== expectedVersion) throw new Error(`Python ${expectedVersion} 共享运行时自检失败`);
       return;
     }
 
     if (manifest.id === "whisper-small") {
       JSON.parse(await fs.readFile(path.join(generationRoot, "model", "config.json"), "utf8"));
+      return;
+    }
+
+    if (manifest.id === "xhs-browser") {
+      const output = await runProcess(
+        path.join(generationRoot, "browser", "chrome.exe"),
+        ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
+        generationRoot,
+        cleanEnvironment()
+      );
+      if (!output.includes("<html")) throw new Error("小红书 Chromium headless 自检失败");
       return;
     }
 
@@ -122,6 +145,40 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
         environment
       );
       assertJsonAvailable(output, "AI 图片处理");
+      return;
+    }
+
+    if (manifest.id === "xhs-archive") {
+      const sourceRoot = path.join(generationRoot, "source");
+      const volumeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-selftest-"));
+      environment.XHS_VOLUME_DIR = volumeRoot;
+      try {
+        const output = await runProcess(
+          pythonPath,
+          [
+            "-c",
+            "import importlib, json, os, sys; sys.path.insert(0, sys.argv[1]); importlib.import_module('source'); importlib.import_module('fastapi'); importlib.import_module('uvicorn'); from pathlib import Path; assert Path(os.environ['XHS_VOLUME_DIR']).is_dir(); print(json.dumps({'available': True}))",
+            sourceRoot
+          ],
+          generationRoot,
+          environment
+        );
+        assertJsonAvailable(output, "小红书归档");
+      } finally {
+        await fs.rm(volumeRoot, { recursive: true, force: true });
+      }
+      return;
+    }
+
+    if (manifest.id === "xhs-translation") {
+      environment.XHS_TRANSLATION_MODEL_DIR = path.join(generationRoot, "model");
+      const output = await runProcess(
+        pythonPath,
+        [path.join(generationRoot, "scripts", "xhs-translation-worker.py"), "--check"],
+        generationRoot,
+        environment
+      );
+      assertJsonAvailable(output, "小红书翻译");
       return;
     }
 

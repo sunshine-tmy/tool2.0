@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { XhsRuntimeStatus } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { ComponentManager, ComponentManagerError } from "../components/component-manager";
 import { XhsRuntimeInstallGateway, XHS_COMMIT } from "./runtime-install-gateway";
 import { XhsProviderProcess } from "./runtime-process";
 
@@ -21,10 +22,18 @@ export class XhsRuntimeManager {
     authenticated: false
   };
 
-  constructor(private readonly config: AppConfig) {
+  constructor(
+    private readonly config: AppConfig,
+    private readonly components?: ComponentManager
+  ) {
     this.installer = new XhsRuntimeInstallGateway(config, (next) => this.update(next));
     this.provider = new XhsProviderProcess(config, (status, message) => this.update({ status, message }));
-    if (config.xhsProviderUrl) {
+    if (config.desktopManagedCapabilities) {
+      this.status = {
+        ...this.status,
+        message: "请在桌面设置的能力管理中安装小红书归档运行时"
+      };
+    } else if (config.xhsProviderUrl) {
       this.status = { ...this.status, status: "ready", installProgress: 100, message: "已连接外部解析服务" };
     } else if (
       fs.existsSync(path.join(config.xhsRuntimeDir, ".installed-commit")) &&
@@ -39,9 +48,63 @@ export class XhsRuntimeManager {
     return { ...this.status };
   }
 
+  async refreshCapabilityStatus() {
+    if (!this.config.desktopManagedCapabilities || !this.components) return this.getStatus();
+    try {
+      const statuses = await this.components.list();
+      const installed = statuses.find((item) => item.id === "xhs-archive")?.installed;
+      if (!installed) {
+        this.update({
+          status: "not-installed",
+          installProgress: 0,
+          message: "请在桌面设置的能力管理中安装小红书归档运行时"
+        });
+      } else if (await this.provider.isHealthy()) {
+        this.update({ status: "ready", installProgress: 100, message: "小红书解析服务可用" });
+      } else {
+        this.update({ status: "ready", installProgress: 100, message: "小红书归档能力已安装，首次获取时启动本机服务" });
+      }
+    } catch {
+      // 能力目录异常时不把已保存的存档误判为损坏；实际任务会返回明确的运行时错误。
+    }
+    return this.getStatus();
+  }
+
   async ensureReady(onProgress?: (status: XhsRuntimeStatus) => void) {
-    if (this.config.xhsProviderUrl) return this.config.xhsProviderUrl.replace(/\/$/, "");
-    if (await this.provider.isHealthy()) return this.provider.baseUrl;
+    if (!this.config.desktopManagedCapabilities && this.config.xhsProviderUrl) {
+      return this.config.xhsProviderUrl.replace(/\/$/, "");
+    }
+    if (!this.config.desktopManagedCapabilities && (await this.provider.isHealthy())) return this.provider.baseUrl;
+    if (this.config.desktopManagedCapabilities) {
+      if (!this.components) {
+        throw new XhsRuntimeError("XHS_ARCHIVE_NOT_INSTALLED", "请在桌面设置中安装小红书归档能力后重试");
+      }
+      try {
+        const [python, sourceAnchor] = await Promise.all([
+          this.components.resolveInstalledPython("xhs-archive"),
+          this.components.resolveInstalledAsset("xhs-archive", "source/requirements.txt")
+        ]);
+        if (await this.provider.isHealthy()) return this.provider.baseUrl;
+        this.update({ status: "installing", message: "正在启动已安装的小红书归档运行时" });
+        await this.provider.start(path.dirname(sourceAnchor.path), python.path);
+        onProgress?.(this.getStatus());
+        return this.provider.baseUrl;
+      } catch (error) {
+        if (
+          error instanceof ComponentManagerError &&
+          ["COMPONENT_NOT_FOUND", "COMPONENT_NOT_INSTALLED", "COMPONENT_DEPENDENCY_MISSING"].includes(error.code)
+        ) {
+          this.update({
+            status: "not-installed",
+            installProgress: 0,
+            message: "请在桌面设置的能力管理中安装小红书归档运行时"
+          });
+          throw new XhsRuntimeError("XHS_ARCHIVE_NOT_INSTALLED", this.status.message);
+        }
+        this.update({ status: "failed", message: error instanceof Error ? error.message : "解析服务启动失败" });
+        throw error;
+      }
+    }
     if (!this.installPromise) {
       this.installPromise = this.installer.install().finally(() => {
         this.installPromise = undefined;
@@ -69,5 +132,15 @@ export class XhsRuntimeManager {
 
   private update(next: Partial<XhsRuntimeStatus>) {
     this.status = { ...this.status, ...next };
+  }
+}
+
+export class XhsRuntimeError extends Error {
+  constructor(
+    readonly code: "XHS_ARCHIVE_NOT_INSTALLED",
+    message: string
+  ) {
+    super(message);
+    this.name = "XhsRuntimeError";
   }
 }

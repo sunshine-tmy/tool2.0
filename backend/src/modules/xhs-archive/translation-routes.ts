@@ -37,7 +37,7 @@ export function registerXhsTranslationRoutes({ app, store, translation }: Regist
   app.get(
     "/api/v1/tools/xhs-archive/translation/runtime",
     { schema: { response: { 200: apiSuccessSchema(XhsTranslationRuntimeStatusSchema) } } },
-    async () => ok(translation.getRuntimeStatus())
+    async () => ok(await translation.getRuntimeStatus())
   );
 
   app.post<{ Params: XhsArchiveIdParams; Body: XhsTranslationRequest }>(

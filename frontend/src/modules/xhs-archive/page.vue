@@ -12,6 +12,21 @@
         仅用于个人本地归档。解析组件来自 XHS-Downloader 2.7（GPL-3.0），不绕过验证码或平台访问限制。
       </n-alert>
 
+      <n-alert
+        v-if="desktopMode && translationRuntime?.status !== 'ready'"
+        type="info"
+        :bordered="false"
+        class="capability-note"
+      >
+        <template #header>翻译能力{{ translationRuntime?.status === "failed" ? "需要修复" : "尚未就绪" }}</template>
+        <div class="capability-alert-content">
+          <span>{{ translationRuntime?.message || "正在读取翻译能力状态。已保存的中文归档仍可正常浏览。" }}</span>
+          <n-button size="small" secondary :disabled="translationRuntimeLoading" @click="openCapabilitySettings">
+            前往设置
+          </n-button>
+        </div>
+      </n-alert>
+
       <ArchiveTaskPanel
         v-model:input-url="inputUrl"
         :task="task"
@@ -70,14 +85,16 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NAlert, useMessage } from "naive-ui";
+import { NAlert, NButton, useMessage } from "naive-ui";
+import { useRouter } from "vue-router";
 import {
   normalizeXhsText,
   parseXhsContentText,
   resolveXhsTranslationField,
   type XhsArchiveItem,
   type XhsArchiveListResponse,
-  type XhsArchiveTask
+  type XhsArchiveTask,
+  type XhsTranslationRuntimeStatus
 } from "@toolbox/shared";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
@@ -95,7 +112,11 @@ import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { xhsArchiveApi } from "./api";
 
 const message = useMessage();
+const router = useRouter();
 const confirm = useConfirmDialog();
+const desktopMode = computed(() => Boolean(window.toolboxDesktop));
+const translationRuntime = ref<XhsTranslationRuntimeStatus>();
+const translationRuntimeLoading = ref(false);
 const inputUrl = ref("");
 const task = ref<XhsArchiveTask>();
 const streamedTaskId = computed(() =>
@@ -250,6 +271,7 @@ async function openDetail(id: string) {
   }
 }
 async function translateCurrent() {
+  if (!(await requireTranslationCapability())) return;
   if (!current.value) return;
   try {
     const task = await xhsArchiveApi.translate(current.value.id, current.value.translation?.status === "ready");
@@ -259,6 +281,7 @@ async function translateCurrent() {
   }
 }
 async function translateDetail() {
+  if (!(await requireTranslationCapability())) return;
   if (!detail.value) return;
   try {
     const task = await xhsArchiveApi.translate(detail.value.id, detail.value.translation?.status === "ready");
@@ -317,6 +340,7 @@ async function saveTranslation(payload: {
   }
 }
 async function translateSelected() {
+  if (!(await requireTranslationCapability())) return;
   try {
     const task = selectedArchiveIds.value.length
       ? await xhsArchiveApi.translateBatch({ mode: "selected", itemIds: selectedArchiveIds.value })
@@ -326,6 +350,19 @@ async function translateSelected() {
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "创建批量翻译任务失败"));
   }
+}
+async function requireTranslationCapability() {
+  if (!desktopMode.value) return true;
+  if (translationRuntime.value?.status === "ready") return true;
+  if (translationRuntimeLoading.value) {
+    message.info("正在检查翻译能力，请稍后重试");
+    return false;
+  }
+  await openCapabilitySettings();
+  return false;
+}
+async function openCapabilitySettings() {
+  await router.push("/settings");
 }
 function trackTranslation(taskId: string, itemId?: string, updateCurrent = false) {
   translationTarget.value = { taskId, itemId, updateCurrent };
@@ -459,6 +496,14 @@ function delay(ms: number) {
 onMounted(() => {
   // 页面级粘贴监听便于快速输入链接；输入框和可编辑元素会主动忽略该快捷操作。
   void loadArchives();
+  if (desktopMode.value) {
+    translationRuntimeLoading.value = true;
+    void xhsArchiveApi
+      .translationRuntime()
+      .then((status) => (translationRuntime.value = status))
+      .catch((error) => message.warning(formatApiError(error, "读取翻译能力状态失败")))
+      .finally(() => (translationRuntimeLoading.value = false));
+  }
   window.addEventListener("paste", handlePagePaste);
 });
 onBeforeUnmount(() => {
@@ -476,5 +521,14 @@ onBeforeUnmount(() => {
 }
 .license-note {
   margin-top: 0;
+}
+.capability-note {
+  margin-top: 0;
+}
+.capability-alert-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 </style>

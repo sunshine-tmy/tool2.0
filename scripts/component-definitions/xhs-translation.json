@@ -1,0 +1,25 @@
+{
+  "id": "xhs-translation",
+  "groupId": "translation",
+  "displayName": "小红书中英离线翻译",
+  "purpose": "安装 CTranslate2 CPU 翻译 Worker、哈希锁定依赖和固定版本 OPUS-MT 模型；翻译能力可单独管理，不影响中文归档。",
+  "dependencyIds": ["python-312"],
+  "taskToolIds": ["xhs-translation"],
+  "installConditions": [
+    "需要 Python 3.12 共享运行时；模型随能力包安装，之后可离线翻译。",
+    "首次下载约 250 MB，安装后预计占用约 500 MB。"
+  ],
+  "version": "1.0.0-ct2-cf109095",
+  "installedBytes": 500000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "Apache-2.0",
+    "url": "https://www.apache.org/licenses/LICENSE-2.0"
+  }
+}

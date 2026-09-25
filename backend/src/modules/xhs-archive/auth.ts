@@ -4,12 +4,10 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { createRequire } from "node:module";
 import { nanoid } from "nanoid";
 import type { XhsAuthSession } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import { ComponentManager, ComponentManagerError } from "../components/component-manager";
 
 type StoredCookie = {
   name: string;
@@ -21,13 +19,20 @@ type StoredCookie = {
   secure: boolean;
   sameSite: string;
 };
-const execFileAsync = promisify(execFile);
-const require = createRequire(import.meta.url);
-
 export class XhsAuthManager {
   private sessions = new Map<string, XhsAuthSession>();
+  private activeSessions = new Set<string>();
+  private contexts = new Map<string, { close: () => Promise<void> }>();
 
-  constructor(private readonly config: AppConfig) {}
+  constructor(
+    private readonly config: AppConfig,
+    private readonly components?: ComponentManager,
+    private readonly findSystemBrowser: () => string | undefined = findBrowser
+  ) {}
+
+  isActive() {
+    return this.activeSessions.size > 0;
+  }
 
   async isAuthenticated() {
     return Boolean((await this.cookieHeader()).trim());
@@ -36,6 +41,7 @@ export class XhsAuthManager {
   async cookieHeader() {
     const cookies = await fsp
       .readFile(this.cookiePath(), "utf8")
+      .catch(() => fsp.readFile(this.legacyCookiePath(), "utf8"))
       .then((value) => JSON.parse(value) as StoredCookie[])
       .catch(() => []);
     return cookies
@@ -56,8 +62,17 @@ export class XhsAuthManager {
       updatedAt: now
     };
     this.sessions.set(session.id, session);
+    this.activeSessions.add(session.id);
     void this.run(session.id);
     return { ...session };
+  }
+
+  async stop() {
+    const contexts = [...this.contexts.entries()];
+    this.contexts.clear();
+    await Promise.allSettled(contexts.map(([, context]) => context.close()));
+    for (const id of this.activeSessions) this.update(id, "failed", "应用已关闭，登录窗口已结束");
+    this.activeSessions.clear();
   }
 
   get(id: string) {
@@ -67,12 +82,12 @@ export class XhsAuthManager {
 
   private async run(id: string) {
     try {
-      process.env.PLAYWRIGHT_BROWSERS_PATH = this.browserDir();
       const { chromium } = await import("playwright-core");
-      const executablePath = await this.ensureBrowser(id, chromium.executablePath());
+      const executablePath = await this.resolveBrowser(id, chromium.executablePath());
       await fsp.mkdir(this.profileDir(), { recursive: true });
       this.update(id, "waiting", "请在打开的浏览器中扫码登录小红书");
       const context = await chromium.launchPersistentContext(this.profileDir(), { headless: false, executablePath });
+      this.contexts.set(id, context);
       const page = context.pages()[0] ?? (await context.newPage());
       await page.goto("https://www.xiaohongshu.com/", { waitUntil: "domcontentloaded", timeout: 60_000 });
       const deadline = Date.now() + 10 * 60 * 1000;
@@ -81,13 +96,13 @@ export class XhsAuthManager {
         if (cookies.some((cookie) => cookie.name === "web_session" && cookie.value)) {
           await fsp.writeFile(this.cookiePath(), JSON.stringify(cookies), { encoding: "utf8", mode: 0o600 });
           await context.close();
+          this.contexts.delete(id);
           this.update(id, "completed", "登录成功，将自动重试获取");
           return;
         }
         if (context.pages().length === 0) throw new Error("登录窗口已关闭");
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-      await context.close();
       throw new Error("登录等待超时，请重新发起登录");
     } catch (error) {
       const message = error instanceof Error ? error.message : "登录失败";
@@ -100,6 +115,11 @@ export class XhsAuthManager {
           error: message,
           updatedAt: new Date().toISOString()
         });
+    } finally {
+      const context = this.contexts.get(id);
+      this.contexts.delete(id);
+      await context?.close().catch(() => undefined);
+      this.activeSessions.delete(id);
     }
   }
 
@@ -109,32 +129,49 @@ export class XhsAuthManager {
   }
 
   private profileDir() {
+    return path.join(path.dirname(this.config.runtime.storageRoot), "profile", "xhs-archive");
+  }
+
+  private legacyProfileDir() {
     return path.resolve(this.config.xhsRuntimeDir, "..", "xhs-browser-profile");
   }
 
-  private browserDir() {
-    return path.resolve(this.config.xhsRuntimeDir, "..", "playwright-browsers");
-  }
-
-  private async ensureBrowser(sessionId: string, playwrightPath: string) {
-    const systemBrowser = findBrowser();
+  private async resolveBrowser(sessionId: string, playwrightPath: string) {
+    const systemBrowser = this.findSystemBrowser();
     if (systemBrowser) return systemBrowser;
     if (fs.existsSync(playwrightPath)) return playwrightPath;
-    this.update(sessionId, "waiting", "正在按需安装登录浏览器，请稍候");
-    const cli = path.join(path.dirname(require.resolve("playwright-core")), "cli.js");
-    await fsp.mkdir(this.browserDir(), { recursive: true });
-    await execFileAsync(process.execPath, [cli, "install", "chromium"], {
-      env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: this.browserDir() },
-      windowsHide: true,
-      timeout: this.config.xhsInstallTimeoutMs,
-      maxBuffer: 2 * 1024 * 1024
-    });
-    if (!fs.existsSync(playwrightPath)) throw new Error("登录浏览器安装失败，请检查网络后重试");
-    return playwrightPath;
+    if (this.components) {
+      try {
+        return (await this.components.resolveInstalledAsset("xhs-browser", "browser/chrome.exe")).path;
+      } catch (error) {
+        if (
+          !(error instanceof ComponentManagerError) ||
+          !["COMPONENT_NOT_FOUND", "COMPONENT_NOT_INSTALLED", "COMPONENT_DEPENDENCY_MISSING"].includes(error.code)
+        ) {
+          throw error;
+        }
+      }
+    }
+    // Legacy managed Playwright downloads are only reused when they already exist;
+    // new browser downloads must be explicitly installed from Settings.
+    const legacyPlaywrightPath = path.join(
+      this.legacyProfileDir(),
+      "..",
+      "playwright-browsers",
+      "chromium",
+      "chrome.exe"
+    );
+    if (fs.existsSync(legacyPlaywrightPath)) return legacyPlaywrightPath;
+    this.update(sessionId, "waiting", "未检测到可复用浏览器，请安装 Chrome/Edge，或前往设置安装登录浏览器能力");
+    throw new Error("未检测到登录浏览器。请安装 Chrome/Edge，或前往设置的能力管理中安装登录浏览器后重试");
   }
 
   private cookiePath() {
     return path.join(this.profileDir(), "auth.json");
+  }
+
+  private legacyCookiePath() {
+    return path.join(this.legacyProfileDir(), "auth.json");
   }
 }
 

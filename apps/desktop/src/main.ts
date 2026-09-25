@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
 import { BackendSupervisor } from "./backend-supervisor";
+import { componentProxyUrlFromResolution } from "./system-proxy";
 import {
   importDesktopData,
   recoverDesktopDataMigrations,
@@ -103,9 +104,17 @@ async function boot() {
 
     // 在后端打开任何数据库或业务文件之前恢复未完成切换，防止半迁移目录被误认为有效数据。
     await recoverDesktopDataMigrations(migrationOptions(layout));
+    const componentProxyUrl = await session.defaultSession
+      .resolveProxy("https://github.com")
+      .then(componentProxyUrlFromResolution)
+      .catch((error) => {
+        console.warn("Unable to resolve the Windows system proxy for component downloads", error);
+        return undefined;
+      });
     backend = new BackendSupervisor({
       entrypoint: desktopBackendEntrypoint(app.isPackaged, process.resourcesPath),
       runtimeLayout: layout,
+      componentProxyUrl,
       onUnexpectedExit: (message) => {
         void dialog.showErrorBox("本地服务已停止", `${message}，请重新启动应用。`);
       }

@@ -49,7 +49,8 @@ export class XhsProviderProcess {
         ...process.env,
         XHS_PROVIDER_PORT: String(this.config.xhsProviderPort),
         XHS_PROVIDER_TOKEN: this.config.xhsProviderToken ?? "",
-        XHS_SOURCE_DIR: sourceDir
+        XHS_SOURCE_DIR: sourceDir,
+        XHS_VOLUME_DIR: path.join(this.config.xhsArchiveDir, "runtime-volume")
       },
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true

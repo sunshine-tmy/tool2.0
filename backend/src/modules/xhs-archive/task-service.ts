@@ -26,7 +26,7 @@ import {
 } from "../../security/remote-fetch";
 import { XhsAuthManager } from "./auth";
 import { XhsArchiveStore } from "./store";
-import { XhsRuntimeManager } from "./runtime";
+import { XhsRuntimeError, XhsRuntimeManager } from "./runtime";
 import { XhsTranslationService, translationSourceHash } from "./translation-service";
 
 type Upstream = Record<string, unknown>;
@@ -59,7 +59,7 @@ export class XhsArchiveTaskService {
   }
 
   async runtimeStatus() {
-    return { ...this.runtime.getStatus(), authenticated: await this.auth.isAuthenticated() };
+    return { ...(await this.runtime.refreshCapabilityStatus()), authenticated: await this.auth.isAuthenticated() };
   }
 
   create(source: string) {
@@ -226,7 +226,11 @@ export class XhsArchiveTaskService {
       // store.commit 负责原子替换清单和媒体；提交前任一异常都会删除 staging，旧存档保持可用。
       await this.store.commit(item, staging);
       this.updateTask(taskId, "completed", "completed", 100, previous ? "存档已更新" : "内容已获取并存档", item.id);
-      void this.translation.enqueue([item.id], false).catch(() => undefined);
+      // Web mode keeps its historical automatic translation behavior. Desktop
+      // mode makes translation an explicit optional capability managed in Settings.
+      if (!this.config.desktopManagedCapabilities) {
+        void this.translation.enqueue([item.id], false).catch(() => undefined);
+      }
     } catch (error) {
       // 失败只更新任务状态，不覆盖已有存档；staging 清理失败也不能影响错误回传。
       await fsp.rm(staging, { recursive: true, force: true });
@@ -238,7 +242,7 @@ export class XhsArchiveTaskService {
           stage: "failed",
           message: error instanceof Error ? error.message : "获取失败",
           error: error instanceof Error ? error.message : "获取失败",
-          errorCode: error instanceof XhsError ? error.code : "XHS_TASK_FAILED",
+          errorCode: error instanceof XhsError || error instanceof XhsRuntimeError ? error.code : "XHS_TASK_FAILED",
           updatedAt: new Date().toISOString()
         };
         this.tasks.set(taskId, failedTask);

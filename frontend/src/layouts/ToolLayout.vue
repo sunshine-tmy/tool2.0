@@ -361,7 +361,10 @@ const desktopCapabilityHint = computed(() => {
     return {
       title,
       heading: "暂时无法读取能力状态",
-      message: "现有功能不受影响；可在设置中重试读取能力目录。",
+      message:
+        route.path === "/tools/xhs-archive"
+          ? "已保存的归档仍可浏览；新归档、翻译和登录依赖能力目录，请稍后重试或前往设置。"
+          : "可在设置中重试读取能力目录。",
       actionVisible: true,
       actionLabel: "查看能力管理"
     };
@@ -381,7 +384,9 @@ const desktopCapabilityHint = computed(() => {
       title,
       heading: "尚无已审核安装包",
       message:
-        "能力目录目前没有为此功能登记已审核并签名的安装包。现有功能仍按当前版本运行；后续接入阶段会将依赖状态与安装入口逐项迁到设置。",
+        route.path === "/tools/xhs-archive"
+          ? "已保存的归档仍可浏览；新归档、翻译和登录需要在设置中安装对应能力。"
+          : "能力目录目前没有为此功能登记已签名的安装包，请在设置中检查可用能力。",
       actionVisible: true,
       actionLabel: "查看能力管理"
     };

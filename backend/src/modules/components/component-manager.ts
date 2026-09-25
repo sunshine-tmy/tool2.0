@@ -39,7 +39,12 @@ const RETRYABLE_DOWNLOAD_CODES = new Set([
   "UND_ERR_BODY_TIMEOUT"
 ]);
 // GitHub Release 下载会从 github.com 跳转至资产 CDN；每一跳都校验 HTTPS 和公网 DNS，最多允许 5 次跳转。
-const fetchComponentAsset = createRemoteFetch({ maxRedirects: 5, requireHttps: true });
+const componentProxyUrl = process.env.TOOLBOX_COMPONENT_HTTPS_PROXY;
+const fetchComponentAsset = createRemoteFetch({
+  maxRedirects: 5,
+  requireHttps: true,
+  ...(componentProxyUrl ? { proxyUrl: componentProxyUrl } : {})
+});
 
 export type ComponentManifestFile = { path: string; bytes: number; sha256: string };
 export type ComponentArchiveAsset = {

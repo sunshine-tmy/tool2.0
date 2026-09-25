@@ -38,6 +38,7 @@ import { XhsArchiveTaskService, extractXhsUrl } from "./task-service";
 import { registerXhsTranslationRoutes } from "./translation-routes";
 import { XhsTranslationRuntime } from "./translation-runtime";
 import { XhsTranslationService } from "./translation-service";
+import type { ComponentManager } from "../components/component-manager";
 
 export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
@@ -48,13 +49,15 @@ export async function registerXhsArchiveRoutes(options: {
   fileMetadata?: FileMetadataRepository;
   runtime?: XhsRuntimeManager;
   auth?: XhsAuthManager;
+  components?: ComponentManager;
+  translationRuntime?: XhsTranslationRuntime;
   store?: XhsArchiveStore;
 }) {
   const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
   const store = options.store ?? new XhsArchiveStore(config, database, fileMetadata);
-  const runtime = options.runtime ?? new XhsRuntimeManager(config);
-  const auth = options.auth ?? new XhsAuthManager(config);
-  const translationRuntime = new XhsTranslationRuntime(config);
+  const runtime = options.runtime ?? new XhsRuntimeManager(config, options.components);
+  const auth = options.auth ?? new XhsAuthManager(config, options.components);
+  const translationRuntime = options.translationRuntime ?? new XhsTranslationRuntime(config, options.components);
   const translation = new XhsTranslationService(config, store, translationRuntime, taskStore);
   const service = new XhsArchiveTaskService(config, remoteFetch, store, runtime, auth, translation, taskStore);
   await service.initialize();
@@ -177,4 +180,5 @@ export async function registerXhsArchiveRoutes(options: {
   );
 
   app.addHook("onClose", async () => service.close());
+  app.addHook("onClose", async () => auth.stop());
 }

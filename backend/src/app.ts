@@ -38,6 +38,7 @@ import { registerVideoTextRoutes } from "./modules/video-text";
 import { registerXhsArchiveRoutes } from "./modules/xhs-archive/routes";
 import { XhsAuthManager } from "./modules/xhs-archive/auth";
 import { XhsRuntimeManager } from "./modules/xhs-archive/runtime";
+import { XhsTranslationRuntime } from "./modules/xhs-archive/translation-runtime";
 import { XhsArchiveStore } from "./modules/xhs-archive/store";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
 import { bundledComponentCatalog } from "./modules/components/catalog";
@@ -86,25 +87,42 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: options.remoteAddressResolver });
-  const xhsRuntime = new XhsRuntimeManager(config);
-  const xhsAuth = new XhsAuthManager(config);
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
   let stopCapabilityBeforeUninstall: (componentId: string) => Promise<void> = async () => undefined;
   let refreshDesktopCapabilities: NonNullable<ComponentManagerOptions["onAfterMutation"]> = async () => undefined;
+  const xhsRuntimeServices: {
+    runtime?: XhsRuntimeManager;
+    auth?: XhsAuthManager;
+    translationRuntime?: XhsTranslationRuntime;
+  } = {};
   const componentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
     catalog: bundledComponentCatalog,
     selfTest: config.desktopManagedCapabilities ? createDesktopComponentSelfTest() : undefined,
-    onBeforeUninstall: (componentId) => stopCapabilityBeforeUninstall(componentId),
+    onBeforeUninstall: async (componentId) => {
+      await stopCapabilityBeforeUninstall(componentId);
+      if (componentId === "xhs-archive") await xhsRuntimeServices.runtime?.stop();
+      if (componentId === "xhs-translation") await xhsRuntimeServices.translationRuntime?.stop();
+      if (componentId === "xhs-browser") await xhsRuntimeServices.auth?.stop();
+    },
     onAfterMutation: (componentId, operation) => refreshDesktopCapabilities(componentId, operation),
-    isInUse: (_componentId, taskToolIds) =>
+    isInUse: (componentId, taskToolIds) =>
       taskStore
         .list()
-        .some((task) => taskToolIds.includes(task.toolId) && (task.status === "pending" || task.status === "running"))
+        .some(
+          (task) => taskToolIds.includes(task.toolId) && (task.status === "pending" || task.status === "running")
+        ) ||
+      (componentId === "xhs-browser" && Boolean(xhsRuntimeServices.auth?.isActive()))
   });
   const desktopCapabilityRuntime = await configureDesktopCapabilityRuntime(config, componentManager);
   stopCapabilityBeforeUninstall = desktopCapabilityRuntime.beforeUninstall;
   refreshDesktopCapabilities = desktopCapabilityRuntime.afterMutation;
+  xhsRuntimeServices.runtime = new XhsRuntimeManager(config, componentManager);
+  xhsRuntimeServices.auth = new XhsAuthManager(config, componentManager);
+  xhsRuntimeServices.translationRuntime = new XhsTranslationRuntime(config, componentManager);
+  const xhsRuntime = xhsRuntimeServices.runtime;
+  const xhsAuth = xhsRuntimeServices.auth;
+  const xhsTranslationRuntime = xhsRuntimeServices.translationRuntime;
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
@@ -392,6 +410,8 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     fileMetadata,
     runtime: xhsRuntime,
     auth: xhsAuth,
+    components: componentManager,
+    translationRuntime: xhsTranslationRuntime,
     store: xhsStore
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });

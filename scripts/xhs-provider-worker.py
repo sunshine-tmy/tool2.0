@@ -3,6 +3,7 @@
 
 import asyncio
 import hmac
+import json
 import os
 import sys
 from pathlib import Path
@@ -60,4 +61,7 @@ async def extract(payload: ExtractRequest):
 
 
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        print(json.dumps({"available": True, "source": "XHS-Downloader"}))
+        raise SystemExit(0)
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("XHS_PROVIDER_PORT", "5556")), log_level="warning")

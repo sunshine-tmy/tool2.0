@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import os
+import sys
 from pathlib import Path
 
 import ctranslate2
@@ -101,6 +103,10 @@ async def translate(request: TranslateRequest) -> TranslateResponse:
 
 
 if __name__ == "__main__":
+    if "--check" in sys.argv:
+        load_model()
+        print(json.dumps({"available": model_ready(), "modelId": "Helsinki-NLP/opus-mt-zh-en"}))
+        raise SystemExit(0)
     import uvicorn
 
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_level="warning")
