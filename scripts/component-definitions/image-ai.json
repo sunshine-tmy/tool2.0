@@ -1,0 +1,21 @@
+{
+  "id": "image-ai",
+  "groupId": "image",
+  "displayName": "AI 图片处理（CPU）",
+  "purpose": "使用本地 CPU 模型进行水印修复、图片增强、背景移除和文字识别；首次安装需要下载固定版本的运行时与模型。",
+  "dependencyIds": ["python-311"],
+  "taskToolIds": ["image-ai"],
+  "installConditions": [
+    "需要 Python 3.11 共享运行时和约 3 GB 磁盘空间；此版本使用 CPU，不要求 CUDA。",
+    "水印智能提示使用固定版本 PP-OCRv5 中文检测与识别模型；所有模型均随能力包离线安装，不在处理过程中下载。"
+  ],
+  "version": "1.0.0-cpu1",
+  "installedBytes": 3000000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-311",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.11"
+  }
+}
