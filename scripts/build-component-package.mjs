@@ -15,6 +15,7 @@ const require = createRequire(path.join(REPOSITORY_ROOT, "backend", "package.jso
 const tar = require("tar");
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MAX_GITHUB_RELEASE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 const GROUP_IDS = new Set(["shared", "media", "audio", "image", "archive", "translation"]);
 
 export async function buildComponentPackage(options) {
@@ -41,6 +42,13 @@ export async function buildComponentPackage(options) {
   if (definition.installedBytes < payloadBytes) {
     throw new Error(`installedBytes (${definition.installedBytes}) 小于解压资产大小 (${payloadBytes})`);
   }
+  const additionalGroups = resolveAdditionalArchiveGroups(definition, files);
+  const additionalPathSet = new Set(additionalGroups.flatMap((group) => group.files.map((file) => file.path)));
+  const archiveGroups = [
+    { name: undefined, files: files.filter((file) => !additionalPathSet.has(file.path)) },
+    ...additionalGroups
+  ];
+  if (!archiveGroups[0].files.length) throw new Error("主归档必须至少包含一个文件");
 
   const pythonEnvironment = await validatePythonEnvironment(definition.pythonEnvironment, stageRoot);
   const privateKey = crypto.createPrivateKey({
@@ -67,25 +75,43 @@ export async function buildComponentPackage(options) {
   await fs.mkdir(stagingOutput, { recursive: true });
 
   try {
-    const archiveName = `${definition.id}-${definition.version}.tar.gz`;
+    const builtArchives = [];
+    for (const group of archiveGroups) {
+      const archiveName = `${definition.id}-${definition.version}${group.name ? `-${group.name}` : ""}.tar.gz`;
+      const archivePath = path.join(stagingOutput, archiveName);
+      await tar.c(
+        {
+          cwd: stageRoot,
+          file: archivePath,
+          gzip: { level: 9 },
+          mtime: new Date(0),
+          portable: true,
+          strict: true
+        },
+        group.files.map((file) => file.path)
+      );
+      const archiveBytes = (await fs.stat(archivePath)).size;
+      if (options.githubReleaseUrl && archiveBytes >= MAX_GITHUB_RELEASE_ASSET_BYTES) {
+        throw new Error(`GitHub Release 单个文件必须小于 2 GiB：${archiveName}`);
+      }
+      builtArchives.push({
+        path: archivePath,
+        asset: {
+          url: assetUrl(archiveName, definition),
+          bytes: archiveBytes,
+          sha256: await sha256File(archivePath),
+          format: "tar.gz",
+          ...(additionalGroups.length ? { filePaths: group.files.map((file) => file.path) } : {})
+        }
+      });
+    }
+    const mainArchive = builtArchives[0];
+    const archiveName = path.basename(mainArchive.path);
+    const archiveUrl = mainArchive.asset.url;
+    const archiveSha256 = mainArchive.asset.sha256;
+    const additionalArchives = builtArchives.slice(1).map(({ asset }) => asset);
     const sbomName = `${definition.id}-${definition.version}.spdx.json`;
     const manifestName = `${definition.id}-${definition.version}.manifest.json`;
-    const archivePath = path.join(stagingOutput, archiveName);
-    await tar.c(
-      {
-        cwd: stageRoot,
-        file: archivePath,
-        gzip: { level: 9 },
-        mtime: new Date(0),
-        portable: true,
-        strict: true
-      },
-      files.map((file) => file.path)
-    );
-
-    const archiveBytes = (await fs.stat(archivePath)).size;
-    const archiveSha256 = await sha256File(archivePath);
-    const archiveUrl = assetUrl(archiveName, definition);
     const sbomUrl = assetUrl(sbomName, definition);
     const lockText = pythonEnvironment
       ? await fs.readFile(path.join(stageRoot, ...pythonEnvironment.requirementsLockPath.split("/")), "utf8")
@@ -107,7 +133,8 @@ export async function buildComponentPackage(options) {
       installConditions: definition.installConditions,
       version: definition.version,
       platform: "win32-x64",
-      archive: { url: archiveUrl, bytes: archiveBytes, sha256: archiveSha256, format: "tar.gz" },
+      archive: mainArchive.asset,
+      ...(additionalArchives.length ? { additionalArchives } : {}),
       installedBytes: definition.installedBytes,
       files: files.map(({ path: filePath, bytes, sha256 }) => ({ path: filePath, bytes, sha256 })),
       ...(pythonEnvironment ? { pythonEnvironment } : {}),
@@ -152,7 +179,11 @@ export async function buildComponentPackage(options) {
       sbomPath: path.join(artifactDirectory, sbomName),
       publicKeyPath,
       keyId,
-      archiveBytes,
+      archiveBytes: mainArchive.asset.bytes,
+      archivePaths: builtArchives.map(({ path: filePath }) => path.join(artifactDirectory, path.basename(filePath))),
+      additionalArchivePaths: builtArchives
+        .slice(1)
+        .map(({ path: filePath }) => path.join(artifactDirectory, path.basename(filePath))),
       fileCount: files.length
     };
   } finally {
@@ -191,6 +222,35 @@ function validateDefinition(value) {
   ) {
     throw new Error("依赖、任务或安装条件列表无效");
   }
+  if (value.additionalArchives !== undefined) {
+    if (
+      !Array.isArray(value.additionalArchives) ||
+      !value.additionalArchives.length ||
+      value.additionalArchives.length > 16
+    ) {
+      throw new Error("additionalArchives 必须是 1 到 16 个分片定义");
+    }
+    const names = new Set();
+    const paths = new Set();
+    for (const group of value.additionalArchives) {
+      if (
+        !group ||
+        typeof group.name !== "string" ||
+        !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(group.name) ||
+        names.has(group.name) ||
+        !Array.isArray(group.paths) ||
+        !group.paths.length ||
+        group.paths.some((filePath) => typeof filePath !== "string" || !isSafeRelativePath(filePath))
+      ) {
+        throw new Error("additionalArchives 分片定义无效");
+      }
+      names.add(group.name);
+      for (const filePath of group.paths) {
+        if (paths.has(filePath)) throw new Error(`additionalArchives 文件重复分配：${filePath}`);
+        paths.add(filePath);
+      }
+    }
+  }
   if (
     value.license !== undefined &&
     (!value.license ||
@@ -216,6 +276,18 @@ function validateDefinition(value) {
       throw new Error("pythonEnvironment 声明无效");
     }
   }
+}
+
+function resolveAdditionalArchiveGroups(definition, files) {
+  const fileByPath = new Map(files.map((file) => [file.path, file]));
+  return (definition.additionalArchives ?? []).map((group) => ({
+    name: group.name,
+    files: group.paths.map((filePath) => {
+      const file = fileByPath.get(filePath);
+      if (!file) throw new Error(`additionalArchives 引用了暂存目录中不存在的文件：${filePath}`);
+      return file;
+    })
+  }));
 }
 
 async function validatePythonEnvironment(environment, stageRoot) {

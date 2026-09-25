@@ -189,6 +189,61 @@ describe("buildComponentPackage", () => {
     assert.equal(sbom.packages[0].downloadLocation, manifest.archive.url);
   });
 
+  it("builds one signed component from independently verified archive parts", async () => {
+    const root = await makeRoot();
+    const stage = path.join(root, "stage");
+    await fs.mkdir(path.join(stage, "scripts"), { recursive: true });
+    await fs.mkdir(path.join(stage, "models", "chatterbox"), { recursive: true });
+    await fs.writeFile(path.join(stage, "scripts", "worker.py"), "print('ready')\n");
+    await fs.writeFile(path.join(stage, "models", "chatterbox", "voice.bin"), "voice model\n");
+    await fs.writeFile(path.join(stage, "models", "chatterbox", "decoder.bin"), "decoder model\n");
+    const key = await createSigningKey(root);
+    const definitionPath = await writeDefinition(
+      root,
+      definition({
+        additionalArchives: [
+          { name: "voice-model", paths: ["models/chatterbox/voice.bin"] },
+          { name: "decoder-model", paths: ["models/chatterbox/decoder.bin"] }
+        ]
+      })
+    );
+    const outputDirectory = path.join(root, "out");
+    const artifact = await buildComponentPackage({
+      definitionPath,
+      stagingDirectory: stage,
+      outputDirectory,
+      githubReleaseUrl: "https://github.com/example/toolbox/releases/download/components-v1/",
+      signingKeyPath: key.privateKeyPath
+    });
+    const manifest = JSON.parse(await fs.readFile(artifact.manifestPath, "utf8"));
+    const signedParts = [manifest.archive, ...manifest.additionalArchives];
+    assert.equal(signedParts.length, 3);
+    assert.deepEqual(
+      signedParts.map((part) => path.basename(new URL(part.url).pathname)),
+      ["edge-tts-1.0.0.tar.gz", "edge-tts-1.0.0-voice-model.tar.gz", "edge-tts-1.0.0-decoder-model.tar.gz"]
+    );
+    assert.deepEqual(
+      signedParts.flatMap((part) => part.filePaths).sort(),
+      manifest.files.map((file) => file.path).sort()
+    );
+    assert.equal(artifact.archivePaths.length, 3);
+    assert.equal(artifact.additionalArchivePaths.length, 2);
+    const catalog = await assembleComponentCatalog(outputDirectory);
+    assert.equal(catalog.manifests[0].additionalArchives.length, 2);
+
+    const extracted = path.join(root, "extracted");
+    await fs.mkdir(extracted);
+    for (const archivePath of artifact.archivePaths) {
+      await tar.x({ file: archivePath, cwd: extracted, strict: true });
+    }
+    await assert.doesNotReject(fs.access(path.join(extracted, "scripts", "worker.py")));
+    assert.equal(await fs.readFile(path.join(extracted, "models", "chatterbox", "voice.bin"), "utf8"), "voice model\n");
+    assert.equal(
+      await fs.readFile(path.join(extracted, "models", "chatterbox", "decoder.bin"), "utf8"),
+      "decoder model\n"
+    );
+  });
+
   it("hashes the Python lock into the signed manifest and lists pinned packages in the SBOM", async () => {
     const root = await makeRoot();
     const stage = path.join(root, "stage");

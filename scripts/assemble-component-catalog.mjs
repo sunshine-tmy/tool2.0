@@ -55,6 +55,10 @@ export async function assembleComponentCatalog(feedDirectory) {
       "能力归档",
       `${manifest.id}-${manifest.version}.tar.gz`
     );
+    for (const archive of manifest.additionalArchives ?? []) {
+      const filename = path.basename(new URL(archive.url).pathname);
+      await verifyLocalAsset(archive, manifestDirectory, "能力分片归档", filename);
+    }
     await verifyLocalAsset(
       manifest.sbom,
       manifestDirectory,
@@ -162,9 +166,8 @@ function validateCatalogManifest(manifest) {
   }
   if (
     !manifest.archive ||
+    !isValidArchive(manifest.archive) ||
     !Number.isSafeInteger(manifest.archive.bytes) ||
-    manifest.archive.bytes < 1 ||
-    manifest.archive.format !== "tar.gz" ||
     !manifest.sbom ||
     !Array.isArray(manifest.files) ||
     !manifest.files.length ||
@@ -173,6 +176,79 @@ function validateCatalogManifest(manifest) {
   ) {
     throw new Error(`能力包 ${manifest.id} 缺少归档、SBOM 或依赖信息`);
   }
+  if (
+    manifest.additionalArchives !== undefined &&
+    (!Array.isArray(manifest.additionalArchives) ||
+      manifest.additionalArchives.length < 1 ||
+      manifest.additionalArchives.length > 16)
+  ) {
+    throw new Error(`能力包 ${manifest.id} 的归档分片列表无效`);
+  }
+  const additionalArchives = manifest.additionalArchives ?? [];
+  for (const archive of additionalArchives) {
+    if (!isValidArchive(archive) || !Array.isArray(archive.filePaths) || !archive.filePaths.length) {
+      throw new Error(`能力包 ${manifest.id} 的归档分片格式无效`);
+    }
+    const filename = path.basename(new URL(archive.url).pathname);
+    const prefix = `${manifest.id}-${manifest.version}-`;
+    const suffix =
+      filename.startsWith(prefix) && filename.endsWith(".tar.gz")
+        ? filename.slice(prefix.length, -".tar.gz".length)
+        : "";
+    if (!suffix || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(suffix)) {
+      throw new Error(`能力包 ${manifest.id} 的归档分片文件名无效`);
+    }
+  }
+  if (additionalArchives.length || manifest.archive.filePaths !== undefined) {
+    const allPaths = new Set();
+    for (const archive of [manifest.archive, ...additionalArchives]) {
+      if (!Array.isArray(archive.filePaths) || !archive.filePaths.length) {
+        throw new Error(`能力包 ${manifest.id} 的分片缺少文件路径清单`);
+      }
+      for (const filePath of archive.filePaths) {
+        if (typeof filePath !== "string" || !isSafeRelativePath(filePath) || allPaths.has(filePath)) {
+          throw new Error(`能力包 ${manifest.id} 的归档文件路径清单无效`);
+        }
+        allPaths.add(filePath);
+      }
+    }
+    const manifestPaths = new Set(manifest.files.map((file) => file?.path));
+    if (
+      manifestPaths.size !== manifest.files.length ||
+      manifestPaths.size !== allPaths.size ||
+      [...manifestPaths].some((filePath) => !allPaths.has(filePath))
+    ) {
+      throw new Error(`能力包 ${manifest.id} 的归档分片未完整覆盖文件清单`);
+    }
+  }
+}
+
+function isValidArchive(archive) {
+  return Boolean(
+    archive &&
+    typeof archive.url === "string" &&
+    isHttpsUrl(archive.url) &&
+    Number.isSafeInteger(archive.bytes) &&
+    archive.bytes > 0 &&
+    archive.format === "tar.gz" &&
+    SHA256.test(archive.sha256)
+  );
+}
+
+function isSafeRelativePath(value) {
+  if (typeof value !== "string" || !value || value.includes("\\") || path.posix.isAbsolute(value)) return false;
+  const segments = value.split("/");
+  return (
+    path.posix.normalize(value) === value &&
+    !segments.some(
+      (segment) =>
+        !segment ||
+        segment === "." ||
+        segment === ".." ||
+        segment.includes(":") ||
+        segment.split("").some((character) => character.charCodeAt(0) < 32)
+    )
+  );
 }
 
 function publicKeyId(publicKey) {

@@ -238,6 +238,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
             CHATTERBOX_DEVICE: "cpu",
             CHATTERBOX_MODEL_IDLE_MINUTES: "10",
             HF_HOME: path.join(config.runtime.modelsRoot, "chatterbox", "huggingface"),
+            PYTHONPATH: path.join(generationRoot, "vendor"),
             HF_HUB_OFFLINE: "1",
             TRANSFORMERS_OFFLINE: "1"
           },

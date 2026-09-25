@@ -29,6 +29,8 @@ const requiredFiles: Record<string, string[]> = {
   chatterbox: [
     "scripts/chatterbox-worker.py",
     "scripts/worker_lifecycle.py",
+    "vendor/chatterbox/__init__.py",
+    "vendor/chatterbox_tts-0.1.7.dist-info/METADATA",
     "models/chatterbox/ve.pt",
     "models/chatterbox/t3_mtl23ls_v3.safetensors",
     "models/chatterbox/s3gen.pt",
@@ -126,6 +128,7 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
     environment.TOOLBOX_DESKTOP_MANAGED = "1";
     environment.CHATTERBOX_MODELS_ROOT = path.join(generationRoot, "models", "chatterbox");
     environment.CHATTERBOX_DEVICE = "cpu";
+    environment.PYTHONPATH = path.join(generationRoot, "vendor");
     const output = await runProcess(
       pythonPath,
       [path.join(generationRoot, "scripts", "chatterbox-worker.py"), "--check"],

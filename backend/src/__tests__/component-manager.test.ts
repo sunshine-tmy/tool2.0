@@ -211,6 +211,88 @@ describe("ComponentManager", () => {
     await expect(manager.list()).resolves.toMatchObject([{ installed: true, installedVersion: "1.0.0" }]);
   });
 
+  it("downloads, verifies and merges every signed archive part before switching the generation", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manifest: ComponentPackageManifest = fixture.manifest;
+    const modelStage = path.join(temporaryRoot, "model-stage");
+    const modelRelativePath = "models/chatterbox/t3-model.bin";
+    const modelPath = path.join(modelStage, ...modelRelativePath.split("/"));
+    const modelArchivePath = path.join(temporaryRoot, "model-part.tar.gz");
+    await fs.mkdir(path.dirname(modelPath), { recursive: true });
+    await fs.writeFile(modelPath, "signed model bytes");
+    await tar.c({ gzip: true, file: modelArchivePath, cwd: modelStage }, [modelRelativePath]);
+    const modelArchive = await fs.readFile(modelArchivePath);
+    const modelStat = await fs.stat(modelPath);
+
+    manifest.archive.filePaths = manifest.files.map((file) => file.path);
+    manifest.files.push({
+      path: modelRelativePath,
+      bytes: modelStat.size,
+      sha256: crypto
+        .createHash("sha256")
+        .update(await fs.readFile(modelPath))
+        .digest("hex")
+    });
+    manifest.additionalArchives = [
+      {
+        url: "https://packages.example.test/edge-tts-1.0.0-model.tar.gz",
+        bytes: modelArchive.byteLength,
+        sha256: crypto.createHash("sha256").update(modelArchive).digest("hex"),
+        format: "tar.gz",
+        filePaths: [modelRelativePath]
+      }
+    ];
+    manifest.installedBytes += modelStat.size;
+    manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(manifest)), keyPair.privateKey)
+      .toString("base64");
+
+    const downloadArchive = vi.fn(async (manifest: ComponentPackageManifest, destination: string) => {
+      await fs.copyFile(
+        manifest.archive.url.endsWith("-model.tar.gz") ? modelArchivePath : fixture.archivePath,
+        destination
+      );
+    });
+    const manager = createManager(manifest, fixture.archivePath, downloadArchive);
+    await expect(manager.list()).resolves.toMatchObject([
+      { id: "edge-tts", downloadBytes: manifest.archive.bytes + modelArchive.byteLength }
+    ]);
+
+    await expect(manager.install("edge-tts")).resolves.toMatchObject({ installed: true, health: "healthy" });
+    expect(downloadArchive).toHaveBeenCalledTimes(2);
+    await expect(
+      fs.readFile(
+        path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0", ...modelRelativePath.split("/")),
+        "utf8"
+      )
+    ).resolves.toBe("signed model bytes");
+  });
+
+  it("rejects overlapping archive file partitions before downloading any part", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manifest: ComponentPackageManifest = fixture.manifest;
+    manifest.archive.filePaths = [manifest.files[0]!.path];
+    manifest.additionalArchives = [
+      {
+        url: "https://packages.example.test/edge-tts-1.0.0-other.tar.gz",
+        bytes: 10,
+        sha256: "1".repeat(64),
+        format: "tar.gz",
+        filePaths: [manifest.files[0]!.path]
+      }
+    ];
+    manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(manifest)), keyPair.privateKey)
+      .toString("base64");
+    const downloadArchive = vi.fn(async (_manifest: ComponentPackageManifest, destination: string) => {
+      await fs.copyFile(fixture.archivePath, destination);
+    });
+    const manager = createManager(manifest, fixture.archivePath, downloadArchive);
+
+    await expect(manager.install("edge-tts")).rejects.toMatchObject({ code: "COMPONENT_MANIFEST_INVALID" });
+    expect(downloadArchive).not.toHaveBeenCalled();
+  });
+
   it("allows an internal package without license metadata and labels it as internal", async () => {
     const fixture = await createFixture("1.0.0", { license: null });
     const manager = createManager(fixture.manifest, fixture.archivePath);

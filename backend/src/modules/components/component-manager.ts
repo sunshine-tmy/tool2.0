@@ -42,6 +42,14 @@ const RETRYABLE_DOWNLOAD_CODES = new Set([
 const fetchComponentAsset = createRemoteFetch({ maxRedirects: 5, requireHttps: true });
 
 export type ComponentManifestFile = { path: string; bytes: number; sha256: string };
+export type ComponentArchiveAsset = {
+  url: string;
+  bytes: number;
+  sha256: string;
+  format: "tar.gz";
+  /** Signed file partition, required when a manifest has multiple archive assets. */
+  filePaths?: string[];
+};
 export type ComponentPackageManifest = {
   protocolVersion: number;
   id: string;
@@ -54,7 +62,8 @@ export type ComponentPackageManifest = {
   installConditions: string[];
   version: string;
   platform: "win32-x64";
-  archive: { url: string; bytes: number; sha256: string; format: "tar.gz" };
+  archive: ComponentArchiveAsset;
+  additionalArchives?: ComponentArchiveAsset[];
   installedBytes: number;
   files: ComponentManifestFile[];
   pythonEnvironment?: {
@@ -361,7 +370,7 @@ export class ComponentManager {
       operation,
       "queued",
       "queued",
-      operation === "uninstall" ? 0 : manifest.archive.bytes,
+      operation === "uninstall" ? 0 : componentDownloadBytes(manifest),
       manifest.files.length
     );
     const internal = { value: job } satisfies InternalJob;
@@ -412,7 +421,7 @@ export class ComponentManager {
       }
       await this.assertDependenciesReady(manifest);
       const freeBytes = await this.availableDiskBytes(this.root);
-      if (freeBytes < manifest.archive.bytes + manifest.installedBytes) {
+      if (freeBytes < componentDownloadBytes(manifest) + manifest.installedBytes) {
         throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘可用空间不足");
       }
       internal.controller = new AbortController();
@@ -476,31 +485,43 @@ export class ComponentManager {
     const generationName =
       reinstall || generationAlreadyExists ? manifest.version + "-" + crypto.randomUUID() : manifest.version;
     const target = safeChildPath(versionsRoot, generationName);
-    const archivePath = safeChildPath(archiveRoot, manifest.version + "." + crypto.randomUUID() + ".partial");
     const staging = safeChildPath(versionsRoot, "." + generationName + "." + crypto.randomUUID() + ".partial");
     const oldCurrent = await this.readCurrent(componentRoot, manifest.id);
     const signal = internal.controller?.signal;
     if (!signal) throw new Error("Install job is missing its download cancellation signal");
     let targetCreated = false;
+    let downloadedBytes = 0;
+    const archiveAssets = componentArchiveAssets(manifest);
+    const downloadBytesTotal = componentDownloadBytes(manifest);
     try {
-      this.updateJob(internal, { phase: "downloading" });
-      await this.downloadArchive(manifest, archivePath, {
-        signal,
-        onProgress: (downloadedBytes) =>
-          this.updateJob(internal, {
-            progress: progress(downloadedBytes, manifest.archive.bytes, 0, manifest.files.length)
-          })
-      });
-      if (signal.aborted) throw new Error("download cancelled");
-      this.updateJob(internal, {
-        phase: "verifying",
-        progress: progress(manifest.archive.bytes, manifest.archive.bytes, 0, manifest.files.length)
-      });
-      await this.verifyArchive(archivePath, manifest);
       await fsp.mkdir(staging, { recursive: false });
-      this.updateJob(internal, { phase: "extracting" });
-      await inspectArchive(archivePath);
-      await tar.x({ file: archivePath, cwd: staging, strict: true, preservePaths: false });
+      for (const [index, archiveAsset] of archiveAssets.entries()) {
+        const archiveManifest = { ...manifest, archive: archiveAsset };
+        const archivePath = safeChildPath(archiveRoot, `${manifest.version}.${index}.${crypto.randomUUID()}.partial`);
+        try {
+          this.updateJob(internal, { phase: "downloading" });
+          await this.downloadArchive(archiveManifest, archivePath, {
+            signal,
+            onProgress: (partDownloadedBytes) =>
+              this.updateJob(internal, {
+                progress: progress(downloadedBytes + partDownloadedBytes, downloadBytesTotal, 0, manifest.files.length)
+              })
+          });
+          if (signal.aborted) throw new Error("download cancelled");
+          downloadedBytes += archiveAsset.bytes;
+          this.updateJob(internal, {
+            phase: "verifying",
+            progress: progress(downloadedBytes, downloadBytesTotal, 0, manifest.files.length)
+          });
+          await this.verifyArchive(archivePath, archiveAsset);
+          this.updateJob(internal, { phase: "extracting" });
+          await inspectArchive(archivePath, archiveAsset.filePaths);
+          await tar.x({ file: archivePath, cwd: staging, strict: true, preservePaths: false });
+        } finally {
+          await fsp.rm(archivePath, { force: true }).catch(() => undefined);
+        }
+      }
+      if (signal.aborted) throw new Error("download cancelled");
       await this.verifyInstalledFiles(staging, manifest);
       await fsp.rename(staging, target);
       targetCreated = true;
@@ -530,10 +551,7 @@ export class ComponentManager {
       if (targetCreated) await fsp.rm(target, { recursive: true, force: true }).catch(() => undefined);
       throw error;
     } finally {
-      await Promise.all([
-        fsp.rm(archivePath, { force: true }).catch(() => undefined),
-        fsp.rm(staging, { recursive: true, force: true }).catch(() => undefined)
-      ]);
+      await Promise.all([fsp.rm(staging, { recursive: true, force: true }).catch(() => undefined)]);
     }
   }
 
@@ -724,7 +742,7 @@ export class ComponentManager {
       installConditions: [...manifest.installConditions],
       version: manifest.version,
       platform: manifest.platform,
-      downloadBytes: manifest.archive.bytes,
+      downloadBytes: componentDownloadBytes(manifest),
       // UI 在安装前也需要展示签名 manifest 提供的目标占用估值，而不是返回无意义的 0。
       installedBytes: manifest.installedBytes,
       installed: Boolean(current),
@@ -755,14 +773,9 @@ export class ComponentManager {
             (typeof manifest.license.url !== "string" || !isHttpsUrl(manifest.license.url))))) ||
       !isHttpsUrl(manifest.sbom.url) ||
       !SHA256.test(manifest.sbom.sha256) ||
-      !isHttpsUrl(manifest.archive.url) ||
-      manifest.archive.format !== "tar.gz" ||
-      !Number.isSafeInteger(manifest.archive.bytes) ||
-      manifest.archive.bytes < 1 ||
-      manifest.archive.bytes > this.maxArchiveBytes ||
+      !isValidArchiveAsset(manifest.archive, this.maxArchiveBytes) ||
       !Number.isSafeInteger(manifest.installedBytes) ||
       manifest.installedBytes < 0 ||
-      !SHA256.test(manifest.archive.sha256) ||
       !Array.isArray(manifest.files) ||
       !manifest.files.length ||
       manifest.files.length > MAX_MANIFEST_FILES ||
@@ -786,6 +799,15 @@ export class ComponentManager {
               !manifest.dependencyIds.includes(manifest.pythonEnvironment.pythonComponentId)))))
     )
       throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包 manifest 不符合安全约束");
+    if (
+      manifest.additionalArchives !== undefined &&
+      (!Array.isArray(manifest.additionalArchives) ||
+        manifest.additionalArchives.length < 1 ||
+        manifest.additionalArchives.length > 16 ||
+        manifest.additionalArchives.some((archive) => !isValidArchiveAsset(archive, this.maxArchiveBytes)))
+    ) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包归档分片不符合安全约束");
+    }
     const names = new Set<string>();
     for (const file of manifest.files) {
       if (
@@ -799,18 +821,36 @@ export class ComponentManager {
       }
       names.add(file.path);
     }
+    const archiveAssets = componentArchiveAssets(manifest);
+    if (archiveAssets.length > 1 || manifest.archive.filePaths !== undefined) {
+      const archivePaths = new Set<string>();
+      for (const archive of archiveAssets) {
+        if (!Array.isArray(archive.filePaths) || !archive.filePaths.length) {
+          throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "归档分片缺少文件路径清单");
+        }
+        for (const filePath of archive.filePaths) {
+          if (!isSafeRelativePath(filePath) || archivePaths.has(filePath)) {
+            throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "归档分片文件路径清单无效");
+          }
+          archivePaths.add(filePath);
+        }
+      }
+      if (archivePaths.size !== names.size || [...names].some((name) => !archivePaths.has(name))) {
+        throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "归档分片没有完整覆盖签名文件清单");
+      }
+    }
     const publicKey = this.trustedPublicKeys[manifest.keyId];
     if (!publicKey || !verifyManifestSignature(manifest, publicKey)) {
       throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包签名校验失败");
     }
   }
 
-  private async verifyArchive(archivePath: string, manifest: ComponentPackageManifest) {
+  private async verifyArchive(archivePath: string, archive: ComponentArchiveAsset) {
     const stat = await fsp.stat(archivePath);
-    if (!stat.isFile() || stat.size !== manifest.archive.bytes) {
+    if (!stat.isFile() || stat.size !== archive.bytes) {
       throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包下载大小校验失败");
     }
-    if ((await sha256File(archivePath)) !== manifest.archive.sha256) {
+    if ((await sha256File(archivePath)) !== archive.sha256) {
       throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包下载摘要校验失败");
     }
   }
@@ -904,6 +944,29 @@ export class ComponentManager {
     if (!COMPONENT_ID.test(componentId)) throw new ComponentManagerError("COMPONENT_NOT_FOUND", "能力包标识无效");
     return safeChildPath(this.root, componentId);
   }
+}
+
+function componentArchiveAssets(manifest: ComponentPackageManifest) {
+  return [manifest.archive, ...(manifest.additionalArchives ?? [])];
+}
+
+function componentDownloadBytes(manifest: ComponentPackageManifest) {
+  return componentArchiveAssets(manifest).reduce((total, archive) => total + archive.bytes, 0);
+}
+
+function isValidArchiveAsset(archive: ComponentArchiveAsset, maxBytes: number) {
+  return Boolean(
+    archive &&
+    typeof archive.url === "string" &&
+    isHttpsUrl(archive.url) &&
+    archive.format === "tar.gz" &&
+    Number.isSafeInteger(archive.bytes) &&
+    archive.bytes > 0 &&
+    archive.bytes <= maxBytes &&
+    SHA256.test(archive.sha256) &&
+    (archive.filePaths === undefined ||
+      (Array.isArray(archive.filePaths) && archive.filePaths.every((filePath) => typeof filePath === "string")))
+  );
 }
 
 export function canonicalManifest(manifest: ComponentPackageManifest) {
@@ -1170,7 +1233,9 @@ async function delayDownloadRetry(attempt: number, signal?: AbortSignal) {
   });
 }
 
-async function inspectArchive(archivePath: string) {
+async function inspectArchive(archivePath: string, filePaths?: string[]) {
+  const expectedFiles = filePaths ? new Set(filePaths) : undefined;
+  const actualFiles = new Set<string>();
   try {
     await tar.t({
       file: archivePath,
@@ -1178,8 +1243,20 @@ async function inspectArchive(archivePath: string) {
         if (!isSafeArchivePath(entry.path) || !["File", "Directory"].includes(entry.type)) {
           throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包归档包含不安全路径或链接");
         }
+        if (entry.type === "File") {
+          if (actualFiles.has(entry.path) || (expectedFiles && !expectedFiles.has(entry.path))) {
+            throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包分片包含重复或未声明文件");
+          }
+          actualFiles.add(entry.path);
+        }
       }
     });
+    if (
+      expectedFiles &&
+      (actualFiles.size !== expectedFiles.size || [...expectedFiles].some((filePath) => !actualFiles.has(filePath)))
+    ) {
+      throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包分片未完整包含其声明文件");
+    }
   } catch (error) {
     if (error instanceof ComponentManagerError) throw error;
     throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包归档格式无效");

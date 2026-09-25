@@ -57,6 +57,36 @@ describe("desktop component self-test", () => {
     );
     expect(runProcess).not.toHaveBeenCalled();
   });
+
+  it("checks Chatterbox against the package-vendored source and fixed models", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = [
+      "scripts/chatterbox-worker.py",
+      "scripts/worker_lifecycle.py",
+      "vendor/chatterbox/__init__.py",
+      "vendor/chatterbox_tts-0.1.7.dist-info/METADATA",
+      "models/chatterbox/ve.pt",
+      "models/chatterbox/t3_mtl23ls_v3.safetensors",
+      "models/chatterbox/s3gen.pt",
+      "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
+    ];
+    await Promise.all(files.map(writeAsset));
+    const runProcess = vi.fn(async () => '{"available":true}');
+    const selfTest = createDesktopComponentSelfTest(runProcess);
+
+    await selfTest(manifest("chatterbox", files), temporaryRoot);
+
+    expect(runProcess).toHaveBeenCalledWith(
+      path.join(temporaryRoot, "venv", "Scripts", "python.exe"),
+      [path.join(temporaryRoot, "scripts", "chatterbox-worker.py"), "--check"],
+      temporaryRoot,
+      expect.objectContaining({
+        TOOLBOX_DESKTOP_MANAGED: "1",
+        CHATTERBOX_DEVICE: "cpu",
+        PYTHONPATH: path.join(temporaryRoot, "vendor")
+      })
+    );
+  });
 });
 
 async function writeAsset(relativePath: string) {

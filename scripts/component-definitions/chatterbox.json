@@ -1,0 +1,40 @@
+{
+  "id": "chatterbox",
+  "groupId": "audio",
+  "displayName": "参考音色克隆（CPU）",
+  "purpose": "使用本地 Chatterbox Multilingual V3 模型，将参考音色用于多语言语音生成；模型离线安装，生成可在本机完成。",
+  "dependencyIds": ["ffmpeg", "python-311"],
+  "taskToolIds": ["chatterbox"],
+  "installConditions": [
+    "首次安装需下载约 3.4 GB 能力归档，建议预留至少 10 GB 可用空间；安装后约占 5.8 GB，包含独立 Python 环境。",
+    "建议至少 16 GB 内存；CPU 推理不要求 CUDA，但生成速度取决于处理器。",
+    "固定 Chatterbox 源码提交、Python 哈希锁定依赖与模型均随包安装，生成时无需联网。"
+  ],
+  "version": "1.0.0-cpu1",
+  "installedBytes": 6000000000,
+  "additionalArchives": [
+    {
+      "name": "model-t3",
+      "paths": ["models/chatterbox/t3_mtl23ls_v3.safetensors"]
+    },
+    {
+      "name": "model-s3gen",
+      "paths": [
+        "models/chatterbox/s3gen.pt",
+        "models/chatterbox/ve.pt",
+        "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
+      ]
+    }
+  ],
+  "pythonEnvironment": {
+    "pythonComponentId": "python-311",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.11"
+  },
+  "license": {
+    "name": "MIT",
+    "url": "https://opensource.org/license/mit/"
+  }
+}
