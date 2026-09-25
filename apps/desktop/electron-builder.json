@@ -5,6 +5,7 @@
     "output": "out/make/nsis"
   },
   "win": {
+    "icon": "assets/ecommerce-toolbox.ico",
     "target": ["nsis"],
     "artifactName": "EcommerceToolboxSetup.exe"
   },
@@ -16,6 +17,8 @@
     "deleteAppDataOnUninstall": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "runAfterFinish": false
+    "runAfterFinish": false,
+    "installerIcon": "assets/ecommerce-toolbox.ico",
+    "uninstallerIcon": "assets/ecommerce-toolbox.ico"
   }
 }

@@ -24,7 +24,7 @@
         </n-button>
         <router-link class="brand brand-link" to="/">
           <div class="brand-mark">
-            <Boxes :size="21" />
+            <img class="brand-icon" src="/ecommerce-toolbox-icon-32.png" alt="" draggable="false" />
           </div>
           <div>
             <h1 class="brand-title">电商工具箱</h1>
@@ -257,7 +257,6 @@ import {
 } from "@toolbox/shared";
 import {
   AudioLines,
-  Boxes,
   ChevronRight,
   Clapperboard,
   LibraryBig,

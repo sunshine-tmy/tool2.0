@@ -9,6 +9,7 @@ const desktopRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputRoot = path.join(desktopRoot, "out");
 const stageRoot = path.join(desktopRoot, ".stage");
 const appName = "EcommerceToolbox";
+const desktopIcon = path.join(desktopRoot, "assets", "ecommerce-toolbox.ico");
 const makeInstaller = process.argv.includes("--make");
 // Keep binary downloads inside the workspace so a broken user-level cache
 // cannot make an otherwise reproducible package build fail.
@@ -26,6 +27,7 @@ if (cachedElectronZipDirectory) {
 }
 
 await Promise.all(["backend", "frontend", "scripts"].map((name) => access(path.join(stageRoot, name))));
+await access(desktopIcon);
 const packageJson = JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8"));
 const release = readReleaseOptions(packageJson);
 await rm(outputRoot, { recursive: true, force: true });
@@ -36,6 +38,7 @@ const [packagedApp] = await packager({
   name: appName,
   platform: "win32",
   arch: "x64",
+  icon: desktopIcon,
   appVersion: release.version,
   buildVersion: release.version,
   asar: true,
@@ -63,6 +66,7 @@ assert.ok(packagedApp, "Electron Packager did not produce a Windows application 
 await access(path.join(packagedApp, `${appName}.exe`));
 await access(path.join(packagedApp, "resources", "backend", "dist", "desktop-entry.js"));
 await access(path.join(packagedApp, "resources", "frontend", "index.html"));
+await access(path.join(packagedApp, "resources", "app.asar"));
 
 if (makeInstaller) {
   const installerOutput = path.join(outputRoot, "make", "nsis");

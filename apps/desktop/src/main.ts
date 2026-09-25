@@ -44,6 +44,7 @@ let startupMigrationResolve: ((completed: boolean) => void) | undefined;
 let startupMigrationCompleted = false;
 
 const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const desktopIconPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets/ecommerce-toolbox.ico");
 const installRoot = desktopInstallRoot(app.isPackaged, app.getPath("exe"), workspaceRoot);
 const legacyDataRoot = path.join(process.env.LOCALAPPDATA || app.getPath("appData"), "EcommerceToolboxData");
 const dataRoot = desktopDataRoot(app.isPackaged, app.getPath("exe"), process.env.LOCALAPPDATA, app.getPath("appData"));
@@ -301,6 +302,7 @@ async function showStartupMigrationWindow(state: StartupDataMigrationState) {
   const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs");
   startupMigrationWindow = new BrowserWindow({
     title: "电商工具箱 · 首次启动数据迁移",
+    icon: desktopIconPath,
     width: 720,
     height: 620,
     minWidth: 620,
@@ -539,6 +541,7 @@ const disabledUpdater: DesktopUpdater = {
 function createWindow(origin: string) {
   const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs");
   mainWindow = new BrowserWindow({
+    icon: desktopIconPath,
     width: 1440,
     height: 960,
     minWidth: 1024,

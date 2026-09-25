@@ -16,6 +16,26 @@ test("NSIS installer is assisted and allows a user-selected install directory", 
   expect(config.nsis.deleteAppDataOnUninstall).toBe(false);
 });
 
+test("Windows executable, NSIS, Electron windows and web branding share the original icon", async () => {
+  const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
+  const repositoryRoot = path.resolve(desktopRoot, "../..");
+  const mainProcess = await readFile(path.join(desktopRoot, "src", "main.ts"), "utf8");
+  const packager = await readFile(path.join(desktopRoot, "scripts", "package-desktop.mjs"), "utf8");
+  const page = await readFile(path.join(repositoryRoot, "frontend", "index.html"), "utf8");
+  const topbar = await readFile(path.join(repositoryRoot, "frontend", "src", "layouts", "ToolLayout.vue"), "utf8");
+
+  expect(config.appId).toBe("com.ecommercetoolbox.desktop");
+  expect(config.win.icon).toBe("assets/ecommerce-toolbox.ico");
+  expect(config.nsis.installerIcon).toBe(config.win.icon);
+  expect(config.nsis.uninstallerIcon).toBe(config.win.icon);
+  expect(packager).toContain("icon: desktopIcon");
+  expect(mainProcess.match(/icon: desktopIconPath/g)).toHaveLength(2);
+  expect(page).toContain('href="/favicon.ico"');
+  expect(page).toContain('href="/favicon-32x32.png"');
+  expect(topbar).toContain('src="/ecommerce-toolbox-icon-32.png"');
+  expect(topbar).not.toContain("<Boxes");
+});
+
 test("NSIS preserves install-root data unless an interactive user confirms deletion twice", async () => {
   const installer = await readFile(path.join(desktopRoot, "installer-custom.nsh"), "utf8");
 
