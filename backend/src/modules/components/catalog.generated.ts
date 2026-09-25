@@ -5,6 +5,1317 @@ export const packagedComponentCatalog = {
   "manifests": [
     {
       "protocolVersion": 1,
+      "id": "chatterbox",
+      "moduleId": "chatterbox",
+      "groupId": "audio",
+      "displayName": "参考音色克隆（CPU）",
+      "purpose": "使用本地 Chatterbox Multilingual V3 模型，将参考音色用于多语言语音生成；模型离线安装，生成可在本机完成。",
+      "dependencyIds": [
+        "ffmpeg",
+        "python-311"
+      ],
+      "taskToolIds": [
+        "chatterbox"
+      ],
+      "installConditions": [
+        "首次安装需下载约 3.4 GB 能力归档，建议预留至少 10 GB 可用空间；安装后约占 5.8 GB，包含独立 Python 环境。",
+        "建议至少 16 GB 内存；CPU 推理不要求 CUDA，但生成速度取决于处理器。",
+        "固定 Chatterbox 源码提交、Python 哈希锁定依赖与模型均随包安装，生成时无需联网。"
+      ],
+      "version": "1.0.0-cpu1",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-cpu1.tar.gz",
+        "bytes": 421550060,
+        "sha256": "d69c3e90e76a99b0b7105aff6bba02ff43d463c0511734b892b1826b611e4e7a",
+        "format": "tar.gz",
+        "filePaths": [
+          "requirements.lock",
+          "scripts/__pycache__/worker_lifecycle.cpython-311.pyc",
+          "scripts/chatterbox-worker.py",
+          "scripts/worker_lifecycle.py",
+          "vendor/chatterbox_tts-0.1.7.dist-info/direct_url.json",
+          "vendor/chatterbox_tts-0.1.7.dist-info/INSTALLER",
+          "vendor/chatterbox_tts-0.1.7.dist-info/licenses/LICENSE",
+          "vendor/chatterbox_tts-0.1.7.dist-info/METADATA",
+          "vendor/chatterbox_tts-0.1.7.dist-info/RECORD",
+          "vendor/chatterbox_tts-0.1.7.dist-info/REQUESTED",
+          "vendor/chatterbox_tts-0.1.7.dist-info/top_level.txt",
+          "vendor/chatterbox_tts-0.1.7.dist-info/WHEEL",
+          "vendor/chatterbox/__init__.py",
+          "vendor/chatterbox/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/__pycache__/mtl_tts.cpython-311.pyc",
+          "vendor/chatterbox/__pycache__/tts.cpython-311.pyc",
+          "vendor/chatterbox/__pycache__/vc.cpython-311.pyc",
+          "vendor/chatterbox/models/__init__.py",
+          "vendor/chatterbox/models/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/__pycache__/utils.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__init__.py",
+          "vendor/chatterbox/models/s3gen/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/configs.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/const.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/decoder.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/f0_predictor.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/flow_matching.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/flow.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/hifigan.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/s3gen.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/__pycache__/xvector.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/configs.py",
+          "vendor/chatterbox/models/s3gen/const.py",
+          "vendor/chatterbox/models/s3gen/decoder.py",
+          "vendor/chatterbox/models/s3gen/f0_predictor.py",
+          "vendor/chatterbox/models/s3gen/flow_matching.py",
+          "vendor/chatterbox/models/s3gen/flow.py",
+          "vendor/chatterbox/models/s3gen/hifigan.py",
+          "vendor/chatterbox/models/s3gen/matcha/__pycache__/decoder.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/matcha/__pycache__/flow_matching.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/matcha/__pycache__/transformer.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/matcha/decoder.py",
+          "vendor/chatterbox/models/s3gen/matcha/flow_matching.py",
+          "vendor/chatterbox/models/s3gen/matcha/text_encoder.py",
+          "vendor/chatterbox/models/s3gen/matcha/transformer.py",
+          "vendor/chatterbox/models/s3gen/s3gen.py",
+          "vendor/chatterbox/models/s3gen/transformer/__init__.py",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/activation.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/attention.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/convolution.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/embedding.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/encoder_layer.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/positionwise_feed_forward.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/subsampling.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/__pycache__/upsample_encoder.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/transformer/activation.py",
+          "vendor/chatterbox/models/s3gen/transformer/attention.py",
+          "vendor/chatterbox/models/s3gen/transformer/convolution.py",
+          "vendor/chatterbox/models/s3gen/transformer/embedding.py",
+          "vendor/chatterbox/models/s3gen/transformer/encoder_layer.py",
+          "vendor/chatterbox/models/s3gen/transformer/positionwise_feed_forward.py",
+          "vendor/chatterbox/models/s3gen/transformer/subsampling.py",
+          "vendor/chatterbox/models/s3gen/transformer/upsample_encoder.py",
+          "vendor/chatterbox/models/s3gen/utils/__pycache__/class_utils.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/utils/__pycache__/intmeanflow.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/utils/__pycache__/mask.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/utils/__pycache__/mel.cpython-311.pyc",
+          "vendor/chatterbox/models/s3gen/utils/class_utils.py",
+          "vendor/chatterbox/models/s3gen/utils/intmeanflow.py",
+          "vendor/chatterbox/models/s3gen/utils/mask.py",
+          "vendor/chatterbox/models/s3gen/utils/mel.py",
+          "vendor/chatterbox/models/s3gen/xvector.py",
+          "vendor/chatterbox/models/s3tokenizer/__init__.py",
+          "vendor/chatterbox/models/s3tokenizer/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/s3tokenizer/__pycache__/s3tokenizer.cpython-311.pyc",
+          "vendor/chatterbox/models/s3tokenizer/s3tokenizer.py",
+          "vendor/chatterbox/models/t3/__init__.py",
+          "vendor/chatterbox/models/t3/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/__pycache__/llama_configs.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/__pycache__/t3.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/inference/__pycache__/t3_hf_backend.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/inference/t3_hf_backend.py",
+          "vendor/chatterbox/models/t3/llama_configs.py",
+          "vendor/chatterbox/models/t3/modules/__pycache__/cond_enc.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/modules/__pycache__/learned_pos_emb.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/modules/__pycache__/perceiver.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/modules/__pycache__/t3_config.cpython-311.pyc",
+          "vendor/chatterbox/models/t3/modules/cond_enc.py",
+          "vendor/chatterbox/models/t3/modules/learned_pos_emb.py",
+          "vendor/chatterbox/models/t3/modules/perceiver.py",
+          "vendor/chatterbox/models/t3/modules/t3_config.py",
+          "vendor/chatterbox/models/t3/t3.py",
+          "vendor/chatterbox/models/tokenizers/__init__.py",
+          "vendor/chatterbox/models/tokenizers/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/tokenizers/__pycache__/tokenizer.cpython-311.pyc",
+          "vendor/chatterbox/models/tokenizers/tokenizer.py",
+          "vendor/chatterbox/models/utils.py",
+          "vendor/chatterbox/models/voice_encoder/__init__.py",
+          "vendor/chatterbox/models/voice_encoder/__pycache__/__init__.cpython-311.pyc",
+          "vendor/chatterbox/models/voice_encoder/__pycache__/config.cpython-311.pyc",
+          "vendor/chatterbox/models/voice_encoder/__pycache__/melspec.cpython-311.pyc",
+          "vendor/chatterbox/models/voice_encoder/__pycache__/voice_encoder.cpython-311.pyc",
+          "vendor/chatterbox/models/voice_encoder/config.py",
+          "vendor/chatterbox/models/voice_encoder/melspec.py",
+          "vendor/chatterbox/models/voice_encoder/voice_encoder.py",
+          "vendor/chatterbox/mtl_tts.py",
+          "vendor/chatterbox/tts_turbo.py",
+          "vendor/chatterbox/tts.py",
+          "vendor/chatterbox/vc.py",
+          "wheelhouse/annotated_doc-0.0.5-py3-none-any.whl",
+          "wheelhouse/annotated_types-0.8.0-py3-none-any.whl",
+          "wheelhouse/antlr4-python3-runtime-4.9.3.tar.gz",
+          "wheelhouse/anyio-4.15.1-py3-none-any.whl",
+          "wheelhouse/audioread-3.1.0-py3-none-any.whl",
+          "wheelhouse/catalogue-2.0.10-py3-none-any.whl",
+          "wheelhouse/certifi-2026.7.22-py3-none-any.whl",
+          "wheelhouse/cffi-2.1.1-cp311-cp311-win_amd64.whl",
+          "wheelhouse/cfgv-3.5.0-py2.py3-none-any.whl",
+          "wheelhouse/charset_normalizer-3.5.1-cp311-cp311-win_amd64.whl",
+          "wheelhouse/click-8.5.0-py3-none-any.whl",
+          "wheelhouse/cloudpickle-3.1.2-py3-none-any.whl",
+          "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+          "wheelhouse/conformer-0.3.2-py3-none-any.whl",
+          "wheelhouse/decorator-5.3.1-py3-none-any.whl",
+          "wheelhouse/deprecated-1.3.1-py2.py3-none-any.whl",
+          "wheelhouse/diffusers-0.38.0-py3-none-any.whl",
+          "wheelhouse/distlib-0.4.3-py2.py3-none-any.whl",
+          "wheelhouse/einops-0.8.2-py3-none-any.whl",
+          "wheelhouse/fastapi-0.141.1-py3-none-any.whl",
+          "wheelhouse/filelock-3.32.6-py3-none-any.whl",
+          "wheelhouse/fsspec-2026.7.0-py3-none-any.whl",
+          "wheelhouse/h11-0.16.0-py3-none-any.whl",
+          "wheelhouse/hf_xet-1.6.0-cp38-abi3-win_amd64.whl",
+          "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+          "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+          "wheelhouse/huggingface_hub-1.31.0-py3-none-any.whl",
+          "wheelhouse/identify-2.6.19-py2.py3-none-any.whl",
+          "wheelhouse/idna-3.19-py3-none-any.whl",
+          "wheelhouse/importlib_metadata-9.0.1-py3-none-any.whl",
+          "wheelhouse/jaconv-0.5.0-py3-none-any.whl",
+          "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "wheelhouse/joblib-1.6.0-py3-none-any.whl",
+          "wheelhouse/lazy_loader-0.5-py3-none-any.whl",
+          "wheelhouse/librosa-0.11.0-py3-none-any.whl",
+          "wheelhouse/llvmlite-0.49.0-cp311-cp311-win_amd64.whl",
+          "wheelhouse/markdown_it_py-4.2.0-py3-none-any.whl",
+          "wheelhouse/markupsafe-3.0.3-cp311-cp311-win_amd64.whl",
+          "wheelhouse/mdurl-0.1.2-py3-none-any.whl",
+          "wheelhouse/ml_dtypes-0.5.4-cp311-cp311-win_amd64.whl",
+          "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "wheelhouse/msgpack-1.2.2-cp311-cp311-win_amd64.whl",
+          "wheelhouse/narwhals-2.26.0-py3-none-any.whl",
+          "wheelhouse/networkx-3.6.1-py3-none-any.whl",
+          "wheelhouse/nodeenv-1.10.0-py2.py3-none-any.whl",
+          "wheelhouse/numba-0.67.0-cp311-cp311-win_amd64.whl",
+          "wheelhouse/numpy-1.26.4-cp311-cp311-win_amd64.whl",
+          "wheelhouse/omegaconf-2.3.1-py3-none-any.whl",
+          "wheelhouse/onnx-1.22.0-cp311-cp311-win_amd64.whl",
+          "wheelhouse/packaging-26.3-py3-none-any.whl",
+          "wheelhouse/pillow-12.3.0-cp311-cp311-win_amd64.whl",
+          "wheelhouse/platformdirs-4.11.8-py3-none-any.whl",
+          "wheelhouse/pooch-1.9.0-py3-none-any.whl",
+          "wheelhouse/pre_commit-4.6.2-py2.py3-none-any.whl",
+          "wheelhouse/protobuf-7.36.1-cp310-abi3-win_amd64.whl",
+          "wheelhouse/pycparser-3.0-py3-none-any.whl",
+          "wheelhouse/pydantic_core-2.46.5-cp311-cp311-win_amd64.whl",
+          "wheelhouse/pydantic-2.13.5-py3-none-any.whl",
+          "wheelhouse/pygments-2.21.0-py3-none-any.whl",
+          "wheelhouse/pykakasi-2.3.0-py3-none-any.whl",
+          "wheelhouse/pyloudnorm-0.2.0-py3-none-any.whl",
+          "wheelhouse/python_discovery-1.6.0-py3-none-any.whl",
+          "wheelhouse/pyyaml-6.0.3-cp311-cp311-win_amd64.whl",
+          "wheelhouse/regex-2026.9.10-cp311-cp311-win_amd64.whl",
+          "wheelhouse/requests-2.34.2-py3-none-any.whl",
+          "wheelhouse/resemble_perth-1.0.1-py3-none-any.whl",
+          "wheelhouse/rich-15.0.0-py3-none-any.whl",
+          "wheelhouse/s3tokenizer-0.3.0-py3-none-any.whl",
+          "wheelhouse/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "wheelhouse/scikit_learn-1.9.1-cp311-cp311-win_amd64.whl",
+          "wheelhouse/scipy-1.17.1-cp311-cp311-win_amd64.whl",
+          "wheelhouse/setuptools-80.9.0-py3-none-any.whl",
+          "wheelhouse/shellingham-1.5.4-py2.py3-none-any.whl",
+          "wheelhouse/soundfile-0.14.0-py2.py3-none-win_amd64.whl",
+          "wheelhouse/soxr-1.1.0-cp311-cp311-win_amd64.whl",
+          "wheelhouse/spacy_pkuseg-1.0.1-cp311-cp311-win_amd64.whl",
+          "wheelhouse/srsly-2.5.3-cp311-cp311-win_amd64.whl",
+          "wheelhouse/starlette-1.6.0-py3-none-any.whl",
+          "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "wheelhouse/threadpoolctl-3.6.0-py3-none-any.whl",
+          "wheelhouse/tokenizers-0.23.2-cp310-abi3-win_amd64.whl",
+          "wheelhouse/torch-2.6.0+cpu-cp311-cp311-win_amd64.whl",
+          "wheelhouse/torchaudio-2.6.0+cpu-cp311-cp311-win_amd64.whl",
+          "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+          "wheelhouse/transformers-5.17.0-py3-none-any.whl",
+          "wheelhouse/typer-0.27.2-py3-none-any.whl",
+          "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "wheelhouse/typing_inspection-0.4.4-py3-none-any.whl",
+          "wheelhouse/urllib3-2.7.0-py3-none-any.whl",
+          "wheelhouse/uvicorn-0.52.4-py3-none-any.whl",
+          "wheelhouse/virtualenv-21.7.9-py3-none-any.whl",
+          "wheelhouse/wrapt-2.4.1-cp311-cp311-win_amd64.whl",
+          "wheelhouse/zipp-4.1.0-py3-none-any.whl"
+        ]
+      },
+      "additionalArchives": [
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-cpu1-model-t3.tar.gz",
+          "bytes": 1980678922,
+          "sha256": "54f58d9feeed3a286c537c5c66e8b65bf6d9dc1f7d131b12654bcb58515fd682",
+          "format": "tar.gz",
+          "filePaths": [
+            "models/chatterbox/t3_mtl23ls_v3.safetensors"
+          ]
+        },
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-cpu1-model-s3gen.tar.gz",
+          "bytes": 984526575,
+          "sha256": "89537f803a54c904e0c2dc7fa697a9dca6d666c6d20e60c57527711a0a0d46e8",
+          "format": "tar.gz",
+          "filePaths": [
+            "models/chatterbox/s3gen.pt",
+            "models/chatterbox/ve.pt",
+            "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
+          ]
+        }
+      ],
+      "installedBytes": 6000000000,
+      "files": [
+        {
+          "path": "models/chatterbox/grapheme_mtl_merged_expanded_v1.json",
+          "bytes": 69989,
+          "sha256": "69632f47220a788a52ce2661d096453c5655e9bf25289d89a8d832c46ee07dbf"
+        },
+        {
+          "path": "models/chatterbox/s3gen.pt",
+          "bytes": 1057165844,
+          "sha256": "9b9ff07e60b20c136e2b1b3d7563a24604e8d2c4c267888d1ee929dd0151d2a3"
+        },
+        {
+          "path": "models/chatterbox/t3_mtl23ls_v3.safetensors",
+          "bytes": 2143989928,
+          "sha256": "5abca8321ede76f8e61f1cc0d19aea6c946b28871017ce8726f8a69203f05953"
+        },
+        {
+          "path": "models/chatterbox/ve.pt",
+          "bytes": 5698626,
+          "sha256": "4b16d836bc598509860f6fa068165a8bb5e9ac84f05582dfcf278a5a372879f1"
+        },
+        {
+          "path": "requirements.lock",
+          "bytes": 138246,
+          "sha256": "8a18c789e37bee367983ddcb689c5e1300ea6222ec551dda648a1f024b94f5c3"
+        },
+        {
+          "path": "scripts/__pycache__/worker_lifecycle.cpython-311.pyc",
+          "bytes": 1570,
+          "sha256": "73fbec533dffd52341cc18f799c69d090d95b7c3cf964233ce6dfaa94dc7f588"
+        },
+        {
+          "path": "scripts/chatterbox-worker.py",
+          "bytes": 22109,
+          "sha256": "11def3d0238722b90e2940349a2736632dffc736334031c7db7706c20a30494f"
+        },
+        {
+          "path": "scripts/worker_lifecycle.py",
+          "bytes": 1130,
+          "sha256": "bbde9d83156f78b6cf669e98ba3641b7786241e696df8598725133cf9c48a645"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/direct_url.json",
+          "bytes": 207,
+          "sha256": "b0e1f920f6322772ee7781de88993f7911ae9fbddae4a3032e380c35643a3acc"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/INSTALLER",
+          "bytes": 4,
+          "sha256": "ceebae7b8927a3227e5303cf5e0f1f7b34bb542ad7250ac03fbcde36ec2f1508"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/licenses/LICENSE",
+          "bytes": 1087,
+          "sha256": "7d6744b52e52960d42c69b29b55b4b9e0b4656cf52569ab710093f7707f7a067"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/METADATA",
+          "bytes": 16464,
+          "sha256": "082f4387c26d373b34a941e8ccd967d4eb69e367392e0b19d595ed7734dd87c3"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/RECORD",
+          "bytes": 8980,
+          "sha256": "c6aee6bbdc372745cfb62d3ee2a808820b1388c9300948bb1015df2270d27b1f"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/REQUESTED",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/top_level.txt",
+          "bytes": 11,
+          "sha256": "ac18c07869f9bdf03af5eb1b72722742dbe7e1751f4b853e871bd98badc70c38"
+        },
+        {
+          "path": "vendor/chatterbox_tts-0.1.7.dist-info/WHEEL",
+          "bytes": 91,
+          "sha256": "2b6eb4118ce7cd7b09601406aa623c553c4476265836f0d9c16f5c061f7efcc0"
+        },
+        {
+          "path": "vendor/chatterbox/__init__.py",
+          "bytes": 310,
+          "sha256": "412a7588ec3e439bc34d3efde1436fffe7093c35540e809b18fd86fa02084433"
+        },
+        {
+          "path": "vendor/chatterbox/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 697,
+          "sha256": "a0ef4bd145eefc06f61f879e04df4c812c2e6f4563000d7cb8f1e091e02f5b1e"
+        },
+        {
+          "path": "vendor/chatterbox/__pycache__/mtl_tts.cpython-311.pyc",
+          "bytes": 17109,
+          "sha256": "b3495776af38003b2f0b3d22071d6d337ea0b64a11a0bc9a540c39bf5568d789"
+        },
+        {
+          "path": "vendor/chatterbox/__pycache__/tts.cpython-311.pyc",
+          "bytes": 13688,
+          "sha256": "e5559276d85e497f1fa85b6d5db115b2107c580c1850782ddf32303a676e1cab"
+        },
+        {
+          "path": "vendor/chatterbox/__pycache__/vc.cpython-311.pyc",
+          "bytes": 6309,
+          "sha256": "70c1bccb56a3ab54ca001d85ae8de1aac913d74342870079d79db298a5db2e53"
+        },
+        {
+          "path": "vendor/chatterbox/models/__init__.py",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "vendor/chatterbox/models/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 201,
+          "sha256": "f33ff5e448f02f3dfd72091d807c5752ea28d7f73f1371569fc14b5d7cfea838"
+        },
+        {
+          "path": "vendor/chatterbox/models/__pycache__/utils.cpython-311.pyc",
+          "bytes": 787,
+          "sha256": "19011edaff456eca28c7f03751f27568c30479fe87e80879e409a1e69a43ac72"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__init__.py",
+          "bytes": 70,
+          "sha256": "cdfafe103f5757b42bd813a1553eb481d9ea631eba34c42129399974e14a23cc"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 323,
+          "sha256": "ad131d1b2c8bf4dc22e6c2dce36ad50fff0b43bf5162807a68cd2968ef05add4"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/configs.cpython-311.pyc",
+          "bytes": 483,
+          "sha256": "8fd909bc688c9e89c04198a247c7e67b1060e9245e1e4d7a20b1440e04ce4a84"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/const.cpython-311.pyc",
+          "bytes": 244,
+          "sha256": "da035c2f2ddba448cfda64b898dcdedb94d49bc38f429511afeba4ba62cf897e"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/decoder.cpython-311.pyc",
+          "bytes": 17674,
+          "sha256": "aaaabdeda365e191a6a93c399b982dc6e88f9409b9f900ab180ab05b8d011d45"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/f0_predictor.cpython-311.pyc",
+          "bytes": 2728,
+          "sha256": "5f37a6b06869dec56f262572aca37a31076c1d5a71ca71819a69db8b23fa0edd"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/flow_matching.cpython-311.pyc",
+          "bytes": 12311,
+          "sha256": "ea77e98a4130a7486ff0d639b206ca68c8f23aa1aad209e6bf31aeda1d3f0721"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/flow.cpython-311.pyc",
+          "bytes": 10168,
+          "sha256": "0c19c5575ff55bf0fc38f09541827d58b11fb7df5d66a0111249c233f1049ac7"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/hifigan.cpython-311.pyc",
+          "bytes": 26339,
+          "sha256": "13e5f1c7ac36f5db07591a9a4c5762b24838e490e6dce0db8be06ccdf74964c0"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/s3gen.cpython-311.pyc",
+          "bytes": 15428,
+          "sha256": "7b4c460431b249e4d539bfe18052b6845448f3c00507eaeaeb25be56224a0c43"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/__pycache__/xvector.cpython-311.pyc",
+          "bytes": 23995,
+          "sha256": "b9c2f19eb256b0fd5dbb4db32a96857c7f7671d7c1fe3e6f800e9819bf80ed69"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/configs.py",
+          "bytes": 230,
+          "sha256": "d5af249710db6d8bb0a3e69b03835e4e2ef20fc135d84289c13e14139868a8a0"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/const.py",
+          "bytes": 36,
+          "sha256": "4e330bdc6b632afb12edb845818ffe2bf7f13441dee4d69bd74014093985fa6b"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/decoder.py",
+          "bytes": 13504,
+          "sha256": "ce0c531bafea8c38658b98ab8c789f14e6a23a3ece99da08631765599b0309d9"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/f0_predictor.py",
+          "bytes": 2048,
+          "sha256": "829f58100879516a1eea93b09c62afcf16c452795a90e76e1bb700e2db606d3f"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/flow_matching.py",
+          "bytes": 11032,
+          "sha256": "15758ec052f8c39dc04aa0993b03cf53a90024998bdc7576705ec4fabf4486da"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/flow.py",
+          "bytes": 8376,
+          "sha256": "9666b083b06a471af07a130e96f400bd4765d99fcc4a81fb2ccfa30bf3575800"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/hifigan.py",
+          "bytes": 18126,
+          "sha256": "0f9adcf24117e504027a515ffa1bf2a42d5f851f4a1a79665af24f39f8660a5b"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/__pycache__/decoder.cpython-311.pyc",
+          "bytes": 21305,
+          "sha256": "99a1a6f7e11ea7eab10bb37c0d765e6eb14e6645529a74d7403286836f4ff909"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/__pycache__/flow_matching.cpython-311.pyc",
+          "bytes": 6485,
+          "sha256": "61e405a23c8bafd43a47e5e425e549968c8b4bf1d1dda8ac7342a670ee989a12"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/__pycache__/transformer.cpython-311.pyc",
+          "bytes": 14777,
+          "sha256": "4482d60a9e8ad6cb8854e70691973e94494aa89cd73cec904f2983b73dc76b40"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/decoder.py",
+          "bytes": 14878,
+          "sha256": "da7cab6c294434d401ebbff9f20cd9b31579767320ab76a4d791b7bdd015e10a"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/flow_matching.py",
+          "bytes": 4685,
+          "sha256": "f3cdc60a786a722ec1b3bf9b12b566452a41fbe563636b71ed87b422631f36d9"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/text_encoder.py",
+          "bytes": 15378,
+          "sha256": "75c1e699a344866daee6edde583f60976bf90060865b23518560170e2f165c98"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/matcha/transformer.py",
+          "bytes": 13553,
+          "sha256": "ff7bc1b80efd583b596bf05551b33892d2471ec747b24660c3006b0c8001f7dd"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/s3gen.py",
+          "bytes": 13551,
+          "sha256": "19ce40153583dc6f9b1f54df0dbed93f07d2218ac6dc0e821ad5ce71fe8acd3a"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__init__.py",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 219,
+          "sha256": "17081926452c6c3ca760c1d72fbfc16ac8454c5b4e398d98fe6728c0050172d6"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/activation.cpython-311.pyc",
+          "bytes": 3605,
+          "sha256": "d50722772fbb84155b898a5c3a78c013f4c7e7a74ca68f1c1d8e1bc6d7b38295"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/attention.cpython-311.pyc",
+          "bytes": 15771,
+          "sha256": "064175660f6f5d3d594631ef9fb452168b2d844d658ad2e4803b652beae7f9c5"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/convolution.cpython-311.pyc",
+          "bytes": 5566,
+          "sha256": "4ae55a567a5f1997b0f3b4a56974a75dcf5e7fd3cdeb49f2ae7ec3d023c330af"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/embedding.cpython-311.pyc",
+          "bytes": 17368,
+          "sha256": "996621f18c47f5bcf109007e6c7a4b726714636e91b53173b8bc0820857bc490"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/encoder_layer.cpython-311.pyc",
+          "bytes": 11206,
+          "sha256": "b48c30c69574c53ab5347f9bc8008ebabe70a958d9b6fc9c43a725f82683a7d8"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/positionwise_feed_forward.cpython-311.pyc",
+          "bytes": 6265,
+          "sha256": "5b46603b7272069b0e2ce4bb7284d5deb0e7be508ac541ee1b435fdeb454e5c9"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/subsampling.cpython-311.pyc",
+          "bytes": 18942,
+          "sha256": "40073954669f5372a5a87ffa88bdff8f2dbaae92f5137028736400d00890fdf9"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/upsample_encoder.cpython-311.pyc",
+          "bytes": 15609,
+          "sha256": "ae195abf50947db5b68fa1f312dc0f49b91c75f30a55257e9b41d3f9ea65dfb4"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/activation.py",
+          "bytes": 3173,
+          "sha256": "741335b4a3a3242d27c6bd471b346efc5164864043a3cf3be1ca692bfee08103"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/attention.py",
+          "bytes": 14745,
+          "sha256": "7ea0562b3e79cb008b7a7407826c2a09cf28f61f55defc728401126080234ab6"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/convolution.py",
+          "bytes": 5375,
+          "sha256": "3e85608add700e0a86a0ee472384e2db511e8b223c87d936dc4ac3b009d4b06a"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/embedding.py",
+          "bytes": 11693,
+          "sha256": "c6e501a052253decd26e6fa185f29d4f09890d0861b977d9b98874b8fdc03234"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/encoder_layer.py",
+          "bytes": 9838,
+          "sha256": "39cab20e9a22c4640c08839b9cc96c6fa10807dbfacebac41fc859d050af3ba5"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/positionwise_feed_forward.py",
+          "bytes": 4334,
+          "sha256": "d345af9bc7e088afd525a58adef627a6cc3b316865c11fa23c61760024901217"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/subsampling.py",
+          "bytes": 13049,
+          "sha256": "345ef01bf1ebca1808532f506653aadf6d35ead8205ee10716c1f0ed68e1e5a3"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/transformer/upsample_encoder.py",
+          "bytes": 14012,
+          "sha256": "251c9376b56b57ac0d052abf4657b83691c6331808f5f8219ebcfd2b8cd1d137"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/class_utils.cpython-311.pyc",
+          "bytes": 1959,
+          "sha256": "eed14fa7ff96c890499cb36c9c356d88518cab384b1cdfe04e4eaff7ea74f3a8"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/intmeanflow.cpython-311.pyc",
+          "bytes": 2113,
+          "sha256": "382908885019c61347f6f345c3670f45e88941139dc1581a1db5877e98f2c2ef"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/mask.cpython-311.pyc",
+          "bytes": 6334,
+          "sha256": "f90297fdb336ccec35f7067770cac090f657697370a06afc3d83e215e26a81ce"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/mel.cpython-311.pyc",
+          "bytes": 4276,
+          "sha256": "b3f70b9de475c9623c77e4669dcd915bd047d07817dc349b3b23fda7bab1aeb2"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/class_utils.py",
+          "bytes": 2405,
+          "sha256": "b0605ec5cb1e1fbadbcc24c488ad6ca8eff3e18f5f460edd0b3027b2de1f6aed"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/intmeanflow.py",
+          "bytes": 987,
+          "sha256": "09f94d16a7aa8cc42ee2aff09d69fcd3ea503f1a5e69fca03d3f0786ef172b05"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/mask.py",
+          "bytes": 7860,
+          "sha256": "0f4a0779b3ee6b70d209b630c4798cee99165560010afe3e0b275dd2105a4209"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/utils/mel.py",
+          "bytes": 2641,
+          "sha256": "e603d99fa827eb84b8bd3df3aef5e1e567b187ab06d02ba440e2afa0eac502b2"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3gen/xvector.py",
+          "bytes": 14569,
+          "sha256": "13d6b473ce7a066c2b6ddd14893e7834e9a5705cc35383adf25c5b1947125bb7"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3tokenizer/__init__.py",
+          "bytes": 625,
+          "sha256": "fa602db9e952f86943274bacd0c5b126415938e268536b8dc551aeb0aa924bc1"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3tokenizer/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 1400,
+          "sha256": "88266c36161f552fb7588255af96104ed49e1be7153c2ff85523a5dec95d5179"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3tokenizer/__pycache__/s3tokenizer.cpython-311.pyc",
+          "bytes": 7970,
+          "sha256": "4e09ed965d2c50827bfd2fad7b32264b0912745d93a050bc8dd0ac8097ced9bd"
+        },
+        {
+          "path": "vendor/chatterbox/models/s3tokenizer/s3tokenizer.py",
+          "bytes": 5323,
+          "sha256": "8da30a6d978b5071761899d913b31f1fe9ae766a07c316a970b529cfcd0f0aa4"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/__init__.py",
+          "bytes": 20,
+          "sha256": "9d4af45d74fc3c0ebef3e875d597aee3dff31e22d585385dc9567427a638e442"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 247,
+          "sha256": "af3c490d99b554c72e819a3ae90a0ef1be5fa59f2ef42c0537f6b84619829f97"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/__pycache__/llama_configs.cpython-311.pyc",
+          "bytes": 2283,
+          "sha256": "2ae07ba8c6f54625b14bcd655cc6ad2230438ce2a07a26e719e457f4f5a2fef8"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/__pycache__/t3.cpython-311.pyc",
+          "bytes": 19795,
+          "sha256": "f4079e4a42a0832c43abb5fa99599779350ccc8795a7643520901573e9cb69f4"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/inference/__pycache__/t3_hf_backend.cpython-311.pyc",
+          "bytes": 4561,
+          "sha256": "ae0d635e3fc08b46f438949e0ee3a037d1a53c7d985e232289a3aeb9773e1cfc"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/inference/t3_hf_backend.py",
+          "bytes": 4101,
+          "sha256": "98ed48dfd7e671d8953a0ea13e003ee16aaf39e8e3228799076ef08eaadc3403"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/llama_configs.py",
+          "bytes": 1882,
+          "sha256": "a384ed991bdccaedb493511d81de95aa8d3c2dcd5dc7d41eb506993051947872"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/__pycache__/cond_enc.cpython-311.pyc",
+          "bytes": 5399,
+          "sha256": "e40be6d34384e50dad7c9615077445c06d10eae1fe4536b7442e1f2b1b749e5c"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/__pycache__/learned_pos_emb.cpython-311.pyc",
+          "bytes": 2566,
+          "sha256": "d05216207ef18067c31282dc69f16a5ec7228311fb1638d205a45eb5d3d4e064"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/__pycache__/perceiver.cpython-311.pyc",
+          "bytes": 12662,
+          "sha256": "bc26cf633766e770e7cfddecdadcc21143f7bd81883c5fd65d55ff209ffdc29e"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/__pycache__/t3_config.cpython-311.pyc",
+          "bytes": 2372,
+          "sha256": "96a56070b62aaf6427be3282a0ac3be8dad8e9b312445447369c279a9121c679"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/cond_enc.py",
+          "bytes": 3390,
+          "sha256": "392cc54b24df90cab3f3f611245b15b2fc1fef2dcf331040ba01671b2175c76f"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/learned_pos_emb.py",
+          "bytes": 1131,
+          "sha256": "0dd028fe53d845e71c70306175ac9e6e4d2b7ee238c0a5aa3497eed6e5e74e8a"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/perceiver.py",
+          "bytes": 7931,
+          "sha256": "f9637ce97b8c2dc11a79cb647ce8c3f5acdbcdeb04a56c05a7b9c55c00c717ba"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/modules/t3_config.py",
+          "bytes": 1286,
+          "sha256": "2a5f8a336d9839cedf1c834c020ddc8980ca63c6e4c654bf4efd894b91dcafef"
+        },
+        {
+          "path": "vendor/chatterbox/models/t3/t3.py",
+          "bytes": 18584,
+          "sha256": "a3641cf222804ef676e9c9a180c2e7eb861954d33bf798a9a9182aa6a760d5a6"
+        },
+        {
+          "path": "vendor/chatterbox/models/tokenizers/__init__.py",
+          "bytes": 48,
+          "sha256": "6759fb8b4f6d50b8e4ab8ddd0e39d44e1ca7196544f93311b385a7eeea6c38c2"
+        },
+        {
+          "path": "vendor/chatterbox/models/tokenizers/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 300,
+          "sha256": "ccdd2b21892a2fb610eb2b705704c9266b336d10f7c3294a668806e9a1d173d4"
+        },
+        {
+          "path": "vendor/chatterbox/models/tokenizers/__pycache__/tokenizer.cpython-311.pyc",
+          "bytes": 16967,
+          "sha256": "0db119b7f08c25a4082aca13fd4f1e7e2b65c078b13abf7485ba127a308787f2"
+        },
+        {
+          "path": "vendor/chatterbox/models/tokenizers/tokenizer.py",
+          "bytes": 10515,
+          "sha256": "5fe52ef58684b2756ab0f0106d62de335311da04a493b637d7d093d1870c65cf"
+        },
+        {
+          "path": "vendor/chatterbox/models/utils.py",
+          "bytes": 152,
+          "sha256": "e35c9893b029d44e7caeb288cf4b6c836aa3b916e7529dc3a1444adfd34ab054"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/__init__.py",
+          "bytes": 57,
+          "sha256": "a3326161831fee10ffbfa5f5eb5dbd0e43172a92f342fb645ac5db8e0d5bcda7"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/__init__.cpython-311.pyc",
+          "bytes": 310,
+          "sha256": "a38e2a1a939b583dae2c9ece3e62d36d36f2c343d2e4f8089b9c470506c5e37d"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/config.cpython-311.pyc",
+          "bytes": 888,
+          "sha256": "f57ce345414bb1342a58bcdfdc476875c629e93f1dc10da946c1ba2b7f1aae29"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/melspec.cpython-311.pyc",
+          "bytes": 3614,
+          "sha256": "34f4be7eee26104f8ec4441ba27b5fbe4260269f6f385011be441abea14f3961"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/voice_encoder.cpython-311.pyc",
+          "bytes": 18719,
+          "sha256": "05c67b2b4a6ad26bcbbca5f56958324630cd24b85f2abd0c6d1dc39dfcd96eeb"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/config.py",
+          "bytes": 424,
+          "sha256": "e64be6d97b000392427a0b243dd41741888d767b96a79961a63039ffd1b2b95c"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/melspec.py",
+          "bytes": 2018,
+          "sha256": "d3d61bf55a5a3aead1a436c3d99fc0ec822c3bced6fc1b932e83605d3775bc9f"
+        },
+        {
+          "path": "vendor/chatterbox/models/voice_encoder/voice_encoder.py",
+          "bytes": 10829,
+          "sha256": "9583825f6b7b5c9cf7ec93c65172fdcb1a0622d8196db65b6a966e02e4f09fc9"
+        },
+        {
+          "path": "vendor/chatterbox/mtl_tts.py",
+          "bytes": 12076,
+          "sha256": "96fd2dfbd947d3b617fdada8721264bc6597799e81ebf8e43603f083f72fe433"
+        },
+        {
+          "path": "vendor/chatterbox/tts_turbo.py",
+          "bytes": 10124,
+          "sha256": "5a45323d4b53e097df363faeee9fae97d410c3fe76df129b9dc2319c0051b3fd"
+        },
+        {
+          "path": "vendor/chatterbox/tts.py",
+          "bytes": 9196,
+          "sha256": "520c4439bcfb7642452e950b3df7d427a625ed57e0bbab31c344dd8c78c01081"
+        },
+        {
+          "path": "vendor/chatterbox/vc.py",
+          "bytes": 3623,
+          "sha256": "2761ad6847eb393209ae48e0e9716f49277597ab0bceeb06e80b867305c493d3"
+        },
+        {
+          "path": "wheelhouse/annotated_doc-0.0.5-py3-none-any.whl",
+          "bytes": 5302,
+          "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101"
+        },
+        {
+          "path": "wheelhouse/annotated_types-0.8.0-py3-none-any.whl",
+          "bytes": 13427,
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
+        },
+        {
+          "path": "wheelhouse/antlr4-python3-runtime-4.9.3.tar.gz",
+          "bytes": 117034,
+          "sha256": "f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b"
+        },
+        {
+          "path": "wheelhouse/anyio-4.15.1-py3-none-any.whl",
+          "bytes": 132079,
+          "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
+        },
+        {
+          "path": "wheelhouse/audioread-3.1.0-py3-none-any.whl",
+          "bytes": 23143,
+          "sha256": "b30d1df6c5d3de5dcef0fb0e256f6ea17bdcf5f979408df0297d8a408e2971b4"
+        },
+        {
+          "path": "wheelhouse/catalogue-2.0.10-py3-none-any.whl",
+          "bytes": 17325,
+          "sha256": "58c2de0020aa90f4a2da7dfad161bf7b3b054c86a5f09fcedc0b2b740c109a9f"
+        },
+        {
+          "path": "wheelhouse/certifi-2026.7.22-py3-none-any.whl",
+          "bytes": 136983,
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+        },
+        {
+          "path": "wheelhouse/cffi-2.1.1-cp311-cp311-win_amd64.whl",
+          "bytes": 185096,
+          "sha256": "42f6930c31dc7f50732c9ae793c2786c7b6b044195967bbdde40bb9be81c4cc0"
+        },
+        {
+          "path": "wheelhouse/cfgv-3.5.0-py2.py3-none-any.whl",
+          "bytes": 7445,
+          "sha256": "a8dc6b26ad22ff227d2634a65cb388215ce6cc96bbcc5cfde7641ae87e8dacc0"
+        },
+        {
+          "path": "wheelhouse/charset_normalizer-3.5.1-cp311-cp311-win_amd64.whl",
+          "bytes": 206653,
+          "sha256": "f9b1e28d0e8dbfa858abdba91d6b547beaf2df1a59bec6da6faae7b96a4991a9"
+        },
+        {
+          "path": "wheelhouse/click-8.5.0-py3-none-any.whl",
+          "bytes": 125251,
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360"
+        },
+        {
+          "path": "wheelhouse/cloudpickle-3.1.2-py3-none-any.whl",
+          "bytes": 22228,
+          "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a"
+        },
+        {
+          "path": "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+          "bytes": 25335,
+          "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+        },
+        {
+          "path": "wheelhouse/conformer-0.3.2-py3-none-any.whl",
+          "bytes": 4260,
+          "sha256": "b957faa683e9e75061257f77407318428f2ad0fb5262bfc2e9b55fc2fffdfa03"
+        },
+        {
+          "path": "wheelhouse/decorator-5.3.1-py3-none-any.whl",
+          "bytes": 10365,
+          "sha256": "f47fe6fdbd2edd623ecfe36875d37aba411624e2670dd395dddae1358689bb3c"
+        },
+        {
+          "path": "wheelhouse/deprecated-1.3.1-py2.py3-none-any.whl",
+          "bytes": 11298,
+          "sha256": "597bfef186b6f60181535a29fbe44865ce137a5079f295b479886c82729d5f3f"
+        },
+        {
+          "path": "wheelhouse/diffusers-0.38.0-py3-none-any.whl",
+          "bytes": 5245919,
+          "sha256": "18e53f9e539096320470f62c6360a6fd5727ff28cffda566265316e13fcdb612"
+        },
+        {
+          "path": "wheelhouse/distlib-0.4.3-py2.py3-none-any.whl",
+          "bytes": 470628,
+          "sha256": "4b0ce306c966eb73bc3a7b6abad017c556dadd92c44701562cd528ac7fde4d5b"
+        },
+        {
+          "path": "wheelhouse/einops-0.8.2-py3-none-any.whl",
+          "bytes": 65638,
+          "sha256": "54058201ac7087911181bfec4af6091bb59380360f069276601256a76af08193"
+        },
+        {
+          "path": "wheelhouse/fastapi-0.141.1-py3-none-any.whl",
+          "bytes": 131954,
+          "sha256": "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3"
+        },
+        {
+          "path": "wheelhouse/filelock-3.32.6-py3-none-any.whl",
+          "bytes": 100189,
+          "sha256": "3f16ecd0117feae0dfc147e8c62eb5daeccd8bd800378c3ddf416de9b4feb6b1"
+        },
+        {
+          "path": "wheelhouse/fsspec-2026.7.0-py3-none-any.whl",
+          "bytes": 206583,
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279"
+        },
+        {
+          "path": "wheelhouse/h11-0.16.0-py3-none-any.whl",
+          "bytes": 37515,
+          "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+        },
+        {
+          "path": "wheelhouse/hf_xet-1.6.0-cp38-abi3-win_amd64.whl",
+          "bytes": 4033128,
+          "sha256": "fb4fadde1b2b70bf4c0c14a6dccbe7194b1c28947fefd5bbe3fed9d940676c3b"
+        },
+        {
+          "path": "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+          "bytes": 78784,
+          "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+        },
+        {
+          "path": "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+          "bytes": 73517,
+          "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+        },
+        {
+          "path": "wheelhouse/huggingface_hub-1.31.0-py3-none-any.whl",
+          "bytes": 798313,
+          "sha256": "9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667"
+        },
+        {
+          "path": "wheelhouse/identify-2.6.19-py2.py3-none-any.whl",
+          "bytes": 99397,
+          "sha256": "20e6a87f786f768c092a721ad107fc9df0eb89347be9396cadf3f4abbd1fb78a"
+        },
+        {
+          "path": "wheelhouse/idna-3.19-py3-none-any.whl",
+          "bytes": 68550,
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4"
+        },
+        {
+          "path": "wheelhouse/importlib_metadata-9.0.1-py3-none-any.whl",
+          "bytes": 27920,
+          "sha256": "bba5600596a7e21f3eef53281cf28d6a5195634d2f2b78ff9501a3272c6eaab0"
+        },
+        {
+          "path": "wheelhouse/jaconv-0.5.0-py3-none-any.whl",
+          "bytes": 16831,
+          "sha256": "2914114fe761ca49fc7089e25e6ad4a400c26f262ffce84e13b176916b71610a"
+        },
+        {
+          "path": "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "bytes": 134899,
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+        },
+        {
+          "path": "wheelhouse/joblib-1.6.0-py3-none-any.whl",
+          "bytes": 306115,
+          "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba"
+        },
+        {
+          "path": "wheelhouse/lazy_loader-0.5-py3-none-any.whl",
+          "bytes": 8044,
+          "sha256": "ab0ea149e9c554d4ffeeb21105ac60bed7f3b4fd69b1d2360a4add51b170b005"
+        },
+        {
+          "path": "wheelhouse/librosa-0.11.0-py3-none-any.whl",
+          "bytes": 260749,
+          "sha256": "0b6415c4fd68bff4c29288abe67c6d80b587e0e1e2cfb0aad23e4559504a7fa1"
+        },
+        {
+          "path": "wheelhouse/llvmlite-0.49.0-cp311-cp311-win_amd64.whl",
+          "bytes": 41865253,
+          "sha256": "6a5b06c1b5fc4ae4c9b169b065f42b719448ef1f873687ef224ef69969b75ec3"
+        },
+        {
+          "path": "wheelhouse/markdown_it_py-4.2.0-py3-none-any.whl",
+          "bytes": 91687,
+          "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a"
+        },
+        {
+          "path": "wheelhouse/markupsafe-3.0.3-cp311-cp311-win_amd64.whl",
+          "bytes": 15077,
+          "sha256": "de8a88e63464af587c950061a5e6a67d3632e36df62b986892331d4620a35c01"
+        },
+        {
+          "path": "wheelhouse/mdurl-0.1.2-py3-none-any.whl",
+          "bytes": 9979,
+          "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"
+        },
+        {
+          "path": "wheelhouse/ml_dtypes-0.5.4-cp311-cp311-win_amd64.whl",
+          "bytes": 210742,
+          "sha256": "7c23c54a00ae43edf48d44066a7ec31e05fdc2eee0be2b8b50dd1903a1db94bb"
+        },
+        {
+          "path": "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "bytes": 536198,
+          "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+        },
+        {
+          "path": "wheelhouse/msgpack-1.2.2-cp311-cp311-win_amd64.whl",
+          "bytes": 71258,
+          "sha256": "0883a1578168929fd1640fbbc4614773f1a130e419a8a817dc2918d9af1b651c"
+        },
+        {
+          "path": "wheelhouse/narwhals-2.26.0-py3-none-any.whl",
+          "bytes": 474034,
+          "sha256": "29326d74f107c347fd1009bd58e38d9f7c7c5b51e6de97bc93dbc325d9038b54"
+        },
+        {
+          "path": "wheelhouse/networkx-3.6.1-py3-none-any.whl",
+          "bytes": 2068504,
+          "sha256": "d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762"
+        },
+        {
+          "path": "wheelhouse/nodeenv-1.10.0-py2.py3-none-any.whl",
+          "bytes": 23438,
+          "sha256": "5bb13e3eed2923615535339b3c620e76779af4cb4c6a90deccc9e36b274d3827"
+        },
+        {
+          "path": "wheelhouse/numba-0.67.0-cp311-cp311-win_amd64.whl",
+          "bytes": 2815700,
+          "sha256": "cfba1ac34f0363fb1a250a10e97240780d11e05227892f7286b26fbfd0ad58ce"
+        },
+        {
+          "path": "wheelhouse/numpy-1.26.4-cp311-cp311-win_amd64.whl",
+          "bytes": 15811913,
+          "sha256": "cd25bcecc4974d09257ffcd1f098ee778f7834c3ad767fe5db785be9a4aa9cb2"
+        },
+        {
+          "path": "wheelhouse/omegaconf-2.3.1-py3-none-any.whl",
+          "bytes": 79502,
+          "sha256": "3d701d14e9a8828f1edd28bb70b725908b34277cdd72cf7d6a83f94dadc6b6a0"
+        },
+        {
+          "path": "wheelhouse/onnx-1.22.0-cp311-cp311-win_amd64.whl",
+          "bytes": 17215684,
+          "sha256": "8561a2c00041c07e08db0c228593b5b4694100398685f348532af7dbb84189da"
+        },
+        {
+          "path": "wheelhouse/packaging-26.3-py3-none-any.whl",
+          "bytes": 129956,
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+        },
+        {
+          "path": "wheelhouse/pillow-12.3.0-cp311-cp311-win_amd64.whl",
+          "bytes": 7233653,
+          "sha256": "8e95e1385e4998ae9694eeaa4730ba5457ff61185b3a55e2e7bea0880aef452a"
+        },
+        {
+          "path": "wheelhouse/platformdirs-4.11.8-py3-none-any.whl",
+          "bytes": 24027,
+          "sha256": "52f2f181bbfde907966932cc8312d967d02976422d66d537ea16092b8e291081"
+        },
+        {
+          "path": "wheelhouse/pooch-1.9.0-py3-none-any.whl",
+          "bytes": 67175,
+          "sha256": "f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b"
+        },
+        {
+          "path": "wheelhouse/pre_commit-4.6.2-py2.py3-none-any.whl",
+          "bytes": 226202,
+          "sha256": "e2dde9a75d3bce11bd3831c26d134df00a2803c1d818be6a0383c3dcda25dc4e"
+        },
+        {
+          "path": "wheelhouse/protobuf-7.36.1-cp310-abi3-win_amd64.whl",
+          "bytes": 456518,
+          "sha256": "51139351435d9b43d88a55eaa49fb6f737fbb478fb0cbf2cf694d1a04a9d3363"
+        },
+        {
+          "path": "wheelhouse/pycparser-3.0-py3-none-any.whl",
+          "bytes": 48172,
+          "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
+        },
+        {
+          "path": "wheelhouse/pydantic_core-2.46.5-cp311-cp311-win_amd64.whl",
+          "bytes": 2041030,
+          "sha256": "40375c2d05acec10323e45dfe2077ac44bc74659008614af5069034e2cfc781c"
+        },
+        {
+          "path": "wheelhouse/pydantic-2.13.5-py3-none-any.whl",
+          "bytes": 472589,
+          "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73"
+        },
+        {
+          "path": "wheelhouse/pygments-2.21.0-py3-none-any.whl",
+          "bytes": 1250147,
+          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"
+        },
+        {
+          "path": "wheelhouse/pykakasi-2.3.0-py3-none-any.whl",
+          "bytes": 2395003,
+          "sha256": "26d21b090048ff45c6a4d8e962426b7951767216008ec30358e8a9d74af77f29"
+        },
+        {
+          "path": "wheelhouse/pyloudnorm-0.2.0-py3-none-any.whl",
+          "bytes": 10879,
+          "sha256": "9bb69afb904f59d007a7f9ba3d75d16fb8aeef35c44d6df822a9f192d69cf13f"
+        },
+        {
+          "path": "wheelhouse/python_discovery-1.6.0-py3-none-any.whl",
+          "bytes": 38451,
+          "sha256": "d4e244cf17b8b29819ed78003d55fbacf86eda23425b075454fff9271b79377a"
+        },
+        {
+          "path": "wheelhouse/pyyaml-6.0.3-cp311-cp311-win_amd64.whl",
+          "bytes": 158763,
+          "sha256": "9f3bfb4965eb874431221a3ff3fdcddc7e74e3b07799e0e84ca4a0f867d449bf"
+        },
+        {
+          "path": "wheelhouse/regex-2026.9.10-cp311-cp311-win_amd64.whl",
+          "bytes": 278263,
+          "sha256": "ce7c118cb102975f974585688357a717ffbf9dddd64ab0bb1bc93eb5b367cf95"
+        },
+        {
+          "path": "wheelhouse/requests-2.34.2-py3-none-any.whl",
+          "bytes": 73075,
+          "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+        },
+        {
+          "path": "wheelhouse/resemble_perth-1.0.1-py3-none-any.whl",
+          "bytes": 34404578,
+          "sha256": "65e9c37531b1a128a4a56226b75dece4521683cf3611b0b2a5ffe234f00c9342"
+        },
+        {
+          "path": "wheelhouse/rich-15.0.0-py3-none-any.whl",
+          "bytes": 310654,
+          "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb"
+        },
+        {
+          "path": "wheelhouse/s3tokenizer-0.3.0-py3-none-any.whl",
+          "bytes": 226368,
+          "sha256": "c9e93b1892a124a2c4d958ab53610a1b4433fcb4172056e2f2bd3c09cfe249a6"
+        },
+        {
+          "path": "wheelhouse/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "bytes": 355540,
+          "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f"
+        },
+        {
+          "path": "wheelhouse/scikit_learn-1.9.1-cp311-cp311-win_amd64.whl",
+          "bytes": 8329877,
+          "sha256": "220fa18152852a5ce29c49e1eaba9d44ec44631cd2e5cf65f5a40eafa5ab3412"
+        },
+        {
+          "path": "wheelhouse/scipy-1.17.1-cp311-cp311-win_amd64.whl",
+          "bytes": 36607512,
+          "sha256": "d30e57c72013c2a4fe441c2fcb8e77b14e152ad48b5464858e07e2ad9fbfceff"
+        },
+        {
+          "path": "wheelhouse/setuptools-80.9.0-py3-none-any.whl",
+          "bytes": 1201486,
+          "sha256": "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"
+        },
+        {
+          "path": "wheelhouse/shellingham-1.5.4-py2.py3-none-any.whl",
+          "bytes": 9755,
+          "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686"
+        },
+        {
+          "path": "wheelhouse/soundfile-0.14.0-py2.py3-none-win_amd64.whl",
+          "bytes": 1021480,
+          "sha256": "299491d3499460fb1b74bb4bd78b57ffc2d243a5fafa7b6ec1b264875c78453e"
+        },
+        {
+          "path": "wheelhouse/soxr-1.1.0-cp311-cp311-win_amd64.whl",
+          "bytes": 176779,
+          "sha256": "ae30c48ac795378cf23ba3c7c640b8ff794af714ac388b9fd6b31a40b39e6e86"
+        },
+        {
+          "path": "wheelhouse/spacy_pkuseg-1.0.1-cp311-cp311-win_amd64.whl",
+          "bytes": 2403753,
+          "sha256": "13961649edbae2beb60abaaf293ad7021ea044a01c482bd3d990538aefea41db"
+        },
+        {
+          "path": "wheelhouse/srsly-2.5.3-cp311-cp311-win_amd64.whl",
+          "bytes": 651733,
+          "sha256": "f09b551f6c3e334652831ac68c770ee4284741ce0a3895bf1ccf2a1178d66cdd"
+        },
+        {
+          "path": "wheelhouse/starlette-1.6.0-py3-none-any.whl",
+          "bytes": 75969,
+          "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c"
+        },
+        {
+          "path": "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "bytes": 6189177,
+          "sha256": "db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8"
+        },
+        {
+          "path": "wheelhouse/threadpoolctl-3.6.0-py3-none-any.whl",
+          "bytes": 18638,
+          "sha256": "43a0b8fd5a2928500110039e43a5eed8480b918967083ea48dc3ab9f13c4a7fb"
+        },
+        {
+          "path": "wheelhouse/tokenizers-0.23.2-cp310-abi3-win_amd64.whl",
+          "bytes": 2863236,
+          "sha256": "2e96f5699d5249c9c64aa8412e044f727aae3a4098cf830f9901ec1afc361cde"
+        },
+        {
+          "path": "wheelhouse/torch-2.6.0+cpu-cp311-cp311-win_amd64.whl",
+          "bytes": 206540444,
+          "sha256": "24c9d3d13b9ea769dd7bd5c11cfa1fc463fd7391397156565484565ca685d908"
+        },
+        {
+          "path": "wheelhouse/torchaudio-2.6.0+cpu-cp311-cp311-win_amd64.whl",
+          "bytes": 2444371,
+          "sha256": "79cd153330c071cb9582351c1f3c3c55a1adbf85556bfc5d521b744c7280728f"
+        },
+        {
+          "path": "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+          "bytes": 80199,
+          "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"
+        },
+        {
+          "path": "wheelhouse/transformers-5.17.0-py3-none-any.whl",
+          "bytes": 12295140,
+          "sha256": "78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801"
+        },
+        {
+          "path": "wheelhouse/typer-0.27.2-py3-none-any.whl",
+          "bytes": 123130,
+          "sha256": "b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d"
+        },
+        {
+          "path": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "bytes": 45571,
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+        },
+        {
+          "path": "wheelhouse/typing_inspection-0.4.4-py3-none-any.whl",
+          "bytes": 14750,
+          "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147"
+        },
+        {
+          "path": "wheelhouse/urllib3-2.7.0-py3-none-any.whl",
+          "bytes": 131087,
+          "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"
+        },
+        {
+          "path": "wheelhouse/uvicorn-0.52.4-py3-none-any.whl",
+          "bytes": 79871,
+          "sha256": "f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1"
+        },
+        {
+          "path": "wheelhouse/virtualenv-21.7.9-py3-none-any.whl",
+          "bytes": 5324667,
+          "sha256": "ba3b0bb41063c848d84d76a9fe3fb7711aaa0f2fe78708e8f3cd9714770e4eac"
+        },
+        {
+          "path": "wheelhouse/wrapt-2.4.1-cp311-cp311-win_amd64.whl",
+          "bytes": 98679,
+          "sha256": "1f1851be0e593d65e68d7c1bc9d3b971e19fefa219f617e490d75e80e467ee14"
+        },
+        {
+          "path": "wheelhouse/zipp-4.1.0-py3-none-any.whl",
+          "bytes": 10238,
+          "sha256": "25ad4e16390cd314347dd8f1de67a2ac538ae658ed4ab9db16029c07c188e97f"
+        }
+      ],
+      "pythonEnvironment": {
+        "pythonComponentId": "python-311",
+        "pythonExecutablePath": "python/python.exe",
+        "wheelhousePath": "wheelhouse",
+        "requirementsLockPath": "requirements.lock",
+        "requirementsLockSha256": "8a18c789e37bee367983ddcb689c5e1300ea6222ec551dda648a1f024b94f5c3",
+        "expectedPythonVersion": "3.11"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit/"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-cpu1.spdx.json",
+        "sha256": "88f8210f906333458c0f7ea25b8a93c12f0609896d9d6d3293a32cdf2a86502c"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "p//Egv5MIu4TJIsNXKR547PoRdSd3KCgQTCgvc+qNta5yzyYJyJFgb3aKTWpuOBJNvkC584heGn4RaHiiaW0Dw=="
+    },
+    {
+      "protocolVersion": 1,
       "id": "edge-tts",
       "moduleId": "edge-tts",
       "groupId": "audio",
@@ -21133,7 +22444,7 @@ export const packagedComponentCatalog = {
     }
   ],
   "trustedPublicKeys": {
-    "ed25519-80154152cb788d65d9e6b661": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAkkENxOAwwVlHdJPkLjqYZ1XzaY+knV55v7Po3otcktg=\n-----END PUBLIC KEY-----\n",
-    "ed25519-f372f170675a31f5015c6a38": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAbwknGXr7/yg9ybMEeb3ykpTSKiE9REB/Ft3uorMVZh0=\n-----END PUBLIC KEY-----\n"
+    "ed25519-f372f170675a31f5015c6a38": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAbwknGXr7/yg9ybMEeb3ykpTSKiE9REB/Ft3uorMVZh0=\n-----END PUBLIC KEY-----\n",
+    "ed25519-80154152cb788d65d9e6b661": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAkkENxOAwwVlHdJPkLjqYZ1XzaY+knV55v7Po3otcktg=\n-----END PUBLIC KEY-----\n"
   }
 } satisfies ComponentCatalog;
