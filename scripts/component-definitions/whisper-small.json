@@ -1,0 +1,11 @@
+{
+  "id": "whisper-small",
+  "groupId": "media",
+  "displayName": "Whisper small 多语言模型",
+  "purpose": "固定提交版本的 CTranslate2 Whisper small 模型，供视频文本解析离线使用。",
+  "dependencyIds": [],
+  "taskToolIds": [],
+  "installConditions": ["约 500 MB；安装后可离线加载，不在任务过程中下载模型。"],
+  "version": "20260925-536b066",
+  "installedBytes": 600000000
+}

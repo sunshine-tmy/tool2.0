@@ -1,0 +1,21 @@
+{
+  "id": "video-text",
+  "groupId": "media",
+  "displayName": "视频文本解析（CPU）",
+  "purpose": "使用本地 faster-whisper CPU 运行时转写视频音频；模型和 FFmpeg 作为可独立管理的共享依赖。",
+  "dependencyIds": ["ffmpeg", "python-311", "whisper-small"],
+  "taskToolIds": ["video-text"],
+  "installConditions": [
+    "需预先安装 FFmpeg、Python 3.11 共享运行时和 Whisper small 模型。",
+    "本 CPU 版本不要求 CUDA；首次安装需要下载固定版本的运行时。"
+  ],
+  "version": "1.2.1-cpu1",
+  "installedBytes": 1000000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-311",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.11"
+  }
+}
