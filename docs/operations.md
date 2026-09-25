@@ -120,11 +120,11 @@ pnpm db:rollback --backup <backup-id>
 
 ## 7. Windows 桌面数据与迁移
 
-Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\EcommerceToolboxData`；NSIS 安装向导允许用户另行选择应用安装目录。两个根目录不得混用：安装目录、`resources` 和 `app.asar` 不保存数据库、素材、模型、能力包、设置或备份。桌面应用的“桌面设置与数据迁移”页是唯一支持导入完整旧版数据目录的图形入口。
+Windows 安装版的应用管理持久数据根默认是用户在安装向导选择的最终安装根下 `data/`；Electron 设置、登录会话、日志、崩溃转储和临时目录也尽量归入该根。安装向导会执行当前用户写入测试，因此不能选择需要管理员权限的 `Program Files` 等受保护位置，也不能通过提权给安装目录放宽权限。NSIS 安装目录中的程序文件、`resources` 和 `app.asar` 不作为用户数据存放位置。面向普通用户的说明见[Windows 桌面应用使用帮助](./desktop-application-help.md)。
 
-导入前请先退出其他可能使用旧 `storage` 的进程。选择旧版 `storage` 目录后，应用会停止本地服务、复制到用户目录临时区并逐文件校验 SHA-256，随后原子切换数据目录。导入不改写源目录；原有 `data` 会保存在 `%LOCALAPPDATA%\\EcommerceToolboxData\\migration-backups\\desktop\\<id>\\previous-data`。
+首次启动检测到旧版 `%LOCALAPPDATA%\\EcommerceToolboxData` 时，应用会显示来源、目标、所需空间和文件数；用户必须选择完整迁移或明确以空数据开始，选择前业务界面不开放。迁移在目标目录的同盘临时区逐文件校验 SHA-256、记录切换日志并支持中断恢复；迁移完成后旧目录仍保留作回退。该旧路径仅作为兼容旧版的迁移来源，不再是新版 Windows 安装版的默认数据位置。
 
-如需撤销，使用同一页面“回滚到导入前数据”。该操作会验证备份摘要并先把当前数据保留为 `rollback-current-data`，因此不要通过资源管理器手工移动、修改或删除迁移备份。若应用报告迁移日志不一致或备份摘要不匹配，应停止操作并完整复制 `%LOCALAPPDATA%\\EcommerceToolboxData` 后再排查；不要删除 `data`、迁移日志或备份目录。
+“桌面设置与数据迁移”页的“导入旧版 storage”是另一项用户主动操作，只导入业务 storage 内容并保留导入前备份；不要将其与首次启动的完整根迁移混为一谈。如需回滚，请使用同一页面的回滚功能。迁移日志或摘要校验不一致时应停止操作并先复制新安装根下的 `data/`；不要通过资源管理器移动或清理迁移备份。
 
 ## 8. Windows 签名安装器与自动更新
 
@@ -134,7 +134,7 @@ Windows 安装版的可写目录固定在当前用户的 `%LOCALAPPDATA%\\Ecomme
 
 桌面设置页可启用/停用自动检查或手动检查。只有从已签名 NSIS 安装器安装、且带有受控 `app-update.yml` 的包会检查更新；开发启动和直接解压的输出目录均不会检查。下载完成后用户可选择立即重启安装，应用会先停止本地后端。发布 CI 会检查安装器和安装目录中的所有 `.exe` Authenticode Subject，必须与受控 `WINDOWS_SIGNING_SUBJECT` 完全一致。
 
-发布 job 还会在全新的 Windows runner 中从上传的签名产物执行静默安装、启动已安装应用、验证实际窗口的回环后端 `/health/ready` 和 `/api/v1/health`、静默卸载，并确认安装前写入 `%LOCALAPPDATA%\\EcommerceToolboxData` 的数据哨兵未被改动。该 `clean-vm-acceptance` job 是创建 GitHub Release 的前置门禁；失败时不得手工绕过后发布。首次正式版本没有可升级的前序版本，后续版本另须保留一次从上一稳定版升级到当前版的人工演练报告。
+发布 job 在全新的 Windows runner 中验收来自签名打包 job 的真实资产。若存在较早稳定语义版本 Release，且它同时含桌面安装器和 SHA-256 sidecar，会下载并校验 Authenticode 后执行旧版安装 → 当前版升级 → 启动健康检查；没有可升级的旧安装器时仅跳过升级用例。之后通过真实本地 API 安装并自检已签名的 Edge-TTS 与共享 Python 3.11 包，再分别卸载，确认能力运行时写入安装根 `data/components/` 且不会删除数据哨兵。最后验证静默卸载保留安装根 `data/`、同目录重装仍可读取原数据，再通过匹配本应用两次确认文本的临时 UI 自动化验证显式删除。验收安装目录位于临时目录且包含空格。工作流中的 `release` job 明确要求 `package` 与 `clean-vm-acceptance` 成功；任一失败或跳过都不会创建/更新 GitHub Release。验收 JSON 作为独立 CI artifact 保存，不混入用户下载的发布资产。
 
 ## 9. standalone 构建与发布
 
@@ -145,7 +145,7 @@ pwsh ./scripts/package-standalone.ps1 -Platform windows
 pwsh ./scripts/package-standalone.ps1 -Platform macos
 ```
 
-输出位于 `.package/standalone/`：双平台归档、归档 `.sha256`、`toolbox-<platform>.build-manifest.json`、`toolbox-<platform>.third-party-licenses.json` 及其校验文件。许可证清单从最终 staging lockfile 解析，不含构建机绝对路径；CI 使用 Syft/Anchore 只扫描最终 staging，并生成 SPDX SBOM 及校验文件。`v*` tag 工作流会验证所有文件后创建或更新 GitHub Release；手动 workflow_dispatch 不发布 Release。
+输出位于 `.package/standalone/`：双平台归档、归档 `.sha256`、`toolbox-<platform>.build-manifest.json`、`toolbox-<platform>.third-party-licenses.json` 及其校验文件。依赖清单和 SPDX SBOM 用于内部资产盘点、问题定位与版本追溯，不是许可审批流程；桌面能力包清单继续记录固定来源、摘要、签名及逐包 SBOM，生成嵌入式目录前须在 Release 中确认签名 manifest 引用的全部资产已上传。内部用途不免除摘要与签名验证。`v*` tag 工作流会验证所有文件后创建或更新 GitHub Release；手动 workflow_dispatch 不发布 Release。
 
 发布前必须在干净 checkout 执行 `pnpm check`，再从真实 ZIP/TAR.GZ 解压目录执行 `pnpm install --frozen-lockfile`、`pnpm build` 和 `scripts/smoke-standalone.mjs`。冒烟必须覆盖 `/health/ready`、前端预览、上传、下载、删除和有界退出；不得直接把 staging 目录当成分发测试对象。
 

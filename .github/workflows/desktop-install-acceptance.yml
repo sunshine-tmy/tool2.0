@@ -60,6 +60,7 @@ jobs:
           ./scripts/accept-windows-desktop-install.ps1 `
             -InstallerPath "apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe" `
             -ExpectedVersion $version `
+            -InstallDirectory (Join-Path $env:RUNNER_TEMP "Ecommerce Toolbox Acceptance") `
             -TestLegacyMigration `
             -AllowUnsignedTestArtifact
       - name: Upload acceptance report
@@ -67,5 +68,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-desktop-install-acceptance-${{ github.run_id }}
-          path: ${{ runner.temp }}/desktop-installed-smoke.json
+          path: |
+            ${{ runner.temp }}/desktop-installed-smoke.json
+            ${{ runner.temp }}/desktop-install-acceptance-report.json
           if-no-files-found: ignore

@@ -55,6 +55,7 @@ const installRootWritable =
     canWriteDirectory(dataRoot, true));
 if (installRootWritable) {
   fs.mkdirSync(path.join(dataRoot, ".runtime"), { recursive: true });
+  fs.mkdirSync(path.join(dataRoot, "models"), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, "profile"), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, "temp"), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, "logs", "crash-dumps"), { recursive: true });

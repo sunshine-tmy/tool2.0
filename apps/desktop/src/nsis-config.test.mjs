@@ -64,6 +64,26 @@ test("Windows installation acceptance has explicit signed and unsigned-test mode
   expect(workflow).toContain("-AllowUnsignedTestArtifact");
   expect(workflow).not.toContain("gh release");
   expect(workflow).not.toContain("WINDOWS_SIGNING_CERTIFICATE");
-  expect(acceptance).toContain('"/D=$installRoot"');
+  expect(acceptance).toContain('"/S /D=$installRoot"');
   expect(acceptance).not.toContain("Join-Path $installBaseRoot 'Ecommerce Toolbox'");
+  expect(acceptance).toContain("PreviousInstallerPath");
+  expect(acceptance).toContain("TestComponentLifecycle");
+  expect(acceptance).toContain("TestExplicitDataDeletion");
+  expect(acceptance).toContain("desktop-install-acceptance-report.json");
+  expect(acceptance).not.toContain("Get-Process -Name 'EcommerceToolbox'");
+});
+
+test("a signed desktop release cannot be created or updated before clean-VM acceptance", async () => {
+  const repositoryRoot = path.resolve(desktopRoot, "../..");
+  const workflow = await readFile(path.join(repositoryRoot, ".github", "workflows", "desktop-release.yml"), "utf8");
+  const releaseJob = workflow.split("\n  release:\n", 2)[1];
+
+  expect(workflow).toContain("clean-vm-acceptance:");
+  expect(workflow).toContain("previous-stable-windows-installer");
+  expect(workflow).toContain("-TestExplicitDataDeletion");
+  expect(workflow).toContain("desktop-install-acceptance-report.json");
+  expect(releaseJob).toContain("needs: [package, clean-vm-acceptance]");
+  expect(releaseJob).toContain("needs.clean-vm-acceptance.result == 'success'");
+  expect(releaseJob).toContain("gh release upload");
+  expect(releaseJob).toContain("gh release create");
 });
