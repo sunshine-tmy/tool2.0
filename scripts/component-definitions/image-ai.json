@@ -6,11 +6,11 @@
   "dependencyIds": ["python-311"],
   "taskToolIds": ["image-ai"],
   "installConditions": [
-    "需要 Python 3.11 共享运行时和约 3 GB 磁盘空间；此版本使用 CPU，不要求 CUDA。",
+    "安装过程建议预留约 7 GB 可用磁盘空间，安装后约占 4.9 GB；建议至少 8 GB 内存。此版本使用 CPU，不要求 CUDA。",
     "水印智能提示使用固定版本 PP-OCRv5 中文检测与识别模型；所有模型均随能力包离线安装，不在处理过程中下载。"
   ],
-  "version": "1.0.0-cpu1",
-  "installedBytes": 3000000000,
+  "version": "1.0.0-cpu2",
+  "installedBytes": 5200000000,
   "pythonEnvironment": {
     "pythonComponentId": "python-311",
     "pythonExecutablePath": "python/python.exe",

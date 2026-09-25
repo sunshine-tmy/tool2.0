@@ -88,6 +88,9 @@ export function validateImageAiCpuLock(lockText) {
     throw new Error("图片 AI 锁文件必须使用 CPU 版 ONNX Runtime");
   }
   if (/^nvidia[-_\w]*==/m.test(lockText)) throw new Error("图片 AI 锁文件不能包含 NVIDIA/CUDA 运行时");
+  if (!/^numpy==2\.3\.5\s*\\?\s*$/m.test(lockText) || !/^pandas==2\.2\.3\s*\\?\s*$/m.test(lockText)) {
+    throw new Error("图片 AI 锁文件必须固定 NumPy 2.3.5 与兼容 NumPy 2 的 pandas 2.2.3");
+  }
 }
 
 export function omitImageAiSourceDistributions(lockText, sources = IMAGE_AI_SOURCE_DISTRIBUTIONS) {

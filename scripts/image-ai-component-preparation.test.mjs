@@ -21,8 +21,11 @@ test("image AI package uses pinned offline CPU model assets and one signed worke
     await fs.readFile(path.join(SCRIPT_DIRECTORY, "component-definitions/image-ai.json"), "utf8")
   );
   assert.equal(definition.id, "image-ai");
+  assert.equal(definition.version, "1.0.0-cpu2");
   assert.deepEqual(definition.dependencyIds, ["python-311"]);
   assert.deepEqual(definition.taskToolIds, ["image-ai"]);
+  assert.ok(definition.installedBytes >= 5_000_000_000);
+  assert.ok(definition.installConditions.some((condition) => condition.includes("8 GB 内存")));
   assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.11");
   assert.equal(IMAGE_AI_MODEL_ASSETS.length, 10);
   assert.ok(IMAGE_AI_MODEL_ASSETS.every((asset) => new URL(asset.url).protocol === "https:"));
@@ -51,7 +54,16 @@ test("image AI dependency lock accepts only the CPU PyTorch and ONNX runtime bas
     downloadLock.omittedBlocks[1],
     /sha256:4f2a4d39e4ea601b9ab42b2db08b5918a9538c168cff1c6895ae26646f3d73b1/
   );
-  validateImageAiCpuLock("torch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n");
+  validateImageAiCpuLock(
+    "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n"
+  );
+  assert.throws(
+    () =>
+      validateImageAiCpuLock(
+        "numpy==2.3.5\npandas==1.5.3\ntorch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n"
+      ),
+    /兼容 NumPy 2 的 pandas/
+  );
   assert.throws(
     () => validateImageAiCpuLock("torch==2.6.0\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n"),
     /CPU 版 PyTorch/

@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import atexit
+import ctypes
 import hashlib
 import hmac
 import importlib.util
 import json
 import os
 import sys
+import tempfile
 import types
 from pathlib import Path
 from typing import Any, Literal
@@ -59,6 +62,12 @@ def project_path(value: str | Path) -> Path:
 
 
 STORAGE_ROOT = project_path(os.getenv("IMAGE_AI_STORAGE_ROOT", "storage/image-ai"))
+os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(STORAGE_ROOT / "cache" / "paddlex"))
+if DESKTOP_MANAGED:
+    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+    # Paddle's bundled oneDNN path currently fails on the shipped PP-OCRv5
+    # inference graph on CPU. The default Paddle CPU backend works correctly.
+    os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
 TRUSTED_STORAGE_ROOTS = tuple(
     dict.fromkeys(
         [
@@ -75,6 +84,165 @@ MODELS_ROOT = project_path(os.getenv("IMAGE_AI_MODELS_ROOT", "models/image-ai"))
 PORT = int(os.getenv("IMAGE_AI_WORKER_PORT", "3210"))
 HOST = os.getenv("IMAGE_AI_WORKER_HOST", "127.0.0.1")
 WORKER_TOKEN = os.getenv("IMAGE_AI_WORKER_TOKEN", "")
+_OCR_ALIAS_ROOT: Path | None = None
+_OCR_ALIAS_PATHS: list[Path] = []
+
+
+def _ascii_writable_temp_root() -> Path:
+    candidates: list[Path] = []
+    windows_root = os.getenv("WINDIR", r"C:\Windows")
+    candidates.append(Path(windows_root) / "Temp")
+    candidates.extend(Path(value) for value in (os.getenv("TEMP"), os.getenv("TMP"), tempfile.gettempdir()) if value)
+
+    # On some Windows installations the per-user TEMP path is Unicode while
+    # the volume still has an available 8.3 alias. Use it only when Windows
+    # actually returns a distinct, ASCII short path.
+    if os.name == "nt":
+        get_short_path_name = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+        get_short_path_name.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint]
+        get_short_path_name.restype = ctypes.c_uint
+        for value in (os.getenv("TEMP"), os.getenv("TMP"), tempfile.gettempdir()):
+            if not value:
+                continue
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = get_short_path_name(value, buffer, len(buffer))
+            if length and length < len(buffer) and buffer.value.isascii():
+                candidates.append(Path(buffer.value))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        value = str(candidate)
+        if not value.isascii() or value.casefold() in seen or not candidate.is_dir():
+            continue
+        seen.add(value.casefold())
+        try:
+            probe = Path(tempfile.mkdtemp(prefix="toolbox-ocr-probe-", dir=candidate))
+            probe.rmdir()
+        except OSError:
+            continue
+        return candidate
+    raise WorkerFailure(
+        "OCR_ASCII_TEMP_UNAVAILABLE",
+        "Windows 没有可写的 ASCII 临时目录，无法初始化 PaddleOCR。请检查系统临时目录权限后重试。",
+    )
+
+
+def _create_windows_junction(link: Path, target: Path) -> None:
+    """Create a directory junction without invoking a shell or requiring symlink privileges."""
+    if os.name != "nt":
+        raise OSError("Windows junctions are only supported on Windows")
+
+    absolute_target = str(target.absolute())
+    substitute_name = f"\\??\\{absolute_target}".encode("utf-16-le")
+    print_name = absolute_target.encode("utf-16-le")
+    path_buffer = substitute_name + b"\x00\x00" + print_name + b"\x00\x00"
+    reparse_data_length = 8 + len(path_buffer)
+    reparse_buffer = (
+        (0xA0000003).to_bytes(4, "little")  # IO_REPARSE_TAG_MOUNT_POINT
+        + reparse_data_length.to_bytes(2, "little")
+        + b"\x00\x00"
+        + b"\x00\x00"
+        + len(substitute_name).to_bytes(2, "little")
+        + (len(substitute_name) + 2).to_bytes(2, "little")
+        + len(print_name).to_bytes(2, "little")
+        + path_buffer
+    )
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    create_file.restype = ctypes.c_void_p
+    device_io_control = kernel32.DeviceIoControl
+    device_io_control.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_uint32),
+        ctypes.c_void_p,
+    ]
+    device_io_control.restype = ctypes.c_int
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [ctypes.c_void_p]
+    close_handle.restype = ctypes.c_int
+
+    # The directory must exist before FSCTL_SET_REPARSE_POINT is issued.
+    link.mkdir()
+    handle = create_file(
+        str(link),
+        0x40000000,  # GENERIC_WRITE
+        0x00000007,  # FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+        None,
+        3,  # OPEN_EXISTING
+        0x00200000 | 0x02000000,  # OPEN_REPARSE_POINT | BACKUP_SEMANTICS
+        None,
+    )
+    if handle == ctypes.c_void_p(-1).value:
+        error = ctypes.get_last_error()
+        link.rmdir()
+        raise ctypes.WinError(error)
+
+    try:
+        input_buffer = ctypes.create_string_buffer(reparse_buffer)
+        returned = ctypes.c_uint32()
+        success = device_io_control(
+            handle,
+            0x000900A4,  # FSCTL_SET_REPARSE_POINT
+            input_buffer,
+            len(reparse_buffer),
+            None,
+            0,
+            ctypes.byref(returned),
+            None,
+        )
+        if not success:
+            raise ctypes.WinError(ctypes.get_last_error())
+    except Exception:
+        link.rmdir()
+        raise
+    finally:
+        close_handle(handle)
+
+
+def _cleanup_ocr_aliases() -> None:
+    for alias in reversed(_OCR_ALIAS_PATHS):
+        try:
+            alias.rmdir()
+        except OSError:
+            pass
+    _OCR_ALIAS_PATHS.clear()
+    if _OCR_ALIAS_ROOT is not None:
+        try:
+            _OCR_ALIAS_ROOT.rmdir()
+        except OSError:
+            pass
+
+
+def _ocr_model_path(path: Path, name: str) -> Path:
+    """Keep Paddle's native Windows reader on an ASCII junction for Unicode installs."""
+    global _OCR_ALIAS_ROOT
+    absolute = path.absolute()
+    if absolute.as_posix().isascii() or os.name != "nt":
+        return absolute
+
+    if _OCR_ALIAS_ROOT is None:
+        _OCR_ALIAS_ROOT = Path(tempfile.mkdtemp(prefix="toolbox-ocr-", dir=_ascii_writable_temp_root()))
+        atexit.register(_cleanup_ocr_aliases)
+    alias = _OCR_ALIAS_ROOT / name
+    if not alias.exists():
+        _create_windows_junction(alias, absolute)
+        _OCR_ALIAS_PATHS.append(alias)
+    return alias
 
 
 class WorkerFailure(RuntimeError):
@@ -173,17 +341,19 @@ class ModelManager:
 
         try:
             if DESKTOP_MANAGED:
-                detection_dir = Path(os.environ["IMAGE_AI_OCR_DETECTION_MODEL_DIR"]).resolve()
-                recognition_dir = Path(os.environ["IMAGE_AI_OCR_RECOGNITION_MODEL_DIR"]).resolve()
+                detection_dir = _ocr_model_path(Path(os.environ["IMAGE_AI_OCR_DETECTION_MODEL_DIR"]), "detection")
+                recognition_dir = _ocr_model_path(Path(os.environ["IMAGE_AI_OCR_RECOGNITION_MODEL_DIR"]), "recognition")
                 if not (detection_dir / "inference.yml").is_file() or not (recognition_dir / "inference.yml").is_file():
                     raise WorkerFailure("OCR_MODELS_MISSING", "缺少已安装的 OCR 检测或识别模型")
                 self.ocr = PaddleOCR(
-                    lang="ch",
+                    text_detection_model_name="PP-OCRv5_mobile_det",
                     text_detection_model_dir=str(detection_dir),
+                    text_recognition_model_name="PP-OCRv5_mobile_rec",
                     text_recognition_model_dir=str(recognition_dir),
+                    use_doc_orientation_classify=False,
+                    use_doc_unwarping=False,
                     use_textline_orientation=False,
                     device="cpu",
-                    show_log=False,
                 )
             else:
                 self.ocr = PaddleOCR(

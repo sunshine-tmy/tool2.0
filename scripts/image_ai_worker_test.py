@@ -59,6 +59,27 @@ class DesktopInstallCheckTests(unittest.TestCase):
             self.assertIn("big-lama.pt", str(raised.exception))
 
 
+@unittest.skipUnless(os.name == "nt", "Paddle's native Unicode-path workaround is Windows-only")
+class OcrModelPathAliasTests(unittest.TestCase):
+    def test_uses_a_temporary_ascii_junction_for_unicode_model_paths(self):
+        with tempfile.TemporaryDirectory(prefix="image-ai-ocr-") as directory:
+            target = Path(directory) / "中文模型"
+            target.mkdir()
+            (target / "inference.yml").write_text("model: test\n", encoding="utf-8")
+
+            with (
+                patch.object(worker, "_OCR_ALIAS_ROOT", None),
+                patch.object(worker, "_OCR_ALIAS_PATHS", []),
+            ):
+                try:
+                    alias = worker._ocr_model_path(target, "detection")
+                    self.assertTrue(str(alias).isascii())
+                    self.assertEqual(alias.resolve(), target.resolve())
+                    self.assertEqual((alias / "inference.yml").read_text(encoding="utf-8"), "model: test\n")
+                finally:
+                    worker._cleanup_ocr_aliases()
+
+
 class RealEsrganInputTests(unittest.TestCase):
     def test_pinned_realesrgan_runtime_imports_with_torchvision_compatibility(self):
         worker.install_basicsr_torchvision_compat()
