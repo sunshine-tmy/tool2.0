@@ -20157,9 +20157,235 @@ export const packagedComponentCatalog = {
       },
       "keyId": "ed25519-80154152cb788d65d9e6b661",
       "signature": "MCJtrFnLexYKBjbbkgt2Alf5YxBrEja3K1t4empcf5SICp0jxBnB11ZsqjTK2tp/cZYgEGi5P5rUZq+fIyE0Dw=="
+    },
+    {
+      "protocolVersion": 1,
+      "id": "video-text",
+      "moduleId": "video-text",
+      "groupId": "media",
+      "displayName": "视频文本解析（CPU）",
+      "purpose": "使用本地 faster-whisper CPU 运行时转写视频音频；模型和 FFmpeg 作为可独立管理的共享依赖。",
+      "dependencyIds": [
+        "ffmpeg",
+        "python-311",
+        "whisper-small"
+      ],
+      "taskToolIds": [
+        "video-text"
+      ],
+      "installConditions": [
+        "需预先安装 FFmpeg、Python 3.11 共享运行时和 Whisper small 模型。",
+        "本 CPU 版本不要求 CUDA；首次安装需要下载固定版本的运行时。"
+      ],
+      "version": "1.2.1-cpu1",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-text-1.2.1-cpu1.tar.gz",
+        "bytes": 83945623,
+        "sha256": "d096614577b485c83bf5907c48ceda206691ba2cbe6b767f5fb51eb1c80f9f8e",
+        "format": "tar.gz"
+      },
+      "installedBytes": 1000000000,
+      "files": [
+        {
+          "path": "requirements.lock",
+          "bytes": 26348,
+          "sha256": "d40e6a41fd2b4fcc72312c63042acdd96dfca16ef1b88ea52bbaaa41370575d6"
+        },
+        {
+          "path": "scripts/video-transcribe-faster-whisper.py",
+          "bytes": 8821,
+          "sha256": "a5b131d1d0f0cb126a9b905c707b87150dbcf05c1921b15071a650ace523be19"
+        },
+        {
+          "path": "wheelhouse/anyio-4.15.1-py3-none-any.whl",
+          "bytes": 132079,
+          "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
+        },
+        {
+          "path": "wheelhouse/av-18.1.0-cp311-abi3-win_amd64.whl",
+          "bytes": 27595679,
+          "sha256": "ea1480b7a8d5405cb5f382b344731bf125fd2c1c6fae3964f6c48595628387ff"
+        },
+        {
+          "path": "wheelhouse/certifi-2026.7.22-py3-none-any.whl",
+          "bytes": 136983,
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+        },
+        {
+          "path": "wheelhouse/click-8.5.0-py3-none-any.whl",
+          "bytes": 125251,
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360"
+        },
+        {
+          "path": "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+          "bytes": 25335,
+          "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+        },
+        {
+          "path": "wheelhouse/ctranslate2-4.8.2-cp311-cp311-win_amd64.whl",
+          "bytes": 19220522,
+          "sha256": "995938fcd24a1174a7abf9765e7fa216b5b91a1d8e8c4c8f383c7a186e8bab2e"
+        },
+        {
+          "path": "wheelhouse/faster_whisper-1.2.1-py3-none-any.whl",
+          "bytes": 1118909,
+          "sha256": "79a66ad50688c0b794dd501dc340a736992a6342f7f95e5811be60b5224a26a7"
+        },
+        {
+          "path": "wheelhouse/filelock-3.32.6-py3-none-any.whl",
+          "bytes": 100189,
+          "sha256": "3f16ecd0117feae0dfc147e8c62eb5daeccd8bd800378c3ddf416de9b4feb6b1"
+        },
+        {
+          "path": "wheelhouse/flatbuffers-25.12.19-py2.py3-none-any.whl",
+          "bytes": 26661,
+          "sha256": "7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4"
+        },
+        {
+          "path": "wheelhouse/fsspec-2026.7.0-py3-none-any.whl",
+          "bytes": 206583,
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279"
+        },
+        {
+          "path": "wheelhouse/h11-0.16.0-py3-none-any.whl",
+          "bytes": 37515,
+          "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+        },
+        {
+          "path": "wheelhouse/hf_xet-1.6.0-cp38-abi3-win_amd64.whl",
+          "bytes": 4033128,
+          "sha256": "fb4fadde1b2b70bf4c0c14a6dccbe7194b1c28947fefd5bbe3fed9d940676c3b"
+        },
+        {
+          "path": "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+          "bytes": 78784,
+          "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+        },
+        {
+          "path": "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+          "bytes": 73517,
+          "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+        },
+        {
+          "path": "wheelhouse/huggingface_hub-1.31.0-py3-none-any.whl",
+          "bytes": 798313,
+          "sha256": "9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667"
+        },
+        {
+          "path": "wheelhouse/idna-3.19-py3-none-any.whl",
+          "bytes": 68550,
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4"
+        },
+        {
+          "path": "wheelhouse/numpy-2.4.6-cp311-cp311-win_amd64.whl",
+          "bytes": 12608406,
+          "sha256": "1e254a00cdf42b1e4d5b3d68d33af63268d41340d8885df2ab6470f2e1500147"
+        },
+        {
+          "path": "wheelhouse/onnxruntime-1.30.0-cp311-cp311-win_amd64.whl",
+          "bytes": 14309136,
+          "sha256": "0edd0145a6e3fce8a1276491dc784d615e3c58bcb952c9b4e5c876d5c6a12ad7"
+        },
+        {
+          "path": "wheelhouse/packaging-26.3-py3-none-any.whl",
+          "bytes": 129956,
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+        },
+        {
+          "path": "wheelhouse/protobuf-7.36.1-cp310-abi3-win_amd64.whl",
+          "bytes": 456518,
+          "sha256": "51139351435d9b43d88a55eaa49fb6f737fbb478fb0cbf2cf694d1a04a9d3363"
+        },
+        {
+          "path": "wheelhouse/pyyaml-6.0.3-cp311-cp311-win_amd64.whl",
+          "bytes": 158763,
+          "sha256": "9f3bfb4965eb874431221a3ff3fdcddc7e74e3b07799e0e84ca4a0f867d449bf"
+        },
+        {
+          "path": "wheelhouse/tokenizers-0.23.2-cp310-abi3-win_amd64.whl",
+          "bytes": 2863236,
+          "sha256": "2e96f5699d5249c9c64aa8412e044f727aae3a4098cf830f9901ec1afc361cde"
+        },
+        {
+          "path": "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+          "bytes": 80199,
+          "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"
+        },
+        {
+          "path": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "bytes": 45571,
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+        }
+      ],
+      "pythonEnvironment": {
+        "pythonComponentId": "python-311",
+        "pythonExecutablePath": "python/python.exe",
+        "wheelhousePath": "wheelhouse",
+        "requirementsLockPath": "requirements.lock",
+        "requirementsLockSha256": "d40e6a41fd2b4fcc72312c63042acdd96dfca16ef1b88ea52bbaaa41370575d6",
+        "expectedPythonVersion": "3.11"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-text-1.2.1-cpu1.spdx.json",
+        "sha256": "2259a7c8a19deff90f4249d0d642276f4443c121bf823e0e8e222ece371ce98f"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "5i64J1E7W2wxeV30dX8P0z3pEuaP8JF2RJxe4WW6rl/45ssvpPMnMKYPWNPgMFs3N8MkV6mfa85ky3smEoNgCw=="
+    },
+    {
+      "protocolVersion": 1,
+      "id": "whisper-small",
+      "moduleId": "whisper-small",
+      "groupId": "media",
+      "displayName": "Whisper small 多语言模型",
+      "purpose": "固定提交版本的 CTranslate2 Whisper small 模型，供视频文本解析离线使用。",
+      "dependencyIds": [],
+      "taskToolIds": [],
+      "installConditions": [
+        "约 500 MB；安装后可离线加载，不在任务过程中下载模型。"
+      ],
+      "version": "20260925-536b066",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/whisper-small-20260925-536b066.tar.gz",
+        "bytes": 445909563,
+        "sha256": "26b3bb7fc572cf92aa09f450da7c3b19f98a8fde7bb4c05bc925b5f724d3c1cc",
+        "format": "tar.gz"
+      },
+      "installedBytes": 600000000,
+      "files": [
+        {
+          "path": "model/config.json",
+          "bytes": 2370,
+          "sha256": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828"
+        },
+        {
+          "path": "model/model.bin",
+          "bytes": 483546902,
+          "sha256": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671"
+        },
+        {
+          "path": "model/tokenizer.json",
+          "bytes": 2203239,
+          "sha256": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab"
+        },
+        {
+          "path": "model/vocabulary.txt",
+          "bytes": 459861,
+          "sha256": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+      ],
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/whisper-small-20260925-536b066.spdx.json",
+        "sha256": "0a175ac0eddf1822e3c4cb155ca1f1c6bbf30ef8dccabd663c39a0c45625607e"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "6tDTqHUSlgeJcNFhWt4LblunMzbq2n5ryUdP69fW8X1OpJzPxRIa3tOPZn+7rAREGgmO+rRbGproeVgyiyfPCg=="
     }
   ],
   "trustedPublicKeys": {
-    "ed25519-80154152cb788d65d9e6b661": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAkkENxOAwwVlHdJPkLjqYZ1XzaY+knV55v7Po3otcktg=\n-----END PUBLIC KEY-----\n"
+    "ed25519-80154152cb788d65d9e6b661": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAkkENxOAwwVlHdJPkLjqYZ1XzaY+knV55v7Po3otcktg=\n-----END PUBLIC KEY-----\n",
+    "ed25519-f372f170675a31f5015c6a38": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAbwknGXr7/yg9ybMEeb3ykpTSKiE9REB/Ft3uorMVZh0=\n-----END PUBLIC KEY-----\n"
   }
 } satisfies ComponentCatalog;
