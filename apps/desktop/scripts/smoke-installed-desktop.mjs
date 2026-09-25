@@ -87,7 +87,32 @@ async function debugTargets(port) {
   return targets;
 }
 
-async function evaluateInTarget(target, expression) {
+async function sendDevtoolsCommand(socket, id, method, params = {}) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.removeEventListener("message", onMessage);
+      reject(new Error(`Timed out waiting for DevTools ${method}`));
+    }, 5_000);
+    const onMessage = (event) => {
+      const message = JSON.parse(String(event.data));
+      if (message.id !== id) return;
+      clearTimeout(timer);
+      socket.removeEventListener("message", onMessage);
+      if (message.error) reject(new Error(message.error.message || `DevTools ${method} failed`));
+      else resolve(message.result);
+    };
+    socket.addEventListener("message", onMessage);
+    try {
+      socket.send(JSON.stringify({ id, method, params }));
+    } catch (error) {
+      clearTimeout(timer);
+      socket.removeEventListener("message", onMessage);
+      reject(error);
+    }
+  });
+}
+
+export async function evaluateInTarget(target, expression) {
   if (typeof target.webSocketDebuggerUrl !== "string")
     throw new Error("Desktop migration window has no DevTools endpoint");
   const socket = new WebSocket(target.webSocketDebuggerUrl);
@@ -112,26 +137,29 @@ async function evaluateInTarget(target, expression) {
       );
     });
 
-    const response = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Timed out evaluating the migration choice")), 5_000);
-      socket.addEventListener("message", (event) => {
-        const message = JSON.parse(String(event.data));
-        if (message.id !== 1) return;
-        clearTimeout(timer);
-        if (message.error) reject(new Error(message.error.message || "DevTools evaluation failed"));
-        else if (message.result?.exceptionDetails) {
-          reject(new Error(message.result.exceptionDetails.exception?.description || "Desktop page evaluation failed"));
-        } else resolve(message.result?.result?.value);
-      });
-    });
-    socket.send(
-      JSON.stringify({
-        id: 1,
-        method: "Runtime.evaluate",
-        params: { expression, awaitPromise: true, returnByValue: true }
-      })
-    );
-    return await response;
+    await sendDevtoolsCommand(socket, 1, "Runtime.enable");
+    const deadline = Date.now() + 15_000;
+    let commandId = 2;
+    let lastContextError;
+    while (Date.now() < deadline) {
+      try {
+        const result = await sendDevtoolsCommand(socket, commandId++, "Runtime.evaluate", {
+          expression,
+          awaitPromise: true,
+          returnByValue: true
+        });
+        if (result?.exceptionDetails) {
+          throw new Error(result.exceptionDetails.exception?.description || "Desktop page evaluation failed");
+        }
+        return result?.result?.value;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("Cannot find default execution context")) throw error;
+        lastContextError = error;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    throw new Error("Timed out waiting for the desktop page execution context", { cause: lastContextError });
   } finally {
     socket.close();
   }

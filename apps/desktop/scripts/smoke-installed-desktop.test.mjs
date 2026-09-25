@@ -4,6 +4,7 @@ import os from "node:os";
 import test from "node:test";
 import path from "node:path";
 import {
+  evaluateInTarget,
   loopbackOrigin,
   MANAGED_PERSISTENT_DIRECTORIES,
   parseSmokeArguments,
@@ -82,6 +83,41 @@ test("installed desktop smoke accepts only a loopback backend page", () => {
   assert.equal(loopbackOrigin("http://127.0.0.1:43123/settings"), "http://127.0.0.1:43123");
   assert.throws(() => loopbackOrigin("https://example.com"), /loopback/);
   assert.throws(() => loopbackOrigin("http://localhost:43123"), /loopback/);
+});
+
+test("installed desktop smoke waits for a page execution context after navigation", async () => {
+  const originalWebSocket = globalThis.WebSocket;
+  let evaluationCount = 0;
+  class FakeWebSocket extends EventTarget {
+    constructor() {
+      super();
+      queueMicrotask(() => this.dispatchEvent(new Event("open")));
+    }
+
+    send(serialized) {
+      const command = JSON.parse(serialized);
+      if (command.method === "Runtime.evaluate") evaluationCount += 1;
+      const response =
+        command.method === "Runtime.evaluate" && evaluationCount === 1
+          ? { id: command.id, error: { message: "Cannot find default execution context" } }
+          : { id: command.id, result: { result: { value: true } } };
+      queueMicrotask(() => {
+        const event = new Event("message");
+        Object.defineProperty(event, "data", { value: JSON.stringify(response) });
+        this.dispatchEvent(event);
+      });
+    }
+
+    close() {}
+  }
+
+  globalThis.WebSocket = FakeWebSocket;
+  try {
+    assert.equal(await evaluateInTarget({ webSocketDebuggerUrl: "ws://127.0.0.1/devtools/page/test" }, "true"), true);
+    assert.equal(evaluationCount, 2);
+  } finally {
+    globalThis.WebSocket = originalWebSocket;
+  }
 });
 
 test("installed desktop smoke verifies persistent directories and SQLite are inside the selected data root", async () => {
