@@ -13,6 +13,7 @@ import {
   XhsTranslationSubmissionSchema,
   XhsTranslationTaskSchema
 } from "@toolbox/shared";
+import type { XhsArchiveItem } from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
 
 const base = "/tools/xhs-archive";
@@ -27,6 +28,11 @@ export const xhsArchiveApi = {
     withApiError(() => httpClient.get(`${base}/items`, XhsArchiveListResponseSchema, { params }), "读取内容存档失败"),
   detail: (id: string) =>
     withApiError(() => httpClient.get(`${base}/items/${id}`, XhsArchiveItemSchema), "读取存档详情失败"),
+  addFrame: (id: string, form: FormData) =>
+    withApiError(
+      () => httpClient.post(`${base}/items/${id}/frames`, XhsArchiveItemSchema, form),
+      "保存视频截帧失败"
+    ) as Promise<XhsArchiveItem>,
   refresh: (id: string) =>
     withApiError(() => httpClient.post(`${base}/items/${id}/refresh`, XhsArchiveTaskSchema), "创建刷新任务失败"),
   remove: (id: string) =>

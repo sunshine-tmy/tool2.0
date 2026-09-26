@@ -4,7 +4,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 import type { XhsAuthSession } from "@toolbox/shared";
 import { createApp } from "../app";
 import { XhsAuthManager } from "../modules/xhs-archive/auth";
@@ -25,6 +27,7 @@ afterEach(async () => {
   delete process.env.STORAGE_ROOT;
   delete process.env.XHS_PROVIDER_URL;
   delete process.env.XHS_TRANSLATION_PROVIDER_URL;
+  delete process.env.XHS_ARCHIVE_MAX_STORAGE_BYTES;
   vi.restoreAllMocks();
   await fs.rm(storageRoot, { recursive: true, force: true });
 });
@@ -149,6 +152,211 @@ describe("xhs archive api", () => {
     const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/xhs-archive/items/${detail.id}` });
     expect(removed.json().data).toMatchObject({ removed: true, mediaCount: 1, releasedBytes: image.length });
     await app.close();
+  });
+
+  it("captures PNG video frames, serializes concurrent saves, and preserves them across refresh", async () => {
+    const video = Buffer.from("local-video-content");
+    const png = await sharp({ create: { width: 32, height: 24, channels: 3, background: "#3156a3" } })
+      .png()
+      .toBuffer();
+    const largePng = await sharp(randomBytes(700 * 700 * 3), { raw: { width: 700, height: 700, channels: 3 } })
+      .png()
+      .toBuffer();
+    expect(largePng.length).toBeGreaterThan(1024 * 1024);
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "https://provider.test/extract") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            items: [
+              {
+                作品ID: "note-frame-1",
+                作品标题: "视频截帧测试",
+                作品类型: "视频",
+                作品链接: "https://www.xiaohongshu.com/explore/note-frame-1",
+                下载地址: ["https://cdn.test/video.mp4"]
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (url === "https://cdn.test/video.mp4") {
+        return new Response(video, {
+          status: 200,
+          headers: { "content-type": "video/mp4", "content-length": String(video.length) }
+        });
+      }
+      if (url === "https://translation.test/translate") {
+        return new Response(JSON.stringify({ translations: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    let app = await createApp({ remoteAddressResolver: publicResolver });
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/xhs-archive/items",
+        payload: { url: "https://www.xiaohongshu.com/explore/note-frame-1" }
+      });
+      const task = await waitForTask(app, created.json().data.id);
+      expect(task.status).toBe("completed");
+      await waitForTranslation(app, task.archiveId);
+      const detailUrl = `/api/v1/tools/xhs-archive/items/${task.archiveId}`;
+      const initial = (await app.inject({ method: "GET", url: detailUrl })).json().data;
+      const sourceMedia = initial.media[0];
+
+      const rejectedSource = await app.inject({
+        method: "POST",
+        url: `${detailUrl}/frames`,
+        ...framePayload("missing-video", 1234, png)
+      });
+      expect(rejectedSource.statusCode).toBe(400);
+      expect(rejectedSource.json().error.code).toBe("XHS_FRAME_SOURCE_INVALID");
+
+      const rejectedImage = await app.inject({
+        method: "POST",
+        url: `${detailUrl}/frames`,
+        ...framePayload(sourceMedia.id, 1234, Buffer.from("not a png"))
+      });
+      expect(rejectedImage.statusCode).toBe(415);
+      expect((await app.inject({ method: "GET", url: detailUrl })).json().data.media).toHaveLength(1);
+
+      const [first, second] = await Promise.all([
+        app.inject({ method: "POST", url: `${detailUrl}/frames`, ...framePayload(sourceMedia.id, 1234, png) }),
+        app.inject({ method: "POST", url: `${detailUrl}/frames`, ...framePayload(sourceMedia.id, 5678, png) })
+      ]);
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      const largeFrame = await app.inject({
+        method: "POST",
+        url: `${detailUrl}/frames`,
+        ...framePayload(sourceMedia.id, 9876, largePng)
+      });
+      expect(largeFrame.statusCode).toBe(200);
+      const afterCapture = (await app.inject({ method: "GET", url: detailUrl })).json().data;
+      const frames = afterCapture.media.filter((media: { frameSourceMediaId?: string }) => media.frameSourceMediaId);
+      expect(frames).toHaveLength(3);
+      expect(afterCapture.totalBytes).toBe(video.length + png.length * 2 + largePng.length);
+      expect(frames.map((frame: { frameTimestampMs: number }) => frame.frameTimestampMs).sort()).toEqual([
+        1234, 5678, 9876
+      ]);
+      expect(frames[0]).toMatchObject({ kind: "image", mimeType: "image/png", width: 32, height: 24 });
+      const listed = await app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items" });
+      expect(listed.json().data.items[0]).toMatchObject({
+        mediaCount: 4,
+        totalBytes: video.length + png.length * 2 + largePng.length
+      });
+
+      const framePreview = await app.inject({ method: "GET", url: frames[0].previewUrl });
+      expect(framePreview.statusCode).toBe(200);
+      expect(framePreview.headers["content-type"]).toContain("image/png");
+      expect(framePreview.rawPayload).toEqual(png);
+      const frameDownload = await app.inject({ method: "GET", url: frames[0].downloadUrl });
+      expect(frameDownload.headers["content-disposition"]).toContain("filename*=UTF-8''");
+
+      const refreshed = await app.inject({ method: "POST", url: `${detailUrl}/refresh` });
+      const refreshTask = await waitForTask(app, refreshed.json().data.id);
+      expect(refreshTask.status).toBe("completed");
+      await waitForTranslation(app, task.archiveId);
+      const afterRefresh = (await app.inject({ method: "GET", url: detailUrl })).json().data;
+      expect(
+        afterRefresh.media.filter((media: { frameSourceMediaId?: string }) => media.frameSourceMediaId)
+      ).toHaveLength(3);
+
+      const zip = await app.inject({ method: "GET", url: `${detailUrl}/download.zip` });
+      expect(zip.statusCode).toBe(200);
+      expect(zip.rawPayload.toString("utf8")).toContain("视频截帧-001-00-00-01-234.png");
+      expect(zip.rawPayload.toString("utf8")).toContain("视频截帧-002-00-00-05-678.png");
+      expect(zip.rawPayload.toString("utf8")).toContain("视频截帧-003-00-00-09-876.png");
+    } finally {
+      await app.close();
+    }
+
+    app = await createApp({ remoteAddressResolver: publicResolver });
+    try {
+      const persisted = await app.inject({ method: "GET", url: "/api/v1/tools/xhs-archive/items" });
+      const archiveId = persisted.json().data.items[0].id;
+      const detail = await app.inject({ method: "GET", url: `/api/v1/tools/xhs-archive/items/${archiveId}` });
+      expect(
+        detail.json().data.media.filter((media: { frameSourceMediaId?: string }) => media.frameSourceMediaId)
+      ).toHaveLength(3);
+
+      const removed = await app.inject({ method: "DELETE", url: `/api/v1/tools/xhs-archive/items/${archiveId}` });
+      expect(removed.json().data).toMatchObject({
+        removed: true,
+        mediaCount: 4,
+        releasedBytes: video.length + png.length * 2 + largePng.length
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects a video frame when it would exceed archive storage quota", async () => {
+    const video = Buffer.from("video-for-quota");
+    const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#fff" } })
+      .png()
+      .toBuffer();
+    process.env.XHS_ARCHIVE_MAX_STORAGE_BYTES = String(video.length + png.length - 1);
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === "https://provider.test/extract") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            items: [
+              {
+                作品ID: "note-frame-quota",
+                作品标题: "配额测试",
+                作品类型: "视频",
+                作品链接: "https://www.xiaohongshu.com/explore/note-frame-quota",
+                下载地址: ["https://cdn.test/quota-video.mp4"]
+              }
+            ]
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      if (url === "https://cdn.test/quota-video.mp4") {
+        return new Response(video, {
+          status: 200,
+          headers: { "content-type": "video/mp4", "content-length": String(video.length) }
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const app = await createApp({ remoteAddressResolver: publicResolver });
+    try {
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/xhs-archive/items",
+        payload: { url: "https://www.xiaohongshu.com/explore/note-frame-quota" }
+      });
+      const task = await waitForTask(app, created.json().data.id);
+      expect(task.status).toBe("completed");
+      await waitForTranslation(app, task.archiveId);
+      const detailUrl = `/api/v1/tools/xhs-archive/items/${task.archiveId}`;
+      const detail = (await app.inject({ method: "GET", url: detailUrl })).json().data;
+      const response = await app.inject({
+        method: "POST",
+        url: `${detailUrl}/frames`,
+        ...framePayload(detail.media[0].id, 999, png)
+      });
+      expect(response.statusCode).toBe(413);
+      expect(response.json().error.code).toBe("XHS_STORAGE_QUOTA_EXCEEDED");
+      const unchanged = (await app.inject({ method: "GET", url: detailUrl })).json().data;
+      expect(unchanged.media).toHaveLength(1);
+      expect(unchanged.totalBytes).toBe(video.length);
+    } finally {
+      await app.close();
+    }
   });
 
   it("rejects non-Xiaohongshu links before starting a task", async () => {
@@ -339,4 +547,21 @@ async function waitForUnifiedTask(app: Awaited<ReturnType<typeof createApp>>, id
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("Unified task timed out");
+}
+
+function framePayload(sourceMediaId: string, timestampMs: number, png: Buffer) {
+  const boundary = `----toolbox-frame-${Math.random().toString(16).slice(2)}`;
+  const payload = Buffer.concat([
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="sourceMediaId"\r\n\r\n${sourceMediaId}\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="timestampMs"\r\n\r\n${timestampMs}\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="frame.png"\r\nContent-Type: image/png\r\n\r\n`
+    ),
+    png,
+    Buffer.from(`\r\n--${boundary}--\r\n`)
+  ]);
+  return {
+    headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+    payload
+  };
 }

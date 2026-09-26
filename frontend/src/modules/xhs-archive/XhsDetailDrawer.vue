@@ -15,7 +15,7 @@
       footer-class="xhs-detail-drawer-footer"
     >
       <template v-if="props.detail">
-        <MediaGallery :item="props.detail" compact />
+        <MediaGallery :item="props.detail" compact @frame-saved="emit('frameSaved', $event)" />
         <div class="drawer-meta">
           <div class="drawer-facts">
             <p>
@@ -75,7 +75,10 @@ const props = defineProps<{
   zipUrl: (id: string) => string;
 }>();
 
-const emit = defineEmits<{ "update:open": [value: boolean] }>();
+const emit = defineEmits<{
+  "update:open": [value: boolean];
+  frameSaved: [item: XhsArchiveItem];
+}>();
 </script>
 
 <style scoped>

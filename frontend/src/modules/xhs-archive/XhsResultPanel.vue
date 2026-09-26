@@ -36,7 +36,7 @@
       </div>
     </div>
     <div class="result-detail-layout">
-      <MediaGallery :item="props.current" />
+      <MediaGallery :item="props.current" @frame-saved="emit('frameSaved', $event)" />
       <div class="drawer-meta result-meta">
         <div class="drawer-facts">
           <p>
@@ -75,6 +75,8 @@ const props = defineProps<{
   hasEdited: (item: XhsArchiveItem) => boolean;
   formatDate: (value: string) => string;
 }>();
+
+const emit = defineEmits<{ frameSaved: [item: XhsArchiveItem] }>();
 </script>
 
 <style scoped>

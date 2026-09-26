@@ -48,6 +48,7 @@
         :reset-translation="resetTranslation"
         :has-edited="hasEdited"
         :format-date="formatDate"
+        @frame-saved="onFrameSaved"
       />
       <ArchiveListPanel
         v-model:keyword="keyword"
@@ -77,6 +78,7 @@
         :reset-translation="resetTranslation"
         :has-edited="hasEdited"
         :zip-url="zipUrl"
+        @frame-saved="onFrameSaved"
       />
       <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
     </section>
@@ -269,6 +271,12 @@ async function openDetail(id: string) {
   if (detail.value.translation?.taskId && detail.value.translation.status !== "ready") {
     trackTranslation(detail.value.translation.taskId, detail.value.id, false);
   }
+}
+async function onFrameSaved(updated: XhsArchiveItem) {
+  if (current.value?.id === updated.id) current.value = updated;
+  if (detail.value?.id === updated.id) detail.value = updated;
+  await loadArchives();
+  message.success("视频截帧已保存到当前归档");
 }
 async function translateCurrent() {
   if (!(await requireTranslationCapability())) return;

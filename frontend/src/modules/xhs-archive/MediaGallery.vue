@@ -9,7 +9,24 @@
         :alt="item.title"
         object-fit="contain"
       />
-      <video v-else :src="mediaUrl(media.previewUrl)" controls preload="metadata" />
+      <video
+        v-else
+        ref="videoElement"
+        :src="mediaUrl(media.previewUrl)"
+        crossorigin="anonymous"
+        controls
+        playsinline
+        preload="metadata"
+        @play="onVideoPlay"
+        @pause="onVideoPause"
+        @loadeddata="onVideoFrameReady"
+        @seeking="onVideoSeeking"
+        @seeked="onVideoFrameReady"
+      />
+      <span v-if="isCapturedVideoFrame(media)" class="captured-frame-badge" role="img" aria-label="视频截帧图片">
+        <Camera :size="15" aria-hidden="true" />
+        <span>截帧</span>
+      </span>
       <template v-if="item.media.length > 1">
         <button
           class="media-nav media-nav-prev"
@@ -55,19 +72,46 @@
             preload="metadata"
             @loadedmetadata="showFirstVideoFrame"
           />
+          <span
+            v-if="isCapturedVideoFrame(entry)"
+            class="captured-frame-thumb-badge"
+            title="视频截帧"
+            aria-label="视频截帧"
+          >
+            <Camera :size="11" aria-hidden="true" />
+            <span>截帧</span>
+          </span>
         </button>
       </div>
-      <div class="media-download"><a :href="mediaUrl(media.downloadUrl)">下载当前媒体</a></div>
+      <div class="media-actions">
+        <div v-if="isVideoMedia(media)" class="frame-capture-actions">
+          <n-button
+            size="small"
+            type="primary"
+            :disabled="!canCaptureFrame"
+            :loading="savingFrame"
+            @click="saveCurrentFrame"
+          >
+            保存当前帧
+          </n-button>
+          <small aria-live="polite">
+            {{ frameMessage || frameHint }}
+          </small>
+        </div>
+        <a :href="mediaUrl(media.downloadUrl)">下载当前媒体</a>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { NImage } from "naive-ui";
-import { ChevronLeft, ChevronRight } from "lucide-vue-next";
+import { NButton, NImage } from "naive-ui";
+import { Camera, ChevronLeft, ChevronRight } from "lucide-vue-next";
 import type { XhsArchiveItem } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../config/runtime";
+import { formatApiError } from "../../services/http";
+import { xhsArchiveApi } from "./api";
 
 const props = withDefaults(
   defineProps<{
@@ -79,11 +123,38 @@ const props = withDefaults(
 
 const selected = ref(0);
 const media = computed(() => props.item.media[selected.value] ?? props.item.media[0]);
+const videoElement = ref<HTMLVideoElement>();
+const videoPaused = ref(true);
+const videoFrameReady = ref(false);
+const savingFrame = ref(false);
+const frameMessage = ref("");
+const canCaptureFrame = computed(
+  () =>
+    isVideoMedia(media.value) &&
+    videoPaused.value &&
+    videoFrameReady.value &&
+    !savingFrame.value &&
+    Boolean(videoElement.value?.videoWidth && videoElement.value.videoHeight)
+);
+const frameHint = computed(() => {
+  if (!videoPaused.value) return "请先暂停视频，再保存当前画面";
+  return videoFrameReady.value ? "暂停到目标画面后保存 PNG" : "等待视频画面加载后即可保存";
+});
+const emit = defineEmits<{ frameSaved: [item: XhsArchiveItem] }>();
 
 watch(
   () => props.item.id,
   () => {
     selected.value = 0;
+  }
+);
+
+watch(
+  () => media.value?.id,
+  () => {
+    videoPaused.value = true;
+    videoFrameReady.value = false;
+    frameMessage.value = "";
   }
 );
 
@@ -96,6 +167,76 @@ function showFirstVideoFrame(event: Event) {
   if (video.currentTime > 0) return;
   const target = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(0.1, video.duration / 2) : 0.1;
   video.currentTime = target;
+}
+
+function isVideoMedia(value: XhsArchiveItem["media"][number] | undefined): value is XhsArchiveItem["media"][number] {
+  return value?.kind === "video" || value?.kind === "live-photo";
+}
+
+function isCapturedVideoFrame(value: XhsArchiveItem["media"][number] | undefined) {
+  return value?.frameSourceMediaId !== undefined && value.frameTimestampMs !== undefined;
+}
+
+function onVideoPlay() {
+  videoPaused.value = false;
+}
+
+function onVideoSeeking() {
+  videoFrameReady.value = false;
+}
+
+function onVideoPause() {
+  videoPaused.value = true;
+  const video = videoElement.value;
+  videoFrameReady.value = Boolean(video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0);
+}
+
+function onVideoFrameReady() {
+  const video = videoElement.value;
+  videoFrameReady.value = Boolean(video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0);
+}
+
+async function saveCurrentFrame() {
+  const video = videoElement.value;
+  const sourceMedia = media.value;
+  if (!video || !isVideoMedia(sourceMedia) || !video.paused || !videoFrameReady.value || !video.videoWidth) return;
+
+  savingFrame.value = true;
+  frameMessage.value = "正在保存截帧…";
+  const timestampMs = Math.max(0, Math.round(video.currentTime * 1000));
+  let uploadStarted = false;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("浏览器无法读取视频画面");
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const png = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("无法生成 PNG 截帧"))), "image/png");
+    });
+    const form = new FormData();
+    form.append("sourceMediaId", sourceMedia.id);
+    form.append("timestampMs", String(timestampMs));
+    form.append("file", png, "video-frame.png");
+    uploadStarted = true;
+    const updated = await xhsArchiveApi.addFrame(props.item.id, form);
+    emit("frameSaved", updated);
+    frameMessage.value = `已保存 ${formatTimestamp(timestampMs)} 的 PNG 截帧`;
+  } catch (error) {
+    frameMessage.value =
+      !uploadStarted && error instanceof Error ? error.message : formatApiError(error, "保存视频截帧失败");
+  } finally {
+    savingFrame.value = false;
+  }
+}
+
+function formatTimestamp(timestampMs: number) {
+  const hours = Math.floor(timestampMs / 3_600_000);
+  const minutes = Math.floor((timestampMs % 3_600_000) / 60_000);
+  const seconds = Math.floor((timestampMs % 60_000) / 1_000);
+  const milliseconds = timestampMs % 1_000;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
 }
 
 function changeMedia(direction: -1 | 1) {
@@ -201,6 +342,7 @@ function changeMedia(direction: -1 | 1) {
   padding-bottom: 4px;
 }
 .media-thumbs button {
+  position: relative;
   flex: 0 0 60px;
   height: 80px;
   overflow: hidden;
@@ -215,7 +357,7 @@ function changeMedia(direction: -1 | 1) {
   height: 72px;
 }
 .is-compact .media-thumbs,
-.is-compact .media-download {
+.is-compact .media-actions {
   width: min(100%, 480px);
 }
 .media-thumbs button.active {
@@ -231,6 +373,44 @@ function changeMedia(direction: -1 | 1) {
   display: block;
   pointer-events: none;
 }
+.captured-frame-badge,
+.captured-frame-thumb-badge {
+  position: absolute;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: #e85d04;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 32%);
+  pointer-events: none;
+}
+.captured-frame-badge {
+  top: 20px;
+  right: 20px;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid rgb(255 255 255 / 32%);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.captured-frame-thumb-badge {
+  top: 4px;
+  right: 4px;
+  gap: 2px;
+  padding: 3px 4px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+.media-thumbs .captured-frame-thumb-badge {
+  height: auto;
+  flex-direction: row;
+  font-size: 9px;
+}
 .media-thumbs span {
   display: flex;
   height: 100%;
@@ -239,11 +419,27 @@ function changeMedia(direction: -1 | 1) {
   justify-content: center;
   font-size: 11px;
 }
-.media-download {
+.media-actions {
+  display: flex;
   width: min(100%, 520px);
-  text-align: right;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
-.media-download a {
+.frame-capture-actions {
+  display: grid;
+  justify-items: start;
+  gap: 5px;
+}
+.frame-capture-actions small {
+  color: #758096;
+  line-height: 1.4;
+}
+.media-actions > a {
+  flex: 0 0 auto;
+  margin-top: 5px;
+  margin-left: auto;
+  text-align: right;
   color: #2563eb;
   text-decoration: none;
 }

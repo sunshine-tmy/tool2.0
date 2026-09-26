@@ -223,9 +223,18 @@ export const XhsArchiveMediaSchema = Type.Object(
     width: Type.Optional(Type.Integer({ minimum: 1 })),
     height: Type.Optional(Type.Integer({ minimum: 1 })),
     durationMs: Type.Optional(Type.Number({ minimum: 0 })),
+    frameSourceMediaId: Type.Optional(XhsEntityIdSchema),
+    frameTimestampMs: Type.Optional(Type.Integer({ minimum: 0 })),
     checksum: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     previewUrl: Type.String(),
     downloadUrl: Type.String()
+  },
+  { additionalProperties: false }
+);
+export const XhsArchiveFrameCaptureSchema = Type.Object(
+  {
+    sourceMediaId: XhsEntityIdSchema,
+    timestampMs: Type.Integer({ minimum: 0 })
   },
   { additionalProperties: false }
 );
@@ -356,6 +365,7 @@ export type XhsTranslationRuntimeStatus = Static<typeof XhsTranslationRuntimeSta
 export type XhsTranslationTaskStage = Static<typeof XhsTranslationTaskStageSchema>;
 export type XhsTranslationTask = Static<typeof XhsTranslationTaskSchema>;
 export type XhsArchiveMedia = Static<typeof XhsArchiveMediaSchema>;
+export type XhsArchiveFrameCapture = Static<typeof XhsArchiveFrameCaptureSchema>;
 export type XhsArchiveItem = Static<typeof XhsArchiveItemSchema>;
 export type XhsArchiveListItem = Static<typeof XhsArchiveListItemSchema>;
 export type XhsArchiveListResponse = Static<typeof XhsArchiveListResponseSchema>;

@@ -25,7 +25,7 @@ import {
   type RemoteFetch
 } from "../../security/remote-fetch";
 import { XhsAuthManager } from "./auth";
-import { XhsArchiveStore } from "./store";
+import { XhsArchiveStore, XhsArchiveStoreError } from "./store";
 import { XhsRuntimeError, XhsRuntimeManager } from "./runtime";
 import { XhsTranslationService, translationSourceHash } from "./translation-service";
 
@@ -242,7 +242,10 @@ export class XhsArchiveTaskService {
           stage: "failed",
           message: error instanceof Error ? error.message : "获取失败",
           error: error instanceof Error ? error.message : "获取失败",
-          errorCode: error instanceof XhsError || error instanceof XhsRuntimeError ? error.code : "XHS_TASK_FAILED",
+          errorCode:
+            error instanceof XhsError || error instanceof XhsRuntimeError || error instanceof XhsArchiveStoreError
+              ? error.code
+              : "XHS_TASK_FAILED",
           updatedAt: new Date().toISOString()
         };
         this.tasks.set(taskId, failedTask);

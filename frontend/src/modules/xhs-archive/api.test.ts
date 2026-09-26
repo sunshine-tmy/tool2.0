@@ -3,6 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  XhsArchiveItemSchema,
   XhsArchiveListResponseSchema,
   XhsArchiveRemovalSchema,
   XhsArchiveTaskSchema,
@@ -30,6 +31,11 @@ describe("XHS archive api", () => {
     await xhsArchiveApi.task("task-1");
     await xhsArchiveApi.list({ keyword: "咖啡", page: 2, pageSize: 10 });
     await xhsArchiveApi.detail("item-1");
+    const frame = new FormData();
+    frame.append("sourceMediaId", "media-1");
+    frame.append("timestampMs", "1234");
+    frame.append("file", new Blob(["png"]), "frame.png");
+    await xhsArchiveApi.addFrame("item-1", frame);
     await xhsArchiveApi.refresh("item-1");
     await xhsArchiveApi.remove("item-1");
     await xhsArchiveApi.startAuth();
@@ -52,6 +58,7 @@ describe("XHS archive api", () => {
     expect(httpMock.post).toHaveBeenCalledWith("/tools/xhs-archive/items", XhsArchiveTaskSchema, {
       url: "https://www.xiaohongshu.com/explore/one"
     });
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/xhs-archive/items/item-1/frames", XhsArchiveItemSchema, frame);
     expect(httpMock.patch).toHaveBeenCalledWith(
       "/tools/xhs-archive/items/item-1/translation",
       XhsArchiveTranslationResultSchema,
