@@ -124,6 +124,38 @@ function Get-InstalledApplication {
   return [pscustomobject]@{ Application = $applicationPath; Uninstaller = $uninstallerFile.FullName }
 }
 
+function Assert-DesktopShortcutTarget {
+  param([string]$ApplicationPath)
+
+  $desktopDirectory = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+  $shortcutPath = Join-Path $desktopDirectory 'Ecommerce Toolbox.lnk'
+  if (-not (Test-Path -LiteralPath $shortcutPath -PathType Leaf)) {
+    throw "Installed desktop shortcut is missing: $shortcutPath"
+  }
+
+  $shell = New-Object -ComObject WScript.Shell
+  try {
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $actualTarget = [IO.Path]::GetFullPath($shortcut.TargetPath)
+    $expectedTarget = [IO.Path]::GetFullPath($ApplicationPath)
+    if (-not [string]::Equals($actualTarget, $expectedTarget, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Desktop shortcut points to '$actualTarget' instead of the installed application '$expectedTarget'."
+    }
+    if (-not (Test-Path -LiteralPath $actualTarget -PathType Leaf)) {
+      throw "Desktop shortcut target does not exist: $actualTarget"
+    }
+    $iconPath = ($shortcut.IconLocation -split ',', 2)[0].Trim('"')
+    $actualIconPath = [IO.Path]::GetFullPath($iconPath)
+    if (-not [string]::Equals($actualIconPath, $expectedTarget, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Desktop shortcut icon points to '$actualIconPath' instead of the packaged application icon '$expectedTarget'."
+    }
+    Set-AcceptanceResult 'desktopShortcut' @{ target = $actualTarget; iconLocation = $shortcut.IconLocation }
+  }
+  finally {
+    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($shell)
+  }
+}
+
 function Assert-InstalledVersion {
   param([string]$ApplicationPath, [string]$Version)
   $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($ApplicationPath).ProductVersion
@@ -283,6 +315,8 @@ try {
   if (-not $AllowUnsignedTestArtifact) {
     & (Join-Path $PSScriptRoot 'verify-windows-signatures.ps1') -Directory $installRoot -ExpectedSubject $ExpectedSubject
   }
+
+  Assert-DesktopShortcutTarget -ApplicationPath $currentInstall.Application
 
   New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
   if (-not (Test-Path -LiteralPath $dataSentinelPath -PathType Leaf)) {

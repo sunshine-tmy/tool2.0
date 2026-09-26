@@ -36,6 +36,19 @@ test("Windows executable, NSIS, Electron windows and web branding share the orig
   expect(topbar).not.toContain("<Boxes");
 });
 
+test("NSIS shortcuts target the actual packaged executable", async () => {
+  const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
+  const packager = await readFile(path.join(desktopRoot, "scripts", "package-desktop.mjs"), "utf8");
+  const repositoryRoot = path.resolve(desktopRoot, "../..");
+  const acceptance = await readFile(path.join(repositoryRoot, "scripts", "accept-windows-desktop-install.ps1"), "utf8");
+
+  expect(config.executableName).toBe("EcommerceToolbox");
+  expect(packager).toContain(`const appName = "${config.executableName}";`);
+  expect(acceptance).toContain("function Assert-DesktopShortcutTarget");
+  expect(acceptance).toContain("Assert-DesktopShortcutTarget -ApplicationPath $currentInstall.Application");
+  expect(acceptance).toContain("$shortcut.IconLocation");
+});
+
 test("NSIS preserves install-root data unless an interactive user confirms deletion twice", async () => {
   const installer = await readFile(path.join(desktopRoot, "installer-custom.nsh"), "utf8");
 

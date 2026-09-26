@@ -1,6 +1,7 @@
 {
   "appId": "com.ecommercetoolbox.desktop",
   "productName": "Ecommerce Toolbox",
+  "executableName": "EcommerceToolbox",
   "directories": {
     "output": "out/make/nsis"
   },
