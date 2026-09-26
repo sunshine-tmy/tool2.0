@@ -21,12 +21,12 @@
     "test:installed-smoke": "node --test scripts/smoke-installed-desktop.test.mjs"
   },
   "devDependencies": {
-    "@electron/packager": "^18.4.4",
+    "@electron/packager": "^20.3.0",
     "@electron/rebuild": "^4.2.0",
-    "electron": "^44.4.3",
+    "electron": "^44.4.4",
     "electron-builder": "26.15.3",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.7"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   }
 }
