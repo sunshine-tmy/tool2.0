@@ -4,6 +4,7 @@ apps/desktop/.stage/
 apps/desktop/out/
 apps/desktop/.electron-cache/
 apps/desktop/.electron-builder-cache/
+apps/desktop/.electron-builder-cache-local/
 .env
 .env.local
 .env.*
