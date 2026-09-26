@@ -20,6 +20,17 @@
 
 耗时创建接口统一返回 HTTP `202` 和 `data.taskId`；使用 `/api/v1/tasks/:taskId` 查询或 `/api/v1/tasks/:taskId/events` 订阅 SSE。所有 JSON 响应都会经过共享 TypeBox Schema 校验；错误至少包含稳定 `error.code`、可读 `message` 和 `requestId`。
 
+## 桌面能力包管理
+
+以下能力管理接口仅在启用桌面受管能力的安装版开放。GET /api/v1/components 返回固定能力目录；每项的 archiveFileNames 是离线导入接受的归档文件名，releasePageUrl 是从签名归档地址推导出的 GitHub 发布页（仅可信 GitHub Releases 源会返回该字段），不是安装 API 的下载参数。安装、重装和卸载返回作业对象，使用 /api/v1/component-jobs/:jobId 查询或 /events 订阅进度。
+
+- POST /api/v1/components/:componentId/install：从签名清单指定的 HTTPS 源在线安装。
+- POST /api/v1/components/:componentId/reinstall：下载并验证新 generation 后再原子切换。
+- POST /api/v1/components/:componentId/offline-import：以 multipart/form-data 上传一个或多个 archives 文件；必须恰好包含该项 archiveFileNames 中的全部文件。服务端拒绝未知/重复文件名、额外字段、尺寸不符或 SHA-256 不符的内容，并继续执行原有签名清单文件验证、自检和原子切换。
+- DELETE /api/v1/components/:componentId：卸载运行时；用户作品、历史和个人素材保留。
+
+离线上传限制来自内置签名清单中的归档总大小。renderer 不能指定安装目录、下载地址或命令；上传文件先写入能力管理器维护的临时目录，安装完成或失败后会清理临时归档。
+
 ## 图片压缩
 
 `POST /api/v1/tools/image-compress` 使用 `multipart/form-data`：

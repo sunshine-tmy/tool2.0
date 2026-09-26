@@ -39,7 +39,12 @@ function component(overrides: Partial<ComponentPackageStatus> = {}): ComponentPa
   };
 }
 
-function mountCard(props: { component: ComponentPackageStatus; job?: ComponentJob }) {
+function mountCard(props: {
+  component: ComponentPackageStatus;
+  job?: ComponentJob;
+  offlineUploading?: boolean;
+  offlineUploadProgress?: number;
+}) {
   return mount(DesktopComponentCard, {
     props,
     global: {
@@ -52,7 +57,8 @@ function mountCard(props: { component: ComponentPackageStatus; job?: ComponentJo
         NTag: defineComponent({ template: "<span><slot /></span>" }),
         Download: true,
         RefreshCw: true,
-        Trash2: true
+        Trash2: true,
+        Upload: true
       }
     }
   });
@@ -80,6 +86,34 @@ describe("DesktopComponentCard", () => {
     const install = wrapper.findAll("button").find((button) => button.text().includes("安装"));
     expect(install?.attributes("disabled")).toBeDefined();
     expect(wrapper.text()).toContain("缺少依赖：python-311");
+  });
+
+  it("offers generic offline import and displays signed archive basenames", async () => {
+    const wrapper = mountCard({
+      component: component({
+        archiveFileNames: ["ffmpeg-8.1.2.tar.gz", "ffmpeg-8.1.2.spdx.json"],
+        releasePageUrl: "https://github.com/sunshine-tmy/tool2.0/releases/tag/components-v1"
+      })
+    });
+    expect(wrapper.text()).toContain("ffmpeg-8.1.2.tar.gz");
+    expect(wrapper.text()).toContain("ffmpeg-8.1.2.spdx.json");
+    expect(wrapper.find(".offline-import-source a").attributes()).toMatchObject({
+      href: "https://github.com/sunshine-tmy/tool2.0/releases/tag/components-v1",
+      target: "_blank",
+      rel: "noopener noreferrer"
+    });
+    const button = wrapper.findAll("button").find((item) => item.text().includes("离线导入"));
+    await button?.trigger("click");
+    expect(wrapper.emitted("offlineImport")?.[0]?.[0]).toMatchObject({ id: "ffmpeg" });
+  });
+
+  it("shows cancellable upload progress during offline import", async () => {
+    const wrapper = mountCard({ component: component(), offlineUploading: true, offlineUploadProgress: 42 });
+    expect(wrapper.text()).toContain("正在传输离线安装包");
+    expect(wrapper.text()).toContain("42%");
+    const cancel = wrapper.findAll("button").find((button) => button.text().includes("取消导入"));
+    await cancel?.trigger("click");
+    expect(wrapper.emitted("cancelOfflineImport")?.[0]?.[0]).toMatchObject({ id: "ffmpeg" });
   });
 
   it("prevents removing a shared dependency while another package depends on it", () => {

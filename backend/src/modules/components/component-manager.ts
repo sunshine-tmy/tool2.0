@@ -5,6 +5,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { Transform, type Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import * as tar from "tar";
 import {
   buildPythonEnvironment,
@@ -54,6 +56,11 @@ export type ComponentArchiveAsset = {
   format: "tar.gz";
   /** Signed file partition, required when a manifest has multiple archive assets. */
   filePaths?: string[];
+};
+export type OfflineArchiveUpload = {
+  fieldName: string;
+  filename: string;
+  stream: Readable & { truncated?: boolean };
 };
 export type ComponentPackageManifest = {
   protocolVersion: number;
@@ -130,6 +137,8 @@ type CurrentRecord = {
 type InternalJob = {
   value: ComponentJob;
   controller?: AbortController;
+  offlineArchivePaths?: string[];
+  offlineImportRoot?: string;
 };
 
 export class ComponentManagerError extends Error {
@@ -137,6 +146,7 @@ export class ComponentManagerError extends Error {
     readonly code:
       | "COMPONENT_NOT_FOUND"
       | "COMPONENT_MANIFEST_INVALID"
+      | "COMPONENT_IMPORT_INVALID"
       | "COMPONENT_INSTALL_FAILED"
       | "COMPONENT_DEPENDENCY_MISSING"
       | "COMPONENT_IN_USE"
@@ -329,6 +339,142 @@ export class ComponentManager {
     return this.startJob(componentId, "uninstall");
   }
 
+  /**
+   * Resolve import constraints from the embedded catalog before accepting a large request body.
+   * This fails fast for missing dependencies, busy workers, invalid signatures, or low disk space.
+   */
+  async getOfflineImportRequirements(componentId: string) {
+    await this.initialize();
+    const manifest = this.getManifest(componentId);
+    this.verifyManifest(manifest);
+    if (this.activeByComponent.has(componentId)) {
+      throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "该能力已有其他管理作业正在运行");
+    }
+    await this.assertDependenciesReady(manifest);
+    const current = await this.readCurrent(this.componentRoot(componentId), componentId);
+    if (current && (await this.isInUse(componentId, this.affectedTaskToolIds(componentId)))) {
+      throw new ComponentManagerError("COMPONENT_IN_USE", "能力正在被运行任务使用，暂时无法导入或重装");
+    }
+    const totalBytes = componentDownloadBytes(manifest);
+    const freeBytes = await this.availableDiskBytes(this.root);
+    if (freeBytes < totalBytes + manifest.installedBytes) {
+      throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘可用空间不足");
+    }
+    const archives = componentArchiveAssets(manifest).map((archive) => ({
+      filename: archiveAssetFileName(archive),
+      bytes: archive.bytes
+    }));
+    if (new Set(archives.map((archive) => archive.filename)).size !== archives.length) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包归档文件名重复");
+    }
+    return { archives, totalBytes };
+  }
+
+  /** Maximum multipart request body allowed by any package in this signed catalog. */
+  getOfflineImportBodyLimit() {
+    const largestPackage = Math.max(0, ...[...this.manifests.values()].map(componentDownloadBytes));
+    return largestPackage + 1024 * 1024;
+  }
+
+  /**
+   * Stream local archives into manager-owned temporary files. Renderer input is limited to bytes
+   * and filenames; it can never select an install path, executable, or download URL.
+   */
+  async startOfflineImport(
+    componentId: string,
+    uploads: AsyncIterable<OfflineArchiveUpload>,
+    onProgress?: (uploadedBytes: number, totalBytes: number) => void
+  ) {
+    const requirements = await this.getOfflineImportRequirements(componentId);
+    const manifest = this.getManifest(componentId);
+    const assets = componentArchiveAssets(manifest);
+    const importRoot = safeChildPath(
+      this.componentRoot(componentId),
+      path.join("archives", `.offline-import-${crypto.randomUUID()}.partial`)
+    );
+    await fsp.mkdir(path.dirname(importRoot), { recursive: true });
+    await fsp.mkdir(importRoot, { recursive: false });
+    const stagedPaths: Array<string | undefined> = Array.from({ length: assets.length });
+    const received = new Set<number>();
+    let uploadedBytes = 0;
+    let ownershipTransferred = false;
+
+    try {
+      for await (const upload of uploads) {
+        if (upload.fieldName !== "archives") {
+          upload.stream.resume();
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "上传字段无效；请只选择能力包文件");
+        }
+        const archiveIndex = requirements.archives.findIndex((archive) => archive.filename === upload.filename);
+        if (archiveIndex < 0 || received.has(archiveIndex)) {
+          upload.stream.resume();
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "文件名不属于当前能力版本，或重复选择了文件");
+        }
+        received.add(archiveIndex);
+        const archiveAsset = assets[archiveIndex]!;
+        const destination = safeChildPath(importRoot, `${archiveIndex}.tar.gz.partial`);
+        const hash = crypto.createHash("sha256");
+        let fileBytes = 0;
+        const meter = new Transform({
+          transform: (chunk: Buffer | string, encoding, callback) => {
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, encoding);
+            fileBytes += buffer.byteLength;
+            if (fileBytes > archiveAsset.bytes) {
+              callback(new ComponentManagerError("COMPONENT_IMPORT_INVALID", "离线能力包超过签名清单声明的大小"));
+              return;
+            }
+            hash.update(buffer);
+            onProgress?.(uploadedBytes + fileBytes, requirements.totalBytes);
+            callback(null, buffer);
+          }
+        });
+
+        try {
+          await pipeline(upload.stream, meter, fs.createWriteStream(destination, { flags: "wx", mode: 0o600 }));
+        } catch (error) {
+          if (error instanceof ComponentManagerError) throw error;
+          if ((error as NodeJS.ErrnoException)?.code === "ENOSPC") {
+            throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘空间不足，离线能力包未导入");
+          }
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "离线能力包上传中断或无法读取，请重新选择文件");
+        }
+        if (upload.stream.truncated) {
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "离线能力包上传不完整或超过允许大小");
+        }
+        if (fileBytes !== archiveAsset.bytes) {
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "离线能力包大小与受信任目录不一致");
+        }
+        if (hash.digest("hex") !== archiveAsset.sha256) {
+          throw new ComponentManagerError(
+            "COMPONENT_IMPORT_INVALID",
+            "离线能力包 SHA-256 校验失败，文件可能损坏或版本不匹配"
+          );
+        }
+        const stagedPath = safeChildPath(importRoot, `${archiveIndex}.tar.gz.partial`);
+        await this.verifyArchive(stagedPath, archiveAsset);
+        stagedPaths[archiveIndex] = stagedPath;
+        uploadedBytes += fileBytes;
+        onProgress?.(uploadedBytes, requirements.totalBytes);
+      }
+
+      if (received.size !== assets.length || stagedPaths.some((stagedPath) => !stagedPath)) {
+        throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "所选文件不完整；请一次选择该能力要求的全部分卷");
+      }
+
+      const current = await this.readCurrent(this.componentRoot(componentId), componentId);
+      const job = await this.startJob(
+        componentId,
+        current ? "reinstall" : "install",
+        stagedPaths as string[],
+        importRoot
+      );
+      ownershipTransferred = true;
+      return job;
+    } finally {
+      if (!ownershipTransferred) await fsp.rm(importRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
   async cancelJob(jobId: string) {
     const job = this.jobs.get(jobId);
     if (!job) throw new ComponentManagerError("COMPONENT_JOB_NOT_FOUND", "未找到能力管理作业");
@@ -358,13 +504,18 @@ export class ComponentManager {
     }
   }
 
-  private async startJob(componentId: string, operation: ComponentJob["operation"]) {
+  private async startJob(
+    componentId: string,
+    operation: ComponentJob["operation"],
+    offlineArchivePaths?: string[],
+    offlineImportRoot?: string
+  ) {
     await this.initialize();
     this.getManifest(componentId);
     const existingId = this.activeByComponent.get(componentId);
     if (existingId) {
       const activeJob = this.jobs.get(existingId)!.value;
-      if (activeJob.operation !== operation) {
+      if (offlineArchivePaths || activeJob.operation !== operation) {
         throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "该能力已有其他管理作业正在运行");
       }
       return activeJob;
@@ -378,7 +529,10 @@ export class ComponentManager {
       operation === "uninstall" ? 0 : componentDownloadBytes(manifest),
       manifest.files.length
     );
-    const internal = { value: job } satisfies InternalJob;
+    const internal = {
+      value: job,
+      ...(offlineArchivePaths ? { offlineArchivePaths, offlineImportRoot } : {})
+    } satisfies InternalJob;
     this.jobs.set(job.id, internal);
     this.activeByComponent.set(componentId, job.id);
     void this.runJob(internal, manifest);
@@ -426,7 +580,10 @@ export class ComponentManager {
       }
       await this.assertDependenciesReady(manifest);
       const freeBytes = await this.availableDiskBytes(this.root);
-      if (freeBytes < componentDownloadBytes(manifest) + manifest.installedBytes) {
+      const requiredBytes = internal.offlineArchivePaths
+        ? manifest.installedBytes
+        : componentDownloadBytes(manifest) + manifest.installedBytes;
+      if (freeBytes < requiredBytes) {
         throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘可用空间不足");
       }
       internal.controller = new AbortController();
@@ -464,6 +621,12 @@ export class ComponentManager {
     } finally {
       this.activeByComponent.delete(manifest.id);
       internal.controller = undefined;
+      if (internal.offlineArchivePaths) {
+        await Promise.all(internal.offlineArchivePaths.map((archivePath) => fsp.rm(archivePath, { force: true })));
+      }
+      if (internal.offlineImportRoot) {
+        await fsp.rm(internal.offlineImportRoot, { recursive: true, force: true }).catch(() => undefined);
+      }
     }
   }
 
@@ -504,14 +667,28 @@ export class ComponentManager {
         const archiveManifest = { ...manifest, archive: archiveAsset };
         const archivePath = safeChildPath(archiveRoot, `${manifest.version}.${index}.${crypto.randomUUID()}.partial`);
         try {
-          this.updateJob(internal, { phase: "downloading" });
-          await this.downloadArchive(archiveManifest, archivePath, {
-            signal,
-            onProgress: (partDownloadedBytes) =>
-              this.updateJob(internal, {
-                progress: progress(downloadedBytes + partDownloadedBytes, downloadBytesTotal, 0, manifest.files.length)
-              })
-          });
+          const offlineArchivePath = internal.offlineArchivePaths?.[index];
+          if (offlineArchivePath) {
+            this.updateJob(internal, { phase: "verifying" });
+            await fsp.rename(offlineArchivePath, archivePath);
+            this.updateJob(internal, {
+              progress: progress(downloadedBytes + archiveAsset.bytes, downloadBytesTotal, 0, manifest.files.length)
+            });
+          } else {
+            this.updateJob(internal, { phase: "downloading" });
+            await this.downloadArchive(archiveManifest, archivePath, {
+              signal,
+              onProgress: (partDownloadedBytes) =>
+                this.updateJob(internal, {
+                  progress: progress(
+                    downloadedBytes + partDownloadedBytes,
+                    downloadBytesTotal,
+                    0,
+                    manifest.files.length
+                  )
+                })
+            });
+          }
           if (signal.aborted) throw new Error("download cancelled");
           downloadedBytes += archiveAsset.bytes;
           this.updateJob(internal, {
@@ -545,7 +722,7 @@ export class ComponentManager {
       }
       this.updateJob(internal, {
         phase: "self-test",
-        progress: progress(manifest.archive.bytes, manifest.archive.bytes, manifest.files.length, manifest.files.length)
+        progress: progress(downloadBytesTotal, downloadBytesTotal, manifest.files.length, manifest.files.length)
       });
       if (this.selfTest) await this.selfTest(manifest, target);
       this.updateJob(internal, { phase: "switching" });
@@ -735,6 +912,7 @@ export class ComponentManager {
         health = "unhealthy";
       }
     }
+    const releasePageUrl = componentReleasePageUrl(manifest);
     return {
       id: manifest.id,
       moduleId: manifest.moduleId,
@@ -748,6 +926,8 @@ export class ComponentManager {
       version: manifest.version,
       platform: manifest.platform,
       downloadBytes: componentDownloadBytes(manifest),
+      archiveFileNames: componentArchiveAssets(manifest).map(archiveAssetFileName),
+      ...(releasePageUrl ? { releasePageUrl } : {}),
       // UI 在安装前也需要展示签名 manifest 提供的目标占用估值，而不是返回无意义的 0。
       installedBytes: manifest.installedBytes,
       installed: Boolean(current),
@@ -953,6 +1133,38 @@ export class ComponentManager {
 
 function componentArchiveAssets(manifest: ComponentPackageManifest) {
   return [manifest.archive, ...(manifest.additionalArchives ?? [])];
+}
+
+function archiveAssetFileName(archive: ComponentArchiveAsset) {
+  try {
+    const fileName = decodeURIComponent(path.posix.basename(new URL(archive.url).pathname));
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,232}\.tar\.gz$/.test(fileName)) throw new Error("invalid archive filename");
+    return fileName;
+  } catch {
+    throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包归档文件名无效");
+  }
+}
+
+function componentReleasePageUrl(manifest: ComponentPackageManifest) {
+  const releasePages = componentArchiveAssets(manifest).map((archive) => {
+    try {
+      const url = new URL(archive.url);
+      if (url.protocol !== "https:" || url.hostname !== "github.com" || url.username || url.password) return undefined;
+      const match = /^\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/[^/]+$/.exec(url.pathname);
+      if (!match) return undefined;
+      const owner = decodeURIComponent(match[1]!);
+      const repository = decodeURIComponent(match[2]!);
+      const tag = decodeURIComponent(match[3]!);
+      if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repository) || !tag) return undefined;
+      return "https://github.com/" + owner + "/" + repository + "/releases/tag/" + encodeURIComponent(tag);
+    } catch {
+      return undefined;
+    }
+  });
+  const firstReleasePage = releasePages[0];
+  return firstReleasePage && releasePages.every((releasePage) => releasePage === firstReleasePage)
+    ? firstReleasePage
+    : undefined;
 }
 
 function componentDownloadBytes(manifest: ComponentPackageManifest) {

@@ -415,7 +415,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     store: xhsStore
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
-  registerComponentRoutes(app, componentManager);
+  registerComponentRoutes(app, componentManager, { allowOfflineImport: config.desktopManagedCapabilities });
   await registerFrontendAssets(app, { root: config.runtime.frontendDistRoot });
 
   if (config.databasePath !== ":memory:") {

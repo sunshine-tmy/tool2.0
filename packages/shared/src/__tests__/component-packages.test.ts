@@ -16,6 +16,8 @@ const packageStatus = {
   version: "1.0.0",
   platform: "win32-x64",
   downloadBytes: 1024,
+  archiveFileNames: ["edge-tts-1.0.0.tar.gz"],
+  releasePageUrl: "https://github.com/sunshine-tmy/tool2.0/releases/tag/components-v1",
   installedBytes: 4096,
   installed: false,
   state: "blocked",
@@ -44,6 +46,12 @@ describe("component package contracts", () => {
       })
     ).toBe(false);
     expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, state: "available" })).toBe(false);
+    expect(
+      Value.Check(ComponentPackageStatusSchema, {
+        ...packageStatus,
+        releasePageUrl: "https://attacker.example/releases/tag/components-v1"
+      })
+    ).toBe(false);
     expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, activeJobId: "not-a-uuid" })).toBe(false);
   });
 

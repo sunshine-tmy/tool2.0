@@ -13,6 +13,14 @@
       </n-alert>
 
       <template v-else>
+        <input
+          ref="offlineArchiveInput"
+          class="offline-archive-input"
+          type="file"
+          accept=".tar.gz,application/gzip,application/x-gzip"
+          multiple
+          @change="handleOfflineArchiveSelection"
+        />
         <n-alert v-if="error" type="error" :bordered="false" class="settings-alert">{{ error }}</n-alert>
         <section class="workspace-panel">
           <div class="panel-heading">
@@ -75,12 +83,51 @@
           </div>
         </section>
 
+        <section class="workspace-panel cleanup-panel">
+          <div class="panel-heading">
+            <div>
+              <h3>存储清理</h3>
+              <p class="panel-description">仅清理超过保留期限的日志和临时文件，清单默认不勾选。</p>
+            </div>
+            <n-button secondary :loading="cleanupLoading" @click="loadCleanup">重新统计</n-button>
+          </div>
+          <n-alert type="info" :bordered="false" class="cleanup-scope">
+            不会清理作品、历史任务、个人素材、数据库、已安装能力、模型、配置、浏览器登录状态或备份。清理前需要连续确认两次。
+          </n-alert>
+          <n-alert v-if="cleanupError" type="error" :bordered="false" class="settings-alert">
+            {{ cleanupError }}
+          </n-alert>
+          <n-spin v-if="cleanupLoading && !cleanupCategories.length" />
+          <template v-else>
+            <n-checkbox-group v-if="cleanupCategories.length" v-model:value="selectedCleanupIds" class="cleanup-list">
+              <n-checkbox v-for="category in cleanupCategories" :key="category.id" :value="category.id">
+                <span class="cleanup-option">
+                  <span>{{ category.label }}</span>
+                  <small>{{ formatBytes(category.bytes) }} · {{ category.files }} 个过期文件</small>
+                </span>
+              </n-checkbox>
+            </n-checkbox-group>
+            <n-empty v-else-if="!cleanupError" description="当前没有超过保留期限的可清理文件" />
+          </template>
+          <div class="cleanup-total">
+            <span>预计释放</span><strong>{{ formatBytes(cleanupSelectedBytes) }}</strong>
+          </div>
+          <n-button
+            type="error"
+            secondary
+            :loading="cleanupExecuting"
+            :disabled="!cleanupSelectedFileCount || cleanupLoading || Boolean(cleanupError)"
+            @click="executeCleanup"
+            >清理所选内容</n-button
+          >
+        </section>
+
         <section class="workspace-panel capability-panel">
           <div class="panel-heading">
             <div>
               <h3>能力管理</h3>
               <p class="panel-description">
-                按需安装本地运行时与模型。安装前会展示体积、用途和来源信息；后端会在下载前检查磁盘空间，失败不会替换可用版本。
+                按需在线安装或从本地导入运行时与模型。离线包仍会按内置签名目录校验；安装失败不会替换可用版本。离线导入请从可信发布页下载卡片所列的全部同版本归档文件。
               </p>
               <p v-if="componentTotalLabel" class="setting-copy">{{ componentTotalLabel }}（共享依赖只计一次）</p>
             </div>
@@ -105,9 +152,13 @@
                     :job="componentJobs[component.id]"
                     :canceling="cancelingJobId === componentJobs[component.id]?.id"
                     :operation-loading="startingComponentId === component.id"
+                    :offline-uploading="offlineUpload?.componentId === component.id"
+                    :offline-upload-progress="offlineUpload?.componentId === component.id ? offlineUpload.progress : 0"
                     @install="installComponent"
                     @reinstall="reinstallComponent"
                     @uninstall="uninstallComponent"
+                    @offline-import="selectOfflineImport"
+                    @cancel-offline-import="cancelOfflineImport"
                     @cancel="cancelComponentJob"
                   />
                 </div>
@@ -171,13 +222,31 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { NAlert, NButton, NCode, NSpin, NSpace, NSwitch, useMessage } from "naive-ui";
-import type { ComponentGroup, ComponentJob, ComponentPackageStatus } from "@toolbox/shared";
+import {
+  NAlert,
+  NButton,
+  NCheckbox,
+  NCheckboxGroup,
+  NCode,
+  NEmpty,
+  NSpin,
+  NSpace,
+  NSwitch,
+  useMessage
+} from "naive-ui";
+import {
+  CleanupInspectionSchema,
+  CleanupResultsSchema,
+  type CleanupCategory,
+  type ComponentGroup,
+  type ComponentJob,
+  type ComponentPackageStatus
+} from "@toolbox/shared";
 import ToolLayout from "../layouts/ToolLayout.vue";
 import ToolPageHeader from "../components/tool/ToolPageHeader.vue";
 import DesktopComponentCard from "./DesktopComponentCard.vue";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
-import { formatApiError } from "../services/http";
+import { formatApiError, httpClient, isApiErrorCancelled } from "../services/http";
 import { componentApi, subscribeComponentJob } from "../services/components";
 
 type DesktopMigrationSummary = {
@@ -201,6 +270,9 @@ const message = useMessage();
 const confirm = useConfirmDialog();
 const settings = ref<DesktopSettingsState>();
 const selectedLegacyDirectory = ref<{ selectionId: string; displayName: string }>();
+const offlineArchiveInput = ref<HTMLInputElement>();
+const pendingOfflineImport = ref<ComponentPackageStatus>();
+const offlineUpload = ref<{ componentId: string; progress: number; controller: AbortController }>();
 const loading = ref(false);
 const saving = ref(false);
 const migrating = ref(false);
@@ -213,7 +285,17 @@ const componentsError = ref("");
 const componentsNotice = ref("");
 const startingComponentId = ref("");
 const cancelingJobId = ref("");
+const cleanupCategories = ref<CleanupCategory[]>([]);
+const selectedCleanupIds = ref<string[]>([]);
+const cleanupLoading = ref(false);
+const cleanupExecuting = ref(false);
+const cleanupError = ref("");
 const jobSubscriptions = new Map<string, () => void>();
+const cleanupSelected = computed(() =>
+  cleanupCategories.value.filter((item) => selectedCleanupIds.value.includes(item.id))
+);
+const cleanupSelectedBytes = computed(() => cleanupSelected.value.reduce((sum, item) => sum + item.bytes, 0));
+const cleanupSelectedFileCount = computed(() => cleanupSelected.value.reduce((sum, item) => sum + item.files, 0));
 
 const componentGroupLabels: Record<ComponentGroup, string> = {
   shared: "共享基础能力",
@@ -243,9 +325,11 @@ const componentTotalLabel = computed(() => {
 onMounted(() => {
   void loadSettings();
   void loadComponents();
+  void loadCleanup();
 });
 
 onBeforeUnmount(() => {
+  offlineUpload.value?.controller.abort();
   for (const unsubscribe of jobSubscriptions.values()) unsubscribe();
   jobSubscriptions.clear();
 });
@@ -288,6 +372,56 @@ async function loadComponents() {
   }
 }
 
+async function loadCleanup() {
+  cleanupLoading.value = true;
+  cleanupError.value = "";
+  try {
+    // Renderer 只显示两个低风险固定类别；真正的路径和保留期限由桌面后端限定。
+    const categories = await httpClient.get("/maintenance/cleanup", CleanupInspectionSchema);
+    cleanupCategories.value = categories.filter((item) => item.risk === "low" && ["logs", "temp"].includes(item.id));
+    const availableIds = new Set(cleanupCategories.value.map((item) => item.id));
+    selectedCleanupIds.value = selectedCleanupIds.value.filter((id) => availableIds.has(id));
+  } catch (cause) {
+    if (!isApiErrorCancelled(cause)) cleanupError.value = formatApiError(cause, "读取可清理内容失败");
+  } finally {
+    cleanupLoading.value = false;
+  }
+}
+
+async function executeCleanup() {
+  const selected = cleanupSelected.value.filter((item) => item.files > 0);
+  if (!selected.length || cleanupExecuting.value) return;
+  const labels = selected.map((item) => `${item.label}（${item.files} 个文件，${formatBytes(item.bytes)}）`).join("、");
+  const inspected = await confirm(
+    `本次只会处理：${labels}。日志仅限 7 天前，临时文件仅限 24 小时前；其他应用数据不会改动。`,
+    { title: "请检查清理范围", positiveText: "继续确认", danger: false }
+  );
+  if (!inspected) return;
+  const accepted = await confirm(
+    "这是第二次确认。清理后所选日志和临时文件无法恢复；作品、历史、素材、数据库、能力、模型、配置、登录状态和备份仍会保留。",
+    { title: "最终确认清理", positiveText: "确认清理所选内容", danger: true }
+  );
+  if (!accepted) return;
+
+  cleanupExecuting.value = true;
+  cleanupError.value = "";
+  try {
+    const results = await httpClient.post("/maintenance/cleanup", CleanupResultsSchema, {
+      ids: selected.map((item) => item.id)
+    });
+    const deletedFiles = results.reduce((sum, item) => sum + item.files, 0);
+    const skippedFiles = results.reduce((sum, item) => sum + (item.skippedFiles ?? 0), 0);
+    if (skippedFiles) message.warning(`已清理 ${deletedFiles} 个文件；${skippedFiles} 个被占用文件已跳过`);
+    else message.success(`已清理 ${deletedFiles} 个过期文件`);
+    selectedCleanupIds.value = [];
+    await loadCleanup();
+  } catch (cause) {
+    if (!isApiErrorCancelled(cause)) cleanupError.value = formatApiError(cause, "清理失败；未能完成的内容已保留");
+  } finally {
+    cleanupExecuting.value = false;
+  }
+}
+
 async function installComponent(component: ComponentPackageStatus) {
   const packageInfo =
     component.licenseName === "内部使用" ? "该能力包用于组织内部。" : `许可信息：${component.licenseName}。`;
@@ -304,6 +438,69 @@ async function reinstallComponent(component: ComponentPackageStatus) {
     { title: "确认重装能力", positiveText: "开始重装" }
   );
   if (accepted) await startComponentOperation(component, "reinstall");
+}
+
+function selectOfflineImport(component: ComponentPackageStatus) {
+  if (startingComponentId.value || offlineUpload.value) return;
+  pendingOfflineImport.value = component;
+  if (!offlineArchiveInput.value) {
+    componentsError.value = "无法打开离线能力包选择器，请重启桌面应用后重试";
+    return;
+  }
+  offlineArchiveInput.value.value = "";
+  offlineArchiveInput.value.click();
+}
+
+async function handleOfflineArchiveSelection(event: Event) {
+  const input = event.currentTarget as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  const component = pendingOfflineImport.value;
+  pendingOfflineImport.value = undefined;
+  if (!component || !files.length) return;
+  if (files.some((file) => !file.name.toLowerCase().endsWith(".tar.gz"))) {
+    message.error("请选择能力管理器提供的 .tar.gz 能力包");
+    return;
+  }
+  const totalBytes = files.reduce((total, file) => total + file.size, 0);
+  if (totalBytes !== component.downloadBytes) {
+    message.error(
+      `所选文件合计 ${formatBytes(totalBytes)}，当前目录要求 ${formatBytes(component.downloadBytes)}；请确认版本和分卷完整`
+    );
+    return;
+  }
+  const accepted = await confirm(
+    `将把所选 ${files.length} 个文件（${formatBytes(totalBytes)}）上传到本机，并按应用内受信任清单校验大小、SHA-256、签名文件清单和运行时自检。校验失败不会替换现有可用版本。请先安装该能力缺少的依赖。`,
+    { title: `离线导入“${component.displayName}”`, positiveText: "校验并导入" }
+  );
+  if (!accepted || startingComponentId.value || offlineUpload.value) return;
+
+  const controller = new AbortController();
+  startingComponentId.value = component.id;
+  componentsError.value = "";
+  componentsNotice.value = "";
+  offlineUpload.value = { componentId: component.id, progress: 0, controller };
+  try {
+    const job = await componentApi.importOffline(component.id, files, {
+      signal: controller.signal,
+      onProgress: (progress) => {
+        if (offlineUpload.value?.controller === controller) {
+          offlineUpload.value = { ...offlineUpload.value, progress };
+        }
+      }
+    });
+    trackComponentJob(job);
+  } catch (cause) {
+    if (controller.signal.aborted) message.info("离线包传输已取消，未安装任何文件");
+    else componentsError.value = formatApiError(cause, "离线能力包导入失败");
+  } finally {
+    if (offlineUpload.value?.controller === controller) offlineUpload.value = undefined;
+    if (startingComponentId.value === component.id) startingComponentId.value = "";
+  }
+}
+
+function cancelOfflineImport(component: ComponentPackageStatus) {
+  if (offlineUpload.value?.componentId === component.id) offlineUpload.value.controller.abort();
 }
 
 async function uninstallComponent(component: ComponentPackageStatus) {
@@ -502,6 +699,10 @@ function formatBytes(value: number) {
 </script>
 
 <style scoped>
+.offline-archive-input {
+  display: none;
+}
+
 .panel-description,
 .setting-copy,
 .selected-source {
@@ -514,6 +715,41 @@ function formatBytes(value: number) {
 .storage-paths {
   display: grid;
   gap: 14px;
+}
+
+.cleanup-scope {
+  margin-bottom: 16px;
+}
+
+.cleanup-list {
+  display: grid;
+  gap: 4px;
+  margin: 16px 0;
+}
+
+.cleanup-list :deep(.n-checkbox) {
+  align-items: flex-start;
+  padding: 8px 0;
+}
+
+.cleanup-option {
+  display: grid;
+  gap: 3px;
+}
+
+.cleanup-option small {
+  color: #64748b;
+}
+
+.cleanup-total {
+  display: flex;
+  justify-content: space-between;
+  margin: 16px 0 12px;
+  color: #64748b;
+}
+
+.cleanup-total strong {
+  color: #243047;
 }
 
 .settings-alert {

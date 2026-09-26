@@ -3,8 +3,10 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import * as tar from "tar";
 import fastify from "fastify";
+import multipart from "@fastify/multipart";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ComponentManager,
@@ -209,6 +211,123 @@ describe("ComponentManager", () => {
       fs.readFile(path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0", "bin", "runner.exe"), "utf8")
     ).resolves.toBe("runner-1.0.0");
     await expect(manager.list()).resolves.toMatchObject([{ installed: true, installedVersion: "1.0.0" }]);
+  });
+
+  it("imports a signed archive from a local stream without making a network request", async () => {
+    const fixture = await createFixture("1.0.0");
+    const downloadArchive = vi.fn(async () => {
+      throw new Error("offline import must not download");
+    });
+    const manager = createManager(fixture.manifest, fixture.archivePath, downloadArchive);
+    const archive = await fs.readFile(fixture.archivePath);
+    const progress: Array<[number, number]> = [];
+    const job = await manager.startOfflineImport(
+      "edge-tts",
+      (async function* () {
+        yield {
+          fieldName: "archives",
+          filename: "edge-tts.tar.gz",
+          stream: Readable.from([archive])
+        };
+      })(),
+      (uploaded, total) => progress.push([uploaded, total])
+    );
+
+    await expect(waitForJob(manager, job.id)).resolves.toMatchObject({ state: "completed" });
+    expect(downloadArchive).not.toHaveBeenCalled();
+    expect(progress.at(-1)).toEqual([archive.byteLength, archive.byteLength]);
+    await expect(manager.list()).resolves.toMatchObject([{ id: "edge-tts", installed: true, health: "healthy" }]);
+    await expect(fs.readdir(path.join(temporaryRoot, "packages", "edge-tts", "archives"))).resolves.toEqual([]);
+  });
+
+  it("derives a clickable GitHub release page only from trusted signed asset URLs", async () => {
+    const fixture = await createFixture("1.0.0");
+    fixture.manifest.archive.url =
+      "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/edge-tts.tar.gz";
+    fixture.manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(fixture.manifest)), keyPair.privateKey)
+      .toString("base64");
+    const manager = createManager(fixture.manifest, fixture.archivePath);
+
+    await expect(manager.list()).resolves.toMatchObject([
+      {
+        id: "edge-tts",
+        archiveFileNames: ["edge-tts.tar.gz"],
+        releasePageUrl: "https://github.com/sunshine-tmy/tool2.0/releases/tag/components-v1"
+      }
+    ]);
+  });
+
+  it("imports every signed archive part by manifest identity even when selected out of order", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manifest: ComponentPackageManifest = fixture.manifest;
+    const source = path.join(temporaryRoot, "offline-model-stage");
+    const modelRelativePath = "models/example.bin";
+    const modelArchivePath = path.join(temporaryRoot, "offline-model-part.tar.gz");
+    await fs.mkdir(path.join(source, "models"), { recursive: true });
+    await fs.writeFile(path.join(source, modelRelativePath), "signed model");
+    await tar.c({ gzip: true, file: modelArchivePath, cwd: source }, [modelRelativePath]);
+    const modelArchive = await fs.readFile(modelArchivePath);
+    const modelContent = await fs.readFile(path.join(source, modelRelativePath));
+    const modelHash = crypto.createHash("sha256").update(modelContent).digest("hex");
+
+    manifest.archive.filePaths = manifest.files.map((file) => file.path);
+    manifest.additionalArchives = [
+      {
+        url: "https://packages.example.test/edge-tts-1.0.0-model.tar.gz",
+        bytes: modelArchive.byteLength,
+        sha256: crypto.createHash("sha256").update(modelArchive).digest("hex"),
+        format: "tar.gz",
+        filePaths: [modelRelativePath]
+      }
+    ];
+    manifest.files.push({ path: modelRelativePath, bytes: modelContent.byteLength, sha256: modelHash });
+    manifest.installedBytes += modelContent.byteLength;
+    manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(manifest)), keyPair.privateKey)
+      .toString("base64");
+
+    const manager = createManager(manifest, fixture.archivePath, async () => {
+      throw new Error("offline import must not download");
+    });
+    const mainArchive = await fs.readFile(fixture.archivePath);
+    const job = await manager.startOfflineImport(
+      "edge-tts",
+      (async function* () {
+        yield {
+          fieldName: "archives",
+          filename: "edge-tts-1.0.0-model.tar.gz",
+          stream: Readable.from([modelArchive])
+        };
+        yield { fieldName: "archives", filename: "edge-tts.tar.gz", stream: Readable.from([mainArchive]) };
+      })()
+    );
+
+    await expect(waitForJob(manager, job.id)).resolves.toMatchObject({ state: "completed" });
+    await expect(
+      fs.readFile(
+        path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0", "models", "example.bin"),
+        "utf8"
+      )
+    ).resolves.toBe("signed model");
+  });
+
+  it("rejects damaged offline archives and removes temporary import files", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manager = createManager(fixture.manifest, fixture.archivePath);
+    const archive = await fs.readFile(fixture.archivePath);
+    archive[0] = archive[0]! ^ 0xff;
+
+    await expect(
+      manager.startOfflineImport(
+        "edge-tts",
+        (async function* () {
+          yield { fieldName: "archives", filename: "edge-tts.tar.gz", stream: Readable.from([archive]) };
+        })()
+      )
+    ).rejects.toMatchObject({ code: "COMPONENT_IMPORT_INVALID" });
+    await expect(manager.list()).resolves.toMatchObject([{ id: "edge-tts", installed: false }]);
+    await expect(fs.readdir(path.join(temporaryRoot, "packages", "edge-tts", "archives"))).resolves.toEqual([]);
   });
 
   it("downloads, verifies and merges every signed archive part before switching the generation", async () => {
@@ -875,6 +994,53 @@ describe("component routes", () => {
       state: "completed"
     });
     await app.close();
+  });
+
+  it("accepts offline archives only when explicitly enabled and applies the signed package size limit", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-offline-route-"));
+    const fixture = await createFixture("1.0.0");
+    const manager = createManager(fixture.manifest, fixture.archivePath, async () => {
+      throw new Error("offline route must not download");
+    });
+    const app = fastify({ bodyLimit: 1 });
+    await app.register(multipart);
+    app.addHook("preSerialization", async (request, _reply, payload) => {
+      if (typeof payload !== "object" || payload === null) return payload;
+      const value = payload as Record<string, unknown>;
+      return typeof value.success === "boolean" ? { ...value, requestId: request.id } : payload;
+    });
+    registerComponentRoutes(app, manager, { allowOfflineImport: true });
+
+    const archive = await fs.readFile(fixture.archivePath);
+    const boundary = "offline-import-test-boundary";
+    const payload = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="archives"; filename="edge-tts.tar.gz"\r\nContent-Type: application/gzip\r\n\r\n`
+      ),
+      archive,
+      Buffer.from(`\r\n--${boundary}--\r\n`)
+    ]);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/components/edge-tts/offline-import",
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      payload
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    const jobId = (response.json() as { data: { id: string } }).data.id;
+    await expect(waitForJob(manager, jobId)).resolves.toMatchObject({ state: "completed" });
+
+    const disabledApp = fastify();
+    registerComponentRoutes(disabledApp, manager);
+    await expect(
+      disabledApp.inject({
+        method: "POST",
+        url: "/api/v1/components/edge-tts/offline-import",
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload
+      })
+    ).resolves.toMatchObject({ statusCode: 404 });
+    await Promise.all([app.close(), disabledApp.close()]);
   });
 });
 

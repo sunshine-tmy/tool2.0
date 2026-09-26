@@ -31,6 +31,15 @@
           <template #icon><RefreshCw :size="15" /></template>重装
         </n-button>
         <n-button
+          size="small"
+          secondary
+          :disabled="busy || component.state === 'blocked'"
+          :loading="operationLoading && !offlineUploading"
+          @click="$emit('offlineImport', component)"
+        >
+          <template #icon><Upload :size="15" /></template>离线导入
+        </n-button>
+        <n-button
           v-if="component.installed"
           size="small"
           type="error"
@@ -51,6 +60,9 @@
         >
           取消下载
         </n-button>
+        <n-button v-if="offlineUploading" size="small" quaternary @click="$emit('cancelOfflineImport', component)">
+          取消导入
+        </n-button>
       </n-space>
     </div>
 
@@ -65,6 +77,15 @@
     </div>
 
     <p v-if="component.dependencyIds.length" class="component-note">依赖：{{ component.dependencyIds.join("、") }}</p>
+    <p v-if="component.archiveFileNames?.length" class="component-note offline-import-files">
+      离线包文件名：<code v-for="filename in component.archiveFileNames" :key="filename">{{ filename }}</code>
+      （请从可信发布页下载与版本完全匹配的全部文件）
+    </p>
+    <p v-if="component.releasePageUrl" class="component-note offline-import-source">
+      GitHub 发布页：<a :href="component.releasePageUrl" target="_blank" rel="noopener noreferrer">{{
+        component.releasePageUrl
+      }}</a>
+    </p>
     <p v-if="component.dependentIds.length" class="component-note">
       被其他能力依赖：{{ component.dependentIds.join("、") }}；请先卸载依赖它的能力。
     </p>
@@ -96,13 +117,22 @@
         {{ job.errorMessage }} <span v-if="job.errorCode">({{ job.errorCode }})</span>
       </n-alert>
     </div>
+
+    <div v-if="offlineUploading" class="component-job" aria-live="polite">
+      <div class="component-job-heading">
+        <strong>正在传输离线安装包</strong>
+        <span>{{ offlineUploadProgress }}%</span>
+      </div>
+      <n-progress type="line" :percentage="offlineUploadProgress" :show-indicator="false" />
+      <p class="component-note">文件先上传到本机，再进行签名清单校验、解包和安装后自检。</p>
+    </div>
   </n-card>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import { NAlert, NButton, NCard, NProgress, NSpace, NTag } from "naive-ui";
-import { Download, RefreshCw, Trash2 } from "lucide-vue-next";
+import { Download, RefreshCw, Trash2, Upload } from "lucide-vue-next";
 import type { ComponentJob, ComponentPackageStatus } from "@toolbox/shared";
 
 const props = defineProps<{
@@ -110,18 +140,23 @@ const props = defineProps<{
   job?: ComponentJob;
   canceling?: boolean;
   operationLoading?: boolean;
+  offlineUploading?: boolean;
+  offlineUploadProgress?: number;
 }>();
 
 defineEmits<{
   install: [component: ComponentPackageStatus];
   reinstall: [component: ComponentPackageStatus];
   uninstall: [component: ComponentPackageStatus];
+  offlineImport: [component: ComponentPackageStatus];
+  cancelOfflineImport: [component: ComponentPackageStatus];
   cancel: [job: ComponentJob];
 }>();
 
 const busy = computed(
   () =>
     props.operationLoading ||
+    props.offlineUploading ||
     ["downloading", "installing"].includes(props.component.state) ||
     Boolean(props.job && ["queued", "running"].includes(props.job.state))
 );
@@ -215,6 +250,21 @@ function formatBytes(value: number) {
 
 .component-facts a {
   color: #2563eb;
+}
+
+.offline-import-files code {
+  display: inline-block;
+  margin: 0 4px 2px 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.offline-import-source a {
+  color: #2563eb;
+  overflow-wrap: anywhere;
 }
 
 .component-message {

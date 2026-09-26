@@ -48,6 +48,12 @@ export const ComponentPackageStatusSchema = Type.Object(
     version: Type.String({ minLength: 1, maxLength: 80 }),
     platform: Type.Literal("win32-x64"),
     downloadBytes: Type.Integer({ minimum: 1 }),
+    /** Exact local archive basenames accepted by the desktop offline-import endpoint. */
+    archiveFileNames: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }))),
+    /** Verified GitHub Releases page derived from the signed archive asset URLs. */
+    releasePageUrl: Type.Optional(
+      Type.String({ pattern: "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/releases/tag/[^\\s/?#]+$" })
+    ),
     installedBytes: Type.Integer({ minimum: 0 }),
     installed: Type.Boolean(),
     state: ComponentLifecycleSchema,

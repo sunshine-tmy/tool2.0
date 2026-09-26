@@ -5,9 +5,15 @@ import {
   type ComponentJob,
   type ComponentPackageStatus
 } from "@toolbox/shared";
+import type { AxiosProgressEvent } from "axios";
 import { Value } from "@sinclair/typebox/value";
 import { resolveApiUrl } from "../config/runtime";
 import { httpClient, withApiError } from "./http";
+
+export type OfflineImportOptions = {
+  signal?: AbortSignal;
+  onProgress?: (percentage: number, event: AxiosProgressEvent) => void;
+};
 
 export const componentApi = {
   list(): Promise<ComponentPackageStatus[]> {
@@ -25,6 +31,25 @@ export const componentApi = {
     return withApiError(
       () => httpClient.post(`/components/${encodeURIComponent(componentId)}/reinstall`, ComponentJobSchema),
       "开始重装能力失败"
+    );
+  },
+
+  importOffline(componentId: string, files: File[], options: OfflineImportOptions = {}): Promise<ComponentJob> {
+    const payload = new FormData();
+    for (const file of files) payload.append("archives", file, file.name);
+    return withApiError(
+      () =>
+        httpClient.post(`/components/${encodeURIComponent(componentId)}/offline-import`, ComponentJobSchema, payload, {
+          timeout: 0,
+          maxBodyLength: Infinity,
+          maxContentLength: Infinity,
+          signal: options.signal,
+          onUploadProgress: (event) => {
+            if (event.progress !== undefined)
+              options.onProgress?.(Math.min(100, Math.round(event.progress * 100)), event);
+          }
+        }),
+      "导入离线能力包失败"
     );
   },
 

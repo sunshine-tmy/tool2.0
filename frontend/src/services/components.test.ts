@@ -55,6 +55,32 @@ describe("componentApi", () => {
     expect(http.get).toHaveBeenCalledWith("/component-jobs/job-id", expect.any(Object));
   });
 
+  it("uploads every offline archive under the fixed capability ID and supports cancellation/progress", async () => {
+    const job = { id: "offline-job" };
+    const onProgress = vi.fn();
+    const controller = new AbortController();
+    const archive = new Blob(["signed archive"]);
+    Object.defineProperty(archive, "name", { value: "edge-tts.tar.gz" });
+    http.post.mockResolvedValue(job);
+
+    await expect(
+      componentApi.importOffline("edge-tts", [archive as File], { signal: controller.signal, onProgress })
+    ).resolves.toBe(job);
+
+    const [url, _schema, payload, config] = http.post.mock.calls[0]!;
+    expect(url).toBe("/components/edge-tts/offline-import");
+    expect(payload).toBeInstanceOf(FormData);
+    expect((payload as FormData).getAll("archives")).toHaveLength(1);
+    expect(config).toMatchObject({
+      timeout: 0,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      signal: controller.signal
+    });
+    config.onUploadProgress({ progress: 0.42 } as never);
+    expect(onProgress).toHaveBeenCalledWith(42, expect.any(Object));
+  });
+
   it("resolves missing shared dependencies and requires every package to be healthy", () => {
     const worker = componentStatus("video-worker", ["video-text"], ["python-311"]);
     const python = componentStatus("python-311", []);
