@@ -32,6 +32,22 @@ export async function registerFrontendAssets(app: FastifyInstance, options: Fron
     immutable: true
   });
 
+  // Vite copies `public/` files beside index.html rather than into assets/.
+  // Register only files present in the generated frontend root (excluding the
+  // bundle directory and HTML entrypoint) so icons and other public resources
+  // resolve without exposing the SPA fallback as an image response.
+  await app.register(fastifyStatic, {
+    root,
+    prefix: "/",
+    decorateReply: false,
+    index: false,
+    list: false,
+    wildcard: false,
+    globIgnore: ["assets/**", "index.html"],
+    serveDotFiles: false,
+    maxAge: "1h"
+  });
+
   app.get("/", async (request, reply) => sendIndex(reply, request, indexFile));
 
   app.get("/*", async (request, reply) => {

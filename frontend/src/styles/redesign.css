@@ -30,7 +30,7 @@ body {
 }
 
 .topbar {
-  grid-template-columns: minmax(250px, var(--sidebar-width)) minmax(240px, 520px) auto;
+  grid-template-columns: minmax(250px, var(--sidebar-width)) minmax(240px, 520px) auto auto;
   min-height: var(--topbar-height);
   gap: var(--space-6);
   padding: 0 var(--space-6);
