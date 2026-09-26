@@ -154,11 +154,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: "24" }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: signed-windows-desktop-acceptance
           path: desktop-signed-acceptance
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.package.outputs.previous_version != ''
         with:
           name: previous-stable-windows-installer
