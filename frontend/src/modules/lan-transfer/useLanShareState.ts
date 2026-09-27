@@ -11,8 +11,9 @@ import type { LanTransferInfo } from "./types";
 export function useLanShareState() {
   // 分享地址和权限计算集中在 composable，页面组件只消费 canRead/canUpload/canManage 三类能力。
   const currentTransferUrl = new URL("/tools/lan-transfer", currentWebUrl()).toString();
+  const isDesktopApp = typeof window !== "undefined" && Boolean(window.toolboxDesktop);
   const lanInfo = ref<LanTransferInfo | null>(null);
-  const selectedShareUrl = ref(currentTransferUrl);
+  const selectedShareUrl = ref(isDesktopApp ? "" : currentTransferUrl);
   const shareQrCode = ref("");
   const accessPin = ref("");
   const unlocking = ref(false);
@@ -22,10 +23,12 @@ export function useLanShareState() {
     value: category
   }));
   const shareUrlOptions = computed(() =>
-    Array.from(new Set([...(lanInfo.value?.lanUrls ?? []), currentTransferUrl])).map((url) => ({
-      label: url,
-      value: url
-    }))
+    Array.from(new Set([...(lanInfo.value?.lanUrls ?? []), ...(isDesktopApp ? [] : [currentTransferUrl])])).map(
+      (url) => ({
+        label: url,
+        value: url
+      })
+    )
   );
   const guestModeDescription = computed(() => {
     const descriptions: Record<NonNullable<LanTransferInfo>["guestMode"], string> = {
@@ -42,6 +45,18 @@ export function useLanShareState() {
   const canReadFiles = computed(() => hasFullAccess.value || lanInfo.value?.guestMode === "download-only");
   const canUploadFiles = computed(() => hasFullAccess.value || lanInfo.value?.guestMode === "upload-only");
   const canManageFiles = computed(() => hasFullAccess.value);
+
+  watch(
+    shareUrlOptions,
+    (options) => {
+      if (!options.length) {
+        selectedShareUrl.value = "";
+      } else if (!options.some((option) => option.value === selectedShareUrl.value)) {
+        selectedShareUrl.value = options[0]!.value;
+      }
+    },
+    { immediate: true }
+  );
 
   watch(
     selectedShareUrl,

@@ -4,7 +4,8 @@
     <div class="share-strip">
       <div class="share-address">
         <span>局域网访问地址</span>
-        <strong>{{ selectedUrl }}</strong>
+        <strong v-if="selectedUrl">{{ selectedUrl }}</strong>
+        <strong v-else class="share-unavailable">当前没有可用的局域网地址</strong>
         <n-select
           v-if="urlOptions.length > 1"
           :value="selectedUrl"
@@ -16,7 +17,8 @@
       </div>
       <div class="share-actions">
         <img v-if="qrCode" :src="qrCode" alt="局域网访问地址二维码" class="share-qr" />
-        <n-button secondary @click="$emit('copy-url')">复制地址</n-button>
+        <span v-else class="share-qr-placeholder">连接到 Wi-Fi 或有线网络后会生成二维码</span>
+        <n-button secondary :disabled="!selectedUrl" @click="$emit('copy-url')">复制地址</n-button>
       </div>
     </div>
     <div v-if="info" class="lan-capacity">

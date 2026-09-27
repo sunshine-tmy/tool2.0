@@ -99,11 +99,19 @@ export function createLanAuditLog(database: ToolboxDatabase) {
 }
 
 export function getLanWebUrls(port: number) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return [];
   const addresses = Object.values(os.networkInterfaces())
     .flatMap((items) => items ?? [])
-    .filter((item) => item.family === "IPv4" && !item.internal && !item.address.startsWith("169.254."))
+    .filter((item) => item.family === "IPv4" && !item.internal && isPrivateLanIPv4(item.address))
     .map((item) => item.address);
   return Array.from(new Set(addresses)).map((address) => `http://${address}:${port}/tools/lan-transfer`);
+}
+
+export function isPrivateLanIPv4(address: string) {
+  const octets = address.split(".").map(Number);
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false;
+  const [first, second] = octets;
+  return first === 10 || (first === 172 && second! >= 16 && second! <= 31) || (first === 192 && second === 168);
 }
 
 function safeStringEquals(left: string, right: string) {

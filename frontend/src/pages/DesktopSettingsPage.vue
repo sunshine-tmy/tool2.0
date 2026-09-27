@@ -1,7 +1,7 @@
 <!-- 中文模块说明：桌面前端页面，负责桌面设置和受控的旧版数据迁移入口。 -->
 <template>
   <ToolLayout>
-    <section class="main-column">
+    <section class="main-column desktop-settings-main">
       <ToolPageHeader
         title="桌面设置与数据迁移"
         description="程序安装位置与持久数据位置分开显示；桌面版的数据库、素材、能力、模型与登录状态保存在安装目录下的 data 文件夹。"

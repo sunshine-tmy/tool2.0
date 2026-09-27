@@ -111,10 +111,12 @@ export async function registerChatterboxRoutes(
     { schema: { response: { 200: apiSuccessSchema(ChatterboxHealthSchema) } } },
     async () => {
       let status: Awaited<ReturnType<typeof worker.health>> | undefined;
+      let failureMessage: string | undefined;
       try {
         status = await workerHealth();
-      } catch {
+      } catch (error) {
         status = undefined;
+        failureMessage = error instanceof Error ? error.message : "无法连接 Chatterbox Worker";
       }
       const legacyStats = queue.stats();
       const batchStats = batchQueue.stats();
@@ -130,7 +132,7 @@ export async function registerChatterboxRoutes(
         model: "multilingual-v3",
         modelLoaded: status?.modelLoaded === true,
         device: status?.device,
-        gpuName: status?.gpuName,
+        gpuName: status?.gpuName ?? undefined,
         message:
           config.desktopManagedCapabilities && !config.chatterboxCapabilityReady
             ? "参考音色克隆能力尚未安装，请前往设置 → 能力管理安装。"
@@ -140,7 +142,7 @@ export async function registerChatterboxRoutes(
                 : config.desktopManagedCapabilities
                   ? "运行环境已就绪，将从已安装的本地模型加载"
                   : "运行环境已就绪，首次生成会下载并加载模型"
-              : "Chatterbox Worker 未启动，请先安装并重新一键启动",
+              : status?.message || failureMessage || "Chatterbox Worker 未启动，请先安装并重新一键启动",
         reference: {
           maxBytes: CHATTERBOX_MAX_REFERENCE_BYTES,
           minSeconds: CHATTERBOX_MIN_REFERENCE_SECONDS,

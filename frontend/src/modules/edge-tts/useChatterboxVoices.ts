@@ -1,7 +1,7 @@
 /**
  * 中文模块说明：配音前端模块，负责 Edge-TTS 与 Chatterbox 的编辑、任务和音色交互
  */
-import { onMounted, watch, type ComputedRef, type Ref } from "vue";
+import { onBeforeUnmount, onMounted, watch, type ComputedRef, type Ref } from "vue";
 import type {
   ChatterboxHealth,
   ChatterboxLanguage,
@@ -17,6 +17,8 @@ type VoiceMessage = {
 };
 
 type ConfirmAction = (message: string, options: { title: string }) => Promise<boolean>;
+const HEALTH_RETRY_INTERVAL_MS = 5_000;
+const HEALTH_REFRESH_INTERVAL_MS = 12_000;
 
 type VoiceState = {
   health: Ref<ChatterboxHealth | undefined>;
@@ -37,8 +39,16 @@ type VoiceState = {
 };
 
 export function useChatterboxVoices(state: VoiceState) {
+  let healthRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  let healthRequestInProgress = false;
+  let disposed = false;
+
   // 进入面板时并行恢复健康状态和永久音色；切换语言时自动修正不再适用的音色选择。
   onMounted(() => void Promise.all([loadHealth(), loadSavedVoices()]));
+  onBeforeUnmount(() => {
+    disposed = true;
+    if (healthRefreshTimer) clearTimeout(healthRefreshTimer);
+  });
   watch(state.language, () => {
     if (state.referenceSource.value !== "saved") return;
     if (!state.languageSavedVoices.value.some((voice) => voice.id === state.selectedVoiceId.value)) {
@@ -105,11 +115,24 @@ export function useChatterboxVoices(state: VoiceState) {
   }
 
   async function loadHealth() {
+    if (healthRequestInProgress) return;
+    healthRequestInProgress = true;
     try {
-      state.health.value = await chatterboxApi.health();
+      const health = await chatterboxApi.health();
+      if (!disposed) state.health.value = health;
     } catch (error) {
-      state.health.value = undefined;
-      if (!isApiErrorCancelled(error)) state.errorMessage.value = formatApiError(error, "无法读取声音克隆服务状态");
+      if (!disposed) {
+        state.health.value = undefined;
+        if (!isApiErrorCancelled(error)) state.errorMessage.value = formatApiError(error, "无法读取声音克隆服务状态");
+      }
+    } finally {
+      healthRequestInProgress = false;
+      if (healthRefreshTimer) clearTimeout(healthRefreshTimer);
+      healthRefreshTimer = undefined;
+      if (!disposed) {
+        const interval = state.health.value?.available ? HEALTH_REFRESH_INTERVAL_MS : HEALTH_RETRY_INTERVAL_MS;
+        healthRefreshTimer = setTimeout(() => void loadHealth(), interval);
+      }
     }
   }
 

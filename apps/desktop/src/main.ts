@@ -2,7 +2,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell, type IpcMainInvokeEvent } from "electron";
 import { BackendSupervisor } from "./backend-supervisor";
 import { componentProxyUrlFromResolution } from "./system-proxy";
 import {
@@ -80,6 +80,9 @@ if (!app.requestSingleInstanceLock()) {
 
 async function boot() {
   await app.whenReady();
+  // The product uses an in-app toolbar; Electron's generated File/Edit/View/Window
+  // menu has no product commands and exposes irrelevant browser/window controls.
+  Menu.setApplicationMenu(null);
   if (!installRootWritable) {
     dialog.showErrorBox(
       "需要重新选择安装目录",

@@ -5,7 +5,7 @@
 
 import { defineComponent, h, ref, type ComponentPublicInstance } from "vue";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChatterboxBatch,
   ChatterboxBatchList,
@@ -63,6 +63,24 @@ function health(): ChatterboxHealth {
     retentionDays: 3,
     queue: { active: 0, queued: 0, concurrency: 1, limit: 30 },
     watermarked: true
+  };
+}
+
+function unavailableHealth(): ChatterboxHealth {
+  return {
+    ...health(),
+    available: false,
+    workerAvailable: false,
+    modelLoaded: false,
+    message: "Chatterbox Worker 正在启动"
+  };
+}
+
+function unloadedHealth(): ChatterboxHealth {
+  return {
+    ...health(),
+    modelLoaded: false,
+    message: "运行环境已就绪，将从已安装的本地模型加载"
   };
 }
 
@@ -223,7 +241,43 @@ beforeEach(() => {
   vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("useChatterboxPanel", () => {
+  it("retries Chatterbox health until the worker becomes available", async () => {
+    vi.useFakeTimers();
+    mocks.api.health.mockReset().mockResolvedValueOnce(unavailableHealth()).mockResolvedValue(health());
+
+    const { panel, wrapper } = await mountPanel();
+    expect(panel.health.value?.available).toBe(false);
+    expect(panel.healthLabel.value).toBe("克隆环境未就绪");
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await flushPromises();
+
+    expect(mocks.api.health).toHaveBeenCalledTimes(2);
+    expect(panel.health.value?.available).toBe(true);
+    expect(panel.healthLabel.value).toContain("V3 已加载");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
+  it("refreshes model status while the panel is open and uses an accurate unloaded label", async () => {
+    vi.useFakeTimers();
+    mocks.api.health.mockReset().mockResolvedValueOnce(unloadedHealth()).mockResolvedValue(health());
+
+    const { panel, wrapper } = await mountPanel();
+    expect(panel.healthLabel.value).toBe("运行就绪 · 生成时载入模型");
+
+    await vi.advanceTimersByTimeAsync(12_000);
+    await flushPromises();
+
+    expect(mocks.api.health).toHaveBeenCalledTimes(2);
+    expect(panel.healthLabel.value).toContain("V3 已加载");
+    wrapper.unmount();
+    vi.useRealTimers();
+  });
+
   it("manages editor segments, references and display helpers", async () => {
     // 面板测试使用真实 composable 组合，仅 mock API，验证编辑器、音色和展示辅助状态能协同工作。
     const { panel, wrapper } = await mountPanel();

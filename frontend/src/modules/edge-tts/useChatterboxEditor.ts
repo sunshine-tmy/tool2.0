@@ -110,11 +110,13 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     )
   );
   const healthLabel = computed(() =>
-    !health.value?.available
-      ? "克隆环境未就绪"
-      : health.value.modelLoaded
-        ? `V3 已加载 · ${health.value.gpuName || health.value.device?.toUpperCase() || "本机"}`
-        : "V3 待加载"
+    !health.value
+      ? "正在检查克隆环境"
+      : !health.value.available
+        ? "克隆环境未就绪"
+        : health.value.modelLoaded
+          ? `V3 已加载 · ${health.value.gpuName || health.value.device?.toUpperCase() || "本机"}`
+          : "运行就绪 · 生成时载入模型"
   );
 
   function newEditorSegment(text = "", fileName = "", referenceTranslation = ""): EditorSegment {

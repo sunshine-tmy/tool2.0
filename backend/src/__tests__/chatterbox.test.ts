@@ -13,9 +13,13 @@ let testRoot = "";
 let workerServer: Server | undefined;
 let workerUrl = "";
 let generateRequests: Array<Record<string, unknown>> = [];
+let workerDevice: "cpu" | "cuda" = "cuda";
+let workerGpuName: string | null = "Test GPU";
 
 beforeEach(async () => {
   generateRequests = [];
+  workerDevice = "cuda";
+  workerGpuName = "Test GPU";
   testRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "toolbox-chatterbox-"));
   workerServer = createServer(async (request, response) => {
     response.setHeader("content-type", "application/json");
@@ -29,8 +33,8 @@ beforeEach(async () => {
             packageVersion: "0.1.7-test",
             model: "multilingual-v3",
             modelLoaded: true,
-            device: "cuda",
-            gpuName: "Test GPU",
+            device: workerDevice,
+            gpuName: workerGpuName,
             watermarked: true
           }
         })
@@ -560,6 +564,19 @@ describe("Chatterbox voice cloning module", () => {
     const response = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks", ...request });
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("CHATTERBOX_CONSENT_REQUIRED");
+    await app.close();
+  });
+
+  it("reports an available CPU worker when its GPU name is null", async () => {
+    workerDevice = "cpu";
+    workerGpuName = null;
+    const app = await createApp();
+
+    const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/health" });
+
+    expect(health.statusCode).toBe(200);
+    expect(health.json().data).toMatchObject({ available: true, workerAvailable: true, device: "cpu" });
+    expect(health.json().data.gpuName).toBeUndefined();
     await app.close();
   });
 });

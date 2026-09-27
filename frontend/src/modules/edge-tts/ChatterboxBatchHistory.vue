@@ -16,7 +16,14 @@
           <div class="voice-avatar"><Layers3 :size="18" /></div>
           <div>
             <strong>{{ panel.batchTitle(batch) }}</strong>
-            <p>
+            <p
+              :title="
+                batch.itemPreviews
+                  .map((item) => item.textPreview)
+                  .slice(0, 2)
+                  .join(' / ')
+              "
+            >
               {{
                 batch.itemPreviews
                   .map((item) => item.textPreview)
@@ -24,12 +31,17 @@
                   .join(" / ")
               }}
             </p>
-            <span
-              >{{ panel.languageLabel(batch.language) }} · {{ batch.completedItems }}/{{
-                batch.itemPreviews.length
-              }}
-              完成 · {{ panel.formatDate(batch.createdAt) }}</span
-            >
+            <div class="batch-history-meta">
+              <span
+                >{{ panel.languageLabel(batch.language) }} · {{ batch.completedItems }}/{{
+                  batch.itemPreviews.length
+                }}
+                段完成 · {{ panel.formatDate(batch.createdAt) }}</span
+              >
+              <n-tag size="small" :type="panel.batchTagType(batch.status)">{{
+                panel.batchStatusLabel(batch.status)
+              }}</n-tag>
+            </div>
           </div>
         </div>
         <div class="history-actions">
@@ -95,7 +107,7 @@
 </template>
 
 <script setup lang="ts">
-import { NButton, NEmpty } from "naive-ui";
+import { NButton, NEmpty, NTag } from "naive-ui";
 import {
   Archive,
   Captions,

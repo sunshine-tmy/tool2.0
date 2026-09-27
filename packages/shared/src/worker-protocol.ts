@@ -66,7 +66,8 @@ export const ChatterboxWorkerHealthSchema = Type.Object({
   model: Type.Literal("multilingual-v3"),
   modelLoaded: Type.Boolean(),
   device: Type.Optional(Type.Union([Type.Literal("cuda"), Type.Literal("cpu")])),
-  gpuName: Type.Optional(Type.String()),
+  // CPU workers serialize Python None as JSON null; accept that protocol value.
+  gpuName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   message: Type.Optional(Type.String()),
   watermarked: Type.Literal(true)
 });

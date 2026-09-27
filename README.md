@@ -1,9 +1,28 @@
 # 电商工具箱
 
-一个本地优先、免账号登录的电商素材处理工作台。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
+一个本地优先、免账号登录的电商素材处理工作台，提供 Windows 桌面安装版和 Web/开发版。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
 
 > [!WARNING]
 > 本项目包含文件上传、下载、删除和高计算量 AI 接口。`local` 模式默认只监听 `127.0.0.1`；`lan` 模式必须配置 `ADMIN_PIN`，管理写操作使用 HttpOnly 会话 Cookie、CSRF Header 和精确 Origin 校验，访客传输权限仍由 guest mode 控制。不要把 API 或 AI Worker 直接暴露到公网。
+
+## 目录
+
+- [功能矩阵](#功能矩阵)
+- [选择使用方式](#选择使用方式)
+- [技术架构](#技术架构)
+- [开发环境要求](#开发环境要求)
+- [快速启动](#快速启动)
+- [配置](#配置)
+- [可选能力安装](#可选能力安装)
+- [开发与质量命令](#开发与质量命令)
+- [构建 Windows 桌面安装包](#构建-windows-桌面安装包)
+- [生产构建与部署](#生产构建与部署)
+- [SQLite 迁移与回滚](#sqlite-迁移与回滚)
+- [数据、安全与隐私](#数据安全与隐私)
+- [API 与响应约定](#api-与响应约定)
+- [新工具接入规范](#新工具接入规范)
+- [常见问题](#常见问题)
+- [项目范围与第三方资产](#项目范围与第三方资产)
 
 ## 功能矩阵
 
@@ -19,7 +38,18 @@
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
+## 选择使用方式
+
+| 使用方式           | 适用场景                                    | 数据位置                     | 说明                                                                                   |
+| ------------------ | ------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| Windows 桌面安装版 | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/` | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装 |
+| Web/开发版         | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`  | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                        |
+
+桌面版安装、数据迁移、能力离线导入、升级和卸载说明见[桌面应用使用帮助](./docs/desktop-application-help.md)。桌面安装器是交互式安装程序，不是免安装便携版；安装时可选择目录，但应选择当前 Windows 用户有写入权限的位置。
+
 ## 技术架构
+
+下图中的 `storage/` 路径描述 Web/开发版。Windows 桌面安装版把应用管理的持久数据放在安装根目录下的 `data/`，见下方桌面安装说明。
 
 ```text
 Browser
@@ -30,7 +60,7 @@ Browser
                  ├─ ffmpeg + faster-whisper：视频转写（可选）
                  ├─ Python AI Worker：抠图、增强、去水印（可选）
                  ├─ Chatterbox V3 Worker：参考音色克隆（可选）
-                 ├─ XHS-Downloader Worker：按首次使用安装的小红书解析适配器
+                 ├─ XHS-Downloader Worker：开发版可按需配置；桌面版由能力管理安装
                  ├─ SQLite（storage/toolbox.db）：元数据、任务与审计事实源
                  └─ storage/：媒体、模型、临时文件与迁移备份
 ```
@@ -48,30 +78,40 @@ docs/operations.md        启动、权限、迁移、隔离区与发布运维手
 docs/enterprise-optimization-backlog.md  企业级优化实时任务与验收清单
 ```
 
-## 环境要求
+## 开发环境要求
 
-必需：
+以下是从源码运行或构建项目所需的环境：
 
 - Node.js `>=24 <25`
 - pnpm `>=11 <12`，项目锁定 `pnpm@11.7.0`
 
-按功能可选：
+Web/开发版按功能可选：
 
 - PowerShell 5.1+：Windows 一键启动与环境安装脚本
 - ffmpeg：视频音频提取
 - Python 3.10–3.12（推荐 3.11）：视频转写和图片 AI
 - NVIDIA CUDA：可显著加速 Whisper、Real-ESRGAN 等模型；没有 CUDA 时可使用 CPU 配置
 
+Windows 桌面安装版不要求用户预装 Node.js 或 Python；可选能力会在设置中显示所需运行时、下载量和空间估算。模型和大型 Worker 不包含在基础安装器内。
+
 ## 快速启动
 
-### Windows 一键启动
+### Windows 桌面安装版
+
+1. 从 [GitHub Releases](https://github.com/sunshine-tmy/tool2.0/releases) 下载 `EcommerceToolboxSetup.exe` 并运行。
+2. 在安装向导中选择当前用户可写的安装目录。此安装模式不支持 Program Files 等受保护目录。
+3. 从桌面快捷方式或开始菜单启动。需要 AI、转写、归档、翻译或克隆配音时，进入“设置 → 能力管理”按需安装。
+
+应用管理的数据默认保存在 `<安装目录>\data`。如果检测到旧版 `%LOCALAPPDATA%\EcommerceToolboxData`，首次启动会先询问是否迁移；旧源保留不删除。普通卸载、静默卸载和升级默认保留数据，只有在交互卸载中主动选择并再次确认才会删除。详见[桌面应用使用帮助](./docs/desktop-application-help.md)。
+
+### Windows 一键启动（源码/开发版）
 
 ```powershell
 Copy-Item .env.example .env
 .\start.bat
 ```
 
-启动器会校验 lockfile、自动探测当前局域网 IPv4、首次安装轻量 Edge-TTS 环境、启动前后端，并启动已经安装的图片 AI 与 Chatterbox 本地 Worker。Chatterbox 体积较大，不会在普通一键启动时自动安装。重复点击时，如果服务已经健康运行，会直接复用并打开页面；如果检测到本项目遗留的部分进程，会自动清理后重新启动。端口被其他程序占用时仍会安全退出并显示进程信息；只有显式运行 `scripts/start-dev.ps1 -ForceRestart` 才会清理陌生进程。
+启动器会校验 lockfile、探测局域网 IPv4、启动前后端，并按开发版脚本配置准备或启动本地 Worker。此源码启动方式与桌面安装版的“设置 → 能力管理”不同；具体环境准备过程见 [Windows 开发与运维说明](./docs/operations.md)。重复点击时，如果服务已经健康运行，会直接复用并打开页面；如果检测到本项目遗留的部分进程，会自动清理后重新启动。端口被其他程序占用时仍会安全退出并显示进程信息；只有显式运行 `scripts/start-dev.ps1 -ForceRestart` 才会清理陌生进程。
 
 需要完全关闭项目并释放前端、后端和本地 AI Worker 占用的 CPU、内存及显存时，双击或运行：
 
@@ -97,7 +137,7 @@ Copy-Item .env.example .env
 
 脚本通过 `git archive HEAD` 在 `.package/ecommerce-toolbox-source.zip` 生成可复现源码包，只包含当前提交；未提交和未跟踪文件不会进入产物，中文 Git 路径也不会被转义破坏。接收方解压后运行 `start.bat` 即可按需重新安装运行环境。
 
-### 通用命令行启动
+### 通用命令行启动（Web/开发版）
 
 ```bash
 pnpm install --frozen-lockfile
@@ -112,7 +152,7 @@ pnpm dev
 
 ## 配置
 
-复制 `.env.example` 为 `.env`。常用变量如下：
+Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windows 桌面安装版的持久数据路径由安装位置决定，能力 Worker 则由桌面运行时管理，不依赖开发目录中的 `.runtime` 路径。
 
 | 变量                                    | 默认值                  | 说明                                                 |
 | --------------------------------------- | ----------------------- | ---------------------------------------------------- |
@@ -170,29 +210,31 @@ pnpm dev
 
 ## 可选能力安装
 
+Windows 桌面版的能力必须在“设置 → 能力管理”中由用户主动安装、重装或卸载；打开工具页或提交任务不会静默下载依赖。下载失败时，可使用能力卡片提供的 GitHub 来源和“离线导入”，并选择同一版本清单中的全部离线包。卸载能力只移除对应运行时和模型，不删除作品、任务历史、个人素材或登录状态。详细步骤见[桌面应用使用帮助](./docs/desktop-application-help.md)。
+
 ### 小红书内容归档
 
-首次点击“获取并存档”时，模块会优先复用 Python 3.12；若本机没有，则通过固定版本 uv 把受管 Python、虚拟环境和固定提交的 XHS-Downloader 2.7 安装到 `.runtime/xhs-downloader`。普通项目启动不会安装或等待该环境。解析 Worker 只监听回环地址，媒体获取完成后立即写入 `storage/xhs-archive`。
+Web/开发版首次点击“获取并存档”时，模块会优先复用 Python 3.12；若本机没有，则通过固定版本 uv 把受管 Python、虚拟环境和固定提交的 XHS-Downloader 2.7 安装到 `.runtime/xhs-downloader`。普通项目启动不会安装或等待该环境。桌面版须先从能力管理中安装对应能力。解析 Worker 只监听回环地址，媒体获取完成后写入当前运行模式的数据目录。
 
-遇到访问限制时，可在页面点击“登录小红书并重试”。登录窗口使用本机 Chrome 或 Edge，状态仅保存在 `.runtime/xhs-browser-profile`，不会进入日志、接口响应、源码包或 Git。模块不会绕过验证码。第三方来源和许可证信息见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
+遇到访问限制时，可在页面点击“登录小红书并重试”。Web/开发版登录状态保存在 `.runtime/xhs-browser-profile`；桌面版使用安装目录 `data/profile` 下的受管浏览器状态。登录信息不会进入日志、接口响应、源码包或 Git。模块不会绕过验证码。第三方来源和许可证信息见 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md)。
 
-获取完成后会在后台使用固定版本的 `Helsinki-NLP/opus-mt-zh-en` 在本机 CPU 翻译标题、正文和话题。翻译运行时和模型只在首次生成英文时安装到 `.runtime/xhs-translate`，失败不会影响中文存档；历史存档可在内容存档页选择“补全未翻译内容”或“翻译所选”。英文支持人工修订，ZIP 会在英文就绪时增加 `Content-English.txt` 和 `内容-中英双语.txt`。模型构建可使用 `node scripts/prepare-xhs-translation-model.mjs`，模型产物不会提交 Git。
+获取完成后会在后台使用固定版本的 `Helsinki-NLP/opus-mt-zh-en` 在本机 CPU 翻译标题、正文和话题。Web/开发版翻译运行时和模型只在首次生成英文时安装到 `.runtime/xhs-translate`；桌面版需先在能力管理中安装翻译能力。失败不会影响中文存档；历史存档可在内容存档页选择“补全未翻译内容”或“翻译所选”。英文支持人工修订，ZIP 会在英文就绪时增加 `Content-English.txt` 和 `内容-中英双语.txt`。模型构建可使用 `node scripts/prepare-xhs-translation-model.mjs`，模型产物不会提交 Git。
 
 ### 多国语言配音
 
 在线自然音色支持马来语（`ms-MY`）、美式英语（`en-US`）、英式英语（`en-GB`）和巴西葡萄牙语（`pt-BR`）。巴西葡语推荐 Francisca 女声与 Antonio 男声，支持语速、音量、音调调整及 MP3/SRT 导出。请直接输入葡萄牙语文案，选择音色不会自动翻译文本。参考音色克隆也支持马来语、英语和巴西葡萄牙语。
 
-一键启动会在首次使用时自动创建 `.venv-edge-tts`。也可以手动安装：
+Web/开发版一键启动会在首次使用时自动创建 `.venv-edge-tts`。桌面版请先在“设置 → 能力管理”安装在线自然配音能力。也可以在源码开发环境手动安装：
 
 ```powershell
 .\scripts\setup-edge-tts.ps1 -Python python
 ```
 
-Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服务，因此必须联网。生成的 MP3、可选 SRT 和任务元数据保存在 `storage/edge-tts/tasks/`，默认 3 天后自动清理。
+Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服务，因此必须联网。生成的 MP3、可选 SRT 和任务元数据保存在当前运行模式的数据目录下，默认 3 天后自动清理。
 
-#### Chatterbox Multilingual V3 声音克隆
+#### Chatterbox Multilingual V3 声音克隆（Web/开发版）
 
-需要 Python 3.11、ffmpeg，推荐 NVIDIA CUDA GPU。首次单独安装并下载模型：
+以下脚本仅用于 Web/开发版源码环境，需要 Python 3.11 和 ffmpeg，推荐 NVIDIA CUDA GPU。桌面版请先在“设置 → 能力管理”安装声音克隆能力。源码环境首次单独安装并下载模型：
 
 ```powershell
 .\scripts\setup-chatterbox.ps1 -DownloadModel
@@ -204,7 +246,7 @@ Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服
 
 每段文案可以额外保存最多 2,000 字符的中文翻译。该翻译不参与语音生成和文案字符统计，原文 SRT、中文 SRT 和原文在上中文在下的双语 SRT 分开提供下载，ZIP 内也会同时包含。字幕以批次随机 ID 的前 8 位作为稳定哈希后缀，例如 `马来语-aB12cd34.srt`、`中文字幕-aB12cd34.srt` 与 `双语字幕-aB12cd34.srt`；总音频命名为 `总音频-aB12cd34.mp3`。选择按句分段时，原文与中文句数相同会逐句对应；句数不同时，该文案段的中文字幕及双语字幕会合并为一个完整字幕块，避免遗漏或错配中文。
 
-### 视频文本解析
+### 视频文本解析（Web/开发版）
 
 1. 安装 ffmpeg，并确认 `ffmpeg -version` 可运行。
 2. 创建独立 Python 环境：
@@ -213,7 +255,7 @@ Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服
 .\scripts\setup-video-text.ps1 -Python py
 ```
 
-3. 在 `.env` 中设置转写命令：
+3. 在 `.env` 中设置转写命令。桌面版请改为在“设置 → 能力管理”安装并检查视频文本解析能力，不使用以下开发环境配置步骤。
 
 ```dotenv
 VIDEO_TEXT_TRANSCRIBE_COMMAND=.venv-video-text/Scripts/python.exe scripts/video-transcribe-faster-whisper.py --input {input} --output {output} --model large-v3-turbo --language zh --device cuda --compute-type int8_float16
@@ -222,6 +264,8 @@ VIDEO_TEXT_TRANSCRIBE_COMMAND=.venv-video-text/Scripts/python.exe scripts/video-
 无 CUDA 时改为 `--device cpu --compute-type int8`。命令模板会被解析为独立参数并通过 `execFile` 执行，不经过 shell；请不要使用管道、重定向或 `&&`。
 
 ### AI 图片处理
+
+以下脚本用于 Web/开发版源码环境；桌面版需在“设置 → 能力管理”安装 AI 图片处理能力。
 
 ```powershell
 .\scripts\setup-image-ai.ps1 -Python py
@@ -257,12 +301,28 @@ pnpm dev:ai
 | `pnpm db:benchmark`                 | 以 10,000 条元数据验证列表/详情 P95 预算             |
 | `pnpm db:rollback --backup <id>`    | 从指定迁移备份恢复旧元数据                           |
 | `pnpm smoke:standalone`             | 验证分发包安装、启动、上传、下载和清理               |
+| `pnpm desktop:build`                | 构建桌面资源和 Electron 应用目录                     |
+| `pnpm desktop:make`                 | 在 Windows x64 上构建 NSIS 安装器                    |
+| `pnpm --filter desktop test`        | 运行 Electron 主进程、迁移和安装验收相关测试         |
 
 图片 AI 的可选环境测试：
 
 ```powershell
 .\.venv-image-ai\Scripts\python.exe scripts\image_ai_worker_test.py
 ```
+
+## 构建 Windows 桌面安装包
+
+仅在 Windows x64 环境中构建本地测试安装包：
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm desktop:make
+```
+
+默认产物为 `apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe`。没有设置 Release 签名配置时，此产物是**未签名测试安装包**，不会自动发布到 GitHub Release。安装前仍须确认目标目录可由当前用户写入。
+
+仓库提供独立的 Windows 安装验收工作流 [desktop-install-acceptance.yml](./.github/workflows/desktop-install-acceptance.yml)：在干净 Windows Runner 上构建测试安装器，执行安装、启动、健康检查、旧数据迁移、卸载和数据保留检查；该工作流不签名、不创建 Release。正式发布走 tag 触发的桌面发行流程，并额外执行签名与干净环境验收。
 
 ## 生产构建与部署
 
@@ -351,11 +411,11 @@ GET /api/v1/health
 
 ### 端口 3100、5173 或 3210 被占用
 
-本项目上次启动遗留的进程会被自动识别和清理。若端口属于其他程序，启动器会显示 PID、程序名和命令行后安全退出；确认可以结束该程序时才使用 `scripts/start-dev.ps1 -ForceRestart`。
+此处说明适用于 Web/开发版。本项目上次启动遗留的进程会被自动识别和清理。若端口属于其他程序，启动器会显示 PID、程序名和命令行后安全退出；确认可以结束该程序时才使用 `scripts/start-dev.ps1 -ForceRestart`。
 
 ### 局域网设备打不开页面
 
-确认 Windows 防火墙允许 5173、设备处于同一网络，并使用启动日志检测到的 LAN IP。默认不需要开放 3100。
+Web/开发版请确认 Windows 防火墙允许 5173、设备处于同一网络，并使用启动日志检测到的 LAN IP。默认不需要开放 3100。桌面版局域网访问也应使用应用显示的地址，并确认 Windows 防火墙允许前端端口。
 
 ### 视频解析提示未配置转写
 
@@ -363,12 +423,20 @@ GET /api/v1/health
 
 ### 图片 AI 健康检查失败
 
-查看 `.logs/image-ai-worker.error.log`，确认 `.venv-image-ai`、模型目录、磁盘空间和 `DEPLOYMENT_USAGE`。Worker 冷启动可能需要几十秒。
+Web/开发版查看 `.logs/image-ai-worker.error.log`，确认 `.venv-image-ai`、模型目录、磁盘空间和 `DEPLOYMENT_USAGE`。桌面版请在“设置 → 能力管理”检查安装状态与空间；Worker 冷启动可能需要几十秒。
 
 ### 构建成功但部署页面调用不到 API
 
 生产静态服务器必须把 `/api` 代理到 API；若前后端不同域，则在构建前设置 `VITE_API_BASE`，并把前端 Origin 加入 `CORS_ORIGINS`。
 
-## 许可证
+### 桌面端导入旧版数据
 
-仓库当前未声明统一项目许可证。在对外分发或商用前，请补充根许可证文件，并分别核对 ffmpeg、Whisper、各 AI 模型及第三方短视频服务的条款。
+桌面版首次启动时的完整迁移会检测固定旧路径 `%LOCALAPPDATA%\EcommerceToolboxData`。设置页中的“导入旧版数据”是独立功能，需选择旧项目或备份中的 `storage` 文件夹本身；它会替换当前业务数据，但会先备份当前内容以便回滚。没有使用过旧版或没有旧数据备份时，不需要操作。
+
+### Chatterbox 显示运行就绪、生成时载入模型
+
+这表示 Worker 可用，但模型还没有载入内存；桌面端在首次生成时载入，空闲后会卸载以释放内存。等待首次生成完成后，页面状态会自动更新。桌面版的设备选择与源码一键启动可能不同；当前桌面运行时默认使用 CPU。
+
+## 项目范围与第三方资产
+
+本项目当前按组织内部使用维护。依赖来源、版本、签名清单、SPDX/SBOM 和第三方说明用于资产追溯、故障排查与内部运维，不是用户安装或内部验收的审批步骤。短视频解析等外部服务的数据传输边界见[数据、安全与隐私](#数据安全与隐私)。

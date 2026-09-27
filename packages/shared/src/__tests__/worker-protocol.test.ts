@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  isChatterboxWorkerHealth,
   isChatterboxWorkerGenerate,
   isImageWorkerHealth,
   isImageWorkerProcess,
@@ -10,6 +11,21 @@ import {
 } from "../worker-protocol";
 
 describe("Worker protocol schemas", () => {
+  it("accepts a CPU Chatterbox health payload with a null GPU name", () => {
+    expect(
+      isChatterboxWorkerHealth({
+        protocolVersion: 1,
+        available: true,
+        packageVersion: "0.1.7",
+        model: "multilingual-v3",
+        modelLoaded: false,
+        device: "cpu",
+        gpuName: null,
+        watermarked: true
+      })
+    ).toBe(true);
+  });
+
   it("accepts a structurally valid image worker health payload", () => {
     expect(
       isImageWorkerHealth({

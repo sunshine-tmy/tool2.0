@@ -3,6 +3,7 @@
  */
 import { startBackend } from "./bootstrap";
 import { getConfig } from "./config";
+import { startDesktopLanGateway, type DesktopLanGateway } from "./runtime/desktop-lan-gateway";
 import { createRuntimeLayout, type RuntimeLayout } from "./runtime/runtime-layout";
 import { createDesktopWorkerSession, workerSessionEnvironment } from "./runtime/worker-session";
 
@@ -21,12 +22,23 @@ const config = getConfig({ layout, dotenvPath: false, desktopManagedCapabilities
 
 try {
   const backend = await startBackend({ config, host: "127.0.0.1", port: 0 });
+  let lanGateway: DesktopLanGateway;
+  try {
+    lanGateway = await startDesktopLanGateway(backend.origin, config.lanTransferWebPort);
+    config.lanTransferWebPort = lanGateway.port;
+  } catch (error) {
+    // LAN sharing is optional; keep the desktop app usable and report no share URLs if the gateway cannot start.
+    config.lanTransferWebPort = 0;
+    console.warn("Desktop LAN transfer gateway could not start", error);
+    lanGateway = { port: 0, close: async () => undefined };
+  }
   parentPort.postMessage({ type: "ready", origin: backend.origin });
 
   let closing = false;
   const close = async () => {
     if (closing) return;
     closing = true;
+    await lanGateway.close();
     await backend.close();
     parentPort.postMessage({ type: "stopped" });
   };

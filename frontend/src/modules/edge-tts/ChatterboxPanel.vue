@@ -7,7 +7,14 @@
         <strong>仅克隆你本人或已获得明确授权的声音</strong>
         <span>一个批次只需上传一次参考音色，可生成独立 MP3、按顺序拼接的总音频及多种字幕。</span>
       </div>
-      <n-tag :type="panel.health?.available ? 'success' : 'error'" round>{{ panel.healthLabel }}</n-tag>
+      <n-tag
+        :type="
+          !panel.health ? 'info' : !panel.health.available ? 'error' : panel.health.modelLoaded ? 'success' : 'info'
+        "
+        :title="panel.health?.message"
+        round
+        >{{ panel.healthLabel }}</n-tag
+      >
     </div>
 
     <ChatterboxEditorForm />
