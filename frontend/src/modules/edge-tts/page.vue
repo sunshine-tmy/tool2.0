@@ -37,7 +37,9 @@
           :aria-selected="engine === 'chatterbox'"
           @click="engine = 'chatterbox'"
         >
-          <Mic2 :size="18" /><span><strong>参考音色克隆</strong><small>Chatterbox V3 · 本机 GPU</small></span>
+          <Mic2 :size="18" /><span
+            ><strong>参考音色克隆</strong><small>Chatterbox V3 · 按设备可用性选择 CPU / GPU</small></span
+          >
         </button>
       </div>
 

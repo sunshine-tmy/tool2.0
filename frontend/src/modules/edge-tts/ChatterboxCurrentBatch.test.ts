@@ -33,13 +33,11 @@ describe("Chatterbox current batch panel", () => {
     };
 
     const ButtonStub = defineComponent({ template: '<button v-bind="$attrs"><slot /></button>' });
-    const TagStub = defineComponent({ template: "<span><slot /></span>" });
     const wrapper = mount(ChatterboxCurrentBatch, {
       global: {
         provide: { [chatterboxPanelKey as symbol]: panel },
         stubs: {
           NButton: ButtonStub,
-          NTag: TagStub,
           Archive: true,
           FileAudio: true,
           Captions: true,
@@ -51,6 +49,7 @@ describe("Chatterbox current batch panel", () => {
 
     expect(wrapper.text()).toContain("测试批次");
     expect(wrapper.text()).toContain("2/2");
+    expect(wrapper.get(".chatterbox-batch-status-badge--success").text()).toBe("已完成");
     await wrapper.get("button").trigger("click");
     expect(openBatch).toHaveBeenCalledWith("batch-1");
   });

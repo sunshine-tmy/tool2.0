@@ -10,6 +10,7 @@
       <template v-if="panel.detailBatch">
         <div class="batch-detail-summary">
           <span>{{ panel.batchStatusLabel(panel.detailBatch.status) }}</span>
+          <span>运行设备：{{ panel.detailBatch.device === "cuda" ? "GPU" : "CPU" }}</span>
           <span>{{ panel.detailBatch.completedItems }}/{{ panel.detailBatch.items.length }} 完成</span>
           <span>总时长 {{ panel.formatDuration(panel.detailBatch.totalAudioDurationSeconds) }}</span>
           <span>参考音色：{{ panel.detailBatch.referenceAvailable ? "可用于重生成" : "已删除" }}</span>

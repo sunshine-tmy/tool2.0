@@ -73,6 +73,7 @@ export class ChatterboxQueue {
       const result = await this.options.worker.generate({
         text: task.text,
         language: task.language,
+        device: task.device ?? "cpu",
         referencePath: paths.reference,
         outputPath: paths.outputWav,
         exaggeration: task.exaggeration,

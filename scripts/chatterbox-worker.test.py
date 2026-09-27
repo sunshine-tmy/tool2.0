@@ -18,6 +18,10 @@ spec.loader.exec_module(worker)
 
 
 class LanguageTests(unittest.TestCase):
+    def test_generation_device_defaults_to_cpu_for_older_clients(self):
+        payload = worker.GenerateRequest(text="Hello", language="en", reference_path="unused", output_path="unused")
+        self.assertEqual(payload.device, "cpu")
+
     def test_brazilian_portuguese_reaches_model_as_pt(self):
         from chatterbox.mtl_tts import SUPPORTED_LANGUAGES
 
@@ -87,6 +91,27 @@ class MetaTensorRecoveryTests(unittest.TestCase):
 
 
 class DesktopModelLoadingTests(unittest.TestCase):
+    def test_switching_generation_device_reloads_model_on_requested_device(self):
+        manager = worker.ModelManager()
+        manager.model = "cpu-model"
+        manager.device = "cpu"
+        with (
+            patch.object(worker, "selected_device", return_value="cuda"),
+            patch.object(worker, "load_multilingual_model", return_value="cuda-model") as load_model,
+        ):
+            self.assertEqual(manager.load("cuda"), "cuda-model")
+        load_model.assert_called_once_with("cuda")
+        self.assertEqual(manager.device, "cuda")
+
+    def test_explicit_cuda_is_rejected_without_cuda_runtime_or_device(self):
+        with (
+            patch.object(torch.version, "cuda", None),
+            patch.object(torch.cuda, "is_available", return_value=False),
+        ):
+            with self.assertRaises(worker.WorkerFailure) as raised:
+                worker.selected_device("cuda")
+        self.assertEqual(raised.exception.code, "CHATTERBOX_CUDA_UNAVAILABLE")
+
     def test_installer_check_requires_the_complete_local_model_set(self):
         with (
             tempfile.TemporaryDirectory(prefix="chatterbox-model-check-") as directory,

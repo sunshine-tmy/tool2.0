@@ -43,6 +43,7 @@
     "components:prepare-edge-tts": "node scripts/prepare-edge-tts-component.mjs",
     "components:prepare-image-ai": "node scripts/prepare-image-ai-component.mjs",
     "components:prepare-chatterbox": "node scripts/prepare-chatterbox-component.mjs",
+    "components:prepare-chatterbox-cuda": "node scripts/prepare-chatterbox-cuda-component.mjs",
     "components:prepare-video-text": "node scripts/prepare-video-text-component.mjs",
     "components:prepare-whisper-small": "node scripts/prepare-whisper-small-model.mjs",
     "standalone:start": "node scripts/start-standalone.mjs",

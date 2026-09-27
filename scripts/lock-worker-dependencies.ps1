@@ -7,6 +7,23 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $env:UV_CACHE_DIR = Join-Path $Root ".package\uv-lock-cache"
+$PythonCandidates = @(
+  (Join-Path $Root ".package\stage\python-311\python\python.exe"),
+  (Join-Path $Root ".venv-chatterbox\Scripts\python.exe")
+)
+$PythonExecutable = $PythonCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if (-not $PythonExecutable) {
+  $SystemPython = Get-Command python.exe -ErrorAction SilentlyContinue
+  if ($SystemPython) {
+    $SystemPythonVersion = & $SystemPython.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+    if ($LASTEXITCODE -eq 0 -and $SystemPythonVersion.Trim() -eq $PythonVersion) {
+      $PythonExecutable = $SystemPython.Source
+    }
+  }
+}
+if (-not $PythonExecutable) {
+  throw "锁定 Worker 依赖需要 Python 3.11；先准备 .package\stage\python-311 或 .venv-chatterbox。"
+}
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
   throw "uv is required to regenerate Worker locks: https://docs.astral.sh/uv/"
@@ -18,6 +35,7 @@ $Locks = @(
   # Stage 5 ships CPU packages first. CUDA variants are separate capabilities and
   # must not leak into the baseline lock or inflate the default installer.
   @{ Input = "chatterbox-requirements.txt"; Output = "chatterbox.lock.txt"; Torch = "cpu" },
+  @{ Input = "chatterbox-cuda-requirements.txt"; Output = "chatterbox-cuda.lock.txt"; Torch = "cu124" },
   @{ Input = "image-ai-requirements.txt"; Output = "image-ai.lock.txt"; Torch = "cpu" }
 )
 
@@ -25,6 +43,7 @@ foreach ($Lock in $Locks) {
   $Arguments = @(
     "pip", "compile",
     (Join-Path $PSScriptRoot $Lock.Input),
+    "--python", $PythonExecutable,
     "--python-version", $PythonVersion,
     "--python-platform", $PythonPlatform,
     "--generate-hashes",

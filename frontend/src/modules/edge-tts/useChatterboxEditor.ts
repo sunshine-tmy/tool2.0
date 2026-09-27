@@ -9,6 +9,7 @@ import {
   CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH,
   CHATTERBOX_MAX_TEXT_LENGTH,
   type ChatterboxBatch,
+  type ChatterboxDevice,
   type ChatterboxHealth,
   type ChatterboxLanguage,
   type ChatterboxSavedVoice,
@@ -69,6 +70,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const autoSegmentVisible = ref(false);
   const autoSegmentText = ref("");
   const language = ref<ChatterboxLanguage>("ms");
+  const device = ref<ChatterboxDevice>("cpu");
   const authorization = ref<ChatterboxVoiceAuthorization>("self");
   const consentConfirmed = ref(false);
   const exaggeration = ref(0.5);
@@ -92,6 +94,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     () => parsedAutoSegments.value.filter((item) => item.referenceTranslation).length
   );
   const isCurrentRunning = computed(() => currentBatch.value && isBatchRunning(currentBatch.value));
+  const cudaAvailable = computed(() => health.value?.cudaAvailable === true);
   const languageSavedVoices = computed(() => savedVoices.value.filter((voice) => voice.language === language.value));
   const hasSelectedReference = computed(() =>
     referenceSource.value === "upload"
@@ -101,6 +104,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const canCreate = computed(() =>
     Boolean(
       health.value?.available &&
+      (device.value === "cpu" || cudaAvailable.value) &&
       hasSelectedReference.value &&
       consentConfirmed.value &&
       segments.value.every((item) => item.text.trim() && item.text.length <= maxTextLength) &&
@@ -115,7 +119,11 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
       : !health.value.available
         ? "克隆环境未就绪"
         : health.value.modelLoaded
-          ? `V3 已加载 · ${health.value.gpuName || health.value.device?.toUpperCase() || "本机"}`
+          ? `V3 已加载 · ${
+              health.value.device === "cuda"
+                ? health.value.gpuName || "GPU"
+                : health.value.device?.toUpperCase() || "本机"
+            }`
           : "运行就绪 · 生成时载入模型"
   );
 
@@ -276,6 +284,8 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     autoSegmentVisible,
     autoSegmentText,
     language,
+    device,
+    cudaAvailable,
     authorization,
     consentConfirmed,
     exaggeration,

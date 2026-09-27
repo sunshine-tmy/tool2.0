@@ -1,0 +1,3 @@
+# Reuse the fixed Chatterbox runtime dependency set, resolving its PyTorch
+# packages from the official CUDA 12.4 backend instead of the CPU wheel index.
+-r chatterbox-requirements.txt

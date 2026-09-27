@@ -199,51 +199,49 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     await tryConfigure(
       "参考音色克隆",
       async () => {
-        const [python, script, lifecycle, ve, t3, s3gen, tokenizer] = await Promise.all([
-          optionalPython(components, "chatterbox"),
-          optionalAsset(components, "chatterbox", "scripts/chatterbox-worker.py"),
-          optionalAsset(components, "chatterbox", "scripts/worker_lifecycle.py"),
+        const [runtime, ve, t3, s3gen, tokenizer] = await Promise.all([
+          resolveChatterboxWorkerRuntime(components),
           optionalAsset(components, "chatterbox", "models/chatterbox/ve.pt"),
           optionalAsset(components, "chatterbox", "models/chatterbox/t3_mtl23ls_v3.safetensors"),
           optionalAsset(components, "chatterbox", "models/chatterbox/s3gen.pt"),
           optionalAsset(components, "chatterbox", "models/chatterbox/grapheme_mtl_merged_expanded_v1.json")
         ]);
-        if (
-          signal.aborted ||
-          !python ||
-          !script ||
-          !lifecycle ||
-          !ffmpeg ||
-          !ffprobe ||
-          !ve ||
-          !t3 ||
-          !s3gen ||
-          !tokenizer
-        )
-          return;
-        const generationRoot = script.generationRoot;
-        const worker = await startWorker({
-          pythonPath: python.path,
-          scriptPath: script.path,
-          componentId: "chatterbox",
-          generationRoot,
-          healthUrlPath: "/health",
-          tempDirectory: config.tempDir,
-          signal,
-          environment: {
-            TOOLBOX_DESKTOP_MANAGED: "1",
-            CHATTERBOX_WORKER_HOST: "127.0.0.1",
-            CHATTERBOX_STORAGE_ROOT: config.chatterboxDir,
-            CHATTERBOX_MODELS_ROOT: path.join(generationRoot, "models", "chatterbox"),
-            CHATTERBOX_DEVICE: "cpu",
-            CHATTERBOX_MODEL_IDLE_MINUTES: "10",
-            HF_HOME: path.join(config.runtime.modelsRoot, "chatterbox", "huggingface"),
-            PYTHONPATH: path.join(generationRoot, "vendor"),
-            HF_HUB_OFFLINE: "1",
-            TRANSFORMERS_OFFLINE: "1"
-          },
-          available: (payload) => payload.available === true
-        });
+        if (signal.aborted || !runtime || !ffmpeg || !ffprobe || !ve || !t3 || !s3gen || !tokenizer) return;
+        const startChatterboxWorker = (selectedRuntime: NonNullable<typeof runtime>) =>
+          startWorker({
+            pythonPath: selectedRuntime.python.path,
+            scriptPath: selectedRuntime.script.path,
+            componentId: selectedRuntime.componentId,
+            generationRoot: selectedRuntime.script.generationRoot,
+            healthUrlPath: "/health",
+            tempDirectory: config.tempDir,
+            signal,
+            environment: {
+              TOOLBOX_DESKTOP_MANAGED: "1",
+              CHATTERBOX_WORKER_HOST: "127.0.0.1",
+              CHATTERBOX_STORAGE_ROOT: config.chatterboxDir,
+              CHATTERBOX_MODELS_ROOT: path.join(ve.generationRoot, "models", "chatterbox"),
+              CHATTERBOX_DEVICE: selectedRuntime.componentId === "chatterbox-cuda" ? "auto" : "cpu",
+              CHATTERBOX_MODEL_IDLE_MINUTES: "10",
+              HF_HOME: path.join(config.runtime.modelsRoot, "chatterbox", "huggingface"),
+              PYTHONPATH: path.join(selectedRuntime.script.generationRoot, "vendor"),
+              HF_HUB_OFFLINE: "1",
+              TRANSFORMERS_OFFLINE: "1"
+            },
+            available: (payload) => payload.available === true
+          });
+        let worker: ManagedWorker;
+        try {
+          worker = await startChatterboxWorker(runtime);
+        } catch (error) {
+          if (signal.aborted || runtime.componentId !== "chatterbox-cuda") throw error;
+          console.warn(
+            `Chatterbox CUDA Worker 启动失败，回退到 CPU：${error instanceof Error ? error.message : "未知错误"}`
+          );
+          const cpuRuntime = await resolveChatterboxWorkerRuntime(components, false);
+          if (!cpuRuntime) throw error;
+          worker = await startChatterboxWorker(cpuRuntime);
+        }
         workers.push(worker);
         if (signal.aborted) return;
         config.chatterboxWorkerUrl = worker.url;
@@ -271,26 +269,25 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     }
   });
 
-  const stopManagedWorker = async (componentId: string) => {
-    const workerIndex = workers.findIndex((worker) => worker.componentId === componentId);
-    if (workerIndex < 0) return;
-    const [worker] = workers.splice(workerIndex, 1);
-    await worker.stop();
+  const stopManagedWorkers = async (componentIds: readonly string[]) => {
+    const stopped = workers.filter((worker) => componentIds.includes(worker.componentId));
+    for (const worker of stopped) {
+      workers.splice(workers.indexOf(worker), 1);
+    }
+    await Promise.all(stopped.map((worker) => worker.stop()));
   };
 
   return {
     beforeUninstall: async (componentId: string) => {
       await initializing.catch(() => undefined);
-      await stopManagedWorker(componentId);
+      await stopManagedWorkers([componentId]);
       if (componentId === "image-ai") {
         config.imageAiCapabilityReady = false;
         config.imageAiWorkerUrl = "http://127.0.0.1:1";
         config.imageAiWorkerToken = undefined;
       }
-      if (componentId === "chatterbox") {
-        config.chatterboxCapabilityReady = false;
-        config.chatterboxWorkerUrl = "http://127.0.0.1:1";
-        config.chatterboxWorkerToken = undefined;
+      if (["chatterbox", "chatterbox-cuda"].includes(componentId)) {
+        resetChatterboxConfiguration();
       }
     },
     afterMutation: async (componentId: string, operation: ComponentJobOperation) => {
@@ -327,7 +324,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
             throw new Error("Edge-TTS 依赖已安装，但运行时自检未就绪");
           }
         } else if (componentId === "image-ai") {
-          await stopManagedWorker(componentId);
+          await stopManagedWorkers([componentId]);
           await configureImageAi(controller.signal);
           if (
             operation !== "uninstall" &&
@@ -336,8 +333,8 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
           ) {
             throw new Error("AI 图片处理依赖已安装，但 Worker 健康检查未通过");
           }
-        } else if (componentId === "chatterbox") {
-          await stopManagedWorker(componentId);
+        } else if (["chatterbox", "chatterbox-cuda"].includes(componentId)) {
+          await stopManagedWorkers(["chatterbox", "chatterbox-cuda"]);
           const [ffmpeg, ffprobe] = await resolveMediaTools();
           await configureChatterbox(controller.signal, ffmpeg, ffprobe);
           if (
@@ -359,6 +356,35 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
       await Promise.allSettled(workers.splice(0).map((worker) => worker.stop()));
     }
   };
+}
+
+/**
+ * Resolve the worker runtime from the signed desktop capability catalog. The
+ * optional CUDA package is an overlay: it supplies its own CUDA-enabled venv
+ * and worker source while reusing models installed by the base CPU capability.
+ */
+export async function resolveChatterboxWorkerRuntime(components: ComponentManager, preferCuda = true) {
+  const resolvePackage = async (componentId: string) => {
+    const [python, script, lifecycle] = await Promise.all([
+      optionalPython(components, componentId),
+      optionalAsset(components, componentId, "scripts/chatterbox-worker.py"),
+      optionalAsset(components, componentId, "scripts/worker_lifecycle.py")
+    ]);
+    if (!python || !script || !lifecycle) return undefined;
+    return { componentId, python, script, lifecycle };
+  };
+
+  const base = await resolvePackage("chatterbox");
+  if (!base || !preferCuda) return base;
+
+  try {
+    return (await resolvePackage("chatterbox-cuda")) ?? base;
+  } catch (error) {
+    console.warn(
+      `Chatterbox CUDA 扩展不可用，回退到 CPU 运行时：${error instanceof Error ? error.message : "未知错误"}`
+    );
+    return base;
+  }
 }
 
 async function isInstalled(components: ComponentManager, componentId: string) {

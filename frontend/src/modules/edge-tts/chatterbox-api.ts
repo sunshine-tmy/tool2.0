@@ -5,6 +5,7 @@ import {
   ChatterboxBatchItemRemovalSchema,
   ChatterboxBatchListSchema,
   ChatterboxBatchSchema,
+  ChatterboxDevice,
   ChatterboxHealthSchema,
   ChatterboxLanguage,
   ChatterboxRemovalSchema,
@@ -21,6 +22,7 @@ type ChatterboxCreateTaskInput = {
   reference: File;
   text: string;
   language: ChatterboxLanguage;
+  device?: ChatterboxDevice;
   authorization: ChatterboxVoiceAuthorization;
   consentConfirmed: boolean;
   exaggeration: number;
@@ -34,6 +36,7 @@ type ChatterboxCreateTaskInput = {
 type ChatterboxBatchSegmentInput = { text: string; referenceTranslation?: string; fileName?: string };
 
 type ChatterboxCreateBatchInput = Omit<ChatterboxCreateTaskInput, "text" | "fileName" | "reference"> & {
+  device: ChatterboxDevice;
   reference?: File;
   voiceId?: string;
   segments: ChatterboxBatchSegmentInput[];
@@ -56,6 +59,7 @@ export const chatterboxApi = {
     form.append("reference", input.reference, input.reference.name);
     form.append("text", input.text);
     form.append("language", input.language);
+    form.append("device", input.device || "cpu");
     form.append("authorization", input.authorization);
     form.append("consentConfirmed", String(input.consentConfirmed));
     form.append("exaggeration", String(input.exaggeration));
@@ -77,6 +81,7 @@ export const chatterboxApi = {
     if (input.voiceId) form.append("voiceId", input.voiceId);
     form.append("segments", JSON.stringify(input.segments));
     form.append("language", input.language);
+    form.append("device", input.device);
     form.append("authorization", input.authorization);
     form.append("consentConfirmed", String(input.consentConfirmed));
     form.append("exaggeration", String(input.exaggeration));

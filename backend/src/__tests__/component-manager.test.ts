@@ -387,6 +387,71 @@ describe("ComponentManager", () => {
     ).resolves.toBe("signed model bytes");
   });
 
+  it("verifies and reassembles signed large-file parts before installing the component", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manifest: ComponentPackageManifest = fixture.manifest;
+    const partStage = path.join(temporaryRoot, "wheel-parts-stage");
+    const firstPath = "wheelhouse/.parts/torch.whl.part-0001";
+    const secondPath = "wheelhouse/.parts/torch.whl.part-0002";
+    const firstPart = Buffer.from("verified first half of the CUDA wheel");
+    const secondPart = Buffer.from("verified second half of the CUDA wheel");
+    const assembledWheel = Buffer.concat([firstPart, secondPart]);
+    const partsArchivePath = path.join(temporaryRoot, "wheel-parts.tar.gz");
+    await fs.mkdir(path.join(partStage, "wheelhouse", ".parts"), { recursive: true });
+    await fs.writeFile(path.join(partStage, ...firstPath.split("/")), firstPart);
+    await fs.writeFile(path.join(partStage, ...secondPath.split("/")), secondPart);
+    await tar.c({ gzip: true, file: partsArchivePath, cwd: partStage }, [firstPath, secondPath]);
+    const partsArchive = await fs.readFile(partsArchivePath);
+    const sha256 = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
+    manifest.archive.filePaths = manifest.files.map((file) => file.path);
+    manifest.additionalArchives = [
+      {
+        url: "https://packages.example.test/edge-tts-wheel-parts.tar.gz",
+        bytes: partsArchive.byteLength,
+        sha256: sha256(partsArchive),
+        format: "tar.gz",
+        filePaths: [firstPath, secondPath]
+      }
+    ];
+    manifest.files.push({ path: "wheelhouse/torch.whl", bytes: assembledWheel.length, sha256: sha256(assembledWheel) });
+    manifest.assembledFiles = [
+      {
+        path: "wheelhouse/torch.whl",
+        bytes: assembledWheel.length,
+        sha256: sha256(assembledWheel),
+        parts: [
+          { path: firstPath, bytes: firstPart.length, sha256: sha256(firstPart) },
+          { path: secondPath, bytes: secondPart.length, sha256: sha256(secondPart) }
+        ]
+      }
+    ];
+    manifest.installedBytes += assembledWheel.length;
+    manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(manifest)), keyPair.privateKey)
+      .toString("base64");
+
+    const downloadArchive = vi.fn(async (assetManifest: ComponentPackageManifest, destination: string) => {
+      await fs.copyFile(
+        assetManifest.archive.url.endsWith("wheel-parts.tar.gz") ? partsArchivePath : fixture.archivePath,
+        destination
+      );
+    });
+    const manager = createManager(manifest, fixture.archivePath, downloadArchive);
+
+    await expect(manager.install("edge-tts")).resolves.toMatchObject({ installed: true, health: "healthy" });
+    const installedRoot = path.join(temporaryRoot, "packages", "edge-tts", "versions", "1.0.0");
+    await expect(fs.readFile(path.join(installedRoot, ..."wheelhouse/torch.whl".split("/")))).resolves.toEqual(
+      assembledWheel
+    );
+    await expect(fs.access(path.join(installedRoot, ...firstPath.split("/")))).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(manager.resolveInstalledAsset("edge-tts", "wheelhouse/torch.whl")).resolves.toMatchObject({
+      path: path.join(installedRoot, "wheelhouse", "torch.whl")
+    });
+    expect(downloadArchive).toHaveBeenCalledTimes(2);
+  });
+
   it("rejects overlapping archive file partitions before downloading any part", async () => {
     const fixture = await createFixture("1.0.0");
     const manifest: ComponentPackageManifest = fixture.manifest;

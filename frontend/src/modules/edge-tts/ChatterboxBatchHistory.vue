@@ -32,15 +32,18 @@
               }}
             </p>
             <div class="batch-history-meta">
-              <span
+              <span class="batch-history-summary"
                 >{{ panel.languageLabel(batch.language) }} · {{ batch.completedItems }}/{{
                   batch.itemPreviews.length
                 }}
                 段完成 · {{ panel.formatDate(batch.createdAt) }}</span
               >
-              <n-tag size="small" :type="panel.batchTagType(batch.status)">{{
-                panel.batchStatusLabel(batch.status)
-              }}</n-tag>
+              <span class="chatterbox-batch-device-badge">{{ batch.device === "cuda" ? "GPU" : "CPU" }}</span>
+              <span
+                class="chatterbox-batch-status-badge"
+                :class="`chatterbox-batch-status-badge--${panel.batchTagType(batch.status)}`"
+                >{{ panel.batchStatusLabel(batch.status) }}</span
+              >
             </div>
           </div>
         </div>
@@ -107,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { NButton, NEmpty, NTag } from "naive-ui";
+import { NButton, NEmpty } from "naive-ui";
 import {
   Archive,
   Captions,

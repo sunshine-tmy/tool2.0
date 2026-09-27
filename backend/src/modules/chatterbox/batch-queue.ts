@@ -126,6 +126,7 @@ export class ChatterboxBatchQueue {
       const result = await this.options.worker.generate({
         text: item.text,
         language: batch.language,
+        device: batch.device ?? "cpu",
         referencePath: batchPaths.reference,
         outputPath: itemPaths.outputWav,
         exaggeration: item.exaggeration ?? batch.exaggeration,

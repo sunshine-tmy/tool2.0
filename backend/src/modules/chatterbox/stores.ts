@@ -8,6 +8,7 @@ import {
   type ChatterboxBatch,
   type ChatterboxBatchItem,
   type ChatterboxBatchStatus,
+  type ChatterboxDevice,
   type ChatterboxSavedVoice,
   type ChatterboxTaskStatus,
   type ChatterboxVoiceAuthorization
@@ -33,7 +34,7 @@ export type BatchCreateInput = Pick<
   | "seed"
   | "includeSubtitles"
   | "subtitleMode"
-> & { segments: BatchSegmentInput[] };
+> & { device: ChatterboxDevice; segments: BatchSegmentInput[] };
 
 export type StoredVoice = Omit<ChatterboxSavedVoice, "audioUrl">;
 
@@ -146,6 +147,7 @@ export class ChatterboxBatchStore {
         try {
           const batch = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxBatch;
           if (!isStoredBatch(batch) || batch.id !== entry.name) continue;
+          batch.device = normalizeDevice(batch.device);
           await this.write(batch);
         } catch {
           // Invalid legacy metadata stays untouched for manual recovery.
@@ -157,6 +159,7 @@ export class ChatterboxBatchStore {
     for (const entity of this.database.list("chatterbox-batch")) {
       const batch = entity.payload as ChatterboxBatch;
       if (!isStoredBatch(batch)) continue;
+      batch.device = normalizeDevice(batch.device);
       for (const item of batch.items) {
         if (item.status === "queued" || item.status === "processing") {
           item.status = "failed";
@@ -181,6 +184,7 @@ export class ChatterboxBatchStore {
       progress: 0,
       name: input.name,
       language: input.language,
+      device: input.device,
       referenceFileName: input.referenceFileName,
       referenceDurationSeconds: input.referenceDurationSeconds,
       referenceRetained: input.referenceRetained,
@@ -502,6 +506,10 @@ function isStoredBatch(value: unknown): value is ChatterboxBatch {
         isRecord(item) && typeof item.id === "string" && typeof item.text === "string" && isTaskStatus(item.status)
     )
   );
+}
+
+function normalizeDevice(value: unknown): ChatterboxDevice {
+  return value === "cuda" ? "cuda" : "cpu";
 }
 
 function isStoredVoice(value: unknown): value is StoredVoice {

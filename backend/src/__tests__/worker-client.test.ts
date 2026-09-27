@@ -50,14 +50,13 @@ describe("Worker clients", () => {
   });
 
   it("rejects malformed Chatterbox generation output", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => jsonResponse({ success: true, data: { samples: -1 } }))
-    );
+    const fetchMock = vi.fn(async () => jsonResponse({ success: true, data: { samples: -1 } }));
+    vi.stubGlobal("fetch", fetchMock);
     await expect(
       createChatterboxWorkerClient(config).generate({
         text: "hello",
         language: "en",
+        device: "cpu",
         referencePath: "reference.wav",
         outputPath: "output.wav",
         exaggeration: 0.5,
@@ -69,6 +68,8 @@ describe("Worker clients", () => {
       code: "CHATTERBOX_WORKER_INVALID_RESPONSE",
       status: 502
     });
+    const init = (fetchMock.mock.calls[0] as unknown as [RequestInfo, RequestInit])[1];
+    expect(JSON.parse(String(init.body))).toMatchObject({ device: "cpu" });
   });
 
   it("sends a configured token only through the local Worker request", async () => {

@@ -6,6 +6,7 @@ import {
   isChatterboxWorkerGenerate,
   isChatterboxWorkerHealth,
   type ChatterboxLanguage,
+  type ChatterboxDevice,
   type ChatterboxWorkerGenerate,
   type ChatterboxWorkerHealth
 } from "@toolbox/shared";
@@ -44,6 +45,7 @@ export function createChatterboxWorkerClient(config: AppConfig) {
     generate(input: {
       text: string;
       language: ChatterboxLanguage;
+      device: ChatterboxDevice;
       referencePath: string;
       outputPath: string;
       exaggeration: number;
@@ -65,6 +67,7 @@ export function createChatterboxWorkerClient(config: AppConfig) {
             body: JSON.stringify({
               text: input.text,
               language: input.language,
+              device: input.device,
               reference_path: input.referencePath,
               output_path: input.outputPath,
               exaggeration: input.exaggeration,

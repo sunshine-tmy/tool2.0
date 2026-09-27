@@ -91,6 +91,31 @@ describe("desktop component self-test", () => {
     );
   });
 
+  it("validates the CUDA 12.4 runtime without requiring an NVIDIA GPU on the package build host", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = [
+      "scripts/chatterbox-worker.py",
+      "scripts/worker_lifecycle.py",
+      "vendor/chatterbox/__init__.py",
+      "vendor/chatterbox_tts-0.1.7.dist-info/METADATA"
+    ];
+    await Promise.all(files.map(writeAsset));
+    const runProcess = vi.fn(async () => '{"available":true,"cudaRuntimeAvailable":true,"cudaAvailable":false}');
+    const selfTest = createDesktopComponentSelfTest(runProcess);
+
+    await selfTest(manifest("chatterbox-cuda", files), temporaryRoot);
+
+    expect(runProcess).toHaveBeenCalledWith(
+      path.join(temporaryRoot, "venv", "Scripts", "python.exe"),
+      ["-c", expect.stringContaining("torch.version.cuda == '12.4'")],
+      temporaryRoot,
+      expect.objectContaining({
+        TOOLBOX_DESKTOP_MANAGED: "1",
+        PYTHONPATH: path.join(temporaryRoot, "vendor")
+      })
+    );
+  });
+
   it("keeps the XHS upstream runtime Volume outside the signed package generation", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
     const files = ["source/requirements.txt", "source/source/__init__.py"];

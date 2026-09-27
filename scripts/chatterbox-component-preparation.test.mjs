@@ -16,6 +16,11 @@ import {
   verifyChatterboxSource,
   verifyChatterboxWheelhouse
 } from "./prepare-chatterbox-component.mjs";
+import {
+  groupCudaWheelhouseAssets,
+  prepareChatterboxCudaComponent,
+  splitFileIntoParts
+} from "./prepare-chatterbox-cuda-component.mjs";
 
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const temporaryRoots = [];
@@ -47,6 +52,143 @@ test("Chatterbox component pins its source, CPU model set and one user-facing mo
   assert.equal(CHATTERBOX_MODEL_ASSETS.length, 4);
   assert.ok(CHATTERBOX_MODEL_ASSETS.every((asset) => /^[a-f0-9]{64}$/.test(asset.sha256)));
   assert.ok(definition.installConditions.some((condition) => condition.includes("16 GB 内存")));
+});
+
+test("CUDA Chatterbox capability is a separately managed extension that reuses the base model pack", async () => {
+  const definition = JSON.parse(
+    await fs.readFile(path.join(SCRIPT_DIRECTORY, "component-definitions/chatterbox-cuda.json"), "utf8")
+  );
+  const cudaLock = await fs.readFile(path.join(SCRIPT_DIRECTORY, "chatterbox-cuda.lock.txt"), "utf8");
+  const cpuLock = await fs.readFile(path.join(SCRIPT_DIRECTORY, "chatterbox.lock.txt"), "utf8");
+
+  assert.equal(definition.id, "chatterbox-cuda");
+  assert.deepEqual(definition.dependencyIds, ["chatterbox", "python-311"]);
+  assert.deepEqual(definition.taskToolIds, ["chatterbox"]);
+  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.11");
+  assert.match(cudaLock, /^torch==2\.6\.0\+cu124\s/m);
+  assert.match(cudaLock, /^torchaudio==2\.6\.0\+cu124\s/m);
+  assert.match(cpuLock, /^torch==2\.6\.0\+cpu\s/m);
+  assert.equal(definition.additionalArchives, undefined);
+});
+
+test("CUDA wheel archives keep framework and NVIDIA runtime wheels in separate signed parts", () => {
+  assert.deepEqual(
+    groupCudaWheelhouseAssets([
+      "fastapi-0.141.1-py3-none-any.whl",
+      "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl",
+      "torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl",
+      "nvidia_cublas_cu12-12.4.5.8-py3-none-win_amd64.whl"
+    ]),
+    [
+      {
+        name: "cuda-nvidia-cublas-cu12",
+        paths: ["wheelhouse/nvidia_cublas_cu12-12.4.5.8-py3-none-win_amd64.whl"]
+      },
+      {
+        name: "cuda-torch",
+        paths: ["wheelhouse/torch-2.6.0+cu124-cp311-cp311-win_amd64.whl"]
+      },
+      {
+        name: "cuda-torchaudio",
+        paths: ["wheelhouse/torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"]
+      }
+    ]
+  );
+  assert.throws(() => groupCudaWheelhouseAssets(["torch-2.6.0+cu124-cp311-cp311-win_amd64.whl"]), /torchaudio/);
+  assert.deepEqual(
+    groupCudaWheelhouseAssets([
+      { name: "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl.part-0001", path: "wheelhouse/.parts/torch.whl.part-0001" },
+      { name: "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl.part-0002", path: "wheelhouse/.parts/torch.whl.part-0002" },
+      "torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"
+    ]),
+    [
+      { name: "cuda-torch-part-0001", paths: ["wheelhouse/.parts/torch.whl.part-0001"] },
+      { name: "cuda-torch-part-0002", paths: ["wheelhouse/.parts/torch.whl.part-0002"] },
+      { name: "cuda-torchaudio", paths: ["wheelhouse/torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"] }
+    ]
+  );
+  assert.throws(
+    () => groupCudaWheelhouseAssets([{ name: "torch.whl.part-0001", path: "wheelhouse/../torch.whl.part-0001" }]),
+    /受控 torch 分片/
+  );
+});
+
+test("large wheel splitting preserves byte order and reports locked part digests", async () => {
+  const root = await makeRoot();
+  const input = path.join(root, "torch.whl");
+  const payload = Buffer.from("one-two-three-four-five");
+  await fs.writeFile(input, payload);
+  const parts = await splitFileIntoParts(input, path.join(root, "parts"), 7);
+
+  assert.deepEqual(
+    parts.map((part) => part.bytes),
+    [7, 7, 7, 2]
+  );
+  const buffers = await Promise.all(parts.map((part) => fs.readFile(part.path)));
+  assert.deepEqual(Buffer.concat(buffers), payload);
+  assert.deepEqual(
+    parts.map((part, index) => part.sha256 === createHash("sha256").update(buffers[index]).digest("hex")),
+    [true, true, true, true]
+  );
+});
+
+test("CUDA preparation vendors the fixed worker and generates exact wheel archive groups without model files", async () => {
+  const root = await makeRoot();
+  const sitePackages = await makeSitePackages(root);
+  const wheelhouse = path.join(root, "wheelhouse");
+  await fs.mkdir(wheelhouse);
+  const torchWheel = Buffer.from("locked CUDA torch wheel");
+  const torchaudioWheel = Buffer.from("locked CUDA audio wheel");
+  const antlrSource = Buffer.from("locked source archive");
+  const torchHash = createHash("sha256").update(torchWheel).digest("hex");
+  const audioHash = createHash("sha256").update(torchaudioWheel).digest("hex");
+  const antlrHash = createHash("sha256").update(antlrSource).digest("hex");
+  await fs.writeFile(path.join(wheelhouse, "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl"), torchWheel);
+  await fs.writeFile(path.join(wheelhouse, "torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"), torchaudioWheel);
+  await fs.writeFile(path.join(wheelhouse, "antlr4-python3-runtime-4.9.3.tar.gz"), antlrSource);
+  const lockPath = path.join(root, "requirements.lock");
+  await fs.writeFile(
+    lockPath,
+    [
+      "torch==2.6.0+cu124 \\",
+      "    --hash=sha256:" + torchHash,
+      "torchaudio==2.6.0+cu124 \\",
+      "    --hash=sha256:" + audioHash,
+      "antlr4-python3-runtime==4.9.3 \\",
+      "    --hash=sha256:" + antlrHash,
+      ""
+    ].join("\n")
+  );
+  const python = path.join(root, "python.exe");
+  const runCommand = (_executable, args) => {
+    const command = args.at(-1);
+    if (command.includes("sys.version_info")) return "3.11\n";
+    if (command.includes("sysconfig")) return sitePackages + "\n";
+    if (command.includes("torch.__version__")) return '{"version":"2.6.0+cu124","cuda":"12.4"}\n';
+    throw new Error("Unexpected preparation command");
+  };
+  const stage = path.join(root, "stage");
+  const generatedDefinitionPath = path.join(root, "generated-definition.json");
+
+  const result = await prepareChatterboxCudaComponent({
+    pythonExecutablePath: python,
+    stagingDirectory: stage,
+    wheelhouseDirectory: wheelhouse,
+    lockFilePath: lockPath,
+    generatedDefinitionPath,
+    runCommand
+  });
+
+  const generatedDefinition = JSON.parse(await fs.readFile(generatedDefinitionPath, "utf8"));
+  assert.equal(result.wheelCount, 3);
+  assert.equal(result.archiveCount, 3);
+  assert.equal(generatedDefinition.additionalArchives.length, 2);
+  assert.equal(
+    await fs.readFile(path.join(stage, "vendor", "chatterbox", "__init__.py"), "utf8"),
+    "from chatterbox import test\n"
+  );
+  await assert.rejects(fs.access(path.join(stage, "models", "chatterbox")));
+  await assert.rejects(fs.access(path.join(stage, "venv")));
 });
 
 test("source metadata must point to the exact official Chatterbox commit", async () => {

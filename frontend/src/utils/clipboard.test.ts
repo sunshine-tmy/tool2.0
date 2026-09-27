@@ -48,4 +48,37 @@ describe("copyTextToClipboard", () => {
     expect(execCommand).toHaveBeenCalledWith("copy");
     expect(removeChild).toHaveBeenCalledWith(textarea);
   });
+
+  it("falls back to textarea copy when navigator clipboard rejects the write", async () => {
+    const textarea = {
+      value: "",
+      style: {},
+      focus: vi.fn(),
+      select: vi.fn()
+    } as unknown as Node & {
+      value: string;
+      style: { position: string; left: string; top: string };
+      focus: () => void;
+      select: () => void;
+    };
+    const writeText = vi.fn().mockRejectedValue(new DOMException("Clipboard permission denied", "NotAllowedError"));
+    const execCommand = vi.fn().mockReturnValue(true);
+
+    await copyTextToClipboard("http://192.168.1.241:5173/tools/lan-transfer", {
+      clipboard: { writeText },
+      documentRef: {
+        body: {
+          appendChild: vi.fn(),
+          removeChild: vi.fn()
+        },
+        createElement: vi.fn().mockReturnValue(textarea),
+        execCommand
+      }
+    });
+
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(textarea.value).toBe("http://192.168.1.241:5173/tools/lan-transfer");
+    expect(textarea.select).toHaveBeenCalledOnce();
+    expect(execCommand).toHaveBeenCalledWith("copy");
+  });
 });

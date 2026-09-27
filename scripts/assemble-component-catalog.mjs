@@ -199,7 +199,61 @@ function validateCatalogManifest(manifest) {
       throw new Error(`能力包 ${manifest.id} 的归档分片文件名无效`);
     }
   }
-  if (additionalArchives.length || manifest.archive.filePaths !== undefined) {
+  if (
+    manifest.assembledFiles !== undefined &&
+    (!Array.isArray(manifest.assembledFiles) || !manifest.assembledFiles.length || manifest.assembledFiles.length > 16)
+  ) {
+    throw new Error(`能力包 ${manifest.id} 的文件重组列表无效`);
+  }
+  const assemblyTargets = new Set();
+  const assemblyParts = new Set();
+  for (const assembly of manifest.assembledFiles ?? []) {
+    if (!assembly || typeof assembly !== "object") throw new Error(`能力包 ${manifest.id} 的重组目标无效`);
+    const target = manifest.files.find((file) => file?.path === assembly.path);
+    if (
+      !isSafeRelativePath(assembly.path) ||
+      assemblyTargets.has(assembly.path) ||
+      !Number.isSafeInteger(assembly.bytes) ||
+      assembly.bytes < 1 ||
+      !SHA256.test(assembly.sha256) ||
+      !target ||
+      target.bytes !== assembly.bytes ||
+      target.sha256 !== assembly.sha256 ||
+      !Array.isArray(assembly.parts) ||
+      assembly.parts.length < 2 ||
+      assembly.parts.length > 64
+    ) {
+      throw new Error(`能力包 ${manifest.id} 的重组目标格式无效`);
+    }
+    assemblyTargets.add(assembly.path);
+    for (const part of assembly.parts) {
+      if (
+        !part ||
+        typeof part !== "object" ||
+        !isSafeRelativePath(part.path) ||
+        part.path === assembly.path ||
+        assemblyTargets.has(part.path) ||
+        assemblyParts.has(part.path) ||
+        !Number.isSafeInteger(part.bytes) ||
+        part.bytes < 1 ||
+        !SHA256.test(part.sha256)
+      ) {
+        throw new Error(`能力包 ${manifest.id} 的重组分片格式无效`);
+      }
+      assemblyParts.add(part.path);
+    }
+  }
+  if ([...assemblyTargets].some((target) => assemblyParts.has(target))) {
+    throw new Error(`能力包 ${manifest.id} 的重组路径冲突`);
+  }
+  const installedFilePaths = new Set(manifest.files.map((file) => file?.path));
+  if (
+    installedFilePaths.size !== manifest.files.length ||
+    [...assemblyParts].some((partPath) => installedFilePaths.has(partPath))
+  ) {
+    throw new Error(`能力包 ${manifest.id} 的文件或重组分片路径重复`);
+  }
+  if (additionalArchives.length || manifest.archive.filePaths !== undefined || assemblyTargets.size) {
     const allPaths = new Set();
     for (const archive of [manifest.archive, ...additionalArchives]) {
       if (!Array.isArray(archive.filePaths) || !archive.filePaths.length) {
@@ -212,12 +266,11 @@ function validateCatalogManifest(manifest) {
         allPaths.add(filePath);
       }
     }
-    const manifestPaths = new Set(manifest.files.map((file) => file?.path));
-    if (
-      manifestPaths.size !== manifest.files.length ||
-      manifestPaths.size !== allPaths.size ||
-      [...manifestPaths].some((filePath) => !allPaths.has(filePath))
-    ) {
+    const manifestPaths = new Set([
+      ...[...installedFilePaths].filter((filePath) => !assemblyTargets.has(filePath)),
+      ...assemblyParts
+    ]);
+    if (manifestPaths.size !== allPaths.size || [...manifestPaths].some((filePath) => !allPaths.has(filePath))) {
       throw new Error(`能力包 ${manifest.id} 的归档分片未完整覆盖文件清单`);
     }
   }

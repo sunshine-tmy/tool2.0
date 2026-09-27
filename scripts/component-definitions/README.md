@@ -4,6 +4,39 @@ AI 图片 CPU 包通过命令 pnpm components:prepare-image-ai -- --python .pack
 
 参考音色克隆 CPU 包通过 `pnpm components:prepare-chatterbox -- --python .venv-chatterbox/Scripts/python.exe --stage .package/stage/chatterbox` 准备。脚本验证 Python 环境中的 `chatterbox-tts` 元数据来自固定官方提交 `65b18437192794391a0308a8f705b1e33e633948`，并校验哈希锁定 wheelhouse 与 Hugging Face revision `5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18` 下的全部模型文件。源码以 `vendor/` 随包发布；用户安装时仍在最终目标目录由共享 Python 3.11 运行时和锁定 wheelhouse 创建独立 venv，不打包构建机的 `.venv`。模型自动归入两个签名分片，但设置中仍作为一个 Chatterbox 能力管理。准备后使用 `scripts/component-definitions/chatterbox.json` 生成签名产物。当前锁定资产实际生成的三个归档约 3.4 GB；单个最大模型分片约 1.98 GB，小于 GitHub Release 单文件上限。
 
+桌面 NVIDIA GPU 加速是独立可选扩展，不替换 CPU 基础包，也不再次下载模型。扩展 ID 为 `chatterbox-cuda`，依赖已安装的 `chatterbox` 与共享 `python-311`；卸载扩展会自动回退 CPU。该扩展锁定 PyTorch/torchaudio `2.6.0+cu124`，此组合见 [PyTorch 官方安装文档](https://docs.pytorch.org/get-started/previous-versions/)；需要 NVIDIA GPU 与兼容驱动，但不会安装或修改显卡驱动。CUDA 包只有在签名归档、SBOM 上传到既有 `components-v1` Release 并更新嵌入式目录后，才会出现在桌面版“设置 → 能力管理”中；已有安装包不会凭此源码改动自动获得 CUDA 包。
+
+Windows PyTorch CUDA wheel 可能超过 GitHub Release 的单资产大小限制。准备器会把超限的 Torch wheel 切成有序分片，签名清单同时固定每片及完整 wheel 的大小和 SHA-256；桌面安装器校验所有分片后重组完整 wheel，校验整体 SHA-256，再离线安装并删除临时分片。不要手动改名、排序或替换这些分片。
+
+构建 CUDA 扩展需准备一个安装了固定 Chatterbox 官方提交及 PyTorch CUDA 12.4 的 Python 3.11 环境（当前构建环境为 `.venv-chatterbox`），然后生成锁文件和 wheelhouse：
+
+```powershell
+pnpm lock:python
+New-Item -ItemType Directory -Force .package/chatterbox-cuda-wheelhouse | Out-Null
+.\.venv-chatterbox\Scripts\python.exe -m pip download `
+  --require-hashes `
+  --no-deps `
+  --index-url https://pypi.org/simple `
+  --extra-index-url https://download.pytorch.org/whl/cu124 `
+  --dest .package/chatterbox-cuda-wheelhouse `
+  -r scripts/chatterbox-cuda.lock.txt
+
+pnpm components:prepare-chatterbox-cuda -- `
+  --python .venv-chatterbox/Scripts/python.exe `
+  --stage .package/stage/chatterbox-cuda `
+  --wheelhouse .package/chatterbox-cuda-wheelhouse
+
+# 将下面路径替换为安全保存的 Ed25519 私钥实际路径；不要把私钥加入暂存目录、仓库或 Release。
+pnpm components:package -- `
+  --definition .package/stage/chatterbox-cuda-definition.generated.json `
+  --stage .package/stage/chatterbox-cuda `
+  --output .package/component-feed `
+  --github-release-url https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/ `
+  --signing-key-file <受保护位置中的 Ed25519 私钥路径>
+```
+
+`--require-hashes` 必须保留，下载完成后准备器会再次按 lock 摘要校验 wheel 与上游仅发布为 sdist 的依赖，并将 Torch 与各 NVIDIA 运行时 wheel 分为单独签名归档。安装时在最终目录从 wheelhouse 离线创建新 venv，并检查 Torch CUDA 运行时确为 12.4；不要求打包构建机本身具备 NVIDIA GPU。完成能力归档与 SBOM 上传、远端资产核验后，再用 `pnpm components:catalog -- --feed .package/component-feed` 更新目录。最后重新构建/安装桌面应用，在“设置 → 能力管理”安装 GPU 加速扩展并运行真实短样例验收。不要在 CUDA 包与目录尚未发布时宣称现有桌面版本已可用 GPU。
+
 共享 Python 运行时固定使用 Astral `python-build-standalone` 的 `20260901` Windows x64 `install_only_stripped` 资产。准备脚本会校验资产长度和 SHA-256，再验证 `python.exe`、`venv`、`ensurepip`、SSL 与 SQLite；不要把本机 `.venv` 复制进能力包。
 
 | 能力        | 固定版本           |         下载大小 | SHA-256                                                            |

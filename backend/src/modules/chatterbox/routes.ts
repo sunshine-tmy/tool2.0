@@ -25,6 +25,7 @@ import {
   fail,
   ok,
   type ChatterboxHealth,
+  type ChatterboxDevice,
   type ChatterboxLanguage,
   type ChatterboxListQuery,
   type ChatterboxTask,
@@ -128,6 +129,19 @@ export async function registerChatterboxRoutes(
         protocolVersion: status?.protocolVersion ?? 1,
         available: status?.available === true,
         workerAvailable: status?.available === true,
+        cudaRuntimeAvailable: status?.cudaRuntimeAvailable === true,
+        cudaAvailable: status?.cudaAvailable === true,
+        cudaUnavailableReason:
+          status?.cudaAvailable === true
+            ? undefined
+            : status?.cudaUnavailableReason ||
+              (status?.available !== true
+                ? "请先启动 Chatterbox Worker。"
+                : config.desktopManagedCapabilities
+                  ? "当前桌面安装使用 CPU 运行组件；CUDA 加速组件尚未安装。"
+                  : status.cudaRuntimeAvailable === false
+                    ? "当前 Worker 使用 CPU 运行环境，不支持 CUDA。"
+                    : "未检测到可用的 NVIDIA GPU 或 CUDA 驱动。"),
         packageVersion: status?.packageVersion,
         model: "multilingual-v3",
         modelLoaded: status?.modelLoaded === true,
@@ -181,11 +195,13 @@ export async function registerChatterboxRoutes(
       ) {
         return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
       }
+      let cudaAvailable = false;
       try {
         const health = await workerHealth();
         if (!health.available) {
           return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
         }
+        cudaAvailable = health.cudaAvailable === true;
       } catch {
         return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
       }
@@ -199,6 +215,14 @@ export async function registerChatterboxRoutes(
         if (!parsed.success) {
           await fsp.rm(paths.dir, { recursive: true, force: true });
           return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
+        }
+        if (parsed.value.device === "cuda" && !cudaAvailable) {
+          await fsp.rm(paths.dir, { recursive: true, force: true });
+          return reply
+            .code(409)
+            .send(
+              fail("CHATTERBOX_CUDA_UNAVAILABLE", "当前运行环境没有可用的 CUDA GPU，请改选 CPU 或安装 CUDA 运行环境。")
+            );
         }
         const duration = await media.normalizeReference(paths.referenceUpload, paths.reference);
         const task = await store.create(
@@ -359,6 +383,9 @@ function parseFields(
     return invalid("CHATTERBOX_TEXT_TOO_LONG", `声音克隆文案不能超过 ${CHATTERBOX_MAX_TEXT_LENGTH} 个字符`, 413);
   }
   if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语");
+  if (fields.device !== undefined && !isDevice(fields.device)) {
+    return invalid("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU 或 NVIDIA GPU");
+  }
   if (!isAuthorization(fields.authorization)) return invalid("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源");
   if (fields.consentConfirmed !== "true") {
     return invalid("CHATTERBOX_CONSENT_REQUIRED", "必须确认已获得参考声音的合法授权");
@@ -375,6 +402,7 @@ function parseFields(
     value: {
       text,
       language: fields.language,
+      device: fields.device === "cuda" ? "cuda" : "cpu",
       referenceFileName,
       authorization: fields.authorization,
       consentConfirmed: true,
@@ -444,6 +472,10 @@ function cloneTask(task: ChatterboxTask): ChatterboxTask {
 
 function isLanguage(value: unknown): value is ChatterboxLanguage {
   return typeof value === "string" && (CHATTERBOX_LANGUAGES as readonly string[]).includes(value);
+}
+
+function isDevice(value: string): value is ChatterboxDevice {
+  return value === "cpu" || value === "cuda";
 }
 
 function isAuthorization(value: unknown): value is ChatterboxVoiceAuthorization {

@@ -40,6 +40,7 @@ describe("chatterbox api", () => {
     expect(form.get("authorization")).toBe("self");
     expect(form.get("consentConfirmed")).toBe("true");
     expect(form.get("language")).toBe(language);
+    expect(form.get("device")).toBe("cpu");
     expect(config).toEqual({ timeout: 120_000 });
   });
 
@@ -62,6 +63,7 @@ describe("chatterbox api", () => {
       ],
       name: "demo-batch",
       language,
+      device: "cuda",
       authorization: "self",
       consentConfirmed: true,
       exaggeration: 0.5,
@@ -81,6 +83,8 @@ describe("chatterbox api", () => {
     expect(form.get("subtitleMode")).toBe("sentences");
     expect(form.get("referenceRetained")).toBe("true");
     expect(form.get("language")).toBe(language);
+    expect(form.get("device")).toBe("cuda");
+    expect(form.get("device")).toBe("cuda");
   });
 
   it("reuses a permanent voice and sends per-item regeneration parameters", async () => {
@@ -89,6 +93,7 @@ describe("chatterbox api", () => {
       voiceId: "voice-1",
       segments: [{ text: "Saved voice text." }],
       language: "en",
+      device: "cpu",
       authorization: "self",
       consentConfirmed: true,
       exaggeration: 0.5,

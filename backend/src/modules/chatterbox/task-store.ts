@@ -3,7 +3,12 @@
  */
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { CHATTERBOX_LANGUAGES, type ChatterboxTask, type ChatterboxTaskStatus } from "@toolbox/shared";
+import {
+  CHATTERBOX_LANGUAGES,
+  type ChatterboxDevice,
+  type ChatterboxTask,
+  type ChatterboxTaskStatus
+} from "@toolbox/shared";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { FileMetadataRepository } from "../../database/file-metadata";
 import type { Task, TaskStore } from "../../tasks/task-store";
@@ -22,6 +27,7 @@ export type ChatterboxCreateInput = Pick<
   ChatterboxTask,
   | "text"
   | "language"
+  | "device"
   | "referenceFileName"
   | "referenceDurationSeconds"
   | "authorization"
@@ -52,6 +58,7 @@ export class ChatterboxTaskStore {
         try {
           const task = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxTask;
           if (!isStoredTask(task) || task.id !== entry.name) continue;
+          task.device = normalizeDevice(task.device);
           await this.write(task);
         } catch {
           // Invalid legacy metadata stays untouched for manual recovery.
@@ -62,6 +69,7 @@ export class ChatterboxTaskStore {
     for (const entity of this.database.list("chatterbox-task")) {
       const task = entity.payload as ChatterboxTask;
       if (!isStoredTask(task)) continue;
+      task.device = normalizeDevice(task.device);
       if (task.status === "queued" || task.status === "processing") {
         task.status = "failed";
         task.progress = 100;
@@ -77,6 +85,7 @@ export class ChatterboxTaskStore {
     const now = new Date();
     const task: ChatterboxTask = {
       ...input,
+      device: normalizeDevice(input.device),
       id,
       engine: "chatterbox-multilingual-v3",
       status: "queued",
@@ -218,6 +227,10 @@ function isStoredTask(value: unknown): value is ChatterboxTask {
     typeof value.createdAt === "string" &&
     typeof value.expiresAt === "string"
   );
+}
+
+function normalizeDevice(value: unknown): ChatterboxDevice {
+  return value === "cuda" ? "cuda" : "cpu";
 }
 
 function isTaskStatus(value: unknown): value is ChatterboxTaskStatus {

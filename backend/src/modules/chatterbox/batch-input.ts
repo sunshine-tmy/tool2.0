@@ -13,6 +13,7 @@ import {
   CHATTERBOX_MAX_REFERENCE_TRANSLATION_LENGTH,
   CHATTERBOX_MAX_TEXT_LENGTH,
   type ChatterboxLanguage,
+  type ChatterboxDevice,
   type ChatterboxSubtitleMode,
   type ChatterboxVoiceAuthorization
 } from "@toolbox/shared";
@@ -119,6 +120,9 @@ export function parseBatchFields(
     );
   }
   if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语");
+  if (fields.device !== undefined && fields.device !== "cpu" && fields.device !== "cuda") {
+    return invalid("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU 或 NVIDIA GPU");
+  }
   if (!isAuthorization(fields.authorization)) return invalid("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源");
   if (fields.consentConfirmed !== "true")
     return invalid("CHATTERBOX_CONSENT_REQUIRED", "必须确认已获得参考声音的合法授权");
@@ -135,6 +139,7 @@ export function parseBatchFields(
       segments,
       name: fields.name ? sanitizeFileName(fields.name) : undefined,
       language: fields.language,
+      device: parseDevice(fields.device),
       referenceFileName,
       referenceRetained: fields.referenceRetained === "true",
       authorization: fields.authorization,
@@ -147,6 +152,10 @@ export function parseBatchFields(
       subtitleMode: isSubtitleMode(fields.subtitleMode) ? fields.subtitleMode : "sentences"
     }
   };
+}
+
+function parseDevice(value: string | undefined): ChatterboxDevice {
+  return value === "cuda" ? "cuda" : "cpu";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

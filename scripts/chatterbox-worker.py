@@ -74,6 +74,7 @@ class WorkerFailure(RuntimeError):
 class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     language: Literal["ms", "en", "pt-BR"]
+    device: Literal["cpu", "cuda"] = "cpu"
     reference_path: str
     output_path: str
     exaggeration: float = Field(default=0.5, ge=0.25, le=1.5)
@@ -93,16 +94,22 @@ def resolve_trusted_path(value: str, *, must_exist: bool) -> Path:
     return candidate
 
 
-def selected_device() -> str:
+def selected_device(requested: str | None = None) -> str:
     import torch
 
-    if DEVICE_SETTING == "cpu":
+    preference = (requested or DEVICE_SETTING).strip().lower()
+    if preference == "cpu":
         return "cpu"
-    if DEVICE_SETTING == "cuda":
-        if not torch.cuda.is_available():
-            raise WorkerFailure("CHATTERBOX_CUDA_UNAVAILABLE", "已要求 CUDA，但当前未检测到可用 NVIDIA GPU")
+    cuda_available = torch.version.cuda is not None and torch.cuda.is_available()
+    if preference == "cuda":
+        if not cuda_available:
+            raise WorkerFailure(
+                "CHATTERBOX_CUDA_UNAVAILABLE",
+                "所选 GPU 不可用：需要 CUDA 版运行环境、兼容的 NVIDIA GPU 和驱动。",
+                409,
+            )
         return "cuda"
-    return "cuda" if torch.cuda.is_available() else "cpu"
+    return "cuda" if cuda_available else "cpu"
 
 
 def split_text(text: str, limit: int = 280) -> list[str]:
@@ -183,10 +190,13 @@ class ModelManager:
         self.device: str | None = None
         self.lock = asyncio.Lock()
 
-    def load(self) -> Any:
-        if self.model is not None:
+    def load(self, requested_device: str | None = None) -> Any:
+        device = selected_device(requested_device)
+        if self.model is not None and self.device == device:
             return self.model
-        device = selected_device()
+        if self.model is not None:
+            # 设备切换必须先释放旧实例，防止切到 GPU 时 CPU/GPU 同时保留整套权重。
+            self.unload()
         try:
             self.model = load_multilingual_model(device)
             self.device = device
@@ -199,14 +209,14 @@ class ModelManager:
         import torch
         import torchaudio
 
-        model = self.load()
+        model = self.load(payload.device)
         reference = resolve_trusted_path(payload.reference_path, must_exist=True)
         output = resolve_trusted_path(payload.output_path, must_exist=False)
         output.parent.mkdir(parents=True, exist_ok=True)
         if payload.seed:
             torch.manual_seed(payload.seed)
             random.seed(payload.seed)
-            if torch.cuda.is_available():
+            if self.device == "cuda":
                 torch.cuda.manual_seed_all(payload.seed)
 
         try:
@@ -445,8 +455,10 @@ async def health() -> dict[str, Any]:
         import torch
 
         version = importlib.metadata.version("chatterbox-tts")
-        device = selected_device()
-        gpu_name = torch.cuda.get_device_name(0) if device == "cuda" else None
+        cuda_runtime_available = torch.version.cuda is not None
+        cuda_available = cuda_runtime_available and torch.cuda.is_available()
+        device = manager.device or ("cpu" if DEVICE_SETTING == "cpu" or not cuda_available else "cuda")
+        gpu_name = torch.cuda.get_device_name(0) if cuda_available else None
         return {
             "success": True,
             "data": {
@@ -455,6 +467,19 @@ async def health() -> dict[str, Any]:
                 "packageVersion": version,
                 "model": "multilingual-v3",
                 "modelLoaded": manager.model is not None,
+                "cudaRuntimeAvailable": cuda_runtime_available,
+                "cudaAvailable": cuda_available,
+                **(
+                    {}
+                    if cuda_available
+                    else {
+                        "cudaUnavailableReason": (
+                            "当前运行环境不包含 CUDA 支持。"
+                            if not cuda_runtime_available
+                            else "未检测到可用的 NVIDIA GPU 或 CUDA 驱动。"
+                        )
+                    }
+                ),
                 "device": device,
                 "gpuName": gpu_name,
                 "watermarked": True,

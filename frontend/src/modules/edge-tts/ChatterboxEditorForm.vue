@@ -222,6 +222,47 @@
       </div>
 
       <div class="control-section">
+        <label>本批次运行设备</label>
+        <div class="chatterbox-device-options" role="radiogroup" aria-label="本批次运行设备">
+          <label class="chatterbox-device-option" :class="{ active: panel.device === 'cpu' }">
+            <input v-model="panel.device" type="radio" name="chatterbox-device" value="cpu" />
+            <span class="chatterbox-device-option-copy">
+              <strong>CPU</strong>
+              <small>兼容优先</small>
+            </span>
+          </label>
+          <label
+            class="chatterbox-device-option"
+            :class="{ active: panel.device === 'cuda', disabled: !panel.cudaAvailable }"
+            :title="
+              panel.cudaAvailable
+                ? panel.health?.gpuName || 'CUDA 加速'
+                : panel.health?.cudaUnavailableReason || 'CUDA 加速组件未就绪'
+            "
+          >
+            <input
+              v-model="panel.device"
+              type="radio"
+              name="chatterbox-device"
+              value="cuda"
+              :disabled="!panel.cudaAvailable"
+            />
+            <span class="chatterbox-device-option-copy">
+              <strong>GPU</strong>
+              <small>{{ panel.cudaAvailable ? panel.health?.gpuName || "CUDA 加速" : "CUDA 未就绪" }}</small>
+            </span>
+          </label>
+        </div>
+        <p class="chatterbox-device-hint">
+          {{
+            panel.cudaAvailable
+              ? "GPU 使用 CUDA 加速；显存不足时本批次会报错，不会暗中切回 CPU。"
+              : panel.health?.cudaUnavailableReason || "正在检测 GPU 与 CUDA 运行环境。"
+          }}
+        </p>
+      </div>
+
+      <div class="control-section">
         <div class="control-label-row">
           <label>生成参数</label
           ><n-button text type="primary" size="tiny" @click="panel.resetParameters">恢复默认</n-button>

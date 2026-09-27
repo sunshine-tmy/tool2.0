@@ -120,6 +120,7 @@ export function useChatterboxBatches(options: {
         })),
         name: editor.batchName.value.trim() || undefined,
         language: editor.language.value,
+        device: editor.device.value,
         authorization: editor.authorization.value,
         consentConfirmed: editor.consentConfirmed.value,
         exaggeration: editor.exaggeration.value,

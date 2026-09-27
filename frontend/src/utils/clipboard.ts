@@ -33,8 +33,13 @@ type CopyOptions = {
 export async function copyTextToClipboard(value: string, options: CopyOptions = {}) {
   const clipboard = options.clipboard ?? globalThis.navigator?.clipboard;
   if (clipboard?.writeText) {
-    await clipboard.writeText(value);
-    return;
+    try {
+      await clipboard.writeText(value);
+      return;
+    } catch {
+      // Clipboard API may exist but reject writes for HTTP LAN origins or missing browser permission.
+      // Continue to the legacy selection-based fallback instead of treating that as a hard failure.
+    }
   }
 
   const documentRef = options.documentRef ?? globalThis.document;

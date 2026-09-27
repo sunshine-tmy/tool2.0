@@ -12,9 +12,11 @@
           完成 · {{ panel.formatDuration(panel.currentBatch.totalAudioDurationSeconds) }}
         </p>
       </div>
-      <n-tag :type="panel.batchTagType(panel.currentBatch.status)">{{
-        panel.batchStatusLabel(panel.currentBatch.status)
-      }}</n-tag>
+      <span
+        class="chatterbox-batch-status-badge"
+        :class="`chatterbox-batch-status-badge--${panel.batchTagType(panel.currentBatch.status)}`"
+        >{{ panel.batchStatusLabel(panel.currentBatch.status) }}</span
+      >
     </div>
     <div v-if="panel.isCurrentRunning" class="edge-tts-progress">
       <span :style="{ width: `${Math.max(4, panel.currentBatch.progress)}%` }" />
@@ -64,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { NButton, NTag } from "naive-ui";
+import { NButton } from "naive-ui";
 import { Archive, Captions, FileAudio, Languages, ListTree } from "lucide-vue-next";
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
 

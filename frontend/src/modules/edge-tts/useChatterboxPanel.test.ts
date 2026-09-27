@@ -330,6 +330,8 @@ describe("useChatterboxPanel", () => {
 
   it("coordinates saved voices, batch lifecycle and legacy migration", async () => {
     const { panel, wrapper } = await mountPanel();
+    panel.health.value = { ...health(), gpuName: "NVIDIA GeForce RTX 3060 Ti" };
+    expect(panel.healthLabel.value).toBe("V3 已加载 · CPU");
     const reference = new File([new Uint8Array([1])], "voice.wav", { type: "audio/wav" });
     panel.referenceFile.value = reference;
     panel.voiceName.value = "Permanent voice";
@@ -342,8 +344,13 @@ describe("useChatterboxPanel", () => {
     panel.referenceSource.value = "upload";
     panel.referenceFile.value = reference;
     panel.segments.value[0].text = "Generate this";
+    panel.device.value = "cuda";
+    panel.health.value = { ...health(), cudaAvailable: false };
+    expect(panel.canCreate.value).toBe(false);
+    panel.health.value = { ...health(), cudaRuntimeAvailable: true, cudaAvailable: true, gpuName: "Test GPU" };
+    expect(panel.canCreate.value).toBe(true);
     await panel.createBatch();
-    expect(mocks.api.createBatch).toHaveBeenCalled();
+    expect(mocks.api.createBatch).toHaveBeenCalledWith(expect.objectContaining({ device: "cuda" }));
 
     await panel.openBatch("batch-1");
     expect(panel.detailVisible.value).toBe(true);

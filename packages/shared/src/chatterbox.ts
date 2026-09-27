@@ -13,6 +13,8 @@ export const CHATTERBOX_MAX_REFERENCE_SECONDS = 30;
 
 export const CHATTERBOX_LANGUAGES = ["ms", "en", "pt-BR"] as const;
 export type ChatterboxLanguage = (typeof CHATTERBOX_LANGUAGES)[number];
+export const CHATTERBOX_DEVICES = ["cpu", "cuda"] as const;
+export type ChatterboxDevice = (typeof CHATTERBOX_DEVICES)[number];
 
 const ChatterboxIdSchema = Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" });
 
@@ -80,6 +82,7 @@ export const ChatterboxTaskSchema = Type.Object(
     progress: Type.Number({ minimum: 0, maximum: 100 }),
     text: Type.String(),
     language: ChatterboxLanguageSchema,
+    device: Type.Optional(Type.Union(CHATTERBOX_DEVICES.map((device) => Type.Literal(device)))),
     referenceFileName: Type.String(),
     referenceDurationSeconds: Type.Number({ minimum: 0 }),
     authorization: ChatterboxAuthorizationSchema,
@@ -117,6 +120,9 @@ export const ChatterboxHealthSchema = Type.Object(
     protocolVersion: Type.Integer({ minimum: 1 }),
     available: Type.Boolean(),
     workerAvailable: Type.Boolean(),
+    cudaRuntimeAvailable: Type.Optional(Type.Boolean()),
+    cudaAvailable: Type.Optional(Type.Boolean()),
+    cudaUnavailableReason: Type.Optional(Type.String()),
     packageVersion: Type.Optional(Type.String()),
     model: Type.Literal("multilingual-v3"),
     modelLoaded: Type.Boolean(),
@@ -200,6 +206,7 @@ export const ChatterboxBatchSchema = Type.Object(
     progress: Type.Number({ minimum: 0, maximum: 100 }),
     name: Type.Optional(Type.String()),
     language: ChatterboxLanguageSchema,
+    device: Type.Optional(Type.Union(CHATTERBOX_DEVICES.map((device) => Type.Literal(device)))),
     referenceFileName: Type.String(),
     referenceDurationSeconds: Type.Number({ minimum: 0 }),
     referenceRetained: Type.Boolean(),

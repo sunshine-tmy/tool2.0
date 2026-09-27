@@ -14,11 +14,13 @@ let workerServer: Server | undefined;
 let workerUrl = "";
 let generateRequests: Array<Record<string, unknown>> = [];
 let workerDevice: "cpu" | "cuda" = "cuda";
+let workerCudaAvailable = true;
 let workerGpuName: string | null = "Test GPU";
 
 beforeEach(async () => {
   generateRequests = [];
   workerDevice = "cuda";
+  workerCudaAvailable = true;
   workerGpuName = "Test GPU";
   testRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "toolbox-chatterbox-"));
   workerServer = createServer(async (request, response) => {
@@ -33,6 +35,8 @@ beforeEach(async () => {
             packageVersion: "0.1.7-test",
             model: "multilingual-v3",
             modelLoaded: true,
+            cudaRuntimeAvailable: workerCudaAvailable,
+            cudaAvailable: workerCudaAvailable,
             device: workerDevice,
             gpuName: workerGpuName,
             watermarked: true
@@ -140,6 +144,7 @@ describe("Chatterbox voice cloning module", () => {
       segments: JSON.stringify(segments),
       name: "batch-demo",
       language,
+      device: "cuda",
       authorization: "self",
       consentConfirmed: "true",
       exaggeration: "0.5",
@@ -159,6 +164,7 @@ describe("Chatterbox voice cloning module", () => {
     let batch = await waitForBatch(app, batchId);
     expect(batch).toMatchObject({
       status: "completed",
+      device: "cuda",
       completedItems: 2,
       failedItems: 0,
       totalAudioDurationSeconds: 2,
@@ -169,6 +175,7 @@ describe("Chatterbox voice cloning module", () => {
       bilingualSubtitleUrl: expect.any(String)
     });
     expect(batch.items).toHaveLength(2);
+    expect(generateRequests.map((request) => request.device)).toEqual(["cuda", "cuda"]);
     expect(batch.items.map((item: { referenceTranslation?: string }) => item.referenceTranslation)).toEqual(
       segments.map((item) => item.referenceTranslation)
     );
@@ -569,6 +576,7 @@ describe("Chatterbox voice cloning module", () => {
 
   it("reports an available CPU worker when its GPU name is null", async () => {
     workerDevice = "cpu";
+    workerCudaAvailable = false;
     workerGpuName = null;
     const app = await createApp();
 
@@ -577,6 +585,35 @@ describe("Chatterbox voice cloning module", () => {
     expect(health.statusCode).toBe(200);
     expect(health.json().data).toMatchObject({ available: true, workerAvailable: true, device: "cpu" });
     expect(health.json().data.gpuName).toBeUndefined();
+    expect(health.json().data).toMatchObject({ cudaRuntimeAvailable: false, cudaAvailable: false });
+    await app.close();
+  });
+
+  it("rejects a GPU batch before enqueue when the worker has no CUDA device", async () => {
+    workerDevice = "cpu";
+    workerCudaAvailable = false;
+    workerGpuName = null;
+    const app = await createApp();
+    const request = multipartRequest(createPcmWav(6), {
+      segments: JSON.stringify([{ text: "This should not be generated." }]),
+      language: "en",
+      device: "cuda",
+      authorization: "self",
+      consentConfirmed: "true",
+      exaggeration: "0.5",
+      cfgWeight: "0.5",
+      temperature: "0.8",
+      seed: "0",
+      includeSubtitles: "false",
+      subtitleMode: "sentences",
+      referenceRetained: "false"
+    });
+
+    const response = await app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/batches", ...request });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("CHATTERBOX_CUDA_UNAVAILABLE");
+    expect(generateRequests).toHaveLength(0);
     await app.close();
   });
 });

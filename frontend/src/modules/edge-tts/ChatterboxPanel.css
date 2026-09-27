@@ -77,6 +77,82 @@
 .chatterbox-consent-checkbox {
   align-items: flex-start;
 }
+.chatterbox-device-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+.chatterbox-device-option {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color, #dbe3ef);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text-primary, #334155);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.chatterbox-device-option:hover:not(.disabled) {
+  border-color: #93b4ff;
+}
+.chatterbox-device-option.active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgb(59 130 246 / 10%);
+}
+.chatterbox-device-option.disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+.chatterbox-device-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.chatterbox-device-option:focus-within {
+  outline: 3px solid rgb(59 130 246 / 24%);
+  outline-offset: 2px;
+}
+.chatterbox-device-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.chatterbox-device-option-copy strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+.chatterbox-device-option-copy small {
+  overflow: hidden;
+  color: var(--text-secondary, #64748b);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chatterbox-device-option.disabled .chatterbox-device-option-copy small {
+  color: #94a3b8;
+}
+.chatterbox-device-hint {
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .chatterbox-consent-checkbox :deep(.n-checkbox__label) {
   line-height: 1.55;
 }
@@ -203,11 +279,51 @@
   align-items: center;
   gap: 8px;
 }
-.batch-history-meta > span {
+.batch-history-summary {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.chatterbox-batch-status-badge,
+.chatterbox-batch-device-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.chatterbox-batch-device-badge {
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+.chatterbox-batch-status-badge--success {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+.chatterbox-batch-status-badge--warning {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+.chatterbox-batch-status-badge--error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+.chatterbox-batch-status-badge--default {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 .chatterbox-panel .batch-history-list .history-actions {
   flex: 0 0 auto;

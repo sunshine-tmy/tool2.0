@@ -36,16 +36,17 @@ export async function buildComponentPackage(options) {
     throw new Error("签名私钥不能位于能力目录中");
   }
 
-  const files = await scanFiles(stageRoot);
-  if (!files.length) throw new Error("能力目录为空，拒绝生成空能力包");
+  const stagedFiles = await scanFiles(stageRoot);
+  if (!stagedFiles.length) throw new Error("能力目录为空，拒绝生成空能力包");
+  const { files, assembledFiles } = await resolveAssembledFiles(definition.assembledFiles, stageRoot, stagedFiles);
   const payloadBytes = files.reduce((total, file) => total + file.bytes, 0);
   if (definition.installedBytes < payloadBytes) {
     throw new Error(`installedBytes (${definition.installedBytes}) 小于解压资产大小 (${payloadBytes})`);
   }
-  const additionalGroups = resolveAdditionalArchiveGroups(definition, files);
+  const additionalGroups = resolveAdditionalArchiveGroups(definition, stagedFiles);
   const additionalPathSet = new Set(additionalGroups.flatMap((group) => group.files.map((file) => file.path)));
   const archiveGroups = [
-    { name: undefined, files: files.filter((file) => !additionalPathSet.has(file.path)) },
+    { name: undefined, files: stagedFiles.filter((file) => !additionalPathSet.has(file.path)) },
     ...additionalGroups
   ];
   if (!archiveGroups[0].files.length) throw new Error("主归档必须至少包含一个文件");
@@ -79,11 +80,12 @@ export async function buildComponentPackage(options) {
     for (const group of archiveGroups) {
       const archiveName = `${definition.id}-${definition.version}${group.name ? `-${group.name}` : ""}.tar.gz`;
       const archivePath = path.join(stagingOutput, archiveName);
+      const gzipLevel = group.files.some((file) => /\.whl\.part-\d{4}$/i.test(file.path)) ? 1 : 9;
       await tar.c(
         {
           cwd: stageRoot,
           file: archivePath,
-          gzip: { level: 9 },
+          gzip: { level: gzipLevel },
           mtime: new Date(0),
           portable: true,
           strict: true
@@ -101,7 +103,9 @@ export async function buildComponentPackage(options) {
           bytes: archiveBytes,
           sha256: await sha256File(archivePath),
           format: "tar.gz",
-          ...(additionalGroups.length ? { filePaths: group.files.map((file) => file.path) } : {})
+          ...(additionalGroups.length || assembledFiles.length
+            ? { filePaths: group.files.map((file) => file.path) }
+            : {})
         }
       });
     }
@@ -135,6 +139,7 @@ export async function buildComponentPackage(options) {
       platform: "win32-x64",
       archive: mainArchive.asset,
       ...(additionalArchives.length ? { additionalArchives } : {}),
+      ...(assembledFiles.length ? { assembledFiles } : {}),
       installedBytes: definition.installedBytes,
       files: files.map(({ path: filePath, bytes, sha256 }) => ({ path: filePath, bytes, sha256 })),
       ...(pythonEnvironment ? { pythonEnvironment } : {}),
@@ -251,6 +256,36 @@ function validateDefinition(value) {
       }
     }
   }
+  if (value.assembledFiles !== undefined) {
+    if (!Array.isArray(value.assembledFiles) || !value.assembledFiles.length || value.assembledFiles.length > 16) {
+      throw new Error("assembledFiles 必须是 1 到 16 个定义");
+    }
+    const targets = new Set();
+    const parts = new Set();
+    for (const assembly of value.assembledFiles) {
+      if (
+        !assembly ||
+        !isSafeRelativePath(assembly.path) ||
+        targets.has(assembly.path) ||
+        !Number.isSafeInteger(assembly.bytes) ||
+        assembly.bytes < 1 ||
+        typeof assembly.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(assembly.sha256) ||
+        !Array.isArray(assembly.parts) ||
+        assembly.parts.length < 2 ||
+        assembly.parts.length > 64 ||
+        new Set(assembly.parts).size !== assembly.parts.length ||
+        assembly.parts.some(
+          (part) => typeof part !== "string" || !isSafeRelativePath(part) || part === assembly.path || parts.has(part)
+        )
+      ) {
+        throw new Error("assembledFiles 定义无效");
+      }
+      targets.add(assembly.path);
+      for (const part of assembly.parts) parts.add(part);
+    }
+    if ([...targets].some((target) => parts.has(target))) throw new Error("assembledFiles 目标与分片路径冲突");
+  }
   if (
     value.license !== undefined &&
     (!value.license ||
@@ -276,6 +311,51 @@ function validateDefinition(value) {
       throw new Error("pythonEnvironment 声明无效");
     }
   }
+}
+
+async function resolveAssembledFiles(definitions = [], stageRoot, stagedFiles) {
+  if (definitions === undefined) return { files: stagedFiles, assembledFiles: [], partPaths: new Set() };
+  const byPath = new Map(stagedFiles.map((file) => [file.path, file]));
+  const partPaths = new Set();
+  const assembledFiles = [];
+  const installedFiles = stagedFiles.slice();
+  for (const definition of definitions) {
+    if (byPath.has(definition.path)) throw new Error(`assembledFiles 目标在暂存目录中已存在：${definition.path}`);
+    const digest = crypto.createHash("sha256");
+    let bytes = 0;
+    const parts = [];
+    for (const relativePath of definition.parts) {
+      const part = byPath.get(relativePath);
+      if (!part || partPaths.has(relativePath)) throw new Error(`assembledFiles 分片不存在或重复：${relativePath}`);
+      partPaths.add(relativePath);
+      bytes += part.bytes;
+      for await (const chunk of createReadStream(part.fullPath)) digest.update(chunk);
+      parts.push({ path: part.path, bytes: part.bytes, sha256: part.sha256 });
+    }
+    const sha256 = digest.digest("hex");
+    if (bytes !== definition.bytes || sha256 !== definition.sha256) {
+      throw new Error(`assembledFiles 分片与目标摘要不匹配：${definition.path}`);
+    }
+    assembledFiles.push({ path: definition.path, bytes, sha256, parts });
+    installedFiles.push({
+      path: definition.path,
+      bytes,
+      sha256,
+      fullPath: path.join(stageRoot, ...definition.path.split("/"))
+    });
+  }
+  const installedPaths = new Set();
+  for (const file of installedFiles) {
+    if (installedPaths.has(file.path)) throw new Error(`能力包目标路径重复：${file.path}`);
+    installedPaths.add(file.path);
+  }
+  return {
+    files: installedFiles
+      .filter((file) => !partPaths.has(file.path))
+      .sort((left, right) => left.path.localeCompare(right.path)),
+    assembledFiles,
+    partPaths
+  };
 }
 
 function resolveAdditionalArchiveGroups(definition, files) {

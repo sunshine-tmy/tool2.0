@@ -93,6 +93,7 @@ export async function verifyChatterboxWheelhouse(wheelhouseDirectory, lockText) 
   if (!entries.length) throw new Error("Chatterbox wheelhouse 为空");
   let bytes = 0;
   let count = 0;
+  const files = [];
   for (const entry of entries) {
     if (!entry.isFile() || !/\.(?:whl|zip|tar\.gz)$/i.test(entry.name)) {
       throw new Error(`Chatterbox wheelhouse 包含非归档资产：${entry.name}`);
@@ -106,8 +107,9 @@ export async function verifyChatterboxWheelhouse(wheelhouseDirectory, lockText) 
     if (!expectedHashes.has(digest)) throw new Error(`Chatterbox wheelhouse 资产未被锁文件摘要授权：${entry.name}`);
     bytes += stat.size;
     count += 1;
+    files.push({ name: entry.name, bytes: stat.size, sha256: digest });
   }
-  return { wheelhouse, count, bytes };
+  return { wheelhouse, count, bytes, files };
 }
 
 export async function verifyChatterboxModelAssets(snapshotDirectory, assets = CHATTERBOX_MODEL_ASSETS) {
@@ -215,7 +217,7 @@ export async function prepareChatterboxComponent({
   }
 }
 
-async function copyTreeWithoutBytecode(source, destination) {
+export async function copyTreeWithoutBytecode(source, destination) {
   const sourceStat = await fs.lstat(source);
   if (sourceStat.isSymbolicLink() || !sourceStat.isDirectory()) throw new Error(`Chatterbox 源码目录无效：${source}`);
   await fs.mkdir(destination, { recursive: false });

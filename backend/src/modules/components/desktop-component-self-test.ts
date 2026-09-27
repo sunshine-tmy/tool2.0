@@ -38,6 +38,12 @@ const requiredFiles: Record<string, string[]> = {
     "models/chatterbox/s3gen.pt",
     "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
   ],
+  "chatterbox-cuda": [
+    "scripts/chatterbox-worker.py",
+    "scripts/worker_lifecycle.py",
+    "vendor/chatterbox/__init__.py",
+    "vendor/chatterbox_tts-0.1.7.dist-info/METADATA"
+  ],
   "xhs-archive": ["source/requirements.txt", "source/source/__init__.py"],
   "xhs-translation": [
     "scripts/xhs-translation-worker.py",
@@ -179,6 +185,22 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
         environment
       );
       assertJsonAvailable(output, "小红书翻译");
+      return;
+    }
+
+    if (manifest.id === "chatterbox-cuda") {
+      environment.TOOLBOX_DESKTOP_MANAGED = "1";
+      environment.PYTHONPATH = path.join(generationRoot, "vendor");
+      const output = await runProcess(
+        pythonPath,
+        [
+          "-c",
+          "import importlib, json, torch; importlib.import_module('chatterbox'); assert torch.version.cuda == '12.4', f'expected CUDA 12.4 PyTorch, found {torch.version.cuda!r}'; print(json.dumps({'available': True, 'cudaRuntimeAvailable': True, 'cudaAvailable': torch.cuda.is_available()}))"
+        ],
+        generationRoot,
+        environment
+      );
+      assertJsonAvailable(output, "Chatterbox CUDA 12.4");
       return;
     }
 

@@ -244,6 +244,69 @@ describe("buildComponentPackage", () => {
     );
   });
 
+  it("signs a large-file assembly while keeping every GitHub Release archive below 2 GiB", async () => {
+    const root = await makeRoot();
+    const stage = path.join(root, "stage");
+    const partDirectory = path.join(stage, "wheelhouse", ".parts");
+    await fs.mkdir(path.join(stage, "scripts"), { recursive: true });
+    await fs.mkdir(partDirectory, { recursive: true });
+    await fs.writeFile(path.join(stage, "scripts", "worker.py"), "print('ready')\n");
+    const partOne = Buffer.from("large-wheel-first-part-");
+    const partTwo = Buffer.from("second-part\n");
+    const assembledWheel = Buffer.concat([partOne, partTwo]);
+    const firstPath = "wheelhouse/.parts/torch.whl.part-0001";
+    const secondPath = "wheelhouse/.parts/torch.whl.part-0002";
+    await fs.writeFile(path.join(stage, ...firstPath.split("/")), partOne);
+    await fs.writeFile(path.join(stage, ...secondPath.split("/")), partTwo);
+    const key = await createSigningKey(root);
+    const definitionPath = await writeDefinition(
+      root,
+      definition({
+        assembledFiles: [
+          {
+            path: "wheelhouse/torch.whl",
+            bytes: assembledWheel.length,
+            sha256: crypto.createHash("sha256").update(assembledWheel).digest("hex"),
+            parts: [firstPath, secondPath]
+          }
+        ],
+        additionalArchives: [
+          { name: "cuda-torch-part-0001", paths: [firstPath] },
+          { name: "cuda-torch-part-0002", paths: [secondPath] }
+        ]
+      })
+    );
+    const outputDirectory = path.join(root, "out");
+    const artifact = await buildComponentPackage({
+      definitionPath,
+      stagingDirectory: stage,
+      outputDirectory,
+      githubReleaseUrl: "https://github.com/example/toolbox/releases/download/components-v1/",
+      signingKeyPath: key.privateKeyPath
+    });
+    const manifest = JSON.parse(await fs.readFile(artifact.manifestPath, "utf8"));
+    const publicKey = await fs.readFile(artifact.publicKeyPath, "utf8");
+
+    assert.deepEqual(manifest.files.map((file) => file.path).sort(), ["scripts/worker.py", "wheelhouse/torch.whl"]);
+    assert.equal(manifest.assembledFiles[0].parts.length, 2);
+    assert.equal(
+      crypto.verify(
+        null,
+        Buffer.from(canonicalManifest(manifest)),
+        publicKey,
+        Buffer.from(manifest.signature, "base64")
+      ),
+      true
+    );
+    assert.deepEqual(
+      [manifest.archive, ...manifest.additionalArchives].flatMap((archive) => archive.filePaths).sort(),
+      ["scripts/worker.py", firstPath, secondPath].sort()
+    );
+    assert.equal(artifact.archivePaths.length, 3);
+    const catalog = await assembleComponentCatalog(outputDirectory);
+    assert.deepEqual(catalog.manifests[0].assembledFiles, manifest.assembledFiles);
+  });
+
   it("hashes the Python lock into the signed manifest and lists pinned packages in the SBOM", async () => {
     const root = await makeRoot();
     const stage = path.join(root, "stage");

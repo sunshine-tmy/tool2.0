@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { once } from "node:events";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import * as tar from "tar";
@@ -57,6 +58,12 @@ export type ComponentArchiveAsset = {
   /** Signed file partition, required when a manifest has multiple archive assets. */
   filePaths?: string[];
 };
+export type ComponentAssembledFile = {
+  path: string;
+  bytes: number;
+  sha256: string;
+  parts: ComponentManifestFile[];
+};
 export type OfflineArchiveUpload = {
   fieldName: string;
   filename: string;
@@ -76,6 +83,7 @@ export type ComponentPackageManifest = {
   platform: "win32-x64";
   archive: ComponentArchiveAsset;
   additionalArchives?: ComponentArchiveAsset[];
+  assembledFiles?: ComponentAssembledFile[];
   installedBytes: number;
   files: ComponentManifestFile[];
   pythonEnvironment?: {
@@ -704,6 +712,7 @@ export class ComponentManager {
         }
       }
       if (signal.aborted) throw new Error("download cancelled");
+      await this.assembleFiles(staging, manifest, signal);
       await this.verifyInstalledFiles(staging, manifest);
       await fsp.rename(staging, target);
       targetCreated = true;
@@ -959,6 +968,10 @@ export class ComponentManager {
       !isHttpsUrl(manifest.sbom.url) ||
       !SHA256.test(manifest.sbom.sha256) ||
       !isValidArchiveAsset(manifest.archive, this.maxArchiveBytes) ||
+      (manifest.assembledFiles !== undefined &&
+        (!Array.isArray(manifest.assembledFiles) ||
+          !manifest.assembledFiles.length ||
+          manifest.assembledFiles.length > 16)) ||
       !Number.isSafeInteger(manifest.installedBytes) ||
       manifest.installedBytes < 0 ||
       !Array.isArray(manifest.files) ||
@@ -1006,8 +1019,52 @@ export class ComponentManager {
       }
       names.add(file.path);
     }
+    const assemblyTargets = new Set<string>();
+    const assemblyParts = new Set<string>();
+    for (const assembly of manifest.assembledFiles ?? []) {
+      if (!assembly || typeof assembly !== "object") {
+        throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包组装目标定义无效");
+      }
+      const targetFile = manifest.files.find((file) => file.path === assembly.path);
+      if (
+        !isSafeRelativePath(assembly.path) ||
+        assemblyTargets.has(assembly.path) ||
+        !Number.isSafeInteger(assembly.bytes) ||
+        assembly.bytes < 1 ||
+        !SHA256.test(assembly.sha256) ||
+        !targetFile ||
+        targetFile.bytes !== assembly.bytes ||
+        targetFile.sha256 !== assembly.sha256 ||
+        !Array.isArray(assembly.parts) ||
+        assembly.parts.length < 2 ||
+        assembly.parts.length > 64
+      ) {
+        throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包组装目标定义无效");
+      }
+      assemblyTargets.add(assembly.path);
+      for (const part of assembly.parts) {
+        if (
+          !part ||
+          typeof part !== "object" ||
+          !isSafeRelativePath(part.path) ||
+          part.path === assembly.path ||
+          names.has(part.path) ||
+          assemblyTargets.has(part.path) ||
+          assemblyParts.has(part.path) ||
+          !Number.isSafeInteger(part.bytes) ||
+          part.bytes < 1 ||
+          !SHA256.test(part.sha256)
+        ) {
+          throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包组装分片定义无效");
+        }
+        assemblyParts.add(part.path);
+      }
+    }
+    if ([...assemblyTargets].some((target) => assemblyParts.has(target))) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包组装目标与分片路径冲突");
+    }
     const archiveAssets = componentArchiveAssets(manifest);
-    if (archiveAssets.length > 1 || manifest.archive.filePaths !== undefined) {
+    if (archiveAssets.length > 1 || manifest.archive.filePaths !== undefined || assemblyTargets.size > 0) {
       const archivePaths = new Set<string>();
       for (const archive of archiveAssets) {
         if (!Array.isArray(archive.filePaths) || !archive.filePaths.length) {
@@ -1020,7 +1077,14 @@ export class ComponentManager {
           archivePaths.add(filePath);
         }
       }
-      if (archivePaths.size !== names.size || [...names].some((name) => !archivePaths.has(name))) {
+      const expectedArchivedPaths = new Set([
+        ...[...names].filter((name) => !assemblyTargets.has(name)),
+        ...assemblyParts
+      ]);
+      if (
+        archivePaths.size !== expectedArchivedPaths.size ||
+        [...expectedArchivedPaths].some((name) => !archivePaths.has(name))
+      ) {
         throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "归档分片没有完整覆盖签名文件清单");
       }
     }
@@ -1054,6 +1118,60 @@ export class ComponentManager {
         (await sha256File(file.fullPath)) !== expectedFile.sha256
       ) {
         throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包文件摘要校验失败");
+      }
+    }
+  }
+
+  private async assembleFiles(root: string, manifest: ComponentPackageManifest, signal: AbortSignal) {
+    for (const assembly of manifest.assembledFiles ?? []) {
+      if (signal.aborted) throw new Error("download cancelled");
+      const target = safeChildPath(root, assembly.path);
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      const output = fs.createWriteStream(target, { flags: "wx" });
+      let outputError: Error | undefined;
+      const outputFinished = new Promise<void>((resolve) => {
+        output.once("error", (error) => {
+          outputError = error;
+          resolve();
+        });
+        output.once("finish", resolve);
+      });
+      const targetDigest = crypto.createHash("sha256");
+      let targetBytes = 0;
+      try {
+        for (const part of assembly.parts) {
+          if (signal.aborted) throw new Error("download cancelled");
+          const partPath = safeChildPath(root, part.path);
+          const partStat = await fsp.lstat(partPath);
+          if (!partStat.isFile() || partStat.isSymbolicLink() || partStat.size !== part.bytes) {
+            throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包组装分片大小校验失败");
+          }
+          const partDigest = crypto.createHash("sha256");
+          let partBytes = 0;
+          for await (const chunk of fs.createReadStream(partPath)) {
+            if (signal.aborted) throw new Error("download cancelled");
+            partBytes += chunk.length;
+            targetBytes += chunk.length;
+            partDigest.update(chunk);
+            targetDigest.update(chunk);
+            if (!output.write(chunk)) await once(output, "drain");
+          }
+          if (partBytes !== part.bytes || partDigest.digest("hex") !== part.sha256) {
+            throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包组装分片摘要校验失败");
+          }
+        }
+        output.end();
+        await outputFinished;
+        if (outputError) throw outputError;
+        if (targetBytes !== assembly.bytes || targetDigest.digest("hex") !== assembly.sha256) {
+          throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包组装目标摘要校验失败");
+        }
+        await Promise.all(assembly.parts.map((part) => fsp.rm(safeChildPath(root, part.path), { force: true })));
+      } catch (error) {
+        output.destroy();
+        await fsp.rm(target, { force: true }).catch(() => undefined);
+        if (error instanceof ComponentManagerError) throw error;
+        throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包分片重组失败");
       }
     }
   }

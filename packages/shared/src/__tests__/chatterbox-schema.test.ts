@@ -49,6 +49,7 @@ describe("chatterbox response schemas", () => {
       status: "completed",
       progress: 100,
       language: "ms",
+      device: "cuda",
       referenceFileName: "sample.wav",
       referenceDurationSeconds: 8.2,
       referenceRetained: false,
@@ -73,6 +74,7 @@ describe("chatterbox response schemas", () => {
       archiveUrl: "/archive.zip"
     };
     expect(Value.Check(ChatterboxBatchSchema, batch)).toBe(true);
+    expect(Value.Check(ChatterboxBatchSchema, { ...batch, device: "metal" })).toBe(false);
     expect(Value.Check(ChatterboxBatchSchema, { ...batch, status: "unknown" })).toBe(false);
 
     const { items: _items, ...summary } = batch;
