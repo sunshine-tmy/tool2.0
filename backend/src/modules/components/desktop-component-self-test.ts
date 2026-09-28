@@ -13,9 +13,6 @@ type ProcessRunner = (
 ) => Promise<string>;
 
 const requiredFiles: Record<string, string[]> = {
-  ffmpeg: ["bin/ffmpeg.exe", "bin/ffprobe.exe"],
-  "python-311": ["python/python.exe"],
-  "python-312": ["python/python.exe"],
   "video-text": ["scripts/video-transcribe-faster-whisper.py"],
   "whisper-small": ["model/config.json", "model/model.bin", "model/tokenizer.json"],
   "edge-tts": ["scripts/edge-tts-generate.py"],
@@ -52,35 +49,45 @@ const requiredFiles: Record<string, string[]> = {
     "model/target.spm",
     "model/manifest.json"
   ],
-  "xhs-browser": ["browser/chrome.exe"]
+  "xhs-browser": []
 };
 
 export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runProcessDefault) {
   return async (manifest: ComponentPackageManifest, generationRoot: string) => {
-    const required = requiredFiles[manifest.id];
-    if (!required) throw new Error(`桌面能力 ${manifest.id} 尚未注册安装自检`);
+    const isMacOS = manifest.platform === "darwin-arm64";
+    const ffmpegName = isMacOS ? "ffmpeg" : "ffmpeg.exe";
+    const ffprobeName = isMacOS ? "ffprobe" : "ffprobe.exe";
+    const pythonName = manifest.id === "python-311" ? "python3.11" : "python3.12";
+    const bundledPythonPath = isMacOS ? `python/bin/${pythonName}` : "python/python.exe";
+    const browserPath = isMacOS ? await resolveMacBrowserPath(manifest, generationRoot) : "browser/chrome.exe";
+    const required = [
+      ...(manifest.id === "ffmpeg" ? [`bin/${ffmpegName}`, `bin/${ffprobeName}`] : []),
+      ...(manifest.id === "python-311" || manifest.id === "python-312" ? [bundledPythonPath] : []),
+      ...(requiredFiles[manifest.id] ?? []),
+      ...(manifest.id === "xhs-browser" ? [...(isMacOS ? ["browser/browser-launcher.json"] : []), browserPath] : [])
+    ];
+    if (!required.length) throw new Error(`桌面能力 ${manifest.id} 尚未注册安装自检`);
     await verifyRequiredFiles(manifest, generationRoot, required);
+    if (isMacOS) {
+      const executablePaths = [
+        ...(manifest.id === "ffmpeg" ? [`bin/${ffmpegName}`, `bin/${ffprobeName}`] : []),
+        ...(manifest.id === "python-311" || manifest.id === "python-312" ? [bundledPythonPath] : []),
+        ...(manifest.id === "xhs-browser" ? [browserPath] : []),
+        ...(manifest.pythonEnvironment ? ["venv/bin/python"] : [])
+      ];
+      await verifyExecutableFiles(generationRoot, executablePaths);
+    }
 
     if (manifest.id === "ffmpeg") {
-      await runProcess(
-        path.join(generationRoot, "bin", "ffmpeg.exe"),
-        ["-version"],
-        generationRoot,
-        cleanEnvironment()
-      );
-      await runProcess(
-        path.join(generationRoot, "bin", "ffprobe.exe"),
-        ["-version"],
-        generationRoot,
-        cleanEnvironment()
-      );
+      await runProcess(path.join(generationRoot, "bin", ffmpegName), ["-version"], generationRoot, cleanEnvironment());
+      await runProcess(path.join(generationRoot, "bin", ffprobeName), ["-version"], generationRoot, cleanEnvironment());
       return;
     }
 
     if (manifest.id === "python-311" || manifest.id === "python-312") {
       const expectedVersion = manifest.id === "python-311" ? "3.11" : "3.12";
       const output = await runProcess(
-        path.join(generationRoot, "python", "python.exe"),
+        path.join(generationRoot, ...bundledPythonPath.split("/")),
         ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
         generationRoot,
         cleanEnvironment()
@@ -96,7 +103,7 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
 
     if (manifest.id === "xhs-browser") {
       const output = await runProcess(
-        path.join(generationRoot, "browser", "chrome.exe"),
+        path.join(generationRoot, ...browserPath.split("/")),
         ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
         generationRoot,
         cleanEnvironment()
@@ -106,7 +113,10 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
     }
 
     if (!manifest.pythonEnvironment) throw new Error(`能力 ${manifest.id} 缺少受管 Python 环境`);
-    const pythonPath = path.join(generationRoot, "venv", "Scripts", "python.exe");
+    const pythonPath = path.join(
+      generationRoot,
+      ...(isMacOS ? ["venv", "bin", "python"] : ["venv", "Scripts", "python.exe"])
+    );
     const environment = cleanEnvironment();
     environment.PYTHONNOUSERSITE = "1";
     environment.PYTHONUNBUFFERED = "1";
@@ -229,6 +239,35 @@ async function verifyRequiredFiles(manifest: ComponentPackageManifest, generatio
     if (!stat.isFile() || stat.size === 0)
       throw new Error(`能力 ${manifest.id} 的必需文件为空或不存在：${relativePath}`);
   }
+}
+
+async function verifyExecutableFiles(generationRoot: string, relativePaths: string[]) {
+  for (const relativePath of relativePaths) {
+    const stat = await fs.stat(path.join(generationRoot, ...relativePath.split("/")));
+    if ((stat.mode & 0o111) === 0) throw new Error(`macOS 能力包可执行权限缺失：${relativePath}`);
+  }
+}
+
+async function resolveMacBrowserPath(manifest: ComponentPackageManifest, generationRoot: string) {
+  if (manifest.id !== "xhs-browser") return "";
+  const launcherPath = "browser/browser-launcher.json";
+  if (!manifest.files.some((file) => file.path === launcherPath)) {
+    throw new Error("小红书浏览器签名清单缺少启动程序映射");
+  }
+  const launcher = JSON.parse(await fs.readFile(path.join(generationRoot, ...launcherPath.split("/")), "utf8")) as {
+    executableAssetPath?: unknown;
+  };
+  const executableAssetPath = launcher.executableAssetPath;
+  if (
+    typeof executableAssetPath !== "string" ||
+    executableAssetPath.includes("\\") ||
+    path.posix.isAbsolute(executableAssetPath) ||
+    executableAssetPath.split("/").some((part) => !part || part === "." || part === ".." || part.includes(":")) ||
+    !manifest.files.some((file) => file.path === executableAssetPath)
+  ) {
+    throw new Error("小红书浏览器启动程序映射无效");
+  }
+  return executableAssetPath;
 }
 
 function assertJsonAvailable(output: string, label: string) {

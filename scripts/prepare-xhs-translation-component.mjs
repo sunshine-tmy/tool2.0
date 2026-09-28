@@ -19,7 +19,12 @@ const MODEL_FILES = [
   "vocab.json"
 ];
 
-export async function prepareXhsTranslationComponent({ pythonExecutablePath, modelDirectory, stagingDirectory }) {
+export async function prepareXhsTranslationComponent({
+  pythonExecutablePath,
+  modelDirectory,
+  stagingDirectory,
+  lockFilePath
+}) {
   const python = path.resolve(pythonExecutablePath);
   const modelSource = path.resolve(modelDirectory);
   const stage = path.resolve(stagingDirectory);
@@ -37,7 +42,12 @@ export async function prepareXhsTranslationComponent({ pythonExecutablePath, mod
   if (version.trim() !== "3.12") throw new Error("小红书翻译 wheelhouse 必须由 Python 3.12 准备");
   const manifest = await verifyModel(modelSource);
   if (await pathExists(stage)) throw new Error("小红书翻译暂存目录已存在，拒绝覆盖");
-  const lockSource = path.join(REPOSITORY_ROOT, "scripts", "xhs-translation.lock.txt");
+  const lockSource = path.resolve(
+    lockFilePath ??
+      (process.platform === "darwin"
+        ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "xhs-translation.lock.txt")
+        : path.join(REPOSITORY_ROOT, "scripts", "xhs-translation.lock.txt"))
+  );
   await fs.access(lockSource);
 
   let stageCreated = false;

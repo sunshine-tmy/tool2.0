@@ -29,11 +29,19 @@ await Promise.all([
 await assertStagedRuntime();
 
 if (rebuildNative) {
+  if (!(
+    (process.platform === "win32" && process.arch === "x64") ||
+    (process.platform === "darwin" && process.arch === "arm64")
+  )) {
+    throw new Error(
+      `Unsupported desktop build host: ${process.platform}-${process.arch}; use Windows x64 or Apple Silicon macOS`
+    );
+  }
   const electronVersion = await readElectronVersion();
   await rebuild({
     buildPath: stageBackend,
     electronVersion,
-    arch: "x64",
+    arch: process.arch,
     force: true,
     mode: "sequential",
     useCache: true

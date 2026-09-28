@@ -142,7 +142,9 @@ export class XhsAuthManager {
     if (fs.existsSync(playwrightPath)) return playwrightPath;
     if (this.components) {
       try {
-        return (await this.components.resolveInstalledAsset("xhs-browser", "browser/chrome.exe")).path;
+        const browserPath =
+          process.platform === "darwin" ? await this.resolveInstalledMacBrowserPath() : "browser/chrome.exe";
+        return (await this.components.resolveInstalledAsset("xhs-browser", browserPath)).path;
       } catch (error) {
         if (
           !(error instanceof ComponentManagerError) ||
@@ -164,6 +166,21 @@ export class XhsAuthManager {
     if (fs.existsSync(legacyPlaywrightPath)) return legacyPlaywrightPath;
     this.update(sessionId, "waiting", "未检测到可复用浏览器，请安装 Chrome/Edge，或前往设置安装登录浏览器能力");
     throw new Error("未检测到登录浏览器。请安装 Chrome/Edge，或前往设置的能力管理中安装登录浏览器后重试");
+  }
+
+  private async resolveInstalledMacBrowserPath() {
+    if (!this.components) throw new Error("未配置小红书浏览器能力管理器");
+    const launcher = await this.components.resolveInstalledAsset("xhs-browser", "browser/browser-launcher.json");
+    const value = JSON.parse(await fsp.readFile(launcher.path, "utf8")) as { executableAssetPath?: unknown };
+    if (
+      typeof value.executableAssetPath !== "string" ||
+      value.executableAssetPath.includes("\\") ||
+      path.posix.isAbsolute(value.executableAssetPath) ||
+      value.executableAssetPath.split("/").some((part) => !part || part === "." || part === ".." || part.includes(":"))
+    ) {
+      throw new Error("小红书浏览器启动程序映射无效");
+    }
+    return value.executableAssetPath;
   }
 
   private cookiePath() {

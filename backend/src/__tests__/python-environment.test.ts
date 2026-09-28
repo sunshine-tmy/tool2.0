@@ -36,6 +36,7 @@ describe("buildPythonEnvironment", () => {
 
     const result = await buildPythonEnvironment({
       packageRoot: temporaryRoot,
+      platform: "win32-x64",
       pythonExecutablePath: "python.exe",
       wheelhousePath: "wheelhouse",
       requirementsLockPath: "requirements.lock",
@@ -60,6 +61,39 @@ describe("buildPythonEnvironment", () => {
     });
     await expect(fs.access(path.join(temporaryRoot, ".python-build-temp"))).rejects.toThrow();
     expect(invocations[4].args).toEqual(["-m", "pip", "--isolated", "check"]);
+  });
+
+  it("creates an isolated macOS venv without linking back to its shared Python runtime", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-python-env-mac-"));
+    await fs.mkdir(path.join(temporaryRoot, "python", "bin"), { recursive: true });
+    await fs.mkdir(path.join(temporaryRoot, "wheelhouse"));
+    await fs.writeFile(path.join(temporaryRoot, "python", "bin", "python3.11"), "signed Mac interpreter");
+    const lock = "sample==1.2.3 --hash=sha256:" + "a".repeat(64) + "\n";
+    await fs.writeFile(path.join(temporaryRoot, "requirements.lock"), lock);
+    const invocations: string[][] = [];
+    const runProcess = vi.fn(async (_executable: string, args: string[]) => {
+      invocations.push(args);
+      if (args[0] === "-m" && args[1] === "venv") {
+        const pythonPath = path.join(args.at(-1)!, "bin", "python");
+        await fs.mkdir(path.dirname(pythonPath), { recursive: true });
+        await fs.writeFile(pythonPath, "isolated Mac interpreter");
+      }
+      return args[0] === "-c" ? "3.11\n" : "";
+    });
+
+    const result = await buildPythonEnvironment({
+      packageRoot: temporaryRoot,
+      platform: "darwin-arm64",
+      pythonExecutablePath: "python/bin/python3.11",
+      wheelhousePath: "wheelhouse",
+      requirementsLockPath: "requirements.lock",
+      requirementsLockSha256: crypto.createHash("sha256").update(lock).digest("hex"),
+      expectedPythonVersion: "3.11",
+      runProcess
+    });
+
+    expect(invocations[1]).toEqual(["-m", "venv", "--copies", path.join(temporaryRoot, "venv")]);
+    expect(result.pythonExecutable).toBe(path.join(temporaryRoot, "venv", "bin", "python"));
   });
 
   it("rejects a changed lock file before invoking Python", async () => {
@@ -91,6 +125,7 @@ describe("buildPythonEnvironment", () => {
     await fs.writeFile(path.join(temporaryRoot, "requirements.lock"), lock);
     const options = {
       packageRoot: temporaryRoot,
+      platform: "win32-x64" as const,
       pythonExecutablePath: "python.exe",
       wheelhousePath: "wheelhouse",
       requirementsLockPath: "requirements.lock",

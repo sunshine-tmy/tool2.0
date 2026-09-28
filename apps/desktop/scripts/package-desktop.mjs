@@ -4,13 +4,25 @@ import { access, cp, readFile, readdir, realpath, rm, writeFile } from "node:fs/
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import packager from "@electron/packager";
+import { generateMacOSIcon } from "./generate-macos-icon.mjs";
 
 const desktopRoot = fileURLToPath(new URL("..", import.meta.url));
 const outputRoot = path.join(desktopRoot, "out");
 const stageRoot = path.join(desktopRoot, ".stage");
 const appName = "EcommerceToolbox";
-const desktopIcon = path.join(desktopRoot, "assets", "ecommerce-toolbox.ico");
 const makeInstaller = process.argv.includes("--make");
+const targetPlatform = process.platform;
+const targetArch = process.arch;
+if (!(
+  (targetPlatform === "win32" && targetArch === "x64") ||
+  (targetPlatform === "darwin" && targetArch === "arm64")
+)) {
+  throw new Error(
+    `Desktop packages must be built on Windows x64 or Apple Silicon macOS; current host is ${targetPlatform}-${targetArch}`
+  );
+}
+const isMacOS = targetPlatform === "darwin";
+const packageOutput = isMacOS ? path.join(outputRoot, "mac-arm64") : outputRoot;
 // Keep binary downloads inside the workspace so a broken user-level cache
 // cannot make an otherwise reproducible package build fail.
 const electronCache = process.env.ELECTRON_DOWNLOAD_CACHE ?? path.join(desktopRoot, ".electron-cache");
@@ -18,7 +30,7 @@ const electronMirror = process.env.ELECTRON_MIRROR;
 const electronPackage = JSON.parse(
   await readFile(path.join(desktopRoot, "node_modules", "electron", "package.json"), "utf8")
 );
-const electronZipName = `electron-v${electronPackage.version}-win32-x64.zip`;
+const electronZipName = `electron-v${electronPackage.version}-${targetPlatform}-${targetArch}.zip`;
 const cachedElectronZipDirectory = await findCachedElectronZipDirectory(electronCache, electronZipName);
 if (cachedElectronZipDirectory) {
   console.log(`Using cached Electron runtime archive: ${path.join(cachedElectronZipDirectory, electronZipName)}`);
@@ -27,6 +39,9 @@ if (cachedElectronZipDirectory) {
 }
 
 await Promise.all(["backend", "frontend", "scripts"].map((name) => access(path.join(stageRoot, name))));
+const desktopIcon = isMacOS
+  ? await generateMacOSIcon(stageRoot)
+  : path.join(desktopRoot, "assets", "ecommerce-toolbox.ico");
 await access(desktopIcon);
 const packageJson = JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8"));
 const release = readReleaseOptions(packageJson);
@@ -36,9 +51,10 @@ const [packagedApp] = await packager({
   dir: desktopRoot,
   out: outputRoot,
   name: appName,
-  platform: "win32",
-  arch: "x64",
+  platform: targetPlatform,
+  arch: targetArch,
   icon: desktopIcon,
+  ...(isMacOS ? { osxSign: false, osxNotarize: false } : {}),
   appVersion: release.version,
   buildVersion: release.version,
   asar: true,
@@ -62,31 +78,43 @@ const [packagedApp] = await packager({
   ignore: [/(^|[\\/])(\.stage|node_modules|out|src|test-results)([\\/]|$)/]
 });
 
-assert.ok(packagedApp, "Electron Packager did not produce a Windows application directory");
-await access(path.join(packagedApp, `${appName}.exe`));
-await access(path.join(packagedApp, "resources", "backend", "dist", "desktop-entry.js"));
-await access(path.join(packagedApp, "resources", "frontend", "index.html"));
-await access(path.join(packagedApp, "resources", "app.asar"));
+assert.ok(packagedApp, "Electron Packager did not produce an application bundle");
+if (isMacOS) {
+  await access(path.join(packagedApp, "Contents", "MacOS", appName));
+  await access(path.join(packagedApp, "Contents", "Resources", "backend", "dist", "desktop-entry.js"));
+  await access(path.join(packagedApp, "Contents", "Resources", "frontend", "index.html"));
+  await access(path.join(packagedApp, "Contents", "Resources", "app.asar"));
+} else {
+  await access(path.join(packagedApp, `${appName}.exe`));
+  await access(path.join(packagedApp, "resources", "backend", "dist", "desktop-entry.js"));
+  await access(path.join(packagedApp, "resources", "frontend", "index.html"));
+  await access(path.join(packagedApp, "resources", "app.asar"));
+}
 
 if (makeInstaller) {
-  const installerOutput = path.join(outputRoot, "make", "nsis");
+  const installerOutput = isMacOS ? packageOutput : path.join(outputRoot, "make", "nsis");
   await writeUpdateConfiguration(packagedApp, release);
   await rm(installerOutput, { recursive: true, force: true });
   const customIncludePath = path.join(stageRoot, "installer-custom.nsh");
-  await writeInstallerInclude(packagedApp, customIncludePath);
+  if (!isMacOS) await writeInstallerInclude(packagedApp, customIncludePath);
   const builderConfig = await writeElectronBuilderConfig(release);
   try {
-    await runElectronBuilder(packagedApp, release, builderConfig.path);
+    await runElectronBuilder(packagedApp, release, builderConfig.path, isMacOS);
   } finally {
     await builderConfig.dispose();
-    await rm(customIncludePath, { force: true });
+    if (!isMacOS) await rm(customIncludePath, { force: true });
   }
-  await access(path.join(installerOutput, `${appName}Setup.exe`));
-  await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
-  if (release.updateFeed) await access(path.join(installerOutput, "latest.yml"));
-  console.log(`Windows installer created: ${installerOutput}`);
+  if (isMacOS) {
+    await access(path.join(installerOutput, "EcommerceToolbox-mac-arm64.dmg"));
+    console.log(`Apple Silicon internal-test DMG created: ${installerOutput}`);
+  } else {
+    await access(path.join(installerOutput, `${appName}Setup.exe`));
+    await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
+    if (release.updateFeed) await access(path.join(installerOutput, "latest.yml"));
+    console.log(`Windows installer created: ${installerOutput}`);
+  }
 } else {
-  console.log(`Windows application packaged: ${packagedApp}`);
+  console.log(`${isMacOS ? "Apple Silicon macOS" : "Windows"} application packaged: ${packagedApp}`);
 }
 
 function readReleaseOptions(packageJson) {
@@ -208,7 +236,10 @@ async function resolveRuntimeDependency(fromDirectory, dependency) {
 }
 
 async function writeUpdateConfiguration(packagedApp, release) {
-  const updateConfigPath = path.join(packagedApp, "resources", "app-update.yml");
+  const updateConfigPath = path.join(
+    packagedApp,
+    ...(isMacOS ? ["Contents", "Resources", "app-update.yml"] : ["resources", "app-update.yml"])
+  );
   if (!release.updateFeed) {
     await rm(updateConfigPath, { force: true });
     return;
@@ -228,7 +259,16 @@ async function writeElectronBuilderConfig(release) {
   const configPath = path.join(outputRoot, "electron-builder.release.json");
   const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
   config.directories = { ...config.directories, buildResources: ".stage" };
-  config.nsis = { ...config.nsis, include: "installer-custom.nsh", allowElevation: false };
+  if (isMacOS) {
+    config.directories.output = path.relative(desktopRoot, packageOutput);
+    config.mac = { icon: ".stage/ecommerce-toolbox.icns", target: ["dmg"], identity: "-" };
+    config.artifactName = "EcommerceToolbox-mac-arm64.${ext}";
+    config.dmg = {};
+    delete config.win;
+    delete config.nsis;
+  } else {
+    config.nsis = { ...config.nsis, include: "installer-custom.nsh", allowElevation: false };
+  }
   if (release.updateFeed) config.publish = [{ provider: "generic", url: release.updateFeed }];
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
   return { path: configPath, dispose: () => rm(configPath, { force: true }) };
@@ -273,7 +313,7 @@ function toNsisPath(value) {
   return value.split(path.sep).join("\\");
 }
 
-async function runElectronBuilder(packagedApp, release, configPath) {
+async function runElectronBuilder(packagedApp, release, configPath, macOS = false) {
   const builderContext = await createBuilderContext(packagedApp, configPath);
   const environment = {
     ...process.env,
@@ -286,22 +326,20 @@ async function runElectronBuilder(packagedApp, release, configPath) {
       : {})
   };
   try {
-    await runElectronBuilderProcess(builderContext, environment);
+    await runElectronBuilderProcess(builderContext, environment, macOS);
   } finally {
     await builderContext.dispose();
   }
 }
 
-function runElectronBuilderProcess(builderContext, environment) {
+function runElectronBuilderProcess(builderContext, environment, macOS = false) {
   const builderCli = path.join(builderContext.root, "node_modules", "electron-builder", "cli.js");
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
       [
         builderCli,
-        "--win",
-        "nsis",
-        "--x64",
+        ...(macOS ? ["--mac", "dmg", "--arm64"] : ["--win", "nsis", "--x64"]),
         "--prepackaged",
         builderContext.packagedApp,
         "--config",
@@ -309,7 +347,7 @@ function runElectronBuilderProcess(builderContext, environment) {
         "--publish",
         "never"
       ],
-      { cwd: builderContext.root, env: environment, stdio: "inherit", windowsHide: true }
+      { cwd: builderContext.root, env: environment, stdio: "inherit", windowsHide: process.platform === "win32" }
     );
     child.once("error", reject);
     child.once("exit", (code) => {

@@ -65,10 +65,12 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
   let initializing: Promise<void> = Promise.resolve();
   let closed = false;
   let refreshQueue: Promise<void> = Promise.resolve();
+  const ffmpegExecutable = process.platform === "darwin" ? "bin/ffmpeg" : "bin/ffmpeg.exe";
+  const ffprobeExecutable = process.platform === "darwin" ? "bin/ffprobe" : "bin/ffprobe.exe";
   const resolveMediaTools = async () =>
     Promise.all([
-      optionalAsset(components, "ffmpeg", "bin/ffmpeg.exe"),
-      optionalAsset(components, "ffmpeg", "bin/ffprobe.exe")
+      optionalAsset(components, "ffmpeg", ffmpegExecutable),
+      optionalAsset(components, "ffmpeg", ffprobeExecutable)
     ]);
 
   const configureVideo = async (signal: AbortSignal, ffmpeg?: Awaited<ReturnType<typeof optionalAsset>>) => {

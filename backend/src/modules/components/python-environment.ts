@@ -5,6 +5,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import type { ComponentPlatform } from "@toolbox/shared";
+import { componentPlatformForRuntime } from "./component-platform";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_RELATIVE_PATH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
@@ -13,6 +15,7 @@ export type PythonRuntimeVersion = "3.11" | "3.12";
 
 export type PythonEnvironmentBuildOptions = {
   packageRoot: string;
+  platform?: ComponentPlatform;
   /** Optional immutable, separately signed Python runtime generation. */
   pythonRuntimeRoot?: string;
   pythonExecutablePath: string;
@@ -29,6 +32,8 @@ export type PythonEnvironmentBuildOptions = {
 };
 
 export async function buildPythonEnvironment(options: PythonEnvironmentBuildOptions) {
+  const platform = options.platform ?? componentPlatformForRuntime();
+  if (!platform) throw new Error("Python 能力环境仅支持 Windows x64 或 Apple Silicon macOS");
   if (!SHA256.test(options.requirementsLockSha256)) throw new Error("Python 依赖锁文件摘要格式无效");
   const packageRoot = await fs.realpath(options.packageRoot);
   const pythonRoot = options.pythonRuntimeRoot ? await fs.realpath(options.pythonRuntimeRoot) : packageRoot;
@@ -64,9 +69,15 @@ export async function buildPythonEnvironment(options: PythonEnvironmentBuildOpti
       temporaryEnvironment
     );
     assertExpectedVersion(baseVersion, options.expectedPythonVersion);
-    await run(pythonExecutable, ["-m", "venv", environmentDirectory], packageRoot, temporaryEnvironment);
+    const isMacOS = platform === "darwin-arm64";
+    await run(
+      pythonExecutable,
+      ["-m", "venv", ...(isMacOS ? ["--copies"] : []), environmentDirectory],
+      packageRoot,
+      temporaryEnvironment
+    );
 
-    const environmentPython = path.join(environmentDirectory, "Scripts", "python.exe");
+    const environmentPython = path.join(environmentDirectory, isMacOS ? "bin/python" : "Scripts/python.exe");
     const environmentVersion = await run(
       environmentPython,
       ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],

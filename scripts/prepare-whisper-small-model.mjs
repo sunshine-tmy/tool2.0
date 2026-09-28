@@ -1,12 +1,17 @@
 /** 中文模块说明：从固定 Hugging Face 提交准备离线 faster-whisper-small 模型目录。 */
-import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { downloadFixedFile } from "./download-fixed-model-file.mjs";
 
-const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const WHISPER_SMALL_REVISION = "536b0662742c02347bc0e980a01041f333bce120";
 export const WHISPER_SMALL_FILES = ["config.json", "model.bin", "tokenizer.json", "vocabulary.txt"];
+export const WHISPER_SMALL_SHA256 = {
+  "config.json": "b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+  "model.bin": "3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+  "tokenizer.json": "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+  "vocabulary.txt": "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+};
 const MAX_MODEL_BYTES = 600_000_000;
 
 export async function prepareWhisperSmallModel({ stagingDirectory }) {
@@ -18,22 +23,13 @@ export async function prepareWhisperSmallModel({ stagingDirectory }) {
     stageCreated = true;
     const modelDirectory = path.join(stage, "model");
     await fs.mkdir(modelDirectory);
-    const downloader = path.join(REPOSITORY_ROOT, "scripts", "download-fixed-model-file.ps1");
     const baseUrl = `https://huggingface.co/Systran/faster-whisper-small/resolve/${WHISPER_SMALL_REVISION}`;
     for (const file of WHISPER_SMALL_FILES) {
-      execFileSync(
-        "pwsh",
-        [
-          "-NoProfile",
-          "-File",
-          downloader,
-          "-Url",
-          `${baseUrl}/${file}`,
-          "-Destination",
-          path.join(modelDirectory, file)
-        ],
-        { stdio: "inherit", windowsHide: true, timeout: 60 * 60 * 1000 }
-      );
+      await downloadFixedFile({
+        url: `${baseUrl}/${file}`,
+        destination: path.join(modelDirectory, file),
+        expectedSha256: WHISPER_SMALL_SHA256[file]
+      });
     }
     const config = JSON.parse(await fs.readFile(path.join(modelDirectory, "config.json"), "utf8"));
     const modelBytes = (await fs.stat(path.join(modelDirectory, "model.bin"))).size;

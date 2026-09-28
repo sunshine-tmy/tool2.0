@@ -19,9 +19,11 @@ import type {
   ComponentJobPhase,
   ComponentJobProgress,
   ComponentJobState,
-  ComponentPackageStatus
+  ComponentPackageStatus,
+  ComponentPlatform
 } from "@toolbox/shared";
 import { createRemoteFetch, type RemoteFetch } from "../../security/remote-fetch";
+import { componentPlatformForRuntime } from "./component-platform";
 
 const COMPONENT_PROTOCOL_VERSION = 1;
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -49,7 +51,7 @@ const fetchComponentAsset = createRemoteFetch({
   ...(componentProxyUrl ? { proxyUrl: componentProxyUrl } : {})
 });
 
-export type ComponentManifestFile = { path: string; bytes: number; sha256: string };
+export type ComponentManifestFile = { path: string; bytes: number; sha256: string; executable?: boolean };
 export type ComponentArchiveAsset = {
   url: string;
   bytes: number;
@@ -80,7 +82,7 @@ export type ComponentPackageManifest = {
   taskToolIds: string[];
   installConditions: string[];
   version: string;
-  platform: "win32-x64";
+  platform: ComponentPlatform;
   archive: ComponentArchiveAsset;
   additionalArchives?: ComponentArchiveAsset[];
   assembledFiles?: ComponentAssembledFile[];
@@ -117,6 +119,8 @@ export type VerifiedComponentAsset = {
 export type ComponentManagerOptions = {
   root: string;
   catalog: ComponentCatalog;
+  /** Override only for deterministic platform-specific tests or package tools. */
+  platform?: ComponentPlatform;
   maxArchiveBytes?: number;
   downloadArchive?: (
     manifest: ComponentPackageManifest,
@@ -176,6 +180,7 @@ export class ComponentManagerError extends Error {
  */
 export class ComponentManager {
   private readonly root: string;
+  private readonly platform: ComponentPlatform | undefined;
   private readonly manifests: Map<string, ComponentPackageManifest>;
   private readonly trustedPublicKeys: Record<string, string>;
   private readonly maxArchiveBytes: number;
@@ -194,6 +199,7 @@ export class ComponentManager {
 
   constructor(options: ComponentManagerOptions) {
     this.root = path.resolve(options.root);
+    this.platform = options.platform ?? componentPlatformForRuntime();
     this.manifests = new Map(options.catalog.manifests.map((manifest) => [manifest.id, manifest]));
     if (this.manifests.size !== options.catalog.manifests.length)
       throw new Error("Component catalog contains duplicate ids");
@@ -312,7 +318,8 @@ export class ComponentManager {
       const versionsRoot = await fsp.realpath(path.join(componentRoot, "versions"));
       const generationRoot = await fsp.realpath(safeChildPath(versionsRoot, current.directory));
       if (!isPathWithin(versionsRoot, generationRoot)) throw new Error("generation path escaped versions root");
-      const pythonPath = await fsp.realpath(safeChildPath(generationRoot, "venv/Scripts/python.exe"));
+      const pythonRelativePath = this.platform === "darwin-arm64" ? "venv/bin/python" : "venv/Scripts/python.exe";
+      const pythonPath = await fsp.realpath(safeChildPath(generationRoot, pythonRelativePath));
       if (!isPathWithin(generationRoot, pythonPath) || !(await fsp.stat(pythonPath)).isFile()) {
         throw new Error("generated Python runtime is unavailable");
       }
@@ -725,6 +732,7 @@ export class ComponentManager {
         await buildPythonEnvironment({
           packageRoot: target,
           ...pythonEnvironment,
+          platform: manifest.platform,
           ...(pythonRuntime ? { pythonRuntimeRoot: pythonRuntime.generationRoot } : {}),
           runProcess: this.runPythonProcess
         });
@@ -956,7 +964,8 @@ export class ComponentManager {
       manifest.moduleId !== manifest.id ||
       !["shared", "media", "audio", "image", "archive", "translation"].includes(manifest.groupId) ||
       !SAFE_VERSION.test(manifest.version) ||
-      manifest.platform !== "win32-x64" ||
+      manifest.platform !== this.platform ||
+      (this.platform === "darwin-arm64" && manifest.id === "chatterbox-cuda") ||
       !manifest.displayName.trim() ||
       !manifest.purpose.trim() ||
       (manifest.license !== undefined &&
@@ -1013,6 +1022,7 @@ export class ComponentManager {
         !Number.isSafeInteger(file.bytes) ||
         file.bytes < 0 ||
         !SHA256.test(file.sha256) ||
+        (file.executable !== undefined && typeof file.executable !== "boolean") ||
         names.has(file.path)
       ) {
         throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包文件清单不符合安全约束");
@@ -1115,6 +1125,7 @@ export class ComponentManager {
       if (
         !expectedFile ||
         file.bytes !== expectedFile.bytes ||
+        (this.platform === "darwin-arm64" && expectedFile.executable && (file.mode & 0o111) === 0) ||
         (await sha256File(file.fullPath)) !== expectedFile.sha256
       ) {
         throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包文件摘要校验失败");
@@ -1598,8 +1609,10 @@ async function inspectArchive(archivePath: string, filePaths?: string[]) {
   }
 }
 
-async function listRegularFiles(root: string): Promise<Array<{ path: string; fullPath: string; bytes: number }>> {
-  const files: Array<{ path: string; fullPath: string; bytes: number }> = [];
+async function listRegularFiles(
+  root: string
+): Promise<Array<{ path: string; fullPath: string; bytes: number; mode: number }>> {
+  const files: Array<{ path: string; fullPath: string; bytes: number; mode: number }> = [];
   async function walk(directory: string, prefix: string) {
     for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
       const relative = prefix ? prefix + "/" + entry.name : entry.name;
@@ -1607,7 +1620,7 @@ async function listRegularFiles(root: string): Promise<Array<{ path: string; ful
       const stat = await fsp.lstat(fullPath);
       if (stat.isSymbolicLink()) throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包解压结果包含链接");
       if (stat.isDirectory()) await walk(fullPath, relative);
-      else if (stat.isFile()) files.push({ path: relative, fullPath, bytes: stat.size });
+      else if (stat.isFile()) files.push({ path: relative, fullPath, bytes: stat.size, mode: stat.mode });
       else throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包解压结果包含不支持的文件类型");
     }
   }

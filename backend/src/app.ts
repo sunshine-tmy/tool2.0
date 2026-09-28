@@ -41,7 +41,7 @@ import { XhsRuntimeManager } from "./modules/xhs-archive/runtime";
 import { XhsTranslationRuntime } from "./modules/xhs-archive/translation-runtime";
 import { XhsArchiveStore } from "./modules/xhs-archive/store";
 import { registerMaintenanceRoutes } from "./modules/maintenance";
-import { bundledComponentCatalog } from "./modules/components/catalog";
+import { bundledComponentCatalogForRuntime } from "./modules/components/catalog";
 import { ComponentManager, type ComponentManagerOptions } from "./modules/components/component-manager";
 import { registerComponentRoutes } from "./modules/components/routes";
 import { createTaskStore } from "./tasks/task-store";
@@ -97,7 +97,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   } = {};
   const componentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
-    catalog: bundledComponentCatalog,
+    catalog: bundledComponentCatalogForRuntime(),
     selfTest: config.desktopManagedCapabilities ? createDesktopComponentSelfTest() : undefined,
     onBeforeUninstall: async (componentId) => {
       await stopCapabilityBeforeUninstall(componentId);

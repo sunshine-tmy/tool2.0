@@ -1,0 +1,54 @@
+name: macOS Apple Silicon internal desktop build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Require Apple Silicon runner
+        run: test "$(uname -m)" = "arm64"
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check desktop and backend types
+        run: |
+          pnpm --filter @toolbox/shared typecheck
+          pnpm --filter backend typecheck
+          pnpm --filter frontend typecheck
+          pnpm --filter desktop typecheck
+
+      - name: Run desktop unit tests
+        run: pnpm --filter desktop exec vitest run --exclude .stage/** --exclude out/** --exclude scripts/**
+
+      - name: Run platform-aware runtime and package tests
+        run: |
+          pnpm --filter backend exec vitest run src/__tests__/component-manager.test.ts src/__tests__/python-environment.test.ts src/__tests__/desktop-component-self-test.test.ts
+          node --test scripts/build-component-package.test.mjs scripts/image-ai-component-preparation.test.mjs scripts/download-fixed-model-file.test.mjs
+
+      - name: Build Apple Silicon application and internal DMG
+        run: pnpm desktop:make
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: EcommerceToolbox-mac-arm64-internal
+          path: apps/desktop/out/mac-arm64/EcommerceToolbox-mac-arm64.dmg
+          if-no-files-found: error
+          retention-days: 14

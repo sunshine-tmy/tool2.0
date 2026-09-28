@@ -1,4 +1,4 @@
-/** 中文模块说明：准备固定提交、哈希锁定且包含离线模型的 Chatterbox Windows CPU 能力包。 */
+/** 中文模块说明：准备固定提交、哈希锁定且包含离线模型的 Windows/macOS CPU Chatterbox 能力包。 */
 import { execFileSync } from "node:child_process";
 import { createReadStream, constants as fsConstants } from "node:fs";
 import crypto from "node:crypto";
@@ -7,8 +7,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const LOCK_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "chatterbox.lock.txt");
-const DEFAULT_WHEELHOUSE = path.join(REPOSITORY_ROOT, ".package", "cpu-lock-verify", "chatterbox-wheelhouse");
+const LOCK_SOURCE =
+  process.platform === "darwin"
+    ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "chatterbox.lock.txt")
+    : path.join(REPOSITORY_ROOT, "scripts", "chatterbox.lock.txt");
+const DEFAULT_WHEELHOUSE = path.join(
+  REPOSITORY_ROOT,
+  ".package",
+  process.platform === "darwin" ? "macos-wheelhouse/chatterbox" : "cpu-lock-verify/chatterbox-wheelhouse"
+);
 const DEFAULT_MODEL_SNAPSHOT = path.join(
   REPOSITORY_ROOT,
   "models",
@@ -146,8 +153,11 @@ export async function prepareChatterboxComponent({
   runCommand = execFileSync,
   assets = CHATTERBOX_MODEL_ASSETS
 }) {
-  if (process.platform !== "win32" || process.arch !== "x64") {
-    throw new Error("Chatterbox CPU 能力包仅支持 Windows x64 构建环境");
+  if (!(
+    (process.platform === "win32" && process.arch === "x64") ||
+    (process.platform === "darwin" && process.arch === "arm64")
+  )) {
+    throw new Error("Chatterbox CPU 能力包仅支持 Windows x64 或 Apple Silicon 原生构建环境");
   }
   const python = path.resolve(pythonExecutablePath);
   const stage = path.resolve(stagingDirectory);

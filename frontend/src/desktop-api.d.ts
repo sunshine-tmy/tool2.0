@@ -24,8 +24,11 @@ declare global {
     updatedAt: string;
     startAtLogin: boolean;
     automaticUpdateChecks: boolean;
+    platform: "win32" | "darwin";
+    updateChecksSupported: boolean;
     installDirectory: string;
     dataDirectory: string;
+    dataDirectoryDescription: string;
     lastMigration?: DesktopMigrationSummary;
   };
 

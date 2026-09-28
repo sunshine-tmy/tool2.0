@@ -12,7 +12,12 @@ const ARCHIVE_NAME = "xhs-downloader-" + COMMIT + ".zip";
 const ARCHIVE_BYTES = 3_470_287;
 const ARCHIVE_SHA256 = "58155970bd3a246bb6bd692f6833ef4645c44a4d39c1080e93ce9c2a4d651004";
 
-export async function prepareXhsArchiveComponent({ pythonExecutablePath, sourceArchivePath, stagingDirectory }) {
+export async function prepareXhsArchiveComponent({
+  pythonExecutablePath,
+  sourceArchivePath,
+  stagingDirectory,
+  lockFilePath
+}) {
   const python = path.resolve(pythonExecutablePath);
   const archive = path.resolve(sourceArchivePath);
   const stage = path.resolve(stagingDirectory);
@@ -31,7 +36,12 @@ export async function prepareXhsArchiveComponent({ pythonExecutablePath, sourceA
   await verifyPinnedSourceArchive(archive);
   if (await pathExists(stage)) throw new Error("小红书归档暂存目录已存在，拒绝覆盖");
 
-  const lockSource = path.join(REPOSITORY_ROOT, "scripts", "xhs-archive.lock.txt");
+  const lockSource = path.resolve(
+    lockFilePath ??
+      (process.platform === "darwin"
+        ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "xhs-archive.lock.txt")
+        : path.join(REPOSITORY_ROOT, "scripts", "xhs-archive.lock.txt"))
+  );
   await fs.access(lockSource);
   const parent = path.dirname(stage);
   await fs.mkdir(parent, { recursive: true });

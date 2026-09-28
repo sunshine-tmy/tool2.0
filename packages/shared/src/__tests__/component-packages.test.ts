@@ -53,6 +53,8 @@ describe("component package contracts", () => {
       })
     ).toBe(false);
     expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, activeJobId: "not-a-uuid" })).toBe(false);
+    expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, platform: "darwin-arm64" })).toBe(true);
+    expect(Value.Check(ComponentPackageStatusSchema, { ...packageStatus, platform: "darwin-x64" })).toBe(false);
   });
 
   it("validates progress jobs and UUID job routes", () => {

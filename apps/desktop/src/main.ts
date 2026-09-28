@@ -44,15 +44,25 @@ let startupMigrationResolve: ((completed: boolean) => void) | undefined;
 let startupMigrationCompleted = false;
 
 const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const desktopIconPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets/ecommerce-toolbox.ico");
+const desktopIconPath =
+  process.platform === "darwin"
+    ? undefined
+    : path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../assets/ecommerce-toolbox.ico");
 const installRoot = desktopInstallRoot(app.isPackaged, app.getPath("exe"), workspaceRoot);
-const legacyDataRoot = path.join(process.env.LOCALAPPDATA || app.getPath("appData"), "EcommerceToolboxData");
+// Automatic migration is intentionally Windows-only. A Mac install starts in a
+// clean Application Support directory and never imports an unrelated Windows tree.
+const legacyDataRoot = path.join(
+  process.env.LOCALAPPDATA || app.getPath("appData"),
+  process.platform === "win32" ? "EcommerceToolboxData" : "EcommerceToolboxData-Windows-Legacy"
+);
 const dataRoot = desktopDataRoot(app.isPackaged, app.getPath("exe"), process.env.LOCALAPPDATA, app.getPath("appData"));
 const installRootWritable =
   !app.isPackaged ||
-  (!desktopPathsOverlap(dataRoot, legacyDataRoot) &&
-    canWriteDirectory(installRoot) &&
-    canWriteDirectory(dataRoot, true));
+  (process.platform === "darwin"
+    ? canWriteDirectory(dataRoot, true)
+    : !desktopPathsOverlap(dataRoot, legacyDataRoot) &&
+      canWriteDirectory(installRoot) &&
+      canWriteDirectory(dataRoot, true));
 if (installRootWritable) {
   fs.mkdirSync(path.join(dataRoot, ".runtime"), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, "models"), { recursive: true });
@@ -80,13 +90,36 @@ if (!app.requestSingleInstanceLock()) {
 
 async function boot() {
   await app.whenReady();
-  // The product uses an in-app toolbar; Electron's generated File/Edit/View/Window
-  // menu has no product commands and exposes irrelevant browser/window controls.
-  Menu.setApplicationMenu(null);
+  if (process.platform === "darwin") {
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate([
+        { label: app.name, submenu: [{ role: "about" }, { type: "separator" }, { role: "quit" }] },
+        {
+          label: "Edit",
+          submenu: [
+            { role: "undo" },
+            { role: "redo" },
+            { type: "separator" },
+            { role: "cut" },
+            { role: "copy" },
+            { role: "paste" },
+            { role: "selectAll" }
+          ]
+        },
+        { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] }
+      ])
+    );
+  } else {
+    // The product uses an in-app toolbar; Electron's generated menu has no
+    // product commands and exposes irrelevant browser/window controls.
+    Menu.setApplicationMenu(null);
+  }
   if (!installRootWritable) {
     dialog.showErrorBox(
-      "需要重新选择安装目录",
-      `当前安装目录或其 data 子目录不可由当前用户写入：\n${installRoot}\n\n请重新运行安装程序，并选择当前用户具有写入权限的目录。此版本不会通过管理员提权或改写目录权限。`
+      process.platform === "darwin" ? "无法访问用户数据目录" : "需要重新选择安装目录",
+      process.platform === "darwin"
+        ? `无法在用户数据目录中创建或写入应用数据：\n${dataRoot}\n\n请检查当前用户对此目录的访问权限。`
+        : `当前安装目录或其 data 子目录不可由当前用户写入：\n${installRoot}\n\n请重新运行安装程序，并选择当前用户具有写入权限的目录。此版本不会通过管理员提权或改写目录权限。`
     );
     app.quit();
     return;
@@ -100,7 +133,10 @@ async function boot() {
   });
 
   try {
-    startupMigrationState = await prepareStartupDataMigration({ dataRoot, legacyDataRoot });
+    startupMigrationState =
+      process.platform === "win32"
+        ? await prepareStartupDataMigration({ dataRoot, legacyDataRoot })
+        : { required: false, destinationDirectory: dataRoot, sourceBytes: 0, sourceFiles: 0 };
     if (startupMigrationState.required) {
       registerStartupMigrationIpc();
       const completed = await showStartupMigrationWindow(startupMigrationState);
@@ -113,7 +149,7 @@ async function boot() {
       .resolveProxy("https://github.com")
       .then(componentProxyUrlFromResolution)
       .catch((error) => {
-        console.warn("Unable to resolve the Windows system proxy for component downloads", error);
+        console.warn("Unable to resolve the system proxy for component downloads", error);
         return undefined;
       });
     backend = new BackendSupervisor({
@@ -162,11 +198,21 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
   const assertTrustedSender = (event: IpcMainInvokeEvent) => {
     if (!mainWindow || event.sender !== mainWindow.webContents) throw new Error("未授权的桌面调用");
   };
-  const currentSettings = async () => ({
-    ...(await readDesktopSettings(layout.configRoot)),
-    installDirectory: installRoot,
-    dataDirectory: dataRoot
-  });
+  const currentSettings = async () => {
+    const saved = await readDesktopSettings(layout.configRoot);
+    return {
+      ...saved,
+      platform: process.platform === "darwin" ? "darwin" : "win32",
+      automaticUpdateChecks: process.platform === "darwin" ? false : saved.automaticUpdateChecks,
+      installDirectory: installRoot,
+      dataDirectory: dataRoot,
+      dataDirectoryDescription:
+        process.platform === "darwin"
+          ? "应用支持目录；移动或替换应用时数据仍会保留。"
+          : "安装目录下的 data 文件夹；卸载时默认保留。",
+      updateChecksSupported: process.platform === "win32"
+    };
+  };
 
   ipcMain.handle("desktop:get-settings", async (event) => {
     assertTrustedSender(event);
@@ -175,6 +221,9 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
   ipcMain.handle("desktop:update-settings", async (event, value: unknown) => {
     assertTrustedSender(event);
     if (!isSettingsUpdate(value)) throw new Error("设置参数无效");
+    if (process.platform === "darwin" && value.automaticUpdateChecks !== undefined) {
+      throw new Error("当前 macOS 内部测试版尚未配置自动更新源");
+    }
     if (value.startAtLogin !== undefined) app.setLoginItemSettings({ openAtLogin: value.startAtLogin });
     const settings = await updateDesktopSettings(layout.configRoot, value);
     scheduleConfiguredUpdateCheck(updater ?? disabledUpdater, settings);
@@ -182,6 +231,7 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
   });
   ipcMain.handle("desktop:check-for-updates", async (event) => {
     assertTrustedSender(event);
+    if (process.platform === "darwin") return { enabled: false, checking: false };
     return (updater ?? disabledUpdater).checkForUpdates();
   });
   ipcMain.handle("desktop:reveal-data-directory", async (event) => {
@@ -306,7 +356,7 @@ async function showStartupMigrationWindow(state: StartupDataMigrationState) {
   const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs");
   startupMigrationWindow = new BrowserWindow({
     title: "电商工具箱 · 首次启动数据迁移",
-    icon: desktopIconPath,
+    ...(desktopIconPath ? { icon: desktopIconPath } : {}),
     width: 720,
     height: 620,
     minWidth: 620,
@@ -545,7 +595,7 @@ const disabledUpdater: DesktopUpdater = {
 function createWindow(origin: string) {
   const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs");
   mainWindow = new BrowserWindow({
-    icon: desktopIconPath,
+    ...(desktopIconPath ? { icon: desktopIconPath } : {}),
     width: 1440,
     height: 960,
     minWidth: 1024,

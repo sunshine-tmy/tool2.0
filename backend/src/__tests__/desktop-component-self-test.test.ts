@@ -48,7 +48,7 @@ describe("desktop component self-test", () => {
       "models/image-ai/rembg/models/birefnet-general/birefnet-general.onnx",
       "models/image-ai/ocr/detection/inference.yml"
     ];
-    await Promise.all(files.map(writeAsset));
+    await Promise.all(files.map((file) => writeAsset(file)));
     const runProcess = vi.fn(
       async (_executable: string, _args: string[], _cwd: string, _environment: Record<string, string>) =>
         '{"available":true}'
@@ -73,7 +73,7 @@ describe("desktop component self-test", () => {
       "models/chatterbox/s3gen.pt",
       "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
     ];
-    await Promise.all(files.map(writeAsset));
+    await Promise.all(files.map((file) => writeAsset(file)));
     const runProcess = vi.fn(async () => '{"available":true}');
     const selfTest = createDesktopComponentSelfTest(runProcess);
 
@@ -99,7 +99,7 @@ describe("desktop component self-test", () => {
       "vendor/chatterbox/__init__.py",
       "vendor/chatterbox_tts-0.1.7.dist-info/METADATA"
     ];
-    await Promise.all(files.map(writeAsset));
+    await Promise.all(files.map((file) => writeAsset(file)));
     const runProcess = vi.fn(async () => '{"available":true,"cudaRuntimeAvailable":true,"cudaAvailable":false}');
     const selfTest = createDesktopComponentSelfTest(runProcess);
 
@@ -119,7 +119,7 @@ describe("desktop component self-test", () => {
   it("keeps the XHS upstream runtime Volume outside the signed package generation", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
     const files = ["source/requirements.txt", "source/source/__init__.py"];
-    await Promise.all(files.map(writeAsset));
+    await Promise.all(files.map((file) => writeAsset(file)));
     const runProcess = vi.fn(
       async (_executable: string, _args: string[], _cwd: string, _environment: Record<string, string>) =>
         '{"available":true}'
@@ -144,7 +144,7 @@ describe("desktop component self-test", () => {
       "model/target.spm",
       "model/manifest.json"
     ];
-    await Promise.all(files.map(writeAsset));
+    await Promise.all(files.map((file) => writeAsset(file)));
     const runProcess = vi.fn(async () => '{"available":true}');
     const selfTest = createDesktopComponentSelfTest(runProcess);
 
@@ -165,7 +165,7 @@ describe("desktop component self-test", () => {
   it("headless-smoke-tests the optional Chromium package without requiring Python", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
     const files = ["browser/chrome.exe"];
-    await Promise.all(files.map(writeAsset));
+    await Promise.all(files.map((file) => writeAsset(file)));
     const runProcess = vi.fn(async () => "<html><body></body></html>");
     const selfTest = createDesktopComponentSelfTest(runProcess);
 
@@ -178,22 +178,108 @@ describe("desktop component self-test", () => {
       expect.any(Object)
     );
   });
+
+  it.skipIf(process.platform !== "darwin")(
+    "uses the Mac FFmpeg names and verifies executable permissions",
+    async () => {
+      temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-mac-"));
+      await writeExecutableAsset("bin/ffmpeg");
+      await writeExecutableAsset("bin/ffprobe");
+      const runProcess = vi.fn(async () => "ffmpeg version 8.1.2");
+      const selfTest = createDesktopComponentSelfTest(runProcess);
+
+      await selfTest(manifest("ffmpeg", ["bin/ffmpeg", "bin/ffprobe"], "3.11", "darwin-arm64"), temporaryRoot);
+
+      expect(runProcess).toHaveBeenNthCalledWith(
+        1,
+        path.join(temporaryRoot, "bin", "ffmpeg"),
+        ["-version"],
+        temporaryRoot,
+        expect.any(Object)
+      );
+      expect(runProcess).toHaveBeenNthCalledWith(
+        2,
+        path.join(temporaryRoot, "bin", "ffprobe"),
+        ["-version"],
+        temporaryRoot,
+        expect.any(Object)
+      );
+    }
+  );
+
+  it.skipIf(process.platform !== "darwin")(
+    "loads the Mac Chromium executable only from its signed launcher map",
+    async () => {
+      temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-mac-"));
+      const browserExecutable = "browser/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+      await writeExecutableAsset(browserExecutable);
+      await writeAsset("browser/browser-launcher.json", JSON.stringify({ executableAssetPath: browserExecutable }));
+      const runProcess = vi.fn(async () => "<html><body></body></html>");
+      const selfTest = createDesktopComponentSelfTest(runProcess);
+
+      await selfTest(
+        manifest("xhs-browser", ["browser/browser-launcher.json", browserExecutable], "3.11", "darwin-arm64"),
+        temporaryRoot
+      );
+
+      expect(runProcess).toHaveBeenCalledWith(
+        path.join(temporaryRoot, ...browserExecutable.split("/")),
+        ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
+        temporaryRoot,
+        expect.any(Object)
+      );
+    }
+  );
+
+  it.skipIf(process.platform !== "darwin")("runs the Chatterbox check in the isolated Mac CPU venv", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-mac-"));
+    const files = [
+      "scripts/chatterbox-worker.py",
+      "scripts/worker_lifecycle.py",
+      "vendor/chatterbox/__init__.py",
+      "vendor/chatterbox_tts-0.1.7.dist-info/METADATA",
+      "models/chatterbox/ve.pt",
+      "models/chatterbox/t3_mtl23ls_v3.safetensors",
+      "models/chatterbox/s3gen.pt",
+      "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
+    ];
+    await Promise.all(files.map((file) => writeAsset(file)));
+    await writeExecutableAsset("venv/bin/python");
+    const runProcess = vi.fn(async () => '{"available":true}');
+    const selfTest = createDesktopComponentSelfTest(runProcess);
+
+    await selfTest(manifest("chatterbox", files, "3.11", "darwin-arm64"), temporaryRoot);
+
+    expect(runProcess).toHaveBeenCalledWith(
+      path.join(temporaryRoot, "venv", "bin", "python"),
+      [path.join(temporaryRoot, "scripts", "chatterbox-worker.py"), "--check"],
+      temporaryRoot,
+      expect.objectContaining({ CHATTERBOX_DEVICE: "cpu", PYTHONPATH: path.join(temporaryRoot, "vendor") })
+    );
+  });
 });
 
-async function writeAsset(relativePath: string) {
+async function writeAsset(relativePath: string, content = "verified test asset") {
   const target = path.join(temporaryRoot, ...relativePath.split("/"));
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, "verified test asset");
+  await fs.writeFile(target, content);
+}
+
+async function writeExecutableAsset(relativePath: string) {
+  await writeAsset(relativePath);
+  await fs.chmod(path.join(temporaryRoot, ...relativePath.split("/")), 0o755);
 }
 
 function manifest(
   id: string,
   files: string[],
-  expectedPythonVersion: "3.11" | "3.12" = "3.11"
+  expectedPythonVersion: "3.11" | "3.12" = "3.11",
+  platform: "win32-x64" | "darwin-arm64" = "win32-x64"
 ): ComponentPackageManifest {
   return {
     id,
     moduleId: id,
+    platform,
     pythonEnvironment: {
       pythonExecutablePath: "python/python.exe",
       wheelhousePath: "wheelhouse",

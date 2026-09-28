@@ -5,6 +5,7 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -17,10 +18,10 @@ const ARCHIVE_SHA256 = "415968b02065d4a9e2c10b85f0ae9f489b8fba500e94d9d0a7b7c485
 
 export async function prepareXhsBrowserComponent({ archivePath, stagingDirectory }) {
   const stage = path.resolve(stagingDirectory);
-  if (process.platform !== "win32" || process.arch !== "x64") {
-    throw new Error("小红书登录浏览器能力仅支持 Windows x64 产物");
-  }
-  await verifyPinnedArchive(path.resolve(archivePath));
+  const isMacOS = process.platform === "darwin" && process.arch === "arm64";
+  const isWindows = process.platform === "win32" && process.arch === "x64";
+  if (!isMacOS && !isWindows) throw new Error("小红书登录浏览器仅支持 Windows x64 或 Apple Silicon 原生构建");
+  if (isWindows) await verifyPinnedArchive(path.resolve(archivePath));
   if (await pathExists(stage)) throw new Error("小红书浏览器暂存目录已存在，拒绝覆盖");
   const browserPackageRoot = path.join(REPOSITORY_ROOT, "backend", "node_modules", "playwright-core");
   const packageJson = JSON.parse(await fs.readFile(path.join(browserPackageRoot, "package.json"), "utf8"));
@@ -37,30 +38,67 @@ export async function prepareXhsBrowserComponent({ archivePath, stagingDirectory
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-xhs-chromium-"));
   const extraction = path.join(temporary, "extracted");
   try {
-    await fs.mkdir(extraction);
-    execFileSync("tar", ["-xf", path.resolve(archivePath), "-C", extraction], {
-      stdio: "ignore",
-      windowsHide: true,
-      timeout: 10 * 60 * 1000
-    });
-    const browserSource = path.join(extraction, "chrome-win64");
-    await assertNoLinks(browserSource);
-    const browserVersion = execFileSync(
-      path.join(browserSource, "chrome.exe"),
-      ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
-      {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-        timeout: 30_000,
-        env: cleanEnvironment()
-      }
-    );
-    if (!browserVersion.includes("<html")) throw new Error("下载的 Chromium headless 自检失败");
     const target = path.join(stage, "browser");
     await fs.mkdir(target, { recursive: true });
-    await fs.cp(browserSource, target, { recursive: true });
-    const executable = path.join(target, "chrome.exe");
+    let executable;
+    if (isMacOS) {
+      const browserCache = path.join(REPOSITORY_ROOT, ".package", "playwright-browsers-mac-arm64");
+      await fs.mkdir(path.dirname(browserCache), { recursive: true });
+      const playwrightCli = path.join(browserPackageRoot, "cli.js");
+      execFileSync(process.execPath, [playwrightCli, "install", "chromium"], {
+        stdio: "inherit",
+        timeout: 30 * 60 * 1000,
+        env: { ...cleanEnvironment(), PLAYWRIGHT_BROWSERS_PATH: browserCache }
+      });
+      const require = createRequire(path.join(REPOSITORY_ROOT, "backend", "package.json"));
+      const previousBrowsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
+      let installedExecutable;
+      try {
+        process.env.PLAYWRIGHT_BROWSERS_PATH = browserCache;
+        const playwright = require("playwright-core");
+        installedExecutable = playwright.chromium.executablePath();
+      } finally {
+        if (previousBrowsersPath === undefined) delete process.env.PLAYWRIGHT_BROWSERS_PATH;
+        else process.env.PLAYWRIGHT_BROWSERS_PATH = previousBrowsersPath;
+      }
+      const browserBundle = await findEnclosingApplication(installedExecutable);
+      const browserBundleName = path.basename(browserBundle);
+      const browserBundleTarget = path.join(target, browserBundleName);
+      await fs.cp(browserBundle, browserBundleTarget, { recursive: true, dereference: true, preserveTimestamps: true });
+      const executableRelativePath = path.relative(browserBundle, installedExecutable).split(path.sep).join("/");
+      executable = path.join(browserBundleTarget, ...executableRelativePath.split("/"));
+      await assertNoLinks(browserBundleTarget);
+      const executableAssetPath = path.posix.join("browser", browserBundleName, executableRelativePath);
+      await fs.writeFile(
+        path.join(target, "browser-launcher.json"),
+        JSON.stringify({ executableAssetPath }, null, 2) + "\n",
+        "utf8"
+      );
+    } else {
+      await fs.mkdir(extraction);
+      execFileSync("tar", ["-xf", path.resolve(archivePath), "-C", extraction], {
+        stdio: "ignore",
+        windowsHide: true,
+        timeout: 10 * 60 * 1000
+      });
+      const browserSource = path.join(extraction, "chrome-win64");
+      await assertNoLinks(browserSource);
+      const browserVersion = execFileSync(
+        path.join(browserSource, "chrome.exe"),
+        ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
+        {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          timeout: 30_000,
+          env: cleanEnvironment()
+        }
+      );
+      if (!browserVersion.includes("<html")) throw new Error("下载的 Chromium headless 自检失败");
+      await fs.cp(browserSource, target, { recursive: true });
+      executable = path.join(target, "chrome.exe");
+    }
+
     const output = execFileSync(
       executable,
       ["--no-sandbox", "--headless", "--disable-gpu", "--dump-dom", "about:blank"],
@@ -81,6 +119,15 @@ export async function prepareXhsBrowserComponent({ archivePath, stagingDirectory
   } finally {
     await fs.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+async function findEnclosingApplication(executable) {
+  let current = path.resolve(executable);
+  while (path.dirname(current) !== current) {
+    if (current.toLowerCase().endsWith(".app")) return current;
+    current = path.dirname(current);
+  }
+  throw new Error("Playwright 安装目录中缺少浏览器 .app 包");
 }
 
 async function verifyPinnedArchive(archive) {
@@ -168,10 +215,19 @@ function parseArguments(argv) {
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
   }
   for (let index = 0; index < argv.length; index += 2) values.set(argv[index].slice(2), argv[index + 1]);
-  if (values.size !== 2 || !values.has("archive") || !values.has("stage")) {
-    throw new Error("用法：pnpm components:prepare-xhs-browser -- --archive <固定 Chromium zip> --stage <新暂存目录>");
+  if (
+    [...values.keys()].some((key) => !["archive", "stage"].includes(key)) ||
+    !values.has("stage") ||
+    (process.platform === "win32" && !values.has("archive"))
+  ) {
+    throw new Error(
+      "用法：pnpm components:prepare-xhs-browser -- [--archive <固定 Windows Chromium zip>] --stage <新暂存目录>"
+    );
   }
-  return { archivePath: values.get("archive"), stagingDirectory: values.get("stage") };
+  return {
+    ...(values.has("archive") ? { archivePath: values.get("archive") } : {}),
+    stagingDirectory: values.get("stage")
+  };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

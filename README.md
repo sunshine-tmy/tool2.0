@@ -1,6 +1,6 @@
 # 电商工具箱
 
-一个本地优先、免账号登录的电商素材处理工作台，提供 Windows 桌面安装版和 Web/开发版。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
+一个本地优先、免账号登录的电商素材处理工作台，提供 Windows 桌面安装版、Apple Silicon macOS 内部测试包和 Web/开发版。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
 
 > [!WARNING]
 > 本项目包含文件上传、下载、删除和高计算量 AI 接口。`local` 模式默认只监听 `127.0.0.1`；`lan` 模式必须配置 `ADMIN_PIN`，管理写操作使用 HttpOnly 会话 Cookie、CSRF Header 和精确 Origin 校验，访客传输权限仍由 guest mode 控制。不要把 API 或 AI Worker 直接暴露到公网。
@@ -16,6 +16,7 @@
 - [可选能力安装](#可选能力安装)
 - [开发与质量命令](#开发与质量命令)
 - [构建 Windows 桌面安装包](#构建-windows-桌面安装包)
+- [Apple Silicon macOS 内部测试包](#apple-silicon-macos-内部测试包)
 - [生产构建与部署](#生产构建与部署)
 - [SQLite 迁移与回滚](#sqlite-迁移与回滚)
 - [数据、安全与隐私](#数据安全与隐私)
@@ -40,12 +41,15 @@
 
 ## 选择使用方式
 
-| 使用方式           | 适用场景                                    | 数据位置                     | 说明                                                                                   |
-| ------------------ | ------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
-| Windows 桌面安装版 | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/` | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装 |
-| Web/开发版         | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`  | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                        |
+| 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                   |
+| ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装 |
+| Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表七模块可用      |
+| Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                        |
 
 桌面版安装、数据迁移、能力离线导入、升级和卸载说明见[桌面应用使用帮助](./docs/desktop-application-help.md)。桌面安装器是交互式安装程序，不是免安装便携版；安装时可选择目录，但应选择当前 Windows 用户有写入权限的位置。
+
+Apple Silicon macOS 首版边界、DMG 构建、原生能力包准备顺序及实机验收门槛见[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)。当前 Mac 能力目录在经过签名与实机验收前保持为空。
 
 ## 技术架构
 
@@ -323,6 +327,10 @@ pnpm desktop:make
 默认产物为 `apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe`。没有设置 Release 签名配置时，此产物是**未签名测试安装包**，不会自动发布到 GitHub Release。安装前仍须确认目标目录可由当前用户写入。
 
 仓库提供独立的 Windows 安装验收工作流 [desktop-install-acceptance.yml](./.github/workflows/desktop-install-acceptance.yml)：在干净 Windows Runner 上构建测试安装器，执行安装、启动、健康检查、旧数据迁移、卸载和数据保留检查；该工作流不签名、不创建 Release。正式发布走 tag 触发的桌面发行流程，并额外执行签名与干净环境验收。
+
+## Apple Silicon macOS 内部测试包
+
+当前内部流程面向 Apple Silicon、macOS 13+，通过 GitHub Actions 中的 `macOS Apple Silicon internal desktop build` 手动生成不含 Developer ID 签名/公证的测试 DMG（使用 ad-hoc 签名）。该流程只验证应用壳、桌面资源、类型和桌面单测；它不会自动制作或发布 Python、FFmpeg、AI 模型、浏览器等能力包。Mac 能力目录现为空，因此不能把该 DMG 宣称为“七模块可用”。完整步骤和阶段门禁请按[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)执行。
 
 ## 生产构建与部署
 

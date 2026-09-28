@@ -1,5 +1,5 @@
 /**
- * 中文模块说明：从已准备好的 Windows 能力目录生成可复现归档、SPDX SBOM 和 Ed25519 签名清单。
+ * 中文模块说明：从已准备好的平台原生能力目录生成可复现归档、SPDX SBOM 和 Ed25519 签名清单。
  * 私钥只从调用方指定的安全文件读取，不复制到产物或仓库。
  */
 import crypto from "node:crypto";
@@ -20,6 +20,18 @@ const GROUP_IDS = new Set(["shared", "media", "audio", "image", "archive", "tran
 
 export async function buildComponentPackage(options) {
   const definition = await readJson(options.definitionPath, "能力包定义");
+  const platform = options.platform ?? componentPlatformForBuildHost();
+  if (!COMPONENT_PLATFORMS.has(platform)) throw new Error("能力包目标平台不受支持");
+  if (platform !== componentPlatformForBuildHost()) {
+    throw new Error("能力包必须在对应目标平台与架构的原生构建机上制作");
+  }
+  if (platform === "darwin-arm64" && definition.id === "chatterbox-cuda") {
+    throw new Error("Apple Silicon 首版仅支持 Chatterbox CPU 能力包");
+  }
+  if (platform === "darwin-arm64" && definition.pythonEnvironment) {
+    const pythonVersion = definition.pythonEnvironment.expectedPythonVersion;
+    definition.pythonEnvironment.pythonExecutablePath = `python/bin/python${pythonVersion}`;
+  }
   const stageRoot = await fs.realpath(options.stagingDirectory);
   const outputPath = path.resolve(options.outputDirectory);
   const assetUrl = createAssetUrlResolver(options);
@@ -136,12 +148,17 @@ export async function buildComponentPackage(options) {
       taskToolIds: definition.taskToolIds,
       installConditions: definition.installConditions,
       version: definition.version,
-      platform: "win32-x64",
+      platform,
       archive: mainArchive.asset,
       ...(additionalArchives.length ? { additionalArchives } : {}),
       ...(assembledFiles.length ? { assembledFiles } : {}),
       installedBytes: definition.installedBytes,
-      files: files.map(({ path: filePath, bytes, sha256 }) => ({ path: filePath, bytes, sha256 })),
+      files: files.map(({ path: filePath, bytes, sha256, executable }) => ({
+        path: filePath,
+        bytes,
+        sha256,
+        ...(executable ? { executable: true } : {})
+      })),
       ...(pythonEnvironment ? { pythonEnvironment } : {}),
       ...(definition.license ? { license: definition.license } : {}),
       sbom: { url: sbomUrl, sha256: sha256Text(sbomText) },
@@ -416,7 +433,13 @@ async function scanFiles(root) {
       if (stat.isSymbolicLink()) throw new Error(`能力目录不允许包含符号链接：${relative}`);
       if (stat.isDirectory()) await visit(fullPath, relative);
       else if (stat.isFile())
-        files.push({ path: relative, fullPath, bytes: stat.size, sha256: await sha256File(fullPath) });
+        files.push({
+          path: relative,
+          fullPath,
+          bytes: stat.size,
+          sha256: await sha256File(fullPath),
+          executable: process.platform !== "win32" && (stat.mode & 0o111) !== 0
+        });
       else throw new Error(`能力目录包含非普通文件：${relative}`);
     }
   }
@@ -654,7 +677,8 @@ function parseArguments(argv) {
     "output",
     "asset-base-url",
     "github-release-url",
-    "signing-key-file"
+    "signing-key-file",
+    "platform"
   ]);
   for (const key of values.keys()) if (!allowed.has(key)) throw new Error(`未知参数 --${key}`);
   return {
@@ -663,8 +687,17 @@ function parseArguments(argv) {
     outputDirectory: path.resolve(values.get("output")),
     ...(values.has("asset-base-url") ? { assetBaseUrl: values.get("asset-base-url") } : {}),
     ...(values.has("github-release-url") ? { githubReleaseUrl: values.get("github-release-url") } : {}),
+    ...(values.has("platform") ? { platform: values.get("platform") } : {}),
     signingKeyPath: path.resolve(signingKeyPath)
   };
+}
+
+const COMPONENT_PLATFORMS = new Set(["win32-x64", "darwin-arm64"]);
+
+function componentPlatformForBuildHost() {
+  if (process.platform === "win32" && process.arch === "x64") return "win32-x64";
+  if (process.platform === "darwin" && process.arch === "arm64") return "darwin-arm64";
+  throw new Error(`能力包仅支持在 Windows x64 或 Apple Silicon 原生构建：${process.platform}-${process.arch}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -232,6 +232,7 @@
             </span>
           </label>
           <label
+            v-if="!isMacOSDesktop"
             class="chatterbox-device-option"
             :class="{ active: panel.device === 'cuda', disabled: !panel.cudaAvailable }"
             :title="
@@ -255,9 +256,11 @@
         </div>
         <p class="chatterbox-device-hint">
           {{
-            panel.cudaAvailable
-              ? "GPU 使用 CUDA 加速；显存不足时本批次会报错，不会暗中切回 CPU。"
-              : panel.health?.cudaUnavailableReason || "正在检测 GPU 与 CUDA 运行环境。"
+            isMacOSDesktop
+              ? "此版本的 macOS 桌面端使用 Chatterbox CPU 推理。"
+              : panel.cudaAvailable
+                ? "GPU 使用 CUDA 加速；显存不足时本批次会报错，不会暗中切回 CPU。"
+                : panel.health?.cudaUnavailableReason || "正在检测 GPU 与 CUDA 运行环境。"
           }}
         </p>
       </div>
@@ -387,4 +390,6 @@ import {
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
 
 const panel = useChatterboxPanelContext();
+const isMacOSDesktop = Boolean(window.toolboxDesktop) && navigator.platform.toLowerCase().includes("mac");
+if (isMacOSDesktop && panel.device === "cuda") panel.device = "cpu";
 </script>

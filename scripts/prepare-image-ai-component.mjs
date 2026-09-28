@@ -1,4 +1,4 @@
-/** 中文模块说明：准备带离线 CPU 依赖和固定模型权重的 Windows AI 图片能力包。 */
+/** 中文模块说明：准备带离线 CPU 依赖和固定模型权重的 Windows/macOS AI 图片能力包。 */
 import { execFileSync } from "node:child_process";
 import { createReadStream, constants as fsConstants } from "node:fs";
 import crypto from "node:crypto";
@@ -8,7 +8,10 @@ import { fileURLToPath } from "node:url";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "image-ai-worker.py");
-const LOCK_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "image-ai.lock.txt");
+const LOCK_SOURCE =
+  process.platform === "darwin"
+    ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "image-ai.lock.txt")
+    : path.join(REPOSITORY_ROOT, "scripts", "image-ai.lock.txt");
 const DEFAULT_ASSET_CACHE = path.join(REPOSITORY_ROOT, ".package", "image-ai-source-assets");
 const PYTORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu";
 export const IMAGE_AI_SOURCE_DISTRIBUTIONS = [
@@ -77,11 +80,13 @@ export const IMAGE_AI_MODEL_ASSETS = [
   })
 ];
 
-export function validateImageAiCpuLock(lockText) {
-  if (!/^torch==2\.6\.0\+cpu\s*\\?\s*$/m.test(lockText)) {
+export function validateImageAiCpuLock(lockText, platform = process.platform) {
+  const torchVersion = platform === "darwin" ? "2\\.6\\.0(?:\\+cpu)?" : "2\\.6\\.0\\+cpu";
+  const torchvisionVersion = platform === "darwin" ? "0\\.21\\.0(?:\\+cpu)?" : "0\\.21\\.0\\+cpu";
+  if (!new RegExp(`^torch==${torchVersion}\\s*\\\\?\\s*$`, "m").test(lockText)) {
     throw new Error("图片 AI 锁文件必须固定 CPU 版 PyTorch 2.6.0");
   }
-  if (!/^torchvision==0\.21\.0\+cpu\s*\\?\s*$/m.test(lockText)) {
+  if (!new RegExp(`^torchvision==${torchvisionVersion}\\s*\\\\?\\s*$`, "m").test(lockText)) {
     throw new Error("图片 AI 锁文件必须固定 CPU 版 TorchVision 0.21.0");
   }
   if (!/^onnxruntime==[\d.]+\s*\\?\s*$/m.test(lockText) || /^onnxruntime-gpu==/m.test(lockText)) {
@@ -132,12 +137,16 @@ export async function verifyImageAiAssets(assetCacheDirectory, assets = IMAGE_AI
 export async function prepareImageAiComponent({
   pythonExecutablePath,
   stagingDirectory,
+  lockFilePath = LOCK_SOURCE,
   assetCacheDirectory = DEFAULT_ASSET_CACHE,
   runCommand = execFileSync,
   assets = IMAGE_AI_MODEL_ASSETS
 }) {
-  if (process.platform !== "win32" || process.arch !== "x64") {
-    throw new Error("AI 图片能力包仅支持 Windows x64 构建环境");
+  if (!(
+    (process.platform === "win32" && process.arch === "x64") ||
+    (process.platform === "darwin" && process.arch === "arm64")
+  )) {
+    throw new Error("AI 图片能力包仅支持 Windows x64 或 Apple Silicon 原生构建环境");
   }
   const python = path.resolve(pythonExecutablePath);
   const stage = path.resolve(stagingDirectory);
@@ -155,7 +164,7 @@ export async function prepareImageAiComponent({
   if (version.trim() !== "3.11") throw new Error("图片 AI wheelhouse 必须由 Python 3.11 准备");
   if (await pathExists(stage)) throw new Error("图片 AI 暂存目录已存在，拒绝覆盖");
 
-  const lockText = await fs.readFile(LOCK_SOURCE, "utf8");
+  const lockText = await fs.readFile(lockFilePath, "utf8");
   validateImageAiCpuLock(lockText);
   const { downloadLockText } = omitImageAiSourceDistributions(lockText);
   await ensureImageAiAssets({ assetCacheDirectory, assets, runCommand });
@@ -208,21 +217,7 @@ export async function prepareImageAiComponent({
     await fs.rm(downloadLock);
     for (const sourceDistribution of IMAGE_AI_SOURCE_DISTRIBUTIONS) {
       const sourceDestination = path.join(wheelhouse, sourceDistribution.fileName);
-      runCommand(
-        "pwsh",
-        [
-          "-NoProfile",
-          "-File",
-          path.join(REPOSITORY_ROOT, "scripts", "download-fixed-model-file.ps1"),
-          "-Url",
-          sourceDistribution.url,
-          "-Destination",
-          sourceDestination,
-          "-ExpectedSha256",
-          sourceDistribution.sha256
-        ],
-        { stdio: "inherit", windowsHide: true, timeout: 10 * 60 * 1000 }
-      );
+      await downloadPinnedFile(sourceDistribution.url, sourceDestination, sourceDistribution.sha256, runCommand);
     }
     const wheels = await fs.readdir(wheelhouse, { withFileTypes: true });
     if (
@@ -247,26 +242,37 @@ export async function prepareImageAiComponent({
 async function ensureImageAiAssets({ assetCacheDirectory, assets, runCommand }) {
   const cache = path.resolve(assetCacheDirectory);
   await fs.mkdir(cache, { recursive: true });
-  const downloader = path.join(REPOSITORY_ROOT, "scripts", "download-fixed-model-file.ps1");
   for (const asset of assets) {
     const destination = path.join(cache, asset.name);
     if (await pathExists(destination)) continue;
+    await downloadPinnedFile(asset.url, destination, asset.sha256, runCommand);
+  }
+}
+
+async function downloadPinnedFile(url, destination, expectedSha256, runCommand = execFileSync) {
+  if (process.platform === "win32") {
     runCommand(
       "pwsh",
       [
         "-NoProfile",
         "-File",
-        downloader,
+        path.join(REPOSITORY_ROOT, "scripts", "download-fixed-model-file.ps1"),
         "-Url",
-        asset.url,
+        url,
         "-Destination",
         destination,
         "-ExpectedSha256",
-        asset.sha256
+        expectedSha256
       ],
       { stdio: "inherit", windowsHide: true, timeout: 90 * 60 * 1000 }
     );
+    return;
   }
+  const downloader = path.join(REPOSITORY_ROOT, "scripts", "download-fixed-model-file.mjs");
+  runCommand(process.execPath, [downloader, "--url", url, "--destination", destination, "--sha256", expectedSha256], {
+    stdio: "inherit",
+    timeout: 90 * 60 * 1000
+  });
 }
 
 function createPaddleOcrAssets({ model, revision, prefix, relativeDirectory, hashes }) {

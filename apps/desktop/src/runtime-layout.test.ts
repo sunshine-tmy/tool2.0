@@ -42,6 +42,20 @@ describe("desktop runtime layout", () => {
     expect(dataRoot).toBe(path.join(localAppData, "EcommerceToolboxData"));
   });
 
+  it("keeps macOS persistent data outside the movable .app bundle", () => {
+    const executable = "/Applications/Ecommerce Toolbox.app/Contents/MacOS/EcommerceToolbox";
+    const installRoot = desktopInstallRoot(true, executable, "/workspace", "darwin");
+    const appData = "/Users/demo/Library/Application Support";
+
+    expect(installRoot).toBe("/Applications/Ecommerce Toolbox.app");
+    expect(desktopDataRoot(true, executable, undefined, appData, "darwin")).toBe(
+      path.posix.join(appData, "EcommerceToolboxData")
+    );
+    expect(desktopDataRoot(false, executable, undefined, appData, "darwin")).toBe(
+      path.posix.join(appData, "EcommerceToolboxData")
+    );
+  });
+
   it("selects the copied backend entrypoint in a packaged application", () => {
     expect(desktopBackendEntrypoint(true, "C:\\app\\resources")).toBe(
       path.join("C:\\app\\resources", "backend", "dist", "desktop-entry.js")

@@ -34,6 +34,8 @@ export const ComponentHealthSchema = Type.Union([
   Type.Literal("unhealthy")
 ]);
 
+export const ComponentPlatformSchema = Type.Union([Type.Literal("win32-x64"), Type.Literal("darwin-arm64")]);
+
 export const ComponentPackageStatusSchema = Type.Object(
   {
     id: Type.String({ minLength: 1, maxLength: 80 }),
@@ -46,7 +48,7 @@ export const ComponentPackageStatusSchema = Type.Object(
     dependentIds: Type.Array(Type.String({ minLength: 1, maxLength: 80 })),
     installConditions: Type.Array(Type.String({ minLength: 1, maxLength: 300 })),
     version: Type.String({ minLength: 1, maxLength: 80 }),
-    platform: Type.Literal("win32-x64"),
+    platform: ComponentPlatformSchema,
     downloadBytes: Type.Integer({ minimum: 1 }),
     /** Exact local archive basenames accepted by the desktop offline-import endpoint. */
     archiveFileNames: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }))),
@@ -146,6 +148,7 @@ export type ComponentIdParams = Static<typeof ComponentIdParamsSchema>;
 export type ComponentGroup = Static<typeof ComponentGroupSchema>;
 export type ComponentLifecycle = Static<typeof ComponentLifecycleSchema>;
 export type ComponentHealth = Static<typeof ComponentHealthSchema>;
+export type ComponentPlatform = Static<typeof ComponentPlatformSchema>;
 export type ComponentPackageStatus = Static<typeof ComponentPackageStatusSchema>;
 export type ComponentJobOperation = Static<typeof ComponentJobOperationSchema>;
 export type ComponentJobState = Static<typeof ComponentJobStateSchema>;

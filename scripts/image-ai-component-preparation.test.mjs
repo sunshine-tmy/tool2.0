@@ -57,6 +57,18 @@ test("image AI dependency lock accepts only the CPU PyTorch and ONNX runtime bas
   validateImageAiCpuLock(
     "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n"
   );
+  validateImageAiCpuLock(
+    "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0\ntorchvision==0.21.0\nonnxruntime==1.30.0\n",
+    "darwin"
+  );
+  assert.throws(
+    () =>
+      validateImageAiCpuLock(
+        "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0\ntorchvision==0.21.0\nonnxruntime-gpu==1.30.0\n",
+        "darwin"
+      ),
+    /CPU 版 ONNX Runtime/
+  );
   assert.throws(
     () =>
       validateImageAiCpuLock(

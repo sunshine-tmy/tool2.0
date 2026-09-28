@@ -4,12 +4,16 @@
     <section class="main-column desktop-settings-main">
       <ToolPageHeader
         title="桌面设置与数据迁移"
-        description="程序安装位置与持久数据位置分开显示；桌面版的数据库、素材、能力、模型与登录状态保存在安装目录下的 data 文件夹。"
+        :description="
+          settings?.platform === 'darwin'
+            ? 'macOS 应用数据保存在当前用户的 Application Support 目录，不随应用移动或替换。'
+            : '程序安装位置与持久数据位置分开显示；桌面版的数据库、素材、能力、模型与登录状态保存在安装目录下的 data 文件夹。'
+        "
         kicker="DESKTOP · STORAGE"
       />
 
       <n-alert v-if="!desktop" type="info" :bordered="false">
-        此页面仅在 Windows 桌面应用中提供。Web 开发模式不会读取或修改本机桌面设置。
+        此页面仅在桌面应用中提供。Web 开发模式不会读取或修改本机桌面设置。
       </n-alert>
 
       <template v-else>
@@ -32,7 +36,11 @@
             </div>
             <n-space>
               <n-button tertiary :loading="loading" @click="loadSettings">刷新</n-button>
-              <n-button tertiary :loading="checkingUpdates" :disabled="loading" @click="checkForUpdates"
+              <n-button
+                tertiary
+                :loading="checkingUpdates"
+                :disabled="loading || !settings?.updateChecksSupported"
+                @click="checkForUpdates"
                 >检查更新</n-button
               >
             </n-space>
@@ -40,8 +48,8 @@
           <n-space vertical :size="18">
             <n-space justify="space-between" align="center">
               <div>
-                <strong>登录 Windows 后启动</strong>
-                <p class="setting-copy">仅设置当前用户的 Windows 登录项。</p>
+                <strong>{{ settings?.platform === "darwin" ? "登录 macOS 后启动" : "登录 Windows 后启动" }}</strong>
+                <p class="setting-copy">仅设置当前用户的登录项。</p>
               </div>
               <n-switch
                 :value="settings?.startAtLogin"
@@ -52,11 +60,17 @@
             <n-space justify="space-between" align="center">
               <div>
                 <strong>自动检查更新</strong>
-                <p class="setting-copy">默认开启；下载完成后会询问是否重启安装。</p>
+                <p class="setting-copy">
+                  {{
+                    settings?.updateChecksSupported
+                      ? "默认开启；下载完成后会询问是否重启安装。"
+                      : "内部测试版尚未配置 macOS 更新源，此功能暂不可用。"
+                  }}
+                </p>
               </div>
               <n-switch
                 :value="settings?.automaticUpdateChecks"
-                :disabled="saving || loading"
+                :disabled="saving || loading || !settings?.updateChecksSupported"
                 @update:value="saveAutomaticUpdateChecks"
               />
             </n-space>
@@ -67,9 +81,17 @@
           <div class="panel-heading">
             <div>
               <h3>存储位置</h3>
-              <p class="panel-description">应用管理的持久数据默认跟随本次选择的安装目录；卸载时默认保留。</p>
+              <p class="panel-description">
+                {{
+                  settings?.platform === "darwin"
+                    ? "macOS 应用包本身只读；持久数据放在当前用户的应用支持目录，替换应用时会保留。"
+                    : "应用管理的持久数据默认跟随本次选择的安装目录；卸载时默认保留。"
+                }}
+              </p>
             </div>
-            <n-button secondary :disabled="loading" @click="revealDataDirectory">在资源管理器中打开</n-button>
+            <n-button secondary :disabled="loading" @click="revealDataDirectory">
+              {{ settings?.platform === "darwin" ? "在 Finder 中打开" : "在资源管理器中打开" }}
+            </n-button>
           </div>
           <div v-if="settings" class="storage-paths">
             <div>
@@ -79,6 +101,7 @@
             <div>
               <p class="setting-copy">完整数据目录</p>
               <n-code :code="settings.dataDirectory" language="text" word-wrap />
+              <p class="setting-copy">{{ settings.dataDirectoryDescription }}</p>
             </div>
           </div>
         </section>
@@ -173,7 +196,7 @@
           </p>
         </section>
 
-        <section class="workspace-panel">
+        <section v-if="settings?.platform === 'win32'" class="workspace-panel">
           <div class="panel-heading">
             <div>
               <h3>导入旧版数据</h3>
@@ -260,8 +283,11 @@ type DesktopMigrationSummary = {
 type DesktopSettingsState = {
   startAtLogin: boolean;
   automaticUpdateChecks: boolean;
+  platform: "win32" | "darwin";
+  updateChecksSupported: boolean;
   installDirectory: string;
   dataDirectory: string;
+  dataDirectoryDescription: string;
   lastMigration?: DesktopMigrationSummary;
 };
 

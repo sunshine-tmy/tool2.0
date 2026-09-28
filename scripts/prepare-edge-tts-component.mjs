@@ -1,4 +1,4 @@
-/** 中文模块说明：从哈希锁文件准备 Edge-TTS worker 与 Windows x64 离线 wheelhouse。 */
+/** 中文模块说明：从哈希锁文件准备 Edge-TTS worker 与平台原生离线 wheelhouse。 */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WORKER_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "edge-tts-generate.py");
-const LOCK_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "edge-tts.lock.txt");
+const LOCK_SOURCE = platformLock("edge-tts");
 
-export async function prepareEdgeTtsComponent({ pythonExecutablePath, stagingDirectory }) {
+export async function prepareEdgeTtsComponent({ pythonExecutablePath, stagingDirectory, lockFilePath = LOCK_SOURCE }) {
   const python = path.resolve(pythonExecutablePath);
   const stage = path.resolve(stagingDirectory);
   const version = execFileSync(
@@ -34,7 +34,7 @@ export async function prepareEdgeTtsComponent({ pythonExecutablePath, stagingDir
     await Promise.all([fs.mkdir(wheelhouse), fs.mkdir(scripts)]);
     await Promise.all([
       fs.copyFile(WORKER_SOURCE, path.join(scripts, "edge-tts-generate.py")),
-      fs.copyFile(LOCK_SOURCE, path.join(stage, "requirements.lock"))
+      fs.copyFile(lockFilePath, path.join(stage, "requirements.lock"))
     ]);
     execFileSync(
       python,
@@ -76,6 +76,12 @@ function cleanPythonEnvironment() {
   environment.PYTHONNOUSERSITE = "1";
   if (process.platform === "win32") environment.PIP_CONFIG_FILE = "NUL";
   return environment;
+}
+
+function platformLock(name) {
+  return process.platform === "darwin"
+    ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", `${name}.lock.txt`)
+    : path.join(REPOSITORY_ROOT, "scripts", `${name}.lock.txt`);
 }
 
 function pathExists(candidate) {

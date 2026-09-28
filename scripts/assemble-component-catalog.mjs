@@ -14,7 +14,8 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-export async function assembleComponentCatalog(feedDirectory) {
+export async function assembleComponentCatalog(feedDirectory, platform = componentPlatformForBuildHost()) {
+  if (platform !== "win32-x64" && platform !== "darwin-arm64") throw new Error("目标平台无效");
   const feedRoot = await fs.realpath(feedDirectory);
   const stat = await fs.stat(feedRoot);
   if (!stat.isDirectory()) throw new Error("内部能力包源目录必须是文件夹");
@@ -25,7 +26,7 @@ export async function assembleComponentCatalog(feedDirectory) {
 
   for (const manifestPath of manifestPaths) {
     const manifest = await readJson(manifestPath);
-    validateCatalogManifest(manifest);
+    validateCatalogManifest(manifest, platform);
     if (seenIds.has(manifest.id)) throw new Error(`能力目录包含重复 id：${manifest.id}`);
     seenIds.add(manifest.id);
 
@@ -80,12 +81,17 @@ export async function assembleComponentCatalog(feedDirectory) {
   return { manifests, trustedPublicKeys };
 }
 
-export async function writeGeneratedCatalog(
-  feedDirectory,
-  outputPath = path.join(REPOSITORY_ROOT, "backend/src/modules/components/catalog.generated.ts")
-) {
-  const catalog = await assembleComponentCatalog(feedDirectory);
-  const resolvedOutput = path.resolve(outputPath);
+export async function writeGeneratedCatalog(feedDirectory, outputPath, platform = componentPlatformForBuildHost()) {
+  const catalog = await assembleComponentCatalog(feedDirectory, platform);
+  const resolvedOutput = path.resolve(
+    outputPath ??
+      path.join(
+        REPOSITORY_ROOT,
+        platform === "win32-x64"
+          ? "backend/src/modules/components/catalog.generated.ts"
+          : `backend/src/modules/components/catalog.${platform}.generated.ts`
+      )
+  );
   const outputDirectory = path.dirname(resolvedOutput);
   await fs.mkdir(outputDirectory, { recursive: true });
   const temporaryPath = `${resolvedOutput}.${crypto.randomUUID()}.partial`;
@@ -139,7 +145,7 @@ async function verifyLocalAsset(reference, directory, label, expectedFilename) {
     throw new Error(`${label}大小不匹配：${filename}`);
 }
 
-function validateCatalogManifest(manifest) {
+function validateCatalogManifest(manifest, platform) {
   if (
     !manifest ||
     typeof manifest !== "object" ||
@@ -149,7 +155,7 @@ function validateCatalogManifest(manifest) {
     manifest.moduleId !== manifest.id ||
     typeof manifest.version !== "string" ||
     !SAFE_VERSION.test(manifest.version) ||
-    manifest.platform !== "win32-x64" ||
+    manifest.platform !== platform ||
     !["shared", "media", "audio", "image", "archive", "translation"].includes(manifest.groupId) ||
     typeof manifest.displayName !== "string" ||
     !manifest.displayName.trim() ||
@@ -164,6 +170,9 @@ function validateCatalogManifest(manifest) {
   ) {
     throw new Error("能力目录中存在格式无效的 manifest");
   }
+  if (platform === "darwin-arm64" && manifest.id === "chatterbox-cuda") {
+    throw new Error("Apple Silicon 首版能力目录不能包含 CUDA 版 Chatterbox");
+  }
   if (
     !manifest.archive ||
     !isValidArchive(manifest.archive) ||
@@ -175,6 +184,20 @@ function validateCatalogManifest(manifest) {
     manifest.dependencyIds.some((id) => typeof id !== "string" || !COMPONENT_ID.test(id))
   ) {
     throw new Error(`能力包 ${manifest.id} 缺少归档、SBOM 或依赖信息`);
+  }
+  if (
+    manifest.files.some(
+      (file) =>
+        !file ||
+        typeof file.path !== "string" ||
+        !isSafeRelativePath(file.path) ||
+        !Number.isSafeInteger(file.bytes) ||
+        file.bytes < 0 ||
+        !SHA256.test(file.sha256) ||
+        (file.executable !== undefined && typeof file.executable !== "boolean")
+    )
+  ) {
+    throw new Error(`能力包 ${manifest.id} 的文件清单无效`);
   }
   if (
     manifest.additionalArchives !== undefined &&
@@ -343,21 +366,30 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const args = process.argv.slice(2);
     const values = new Map();
     if (args.length % 2 !== 0)
-      throw new Error("用法：node scripts/assemble-component-catalog.mjs --feed <目录> [--output <TS 文件>]");
+      throw new Error(
+        "用法：node scripts/assemble-component-catalog.mjs --feed <目录> [--platform win32-x64|darwin-arm64] [--output <TS 文件>]"
+      );
     for (let index = 0; index < args.length; index += 2) {
       const key = args[index];
       const value = args[index + 1];
       if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
-      if (!["feed", "output"].includes(key.slice(2))) throw new Error(`未知参数 ${key}`);
+      if (!["feed", "output", "platform"].includes(key.slice(2))) throw new Error(`未知参数 ${key}`);
       values.set(key.slice(2), value);
     }
     if (!values.has("feed")) throw new Error("缺少参数 --feed");
     const feedDirectory = path.resolve(values.get("feed"));
     const outputPath = values.has("output") ? path.resolve(values.get("output")) : undefined;
-    const result = await writeGeneratedCatalog(feedDirectory, outputPath);
+    const platform = values.get("platform") ?? componentPlatformForBuildHost();
+    const result = await writeGeneratedCatalog(feedDirectory, outputPath, platform);
     console.log(`已核验并写入 ${result.manifestCount} 个能力包：${result.outputPath}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "能力目录组装失败");
     process.exitCode = 1;
   }
+}
+
+function componentPlatformForBuildHost() {
+  if (process.platform === "win32" && process.arch === "x64") return "win32-x64";
+  if (process.platform === "darwin" && process.arch === "arm64") return "darwin-arm64";
+  throw new Error(`能力目录仅支持在 Windows x64 或 Apple Silicon 原生构建：${process.platform}-${process.arch}`);
 }

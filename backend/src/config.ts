@@ -338,7 +338,10 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
       ? ""
       : resolveConfigPath(
           runtime,
-          runtimeEnv("EDGE_TTS_PYTHON")?.trim() || path.join(runtime.appRoot, ".venv-edge-tts", "Scripts", "python.exe")
+          runtimeEnv("EDGE_TTS_PYTHON")?.trim() ||
+            (process.platform === "win32"
+              ? path.join(runtime.appRoot, ".venv-edge-tts", "Scripts", "python.exe")
+              : path.join(runtime.appRoot, ".venv-edge-tts", "bin", "python"))
         ),
     edgeTtsScriptPath: desktopManagedCapabilities
       ? ""

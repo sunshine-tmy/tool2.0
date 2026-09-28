@@ -25,20 +25,39 @@ export function createDesktopRuntimeLayout(options: DesktopRuntimeLayoutOptions)
   });
 }
 
-export function desktopInstallRoot(packaged: boolean, executablePath: string, developmentRoot: string) {
-  return path.resolve(packaged ? path.dirname(executablePath) : developmentRoot);
+export function desktopInstallRoot(
+  packaged: boolean,
+  executablePath: string,
+  developmentRoot: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  if (!packaged) return path.resolve(developmentRoot);
+  if (platform === "darwin") {
+    const macPath = path.posix;
+    let current = macPath.resolve(macPath.dirname(executablePath));
+    while (macPath.dirname(current) !== current) {
+      if (current.toLowerCase().endsWith(".app")) return current;
+      current = macPath.dirname(current);
+    }
+    throw new Error("Unable to locate the enclosing macOS .app bundle");
+  }
+  return path.resolve(path.dirname(executablePath));
 }
 
 export function desktopDataRoot(
   packaged: boolean,
   executablePath: string,
   localAppData: string | undefined,
-  fallback: string
+  fallback: string,
+  platform: NodeJS.Platform = process.platform
 ) {
-  // In packaged builds the installer-selected directory owns every persistent
-  // app file. Development/Web keeps the historical per-user data location.
+  // macOS app bundles are read-only and may be moved/replaced during updates.
+  // Keep all mutable state in the user's Application Support directory.
+  if (platform === "darwin") return path.posix.join(fallback, "EcommerceToolboxData");
+  // Windows installer-selected directory owns persistent app files. Development/Web
+  // keeps the historical per-user data location.
   return packaged
-    ? path.join(desktopInstallRoot(true, executablePath, fallback), "data")
+    ? path.join(desktopInstallRoot(true, executablePath, fallback, platform), "data")
     : path.join(localAppData || fallback, "EcommerceToolboxData");
 }
 

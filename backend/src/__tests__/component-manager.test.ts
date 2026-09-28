@@ -29,6 +29,20 @@ afterEach(async () => {
 });
 
 describe("ComponentManager", () => {
+  it("rejects signed Windows packages before offline import on Apple Silicon", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manager = new ComponentManager({
+      root: path.join(temporaryRoot, "mac-packages"),
+      platform: "darwin-arm64",
+      catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
+      availableDiskBytes: async () => Number.MAX_SAFE_INTEGER
+    });
+
+    await expect(manager.getOfflineImportRequirements("edge-tts")).rejects.toMatchObject({
+      code: "COMPONENT_MANIFEST_INVALID"
+    });
+  });
+
   it("downloads a GitHub Release asset through verified HTTPS redirects and reports exact progress", async () => {
     const fixture = await createFixture("1.0.0");
     const destination = path.join(temporaryRoot, "redirected-download.partial");
@@ -631,6 +645,7 @@ describe("ComponentManager", () => {
     const before = await fs.readFile(currentPath, "utf8");
     const manager = new ComponentManager({
       root,
+      platform: "win32-x64",
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
       downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
       selfTest: async () => {
@@ -658,6 +673,7 @@ describe("ComponentManager", () => {
     const before = await fs.readFile(currentPath, "utf8");
     const manager = new ComponentManager({
       root,
+      platform: "win32-x64",
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
       downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
       onAfterMutation: async (_componentId, operation) => {
@@ -682,6 +698,7 @@ describe("ComponentManager", () => {
     const refreshRuntime = vi.fn(async () => undefined);
     const manager = new ComponentManager({
       root,
+      platform: "win32-x64",
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
       downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
       onAfterMutation: refreshRuntime,
@@ -710,6 +727,7 @@ describe("ComponentManager", () => {
     }> = [];
     const manager = new ComponentManager({
       root,
+      platform: "win32-x64",
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
       downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination),
       runPythonProcess: async (executable, args, cwd, environment) => {
@@ -746,6 +764,7 @@ describe("ComponentManager", () => {
     const calls: Array<{ executable: string; args: string[]; cwd: string }> = [];
     const manager = new ComponentManager({
       root,
+      platform: "win32-x64",
       catalog: {
         manifests: [runtime.manifest, dependent.manifest],
         trustedPublicKeys: { "test-ed25519": publicKey }
@@ -795,6 +814,7 @@ describe("ComponentManager", () => {
     ]);
     const manager = new ComponentManager({
       root: path.join(temporaryRoot, "packages"),
+      platform: "win32-x64",
       catalog: {
         manifests: [dependency.manifest, dependent.manifest],
         trustedPublicKeys: { "test-ed25519": publicKey }
@@ -852,6 +872,7 @@ describe("ComponentManager", () => {
     });
     const manager = new ComponentManager({
       root: path.join(temporaryRoot, "packages"),
+      platform: "win32-x64",
       catalog: {
         manifests: [dependency.manifest, dependent.manifest],
         trustedPublicKeys: { "test-ed25519": publicKey }
@@ -949,6 +970,7 @@ describe("ComponentManager", () => {
     const onBeforeUninstall = vi.fn(async () => undefined);
     const manager = new ComponentManager({
       root,
+      platform: "win32-x64",
       catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
       onBeforeUninstall,
       isInUse: async (componentId, taskToolIds) => componentId === "edge-tts" && taskToolIds.includes("edge-tts")
@@ -1002,7 +1024,11 @@ describe("component routes", () => {
     });
     registerComponentRoutes(
       app,
-      new ComponentManager({ root: temporaryRoot, catalog: { manifests: [], trustedPublicKeys: {} } })
+      new ComponentManager({
+        root: temporaryRoot,
+        platform: "win32-x64",
+        catalog: { manifests: [], trustedPublicKeys: {} }
+      })
     );
 
     await expect(app.inject({ method: "GET", url: "/api/v1/components" })).resolves.toMatchObject({ statusCode: 200 });
@@ -1217,6 +1243,7 @@ function createManager(
 ) {
   return new ComponentManager({
     root: path.join(temporaryRoot, "packages"),
+    platform: "win32-x64",
     catalog: { manifests: [manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
     downloadArchive,
     ...extra
