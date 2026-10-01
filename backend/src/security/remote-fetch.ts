@@ -244,13 +244,51 @@ function isPublicIpv4(value: string) {
 }
 
 function isPublicIpv6(value: string) {
-  return !(
-    value === "::" ||
-    value === "::1" ||
-    value.startsWith("fc") ||
-    value.startsWith("fd") ||
-    /^fe[89ab]/.test(value) ||
-    value.startsWith("ff") ||
-    value.startsWith("2001:db8:")
-  );
+  const groups = parseIpv6Groups(value);
+  if (!groups) return false;
+
+  // 只接受 2000::/3 全球单播，再额外排除协议、隧道及文档用途范围。
+  // 不能只检查 fc00/link-local：IPv4 映射、NAT64、Teredo/6to4 等地址
+  // 也可能把看似 IPv6 的目标转发到本机或私网 IPv4。
+  const [first, second] = groups;
+  if ((first & 0xe000) !== 0x2000) return false;
+  if (first === 0x2001 && (second & 0xfe00) === 0) return false; // 2001::/23 协议分配
+  if (first === 0x2001 && second === 0x0db8) return false; // 2001:db8::/32 文档地址
+  if (first === 0x2002) return false; // 2002::/16 6to4 隧道
+  if (first === 0x3fff && (second & 0xf000) === 0) return false; // 3fff::/20 文档地址
+  return true;
+}
+
+function parseIpv6Groups(value: string): number[] | undefined {
+  let normalized = value.toLowerCase().replace(/^\[|\]$/g, "");
+  // 带 zone ID 的 link-local/接口作用域地址不允许进入公网目标判断。
+  if (normalized.includes("%")) return undefined;
+
+  // 接受标准 IPv4 尾段语法，并转换成等价的两个十六进制组，统一处理
+  // ::ffff:192.168.1.1 和 ::ffff:c0a8:0101 这两种映射写法。
+  if (normalized.includes(".")) {
+    const separator = normalized.lastIndexOf(":");
+    const ipv4 = normalized.slice(separator + 1);
+    if (separator < 0 || isIP(ipv4) !== 4) return undefined;
+    const octets = ipv4.split(".").map(Number);
+    const high = ((octets[0] << 8) | octets[1]).toString(16);
+    const low = ((octets[2] << 8) | octets[3]).toString(16);
+    normalized = `${normalized.slice(0, separator)}:${high}:${low}`;
+  }
+
+  const compression = normalized.indexOf("::");
+  if (compression !== normalized.lastIndexOf("::")) return undefined;
+  const left = (compression < 0 ? normalized : normalized.slice(0, compression)).split(":").filter(Boolean);
+  const right =
+    compression < 0
+      ? []
+      : normalized
+          .slice(compression + 2)
+          .split(":")
+          .filter(Boolean);
+  const missing = 8 - left.length - right.length;
+  if ((compression < 0 && missing !== 0) || (compression >= 0 && missing < 1)) return undefined;
+  const groups = [...left, ...Array(missing).fill("0"), ...right];
+  if (groups.length !== 8 || groups.some((group) => !/^[\da-f]{1,4}$/.test(group))) return undefined;
+  return groups.map((group) => Number.parseInt(group, 16));
 }

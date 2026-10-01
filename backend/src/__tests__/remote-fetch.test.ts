@@ -39,6 +39,28 @@ describe("safe remote fetch", () => {
     await expect(assertPublicRemoteUrl(new URL(value), publicResolver)).rejects.toThrow();
   });
 
+  it.each([
+    "http://[::ffff:c0a8:0101]/resource",
+    "http://[64:ff9b::c0a8:0101]/resource",
+    "http://[64:ff9b:1::c0a8:0101]/resource",
+    "http://[100::1]/resource",
+    "http://[2001::1]/resource",
+    "http://[2002:c0a8:0101::1]/resource",
+    "http://[3fff::1]/resource",
+    "http://[5f00::1]/resource"
+  ])("rejects special-purpose IPv6 target %s", async (value) => {
+    await expect(assertPublicRemoteUrl(new URL(value), publicResolver)).rejects.toThrow();
+  });
+
+  it("allows an ordinary global-unicast IPv6 address and rejects mapped private DNS answers", async () => {
+    await expect(assertPublicRemoteUrl(new URL("https://[2606:4700:4700::1111]/resource"))).resolves.toBeUndefined();
+    await expect(
+      assertPublicRemoteUrl(new URL("https://media.example/resource"), async () => [
+        { address: "::ffff:c0a8:0101", family: 6 }
+      ])
+    ).rejects.toThrow(/private or reserved/i);
+  });
+
   it("rejects hostnames when DNS returns any private address", async () => {
     await expect(
       assertPublicRemoteUrl(new URL("https://media.example/video.mp4"), async () => [
