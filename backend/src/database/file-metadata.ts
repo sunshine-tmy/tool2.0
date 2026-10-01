@@ -5,6 +5,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { FileMetadata, ToolboxDatabase } from "./toolbox-database";
 
 type RegisterFileInput = {
@@ -95,12 +97,16 @@ function fileMetadataId(entityKind: string, entityId: string, relativePath: stri
 
 async function sha256(filePath: string) {
   const hash = crypto.createHash("sha256");
-  await new Promise<void>((resolve, reject) => {
-    const stream = fs.createReadStream(filePath);
-    stream.on("data", (chunk) => hash.update(chunk));
-    stream.once("error", reject);
-    stream.once("end", resolve);
-  });
+  // end 仅表示读取结束，Windows 此时可能尚未释放文件句柄；pipeline 等待 close 后才允许移动目录。
+  await pipeline(
+    fs.createReadStream(filePath),
+    new Writable({
+      write(chunk, _encoding, callback) {
+        hash.update(chunk);
+        callback();
+      }
+    })
+  );
   return hash.digest("hex");
 }
 

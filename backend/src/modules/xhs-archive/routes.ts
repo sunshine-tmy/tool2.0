@@ -39,6 +39,9 @@ import { registerXhsTranslationRoutes } from "./translation-routes";
 import { XhsTranslationRuntime } from "./translation-runtime";
 import { XhsTranslationService } from "./translation-service";
 import type { ComponentManager } from "../components/component-manager";
+import type { DouyinRuntimeManager } from "../media-archive/douyin-runtime";
+import { registerContentArchiveRoutes } from "../media-archive/routes";
+import { ArchiveTaskError } from "../media-archive/provider";
 
 export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
@@ -52,6 +55,7 @@ export async function registerXhsArchiveRoutes(options: {
   components?: ComponentManager;
   translationRuntime?: XhsTranslationRuntime;
   store?: XhsArchiveStore;
+  douyinRuntime?: DouyinRuntimeManager;
 }) {
   const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
   const store = options.store ?? new XhsArchiveStore(config, database, fileMetadata);
@@ -59,8 +63,19 @@ export async function registerXhsArchiveRoutes(options: {
   const auth = options.auth ?? new XhsAuthManager(config, options.components);
   const translationRuntime = options.translationRuntime ?? new XhsTranslationRuntime(config, options.components);
   const translation = new XhsTranslationService(config, store, translationRuntime, taskStore);
-  const service = new XhsArchiveTaskService(config, remoteFetch, store, runtime, auth, translation, taskStore);
+  const service = new XhsArchiveTaskService(
+    config,
+    remoteFetch,
+    store,
+    runtime,
+    auth,
+    translation,
+    taskStore,
+    database,
+    options.douyinRuntime
+  );
   await service.initialize();
+  registerContentArchiveRoutes(app, store.content, service.content);
 
   app.get(
     "/api/v1/tools/xhs-archive/runtime",
@@ -76,7 +91,12 @@ export async function registerXhsArchiveRoutes(options: {
       config: REQUEST_QUOTAS.remoteFetch,
       schema: {
         body: XhsArchiveCreateInputSchema,
-        response: { 202: apiSuccessSchema(XhsArchiveTaskSchema), 400: ApiFailureSchema }
+        response: {
+          202: apiSuccessSchema(XhsArchiveTaskSchema),
+          400: ApiFailureSchema,
+          429: ApiFailureSchema,
+          503: ApiFailureSchema
+        }
       }
     },
     async (request, reply) => {
@@ -84,7 +104,13 @@ export async function registerXhsArchiveRoutes(options: {
       if (!extractXhsUrl(source)) {
         return reply.code(400).send(fail("XHS_URL_INVALID", "请输入有效的小红书链接或分享文案"));
       }
-      return reply.code(202).send(ok(service.create(source)));
+      try {
+        return reply.code(202).send(ok(service.create(source)));
+      } catch (error) {
+        if (error instanceof ArchiveTaskError)
+          return reply.code(error.statusCode).send(fail(error.code.replace(/^ARCHIVE_/, "XHS_"), error.message));
+        throw error;
+      }
     }
   );
 
@@ -133,12 +159,26 @@ export async function registerXhsArchiveRoutes(options: {
       config: REQUEST_QUOTAS.remoteFetch,
       schema: {
         params: XhsArchiveIdParamsSchema,
-        response: { 202: apiSuccessSchema(XhsArchiveTaskSchema), 404: ApiFailureSchema }
+        response: {
+          202: apiSuccessSchema(XhsArchiveTaskSchema),
+          404: ApiFailureSchema,
+          400: ApiFailureSchema,
+          429: ApiFailureSchema,
+          503: ApiFailureSchema
+        }
       }
     },
     async (request, reply) => {
-      const task = await service.refresh(request.params.id);
-      return task ? reply.code(202).send(ok(task)) : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      try {
+        const task = await service.refresh(request.params.id);
+        return task
+          ? reply.code(202).send(ok(task))
+          : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
+      } catch (error) {
+        if (error instanceof ArchiveTaskError)
+          return reply.code(error.statusCode).send(fail(error.code.replace(/^ARCHIVE_/, "XHS_"), error.message));
+        throw error;
+      }
     }
   );
 
@@ -147,13 +187,19 @@ export async function registerXhsArchiveRoutes(options: {
     {
       schema: {
         params: XhsArchiveIdParamsSchema,
-        response: { 200: apiSuccessSchema(XhsArchiveRemovalSchema), 404: ApiFailureSchema }
+        response: { 200: apiSuccessSchema(XhsArchiveRemovalSchema), 404: ApiFailureSchema, 409: ApiFailureSchema }
       }
     },
     async (request, reply) => {
       const item = await store.get(request.params.id);
       if (!item) return reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
-      await store.remove(request.params.id);
+      try {
+        await service.content.remove(request.params.id);
+      } catch (error) {
+        if (error instanceof ArchiveTaskError)
+          return reply.code(error.statusCode).send(fail(error.code.replace(/^ARCHIVE_/, "XHS_"), error.message));
+        throw error;
+      }
       return ok({ removed: true, mediaCount: item.media.length, releasedBytes: item.totalBytes });
     }
   );

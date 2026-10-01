@@ -78,6 +78,15 @@ export function isContentArchiveItem(value: unknown): value is ContentArchiveIte
   return Value.Check(ContentArchiveItemSchema, value);
 }
 
+export function isContentArchiveTask(value: unknown): value is ContentArchiveTask {
+  return Value.Check(ContentArchiveTaskSchema, value);
+}
+
+/** 写入入口在 AJV 移除额外字段前验证，避免把 Cookie 等未授权输入静默转换成合法请求。 */
+export function isContentArchiveCreateInput(value: unknown): value is ContentArchiveCreateInput {
+  return Value.Check(ContentArchiveCreateInputSchema, value);
+}
+
 export function isContentArchiveListQuery(value: unknown): value is ContentArchiveListQuery {
   return Value.Check(ContentArchiveListQuerySchema, value);
 }

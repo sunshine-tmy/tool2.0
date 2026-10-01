@@ -7,6 +7,8 @@ describe("归档作品链接识别", () => {
     ["分享 https://www.xiaohongshu.com/discovery/item/abc?xsec_token=a%2Bb&source=pc_share。", "xiaohongshu"],
     ["https://www.xiaohongshu.com/explore/abc", "xiaohongshu"],
     ["http://xhslink.com/a/123", "xiaohongshu"],
+    ["https://xhslink.cn/a/123", "xiaohongshu"],
+    ["https://www.xhslink.cn/a/123", "xiaohongshu"],
     ["7.99 回理工。 https://v.douyin.com/PrWnsoVIg78/ 复制打开抖音", "douyin"],
     ["https://www.douyin.com/note/7594644721835798635", "douyin"],
     ["https://www.douyin.com/video/123456?modal_id=123456", "douyin"],

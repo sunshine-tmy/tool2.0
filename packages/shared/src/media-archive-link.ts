@@ -27,7 +27,7 @@ export function identifyArchiveLink(input: string, selection: ArchivePlatformSel
   if (
     (["xiaohongshu.com", "www.xiaohongshu.com"].includes(url.hostname) &&
       /^\/(?:explore|discovery\/item)\/[^/]+\/?$/.test(url.pathname)) ||
-    (["xhslink.com", "www.xhslink.com"].includes(url.hostname) && url.pathname !== "/")
+    (["xhslink.com", "www.xhslink.com", "xhslink.cn", "www.xhslink.cn"].includes(url.hostname) && url.pathname !== "/")
   )
     platform = "xiaohongshu";
   if (

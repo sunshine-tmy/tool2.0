@@ -2,6 +2,7 @@
  * 中文模块说明：小红书归档领域，负责获取、媒体、翻译、运行时和恢复
  */
 import { createHash } from "node:crypto";
+import { nanoid } from "nanoid";
 import {
   parseXhsContentText,
   resolveXhsTranslationField,
@@ -15,6 +16,7 @@ import { workerAuthHeaders } from "../../security/worker-auth";
 import type { Task, TaskStore } from "../../tasks/task-store";
 import { XhsArchiveStore } from "./store";
 import { XhsTranslationRuntime, XhsTranslationRuntimeError } from "./translation-runtime";
+import { abortable } from "../media-archive/provider";
 
 const MODEL_REVISION = "cf109095479db38d6df799875e34039d4938aaa6";
 const MODEL_ID = "Helsinki-NLP/opus-mt-zh-en";
@@ -24,7 +26,10 @@ export class XhsTranslationService {
   private readonly tasks = new Map<string, XhsTranslationTask>();
   private readonly active = new Map<string, string>();
   private queue: Array<{ taskId: string; itemIds: string[] }> = [];
-  private running = false;
+  private draining?: Promise<void>;
+  private closing?: Promise<void>;
+  private readonly shutdownController = new AbortController();
+  private readonly enqueuing = new Set<Promise<XhsTranslationTask | undefined>>();
 
   constructor(
     private readonly config: AppConfig,
@@ -61,7 +66,15 @@ export class XhsTranslationService {
     return this.tasks.get(id);
   }
 
-  async enqueue(itemIds: string[], force = false) {
+  enqueue(itemIds: string[], force = false) {
+    if (this.shutdownController.signal.aborted) return Promise.resolve(undefined);
+    const operation = this.enqueueItems(itemIds, force);
+    this.enqueuing.add(operation);
+    void operation.finally(() => this.enqueuing.delete(operation)).catch(() => undefined);
+    return operation;
+  }
+
+  private async enqueueItems(itemIds: string[], force: boolean) {
     const unique = [...new Set(itemIds)];
     const valid: string[] = [];
     for (const id of unique) {
@@ -75,6 +88,7 @@ export class XhsTranslationService {
       valid.push(id);
     }
     if (!valid.length) return undefined;
+    this.shutdownController.signal.throwIfAborted();
     const task = createTranslationTask(valid);
     this.tasks.set(task.id, task);
     this.taskStore.upsert(toUnifiedTranslationTask(task));
@@ -89,7 +103,7 @@ export class XhsTranslationService {
       }));
     }
     this.queue.push({ taskId: task.id, itemIds: valid });
-    void this.drain();
+    void this.drain().catch(() => undefined);
     return task;
   }
 
@@ -97,32 +111,52 @@ export class XhsTranslationService {
     return this.enqueue([id], force);
   }
 
-  async shutdown() {
-    await this.runtime.stop();
+  shutdown() {
+    if (this.closing) return this.closing;
+    // 先停止新任务并取消网络读取，再等待入队与任务收尾落库；数据库仍由应用最后关闭。
+    this.shutdownController.abort(
+      new XhsTranslationRuntimeError("XHS_TRANSLATION_INTERRUPTED", "服务退出，翻译已中断，请显式重试")
+    );
+    this.closing = (async () => {
+      const deadline = AbortSignal.timeout(5000);
+      await abortable(
+        (async () => {
+          await Promise.allSettled([...this.enqueuing]);
+          await this.draining;
+          await this.runtime.stop();
+        })(),
+        deadline
+      );
+    })();
+    return this.closing;
   }
 
-  private async drain() {
-    if (this.running) return;
-    this.running = true;
-    try {
-      while (this.queue.length) {
-        const next = this.queue.shift()!;
-        await this.runTask(next.taskId, next.itemIds);
+  private drain() {
+    if (this.draining) return this.draining;
+    this.draining = (async () => {
+      try {
+        while (this.queue.length) {
+          const next = this.queue.shift()!;
+          await this.runTask(next.taskId, next.itemIds);
+        }
+      } finally {
+        this.draining = undefined;
       }
-    } finally {
-      this.running = false;
-    }
+    })();
+    return this.draining;
   }
 
   private async runTask(taskId: string, itemIds: string[]) {
     const task = this.tasks.get(taskId);
     if (!task) return;
     try {
+      this.shutdownController.signal.throwIfAborted();
       let provider: string | undefined;
       let failedCount = 0;
       let lastFailureMessage: string | undefined;
       let lastFailureCode: string | undefined;
       for (let index = 0; index < itemIds.length; index += 1) {
+        this.shutdownController.signal.throwIfAborted();
         const id = itemIds[index];
         const item = await this.store.get(id);
         if (!item) continue;
@@ -132,17 +166,25 @@ export class XhsTranslationService {
             translation: current.translation ? { ...current.translation, status: "installing" } : undefined
           }));
           this.updateTask(taskId, "running", "installing-runtime", 2, "准备本地翻译环境");
-          provider = await this.runtime.ensureReady((status) =>
-            this.updateTask(
-              taskId,
-              "running",
-              status.message.includes("模型") && status.message.includes("下载")
-                ? "downloading-model"
-                : "installing-runtime",
-              Math.max(2, Math.round(status.installProgress * 0.35)),
-              status.message
-            )
+          provider = await abortable(
+            this.runtime.ensureReady(
+              (status) => {
+                if (!this.shutdownController.signal.aborted)
+                  this.updateTask(
+                    taskId,
+                    "running",
+                    status.message.includes("模型") && status.message.includes("下载")
+                      ? "downloading-model"
+                      : "installing-runtime",
+                    Math.max(2, Math.round(status.installProgress * 0.35)),
+                    status.message
+                  );
+              },
+              { signal: this.shutdownController.signal }
+            ),
+            this.shutdownController.signal
           );
+          this.shutdownController.signal.throwIfAborted();
           this.updateTask(taskId, "running", "loading-model", 34, "正在加载翻译模型");
         }
         await this.store.updateTranslation(id, (current) => ({
@@ -169,6 +211,7 @@ export class XhsTranslationService {
             )
           );
         } catch (error) {
+          if (this.shutdownController.signal.aborted) throw this.shutdownController.signal.reason;
           failedCount += 1;
           const message = error instanceof Error ? error.message : "翻译失败";
           lastFailureMessage = message;
@@ -276,6 +319,7 @@ export class XhsTranslationService {
       })),
       translatedAt: new Date().toISOString()
     };
+    this.shutdownController.signal.throwIfAborted();
     await this.store.updateTranslation(item.id, (current) => ({ ...current, topics, translation: next }));
   }
 
@@ -316,7 +360,14 @@ export class XhsTranslationService {
             : "正在翻译正文"
       );
       for (let offset = 0; offset < pending.length; offset += 64) {
-        translations.push(...(await translateProviderBatch(this.config, provider, pending.slice(offset, offset + 64))));
+        translations.push(
+          ...(await translateProviderBatch(
+            this.config,
+            provider,
+            pending.slice(offset, offset + 64),
+            this.shutdownController.signal
+          ))
+        );
       }
     }
     plans.forEach((chunks, index) => {
@@ -379,7 +430,7 @@ function toUnifiedTranslationTask(task: XhsTranslationTask): Task {
 function createTranslationTask(itemIds: string[]): XhsTranslationTask {
   const now = new Date().toISOString();
   return {
-    id: `xhs-tr-${Date.now().toString(36)}`,
+    id: `xhs-tr-${nanoid(12)}`,
     itemIds,
     status: "pending",
     stage: "queued",
@@ -524,17 +575,29 @@ function joinTranslationParts(parts: Array<string | undefined>): string {
     .trim();
 }
 
-async function translateProviderBatch(config: AppConfig, provider: string, texts: string[]): Promise<string[]> {
-  const response = await fetch(`${provider}/translate`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...workerAuthHeaders(isLoopbackProvider(provider) ? config.xhsTranslationToken : undefined)
-    },
-    body: JSON.stringify({ texts }),
-    signal: AbortSignal.timeout(120_000)
-  });
-  const payload = (await response.json().catch(() => ({}))) as { translations?: unknown; detail?: unknown };
+async function translateProviderBatch(
+  config: AppConfig,
+  provider: string,
+  texts: string[],
+  shutdown: AbortSignal
+): Promise<string[]> {
+  const signal = AbortSignal.any([shutdown, AbortSignal.timeout(120_000)]);
+  const response = await abortable(
+    fetch(`${provider}/translate`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...workerAuthHeaders(isLoopbackProvider(provider) ? config.xhsTranslationToken : undefined)
+      },
+      body: JSON.stringify({ texts }),
+      signal
+    }),
+    signal
+  );
+  const payload = (await abortable(
+    response.json().catch(() => ({})),
+    signal
+  )) as { translations?: unknown; detail?: unknown };
   if (!response.ok) {
     const detail = typeof payload.detail === "string" ? payload.detail : "本地翻译服务执行失败";
     throw new Error(`${detail}（HTTP ${response.status}）`);

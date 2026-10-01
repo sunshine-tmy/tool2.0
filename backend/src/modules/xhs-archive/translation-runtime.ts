@@ -105,7 +105,11 @@ export class XhsTranslationRuntime {
     return this.getStatus();
   }
 
-  async ensureReady(onProgress?: (status: XhsTranslationRuntimeStatus) => void): Promise<string> {
+  async ensureReady(
+    onProgress?: (status: XhsTranslationRuntimeStatus) => void,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<string> {
+    options.signal?.throwIfAborted();
     if (!this.config.desktopManagedCapabilities && this.config.xhsTranslationProviderUrl) {
       return this.config.xhsTranslationProviderUrl.replace(/\/$/, "");
     }
@@ -123,13 +127,17 @@ export class XhsTranslationRuntime {
           this.components.resolveInstalledAsset("xhs-translation", "scripts/xhs-translation-worker.py"),
           this.components.resolveInstalledAsset("xhs-translation", "model/manifest.json")
         ]);
+        options.signal?.throwIfAborted();
         if (await this.isHealthy()) return this.baseUrl();
         this.update("installing", 80, "正在启动已安装的小红书翻译服务", onProgress);
-        await this.startWorker({
-          pythonPath: python.path,
-          scriptPath: worker.path,
-          modelDir: path.dirname(model.path)
-        });
+        await this.startWorker(
+          {
+            pythonPath: python.path,
+            scriptPath: worker.path,
+            modelDir: path.dirname(model.path)
+          },
+          options.signal
+        );
         this.update("ready", 100, "本地翻译服务可用", onProgress);
         return this.baseUrl();
       } catch (error) {
@@ -155,7 +163,8 @@ export class XhsTranslationRuntime {
       });
     }
     await this.installPromise;
-    await this.startWorker();
+    options.signal?.throwIfAborted();
+    await this.startWorker(undefined, options.signal);
     return this.baseUrl();
   }
 
@@ -341,8 +350,12 @@ export class XhsTranslationRuntime {
     }
   }
 
-  private async startWorker(options?: { pythonPath: string; scriptPath: string; modelDir: string }) {
+  private async startWorker(
+    options?: { pythonPath: string; scriptPath: string; modelDir: string },
+    signal?: AbortSignal
+  ) {
     if (await this.isHealthy()) return;
+    signal?.throwIfAborted();
     const script = options?.scriptPath ?? findRuntimeScript(this.config, "xhs-translation-worker.py");
     this.worker = spawn(options?.pythonPath ?? this.venvPython(), [script], {
       cwd: path.dirname(script),
@@ -361,7 +374,15 @@ export class XhsTranslationRuntime {
     });
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
+      if (signal?.aborted) {
+        await this.stop();
+        signal.throwIfAborted();
+      }
       if (await this.isHealthy()) {
+        if (signal?.aborted) {
+          await this.stop();
+          signal.throwIfAborted();
+        }
         this.status = { ...this.status, status: "ready", installProgress: 100, message: "本地翻译服务可用" };
         return;
       }
@@ -417,6 +438,7 @@ export class XhsTranslationRuntimeError extends Error {
   constructor(
     readonly code:
       | "XHS_TRANSLATION_NOT_INSTALLED"
+      | "XHS_TRANSLATION_INTERRUPTED"
       | "XHS_TRANSLATION_MODEL_NOT_FOUND"
       | "XHS_TRANSLATION_MODEL_DOWNLOAD_FAILED"
       | "XHS_TRANSLATION_MODEL_INVALID",

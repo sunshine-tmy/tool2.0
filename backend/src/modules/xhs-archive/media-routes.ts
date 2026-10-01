@@ -2,17 +2,14 @@
  * 中文模块说明：小红书归档领域，负责获取、媒体、翻译、运行时和恢复
  */
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { ZipArchive } from "archiver";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance } from "fastify";
 import {
   ApiFailureSchema,
   XhsArchiveIdParamsSchema,
   XhsArchiveItemSchema,
-  XhsArchiveMediaParamsSchema,
-  XhsMediaQuerySchema,
   apiSuccessSchema,
   fail,
   normalizeXhsText,
@@ -21,13 +18,12 @@ import {
   type XhsArchiveIdParams,
   type XhsArchiveItem,
   type XhsArchiveMedia,
-  type XhsArchiveMediaParams,
-  type XhsArchiveFrameCapture,
-  type XhsMediaQuery
+  type XhsArchiveFrameCapture
 } from "@toolbox/shared";
 import { REQUEST_QUOTAS } from "../../security/request-quotas";
 import { XhsArchiveStoreError, type XhsArchiveStore } from "./store";
 import { effectiveTranslation } from "./translation-service";
+import { registerArchivePreviewRoutes } from "../media-archive/media-preview-routes";
 
 const XHS_FRAME_MAX_BYTES = 20 * 1024 * 1024;
 const XHS_FRAME_MAX_PIXELS = 40_000_000;
@@ -115,30 +111,7 @@ export function registerXhsMediaRoutes({ app, store }: RegisterXhsMediaRoutesOpt
     }
   );
 
-  app.get<{ Params: XhsArchiveMediaParams; Querystring: XhsMediaQuery }>(
-    "/api/v1/tools/xhs-archive/items/:id/media/:mediaId",
-    {
-      schema: {
-        params: XhsArchiveMediaParamsSchema,
-        querystring: XhsMediaQuerySchema,
-        response: { 404: ApiFailureSchema }
-      }
-    },
-    async (request, reply) => {
-      const { id, mediaId } = request.params;
-      const value = await store.mediaPath(id, mediaId);
-      if (!value) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
-      const stat = await fsp.stat(value.filePath).catch(() => undefined);
-      if (!stat?.isFile()) return reply.code(404).send(fail("XHS_MEDIA_NOT_FOUND", "媒体文件不存在"));
-      const download = request.query.download === "1";
-      reply
-        .header("accept-ranges", "bytes")
-        .header("content-type", value.media.mimeType)
-        .header("x-content-type-options", "nosniff");
-      if (download) reply.header("content-disposition", disposition(value.media.fileName));
-      return sendRange(reply, value.filePath, stat.size, request.headers.range);
-    }
-  );
+  registerArchivePreviewRoutes(app, store, "xhs-archive");
 
   app.get<{ Params: XhsArchiveIdParams }>(
     "/api/v1/tools/xhs-archive/items/:id/download.zip",
@@ -194,21 +167,6 @@ export function registerXhsMediaRoutes({ app, store }: RegisterXhsMediaRoutesOpt
       return reply.send(archive);
     }
   );
-}
-
-function sendRange(reply: FastifyReply, file: string, size: number, header?: string) {
-  if (!header) {
-    reply.header("content-length", size);
-    return reply.send(fs.createReadStream(file));
-  }
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header);
-  if (!match) return reply.code(416).header("content-range", `bytes */${size}`).send();
-  const start = match[1] ? Number(match[1]) : Math.max(0, size - Number(match[2]));
-  const end = match[2] ? Number(match[2]) : size - 1;
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= size)
-    return reply.code(416).header("content-range", `bytes */${size}`).send();
-  reply.code(206).headers({ "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1 });
-  return reply.send(fs.createReadStream(file, { start, end }));
 }
 
 function disposition(name: string) {

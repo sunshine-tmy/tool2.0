@@ -130,7 +130,8 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const xhsTranslationRuntime = xhsRuntimeServices.translationRuntime;
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
-  // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
+  // Fastify 的 onClose 按后注册先执行：领域队列先退出，随后关闭共享运行时和数据库。
+  // SSE 则在 preClose 结束连接，避免长连接阻塞服务关闭。
   app.addHook("onClose", async () => desktopCapabilityRuntime.close());
   app.addHook("onClose", async () => database.close());
   app.addHook("onClose", async () => douyinRuntime?.close());
@@ -365,6 +366,12 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       taskEventStreams.add(reply.raw);
       const send = (value: typeof task) => reply.raw.write(`event: task\ndata: ${JSON.stringify(value)}\n\n`);
       send(task);
+      // 重连时任务可能已经结束；发送终态后立即结束，不再保留订阅和心跳。
+      if (task.status === "completed" || task.status === "failed") {
+        taskEventStreams.delete(reply.raw);
+        reply.raw.end();
+        return;
+      }
       const unsubscribe = taskStore.subscribe(taskId, (value) => {
         send(value);
         if (value.status === "completed" || value.status === "failed") reply.raw.end();
@@ -418,7 +425,8 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     auth: xhsAuth,
     components: componentManager,
     translationRuntime: xhsTranslationRuntime,
-    store: xhsStore
+    store: xhsStore,
+    douyinRuntime
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
   registerComponentRoutes(app, componentManager, { allowOfflineImport: config.desktopManagedCapabilities });

@@ -15,6 +15,8 @@ import {
   toXhsArchive,
   toContentArchiveListItem,
   isContentArchiveListQuery,
+  isContentArchiveTask,
+  isContentArchiveCreateInput,
   type ContentArchiveItem,
   type ContentArchiveListItem,
   type ContentArchiveMedia,
@@ -58,6 +60,11 @@ const legacy: XhsArchiveItem = {
 };
 
 describe("content archive contract", () => {
+  it("创建输入仅接受链接和平台，不能带入 Cookie 或内部配置", () => {
+    expect(isContentArchiveCreateInput({ url: "https://www.douyin.com/video/123", platform: "auto" })).toBe(true);
+    expect(isContentArchiveCreateInput({ url: "link", cookie: "secret" })).toBe(false);
+    expect(isContentArchiveCreateInput(null)).toBe(false);
+  });
   it("adapts old data without changing media, URLs, timestamps or frame provenance", () => {
     const item = fromXhsArchive(legacy);
     expect(item).toMatchObject({ platform: "xiaohongshu", contentId: legacy.noteId, media: [media] });
@@ -127,6 +134,22 @@ describe("content archive contract", () => {
 
   it("rejects malformed legacy payload instead of inventing an identity", () => {
     expect(() => fromXhsArchive({ ...legacy, noteId: "" })).toThrow("ARCHIVE_PAYLOAD_INVALID");
+  });
+
+  it("validates persisted platform tasks without accepting internal source URLs", () => {
+    const task = {
+      id: "task_123456",
+      platform: "douyin",
+      status: "pending",
+      stage: "installing",
+      progress: 0,
+      message: "已排队",
+      createdAt: now,
+      updatedAt: now
+    };
+    expect(isContentArchiveTask(task)).toBe(true);
+    expect(isContentArchiveTask({ ...task, sourceUrl: "https://secret.test" })).toBe(false);
+    expect(isContentArchiveTask({ ...task, platform: "other" })).toBe(false);
   });
 
   it("omits heavy media details and excludes captured frames from default covers", () => {

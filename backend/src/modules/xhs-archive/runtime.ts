@@ -70,7 +70,8 @@ export class XhsRuntimeManager {
     return this.getStatus();
   }
 
-  async ensureReady(onProgress?: (status: XhsRuntimeStatus) => void) {
+  async ensureReady(onProgress?: (status: XhsRuntimeStatus) => void, options: { signal?: AbortSignal } = {}) {
+    options.signal?.throwIfAborted();
     if (!this.config.desktopManagedCapabilities && this.config.xhsProviderUrl) {
       return this.config.xhsProviderUrl.replace(/\/$/, "");
     }
@@ -84,9 +85,15 @@ export class XhsRuntimeManager {
           this.components.resolveInstalledPython("xhs-archive"),
           this.components.resolveInstalledAsset("xhs-archive", "source/requirements.txt")
         ]);
+        options.signal?.throwIfAborted();
         if (await this.provider.isHealthy()) return this.provider.baseUrl;
+        options.signal?.throwIfAborted();
         this.update({ status: "installing", message: "正在启动已安装的小红书归档运行时" });
         await this.provider.start(path.dirname(sourceAnchor.path), python.path);
+        if (options.signal?.aborted) {
+          await this.provider.stop();
+          options.signal.throwIfAborted();
+        }
         onProgress?.(this.getStatus());
         return this.provider.baseUrl;
       } catch (error) {
@@ -112,12 +119,17 @@ export class XhsRuntimeManager {
     }
     try {
       await this.installPromise;
+      options.signal?.throwIfAborted();
     } catch (error) {
       this.update({ status: "failed", message: error instanceof Error ? error.message : "解析环境安装失败" });
       throw error;
     }
     try {
       await this.provider.start(this.installer.runtimeSourceDir(), this.installer.venvPython());
+      if (options.signal?.aborted) {
+        await this.provider.stop();
+        options.signal.throwIfAborted();
+      }
       onProgress?.(this.getStatus());
     } catch (error) {
       this.update({ status: "failed", message: error instanceof Error ? error.message : "解析服务启动失败" });
@@ -135,7 +147,7 @@ export class XhsRuntimeManager {
   }
 }
 
-export class XhsRuntimeError extends Error {
+class XhsRuntimeError extends Error {
   constructor(
     readonly code: "XHS_ARCHIVE_NOT_INSTALLED",
     message: string
