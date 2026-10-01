@@ -214,6 +214,23 @@ describe("多媒体归档 API 与兼容性", () => {
     expect((await app.inject(`${prefix}/items?platform=auto`)).statusCode).toBe(400);
     expect(extract).not.toHaveBeenCalled();
   });
+  it("归档获取入口执行独立的远程请求速率额度并返回稳定 429", async () => {
+    const app = await appWith();
+    for (let index = 0; index < 10; index += 1) {
+      const response = await app.inject({ method: "POST", url: `${prefix}/items`, payload: { url } });
+      expect(response.statusCode).toBe(202);
+    }
+
+    const limited = await app.inject({ method: "POST", url: `${prefix}/items`, payload: { url } });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toMatchObject({
+      success: false,
+      error: { code: "RATE_LIMIT_EXCEEDED" },
+      requestId: expect.any(String)
+    });
+    // 远程获取限额不应连带阻断低成本健康检查。
+    expect((await app.inject("/health/live")).statusCode).toBe(200);
+  });
   it("取消运行任务返回终态并允许显式新建重试，不保留空归档", async () => {
     extract.mockImplementation(() => new Promise(() => undefined));
     const app = await appWith();

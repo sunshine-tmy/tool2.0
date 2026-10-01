@@ -541,3 +541,15 @@ MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA0
 扩展 `content-archive-api.test.ts` 的 LAN 安全场景，对创建、刷新、删除归档、取消任务、保存截帧、单条翻译、批量翻译、编辑译文和重置译文 9 个中性写接口逐一发送访客请求及管理员 Cookie + 非法 Origin 请求；9/9 访客请求均为 401，9/9 非法 Origin 请求均为 403。另验证正确 Origin 但缺少 CSRF Token 返回 403，而管理员会话、精确 Origin 和 CSRF Token 齐全时创建请求仍返回 202。媒体帧使用隔离生成的 PNG multipart，不访问在线平台或用户存档。
 
 `pnpm --filter backend exec vitest run src/__tests__/content-archive-api.test.ts --reporter=dot` 10 项通过；`pnpm --filter backend typecheck` 与 `git diff --check` 通过。此处验证的是中性归档所有写接口，访客文件传输白名单不变；MA07 其他 SSRF、限流、配额和清理恢复专项仍需单独验收。
+
+### MA07 归档获取路由速率限额验收
+
+补充真实 Fastify 应用层的限流契约测试，不只验证限流插件本身：在单个隔离测试应用内，对中性归档创建路由连续提交 10 次请求均得到 202，第 11 次按 `REQUEST_QUOTAS.remoteFetch` 限额返回 429 和稳定 `RATE_LIMIT_EXCEEDED` 响应信封；限额触发后 `/health/live` 仍返回 200。测试使用临时 storage/SQLite 和模拟 Provider，不访问平台或真实用户数据。
+
+```text
+pnpm --filter backend exec vitest run src/__tests__/content-archive-api.test.ts --reporter=dot
+pnpm check
+git diff --check
+```
+
+定向 API 测试 11 项通过。该验收只证明归档获取路由的每分钟速率限额在实际 Fastify 装配中生效，不将其扩大解释为 LAN 上传、分片、批量下载、媒体预览及全部翻译/模型额度已逐路由验收；MA07 其余 SSRF、额度竞争与清理恢复专项仍待继续。
