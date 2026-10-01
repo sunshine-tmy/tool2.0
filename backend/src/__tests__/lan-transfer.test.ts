@@ -610,6 +610,50 @@ describe("lan transfer api", () => {
     await app.close();
   });
 
+  it("enforces independent LAN session, chunk, and batch-download rate limits", async () => {
+    const app = await createApp();
+    const cases = [
+      {
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/uploads",
+        payload: {},
+        max: 30
+      },
+      {
+        method: "PUT",
+        url: "/api/v1/tools/lan-transfer/uploads/missing_upload/chunks/0",
+        payload: undefined,
+        max: 120
+      },
+      {
+        method: "POST",
+        url: "/api/v1/tools/lan-transfer/files/batch-download",
+        payload: {},
+        max: 10
+      }
+    ] as const;
+
+    try {
+      for (const route of cases) {
+        let response;
+        for (let index = 0; index < route.max; index += 1) {
+          response = await app.inject({ method: route.method, url: route.url, payload: route.payload });
+          expect(response.statusCode).not.toBe(429);
+        }
+        response = await app.inject({ method: route.method, url: route.url, payload: route.payload });
+        expect(response.statusCode).toBe(429);
+        expect(response.json()).toMatchObject({
+          success: false,
+          error: { code: "RATE_LIMIT_EXCEEDED" },
+          requestId: expect.any(String)
+        });
+      }
+      expect((await app.inject("/health/live")).statusCode).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("enforces the configured storage quota", async () => {
     process.env.LAN_TRANSFER_MAX_STORAGE_BYTES = "4";
     const app = await createApp();

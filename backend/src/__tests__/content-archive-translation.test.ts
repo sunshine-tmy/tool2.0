@@ -139,6 +139,44 @@ const edit = (item: ContentArchiveItem, title = "User title") => ({
 });
 
 describe("双平台共用翻译契约", () => {
+  it("单条和批量翻译路由分别执行独立速率限额并返回稳定 429", async () => {
+    const app = await appWith();
+
+    for (let index = 0; index < 20; index += 1) {
+      // 不存在的合法 ID 避免创建模型任务，同时使用不同参数证明配额按注册路由而不是 ID 分桶。
+      const response = await app.inject({
+        method: "POST",
+        url: `${base}/items/douyin_item_${String(index).padStart(6, "0")}/translation`,
+        payload: { force: false }
+      });
+      expect(response.statusCode).not.toBe(429);
+    }
+    const singleLimited = await app.inject({
+      method: "POST",
+      url: `${base}/items/douyin_item_999999/translation`,
+      payload: { force: false }
+    });
+    expect(singleLimited.statusCode).toBe(429);
+    expect(singleLimited.json()).toMatchObject({
+      success: false,
+      error: { code: "RATE_LIMIT_EXCEEDED" },
+      requestId: expect.any(String)
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+      const response = await app.inject({ method: "POST", url: `${base}/translation/batches`, payload: {} });
+      expect(response.statusCode).not.toBe(429);
+    }
+    const batchLimited = await app.inject({ method: "POST", url: `${base}/translation/batches`, payload: {} });
+    expect(batchLimited.statusCode).toBe(429);
+    expect(batchLimited.json()).toMatchObject({
+      success: false,
+      error: { code: "RATE_LIMIT_EXCEEDED" },
+      requestId: expect.any(String)
+    });
+    expect((await app.inject("/health/live")).statusCode).toBe(200);
+  });
+
   it("单条/批次队列错误映射稳定错误码，非领域异常按全局 500 契约处理", async () => {
     const item = await seed(),
       xhs = await seed("xiaohongshu"),
