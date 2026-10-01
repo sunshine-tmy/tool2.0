@@ -264,3 +264,38 @@ MA04 保持 `IN_PROGRESS`：Windows 隔离签名生命周期已通过，但正�
 93.58%/74.23%/93.61%、94.26%/74.91%/87.38%、76.13%/78.32%/90.00%，全部达到原有门槛。
 代码与组件模板形成独立本地提交 `2d4d7a1`（接入抖音匿名受管运行时与签名能力生命周期），没有推送远程。
 此前 MA02 页面更名/输入交互改动仍原样留在工作区，未混入此运行时提交。
+
+## 2026-10-01 MA05：共享存储与旧接口兼容基础
+
+本节点将原小红书存储实现迁入 `media-archive/ContentArchiveStore`；旧 `XhsArchiveStore` 只保留平台过滤和 DTO/URL 适配，共用同一实例、目录、SQLite 表和全局配额，不建立第二套存储。两平台同作品 ID 可共存，同平台身份不可改写；旧接口不能读取、删除、截帧或编辑抖音记录。
+
+- 从数据库读取时校验平台、作品和本地 ID；读旧载荷时补缺省值，不改写旧清单。混合平台清单可恢复，损坏清单/恢复备份保留，不永久清除。单条写入不会删掉未载入内存的另一条数据库记录。
+- 所有目录提交先验证 staging 边界及媒体文件名，再校验实际大小/摘要、fsync、同盘移动；领域记录和文件索引在一个 SQLite 事务内提交。旧目录移动失败时不清理旧目录；事务失败恢复旧媒体；提交后备份清理失败不回滚新数据。
+- 最终配额复核与截帧保存按共享队列串行；单作品修改独立锁定，下载期间的手工译文更新不会被旧快照覆盖。刷新保留历史截帧，源文变化只将译文标为 stale，保留用户编辑。
+- 截帧和译文保存改为清单备份/原子替换与数据库事务，索引写入失败还原原清单；不再吞掉文件登记错误。删除先移动到可恢复目录，数据库提交成功后才清除工件，失败则恢复。
+
+### 定向验证与运行证据
+
+新增 `content-archive-store.test.ts` 33 项；与小红书 API 9、Repository 6、翻译服务 1 项共 49 项通过。覆盖跨平台过滤、重复身份/媒体、路径拒绝、摘要/大小/缺失媒体、目录移动失败、索引/事务回滚、恢复备份保留、配额竞争、刷新保留用户内容及重启恢复。
+
+定向命令：`pnpm --filter backend exec vitest run src/__tests__/content-archive-store.test.ts src/__tests__/xhs-archive.test.ts src/__tests__/content-archive-repository.test.ts src/__tests__/xhs-translation-service.test.ts`。
+五个归档模块定向覆盖率行/语句 99.73%、分支 94.64%、函数 100%，报告 `.package/ma05-store-coverage-targeted`。存储单测的媒体字节为隔离夹具，不代表真实视频解码；图片解码与接口响应分别由现有小红书 API 测试和 HTTP 冒烟验证。
+
+隔离运行：`pnpm --filter backend exec tsx F:/git仓库内容/tool2.0/.package/ma03-smoke.ts`，证据 `.package/ma03-smoke-o6LSnl/result.json`。旧库迁移 dry-run、完整性校验、启动/重启 12 项路由验证、健康检查、旧列表/详情、截帧 PNG 预览、Range 206、ZIP 及整库回滚至 v5 通过；旧媒体与 manifest 摘要不变。实际用户 storage、媒体、音色及迁移备份未操作。
+
+首轮完整门禁/覆盖率各发现一项清理测试夹具不合法：`domain-consistency.test.ts` 的 `arch1` 长度低于既有公开 ID Schema 的 6 字符下限。仅将夹具换为合法 ID，未放宽生产 Schema、删除测试或降低覆盖率；原空发布时间是允许的字符串，并非失败原因。复验该组 8 项与存储 33 项共 41 项通过。失败日志保留在 `.package/ma05-store-check.log`、`.package/ma05-store-coverage.log`。
+
+### 全量验收与独立提交
+
+最终 `pnpm check`、`pnpm coverage` 退出码均为 0，`git diff --check` 通过；日志 `.package/ma05-store-check-final.log`、`.package/ma05-store-coverage-final.log`。格式、ESLint、Knip、类型检查、构建预算和构建冒烟均通过。
+共享 90、后端 453（跳过 5）、前端 128、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3 项通过。
+共享/后端/前端行、分支、函数分别为 93.58%/74.23%/93.61%、94.34%/75.90%/87.64%、76.13%/78.32%/90.00%，保持原门槛。
+
+补充落盘与真实 HTTP 验证：`pnpm --filter backend exec tsx F:/git仓库内容/tool2.0/.package/ma05-store-http-smoke.ts`，证据 `.package/ma05-store-http-X8KtnD/result.json`。同作品 ID 的两平台记录落入隔离 SQLite，两个启动周期后仍有 2 条归档、4 条文件索引；完整性正常、无外键错误。旧接口仅返回小红书（抖音 ID 返回 404），旧 DTO/媒体 URL、PNG 原始字节与 ZIP 正常。该验证使用生成的真实 PNG，不涉及在线作品获取或视频播放。
+补充脚本首次失败来自错误假定压缩包必大于 PNG，第二次失败来自测试环境未指定数据库路径而采用内存库；已修正脚本并复验，不将其报告为生产故障或抖音在线验收。
+
+代码独立提交 `9a100d8`（抽取多媒体归档共享存储并保护文件事务与旧接口）；此前 MA02 前端/共享工具文案/README 改动未混入提交。文档记录与代码提交分开。
+
+### 仍未完成
+
+MA05 保持 `IN_PROGRESS`，本次只交付共享存储基础。统一获取服务、抖音下载/刷新任务、新中性 API、排队/取消/SSE 与重启中断恢复仍需接入；本轮没有开放抖音生产获取入口。MA04 正式能力发布/macOS 实测与 MA06–MA09 继续待完成。登录内容按用户要求跳过，未推送远程或生成新安装包。
