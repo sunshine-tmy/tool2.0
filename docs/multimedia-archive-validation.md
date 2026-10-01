@@ -357,4 +357,61 @@ git diff --check
 
 全量检查曾与覆盖率/浏览器初始化并行执行，一次已有维护清理测试在 15 秒内未完成；覆盖率同一测试通过。最终门禁冻结后独立重跑全部通过，不延长测试时限、不跳过测试。文档编辑后的一次格式检查及新增安装预算测试的首次重试断言失败均已修正：后者暴露终态清理期间去重返回旧任务，生产代码已修复并复验 43 项通过。
 
-仍未完成：MA04 正式适配器发布/能力目录/macOS 原生验收；MA06 中性翻译/截帧/ZIP API 与双平台前端完整交互；MA07 综合权限/清理/安全验收；MA08 最终桌面安装包/升级验收；MA09 最终文档。当前前端抖音按钮仍禁用，不能把隔离新 API 通过等同于已发布可安装功能。没有推送远程或生成新桌面安装包，MA02 未提交更名改动保持独立。
+该节点结束时仍未完成：MA04 正式适配器发布/能力目录/macOS 原生验收；MA06 中性翻译/截帧/ZIP API 与双平台前端完整交互；MA07 综合权限/清理/安全验收；MA08 最终桌面安装包/升级验收；MA09 最终文档。当前前端抖音按钮仍禁用，不能把隔离新 API 通过等同于已发布可安装功能。没有推送远程或生成新桌面安装包，MA02 未提交更名改动保持独立。
+
+## 2026-10-01 MA06：共享视频截帧与完整 ZIP 导出
+
+代码提交：`1153665`。本次为 MA06 的独立验收节点，不代表整项完成；抖音登录继续按用户指示跳过。
+
+### 实现范围
+
+- 中性入口 `POST /api/v1/tools/media-archive/items/:id/frames` 和 `GET /api/v1/tools/media-archive/items/:id/download.zip` 支持两平台；旧小红书入口通过同一实现和过滤存储视图复用，继续返回旧 DTO/错误码，抖音记录不可通过旧入口访问。
+- PNG 验证同时检查 MIME、文件签名、实际尺寸和完整像素解码；限制为 20 MiB、40 MP。不以尺寸可读作为文件有效的证明，损坏 IDAT 被拒绝；超像素在解码前拒绝。使用原共享存储的串行提交、配额、事务和回滚，不引入 FFmpeg。
+- 截帧来源和时间保留，计入归档大小及文件索引；并发保存不会覆盖，失败恢复原清单/数据库并清理暂存。LAN 写接口仍需管理员会话、精确 Origin 和 CSRF，未新增访客豁免。
+- ZIP 包含平台/作品身份、原始文案、中文文案、可用的英文/双语译文、元数据及全部本地媒体。用户编辑译文优先但不覆盖机器结果；过期译文不作为可用英文文案导出。抖音原文不套用小红书表情/话题清洗。
+- 媒体命名保留类型/顺序；截帧含序号与毫秒时间；封面与静态图同序号时追加媒体 ID，避免 ZIP 内重名。导出预检文件存在/大小，异常返回 409；预检后的读文件异常终止流，不静默产生缺媒体的 ZIP。客户端断开会释放导出流。
+- 移除旧导出重复代码及因此失去调用的两项导出。没有修改翻译服务行为、Schema、媒体物理路径或正式页面。
+
+### 自动化门禁
+
+新增 25 项测试：双平台截帧/导出 API 18 项、导出文本与命名 7 项。覆盖实际 PNG 校验、大小/像素/损坏输入、来源类型和跨归档来源、配额、并发、索引事务失败回滚、重启、下载/ZIP 实际字节、缺文件/大小异常及 LAN 权限。旧截帧并发测试按实际提交序号验收，不再假定两个异步解码请求必然按发起顺序完成；三个画面都必须出现在 ZIP 中。
+
+```text
+pnpm --filter backend exec vitest run src/__tests__/content-archive-artifacts.test.ts src/__tests__/content-archive-export.test.ts src/__tests__/xhs-archive.test.ts
+pnpm check
+pnpm coverage
+pnpm --filter backend exec vitest run src/__tests__/content-archive-artifacts.test.ts src/__tests__/content-archive-export.test.ts src/__tests__/content-archive-api.test.ts src/__tests__/content-archive-store.test.ts src/__tests__/xhs-archive.test.ts --coverage --coverage.include=src/modules/media-archive/artifact-routes.ts --coverage.include=src/modules/media-archive/export.ts --coverage.include=src/modules/xhs-archive/media-routes.ts --coverage.reportsDirectory=../.package/ma06-artifacts-targeted-coverage
+git diff --check
+```
+
+最终检查与覆盖率退出码均为 0，未降低门槛。首次三文件定向 34 项、五文件归档回归 77 项通过。三个截帧/导出模块行/语句 100%、分支 95.38%、函数 100%；该定向报告不能替代全局门禁。
+
+全量通过：共享 94、后端 555（跳过 5）、前端 128、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3 项。
+共享/后端/前端的行、分支、函数覆盖率分别为 93.62%/74.45%/93.87%、94.56%/78.54%/87.96%、76.13%/78.32%/90.00%。
+日志：`.package/ma06-artifacts-check-final.log`、`.package/ma06-artifacts-coverage-final.log`、`.package/ma06-artifacts-targeted-coverage.log`。
+
+### 真实视频与旧库补验
+
+使用 Playwright skill 的 CLI 在隔离验收页面播放、暂停至 0.5 秒、读取浏览器解码画面并生成原分辨率 PNG，提交生产 API。仅复制上一节点隔离目录内已授权作品，不重新获取平台、不读取 Cookie、不操作用户 storage。
+
+```text
+pnpm --filter backend exec tsx ../.package/ma06-artifacts-browser-smoke.ts
+pnpm --filter backend exec tsx ../.package/ma03-smoke.ts
+pnpm --filter backend exec tsx ../.package/ma05-store-http-smoke.ts
+```
+
+真实截帧证据 `.package/ma06-artifacts-browser-A1aEQO/output/playwright/result.json` 为 `PASSED`：
+
+- 实况视频截图 720×960，1,071,113 字节；普通视频截图 720×1280，1,053,473 字节。两者均暂停、时间 500 ms；PNG 下载摘要/解码尺寸与返回元数据一致。
+- 实况归档原 28 媒体加截帧后为 29，ZIP 共 32 条；普通视频原 1 媒体加截帧后为 2，ZIP 共 5 条。中央目录完整、无重名、截帧解压字节与单张下载一致，导出元数据平台为 `douyin`。
+- 重启保留两张截帧；健康接口均 200；SQLite integrity=ok、无外键错误。控制台 0 错误/0 警告，截帧 POST 200、视频 Range 206。
+- 截图 `output/playwright/.playwright-cli/page-2026-10-01T08-04-07-874Z.png`（相对证据根目录）已人工检查，保存画面与暂停视频一致。此页面和徽标仅是验收夹具，不宣称完整产品前端已接入。
+
+旧库证据 `.package/ma03-smoke-ZWM3J8/result.json`：dry-run、v5→v6 迁移、完整性、v6→v5 整库回滚、两次启动共 12 项健康/旧接口/PNG/ZIP 检查通过，原媒体与清单不变。
+混合平台证据 `.package/ma05-store-http-iQB6il/result.json`：两次启动保持 2 个归档、4 条文件索引；旧 API 只返回小红书、抖音 ID 为 404，媒体预览/ZIP 和数据库正常。
+
+首次门禁报告两项因抽取失去调用的导出，已删除后全量复验通过；首次旧并发测试暴露了发起顺序与完成顺序的非等价假设，已改为按实际提交结果验收并增加新并发/字节校验。LAN 夹具初次误用登录路径，修正为 `/api/v1/session` 后通过；浏览器夹具初始化的路由重复/依赖路径问题已修正，不归为生产业务通过证据。失败日志/隔离目录保留，不改写失败结果。CLI 的网络查看命令已按实际工具改用 `requests`。
+
+### 下一节点与边界
+
+继续 MA06 中性翻译接口、平台文本规则及编辑冲突验证，再接入完整双平台列表/详情/任务/截帧/导出前端。MA04 正式能力发布/macOS、MA07 安全清理、MA08 最终安装包及 MA09 最终文档仍待验收；正式抖音按钮没有开放。本次仅本地提交，不推送远程、不打包、不修改用户数据库，MA02 原有未提交更名改动仍保持独立。
