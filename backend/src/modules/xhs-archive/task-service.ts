@@ -7,7 +7,7 @@ import type { TaskStore } from "../../tasks/task-store";
 import type { XhsAuthManager } from "./auth";
 import type { XhsArchiveStore } from "./store";
 import type { XhsRuntimeManager } from "./runtime";
-import type { XhsTranslationService } from "./translation-service";
+import type { ContentArchiveTranslationService } from "../media-archive/translation-service";
 import type { DouyinRuntimeManager } from "../media-archive/douyin-runtime";
 import { ContentArchiveTaskService } from "../media-archive/task-service";
 import { ArchiveTaskRepository } from "../media-archive/task-repository";
@@ -24,7 +24,7 @@ export class XhsArchiveTaskService {
     private readonly store: XhsArchiveStore,
     private readonly runtime: XhsRuntimeManager,
     private readonly auth: XhsAuthManager,
-    private readonly translation: XhsTranslationService,
+    private readonly translation: Pick<ContentArchiveTranslationService, "enqueue" | "recoverInterrupted" | "shutdown">,
     taskStore: TaskStore,
     database: ToolboxDatabase,
     douyin?: DouyinRuntimeManager
@@ -36,9 +36,8 @@ export class XhsArchiveTaskService {
       download: new ArchiveDownloadGateway(config, remoteFetch),
       providers: [xhsProvider(config, remoteFetch, runtime, auth), ...(douyin ? [douyinProvider(douyin)] : [])],
       afterCommit: (item) => {
-        // Web 小红书继续自动翻译；抖音翻译及桌面可选能力的交互由后续 MA06 接入。
-        if (item.platform === "xiaohongshu" && !config.desktopManagedCapabilities)
-          void translation.enqueue([item.id], false).catch(() => undefined);
+        // Web 两平台共用可选自动翻译；桌面仍由用户安装内容翻译能力，不阻断媒体归档成功。
+        if (!config.desktopManagedCapabilities) void translation.enqueue([item.id], false).catch(() => undefined);
       }
     });
   }

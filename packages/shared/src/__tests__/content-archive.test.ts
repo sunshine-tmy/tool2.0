@@ -17,6 +17,14 @@ import {
   isContentArchiveListQuery,
   isContentArchiveTask,
   isContentArchiveCreateInput,
+  isContentTranslationRequest,
+  isContentTranslationEditInput,
+  isContentTranslationBatchInput,
+  isLegacyTranslationBatchInput,
+  isContentTranslationTask,
+  ContentTranslationRequestSchema,
+  ContentTranslationEditInputSchema,
+  ContentTranslationTaskSchema,
   type ContentArchiveItem,
   type ContentArchiveListItem,
   type ContentArchiveMedia,
@@ -60,6 +68,56 @@ const legacy: XhsArchiveItem = {
 };
 
 describe("content archive contract", () => {
+  it("中性翻译请求/编辑复用旧字段，禁止夹带 Cookie 和伪造字段", () => {
+    expect(isContentTranslationRequest({ force: true })).toBe(true);
+    expect(isContentTranslationRequest({ force: "true" })).toBe(false);
+    expect(isContentTranslationRequest({ cookie: "secret" })).toBe(false);
+    const edit = { sourceHash: "a".repeat(64), title: { edited: "Edited" }, topics: [] };
+    expect(isContentTranslationEditInput(edit)).toBe(true);
+    expect(isContentTranslationEditInput({ ...edit, authorization: "secret" })).toBe(false);
+    expect(Value.Check(ContentTranslationEditInputSchema, edit)).toBe(true);
+    expect(Value.Check(ContentTranslationRequestSchema, {})).toBe(true);
+  });
+  it("中性批次支持平台/关键词/类型过滤，旧批次与分页/认证输入不混用", () => {
+    expect(
+      isContentTranslationBatchInput({
+        mode: "missing-or-stale",
+        filter: { platform: "douyin", keyword: "标题", type: "video" }
+      })
+    ).toBe(true);
+    expect(isContentTranslationBatchInput({ mode: "selected", itemIds: ["archive_123456"] })).toBe(true);
+    expect(isContentTranslationBatchInput({ mode: "selected", itemIds: Array(101).fill("archive_123456") })).toBe(
+      false
+    );
+    for (const filter of [
+      { platform: "tiktok" },
+      { page: 2 },
+      { pageSize: 50 },
+      { cookie: "secret" },
+      { keyword: "x".repeat(201) }
+    ])
+      expect(isContentTranslationBatchInput({ mode: "missing-or-stale", filter })).toBe(false);
+    expect(isLegacyTranslationBatchInput({ mode: "missing-or-stale", itemIds: [] })).toBe(true);
+    expect(isLegacyTranslationBatchInput({ mode: "missing-or-stale", filter: { platform: "douyin" } })).toBe(false);
+  });
+  it("翻译任务使用统一可解码契约，不接收内部配置或错误状态", () => {
+    const task = {
+      id: "translation_123456",
+      itemIds: ["archive_123456"],
+      status: "completed",
+      stage: "completed",
+      progress: 100,
+      completedItems: 1,
+      totalItems: 1,
+      message: "完成",
+      createdAt: now,
+      updatedAt: now
+    };
+    expect(isContentTranslationTask(task)).toBe(true);
+    expect(Value.Check(ContentTranslationTaskSchema, task)).toBe(true);
+    expect(isContentTranslationTask({ ...task, providerUrl: "https://secret.test" })).toBe(false);
+    expect(isContentTranslationTask({ ...task, progress: 101 })).toBe(false);
+  });
   it("创建输入仅接受链接和平台，不能带入 Cookie 或内部配置", () => {
     expect(isContentArchiveCreateInput({ url: "https://www.douyin.com/video/123", platform: "auto" })).toBe(true);
     expect(isContentArchiveCreateInput({ url: "link", cookie: "secret" })).toBe(false);

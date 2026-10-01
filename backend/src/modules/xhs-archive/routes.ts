@@ -37,7 +37,8 @@ import { XhsArchiveStore } from "./store";
 import { XhsArchiveTaskService, extractXhsUrl } from "./task-service";
 import { registerXhsTranslationRoutes } from "./translation-routes";
 import { XhsTranslationRuntime } from "./translation-runtime";
-import { XhsTranslationService } from "./translation-service";
+import { ContentArchiveTranslationService } from "../media-archive/translation-service";
+import { registerArchiveTranslationRoutes } from "../media-archive/translation-routes";
 import type { ComponentManager } from "../components/component-manager";
 import type { DouyinRuntimeManager } from "../media-archive/douyin-runtime";
 import { registerContentArchiveRoutes } from "../media-archive/routes";
@@ -62,7 +63,7 @@ export async function registerXhsArchiveRoutes(options: {
   const runtime = options.runtime ?? new XhsRuntimeManager(config, options.components);
   const auth = options.auth ?? new XhsAuthManager(config, options.components);
   const translationRuntime = options.translationRuntime ?? new XhsTranslationRuntime(config, options.components);
-  const translation = new XhsTranslationService(config, store, translationRuntime, taskStore);
+  const translation = new ContentArchiveTranslationService(config, store.content, translationRuntime, taskStore);
   const service = new XhsArchiveTaskService(
     config,
     remoteFetch,
@@ -76,6 +77,7 @@ export async function registerXhsArchiveRoutes(options: {
   );
   await service.initialize();
   registerContentArchiveRoutes(app, store.content, service.content);
+  registerArchiveTranslationRoutes(app, store.content, translation, "media-archive");
 
   app.get(
     "/api/v1/tools/xhs-archive/runtime",

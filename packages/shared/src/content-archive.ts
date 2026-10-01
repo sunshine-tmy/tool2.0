@@ -6,6 +6,10 @@ import {
   XhsArchiveListQuerySchema,
   XhsArchiveMediaSchema,
   XhsArchiveTaskSchema,
+  XhsTranslationTaskSchema,
+  XhsTranslationRequestSchema,
+  XhsTranslationEditInputSchema,
+  XhsTranslationBatchInputSchema,
   type XhsArchiveItem
 } from "./xhs-archive";
 
@@ -67,6 +71,45 @@ export const ContentArchiveTaskSchema = Type.Composite(
   { additionalProperties: false }
 );
 export type ContentArchiveItem = Static<typeof ContentArchiveItemSchema>;
+// 翻译字段与旧契约复用；只扩展中性批次的筛选范围，避免维护两套编辑/任务 DTO。
+export const ContentTranslationTaskSchema = XhsTranslationTaskSchema;
+export const ContentTranslationRequestSchema = XhsTranslationRequestSchema;
+export const ContentTranslationEditInputSchema = XhsTranslationEditInputSchema;
+export const ContentTranslationBatchInputSchema = Type.Union([
+  Type.Object(
+    {
+      mode: Type.Literal("selected"),
+      itemIds: Type.Array(XhsTranslationTaskSchema.properties.id, { minItems: 1, maxItems: 100, uniqueItems: true })
+    },
+    { additionalProperties: false }
+  ),
+  Type.Object(
+    {
+      mode: Type.Literal("missing-or-stale"),
+      filter: Type.Optional(Type.Omit(ContentArchiveListQuerySchema, ["page", "pageSize"]))
+    },
+    { additionalProperties: false }
+  )
+]);
+export type ContentTranslationTask = Static<typeof ContentTranslationTaskSchema>;
+export function isContentTranslationTask(value: unknown): value is ContentTranslationTask {
+  return Value.Check(ContentTranslationTaskSchema, value);
+}
+export type ContentTranslationRequest = Static<typeof ContentTranslationRequestSchema>;
+export type ContentTranslationEditInput = Static<typeof ContentTranslationEditInputSchema>;
+export type ContentTranslationBatchInput = Static<typeof ContentTranslationBatchInputSchema>;
+export function isContentTranslationBatchInput(value: unknown): value is ContentTranslationBatchInput {
+  return Value.Check(ContentTranslationBatchInputSchema, value);
+}
+export function isContentTranslationRequest(value: unknown): value is ContentTranslationRequest {
+  return Value.Check(ContentTranslationRequestSchema, value);
+}
+export function isContentTranslationEditInput(value: unknown): value is ContentTranslationEditInput {
+  return Value.Check(ContentTranslationEditInputSchema, value);
+}
+export function isLegacyTranslationBatchInput(value: unknown) {
+  return Value.Check(XhsTranslationBatchInputSchema, value);
+}
 export type ContentArchiveMedia = Static<typeof ContentArchiveMediaSchema>;
 export type ContentArchiveListItem = Static<typeof ContentArchiveListItemSchema>;
 export type ContentArchiveListResponse = Static<typeof ContentArchiveListResponseSchema>;
