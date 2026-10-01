@@ -4,8 +4,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import { archiveIdentity, CURRENT_SCHEMA_VERSION, migrateArchiveIdentity } from "./archive-identity";
+import { backupBeforeSchemaMigration } from "./schema-backup";
 
-const DATABASE_SCHEMA_VERSION = 5;
+const DATABASE_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION;
 
 type StoredEntity = {
   id: string;
@@ -59,22 +61,25 @@ type LegacyEntityRow = Omit<EntityRow, "kind"> & { kind?: string | null };
 export class ToolboxDatabase {
   readonly path: string;
   readonly connection: Database.Database;
+  readonly schemaBackupId: string | undefined;
 
   constructor(databasePath: string) {
     this.path = databasePath;
+    const existing = databasePath !== ":memory:" && fs.existsSync(databasePath) && fs.statSync(databasePath).size > 0;
     if (databasePath !== ":memory:") fs.mkdirSync(path.dirname(databasePath), { recursive: true });
     this.connection = new Database(databasePath, {
       timeout: 5_000,
       fileMustExist: false
     });
     try {
+      this.schemaBackupId = existing ? backupBeforeSchemaMigration(this.connection, databasePath) : undefined;
       // WAL 提升读写并发；外键和 trusted_schema 关闭不可信扩展路径，busy_timeout
       // 为本机短暂并发写入留出等待窗口，所有迁移完成后才允许应用继续启动。
       this.connection.pragma("journal_mode = WAL");
       this.connection.pragma("foreign_keys = ON");
       this.connection.pragma("busy_timeout = 5000");
       this.connection.pragma("trusted_schema = OFF");
-      this.migrate();
+      this.transaction(() => this.migrate());
       this.recoverInterruptedTasks();
     } catch (error) {
       this.connection.close();
@@ -231,6 +236,18 @@ export class ToolboxDatabase {
              payload_json = excluded.payload_json, updated_at = excluded.updated_at`
         )
         .run(values);
+    } else if (table === "xhs_archives") {
+      const identity = archiveIdentity(entity.payload);
+      this.connection
+        .prepare(
+          `
+        INSERT INTO xhs_archives(id, platform, content_id, status, payload_json, created_at, updated_at)
+        VALUES (@id, @platform, @contentId, @status, @payloadJson, @createdAt, @updatedAt)
+        ON CONFLICT(id) DO UPDATE SET platform = excluded.platform, content_id = excluded.content_id,
+          status = excluded.status, payload_json = excluded.payload_json, updated_at = excluded.updated_at
+      `
+        )
+        .run({ ...values, ...identity });
     } else if (table === "chatterbox_items") {
       const payload = asRecord(entity.payload);
       const batchId = textValue(payload.batchId ?? payload.batch_id);
@@ -408,6 +425,7 @@ export class ToolboxDatabase {
       `);
     }
     this.migrateDomainRelations();
+    migrateArchiveIdentity(this.connection);
     this.connection
       .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
       .run(DATABASE_SCHEMA_VERSION, new Date().toISOString());
@@ -453,9 +471,6 @@ export class ToolboxDatabase {
       CREATE INDEX IF NOT EXISTS chatterbox_batches_voice_idx ON chatterbox_batches(voice_id);
       CREATE INDEX IF NOT EXISTS chatterbox_items_batch_order_idx ON chatterbox_items(batch_id, item_order);
     `);
-    this.connection
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
-      .run(DATABASE_SCHEMA_VERSION, new Date().toISOString());
   }
 
   private migrateEntitiesTable() {

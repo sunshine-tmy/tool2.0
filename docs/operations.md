@@ -105,6 +105,10 @@ pnpm db:rollback --backup <backup-id>
 
 回滚前必须先运行备份校验。CLI 会先把当前数据库及其 `-wal`/`-shm` 移到带时间戳的 `before-rollback` 备份，再原子恢复指定备份；恢复失败会把当前数据库放回原位。不要手工删除 WAL/SHM，也不要在服务运行时复制数据库文件。
 
+多媒体归档 Schema v6 升级另外增加平台/作品身份列与联合唯一索引，保留历史表名、载荷、媒体路径及翻译关联。`db:migrate --dry-run` 以只读方式预检旧身份与冲突；`db:verify` 也只读现有库并报告实际 Schema 版本，不隐式升级或恢复任务。升级前生成包含已提交 WAL 的一致性整库快照及 SHA-256 清单，默认保存在 `storage/migration-backups/schema-v6-<时间>-<随机值>`；自定义数据库路径时位于数据库相邻的 `migration-backups`。冲突或备份失败会拒绝升级，不自动合并/删除记录。
+
+Schema 回滚先停止 Web/桌面应用，再执行 `pnpm db:rollback --backup schema-v6-<完整 ID>`。校验通过后恢复整个旧数据库，升级后的数据库和 WAL/SHM 保留为 `*.before-schema-rollback-*`；旧媒体、JSON 与旧备份不会被删除。若要继续保持旧 Schema，应同时恢复升级前的应用版本；本分支再次启动会重新执行备份和前向升级。不要把 Schema 整库备份 ID 与旧 JSON 迁移备份 ID 混用。
+
 ## 6. 一致性检查与隔离区恢复
 
 启动时会检查元数据登记的文件及残留 staging/partial 文件。缺失、大小或 SHA-256 不匹配、危险路径和孤立文件会移动到 `storage/quarantine/<timestamp>/files/`，并写入 `audit_events`；不会永久删除未登记的历史媒体。

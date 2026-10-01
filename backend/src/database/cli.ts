@@ -9,7 +9,7 @@ import {
   rollbackDatabase,
   verifyMigrationBackup
 } from "./legacy-migration";
-import { ToolboxDatabase } from "./toolbox-database";
+import { inspectSchemaMigration, restoreSchemaBackup, inspectDatabaseIntegrity } from "./schema-backup";
 
 const [command, ...args] = process.argv.slice(2);
 if (command !== "migrate" && command !== "verify" && command !== "rollback") {
@@ -21,6 +21,10 @@ if (command === "rollback") {
   const backupFlag = args.indexOf("--backup");
   const backupId = backupFlag >= 0 ? args[backupFlag + 1] : undefined;
   if (!backupId) throw new Error("Usage: pnpm db:rollback --backup <id>");
+  if (backupId.startsWith("schema-")) {
+    console.log(JSON.stringify(restoreSchemaBackup(config.databasePath, backupId), null, 2));
+    process.exit(0);
+  }
   await verifyMigrationBackup(config, backupId);
   let rollbackCopy: string | undefined;
   if (fs.existsSync(config.databasePath)) {
@@ -49,14 +53,20 @@ if (command === "rollback") {
 }
 
 if (command === "migrate" && args.includes("--dry-run")) {
-  console.log(JSON.stringify(await inspectLegacyMetadata(config), null, 2));
+  console.log(
+    JSON.stringify(
+      { ...(await inspectLegacyMetadata(config)), schemaMigration: inspectSchemaMigration(config.databasePath) },
+      null,
+      2
+    )
+  );
   process.exit(0);
 }
 
 if (command === "migrate") {
   const { database, migration } = await openToolboxDatabase(config);
   try {
-    console.log(JSON.stringify(migration, null, 2));
+    console.log(JSON.stringify({ ...migration, schemaBackupId: database.schemaBackupId ?? null }, null, 2));
   } finally {
     database.close();
   }
@@ -66,9 +76,6 @@ if (command === "migrate") {
 if (config.databasePath !== ":memory:" && !fs.existsSync(config.databasePath)) {
   throw new Error(`Database does not exist: ${config.databasePath}`);
 }
-const database = new ToolboxDatabase(config.databasePath);
-try {
-  console.log(JSON.stringify(database.verify(), null, 2));
-} finally {
-  database.close();
-}
+const verification = inspectDatabaseIntegrity(config.databasePath);
+console.log(JSON.stringify(verification, null, 2));
+if (verification.integrity !== "ok" || verification.foreignKeys.length) process.exitCode = 1;

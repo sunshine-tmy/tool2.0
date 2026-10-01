@@ -71,7 +71,7 @@ describe("toolbox database", () => {
       source: "xhs-archive/index.json",
       value: { version: 2, items: [{ id: "note-1" }] }
     });
-    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 6 });
     expect(upgraded.connection.pragma("table_info(entities)")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "kind", pk: 1 }),
@@ -213,7 +213,7 @@ describe("toolbox database", () => {
     const { database, migration } = await openToolboxDatabase(config);
     expect(migration).toMatchObject({ migrated: true, atomicSwitch: true });
     expect(database.hasCompletedLegacyMigration()).toBe(true);
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 6 });
     database.close();
 
     expect(await exists(databasePath)).toBe(true);
@@ -263,7 +263,7 @@ describe("toolbox database", () => {
       updatedAt: now
     });
 
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 6 });
     expect(database.connection.pragma("table_info(chatterbox_items)")).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "batch_id" }),
@@ -352,7 +352,7 @@ describe("toolbox database", () => {
     legacy.close();
 
     const upgraded = new ToolboxDatabase(databasePath);
-    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    expect(upgraded.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 6 });
     expect(upgraded.connection.pragma("table_info(files)")).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "owner" })])
     );
@@ -361,7 +361,7 @@ describe("toolbox database", () => {
 
     const restarted = new ToolboxDatabase(databasePath);
     expect(restarted.listFiles()).toHaveLength(1);
-    expect(restarted.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 5 });
+    expect(restarted.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 6 });
     restarted.close();
   });
 
