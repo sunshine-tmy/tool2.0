@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import nodeFs from "node:fs";
-import { Readable } from "node:stream";
+import { Readable, Writable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArchivePlatform, ContentArchiveTask } from "@toolbox/shared";
 import { getConfig } from "../config";
@@ -353,6 +353,35 @@ describe("多平台获取生命周期", () => {
     expect(task).toMatchObject({ status: "failed", errorCode: "ARCHIVE_STORAGE_QUOTA_EXCEEDED" });
     expect(task.error).not.toContain(root);
     expect((await store.list()).total).toBe(0);
+  });
+
+  it("刷新遇到磁盘写满时返回明确错误，并完整保留旧归档及文件索引", async () => {
+    const created = await terminal(service.create(link()).id);
+    const before = await store.get(created.archiveId!);
+    const files = database.listFiles();
+    const manifestPath = path.join(config.xhsArchiveItemsDir, before!.id, "manifest.json");
+    const oldManifest = await fs.readFile(manifestPath);
+    const noSpace = Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    vi.spyOn(nodeFs, "createWriteStream").mockImplementation(
+      () =>
+        new Writable({
+          write(_chunk, _encoding, callback) {
+            callback(noSpace);
+          }
+        }) as nodeFs.WriteStream
+    );
+
+    const failed = await terminal((await service.refresh(before!.id))!.id);
+
+    expect(failed).toMatchObject({
+      status: "failed",
+      errorCode: "ARCHIVE_DISK_SPACE_INSUFFICIENT",
+      error: expect.stringContaining("现有存档未被覆盖")
+    });
+    expect(await store.get(before!.id)).toEqual(before);
+    expect(database.listFiles()).toEqual(files);
+    expect(await fs.readFile(manifestPath)).toEqual(oldManifest);
+    await vi.waitFor(async () => expect(await fs.readdir(config.xhsArchiveStagingDir)).toHaveLength(0));
   });
 
   it.each(["platform", "identity", "empty", "component", "unexpected"])("%s 错误不能生成错误归档", async (mode) => {

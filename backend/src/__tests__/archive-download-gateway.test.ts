@@ -2,6 +2,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import fsSync from "node:fs";
+import { Writable } from "node:stream";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArchiveDownloadGateway } from "../modules/media-archive/download-gateway";
@@ -65,6 +67,33 @@ describe("归档媒体下载", () => {
     expect(await fs.readdir(root)).toEqual([media.fileName]);
     expect(remote.mock.calls[1][1].headers).not.toHaveProperty("cookie");
     expect(remote.mock.calls.every((call) => call[1].signal.aborted)).toBe(true);
+  });
+  it("磁盘空间不足时停止备用地址重试并清理部分文件", async () => {
+    const noSpace = Object.assign(new Error("disk full"), { code: "ENOSPC" });
+    vi.spyOn(fsSync, "createWriteStream").mockImplementation(
+      () =>
+        new Writable({
+          write(_chunk, _encoding, callback) {
+            callback(noSpace);
+          }
+        }) as unknown as ReturnType<typeof fsSync.createWriteStream>
+    );
+
+    await expect(
+      gateway.download(
+        { ...entry, urls: [...entry.urls, "https://backup.test/image"] },
+        "douyin",
+        root,
+        "archive_123456",
+        signal()
+      )
+    ).rejects.toMatchObject({
+      code: "ARCHIVE_DISK_SPACE_INSUFFICIENT",
+      statusCode: 507,
+      message: expect.stringContaining("现有存档未被覆盖")
+    });
+    expect(remote).toHaveBeenCalledOnce();
+    expect(await fs.readdir(root)).toEqual([]);
   });
   it.each(["header", "body", "truncated", "empty", "html", "image-type", "video-type"])(
     "%s 异常拒绝并移除临时文件",

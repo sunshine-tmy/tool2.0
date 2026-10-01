@@ -12,7 +12,13 @@ import type { AppConfig } from "../../config";
 import { ContentArchiveStore } from "./store";
 import { ArchiveTaskRepository } from "./task-repository";
 import { ArchiveDownloadGateway } from "./download-gateway";
-import { abortable, ArchiveTaskError, type ArchiveProvider, type ArchiveProgress } from "./provider";
+import {
+  abortable,
+  ArchiveTaskError,
+  normalizeArchiveStorageError,
+  type ArchiveProvider,
+  type ArchiveProgress
+} from "./provider";
 
 type Job = {
   id: string;
@@ -208,8 +214,10 @@ export class ContentArchiveTaskService {
             };
           }
           media.push(downloaded);
-        } catch {
+        } catch (error) {
           signal.throwIfAborted();
+          const normalized = normalizeArchiveStorageError(error);
+          if (normalized instanceof ArchiveTaskError && normalized.statusCode === 507) throw normalized;
           failures++;
         }
         progress(
@@ -256,17 +264,18 @@ export class ContentArchiveTaskService {
         /* 归档已提交，后续功能由各自任务报告错误。 */
       }
     } catch (error) {
+      const normalized = normalizeArchiveStorageError(error);
       const code = this.stopped
         ? "ARCHIVE_INTERRUPTED"
         : job.controller.signal.aborted
           ? "ARCHIVE_CANCELLED"
           : deadline.signal.aborted
             ? "ARCHIVE_TIMEOUT"
-            : error instanceof Error &&
-                "code" in error &&
-                typeof error.code === "string" &&
-                /^(?:XHS|DOUYIN|ARCHIVE)_[A-Z_]+$/.test(error.code)
-              ? error.code.replace(/^(XHS|DOUYIN)_/, "ARCHIVE_")
+            : normalized instanceof Error &&
+                "code" in normalized &&
+                typeof normalized.code === "string" &&
+                /^(?:XHS|DOUYIN|ARCHIVE)_[A-Z_]+$/.test(normalized.code)
+              ? normalized.code.replace(/^(XHS|DOUYIN)_/, "ARCHIVE_")
               : "ARCHIVE_TASK_FAILED";
       const message = this.stopped
         ? "程序退出，任务已中断，请显式重试"
@@ -274,8 +283,8 @@ export class ContentArchiveTaskService {
           ? "任务已取消"
           : deadline.signal.aborted
             ? "获取超时，请稍后重试"
-            : error instanceof ArchiveTaskError
-              ? error.message
+            : normalized instanceof ArchiveTaskError
+              ? normalized.message
               : "获取失败，请检查能力环境或网络后重试";
       this.fail(job.id, code, message);
     } finally {

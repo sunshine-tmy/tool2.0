@@ -510,7 +510,7 @@ git diff --check
 
 ### 下一验收节点
 
-MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA06 需待能力可用后补齐正式在线入口的创建、刷新、取消/重试与平台流程验收。MA07 已完成基础日志敏感信息收敛，尚需两平台权限、SSRF/限流、配额/磁盘不足和清理恢复专项；MA08 桌面安装/升级、MA09 最终文档仍未完成。继续跳过抖音登录，不以本轮本地页面成功替代上述验收。
+MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA06 需待能力可用后补齐正式在线入口的创建、刷新、取消/重试与平台流程验收。MA07 已完成基础日志敏感信息收敛及 ENOSPC 刷新失败保护，尚需两平台权限、SSRF/限流、配额竞争与清理恢复专项；MA08 桌面安装/升级、MA09 最终文档仍未完成。继续跳过抖音登录，不以本轮本地页面成功替代上述验收。
 
 ### MA07 日志敏感信息收敛
 
@@ -519,3 +519,9 @@ MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA0
 新增 `backend/src/__tests__/log-sanitization.test.ts` 3 项测试，覆盖查询串/片段剥离、请求 URL 与凭据字段脱敏、异常消息和堆栈排除。定向 app + 脱敏测试 16 项通过；`pnpm --filter backend typecheck`、`pnpm check`、格式检查与 `git diff --check` 均通过。全量检查统计：后端 604 项通过、5 项既有跳过，前端 188 项通过，其他工作区与脚本检查通过，生产构建与 smoke 通过。
 
 该项只完成日志边界收敛，不代表 MA07 完成；LAN 双平台授权负向、安全重定向/限流、配额和磁盘故障、清理恢复专项仍需验收。签名能力包暂不能在本机制作：当前环境未发现能力签名私钥配置或 `gh` 发布 CLI；macOS arm64 原生构建与实测也不能由 Windows x64 代替。
+
+### MA07 磁盘写满失败保护
+
+归档下载流遇到 `ENOSPC` 或 `EDQUOT` 时立即清理当前暂存文件并停止备用 CDN 重试，统一报告 HTTP 507 对应的 `ARCHIVE_DISK_SPACE_INSUFFICIENT`；外层任务管线也会规范化提交阶段的磁盘耗尽错误。旧归档刷新失败时不会替换清单、媒体或 SQLite 文件索引；小红书兼容任务将稳定错误码映射为 `XHS_DISK_SPACE_INSUFFICIENT`。API 文档已同步错误码说明。
+
+新增网关/任务测试 2 项，验证停止重复请求、staging 清理、稳定错误信息，以及刷新失败后旧归档、清单和索引逐项保持。`pnpm --filter backend exec vitest run src/__tests__/archive-download-gateway.test.ts src/__tests__/content-archive-task.test.ts` 45 项通过；`pnpm --filter backend typecheck` 通过。完整 `pnpm check` 通过：共享 97、后端 606（5 项既有跳过）、前端 188、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；构建预算与启动 smoke 通过。

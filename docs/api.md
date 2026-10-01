@@ -215,24 +215,25 @@
 
 ## 常见错误码
 
-| 错误码                                    | 含义                           |
-| ----------------------------------------- | ------------------------------ |
-| `FILE_REQUIRED` / `FILE_TOO_LARGE`        | 缺少文件或超过上限             |
-| `INVALID_TASK_ID` / `TASK_NOT_FOUND`      | 任务 ID 非法或不存在           |
-| `UPLOAD_INCOMPLETE` / `UPLOAD_FINALIZING` | 分片缺失或正在提交             |
-| `INSUFFICIENT_STORAGE`                    | 可用磁盘不足                   |
-| `IMAGE_AI_QUEUE_FULL`                     | AI 队列与预留槽已满            |
-| `EDGE_TTS_NOT_INSTALLED`                  | Edge-TTS Python 环境尚未安装   |
-| `EDGE_TTS_QUEUE_FULL`                     | 语音生成队列已满               |
-| `CHATTERBOX_NOT_AVAILABLE`                | 本地声音克隆 Worker 未就绪     |
-| `CHATTERBOX_CONSENT_REQUIRED`             | 未确认拥有合法声音授权         |
-| `CHATTERBOX_REFERENCE_DURATION_INVALID`   | 参考音频不在 5–30 秒范围       |
-| `CHATTERBOX_QUEUE_FULL`                   | 本地声音克隆队列已满           |
-| `VIDEO_DOWNLOAD_FAILED`                   | 远程地址被拒绝、超时或响应异常 |
-| `SHORT_VIDEO_PROVIDER_UNAVAILABLE`        | 第三方解析服务不可用           |
-| `SHORT_VIDEO_PLATFORM_MISMATCH`           | 选择的平台与分享链接不匹配     |
-| `XHS_AUTH_REQUIRED`                       | 内容不完整，需要登录后重试     |
-| `XHS_MEDIA_DOWNLOAD_PARTIAL`              | 部分媒体失败，旧存档保持不变   |
-| `XHS_STORAGE_QUOTA_EXCEEDED`              | 小红书存档空间不足             |
+| 错误码                                                            | 含义                             |
+| ----------------------------------------------------------------- | -------------------------------- |
+| `FILE_REQUIRED` / `FILE_TOO_LARGE`                                | 缺少文件或超过上限               |
+| `INVALID_TASK_ID` / `TASK_NOT_FOUND`                              | 任务 ID 非法或不存在             |
+| `UPLOAD_INCOMPLETE` / `UPLOAD_FINALIZING`                         | 分片缺失或正在提交               |
+| `INSUFFICIENT_STORAGE`                                            | 可用磁盘不足                     |
+| `IMAGE_AI_QUEUE_FULL`                                             | AI 队列与预留槽已满              |
+| `EDGE_TTS_NOT_INSTALLED`                                          | Edge-TTS Python 环境尚未安装     |
+| `EDGE_TTS_QUEUE_FULL`                                             | 语音生成队列已满                 |
+| `CHATTERBOX_NOT_AVAILABLE`                                        | 本地声音克隆 Worker 未就绪       |
+| `CHATTERBOX_CONSENT_REQUIRED`                                     | 未确认拥有合法声音授权           |
+| `CHATTERBOX_REFERENCE_DURATION_INVALID`                           | 参考音频不在 5–30 秒范围         |
+| `CHATTERBOX_QUEUE_FULL`                                           | 本地声音克隆队列已满             |
+| `VIDEO_DOWNLOAD_FAILED`                                           | 远程地址被拒绝、超时或响应异常   |
+| `SHORT_VIDEO_PROVIDER_UNAVAILABLE`                                | 第三方解析服务不可用             |
+| `SHORT_VIDEO_PLATFORM_MISMATCH`                                   | 选择的平台与分享链接不匹配       |
+| `XHS_AUTH_REQUIRED`                                               | 内容不完整，需要登录后重试       |
+| `XHS_MEDIA_DOWNLOAD_PARTIAL`                                      | 部分媒体失败，旧存档保持不变     |
+| `XHS_STORAGE_QUOTA_EXCEEDED`                                      | 小红书存档空间不足               |
+| `ARCHIVE_DISK_SPACE_INSUFFICIENT` / `XHS_DISK_SPACE_INSUFFICIENT` | 本机磁盘已满，刷新不会覆盖旧存档 |
 
 HTTP `413/415/429/507` 分别表示过大、不支持媒体类型、队列满和磁盘不足。

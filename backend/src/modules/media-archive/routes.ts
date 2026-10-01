@@ -38,7 +38,8 @@ export function registerContentArchiveRoutes(
     404: ApiFailureSchema,
     409: ApiFailureSchema,
     429: ApiFailureSchema,
-    503: ApiFailureSchema
+    503: ApiFailureSchema,
+    507: ApiFailureSchema
   };
   app.post<{ Body: ContentArchiveCreateInput }>(
     "/api/v1/tools/media-archive/items",

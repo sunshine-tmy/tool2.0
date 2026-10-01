@@ -10,7 +10,7 @@ import sharp from "sharp";
 import type { ContentArchiveMedia, ArchivePlatform } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../../security/remote-fetch";
-import { abortable, ArchiveTaskError, type ArchiveSource } from "./provider";
+import { abortable, ArchiveTaskError, normalizeArchiveStorageError, type ArchiveSource } from "./provider";
 
 export class ArchiveDownloadGateway {
   constructor(
@@ -132,10 +132,12 @@ export class ArchiveDownloadGateway {
           previewUrl: `/api/v1/tools/media-archive/items/${itemId}/media/${id}`,
           downloadUrl: `/api/v1/tools/media-archive/items/${itemId}/media/${id}?download=1`
         };
-      } catch {
+      } catch (error) {
         await response?.body?.cancel().catch(() => undefined);
         await fsp.rm(temporary, { force: true }).catch(() => undefined);
         signal.throwIfAborted();
+        const normalized = normalizeArchiveStorageError(error);
+        if (normalized instanceof ArchiveTaskError && normalized.statusCode === 507) throw normalized;
       } finally {
         // 下游大小限制、写盘失败或格式校验失败时也关闭 CDN 连接；锁定的 body.cancel() 并不可靠。
         controller.abort();

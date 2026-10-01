@@ -34,10 +34,21 @@ export class ArchiveTaskError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly statusCode: 400 | 409 | 429 | 503 = 400
+    readonly statusCode: 400 | 409 | 429 | 503 | 507 = 400
   ) {
     super(message);
   }
+}
+
+/** 将真实磁盘/配额耗尽归一化为稳定错误，避免重试 CDN 或向用户泄漏底层路径。 */
+export function normalizeArchiveStorageError(error: unknown): unknown {
+  if (typeof error !== "object" || error === null || !("code" in error)) return error;
+  if (error.code !== "ENOSPC" && error.code !== "EDQUOT") return error;
+  return new ArchiveTaskError(
+    "ARCHIVE_DISK_SPACE_INSUFFICIENT",
+    "本机可用磁盘空间不足，现有存档未被覆盖。请释放磁盘空间后重试。",
+    507
+  );
 }
 
 /** 外部读取不能因未响应取消而把队列永久占住；迟到结果不可进入下载/提交阶段。 */

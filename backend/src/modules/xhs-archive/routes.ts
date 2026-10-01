@@ -97,7 +97,8 @@ export async function registerXhsArchiveRoutes(options: {
           202: apiSuccessSchema(XhsArchiveTaskSchema),
           400: ApiFailureSchema,
           429: ApiFailureSchema,
-          503: ApiFailureSchema
+          503: ApiFailureSchema,
+          507: ApiFailureSchema
         }
       }
     },
@@ -166,7 +167,8 @@ export async function registerXhsArchiveRoutes(options: {
           404: ApiFailureSchema,
           400: ApiFailureSchema,
           429: ApiFailureSchema,
-          503: ApiFailureSchema
+          503: ApiFailureSchema,
+          507: ApiFailureSchema
         }
       }
     },
