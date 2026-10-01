@@ -299,3 +299,62 @@ MA04 保持 `IN_PROGRESS`：Windows 隔离签名生命周期已通过，但正�
 ### 仍未完成
 
 MA05 保持 `IN_PROGRESS`，本次只交付共享存储基础。统一获取服务、抖音下载/刷新任务、新中性 API、排队/取消/SSE 与重启中断恢复仍需接入；本轮没有开放抖音生产获取入口。MA04 正式能力发布/macOS 实测与 MA06–MA09 继续待完成。登录内容按用户要求跳过，未推送远程或生成新安装包。
+
+## 2026-10-01 MA05 续：双平台获取管线与本地播放
+
+本节替代上一节点的“管线尚未接入”现状说明，保留此前验收和失败证据。代码已独立提交 `ef68f54`（统一双平台归档获取管线并补齐取消与退出保护）；MA05 在正式能力目录与支持平台验收完成前仍为 `IN_PROGRESS`。
+
+### 实现与兼容边界
+
+- `ContentArchiveTaskService` 共用单并发 FIFO、16 个等待名额、任务 Repository 和下载网关。相同链接的活动任务去重；终态刚产生、临时目录尚未清理时立即重试可创建新任务。取消排队/运行任务会阻止迟到解析结果提交；原子提交阶段返回 409，避免误称已取消。
+- 获取任务持久化到 SQLite，重启将 pending/running 标为 `ARCHIVE_INTERRUPTED`，不自动重新获取。SSE 投影不保存来源 URL、Cookie 或正文；终态重连立即发送状态并关闭连接。关闭操作有界、幂等，退出后拒绝新任务。
+- 增加 `/api/v1/tools/media-archive` 获取、平台筛选列表、详情、刷新、删除、查询/取消任务，以及本地媒体预览/下载。请求和 JSON 响应使用共享 Schema；严格拒绝客户端 Cookie 等额外字段，不因 AJV 剥离字段而默许。LAN 管理会话、Origin/CSRF 与现有额度继续生效。
+- 旧小红书 API 通过兼容 facade 复用同一管线，保持原 DTO、旧媒体 URL、登录与 Web 自动翻译，不开放另一套存储。兼容接口不能访问抖音记录；旧分享短链 `.com` 与 `.cn` 均继续受支持。
+- 平台 Cookie/Worker Token 仅发送到本机小红书 Worker，不发送外部解析服务或媒体 CDN。抖音匿名适配器不读取 Cookie。下载与短链解析继续使用已校验 IP 的网关，重定向逐跳校验，不绕过平台限制。
+- 媒体流式写入 staging，校验大小/摘要/格式后统一提交；抖音图片通过实际解码确定尺寸与 MIME，视频检测 MP4 容器头，完整解码由真实浏览器补验。任意必要媒体下载失败时不覆盖旧归档，下载失败/取消也终止该 CDN 连接。
+- 刷新复用相同媒体的 ID/文件名，保留截帧、手工译文和历史来源；原文变化标记 stale。数据库文件摘要等待读取流 close，避免 Windows 句柄仍占用时移动目录。针对 WebP 校验后的 libvips 文件句柄缓存，在 Windows 关闭文件缓存，保留内存及运算缓存。
+- Web 小红书自动安装预算继续使用 `XHS_INSTALL_TIMEOUT_MS`，另加五分钟获取预算；桌面受管/外部 Provider 与抖音不预留 Web 安装时间。翻译退出等待 pending enqueue、标记中断并取消读取，不让迟到进度/完成回调写入已关闭数据库；同毫秒创建的翻译任务使用独立 ID。
+
+### 自动化验证
+
+新增后端 77 项（任务/文件句柄 27、下载 16、平台适配 21、API 10、翻译退出 3），共享契约与短链回归 4 项。覆盖跨平台身份、旧 API 过滤、输入边界、下载全部/部分失败、配额不足、任务限流/提交冲突、超时/取消/重启、SSE 终态重连、刷新保留用户内容、翻译关闭竞态与同毫秒任务 ID。
+
+定向命令：
+
+```text
+pnpm --filter backend exec vitest run src/__tests__/content-archive-task.test.ts src/__tests__/content-archive-api.test.ts src/__tests__/archive-download-gateway.test.ts src/__tests__/archive-platform-providers.test.ts src/__tests__/archive-translation-shutdown.test.ts src/__tests__/xhs-archive.test.ts src/__tests__/xhs-runtime.test.ts src/__tests__/short-video.test.ts
+pnpm check
+pnpm coverage
+git diff --check
+```
+
+最终 `pnpm check`、`pnpm coverage` 退出码均为 0，`git diff --check` 与已暂存差异检查通过。格式、ESLint、Knip、类型检查、全量测试、构建预算和构建冒烟全部通过；未降低任何既有门槛。
+日志：`.package/ma05-pipeline-check-final.log`、`.package/ma05-pipeline-coverage-final.log`。
+全量通过：共享 94、后端 530（跳过 5）、前端 128、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3 项。
+共享/后端/前端的行、分支、函数覆盖率分别为 93.62%/74.45%/93.87%、94.53%/77.92%/87.97%、76.13%/78.32%/90.00%。
+
+上述八个测试文件定向共 117 项通过；九个管线/兼容模块覆盖率行/语句 98.47%、分支 96.27%、函数 100%，报告 `.package/ma05-pipeline-targeted-coverage`，日志 `.package/ma05-pipeline-targeted-coverage.log`。定向覆盖率通过 `--coverage.include` 指定本次模块，不能代替已经通过的全局门禁。
+
+### 真实获取与播放证据
+
+仅使用 `.package` 隔离目录、临时数据库和当次测试签名适配器，不改变正式能力目录，不操作用户实际 storage、归档、音色或模型。抖音登录按用户要求跳过。
+
+真实管线命令：`pnpm --filter backend exec tsx F:/git仓库内容/tool2.0/.package/ma05-managed-pipeline-smoke.ts`。证据 `.package/ma05-managed-pipeline-CNFAIa/output/playwright/result.json` 为 `PASSED`：
+
+- 用户普通视频 `7464977705159691570`：1 个视频，6,090,655 字节。
+- 用户图集 `7685962392984216805` 实际为 14 组实况：28 个媒体，10,423,795 字节，静态图与实况片段完整保存。
+- 共 29 个媒体实际大小/摘要和 Range 206 全部通过；任务、列表/详情、原始文案和重启读取通过。两次匿名浏览器退出后网络 active/failed/rejected 均为 0。
+
+独立本地播放命令：`pnpm --filter backend exec tsx F:/git仓库内容/tool2.0/.package/ma05-preview-archive-smoke.ts`。使用 Playwright skill 的 CLI 在隔离测试页面执行真实播放、暂停、寻帧，并检查截图及控制台；不代表 MA06 完整业务页面已开放。
+证据 `.package/ma05-managed-pipeline-hA1NyU/output/playwright/preview-result.json` 为 `PASSED`：29 个文件摘要、重启读取、SQLite 完整性与外键正常；实况视频 720×960、普通视频 720×1280 均 readyState=4、实际播放并暂停，error=null；图片 2160×2880 正常显示，控制台 0 错误/0 警告。截图 `.playwright-cli/page-2026-10-01T06-38-54-461Z.png` 已人工检查。
+
+原管线 `hA1NyU` 的结果文件因首次 UI 初始化超时记录为 `FAILED`，不能被后续播放成功改写为管线通过；管线成功证据明确采用独立 `CNFAIa` 结果。此前真实 WebP 原子移动失败的 `6UBcHu`、`0INBWW`、`qrgbNL` 目录保留；锁问题已隔离确认并新增回归测试，没有通过改用非原子复制规避。
+
+隔离旧库回归：`.package/ma03-smoke-tyTPbH/result.json`，冻结代码后再次通过 `.package/ma03-smoke-fhKnnr/result.json`。迁移 dry-run、完整性校验、v6→v5 整库回滚、两次启动共 12 项健康/旧 API/PNG/Range/ZIP 检查通过，旧媒体/清单不变。
+混合平台落盘回归：`.package/ma05-store-http-alyduh/result.json`，冻结代码后再次通过 `.package/ma05-store-http-da5UTo/result.json`。两次启动均保持 2 个归档与 4 条文件索引，旧 API 仅返回小红书、抖音 ID 为 404，完整性与外键正常。
+
+### 问题记录与下一节点
+
+全量检查曾与覆盖率/浏览器初始化并行执行，一次已有维护清理测试在 15 秒内未完成；覆盖率同一测试通过。最终门禁冻结后独立重跑全部通过，不延长测试时限、不跳过测试。文档编辑后的一次格式检查及新增安装预算测试的首次重试断言失败均已修正：后者暴露终态清理期间去重返回旧任务，生产代码已修复并复验 43 项通过。
+
+仍未完成：MA04 正式适配器发布/能力目录/macOS 原生验收；MA06 中性翻译/截帧/ZIP API 与双平台前端完整交互；MA07 综合权限/清理/安全验收；MA08 最终桌面安装包/升级验收；MA09 最终文档。当前前端抖音按钮仍禁用，不能把隔离新 API 通过等同于已发布可安装功能。没有推送远程或生成新桌面安装包，MA02 未提交更名改动保持独立。
