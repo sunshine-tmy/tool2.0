@@ -462,4 +462,52 @@ git diff --check
 
 ### 后续范围
 
-下一节点接入双平台列表、详情、任务、翻译编辑、截帧和导出的完整前端，并完成实际页面操作验证。MA04 正式能力发布/macOS、MA07 综合安全清理、MA08 安装包/升级、MA09 最终文档仍待验收。前端抖音正式按钮保持禁用；用户数据库、媒体、音色和模型未触碰。本次仅本地独立提交，不推送或生成安装包，MA02 原有未提交更名改动仍保持独立。
+该节点结束时，下一节点是双平台列表、详情、任务、翻译编辑、截帧和导出的前端接入。MA04 正式能力发布/macOS、MA07 综合安全清理、MA08 安装包/升级、MA09 最终文档仍待验收。前端抖音正式按钮保持禁用；用户数据库、媒体、音色和模型未触碰。该节点仅本地独立提交，不推送或生成安装包，MA02 当时的未提交更名改动保持独立；后续进度见下文。
+
+## 2026-10-01 MA02 收尾、MA06 前端与 MA07 预览稳定性
+
+独立提交：`a8d9aac`（更名与输入门禁）、`2e42a6b`（双平台前端）、`e4ec038`（流式断连额度）、`b4c3935`（抽屉动态宽度）。MA02 在源码与页面范围内标记完成；MA06/MA07 仍是局部验收，不等于抖音在线入口开放或安装包已更新。
+
+### 本次实现
+
+- 页面业务 API 改用 `/api/v1/tools/media-archive`，全部请求消费共享 Schema 并传递 AbortSignal。旧前端 `api.ts` 只保留小红书登录别名供短视频解析模块使用，不把抖音凭据送往小红书接口。
+- 混合列表显示来源平台；平台、内容类型、关键词筛选共同约束未选择时的批量补译。显式选择只提交选中 ID；切换范围/分页清空选择，删除部分失败不谎报全部成功且失败项仍可重试。
+- 抽取列表/详情 composable，取消旧请求并校验请求代际。抽屉关闭、页面卸载、筛选变化不会被迟到结果覆盖，也不会把取消当作业务失败。两平台运行时状态独立读取，能力未安装不隐藏本地归档。
+- 详情与结果共用平台、作品 ID、作者、发布时间及原作品链接信息。抖音保留完整原始文案；只有小红书使用已有表情/话题清洗规则。复制、翻译、人工编辑/恢复和 ZIP 使用一致的数据与中性接口。
+- 编辑弹窗固化打开时的 sourceHash；同一归档后台刷新不能重置未保存输入或让旧版本覆盖新原文。翻译 SSE 进入终态后读取详情，保留失败后的原文并刷新列表。
+- 普通视频/实况视频共用 PNG 截帧。画布导出期间切换归档、切换视频、卸载或源摘要变化时，不上传旧画面；保存后的媒体数量与橙色截帧徽标同步更新。
+- 实况图集只预加载选中视频缩略图，其余显示视频图标，图片延迟加载。详情抽屉采用 CSS `min(720px, 100vw)`，随窗口宽度实时变化，不依赖一次性 innerWidth 快照。
+- 实际浏览器发现播放器取消流时可能只触发响应 close，而不触发 onResponse。并发额度现在在处理器完成后的 onSend 监听流式断连、幂等释放；不会因客户端提前断连而放行仍在执行的耗时任务。未调高或取消原有限流额度。
+
+### 测试与门禁
+
+前端归档定向 72 项通过，相比原模块净增 60 项；后端并发测试 3 项（新增真实 TCP 流中断及耗时处理器提前断连 2 项）。定向前端包含 13 个生产文件及 Vue 实现：行/语句 98.30%、分支 87.43%、函数 98.47%；并发模块行 97.95%、分支 89.47%、函数 100%。这些定向报告不替代全局门禁。
+
+```text
+pnpm check
+pnpm coverage
+pnpm --filter frontend exec vitest run src/modules/xhs-archive --coverage --coverage.include=src/modules/xhs-archive/*.ts --coverage.include=src/modules/xhs-archive/*.vue --coverage.reportsDirectory=../.package/ma06-frontend-targeted-coverage
+pnpm --filter backend exec vitest run src/__tests__/request-quotas.test.ts --coverage --coverage.include=src/security/request-quotas.ts --coverage.reportsDirectory=../.package/ma07-preview-quotas-coverage
+pnpm --filter frontend typecheck
+git diff --check
+```
+
+前端差异基线 `a8d9aac`，正式差异覆盖率脚本验收 510/512 可执行变更行（99.61%），含 Vue；LCOV 的 SF 路径规范为 frontend 的真实绝对源码路径后再计算，未改变正式算法或门槛。后端独立提交新增可执行行 7/7（100%）。日志分别为 `.package/ma06-frontend-diff-final.log`、`.package/ma07-preview-quotas-diff-final.log`。
+
+全量门禁与覆盖率通过，未降低门槛：共享 97、后端 601（跳过 5）、前端 188、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3 项。共享/后端/前端行、分支、函数分别为 93.87%/75.00%/94.44%、94.76%/79.51%/88.32%、78.35%/81.35%/91.15%。最终日志：`.package/ma06-frontend-check-final.log`、`.package/ma06-frontend-coverage-final.log`、`.package/ma06-frontend-targeted.log`、`.package/ma07-preview-quotas-test.log`。
+
+### 真实产品页面验收
+
+使用 Playwright skill CLI 验证真实构建后的生产 SPA 和真实 Fastify 接口，不是替代页面。复制 MA05 已获授权的隔离视频/实况归档；另建小红书兼容 DTO 夹具复用该视频，不宣称重新获取了真实小红书笔记。翻译 Worker 为本机固定协议夹具，仅验证调用、事件、编辑及持久化，不代表真实模型效果。
+
+- 初次目录 `.package/ma06-frontend-browser-21s3Vs` 完成按平台补译、人工编辑/恢复、三类截帧及重启检查，但浏览器出现媒体 429。保留该失败证据，不将其控制台视为通过；根据此问题补齐按需预加载和流式额度释放。
+- 修复后 `.package/ma06-frontend-browser-mVojkh/output/playwright/result.json` 为 `PASSED`。产品页面混合展示三条存档，平台筛选正确；普通视频 720×1280、实况视频 720×960、小红书兼容视频 720×1280 均可播放、暂停至 500 ms 并保存原分辨率 PNG。
+- 三个归档各追加一帧；实况归档 29 个媒体、ZIP 34 条；两个视频归档各 2 个媒体、ZIP 各 7 条，均包含有效英文文件。刷新/重启保留截帧和译文；健康接口均为 200、SQLite integrity=ok、无外键错误。
+- 修复后中性 API 记录无 4xx/5xx，视频 Range 为 206、截帧 POST 为 200、翻译创建为 202；控制台 0 错误/0 警告。旧页面链接保留查询参数/锚点跳转新入口；390px 下筛选工具栏可正常操作。CLI 网络命令按工具实际版本使用 `requests`。
+- 截图 `live-photo-frame-final.png` 与 `mobile-archive-list.png`（相对上述 output/playwright 目录）已人工检查。响应式补验 `.package/ma06-drawer-resize-9qfyby` 使用最终构建及隔离数据副本：窗口从 390px 调整为 1280px 后，已打开抽屉宽度分别为 390px 和 720px，控制台无错误、列表与健康检查通过。
+
+所有临时服务和本次专用浏览器已关闭。没有读取或修改用户实际 storage、永久音色或模型，没有生成安装包或推送远程。早期测试夹具的 DTO、传送门及 CLI 缓存问题已修正；失败记录留在隔离目录，不作为通过证据。
+
+### 下一验收节点
+
+MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA06 需待能力可用后补齐正式在线入口的创建、刷新、取消/重试与平台流程验收。MA07 尚需两平台权限、敏感日志/凭据、SSRF/限流、配额/磁盘不足和清理恢复专项；MA08 桌面安装/升级、MA09 最终文档仍未完成。继续跳过抖音登录，不以本轮本地页面成功替代上述验收。

@@ -27,15 +27,15 @@
 
 ## 功能矩阵
 
-| 模块           | 前端路由                | API 命名空间                   | 能力                                                                        |
-| -------------- | ----------------------- | ------------------------------ | --------------------------------------------------------------------------- |
-| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress` | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                      |
-| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`     | 去水印、清晰度增强、商品图抠图，本地模型推理                                |
-| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*` | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理 |
-| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                        |
-| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                              |
-| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                           |
-| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/xhs-archive/*`  | 当前支持小红书图文、视频、Live Photo 归档、翻译与截帧；抖音接入验证中       |
+| 模块           | 前端路由                | API 命名空间                    | 能力                                                                        |
+| -------------- | ----------------------- | ------------------------------- | --------------------------------------------------------------------------- |
+| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress`  | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                      |
+| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`      | 去水印、清晰度增强、商品图抠图，本地模型推理                                |
+| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*`  | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理 |
+| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`    | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                        |
+| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                              |
+| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`   | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                           |
+| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书与抖音本地存档浏览、翻译、截帧及导出；抖音在线获取待发布验收          |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
@@ -218,7 +218,9 @@ Windows 桌面版的能力必须在“设置 → 能力管理”中由用户主�
 
 ### 多媒体内容归档
 
-当前可用平台仍为小红书；抖音正在进行真实作品解析和完整媒体下载验收，尚不能提交归档。新页面入口为 `/tools/media-archive`，旧 `/tools/xhs-archive` 收藏链接自动跳转。平台选择会校验分享链接，阻止多链接及平台不符的输入。此阶段保留原有版本化 API、能力包 ID 和存储目录，升级不会迁移或删除现有归档。
+页面入口为 `/tools/media-archive`，旧 `/tools/xhs-archive` 收藏链接自动跳转并保留查询参数及锚点。页面通过中性 `/api/v1/tools/media-archive/*` 接口浏览两平台本地存档，支持平台/内容类型/关键词筛选、预览、英文翻译与人工修订、暂停保存 PNG 截帧和 ZIP 导出。批量补译只处理当前筛选范围或显式选中 ID；切换筛选/分页会清空选择，删除失败的记录保留选择以便重试。小红书仍使用独立文本规范化及登录入口，不把这些规则应用到抖音。
+
+小红书在线获取保留；抖音匿名解析、获取管线和本地功能已分阶段验证，但正式受管能力发布、macOS 和最终安装包验收尚未完成，因此页面暂不开放抖音在线获取。本期按用户要求不实现抖音登录，也不复用小红书凭据。两平台解析环境状态独立显示，环境未安装不阻断已有存档浏览。现有存储目录与媒体不变，旧小红书版本化 API 保留为平台受限兼容入口；上述开发分支进度不等于旧安装包已更新。
 
 Web/开发版首次点击“获取并存档”时，模块会优先复用 Python 3.12；若本机没有，则通过固定版本 uv 把受管 Python、虚拟环境和固定提交的 XHS-Downloader 2.7 安装到 `.runtime/xhs-downloader`。普通项目启动不会安装或等待该环境。桌面版须先从能力管理中安装对应能力。解析 Worker 只监听回环地址，媒体获取完成后写入当前运行模式的数据目录。
 
