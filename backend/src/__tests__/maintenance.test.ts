@@ -43,6 +43,49 @@ describe("maintenance cleanup safety", () => {
     await app.close();
   });
 
+  it("清理分类仍有被占用文件时保留元数据，完整清理后才同步删除", async () => {
+    const app = fastify({ logger: false });
+    app.addHook("preSerialization", async (request, _reply, payload) => {
+      if (typeof payload !== "object" || payload === null) return payload;
+      const value = payload as Record<string, unknown>;
+      return typeof value.success === "boolean" ? { ...value, requestId: request.id } : payload;
+    });
+    const purgeAll = vi.fn().mockResolvedValue(1);
+    const cleanupRunner = vi
+      .fn()
+      .mockResolvedValueOnce([
+        { id: "xhs-archive", label: "归档", files: 1, bytes: 16, skippedFiles: 1, skippedBytes: 8 }
+      ])
+      .mockResolvedValueOnce([{ id: "xhs-archive", label: "归档", files: 1, bytes: 16 }]);
+    registerMaintenanceRoutes(app, {
+      config: {} as AppConfig,
+      database: {} as ToolboxDatabase,
+      xhsStore: { purgeAll } as unknown as XhsArchiveStore,
+      cleanupRunner
+    });
+
+    try {
+      const partial = await app.inject({
+        method: "POST",
+        url: "/api/v1/maintenance/cleanup",
+        payload: { ids: ["xhs-archive"] }
+      });
+      expect(partial.statusCode).toBe(200);
+      expect(partial.json().data).toMatchObject([{ id: "xhs-archive", skippedFiles: 1, skippedBytes: 8 }]);
+      expect(purgeAll).not.toHaveBeenCalled();
+
+      const completed = await app.inject({
+        method: "POST",
+        url: "/api/v1/maintenance/cleanup",
+        payload: { ids: ["xhs-archive"] }
+      });
+      expect(completed.statusCode).toBe(200);
+      expect(purgeAll).toHaveBeenCalledTimes(1);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("limits desktop cleanup to expired logs and temporary files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-desktop-cleanup-"));
     const dataRoot = path.join(root, "data");
