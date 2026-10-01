@@ -41,7 +41,7 @@ export function registerConcurrencyQuotas(app: FastifyInstance) {
   });
 
   const release = (request: FastifyRequest) => {
-    // onResponse/onError 均会释放占用，WeakMap 令同一请求最多释放一次。
+    // 正常响应、错误和流式响应断连都可能触发释放，WeakMap 令同一请求最多释放一次。
     const route = acquired.get(request);
     if (!route) return;
     acquired.delete(request);
@@ -51,5 +51,14 @@ export function registerConcurrencyQuotas(app: FastifyInstance) {
   };
   app.addHook("onResponse", async (request) => release(request));
   app.addHook("onError", async (request) => release(request));
+  app.addHook("onSend", async (request, reply, payload) => {
+    // 播放器取消 Range 请求可能只有 close 而没有 onResponse。等处理器结束后再监听，
+    // 不能因客户端提前断连而释放仍在执行的 AI/上传任务额度。
+    if (acquired.has(request)) {
+      if (reply.raw.destroyed) release(request);
+      else reply.raw.once("close", () => release(request));
+    }
+    return payload;
+  });
   app.addHook("onClose", async () => activeByRoute.clear());
 }
