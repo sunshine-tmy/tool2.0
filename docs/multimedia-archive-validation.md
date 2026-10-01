@@ -528,6 +528,10 @@ MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA0
 
 ### MA05/MA06 前端任务取消入口
 
+代码提交：`5f1e059`。
+
 归档任务卡现对 `pending`/`running` 任务显示“取消获取”。任务进入 `archiving` 原子提交阶段时隐藏取消按钮并解释不可取消，避免用户误以为文件提交可被中断；提交取消后显示忙碌状态，防止重复请求。页面调用中性任务取消 API，采用服务端返回的任务终态；若取消请求与正常完成竞争，以服务端结果为准并加载完成归档详情。提交阶段等原因导致取消失败时展示错误并重新读取任务状态。页面卸载继续由既有 AbortSignal 中止请求。
 
-定向测试：`pnpm --filter frontend exec vitest run src/modules/xhs-archive/ArchiveTaskPanel.test.ts src/modules/xhs-archive/page.test.ts`，27 项通过；`pnpm --filter frontend typecheck` 通过。覆盖待处理/运行态取消入口、取消中禁用、归档提交期提示、失败终态隐藏入口、页面调用取消 API、取消成功反馈，以及取消与正常完成/原子提交冲突的竞态。此功能不开放被 MA04/MA08 门禁保护的抖音在线获取，不代表 MA05/MA06 整体验收完成。
+定向测试：`pnpm --filter frontend exec vitest run src/modules/xhs-archive/ArchiveTaskPanel.test.ts src/modules/xhs-archive/page.test.ts`，27 项通过；`pnpm --filter frontend typecheck` 通过。覆盖待处理/运行态取消入口、取消中禁用、归档提交期提示、失败终态隐藏入口、页面调用取消 API、取消成功反馈，以及取消与正常完成/原子提交冲突的竞态。定向 Vue 覆盖行/语句 96.19%、分支 76.15%、函数 95.23%；以 `5af15bf` 为基线的变更行门禁覆盖 43/46（93.48%，高于 90%）。
+
+本次最终 `pnpm check`、`pnpm coverage` 与 `git diff --check` 均通过；全局行/语句、分支、函数覆盖率分别为：共享 93.87%/75.00%/94.44%，后端 94.78%/79.60%/88.35%，前端 78.38%/81.70%/91.15%，未调整任何门槛。此功能不开放被 MA04/MA08 门禁保护的抖音在线获取，不代表 MA05/MA06 整体验收完成。
