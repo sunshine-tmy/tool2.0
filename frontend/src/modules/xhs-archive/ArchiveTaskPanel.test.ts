@@ -6,7 +6,7 @@
 import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import type { ArchivePlatformSelection, XhsArchiveTask } from "@toolbox/shared";
+import type { ArchivePlatformSelection, ContentArchiveTask } from "@toolbox/shared";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
 
 const ButtonStub = defineComponent({
@@ -25,9 +25,10 @@ const InputStub = defineComponent({
     '<input v-bind="$attrs" :value="value" @input="$emit(\'update:value\', $event.target.value)" @keyup="$emit(\'keyup\', $event)" />'
 });
 
-function task(overrides: Partial<XhsArchiveTask> = {}): XhsArchiveTask {
+function task(overrides: Partial<ContentArchiveTask> = {}): ContentArchiveTask {
   return {
     id: "task-1",
+    platform: "xiaohongshu",
     status: "running",
     stage: "downloading",
     progress: 60,
@@ -42,7 +43,7 @@ function mountPanel(
   overrides: Partial<{
     inputUrl: string;
     platform: ArchivePlatformSelection;
-    task: XhsArchiveTask;
+    task: ContentArchiveTask;
     authWaiting: boolean;
     submitting: boolean;
   }> = {}

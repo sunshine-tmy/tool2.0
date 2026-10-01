@@ -6,6 +6,12 @@
         <template #prefix><Search :size="16" /></template>
       </n-input>
       <n-select v-model:value="typeFilter" :options="typeOptions" style="width: 150px" />
+      <n-select
+        v-model:value="platformFilter"
+        :options="platformOptions"
+        aria-label="归档平台筛选"
+        style="width: 150px"
+      />
       <n-checkbox
         class="archive-select-all"
         :checked="allCurrentArchivesSelected"
@@ -26,6 +32,9 @@
         {{ selectedIds.length ? `翻译所选 ${selectedIds.length} 条` : "补全未翻译内容" }}
       </n-button>
     </div>
+    <p class="filter-scope">
+      当前筛选范围 {{ archives.total }} 条；未选择时仅补全此范围内未翻译或已过期内容（每批最多 100 条）。
+    </p>
     <n-spin :show="listLoading">
       <n-empty v-if="!archives.items.length" description="还没有内容存档，请在上方输入链接获取内容" />
       <div v-else class="archive-grid">
@@ -40,7 +49,7 @@
           <n-checkbox
             class="card-selector"
             :checked="selectedIds.includes(archive.id)"
-            :aria-label="`选择 ${normalizeXhsText(archive.title)}`"
+            :aria-label="`选择 ${archiveDisplayTitle(archive)}`"
             @click.stop
             @update:checked="$emit('toggleSelection', archive.id, $event)"
           />
@@ -56,7 +65,7 @@
             <img
               v-else-if="archive.coverUrl"
               :src="mediaUrl(archive.coverUrl)"
-              :alt="normalizeXhsText(archive.title)"
+              :alt="archiveDisplayTitle(archive)"
               loading="lazy"
             />
             <div v-else><FileImage :size="30" /></div>
@@ -69,7 +78,10 @@
             </span>
           </div>
           <div class="card-copy">
-            <h3>{{ normalizeXhsText(archive.title) }}</h3>
+            <span class="card-platform-badge" :class="`platform-${archive.platform}`">{{
+              archivePlatformLabel(archive.platform)
+            }}</span>
+            <h3>{{ archiveDisplayTitle(archive) }}</h3>
             <p>{{ archive.author?.name || "未知作者" }}</p>
             <div>
               <span>{{ archive.mediaCount }} 个媒体</span><span>{{ formatBytes(archive.totalBytes) }}</span>
@@ -87,11 +99,12 @@
 import { computed } from "vue";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NSelect, NSpin } from "naive-ui";
 import { FileImage, Languages, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
-import { normalizeXhsText, type XhsArchiveListResponse } from "@toolbox/shared";
+import type { ContentArchiveListResponse, ContentArchiveListQuery } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../config/runtime";
+import { archiveDisplayTitle, archivePlatformLabel } from "./presentation";
 
 const props = defineProps<{
-  archives: XhsArchiveListResponse;
+  archives: ContentArchiveListResponse;
   listLoading: boolean;
   selectedIds: string[];
 }>();
@@ -108,7 +121,10 @@ const emit = defineEmits<{
 }>();
 
 const keyword = defineModel<string>("keyword", { required: true });
-const typeFilter = defineModel<string>("typeFilter", { required: true });
+const typeFilter = defineModel<NonNullable<ContentArchiveListQuery["type"]>>("typeFilter", { required: true });
+const platformFilter = defineModel<NonNullable<ContentArchiveListQuery["platform"]>>("platformFilter", {
+  default: "all"
+});
 const page = defineModel<number>("page", { required: true });
 
 const typeOptions = [
@@ -116,6 +132,11 @@ const typeOptions = [
   { label: "图文", value: "image" },
   { label: "视频", value: "video" },
   { label: "Live Photo", value: "live-photo" }
+];
+const platformOptions = [
+  { label: "全部平台", value: "all" },
+  { label: "小红书", value: "xiaohongshu" },
+  { label: "抖音", value: "douyin" }
 ];
 
 const allCurrentArchivesSelected = computed(
@@ -167,9 +188,29 @@ function formatBytes(value: number) {
 }
 .archive-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   margin-bottom: 20px;
+}
+.filter-scope {
+  color: #687386;
+  font-size: 12px;
+  margin: -8px 0 16px;
+}
+.card-platform-badge {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: #be123c;
+  background: #fff1f2;
+  font-size: 11px;
+  font-weight: 600;
+}
+.card-platform-badge.platform-douyin {
+  color: #334155;
+  background: #e2e8f0;
 }
 .archive-toolbar .n-input {
   flex: 1;

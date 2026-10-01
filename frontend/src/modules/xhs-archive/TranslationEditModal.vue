@@ -34,29 +34,24 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { NButton, NForm, NFormItem, NInput, NModal } from "naive-ui";
-import type { XhsArchiveItem } from "@toolbox/shared";
+import type { ContentArchiveItem, ContentTranslationEditInput } from "@toolbox/shared";
 import { resolveXhsTranslationField } from "@toolbox/shared";
 
-const props = defineProps<{ show: boolean; item?: XhsArchiveItem }>();
+const props = defineProps<{ show: boolean; item?: ContentArchiveItem }>();
 const emit = defineEmits<{
   (event: "update:show", value: boolean): void;
-  (
-    event: "save",
-    value: {
-      sourceHash: string;
-      title: { edited: string };
-      description?: { edited: string };
-      topics: Array<{ topicId: string; edited: string }>;
-    }
-  ): void;
+  (event: "save", value: ContentTranslationEditInput): void;
 }>();
 const title = ref("");
 const description = ref("");
 const topicFields = ref<Array<{ topicId: string; source: string; edited: string }>>([]);
+// 编辑时固化打开弹窗的版本；后台刷新不能替换 sourceHash 后让旧输入覆盖新译文。
+const sourceHash = ref("");
 watch(
-  () => [props.show, props.item?.id],
+  [() => props.show, () => props.item?.id],
   () => {
     if (!props.show || !props.item?.translation) return;
+    sourceHash.value = props.item.translation.sourceHash;
     title.value = resolveXhsTranslationField(props.item.translation.title);
     description.value = resolveXhsTranslationField(props.item.translation.description);
     topicFields.value = props.item.translation.topics.map((topic) => ({
@@ -73,7 +68,7 @@ function onShowChange(value: boolean) {
 function save() {
   if (!props.item?.translation) return;
   emit("save", {
-    sourceHash: props.item.translation.sourceHash,
+    sourceHash: sourceHash.value,
     title: { edited: title.value.trim() },
     description: description.value.trim() ? { edited: description.value.trim() } : undefined,
     topics: topicFields.value.map(({ topicId, edited }) => ({ topicId, edited: edited.trim() }))

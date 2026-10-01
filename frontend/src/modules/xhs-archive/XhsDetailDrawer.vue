@@ -17,14 +17,7 @@
       <template v-if="props.detail">
         <MediaGallery :item="props.detail" compact @frame-saved="emit('frameSaved', $event)" />
         <div class="drawer-meta">
-          <div class="drawer-facts">
-            <p>
-              <span>作者</span><strong>{{ props.detail.author?.name || "未知" }}</strong>
-            </p>
-            <p>
-              <span>存档时间</span><strong>{{ props.formatDate(props.detail.updatedAt) }}</strong>
-            </p>
-          </div>
+          <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
           <BilingualContent :item="props.detail" compact />
         </div>
       </template>
@@ -36,7 +29,11 @@
           <n-button v-if="props.detail" secondary @click="props.translateDetail">
             <template #icon><Languages :size="15" /></template>生成英文
           </n-button>
-          <n-button v-if="props.detail?.translation" secondary @click="props.editTranslation(props.detail)"
+          <n-button
+            v-if="props.detail"
+            :disabled="!canEditTranslation(props.detail)"
+            secondary
+            @click="props.editTranslation(props.detail)"
             >编辑英文</n-button
           >
           <n-button
@@ -58,26 +55,28 @@
 <script setup lang="ts">
 import { NButton, NDrawer, NDrawerContent } from "naive-ui";
 import { Languages, Trash2 } from "lucide-vue-next";
-import type { XhsArchiveItem } from "@toolbox/shared";
+import type { ContentArchiveItem } from "@toolbox/shared";
+import ArchiveFacts from "./ArchiveFacts.vue";
+import { canEditTranslation } from "./presentation";
 import BilingualContent from "./BilingualContent.vue";
 import MediaGallery from "./MediaGallery.vue";
 
 const props = defineProps<{
   open: boolean;
   width: number | string;
-  detail?: XhsArchiveItem;
+  detail?: ContentArchiveItem;
   formatDate: (value: string) => string;
   removeItem: () => void | Promise<void>;
   translateDetail: () => void | Promise<void>;
-  editTranslation: (item: XhsArchiveItem) => void;
-  resetTranslation: (item: XhsArchiveItem) => void | Promise<void>;
-  hasEdited: (item: XhsArchiveItem) => boolean;
+  editTranslation: (item: ContentArchiveItem) => void;
+  resetTranslation: (item: ContentArchiveItem) => void | Promise<void>;
+  hasEdited: (item: ContentArchiveItem) => boolean;
   zipUrl: (id: string) => string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
-  frameSaved: [item: XhsArchiveItem];
+  frameSaved: [item: ContentArchiveItem];
 }>();
 </script>
 

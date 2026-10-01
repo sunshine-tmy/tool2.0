@@ -4,13 +4,17 @@
     <section class="main-column xhs-main">
       <ToolPageHeader
         title="多媒体内容归档"
-        description="将作品正文与媒体保存到本机，支持预览、翻译与视频截帧。当前支持小红书，抖音接入验证中。"
+        description="浏览小红书与抖音本地存档，支持预览、翻译与视频截帧。抖音在线获取仍在接入验收中。"
         kicker="LOCAL MEDIA ARCHIVE"
       />
 
       <n-alert type="info" :bordered="false" class="license-note">
         仅用于个人本地归档。解析组件来自 XHS-Downloader 2.7（GPL-3.0），不绕过验证码或平台访问限制。
       </n-alert>
+      <div class="platform-runtime" aria-label="分平台解析环境">
+        <span>小红书：{{ xhsRuntime?.message || "正在读取环境状态" }}</span>
+        <span>抖音（匿名）：{{ douyinRuntime?.message || "正在读取环境状态" }}；获取入口待正式能力发布验收</span>
+      </div>
 
       <n-alert
         v-if="desktopMode && translationRuntime?.status !== 'ready'"
@@ -55,6 +59,7 @@
       <ArchiveListPanel
         v-model:keyword="keyword"
         v-model:type-filter="typeFilter"
+        v-model:platform-filter="platformFilter"
         v-model:page="page"
         :archives="archives"
         :list-loading="listLoading"
@@ -92,14 +97,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton, useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import {
-  normalizeXhsText,
   identifyArchiveLink,
   type ArchivePlatformSelection,
-  parseXhsContentText,
-  resolveXhsTranslationField,
-  type XhsArchiveItem,
-  type XhsArchiveListResponse,
-  type XhsArchiveTask,
+  type ContentArchiveItem,
+  type ContentArchiveTask,
+  type ContentTranslationEditInput,
+  type DouyinRuntimeStatus,
+  type XhsRuntimeStatus,
   type XhsTranslationRuntimeStatus
 } from "@toolbox/shared";
 import ToolLayout from "../../layouts/ToolLayout.vue";
@@ -113,9 +117,10 @@ import { useConfirmDialog } from "../../composables/useConfirmDialog";
 import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { copyTextToClipboard } from "../../utils/clipboard";
-import { resolveBackendUrl } from "../../config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../services/http";
-import { xhsArchiveApi } from "./api";
+import { contentArchiveApi, contentArchiveZipUrl } from "./content-api";
+import { archiveDisplayTitle, archiveDisplayText, archiveClipboardText, canEditTranslation } from "./presentation";
+import { useArchiveCollection } from "./useArchiveCollection";
 
 const message = useMessage();
 const router = useRouter();
@@ -123,9 +128,11 @@ const confirm = useConfirmDialog();
 const desktopMode = computed(() => Boolean(window.toolboxDesktop));
 const translationRuntime = ref<XhsTranslationRuntimeStatus>();
 const translationRuntimeLoading = ref(false);
+const xhsRuntime = ref<XhsRuntimeStatus>();
+const douyinRuntime = ref<DouyinRuntimeStatus>();
 const inputUrl = ref("");
 const platform = ref<ArchivePlatformSelection>("auto");
-const task = ref<XhsArchiveTask>();
+const task = ref<ContentArchiveTask>();
 const submitting = ref(false);
 const streamedTaskId = computed(() =>
   task.value && !["completed", "failed"].includes(task.value.status) ? task.value.id : undefined
@@ -139,19 +146,26 @@ const translationEvents = useTaskEvents(
     signal: requestScope.signal
   }
 );
-const current = ref<XhsArchiveItem>();
+const collection = useArchiveCollection((error) => message.error(formatApiError(error, "读取存档失败")));
+const {
+  current,
+  keyword,
+  typeFilter,
+  platformFilter,
+  page,
+  listLoading,
+  archives,
+  selectedArchiveIds,
+  drawerOpen,
+  detail,
+  loadArchives,
+  toggleArchiveSelection,
+  toggleSelectAllArchives
+} = collection;
 const refreshing = ref(false);
 const authWaiting = ref(false);
-const keyword = ref("");
-const typeFilter = ref("all");
-const page = ref(1);
-const listLoading = ref(false);
-const archives = ref<XhsArchiveListResponse>({ items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 });
-const selectedArchiveIds = ref<string[]>([]);
-const drawerOpen = ref(false);
-const detail = ref<XhsArchiveItem>();
 const editOpen = ref(false);
-const editTarget = ref<XhsArchiveItem>();
+const editTarget = ref<ContentArchiveItem>();
 const drawerWidth = computed(() => (typeof window !== "undefined" && window.innerWidth < 720 ? "100%" : 720));
 let disposed = false;
 let taskSyncRevision = 0;
@@ -205,7 +219,7 @@ async function startFetch() {
   submitting.value = true;
   try {
     // 创建获取任务立即返回 taskId；后续进度由 SSE 驱动，不阻塞页面输入和浏览。
-    task.value = await xhsArchiveApi.create(link.url);
+    task.value = await contentArchiveApi.create({ url: link.url, platform: link.platform }, requestScope.signal);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取失败"));
   } finally {
@@ -215,7 +229,7 @@ async function startFetch() {
 async function refreshItem(id: string) {
   refreshing.value = true;
   try {
-    task.value = await xhsArchiveApi.refresh(id);
+    task.value = await contentArchiveApi.refresh(id, requestScope.signal);
   } catch (error) {
     refreshing.value = false;
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "刷新存档失败"));
@@ -226,8 +240,8 @@ async function syncArchiveTask(taskId: string) {
   const revision = ++taskSyncRevision;
   try {
     // revision 令牌保证快速连续提交时只有最后一次请求可以更新当前内容。
-    const next = await xhsArchiveApi.task(taskId);
-    if (revision !== taskSyncRevision || task.value?.id !== taskId) return;
+    const next = await contentArchiveApi.task(taskId, requestScope.signal);
+    if (disposed || revision !== taskSyncRevision || task.value?.id !== taskId) return;
     task.value = next;
     if (next.status === "failed") {
       refreshing.value = false;
@@ -236,7 +250,9 @@ async function syncArchiveTask(taskId: string) {
     }
     if (next.status !== "completed" || !next.archiveId) return;
     refreshing.value = false;
-    current.value = await xhsArchiveApi.detail(next.archiveId);
+    const result = await contentArchiveApi.detail(next.archiveId, requestScope.signal);
+    if (disposed || revision !== taskSyncRevision || task.value?.id !== taskId) return;
+    current.value = result;
     if (current.value.translation?.taskId && current.value.translation.status !== "ready") {
       trackTranslation(current.value.translation.taskId, current.value.id, true);
     }
@@ -250,14 +266,16 @@ async function syncArchiveTask(taskId: string) {
   }
 }
 async function loginAndRetry() {
+  // 本期抖音不提供登录，不因输入平台切换而误启动 XHS 登录窗口。
+  if (task.value?.platform !== "xiaohongshu" || authWaiting.value) return;
   authWaiting.value = true;
   try {
     // 登录流程由后端管理 Cookie；前端仅等待状态终止，再复用原输入重新创建获取任务。
-    const session = await xhsArchiveApi.startAuth();
+    const session = await contentArchiveApi.startXhsAuth(requestScope.signal);
     let state = session;
     while (!["completed", "failed"].includes(state.status)) {
-      await delay(1200);
-      state = await xhsArchiveApi.auth(session.id);
+      await delay(1200, requestScope.signal);
+      state = await contentArchiveApi.xhsAuth(session.id, requestScope.signal);
     }
     if (state.status === "failed") throw new Error(state.error || state.message);
     message.success("登录成功，正在重新获取");
@@ -268,34 +286,14 @@ async function loginAndRetry() {
     authWaiting.value = false;
   }
 }
-async function loadArchives() {
-  listLoading.value = true;
-  try {
-    archives.value = await xhsArchiveApi.list({
-      keyword: keyword.value,
-      type: typeFilter.value,
-      page: page.value,
-      pageSize: 12
-    });
-    selectedArchiveIds.value = selectedArchiveIds.value.filter((id) =>
-      archives.value.items.some((item) => item.id === id)
-    );
-  } catch (error) {
-    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "读取存档失败"));
-  } finally {
-    listLoading.value = false;
-  }
-}
 async function openDetail(id: string) {
-  detail.value = await xhsArchiveApi.detail(id);
-  drawerOpen.value = true;
-  if (detail.value.translation?.taskId && detail.value.translation.status !== "ready") {
-    trackTranslation(detail.value.translation.taskId, detail.value.id, false);
+  const item = await collection.openDetail(id);
+  if (item?.translation?.taskId && !["ready", "stale", "failed"].includes(item.translation.status)) {
+    trackTranslation(item.translation.taskId, item.id, false);
   }
 }
-async function onFrameSaved(updated: XhsArchiveItem) {
-  if (current.value?.id === updated.id) current.value = updated;
-  if (detail.value?.id === updated.id) detail.value = updated;
+async function onFrameSaved(updated: ContentArchiveItem) {
+  collection.updateItem(updated);
   await loadArchives();
   message.success("视频截帧已保存到当前归档");
 }
@@ -303,8 +301,10 @@ async function translateCurrent() {
   if (!(await requireTranslationCapability())) return;
   if (!current.value) return;
   try {
-    const task = await xhsArchiveApi.translate(current.value.id, current.value.translation?.status === "ready");
-    if ("id" in task) trackTranslation(task.id, current.value.id, true);
+    const item = current.value;
+    const task = await contentArchiveApi.translate(item.id, item.translation?.status === "ready", requestScope.signal);
+    if (disposed) return;
+    if ("id" in task) trackTranslation(task.id, item.id, true);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "创建翻译任务失败"));
   }
@@ -313,17 +313,20 @@ async function translateDetail() {
   if (!(await requireTranslationCapability())) return;
   if (!detail.value) return;
   try {
-    const task = await xhsArchiveApi.translate(detail.value.id, detail.value.translation?.status === "ready");
-    if ("id" in task) trackTranslation(task.id, detail.value.id, false);
+    const item = detail.value;
+    const task = await contentArchiveApi.translate(item.id, item.translation?.status === "ready", requestScope.signal);
+    if (disposed) return;
+    if ("id" in task) trackTranslation(task.id, item.id, false);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "创建翻译任务失败"));
   }
 }
-function editTranslation(item: XhsArchiveItem) {
+function editTranslation(item: ContentArchiveItem) {
+  if (!canEditTranslation(item)) return;
   editTarget.value = item;
   editOpen.value = true;
 }
-function hasEdited(item: XhsArchiveItem) {
+function hasEdited(item: ContentArchiveItem) {
   const translation = item.translation;
   return Boolean(
     translation &&
@@ -332,15 +335,15 @@ function hasEdited(item: XhsArchiveItem) {
       translation.topics.some((topic) => topic.edited?.trim()))
   );
 }
-async function resetTranslation(item: XhsArchiveItem) {
+async function resetTranslation(item: ContentArchiveItem) {
   const accepted = await confirm("将清除这条存档的英文人工修订并恢复机器翻译。", {
     title: "恢复机器翻译",
     positiveText: "确认恢复"
   });
   if (!accepted) return;
   try {
-    await xhsArchiveApi.resetTranslation(item.id);
-    const updated = await xhsArchiveApi.detail(item.id);
+    await contentArchiveApi.resetTranslation(item.id, requestScope.signal);
+    const updated = await contentArchiveApi.detail(item.id, requestScope.signal);
     if (current.value?.id === item.id) current.value = updated;
     if (detail.value?.id === item.id) detail.value = updated;
     message.success("已恢复机器翻译");
@@ -348,21 +351,17 @@ async function resetTranslation(item: XhsArchiveItem) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "恢复机器翻译失败"));
   }
 }
-async function saveTranslation(payload: {
-  sourceHash: string;
-  title: { edited: string };
-  description?: { edited: string };
-  topics: Array<{ topicId: string; edited: string }>;
-}) {
-  if (!editTarget.value) return;
+async function saveTranslation(payload: ContentTranslationEditInput) {
+  const target = editTarget.value;
+  if (!target) return;
   try {
-    const updated = await xhsArchiveApi.editTranslation(editTarget.value.id, payload);
-    const refreshed = await xhsArchiveApi.detail(editTarget.value.id);
+    await contentArchiveApi.editTranslation(target.id, payload, requestScope.signal);
+    const refreshed = await contentArchiveApi.detail(target.id, requestScope.signal);
+    if (disposed || editTarget.value !== target) return;
     editTarget.value = refreshed;
     if (current.value?.id === refreshed.id) current.value = refreshed;
     if (detail.value?.id === refreshed.id) detail.value = refreshed;
     editOpen.value = false;
-    void updated;
     message.success("英文修订已保存");
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "保存英文修订失败"));
@@ -372,8 +371,14 @@ async function translateSelected() {
   if (!(await requireTranslationCapability())) return;
   try {
     const task = selectedArchiveIds.value.length
-      ? await xhsArchiveApi.translateBatch({ mode: "selected", itemIds: selectedArchiveIds.value })
-      : await xhsArchiveApi.translateBatch({ mode: "missing-or-stale" });
+      ? await contentArchiveApi.translateBatch(
+          { mode: "selected", itemIds: [...selectedArchiveIds.value] },
+          requestScope.signal
+        )
+      : await contentArchiveApi.translateBatch(
+          { mode: "missing-or-stale", filter: collection.filter() },
+          requestScope.signal
+        );
     if ("id" in task) trackTranslation(task.id, undefined, false);
     await loadArchives();
   } catch (error) {
@@ -402,10 +407,12 @@ async function finishTranslation(taskId: string) {
   if (!target || target.taskId !== taskId) return;
   try {
     // 翻译终态后按目标 item 刷新当前抽屉和列表，失败时保留原文并展示可重试错误。
-    const state = await xhsArchiveApi.translationTask(taskId);
+    const state = await contentArchiveApi.translationTask(taskId, requestScope.signal);
+    if (disposed || translationTarget.value !== target) return;
     if (state.status === "failed") {
       if (target.itemId) {
-        const updated = await xhsArchiveApi.detail(target.itemId).catch(() => undefined);
+        const updated = await contentArchiveApi.detail(target.itemId, requestScope.signal).catch(() => undefined);
+        if (disposed || translationTarget.value !== target) return;
         if (updated) {
           if (target.updateCurrent && current.value?.id === target.itemId) current.value = updated;
           if (detail.value?.id === target.itemId) detail.value = updated;
@@ -416,11 +423,13 @@ async function finishTranslation(taskId: string) {
       return;
     }
     if (target.itemId) {
-      const updated = await xhsArchiveApi.detail(target.itemId);
+      const updated = await contentArchiveApi.detail(target.itemId, requestScope.signal);
+      if (disposed || translationTarget.value !== target) return;
       if (target.updateCurrent && current.value?.id === target.itemId) current.value = updated;
       if (detail.value?.id === target.itemId) detail.value = updated;
     }
     message.success("英文翻译已完成");
+    await loadArchives();
   } catch (error) {
     if (!disposed && !isApiErrorCancelled(error)) message.error(formatApiError(error, "读取翻译进度失败"));
   } finally {
@@ -432,30 +441,24 @@ async function removeItem() {
   // 删除前展示媒体数量和字节数；确认后由服务端事务同时删除元数据和文件。
   const item = detail.value;
   const accepted = await confirm(
-    `将永久删除“${normalizeXhsText(item.title)}”及 ${item.media.length} 个本地媒体（${formatBytes(item.totalBytes)}）。此操作无法撤销。`,
+    `将永久删除“${archiveDisplayTitle(item)}”及 ${item.media.length} 个本地媒体（${formatBytes(item.totalBytes)}）。此操作无法撤销。`,
     { title: "删除内容存档", positiveText: "确认删除" }
   );
   if (!accepted) return;
-  await xhsArchiveApi.remove(item.id);
-  drawerOpen.value = false;
-  if (current.value?.id === item.id) current.value = undefined;
-  message.success("存档已删除");
-  await loadArchives();
-}
-function toggleArchiveSelection(id: string, checked: boolean) {
-  selectedArchiveIds.value = checked
-    ? [...new Set([...selectedArchiveIds.value, id])]
-    : selectedArchiveIds.value.filter((value) => value !== id);
-}
-function toggleSelectAllArchives(checked: boolean) {
-  const currentIds = archives.value.items.map((item) => item.id);
-  selectedArchiveIds.value = checked
-    ? [...new Set([...selectedArchiveIds.value, ...currentIds])]
-    : selectedArchiveIds.value.filter((id) => !currentIds.includes(id));
+  try {
+    await contentArchiveApi.remove(item.id, requestScope.signal);
+    if (disposed) return;
+    collection.forgetItem(item.id);
+    message.success("存档已删除");
+    await loadArchives();
+  } catch (error) {
+    if (!disposed && !isApiErrorCancelled(error)) message.error(formatApiError(error, "删除存档失败"));
+  }
 }
 async function removeSelected() {
   const selected = archives.value.items.filter((item) => selectedArchiveIds.value.includes(item.id));
-  // 批量删除只针对当前已选 ID，删除完成后清空选择并刷新分页，避免残留已删除项。
+  if (!selected.length) return;
+  // 批量删除只针对当前已选 ID；仅清除成功项，失败项保留选择以便显式重试。
   const mediaCount = selected.reduce((sum, item) => sum + item.mediaCount, 0);
   const bytes = selected.reduce((sum, item) => sum + item.totalBytes, 0);
   const accepted = await confirm(
@@ -463,53 +466,34 @@ async function removeSelected() {
     { title: "批量删除内容存档", positiveText: "确认全部删除" }
   );
   if (!accepted) return;
-  await Promise.all(selected.map((item) => xhsArchiveApi.remove(item.id)));
-  selectedArchiveIds.value = [];
-  if (current.value && selected.some((item) => item.id === current.value?.id)) current.value = undefined;
-  message.success(`已删除 ${selected.length} 条存档`);
+  const results = await Promise.allSettled(
+    selected.map(async (item) => {
+      await contentArchiveApi.remove(item.id, requestScope.signal);
+      collection.forgetItem(item.id);
+    })
+  );
+  if (disposed) return;
+  const removed = results.filter((result) => result.status === "fulfilled").length;
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected" && !isApiErrorCancelled(failed.reason))
+    message.error(formatApiError(failed.reason, "部分存档删除失败"));
+  if (removed) message.success(`已删除 ${removed} 条存档`);
   await loadArchives();
 }
 async function copyDescription() {
   if (!current.value) return;
-  await copyTextToClipboard(cleanDescription(current.value.description || ""));
+  await copyTextToClipboard(archiveDisplayText(current.value).body);
   message.success("正文已复制");
 }
 async function copyCurrent(language: "zh" | "en" | "both") {
   if (!current.value) return;
   await copyItem(current.value, language);
 }
-async function copyItem(item: XhsArchiveItem, language: "zh" | "en" | "both") {
-  const parsed = parseXhsContentText(item.description);
-  const chinese = [
-    `标题：${item.title}`,
-    "",
-    parsed.body,
-    parsed.topics.length ? `\n话题：${parsed.topics.map((topic) => `#${topic.source}`).join(" ")}` : ""
-  ].join("\n");
-  const translation = item.translation;
-  const english = translation
-    ? [
-        `Title: ${resolveXhsTranslationField(translation.title)}`,
-        "",
-        resolveXhsTranslationField(translation.description),
-        translation.topics.length
-          ? `\nTopics: ${translation.topics.map((topic) => `#${resolveXhsTranslationField(topic)}`).join(" ")}`
-          : ""
-      ].join("\n")
-    : "";
-  await copyTextToClipboard(language === "zh" ? chinese : language === "en" ? english : `${chinese}\n\n${english}`);
+async function copyItem(item: ContentArchiveItem, language: "zh" | "en" | "both") {
+  await copyTextToClipboard(archiveClipboardText(item, language));
   message.success("内容已复制");
 }
-
-function cleanDescription(value: string) {
-  return normalizeXhsText(value)
-    .replace(/\[话题\]#?/g, " ")
-    .replace(/[^\S\r\n]+/g, " ")
-    .trim();
-}
-function zipUrl(id: string) {
-  return resolveBackendUrl(`/api/v1/tools/xhs-archive/items/${id}/download.zip`);
-}
+const zipUrl = contentArchiveZipUrl;
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
@@ -519,19 +503,53 @@ function formatBytes(value: number) {
   if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
 }
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new DOMException("请求已取消", "AbortError"));
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("请求已取消", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 onMounted(() => {
   // 页面级粘贴监听便于快速输入链接；输入框和可编辑元素会主动忽略该快捷操作。
   void loadArchives();
+  // 独立读取平台环境，仅影响状态提示，能力离线不会阻断已保存归档的浏览。
+  void contentArchiveApi
+    .xhsRuntime(requestScope.signal)
+    .then((status) => {
+      if (!disposed) xhsRuntime.value = status;
+    })
+    .catch((error) => {
+      if (!disposed && !isApiErrorCancelled(error)) message.warning(formatApiError(error, "读取小红书环境失败"));
+    });
+  void contentArchiveApi
+    .douyinRuntime(requestScope.signal)
+    .then((status) => {
+      if (!disposed) douyinRuntime.value = status;
+    })
+    .catch((error) => {
+      if (!disposed && !isApiErrorCancelled(error)) message.warning(formatApiError(error, "读取抖音环境失败"));
+    });
   if (desktopMode.value) {
     translationRuntimeLoading.value = true;
-    void xhsArchiveApi
-      .translationRuntime()
-      .then((status) => (translationRuntime.value = status))
-      .catch((error) => message.warning(formatApiError(error, "读取翻译能力状态失败")))
-      .finally(() => (translationRuntimeLoading.value = false));
+    void contentArchiveApi
+      .translationRuntime(requestScope.signal)
+      .then((status) => {
+        if (!disposed) translationRuntime.value = status;
+      })
+      .catch((error) => {
+        if (!disposed && !isApiErrorCancelled(error)) message.warning(formatApiError(error, "读取翻译能力状态失败"));
+      })
+      .finally(() => {
+        if (!disposed) translationRuntimeLoading.value = false;
+      });
   }
   window.addEventListener("paste", handlePagePaste);
 });
@@ -550,6 +568,13 @@ onBeforeUnmount(() => {
 }
 .license-note {
   margin-top: 0;
+}
+.platform-runtime {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  color: #687386;
+  font-size: 12px;
 }
 .capability-note {
   margin-top: 0;

@@ -14,7 +14,7 @@
         <n-button secondary @click="props.copyCurrent('zh')">复制中文</n-button>
         <n-button secondary :disabled="!props.current.translation" @click="props.copyCurrent('en')">复制英文</n-button>
         <n-button secondary @click="props.copyCurrent('both')">复制中英双语</n-button>
-        <n-button secondary tag="a" :href="props.current.canonicalUrl" target="_blank">
+        <n-button secondary tag="a" :href="props.current.canonicalUrl" target="_blank" rel="noopener noreferrer">
           <template #icon><ExternalLink :size="15" /></template>原链接
         </n-button>
         <n-button secondary tag="a" :href="props.zipUrl(props.current.id)">
@@ -27,7 +27,7 @@
           <template #icon><Languages :size="15" /></template
           >{{ props.current.translation?.status === "ready" ? "重新翻译" : "生成英文" }}
         </n-button>
-        <n-button secondary :disabled="!props.current.translation" @click="props.editTranslation(props.current)"
+        <n-button secondary :disabled="!canEditTranslation(props.current)" @click="props.editTranslation(props.current)"
           >编辑英文</n-button
         >
         <n-button v-if="props.hasEdited(props.current)" secondary @click="props.resetTranslation(props.current)"
@@ -38,14 +38,7 @@
     <div class="result-detail-layout">
       <MediaGallery :item="props.current" @frame-saved="emit('frameSaved', $event)" />
       <div class="drawer-meta result-meta">
-        <div class="drawer-facts">
-          <p>
-            <span>作者</span><strong>{{ props.current.author?.name || "未知" }}</strong>
-          </p>
-          <p>
-            <span>存档时间</span><strong>{{ props.formatDate(props.current.updatedAt) }}</strong>
-          </p>
-        </div>
+        <ArchiveFacts :item="props.current" :format-date="props.formatDate" />
         <BilingualContent :item="props.current" />
       </div>
     </div>
@@ -58,25 +51,27 @@
 <script setup lang="ts">
 import { NAlert, NButton, NTag } from "naive-ui";
 import { Copy, ExternalLink, Languages, PackageOpen, RefreshCw } from "lucide-vue-next";
-import type { XhsArchiveItem } from "@toolbox/shared";
+import type { ContentArchiveItem } from "@toolbox/shared";
+import ArchiveFacts from "./ArchiveFacts.vue";
+import { canEditTranslation } from "./presentation";
 import BilingualContent from "./BilingualContent.vue";
 import MediaGallery from "./MediaGallery.vue";
 
 const props = defineProps<{
-  current: XhsArchiveItem;
+  current: ContentArchiveItem;
   refreshing: boolean;
   copyDescription: () => void | Promise<void>;
   copyCurrent: (language: "zh" | "en" | "both") => void | Promise<void>;
   zipUrl: (id: string) => string;
   refreshItem: (id: string) => void | Promise<void>;
   translateCurrent: () => void | Promise<void>;
-  editTranslation: (item: XhsArchiveItem) => void;
-  resetTranslation: (item: XhsArchiveItem) => void | Promise<void>;
-  hasEdited: (item: XhsArchiveItem) => boolean;
+  editTranslation: (item: ContentArchiveItem) => void;
+  resetTranslation: (item: ContentArchiveItem) => void | Promise<void>;
+  hasEdited: (item: ContentArchiveItem) => boolean;
   formatDate: (value: string) => string;
 }>();
 
-const emit = defineEmits<{ frameSaved: [item: XhsArchiveItem] }>();
+const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem] }>();
 </script>
 
 <style scoped>

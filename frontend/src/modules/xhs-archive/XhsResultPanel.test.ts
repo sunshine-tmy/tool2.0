@@ -6,17 +6,19 @@
 import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
-import type { XhsArchiveItem } from "@toolbox/shared";
+import type { ContentArchiveItem } from "@toolbox/shared";
 import XhsResultPanel from "./XhsResultPanel.vue";
 
 const item = {
   id: "archive-1",
+  platform: "xiaohongshu",
+  contentId: "content-1",
   canonicalUrl: "https://www.xiaohongshu.com/explore/archive-1",
   updatedAt: "2026-09-15T00:00:00.000Z",
   warnings: [],
   author: { name: "测试作者" },
   translation: undefined
-} as unknown as XhsArchiveItem;
+} as unknown as ContentArchiveItem;
 
 describe("XHS result panel", () => {
   it("renders the result summary and delegates actions", async () => {

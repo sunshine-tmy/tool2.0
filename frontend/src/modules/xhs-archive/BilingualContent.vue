@@ -3,7 +3,7 @@
   <div class="bilingual-content" :class="{ compact }">
     <section class="bilingual-title-block">
       <span class="bilingual-label">标题</span>
-      <h3>{{ item.title }}</h3>
+      <h3>{{ archiveDisplayTitle(item) }}</h3>
       <template v-if="item.translation">
         <span class="bilingual-label english-label">English</span>
         <p class="english-title">{{ resolveXhsTranslationField(item.translation.title) || "尚未生成英文翻译" }}</p>
@@ -42,17 +42,17 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
-  parseXhsContentText,
   resolveXhsTranslationField,
-  type XhsArchiveItem,
+  type ContentArchiveItem,
   type XhsArchiveTranslation,
   type XhsTranslationField
 } from "@toolbox/shared";
+import { archiveDisplayText, archiveDisplayTitle } from "./presentation";
 
-const props = defineProps<{ item: XhsArchiveItem; compact?: boolean }>();
-const parsed = computed(() => parseXhsContentText(props.item.description));
+const props = defineProps<{ item: ContentArchiveItem; compact?: boolean }>();
+const parsed = computed(() => archiveDisplayText(props.item));
 const body = computed(() => parsed.value.body);
-const topics = computed(() => (props.item.topics.length ? props.item.topics : parsed.value.topics));
+const topics = computed(() => parsed.value.topics);
 function translationTopic(id: string): XhsTranslationField | undefined {
   return props.item.translation?.topics.find((topic) => topic.topicId === id);
 }

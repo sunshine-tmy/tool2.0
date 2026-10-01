@@ -63,7 +63,10 @@
       <div v-if="task.status === 'failed'" class="task-error">
         <span>{{ task.error }}</span>
         <n-button
-          v-if="task.errorCode === 'XHS_AUTH_REQUIRED'"
+          v-if="
+            task.platform === 'xiaohongshu' &&
+            ['XHS_AUTH_REQUIRED', 'ARCHIVE_AUTH_REQUIRED'].includes(task.errorCode || '')
+          "
           type="warning"
           size="small"
           :loading="authWaiting"
@@ -84,12 +87,12 @@ import { Archive, Box, Check, Download, FileSearch, HardDriveDownload } from "lu
 import {
   identifyArchiveLink,
   type ArchivePlatformSelection,
-  type XhsArchiveTask,
+  type ContentArchiveTask,
   type XhsArchiveTaskStage
 } from "@toolbox/shared";
 
 const props = defineProps<{
-  task?: XhsArchiveTask;
+  task?: ContentArchiveTask;
   submitting?: boolean;
   authWaiting: boolean;
 }>();

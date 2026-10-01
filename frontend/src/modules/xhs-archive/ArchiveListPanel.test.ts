@@ -12,7 +12,8 @@ const archives = {
   items: [
     {
       id: "archive_123",
-      noteId: "note-123",
+      platform: "xiaohongshu" as const,
+      contentId: "note-123",
       sourceUrl: "https://www.xiaohongshu.com/explore/note-123",
       canonicalUrl: "https://www.xiaohongshu.com/explore/note-123",
       type: "image" as const,

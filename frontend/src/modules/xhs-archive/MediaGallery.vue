@@ -12,6 +12,7 @@
       <video
         v-else
         ref="videoElement"
+        :key="media.id"
         :src="mediaUrl(media.previewUrl)"
         crossorigin="anonymous"
         controls
@@ -56,6 +57,7 @@
           v-for="(entry, index) in item.media"
           :key="entry.id"
           type="button"
+          :aria-label="`预览媒体 ${index + 1}`"
           :class="{ active: selected === index }"
           @click="selected = index"
         >
@@ -63,15 +65,19 @@
             v-if="entry.kind === 'image' || entry.kind === 'cover'"
             :src="mediaUrl(entry.previewUrl)"
             :alt="`媒体 ${index + 1}`"
+            loading="lazy"
           />
           <video
             v-else
             :src="mediaUrl(entry.previewUrl)"
             muted
             playsinline
-            preload="metadata"
+            :preload="selected === index ? 'metadata' : 'none'"
             @loadedmetadata="showFirstVideoFrame"
           />
+          <span v-if="isVideoMedia(entry) && selected !== index" class="video-thumb-placeholder">
+            <Play :size="18" aria-hidden="true" />视频
+          </span>
           <span
             v-if="isCapturedVideoFrame(entry)"
             class="captured-frame-thumb-badge"
@@ -107,21 +113,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { NButton, NImage } from "naive-ui";
-import { Camera, ChevronLeft, ChevronRight } from "lucide-vue-next";
-import type { XhsArchiveItem } from "@toolbox/shared";
+import { Camera, ChevronLeft, ChevronRight, Play } from "lucide-vue-next";
+import type { ContentArchiveItem } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../config/runtime";
-import { formatApiError } from "../../services/http";
-import { xhsArchiveApi } from "./api";
+import { formatApiError, isApiErrorCancelled } from "../../services/http";
+import { useRequestScope } from "../../composables/useRequestScope";
+import { contentArchiveApi } from "./content-api";
 
 const props = withDefaults(
   defineProps<{
-    item: XhsArchiveItem;
+    item: ContentArchiveItem;
     compact?: boolean;
   }>(),
   { compact: false }
 );
 
 const selected = ref(0);
+const requestScope = useRequestScope();
 const media = computed(() => props.item.media[selected.value] ?? props.item.media[0]);
 const videoElement = ref<HTMLVideoElement>();
 const videoPaused = ref(true);
@@ -140,7 +148,7 @@ const frameHint = computed(() => {
   if (!videoPaused.value) return "请先暂停视频，再保存当前画面";
   return videoFrameReady.value ? "暂停到目标画面后保存 PNG" : "等待视频画面加载后即可保存";
 });
-const emit = defineEmits<{ frameSaved: [item: XhsArchiveItem] }>();
+const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem] }>();
 
 watch(
   () => props.item.id,
@@ -163,17 +171,20 @@ function mediaUrl(url: string) {
 }
 
 function showFirstVideoFrame(event: Event) {
+  // 实况图集可能包含数十个视频；只预加载所选缩略图，避免首屏并发 Range 请求触发限流。
   const video = event.currentTarget as HTMLVideoElement;
   if (video.currentTime > 0) return;
   const target = Number.isFinite(video.duration) && video.duration > 0 ? Math.min(0.1, video.duration / 2) : 0.1;
   video.currentTime = target;
 }
 
-function isVideoMedia(value: XhsArchiveItem["media"][number] | undefined): value is XhsArchiveItem["media"][number] {
+function isVideoMedia(
+  value: ContentArchiveItem["media"][number] | undefined
+): value is ContentArchiveItem["media"][number] {
   return value?.kind === "video" || value?.kind === "live-photo";
 }
 
-function isCapturedVideoFrame(value: XhsArchiveItem["media"][number] | undefined) {
+function isCapturedVideoFrame(value: ContentArchiveItem["media"][number] | undefined) {
   return value?.frameSourceMediaId !== undefined && value.frameTimestampMs !== undefined;
 }
 
@@ -199,6 +210,7 @@ function onVideoFrameReady() {
 async function saveCurrentFrame() {
   const video = videoElement.value;
   const sourceMedia = media.value;
+  const itemId = props.item.id;
   if (!video || !isVideoMedia(sourceMedia) || !video.paused || !videoFrameReady.value || !video.videoWidth) return;
 
   savingFrame.value = true;
@@ -219,11 +231,21 @@ async function saveCurrentFrame() {
     form.append("sourceMediaId", sourceMedia.id);
     form.append("timestampMs", String(timestampMs));
     form.append("file", png, "video-frame.png");
+    // 画布导出期间可能切换归档/媒体；不把旧画面上传到新的笔记。
+    if (
+      requestScope.aborted ||
+      props.item.id !== itemId ||
+      media.value?.id !== sourceMedia.id ||
+      media.value?.checksum !== sourceMedia.checksum
+    )
+      return;
     uploadStarted = true;
-    const updated = await xhsArchiveApi.addFrame(props.item.id, form);
+    const updated = await contentArchiveApi.addFrame(itemId, form, requestScope.signal);
+    if (requestScope.aborted || props.item.id !== itemId) return;
     emit("frameSaved", updated);
     frameMessage.value = `已保存 ${formatTimestamp(timestampMs)} 的 PNG 截帧`;
   } catch (error) {
+    if (requestScope.aborted || isApiErrorCancelled(error) || props.item.id !== itemId) return;
     frameMessage.value =
       !uploadStarted && error instanceof Error ? error.message : formatApiError(error, "保存视频截帧失败");
   } finally {
@@ -372,6 +394,13 @@ function changeMedia(direction: -1 | 1) {
 .media-thumbs video {
   display: block;
   pointer-events: none;
+}
+.video-thumb-placeholder {
+  position: absolute;
+  inset: 0;
+  gap: 4px;
+  color: #687386;
+  background: #eef2f7;
 }
 .captured-frame-badge,
 .captured-frame-thumb-badge {
