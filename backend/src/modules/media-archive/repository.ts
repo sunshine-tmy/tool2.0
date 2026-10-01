@@ -21,7 +21,10 @@ export class ContentArchiveRepository {
     const row = this.database.connection
       .prepare("SELECT payload_json, platform, content_id FROM xhs_archives WHERE id = ?")
       .get(id) as Row | undefined;
-    return row ? decode(row) : undefined;
+    if (!row) return undefined;
+    const item = decode(row);
+    if (item.id !== id) throw new Error("ARCHIVE_IDENTITY_MISMATCH");
+    return item;
   }
 
   findBySource(platform: ArchivePlatform, contentId: string) {
@@ -97,9 +100,17 @@ function decode(row: Row): ContentArchiveItem {
   const identity = archiveIdentity(payload);
   if (identity.platform !== row.platform || identity.contentId !== row.content_id)
     throw new Error("ARCHIVE_IDENTITY_MISMATCH");
+  return decodeContentArchivePayload(payload);
+}
+
+/** 存储与 Repository 共用旧载荷解码；身份不符拒绝读取，不自动删除或修复媒体。 */
+export function decodeContentArchivePayload(value: unknown): ContentArchiveItem {
+  if (!value || typeof value !== "object") throw new Error("ARCHIVE_PAYLOAD_INVALID");
+  const payload = value as Record<string, unknown>;
+  const identity = archiveIdentity(payload);
   const { noteId: _noteId, ...rest } = payload;
   // v1 小红书清单尚无 topics；仅在读取旧载荷时补默认值，不改存储正文，也不对抖音应用 XHS 文本规则。
-  const legacy = payload.platform === undefined && identity.platform === "xiaohongshu";
+  const legacy = identity.platform === "xiaohongshu";
   const item = {
     ...rest,
     ...identity,

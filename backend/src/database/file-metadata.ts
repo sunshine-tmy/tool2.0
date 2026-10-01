@@ -28,8 +28,16 @@ export class FileMetadataRepository {
   ) {}
 
   async register(input: RegisterFileInput): Promise<FileMetadata> {
+    const metadata = await this.inspect(input);
+    this.database.upsertFile(metadata);
+    return metadata;
+  }
+
+  /** 只计算元数据，不写数据库；同盘 staging 可按最终路径登记，由调用方一次事务提交。 */
+  async inspect(input: RegisterFileInput, readPath = input.filePath): Promise<FileMetadata> {
     const relativePath = this.relativePath(input.filePath);
-    const stat = await fsp.stat(input.filePath);
+    this.relativePath(readPath);
+    const stat = await fsp.stat(readPath);
     if (!stat.isFile()) throw new Error("File metadata target is not a regular file");
     const metadata: FileMetadata = {
       id: input.id ?? fileMetadataId(input.entityKind, input.entityId, relativePath),
@@ -37,12 +45,11 @@ export class FileMetadataRepository {
       entityId: input.entityId,
       relativePath,
       byteSize: stat.size,
-      sha256: await sha256(input.filePath),
+      sha256: await sha256(readPath),
       mediaType: input.mediaType,
       owner: input.owner,
       createdAt: new Date().toISOString()
     };
-    this.database.upsertFile(metadata);
     return metadata;
   }
 

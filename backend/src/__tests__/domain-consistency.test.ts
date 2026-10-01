@@ -171,7 +171,7 @@ describe("xhs archive store purgeAll", () => {
     const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
     const store = new XhsArchiveStore(config, database, fileMetadata);
     const item = {
-      id: "arch1",
+      id: "archive_123456",
       noteId: "note1",
       type: "image",
       status: "ready",
@@ -187,8 +187,9 @@ describe("xhs archive store purgeAll", () => {
       media: [],
       totalBytes: 0
     };
-    await fsp.mkdir(path.join(config.xhsArchiveItemsDir, "arch1"), { recursive: true });
-    await fsp.writeFile(path.join(config.xhsArchiveItemsDir, "arch1", "manifest.json"), JSON.stringify(item));
+    // 夹具使用既有公开 Schema 允许的 ID，避免把不可通过 API 访问的短 ID 当成有效归档。
+    await fsp.mkdir(path.join(config.xhsArchiveItemsDir, item.id), { recursive: true });
+    await fsp.writeFile(path.join(config.xhsArchiveItemsDir, item.id, "manifest.json"), JSON.stringify(item));
 
     // 首次 list 触发 initialize：DB 无记录时从各条目 manifest 重建内存状态。
     expect((await store.list()).items).toHaveLength(1);
@@ -199,6 +200,6 @@ describe("xhs archive store purgeAll", () => {
     expect(removed).toBe(1);
     expect((await store.list()).items).toHaveLength(0);
     expect(database.list("xhs-archive")).toHaveLength(0);
-    await expect(fsp.stat(path.join(config.xhsArchiveItemsDir, "arch1"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(fsp.stat(path.join(config.xhsArchiveItemsDir, item.id))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
