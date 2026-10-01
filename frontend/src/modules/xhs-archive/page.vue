@@ -166,7 +166,8 @@ const refreshing = ref(false);
 const authWaiting = ref(false);
 const editOpen = ref(false);
 const editTarget = ref<ContentArchiveItem>();
-const drawerWidth = computed(() => (typeof window !== "undefined" && window.innerWidth < 720 ? "100%" : 720));
+// CSS 自行响应窗口变化，避免非响应式 innerWidth 把移动端的 100% 宽度永久保留到桌面窗口。
+const drawerWidth = "min(720px, 100vw)";
 let disposed = false;
 let taskSyncRevision = 0;
 

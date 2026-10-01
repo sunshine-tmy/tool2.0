@@ -113,6 +113,10 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("详情抽屉用 CSS 同时限制桌面宽度和移动视口，不依赖一次性窗口尺寸", () => {
+    const wrapper = mountPage();
+    expect(wrapper.findComponent(XhsDetailDrawer).props("width")).toBe("min(720px, 100vw)");
+  });
   it("结果区保留复制、翻译、刷新和格式化操作", async () => {
     const wrapper = mountPage();
     await flushPromises();
