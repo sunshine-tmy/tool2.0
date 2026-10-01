@@ -55,6 +55,14 @@ describe("safe remote fetch", () => {
     }
   });
 
+  it("rejects a private DNS answer before the production pinned dispatcher can send a request", async () => {
+    const resolver = vi.fn(async () => [{ address: "127.0.0.1", family: 4 }]);
+    const remoteFetch = createRemoteFetch({ resolver });
+
+    await expect(remoteFetch("http://media.example/resource")).rejects.toThrow(/private or reserved/i);
+    expect(resolver).toHaveBeenCalledWith("media.example");
+  });
+
   it.each([
     "http://127.0.0.1/resource",
     "http://192.88.99.1/resource",
