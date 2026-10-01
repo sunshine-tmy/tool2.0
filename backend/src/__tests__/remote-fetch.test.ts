@@ -61,6 +61,22 @@ describe("safe remote fetch", () => {
     ).rejects.toThrow(/private or reserved/i);
   });
 
+  it("parses IPv6 DNS answers with dotted tails, expanded groups and interface scope safely", async () => {
+    const resolver = vi.fn(async (hostname: string) => {
+      if (hostname === "dotted.example") return [{ address: "2606:4700::192.0.2.1", family: 6 }];
+      if (hostname === "expanded.example") return [{ address: "2606:4700:4700:0:0:0:0:1111", family: 6 }];
+      return [{ address: "fe80::1%eth0", family: 6 }];
+    });
+
+    await expect(assertPublicRemoteUrl(new URL("https://dotted.example/resource"), resolver)).resolves.toBeUndefined();
+    await expect(
+      assertPublicRemoteUrl(new URL("https://expanded.example/resource"), resolver)
+    ).resolves.toBeUndefined();
+    await expect(assertPublicRemoteUrl(new URL("https://scoped.example/resource"), resolver)).rejects.toThrow(
+      /private or reserved/i
+    );
+  });
+
   it("rejects hostnames when DNS returns any private address", async () => {
     await expect(
       assertPublicRemoteUrl(new URL("https://media.example/video.mp4"), async () => [

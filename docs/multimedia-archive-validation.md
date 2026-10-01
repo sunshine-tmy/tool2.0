@@ -558,6 +558,6 @@ git diff --check
 
 发现原 IPv6 判断只排除了回环、ULA、链路本地、组播和文档地址，却会把部分其它特殊用途地址误判为公网。依据 IANA IPv6 特殊用途地址登记，改为只接受全球单播范围，并保守拒绝协议分配、IPv4 映射/NAT64 前缀、Teredo/6to4、文档及非全球路由地址；规范化解析压缩/展开形式与 IPv4 尾段后再判定，无法解析或含接口作用域的地址默认拒绝。逐跳重定向重解析和连接 DNS 固定策略保持不变。
 
-新增负向用例覆盖映射私网 IPv4、两类 NAT64 前缀、discard-only、Teredo、6to4、文档及 SRv6 特殊地址；同时确认普通 Cloudflare 全球单播 IPv6 仍被允许。`remote-fetch.test.ts` 定向 26 项通过，后端 TypeScript 检查通过。IANA 登记说明特殊地址不保证全球可路由，且列明映射、翻译、协议分配、6to4、文档等地址段；RFC 6052 要求 Well-Known Prefix 不用于表示非全球 IPv4 地址。[IANA IPv6 特殊用途地址登记](https://www.iana.org/assignments/iana-ipv6-special-registry)；[RFC 6052 §3.1](https://www.rfc-editor.org/rfc/rfc6052.html#section-3.1)
+新增负向用例覆盖映射私网 IPv4、两类 NAT64 前缀、discard-only、Teredo、6to4、文档及 SRv6 特殊地址；同时确认普通 Cloudflare 全球单播 IPv6 仍被允许。补充 DNS 答案的 IPv4 尾段、完整展开地址和接口作用域解析测试后，`remote-fetch.test.ts` 定向 27 项通过，后端 TypeScript 检查通过。正式后端全量覆盖率为行/语句 94.78%、分支 79.55%、函数 88.36%；针对本次修改源文件的变更行覆盖率为 37/37（100%）。IANA 登记说明特殊地址不保证全球可路由，且列明映射、翻译、协议分配、6to4、文档等地址段；RFC 6052 要求 Well-Known Prefix 不用于表示非全球 IPv4 地址。[IANA IPv6 特殊用途地址登记](https://www.iana.org/assignments/iana-ipv6-special-registry)；[RFC 6052 §3.1](https://www.rfc-editor.org/rfc/rfc6052.html#section-3.1)
 
 该修复收紧了远端解析、媒体下载和能力资产下载共用的 SSRF 地址策略；仍需补充真实 TCP 连接固定地址的集成证明与重定向逐跳连接验收，本测试不宣称完成 DNS rebinding 端到端验证。
