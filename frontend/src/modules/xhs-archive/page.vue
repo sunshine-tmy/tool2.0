@@ -36,9 +36,11 @@
         v-model:platform="platform"
         :task="task"
         :submitting="submitting"
+        :cancelling="cancellingTask"
         :auth-waiting="authWaiting"
         @submit="startFetch"
         @login="loginAndRetry"
+        @cancel="cancelFetch"
       />
 
       <XhsResultPanel
@@ -134,6 +136,7 @@ const inputUrl = ref("");
 const platform = ref<ArchivePlatformSelection>("auto");
 const task = ref<ContentArchiveTask>();
 const submitting = ref(false);
+const cancellingTask = ref(false);
 const streamedTaskId = computed(() =>
   task.value && !["completed", "failed"].includes(task.value.status) ? task.value.id : undefined
 );
@@ -225,6 +228,39 @@ async function startFetch() {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取失败"));
   } finally {
     submitting.value = false;
+  }
+}
+async function cancelFetch() {
+  const active = task.value;
+  if (!active || cancellingTask.value || !["pending", "running"].includes(active.status)) return;
+  cancellingTask.value = true;
+  // 先使当前进度读取失效，避免它在取消响应后用旧状态覆盖最终结果。
+  taskSyncRevision++;
+  try {
+    const next = await contentArchiveApi.cancel(active.id, requestScope.signal);
+    if (disposed || task.value?.id !== active.id) return;
+    taskSyncRevision++;
+    task.value = next;
+    if (next.errorCode === "ARCHIVE_CANCELLED") {
+      refreshing.value = false;
+      message.info("获取任务已取消");
+    } else if (next.status === "completed") {
+      // 取消请求到达时任务可能已完成；按完成态补取归档详情，不把成功误显示为取消。
+      await syncArchiveTask(next.id);
+    } else if (next.status === "failed") {
+      refreshing.value = false;
+      message.error(next.error || next.message);
+    }
+  } catch (error) {
+    if (disposed || task.value?.id !== active.id) return;
+    taskSyncRevision++;
+    if (!isApiErrorCancelled(error)) {
+      message.error(formatApiError(error, "取消获取失败"));
+      // 原子提交阶段可能返回 409；失败后重新读取服务端状态，给出准确的可操作提示。
+      await syncArchiveTask(active.id);
+    }
+  } finally {
+    if (!disposed) cancellingTask.value = false;
   }
 }
 async function refreshItem(id: string) {

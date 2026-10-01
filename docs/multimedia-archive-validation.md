@@ -510,7 +510,7 @@ git diff --check
 
 ### 下一验收节点
 
-MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA06 需待能力可用后补齐正式在线入口的创建、刷新、取消/重试与平台流程验收。MA07 已完成基础日志敏感信息收敛及 ENOSPC 刷新失败保护，尚需两平台权限、SSRF/限流、配额竞争与清理恢复专项；MA08 桌面安装/升级、MA09 最终文档仍未完成。继续跳过抖音登录，不以本轮本地页面成功替代上述验收。
+MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA06 的前端现在提供活动任务取消入口，并对原子提交不可取消和取消/完成竞态作出处理；但正式抖音在线入口的创建、刷新、取消/重试与平台流程仍须在能力发布后验收。MA07 已完成基础日志敏感信息收敛及 ENOSPC 刷新失败保护，尚需两平台权限、SSRF/限流、配额竞争与清理恢复专项；MA08 桌面安装/升级、MA09 最终文档仍未完成。继续跳过抖音登录，不以本轮本地页面成功替代上述验收。
 
 ### MA07 日志敏感信息收敛
 
@@ -525,3 +525,9 @@ MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA0
 归档下载流遇到 `ENOSPC` 或 `EDQUOT` 时立即清理当前暂存文件并停止备用 CDN 重试，统一报告 HTTP 507 对应的 `ARCHIVE_DISK_SPACE_INSUFFICIENT`；外层任务管线也会规范化提交阶段的磁盘耗尽错误。旧归档刷新失败时不会替换清单、媒体或 SQLite 文件索引；小红书兼容任务将稳定错误码映射为 `XHS_DISK_SPACE_INSUFFICIENT`。API 文档已同步错误码说明。
 
 新增网关/任务测试 2 项，验证停止重复请求、staging 清理、稳定错误信息，以及刷新失败后旧归档、清单和索引逐项保持。`pnpm --filter backend exec vitest run src/__tests__/archive-download-gateway.test.ts src/__tests__/content-archive-task.test.ts` 45 项通过；`pnpm --filter backend typecheck` 通过。完整 `pnpm check` 通过：共享 97、后端 606（5 项既有跳过）、前端 188、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；构建预算与启动 smoke 通过。
+
+### MA05/MA06 前端任务取消入口
+
+归档任务卡现对 `pending`/`running` 任务显示“取消获取”。任务进入 `archiving` 原子提交阶段时隐藏取消按钮并解释不可取消，避免用户误以为文件提交可被中断；提交取消后显示忙碌状态，防止重复请求。页面调用中性任务取消 API，采用服务端返回的任务终态；若取消请求与正常完成竞争，以服务端结果为准并加载完成归档详情。提交阶段等原因导致取消失败时展示错误并重新读取任务状态。页面卸载继续由既有 AbortSignal 中止请求。
+
+定向测试：`pnpm --filter frontend exec vitest run src/modules/xhs-archive/ArchiveTaskPanel.test.ts src/modules/xhs-archive/page.test.ts`，27 项通过；`pnpm --filter frontend typecheck` 通过。覆盖待处理/运行态取消入口、取消中禁用、归档提交期提示、失败终态隐藏入口、页面调用取消 API、取消成功反馈，以及取消与正常完成/原子提交冲突的竞态。此功能不开放被 MA04/MA08 门禁保护的抖音在线获取，不代表 MA05/MA06 整体验收完成。

@@ -10,6 +10,7 @@ import XhsDetailDrawer from "./XhsDetailDrawer.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import { archiveFixture, listFixture, taskFixture, translationFixture } from "./__tests__/fixtures";
+import { ApiRequestError } from "../../services/http";
 
 const mocks = vi.hoisted(() => ({
   api: Object.fromEntries(
@@ -326,6 +327,69 @@ describe("中性多媒体归档页面", () => {
     mocks.streams[0]!.task.value = { id: "task-123", status: "completed" };
     await flushPromises();
     expect(wrapper.findComponent(XhsResultPanel).props("current").platform).toBe("xiaohongshu");
+  });
+  it("取消活动获取任务后采用服务端终态并提示用户", async () => {
+    mocks.api.create!.mockResolvedValue(taskFixture({ status: "running", stage: "downloading", progress: 45 }));
+    mocks.api.cancel!.mockResolvedValue(
+      taskFixture({ status: "failed", stage: "failed", errorCode: "ARCHIVE_CANCELLED", error: "任务已取消" })
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.findComponent(ArchiveTaskPanel);
+    panel.vm.$emit("update:inputUrl", "https://www.xiaohongshu.com/explore/123");
+    panel.vm.$emit("submit");
+    await flushPromises();
+
+    panel.vm.$emit("cancel");
+    await flushPromises();
+
+    expect(mocks.api.cancel).toHaveBeenCalledWith("task-123", expect.any(AbortSignal));
+    expect(panel.props("task")).toMatchObject({ status: "failed", errorCode: "ARCHIVE_CANCELLED" });
+    expect(mocks.message.info).toHaveBeenCalledWith("获取任务已取消");
+    expect(panel.props("cancelling")).toBe(false);
+  });
+  it("取消请求与任务完成竞争时以服务端完成态为准并加载归档", async () => {
+    const completed = taskFixture({ status: "completed", stage: "completed", archiveId: "archive-123", progress: 100 });
+    mocks.api.create!.mockResolvedValue(taskFixture({ status: "running", stage: "downloading", progress: 45 }));
+    mocks.api.cancel!.mockResolvedValue(completed);
+    mocks.api.task!.mockResolvedValue(completed);
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.findComponent(ArchiveTaskPanel);
+    panel.vm.$emit("update:inputUrl", "https://www.xiaohongshu.com/explore/123");
+    panel.vm.$emit("submit");
+    await flushPromises();
+
+    panel.vm.$emit("cancel");
+    await flushPromises();
+
+    expect(mocks.api.detail).toHaveBeenCalledWith("archive-123", expect.any(AbortSignal));
+    expect(wrapper.findComponent(XhsResultPanel).props("current")?.id).toBe("archive-123");
+    expect(mocks.message.info).not.toHaveBeenCalledWith("获取任务已取消");
+  });
+  it("提交阶段取消被拒绝时重新读取任务状态", async () => {
+    const committing = taskFixture({ status: "running", stage: "archiving", progress: 92 });
+    mocks.api.create!.mockResolvedValue(taskFixture({ status: "running", stage: "downloading", progress: 90 }));
+    mocks.api.cancel!.mockRejectedValue(
+      new ApiRequestError("文件正在原子提交，请等待完成后再操作", {
+        code: "ARCHIVE_COMMIT_IN_PROGRESS",
+        status: 409
+      })
+    );
+    mocks.api.task!.mockResolvedValue(committing);
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.findComponent(ArchiveTaskPanel);
+    panel.vm.$emit("update:inputUrl", "https://www.xiaohongshu.com/explore/123");
+    panel.vm.$emit("submit");
+    await flushPromises();
+
+    panel.vm.$emit("cancel");
+    await flushPromises();
+
+    expect(mocks.message.error).toHaveBeenCalledWith(expect.stringContaining("文件正在原子提交"));
+    expect(panel.props("task")).toMatchObject({ status: "running", stage: "archiving" });
+    expect(mocks.api.task).toHaveBeenCalledWith("task-123", expect.any(AbortSignal));
   });
   it("抖音详情、翻译、编辑和重置使用同一页面与中性 API", async () => {
     const item = archiveFixture({ platform: "douyin", rawText: "抖音原文[微笑R]", translation: translationFixture() });

@@ -60,6 +60,20 @@
           <span class="stage-label">{{ stage.label }}</span>
         </div>
       </div>
+      <div v-if="activeTask" class="task-actions">
+        <span v-if="task?.stage === 'archiving'" class="task-commit-note">正在安全提交归档，暂不可取消</span>
+        <n-button
+          v-else
+          size="small"
+          type="warning"
+          secondary
+          :loading="cancelling"
+          :disabled="cancelling"
+          @click="emit('cancel')"
+        >
+          {{ cancelling ? "正在取消…" : "取消获取" }}
+        </n-button>
+      </div>
       <div v-if="task.status === 'failed'" class="task-error">
         <span>{{ task.error }}</span>
         <n-button
@@ -94,12 +108,14 @@ import {
 const props = defineProps<{
   task?: ContentArchiveTask;
   submitting?: boolean;
+  cancelling?: boolean;
   authWaiting: boolean;
 }>();
 
 const emit = defineEmits<{
   submit: [];
   login: [];
+  cancel: [];
 }>();
 
 const inputUrl = defineModel<string>("inputUrl", { required: true });
@@ -125,6 +141,7 @@ const canSubmit = computed(
     !props.authWaiting &&
     !["running", "pending"].includes(props.task?.status || "")
 );
+const activeTask = computed(() => ["running", "pending"].includes(props.task?.status || ""));
 
 function submit() {
   // 按钮、回车和失败重试共用门禁，避免绕过平台校验或重复创建正在执行的任务。
@@ -321,6 +338,15 @@ function stageClass(stage: XhsArchiveTaskStage) {
   align-items: center;
   margin-top: 14px;
   color: #d03050;
+}
+.task-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.task-commit-note {
+  color: #8a94a6;
+  font-size: 12px;
 }
 @media (max-width: 640px) {
   .input-row {

@@ -46,6 +46,7 @@ function mountPanel(
     task: ContentArchiveTask;
     authWaiting: boolean;
     submitting: boolean;
+    cancelling: boolean;
   }> = {}
 ) {
   return mount(ArchiveTaskPanel, {
@@ -120,6 +121,26 @@ describe("XHS archive task panel", () => {
     expect(submitButton).toBeDefined();
     await submitButton?.trigger("click");
     expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+
+  it("仅在可取消的活动任务展示取消入口，提交阶段和终态不允许取消", async () => {
+    const wrapper = mountPanel({ task: task({ status: "pending", stage: "installing" }) });
+    const cancelButton = wrapper.findAll("button").find((button) => button.text().includes("取消获取"));
+    expect(cancelButton).toBeDefined();
+    await cancelButton?.trigger("click");
+    expect(wrapper.emitted("cancel")).toHaveLength(1);
+
+    await wrapper.setProps({ cancelling: true });
+    const cancellingButton = wrapper.findAll("button").find((button) => button.text().includes("正在取消"));
+    expect(cancellingButton?.attributes("disabled")).toBeDefined();
+
+    await wrapper.setProps({ cancelling: false, task: task({ status: "running", stage: "archiving" }) });
+    expect(wrapper.text()).toContain("正在安全提交归档，暂不可取消");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("取消获取"))).toBe(false);
+
+    await wrapper.setProps({ task: task({ status: "failed", stage: "failed" }) });
+    expect(wrapper.text()).not.toContain("暂不可取消");
+    expect(wrapper.findAll("button").some((button) => button.text().includes("取消获取"))).toBe(false);
   });
 
   it("routes authentication failures to the login action", async () => {
