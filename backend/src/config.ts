@@ -96,7 +96,7 @@ export type AppConfig = {
   deploymentUsage: "internal-noncommercial" | "commercial";
 };
 
-export type ConfigOptions = {
+type ConfigOptions = {
   layout?: RuntimeLayout;
   environment?: Record<string, string | undefined>;
   dotenvPath?: string | false;

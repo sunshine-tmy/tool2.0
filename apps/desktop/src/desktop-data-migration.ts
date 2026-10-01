@@ -59,13 +59,13 @@ type MigrationJournal = {
   createdAt: string;
 };
 
-export type DesktopDataMigrationResult = {
+type DesktopDataMigrationResult = {
   id: string;
   source: { files: number; bytes: number };
   previous: { files: number; bytes: number };
 };
 
-export type DesktopDataRollbackResult = {
+type DesktopDataRollbackResult = {
   id: string;
   restored: { files: number; bytes: number };
 };

@@ -10,7 +10,7 @@ import { Value } from "@sinclair/typebox/value";
 import { resolveApiUrl } from "../config/runtime";
 import { httpClient, withApiError } from "./http";
 
-export type OfflineImportOptions = {
+type OfflineImportOptions = {
   signal?: AbortSignal;
   onProgress?: (percentage: number, event: AxiosProgressEvent) => void;
 };

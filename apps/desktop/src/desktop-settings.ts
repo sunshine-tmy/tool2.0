@@ -5,7 +5,7 @@ import path from "node:path";
 
 const SETTINGS_FILE = "desktop-settings.json";
 
-export type DesktopMigrationRecord = {
+type DesktopMigrationRecord = {
   id: string;
   status: "imported" | "rolled-back";
   completedAt: string;
@@ -13,7 +13,7 @@ export type DesktopMigrationRecord = {
   bytes: number;
 };
 
-export type DesktopSettings = {
+type DesktopSettings = {
   schemaVersion: 1;
   updatedAt: string;
   startAtLogin: boolean;
@@ -21,13 +21,13 @@ export type DesktopSettings = {
   lastMigration?: DesktopMigrationRecord;
 };
 
-export type DesktopSettingsUpdate = Pick<DesktopSettings, "startAtLogin" | "automaticUpdateChecks">;
+type DesktopSettingsUpdate = Pick<DesktopSettings, "startAtLogin" | "automaticUpdateChecks">;
 
 export function desktopSettingsPath(configRoot: string) {
   return path.join(path.resolve(configRoot), SETTINGS_FILE);
 }
 
-export function defaultDesktopSettings(): DesktopSettings {
+function defaultDesktopSettings(): DesktopSettings {
   return {
     schemaVersion: 1,
     updatedAt: new Date().toISOString(),
@@ -61,7 +61,7 @@ export async function updateDesktopSettings(
   return next;
 }
 
-export async function writeDesktopSettings(configRoot: string, settings: DesktopSettings) {
+async function writeDesktopSettings(configRoot: string, settings: DesktopSettings) {
   const settingsPath = desktopSettingsPath(configRoot);
   await fs.mkdir(path.dirname(settingsPath), { recursive: true });
   const temporary = `${settingsPath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;

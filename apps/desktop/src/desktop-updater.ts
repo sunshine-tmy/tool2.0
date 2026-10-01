@@ -14,7 +14,7 @@ export function getDesktopAutoUpdater(): AppUpdater {
   return (updaterModule ??= require("electron-updater")).autoUpdater;
 }
 
-export type DesktopUpdateSettings = { automaticUpdateChecks: boolean };
+type DesktopUpdateSettings = { automaticUpdateChecks: boolean };
 
 type DesktopUpdaterOptions = {
   resourcesPath: string;

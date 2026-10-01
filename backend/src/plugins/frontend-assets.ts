@@ -7,7 +7,7 @@ import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-export type FrontendAssetsOptions = {
+type FrontendAssetsOptions = {
   root: string;
 };
 

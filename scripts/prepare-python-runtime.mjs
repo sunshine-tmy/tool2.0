@@ -119,7 +119,7 @@ export async function preparePythonRuntime({
   }
 }
 
-export async function materializeMacRuntimeLinks(root) {
+async function materializeMacRuntimeLinks(root) {
   const resolvedRoot = await fs.realpath(root);
   const pending = [resolvedRoot];
   const links = [];

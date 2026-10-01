@@ -3,7 +3,10 @@
   "ignoreDependencies": ["electron-builder", "tslib"],
   "workspaces": {
     "backend": {
-      "entry": ["src/database/cli.ts", "src/database/benchmark.ts"]
+      "entry": ["src/database/cli.ts", "src/database/benchmark.ts", "scripts/generate-desktop-icon-assets.mjs"]
+    },
+    "apps/desktop": {
+      "entry": ["src/preload.ts"]
     }
   }
 }

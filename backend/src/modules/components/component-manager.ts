@@ -66,7 +66,7 @@ export type ComponentAssembledFile = {
   sha256: string;
   parts: ComponentManifestFile[];
 };
-export type OfflineArchiveUpload = {
+type OfflineArchiveUpload = {
   fieldName: string;
   filename: string;
   stream: Readable & { truncated?: boolean };
@@ -108,7 +108,7 @@ export type ComponentCatalog = {
   trustedPublicKeys: Record<string, string>;
 };
 
-export type VerifiedComponentAsset = {
+type VerifiedComponentAsset = {
   /** The canonical path of a file listed in the signed package manifest. */
   path: string;
   /** The immutable generation containing the verified file. */

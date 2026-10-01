@@ -19,7 +19,7 @@ const MIGRATION_JOURNAL = ".desktop-root-migration.json";
 const MIGRATION_STATE = ".desktop-data-location.json";
 const SCHEMA_VERSION = 1;
 
-export type DesktopRootMigrationOptions = {
+type DesktopRootMigrationOptions = {
   dataRoot: string;
   legacyDataRoot: string;
 };
@@ -34,7 +34,7 @@ export type StartupDataMigrationState = {
   sufficientSpace?: boolean;
 };
 
-export type DesktopRootMigrationResult = {
+type DesktopRootMigrationResult = {
   id: string;
   files: number;
   bytes: number;

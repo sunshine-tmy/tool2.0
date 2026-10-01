@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRuntimeLayout, type RuntimeLayout } from "../../../backend/src/runtime/runtime-layout";
 
-export type DesktopRuntimeLayoutOptions = {
+type DesktopRuntimeLayoutOptions = {
   packaged: boolean;
   installRoot?: string;
   userDataRoot: string;

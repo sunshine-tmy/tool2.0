@@ -82,7 +82,9 @@
     "eslint-plugin-vue": "^10.11.0",
     "globals": "^16.5.0",
     "knip": "^5.88.1",
+    "playwright-core": "1.63.0",
     "prettier": "^3.9.6",
+    "tar": "7.5.22",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0"

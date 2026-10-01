@@ -457,7 +457,7 @@ async function stopProcessTree(child) {
   });
 }
 
-export async function smokeInstalledDesktop(options) {
+async function smokeInstalledDesktop(options) {
   await access(options.executable);
   const debugPort = await reserveLoopbackPort();
   const startedAt = new Date().toISOString();

@@ -113,7 +113,14 @@ describe("ComponentManager", () => {
   it("assembles concurrent ranges at their verified offsets", async () => {
     const fixture = await createFixture("1.0.0");
     const destination = path.join(temporaryRoot, "concurrent-ranges.partial");
-    const bytes = Buffer.alloc(2 * 1024 * 1024 + 37, 0x5a);
+    // 各分段使用不同内容，互换偏移会真实失败；全 0x5a 无法证明偏移写入正确。
+    const rangeBytes = 1024 * 1024;
+    const bytes = Buffer.concat([
+      Buffer.alloc(rangeBytes, 0x11),
+      Buffer.alloc(rangeBytes, 0x22),
+      Buffer.alloc(37, 0x33)
+    ]);
+    const completed: number[] = [];
     fixture.manifest.archive.bytes = bytes.length;
     const fetchImpl = vi.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
       const range = new Headers(init?.headers).get("range");
@@ -122,6 +129,9 @@ describe("ComponentManager", () => {
       const start = Number(match[1]);
       const end = Number(match[2]);
       const body = bytes.subarray(start, end + 1);
+      // 第二段延迟，末段先返回，确保覆盖真实并发下的乱序落盘，而非顺序下载。
+      if (start === rangeBytes) await new Promise((resolve) => setTimeout(resolve, 20));
+      completed.push(start);
       return new Response(body, {
         status: 206,
         headers: {
@@ -139,7 +149,9 @@ describe("ComponentManager", () => {
     await downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch);
 
     expect(fetchImpl).toHaveBeenCalledTimes(3);
-    await expect(fs.readFile(destination)).resolves.toEqual(bytes);
+    expect(completed).toEqual([0, 2 * rangeBytes, rangeBytes]);
+    // Buffer.equals 比较完整二进制内容，不让 JS 深比较数百万索引拖慢覆盖率运行。
+    expect((await fs.readFile(destination)).equals(bytes)).toBe(true);
   });
 
   it("retries transient connection resets before receiving a byte-range response", async () => {

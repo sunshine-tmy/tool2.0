@@ -4,7 +4,7 @@
 import crypto from "node:crypto";
 import net from "node:net";
 
-export type DesktopWorkerSession = {
+type DesktopWorkerSession = {
   xhsProviderPort: number;
   xhsTranslationPort: number;
   xhsProviderToken: string;

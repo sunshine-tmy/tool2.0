@@ -21,7 +21,7 @@ export type RuntimeLayout = {
   frontendDistRoot: string;
 };
 
-export type RuntimeLayoutOptions = Partial<RuntimeLayout> & Pick<RuntimeLayout, "appRoot">;
+type RuntimeLayoutOptions = Partial<RuntimeLayout> & Pick<RuntimeLayout, "appRoot">;
 
 /**
  * 开发、CLI 与既有脚本使用仓库布局。桌面壳会在后续阶段显式传入用户数据目录，
