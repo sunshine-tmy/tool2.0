@@ -58,6 +58,7 @@ import { configureDesktopCapabilityRuntime } from "./runtime/desktop-capability-
 import { createDesktopComponentSelfTest } from "./modules/components/desktop-component-self-test";
 import { DouyinRuntimeManager } from "./modules/media-archive/douyin-runtime";
 import { registerMediaArchiveRuntimeRoutes } from "./modules/media-archive/runtime-routes";
+import { LOG_REDACTION_PATHS, safeErrorLogFields, safeRequestLogPath } from "./security/log-sanitization";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
   const app = fastify({
@@ -67,16 +68,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
         : {
             level: process.env.LOG_LEVEL?.trim() || "info",
             redact: {
-              paths: [
-                "req.headers.authorization",
-                "req.headers.cookie",
-                "req.headers.x-csrf-token",
-                "req.headers.x-lan-transfer-pin",
-                "req.headers.x-toolbox-worker-token",
-                "pin",
-                "text",
-                "path"
-              ],
+              paths: [...LOG_REDACTION_PATHS],
               censor: "[REDACTED]"
             }
           },
@@ -199,13 +191,23 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
 
   app.setNotFoundHandler((request, reply) => {
-    request.log.info({ requestId: request.id, method: request.method, url: request.url }, "route not found");
+    request.log.info(
+      { requestId: request.id, method: request.method, route: safeRequestLogPath(request.url) },
+      "route not found"
+    );
     return reply.code(404).send(fail("ROUTE_NOT_FOUND", "请求的接口不存在"));
   });
 
   app.setErrorHandler((error, request, reply) => {
     // 错误日志保留结构化字段，具体响应只暴露稳定错误码，避免泄漏堆栈、绝对路径或凭据。
-    request.log.error({ err: error, requestId: request.id }, "request failed");
+    request.log.error(
+      {
+        error: safeErrorLogFields(error),
+        requestId: request.id,
+        route: request.routeOptions.url ?? safeRequestLogPath(request.url)
+      },
+      "request failed"
+    );
     const reported = error as unknown as {
       statusCode?: number;
       code?: string;
