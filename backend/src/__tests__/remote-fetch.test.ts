@@ -28,6 +28,7 @@ describe("safe remote fetch", () => {
 
   it.each([
     "http://127.0.0.1/resource",
+    "http://192.88.99.1/resource",
     "http://10.0.0.1/resource",
     "http://169.254.169.254/latest/meta-data",
     "http://[::1]/resource",
