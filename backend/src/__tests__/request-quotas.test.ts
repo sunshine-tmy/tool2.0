@@ -8,6 +8,58 @@ import { describe, expect, it } from "vitest";
 import { registerConcurrencyQuotas } from "../security/request-quotas";
 
 describe("request concurrency quotas", () => {
+  it("动态参数共用同一路由并发桶，不同路由相互隔离", async () => {
+    const app = fastify({ logger: false });
+    registerConcurrencyQuotas(app);
+    let unblock!: () => void;
+    let entered!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    app.get("/items/:id", { config: { concurrencyLimit: 1 } }, async (request) => {
+      if (request.params && (request.params as { id?: string }).id === "first") {
+        entered();
+        await blocked;
+      }
+      return { success: true };
+    });
+    app.get("/other/:id", { config: { concurrencyLimit: 1 } }, () => ({ success: true }));
+    await app.ready();
+
+    try {
+      const first = app.inject("/items/first");
+      await started;
+      expect((await app.inject("/items/second")).statusCode).toBe(429);
+      expect((await app.inject("/other/first")).statusCode).toBe(200);
+      unblock();
+      expect((await first).statusCode).toBe(200);
+      expect((await app.inject("/items/second")).statusCode).toBe(200);
+    } finally {
+      unblock();
+      await app.close();
+    }
+  });
+
+  it("处理器异常后释放并发额度，后续请求可以继续", async () => {
+    const app = fastify({ logger: false });
+    registerConcurrencyQuotas(app);
+    let calls = 0;
+    app.get("/unstable", { config: { concurrencyLimit: 1 } }, async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("simulated handler failure");
+      return { success: true };
+    });
+    await app.ready();
+
+    expect((await app.inject("/unstable")).statusCode).toBe(500);
+    expect((await app.inject("/unstable")).statusCode).toBe(200);
+    expect(calls).toBe(2);
+    await app.close();
+  });
+
   it("播放中断释放流式额度，重复断连不会耗尽或重复释放", async () => {
     const app = fastify();
     registerConcurrencyQuotas(app);
