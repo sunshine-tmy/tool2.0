@@ -560,8 +560,10 @@ git diff --check
 
 新增负向用例覆盖映射私网 IPv4、两类 NAT64 前缀、discard-only、Teredo、6to4、文档及 SRv6 特殊地址；同时确认普通 Cloudflare 全球单播 IPv6 仍被允许。补充 DNS 答案的 IPv4 尾段、完整展开地址和接口作用域解析测试后，`remote-fetch.test.ts` 定向 27 项通过，后端 TypeScript 检查通过。正式后端全量覆盖率为行/语句 94.78%、分支 79.55%、函数 88.36%；针对本次修改源文件的变更行覆盖率为 37/37（100%）。IANA 登记说明特殊地址不保证全球可路由，且列明映射、翻译、协议分配、6to4、文档等地址段；RFC 6052 要求 Well-Known Prefix 不用于表示非全球 IPv4 地址。[IANA IPv6 特殊用途地址登记](https://www.iana.org/assignments/iana-ipv6-special-registry)；[RFC 6052 §3.1](https://www.rfc-editor.org/rfc/rfc6052.html#section-3.1)
 
-该修复收紧了远端解析、媒体下载和能力资产下载共用的 SSRF 地址策略；仍需补充真实 TCP 连接固定地址的集成证明与重定向逐跳连接验收，本测试不宣称完成 DNS rebinding 端到端验证。
+该修复收紧了远端解析、媒体下载和能力资产下载共用的 SSRF 地址策略；当时仍需补充真实 TCP 连接固定地址的集成证明与重定向逐跳连接验收，本测试不宣称完成 DNS rebinding 端到端验证。
 
 ### MA07 IPv4 特殊用途地址拒绝
 
 复核 IPv4 特殊用途登记后发现 `192.88.99.0/24`（已弃用的 6to4 Relay Anycast）不在原私网/保留地址判断中。现将整个网段加入拒绝范围，并增加 `192.88.99.1` 回归用例；IANA 登记将该段标记为已弃用且没有全球可达性字段。[IANA IPv4 特殊用途地址登记](https://www.iana.org/assignments/iana-ipv4-special-registry)
+
+另将固定地址 Agent 工厂抽出并以真实 Undici TCP 请求验证：请求目标使用不可解析的 `pinned.example`，Agent 通过固定 lookup 连接到测试回环服务器，服务端仍收到原始 `Host: pinned.example:<port>`。这一测试证明传输层实际采用 lookup 返回的 IP，而不是再次查询原域名。公网/私网策略另由远端 URL 校验测试覆盖；重定向使用真实连接的多跳端到端验证仍未完成，故不将 DNS rebinding 全链路标为通过。`remote-fetch.test.ts` 定向 29 项通过，后端类型检查、格式检查及全量 `pnpm check` 通过。

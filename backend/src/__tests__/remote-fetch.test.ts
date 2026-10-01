@@ -2,8 +2,12 @@
  * 中文模块说明：测试 backend/src/__tests__/remote-fetch.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it, vi } from "vitest";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import { fetch as undiciFetch } from "undici";
 import {
   assertPublicRemoteUrl,
+  createPinnedDispatcher,
   createPinnedLookup,
   createRemoteFetch,
   fetchRemoteResponse,
@@ -24,6 +28,31 @@ describe("safe remote fetch", () => {
 
     lookup("media.example", { all: false }, callback);
     expect(callback).toHaveBeenLastCalledWith(null, "93.184.216.34", 4);
+  });
+
+  it("connects to the pinned TCP address while preserving the original HTTP host", async () => {
+    let observedHost: string | undefined;
+    const server = createServer((request, response) => {
+      observedHost = request.headers.host;
+      response.end("pinned");
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Local test server did not bind a TCP port");
+    const dispatcher = createPinnedDispatcher(new Map([["pinned.example", { address: "127.0.0.1", family: 4 }]]));
+
+    try {
+      const response = await undiciFetch(`http://pinned.example:${address.port}/resource`, { dispatcher });
+      await expect(response.text()).resolves.toBe("pinned");
+      expect(observedHost).toBe(`pinned.example:${address.port}`);
+    } finally {
+      await dispatcher.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it.each([

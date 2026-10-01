@@ -66,11 +66,7 @@ export function createRemoteFetch(
       ? undefined
       : proxyUrl
         ? new ProxyAgent(proxyUrl)
-        : new Agent({
-            connect: {
-              lookup: createPinnedLookup(pinnedAddresses)
-            }
-          });
+        : createPinnedDispatcher(pinnedAddresses);
     let current = new URL(input);
 
     // 重定向的每一跳都重新解析、重新做公网地址检查，并限制最大跳数。
@@ -135,6 +131,18 @@ export function createPinnedLookup(pinnedAddresses: ReadonlyMap<string, Resolved
       callback(null, selected.address, selected.family as 4 | 6);
     }
   };
+}
+
+/**
+ * 为单次远程请求创建使用固定 DNS 结果的 Undici Agent。
+ * URL 主机名仍用于 Host/SNI，底层 TCP 查找只返回已通过公网地址校验的 IP。
+ */
+export function createPinnedDispatcher(pinnedAddresses: ReadonlyMap<string, ResolvedAddress>) {
+  return new Agent({
+    connect: {
+      lookup: createPinnedLookup(pinnedAddresses)
+    }
+  });
 }
 
 export async function assertPublicRemoteUrl(
