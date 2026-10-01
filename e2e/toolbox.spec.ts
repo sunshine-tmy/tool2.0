@@ -184,7 +184,7 @@ test.describe("toolbox critical workflows", () => {
 
   test("lists XHS archives and retries a failed task", async ({ page }) => {
     let attempts = 0;
-    await page.route("**/api/v1/tools/xhs-archive/items", async (route) => {
+    await page.route("**/api/v1/tools/media-archive/items**", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({
           contentType: "application/json",
@@ -204,6 +204,7 @@ test.describe("toolbox critical workflows", () => {
           success: true,
           data: {
             id: `e2e-xhs-task-${attempts}`,
+            platform: "xiaohongshu",
             status: "pending",
             stage: "parsing",
             progress: 15,
@@ -242,7 +243,7 @@ test.describe("toolbox critical workflows", () => {
         })}\n\n`
       });
     });
-    await page.route("**/api/v1/tools/xhs-archive/tasks/e2e-xhs-task-*", async (route) => {
+    await page.route("**/api/v1/tools/media-archive/tasks/e2e-xhs-task-*", async (route) => {
       const id = route.request().url().includes("e2e-xhs-task-1") ? "e2e-xhs-task-1" : "e2e-xhs-task-2";
       const failed = id.endsWith("-1");
       await route.fulfill({
@@ -251,6 +252,7 @@ test.describe("toolbox critical workflows", () => {
           success: true,
           data: {
             id,
+            platform: "xiaohongshu",
             status: failed ? "failed" : "completed",
             stage: failed ? "failed" : "completed",
             progress: failed ? 15 : 100,
@@ -265,11 +267,111 @@ test.describe("toolbox critical workflows", () => {
     });
 
     await page.goto("/tools/xhs-archive");
-    await expect(page.getByRole("heading", { name: "小红书内容归档" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "多媒体内容归档" })).toBeVisible();
     await page.getByPlaceholder(/直接按 Ctrl\+V/).fill("https://www.xiaohongshu.com/explore/e2e");
     await page.getByRole("button", { name: "获取并存档" }).click();
     await expect(page.getByRole("button", { name: "重新尝试" })).toBeVisible();
     await page.getByRole("button", { name: "重新尝试" }).click();
     await expect.poll(() => attempts).toBe(2);
+  });
+
+  test("cancels an active archive task and shows the server-confirmed terminal state", async ({ page }) => {
+    let cancelRequests = 0;
+    await page.route("**/api/v1/tools/media-archive/items**", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            data: { items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 },
+            requestId: "e2e-cancel-list"
+          })
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 202,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            id: "e2e-cancel-task",
+            platform: "xiaohongshu",
+            status: "running",
+            stage: "downloading",
+            progress: 45,
+            message: "正在下载媒体",
+            createdAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-01T00:00:01.000Z"
+          },
+          requestId: "e2e-cancel-create"
+        })
+      });
+    });
+    await page.route("**/api/v1/tasks/e2e-cancel-task/events", async (route) => {
+      await route.fulfill({
+        contentType: "text/event-stream",
+        body: `event: task\ndata: ${JSON.stringify({
+          id: "e2e-cancel-task",
+          toolId: "media-archive",
+          status: "running",
+          progress: 45,
+          createdAt: "2026-10-01T00:00:00.000Z",
+          updatedAt: "2026-10-01T00:00:01.000Z"
+        })}\n\n`
+      });
+    });
+    await page.route("**/api/v1/tools/media-archive/tasks/e2e-cancel-task", async (route) => {
+      if (route.request().method() === "DELETE") {
+        cancelRequests += 1;
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            success: true,
+            data: {
+              id: "e2e-cancel-task",
+              platform: "xiaohongshu",
+              status: "failed",
+              stage: "failed",
+              progress: 45,
+              message: "任务已取消",
+              error: "任务已取消",
+              errorCode: "ARCHIVE_CANCELLED",
+              createdAt: "2026-10-01T00:00:00.000Z",
+              updatedAt: "2026-10-01T00:00:02.000Z"
+            },
+            requestId: "e2e-cancel-result"
+          })
+        });
+        return;
+      }
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            id: "e2e-cancel-task",
+            platform: "xiaohongshu",
+            status: "running",
+            stage: "downloading",
+            progress: 45,
+            message: "正在下载媒体",
+            createdAt: "2026-10-01T00:00:00.000Z",
+            updatedAt: "2026-10-01T00:00:01.000Z"
+          },
+          requestId: "e2e-cancel-state"
+        })
+      });
+    });
+
+    await page.goto("/tools/xhs-archive");
+    await expect(page.getByRole("heading", { name: "多媒体内容归档" })).toBeVisible();
+    await page.getByPlaceholder(/直接按 Ctrl\+V/).fill("https://www.xiaohongshu.com/explore/e2e-cancel");
+    await page.getByRole("button", { name: "获取并存档" }).click();
+    await page.getByRole("button", { name: "取消获取" }).click();
+
+    await expect(page.getByText("获取任务已取消")).toBeVisible();
+    await expect(page.getByRole("button", { name: "重新尝试" })).toBeVisible();
+    expect(cancelRequests).toBe(1);
   });
 });
