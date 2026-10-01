@@ -566,4 +566,4 @@ git diff --check
 
 复核 IPv4 特殊用途登记后发现 `192.88.99.0/24`（已弃用的 6to4 Relay Anycast）不在原私网/保留地址判断中。现将整个网段加入拒绝范围，并增加 `192.88.99.1` 回归用例；IANA 登记将该段标记为已弃用且没有全球可达性字段。[IANA IPv4 特殊用途地址登记](https://www.iana.org/assignments/iana-ipv4-special-registry)
 
-另将固定地址 Agent 工厂抽出并以真实 Undici TCP 请求验证：请求目标使用不可解析的 `pinned.example`，Agent 通过固定 lookup 连接到测试回环服务器，服务端仍收到原始 `Host: pinned.example:<port>`。这一测试证明传输层实际采用 lookup 返回的 IP，而不是再次查询原域名；另以生产远程抓取入口验证私网 DNS 答案会在发出网络请求前拒绝。公网/私网策略另由远端 URL 校验测试覆盖；重定向使用真实连接的多跳端到端验证仍未完成，故不将 DNS rebinding 全链路标为通过。`remote-fetch.test.ts` 定向 30 项通过，后端类型检查、格式检查及全量 `pnpm check` 通过。
+另将固定地址 Agent 工厂抽出并以真实 Undici TCP 请求验证：请求目标使用不可解析的 `pinned.example`，Agent 通过固定 lookup 连接到测试回环服务器，服务端仍收到原始 `Host: pinned.example:<port>`。这一测试证明传输层实际采用 lookup 返回的 IP，而不是再次查询原域名；另以生产远程抓取入口验证私网 DNS 答案会在发出网络请求前拒绝。真实 `createRemoteFetch`/Undici 重定向测试使用本机 CONNECT 代理和本机 origin：确认公网测试域名 302 后再次解析并建立第二条隧道，重定向至私网时则只建立第一条隧道。直接连接模式下跨重定向的真实 TCP 固定地址尚未由独立网络夹具验证，因此仍不把 DNS rebinding 全链路标为完全通过。`remote-fetch.test.ts` 定向 32 项及最终全量 `pnpm check` 通过。

@@ -4,6 +4,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { once } from "node:events";
 import { createServer } from "node:http";
+import type { Server } from "node:http";
+import { connect as openTcpConnection } from "node:net";
+import type { Duplex } from "node:stream";
 import { fetch as undiciFetch } from "undici";
 import {
   assertPublicRemoteUrl,
@@ -17,6 +20,36 @@ import { pipeline } from "node:stream/promises";
 import { Writable } from "node:stream";
 
 const publicResolver = async () => [{ address: "93.184.216.34", family: 4 }];
+
+function createConnectProxy(destinationPort: number) {
+  const connectedTargets: string[] = [];
+  const sockets = new Set<Duplex>();
+  const server = createServer();
+  server.on("connection", (socket) => sockets.add(socket));
+  server.on("connect", (request, clientSocket, head) => {
+    connectedTargets.push(request.url ?? "");
+    const upstream = openTcpConnection(destinationPort, "127.0.0.1");
+    sockets.add(clientSocket);
+    sockets.add(upstream);
+    upstream.once("connect", () => {
+      clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+      if (head.length) upstream.write(head);
+      clientSocket.pipe(upstream);
+      upstream.pipe(clientSocket);
+    });
+    upstream.on("error", () => clientSocket.destroy());
+    clientSocket.on("error", () => upstream.destroy());
+  });
+  return { connectedTargets, server, sockets };
+}
+
+async function closeTestServer(server: Server, sockets: Set<Duplex>) {
+  for (const socket of sockets) socket.destroy();
+  if (!server.listening) return;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
 
 describe("safe remote fetch", () => {
   it("returns the Node 24 lookup shape for scalar and all-address callbacks", () => {
@@ -157,6 +190,81 @@ describe("safe remote fetch", () => {
       "https://cdn.example/video.mp4",
       expect.objectContaining({ redirect: "manual" })
     );
+  });
+
+  it("validates each real HTTP redirect hop before forwarding through the configured proxy", async () => {
+    const origin = createServer((request, response) => {
+      response.setHeader("connection", "close");
+      if (request.headers.host === "origin.example") {
+        response.writeHead(302, { location: "http://cdn.example/final.mp4" });
+        response.end();
+        return;
+      }
+      response.end("downloaded");
+    });
+    const originSockets = new Set<Duplex>();
+    origin.on("connection", (socket) => originSockets.add(socket));
+    origin.listen(0, "127.0.0.1");
+    await once(origin, "listening");
+
+    const originAddress = origin.address();
+    if (!originAddress || typeof originAddress === "string") throw new Error("Local origin did not bind a TCP port");
+    const proxy = createConnectProxy(originAddress.port);
+    proxy.server.listen(0, "127.0.0.1");
+    await once(proxy.server, "listening");
+
+    const address = proxy.server.address();
+    if (!address || typeof address === "string") throw new Error("Local proxy did not bind a TCP port");
+    const resolver = vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]);
+    const remoteFetch = createRemoteFetch({
+      resolver,
+      proxyUrl: `http://127.0.0.1:${address.port}`
+    });
+
+    try {
+      const response = await remoteFetch("http://origin.example/video.mp4");
+      await expect(response.text()).resolves.toBe("downloaded");
+      expect(proxy.connectedTargets).toEqual(["origin.example:80", "cdn.example:80"]);
+      expect(resolver).toHaveBeenNthCalledWith(1, "origin.example");
+      expect(resolver).toHaveBeenNthCalledWith(2, "cdn.example");
+    } finally {
+      await Promise.all([closeTestServer(proxy.server, proxy.sockets), closeTestServer(origin, originSockets)]);
+    }
+  });
+
+  it("does not establish a second real proxy tunnel after a redirect to a private address", async () => {
+    let requestCount = 0;
+    const origin = createServer((_request, response) => {
+      requestCount += 1;
+      response.setHeader("connection", "close");
+      response.writeHead(302, { location: "http://127.0.0.1/admin" });
+      response.end();
+    });
+    const originSockets = new Set<Duplex>();
+    origin.on("connection", (socket) => originSockets.add(socket));
+    origin.listen(0, "127.0.0.1");
+    await once(origin, "listening");
+
+    const originAddress = origin.address();
+    if (!originAddress || typeof originAddress === "string") throw new Error("Local origin did not bind a TCP port");
+    const proxy = createConnectProxy(originAddress.port);
+    proxy.server.listen(0, "127.0.0.1");
+    await once(proxy.server, "listening");
+
+    const address = proxy.server.address();
+    if (!address || typeof address === "string") throw new Error("Local proxy did not bind a TCP port");
+    const remoteFetch = createRemoteFetch({
+      resolver: publicResolver,
+      proxyUrl: `http://127.0.0.1:${address.port}`
+    });
+
+    try {
+      await expect(remoteFetch("http://origin.example/video.mp4")).rejects.toThrow(/private|local/i);
+      expect(requestCount).toBe(1);
+      expect(proxy.connectedTargets).toEqual(["origin.example:80"]);
+    } finally {
+      await Promise.all([closeTestServer(proxy.server, proxy.sockets), closeTestServer(origin, originSockets)]);
+    }
   });
 
   it("rejects an HTTPS downgrade on a redirect when the caller requires HTTPS", async () => {
