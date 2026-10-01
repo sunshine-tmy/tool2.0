@@ -5,8 +5,6 @@ import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { FileMetadataRepository } from "../../database/file-metadata";
 import { ContentArchiveStore, ContentArchiveStoreError } from "../media-archive/store";
 
-export { ContentArchiveStoreError as XhsArchiveStoreError } from "../media-archive/store";
-
 export class XhsArchiveStore {
   readonly content: ContentArchiveStore;
 

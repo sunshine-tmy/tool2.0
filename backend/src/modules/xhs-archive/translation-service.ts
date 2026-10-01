@@ -5,7 +5,6 @@ import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import {
   parseXhsContentText,
-  resolveXhsTranslationField,
   type XhsArchiveItem,
   type XhsArchiveTranslation,
   type XhsTranslationTask,
@@ -508,10 +507,6 @@ export function translationSourceHash(item: Pick<XhsArchiveItem, "title" | "desc
   return createHash("sha256")
     .update(JSON.stringify({ title: item.title.trim(), body: parsed.body, topics }))
     .digest("hex");
-}
-
-export function effectiveTranslation(field?: XhsTranslationFieldLike) {
-  return resolveXhsTranslationField(field);
 }
 
 function itemNeedsModel(item: XhsArchiveItem) {

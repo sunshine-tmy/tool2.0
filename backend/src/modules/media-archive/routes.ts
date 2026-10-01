@@ -24,6 +24,7 @@ import type { ContentArchiveStore } from "./store";
 import type { ContentArchiveTaskService } from "./task-service";
 import { ArchiveTaskError } from "./provider";
 import { registerArchivePreviewRoutes } from "./media-preview-routes";
+import { registerArchiveArtifactRoutes } from "./artifact-routes";
 
 export function registerContentArchiveRoutes(
   app: FastifyInstance,
@@ -31,6 +32,7 @@ export function registerContentArchiveRoutes(
   service: ContentArchiveTaskService
 ) {
   registerArchivePreviewRoutes(app, store, "media-archive");
+  registerArchiveArtifactRoutes(app, store, "media-archive");
   const failureResponses = {
     400: ApiFailureSchema,
     404: ApiFailureSchema,

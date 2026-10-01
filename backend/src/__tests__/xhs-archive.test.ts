@@ -271,9 +271,12 @@ describe("xhs archive api", () => {
 
       const zip = await app.inject({ method: "GET", url: `${detailUrl}/download.zip` });
       expect(zip.statusCode).toBe(200);
-      expect(zip.rawPayload.toString("utf8")).toContain("视频截帧-001-00-00-01-234.png");
-      expect(zip.rawPayload.toString("utf8")).toContain("视频截帧-002-00-00-05-678.png");
-      expect(zip.rawPayload.toString("utf8")).toContain("视频截帧-003-00-00-09-876.png");
+      // 并发请求的解码完成顺序不保证与发起顺序一致；导出使用实际提交序号，三个画面都必须存在。
+      const timeNames: Record<number, string> = { 1234: "00-00-01-234", 5678: "00-00-05-678", 9876: "00-00-09-876" };
+      for (const frame of frames) {
+        const expectedName = `视频截帧-${String(frame.index + 1).padStart(3, "0")}-${timeNames[frame.frameTimestampMs]}.png`;
+        expect(zip.rawPayload.includes(Buffer.from(expectedName))).toBe(true);
+      }
     } finally {
       await app.close();
     }
