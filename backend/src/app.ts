@@ -56,6 +56,8 @@ import { reconcileDomainRecords } from "./database/domain-consistency";
 import { registerFrontendAssets } from "./plugins/frontend-assets";
 import { configureDesktopCapabilityRuntime } from "./runtime/desktop-capability-runtime";
 import { createDesktopComponentSelfTest } from "./modules/components/desktop-component-self-test";
+import { DouyinRuntimeManager } from "./modules/media-archive/douyin-runtime";
+import { registerMediaArchiveRuntimeRoutes } from "./modules/media-archive/runtime-routes";
 
 export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
   const app = fastify({
@@ -104,6 +106,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       if (componentId === "xhs-archive") await xhsRuntimeServices.runtime?.stop();
       if (componentId === "xhs-translation") await xhsRuntimeServices.translationRuntime?.stop();
       if (componentId === "xhs-browser") await xhsRuntimeServices.auth?.stop();
+      if (componentId === "xhs-browser" || componentId === "douyin-archive") await douyinRuntime?.stop();
     },
     onAfterMutation: (componentId, operation) => refreshDesktopCapabilities(componentId, operation),
     isInUse: (componentId, taskToolIds) =>
@@ -112,8 +115,10 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
         .some(
           (task) => taskToolIds.includes(task.toolId) && (task.status === "pending" || task.status === "running")
         ) ||
-      (componentId === "xhs-browser" && Boolean(xhsRuntimeServices.auth?.isActive()))
+      (componentId === "xhs-browser" && Boolean(xhsRuntimeServices.auth?.isActive())) ||
+      (["xhs-browser", "douyin-archive"].includes(componentId) && Boolean(douyinRuntime?.isActive()))
   });
+  const douyinRuntime: DouyinRuntimeManager = new DouyinRuntimeManager(componentManager);
   const desktopCapabilityRuntime = await configureDesktopCapabilityRuntime(config, componentManager);
   stopCapabilityBeforeUninstall = desktopCapabilityRuntime.beforeUninstall;
   refreshDesktopCapabilities = desktopCapabilityRuntime.afterMutation;
@@ -128,6 +133,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   // 关闭顺序与初始化顺序相反：先断开 SSE，再关闭数据库，避免客户端收到半截状态或访问已关闭连接。
   app.addHook("onClose", async () => desktopCapabilityRuntime.close());
   app.addHook("onClose", async () => database.close());
+  app.addHook("onClose", async () => douyinRuntime?.close());
   app.addHook("preClose", async () => {
     for (const stream of taskEventStreams) stream.end();
     taskEventStreams.clear();
@@ -416,6 +422,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
   registerComponentRoutes(app, componentManager, { allowOfflineImport: config.desktopManagedCapabilities });
+  registerMediaArchiveRuntimeRoutes(app, douyinRuntime);
   await registerFrontendAssets(app, { root: config.runtime.frontendDistRoot });
 
   if (config.databasePath !== ":memory:") {

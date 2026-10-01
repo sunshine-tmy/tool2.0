@@ -1,0 +1,11 @@
+{
+  "protocolVersion": 1,
+  "platform": "douyin",
+  "mode": "anonymous",
+  "parser": "normal-browser",
+  "browserComponentId": "xhs-browser",
+  "playwrightVersion": "1.63.0",
+  "chromiumRevision": "1243",
+  "chromiumVersion": "153.0.8010.12",
+  "sourceRevision": "27468deae565fcb3d5a074063703d9df88449aed"
+}

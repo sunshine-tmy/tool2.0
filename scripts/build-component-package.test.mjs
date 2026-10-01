@@ -56,6 +56,38 @@ after(async () => {
 });
 
 describe("buildComponentPackage", () => {
+  it("抖音匿名能力从真实分发模板生成签名与 SBOM，不重复打包浏览器", async () => {
+    const root = await makeRoot();
+    const key = await createSigningKey(root);
+    const result = await buildComponentPackage({
+      definitionPath: path.join(repositoryRoot, "scripts/component-definitions/douyin-archive.json"),
+      stagingDirectory: path.join(repositoryRoot, "packaging/components/douyin-archive"),
+      outputDirectory: path.join(root, "feed"),
+      signingKeyPath: key.privateKeyPath,
+      githubReleaseUrl: "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/"
+    });
+    const manifest = JSON.parse(await fs.readFile(result.manifestPath, "utf8"));
+    assert.equal(manifest.id, "douyin-archive");
+    assert.deepEqual(manifest.dependencyIds, ["xhs-browser"]);
+    assert.deepEqual(
+      manifest.files.map((file) => file.path),
+      ["adapter/manifest.json"]
+    );
+    assert.equal(manifest.pythonEnvironment, undefined);
+    assert.equal(
+      crypto.verify(
+        null,
+        Buffer.from(canonicalManifest(manifest)),
+        key.publicKey,
+        Buffer.from(manifest.signature, "base64")
+      ),
+      true
+    );
+    const sbom = JSON.parse(await fs.readFile(result.sbomPath, "utf8"));
+    assert.equal(sbom.files.length, 1);
+    assert.equal(sbom.files[0].fileName, "./adapter/manifest.json");
+    assert.ok((await fs.stat(result.archivePath)).size < 4096);
+  });
   it("rejects an unpinned Python runtime archive before creating a staging directory", async () => {
     const root = await makeRoot();
     const archivePath = path.join(root, "python-runtime.tar.gz");

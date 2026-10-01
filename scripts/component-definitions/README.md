@@ -1,5 +1,36 @@
 # Windows 能力包准备与发布
 
+## 抖音公开内容归档（匿名，MA04）
+
+固定解析代码随应用发布，能力包仅包含受签名保护的协议描述，不复制第二套业务源码、不安装 Python。模板位于
+`packaging/components/douyin-archive/adapter/manifest.json`；描述固定匿名模式、读取实现提交
+`27468deae565fcb3d5a074063703d9df88449aed`、Playwright 1.63.0、Chromium revision 1243 / 153.0.8010.12。
+共享浏览器资产沿用历史能力 ID `xhs-browser`，独立进程和全新内存会话不读取或复用小红书 Profile/Cookie。
+本期不提供抖音登录、验证码绕过或环境变量 Cookie 注入。
+
+在对应原生构建机上生成产物；Windows x64、macOS arm64 不能互相替代构建和实测：
+
+```powershell
+pnpm components:package -- `
+  --definition scripts/component-definitions/douyin-archive.json `
+  --stage packaging/components/douyin-archive `
+  --output .package/component-feed `
+  --github-release-url https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/ `
+  --signing-key-file <受保护位置中的 Ed25519 私钥路径>
+```
+
+先安装签名浏览器依赖，再显式安装适配器。安装自检只校验本地协议/资产，不访问抖音；读取任务单次占用受管浏览器，
+总时限 120 秒，停止最多等待 5 秒。任务占用期间拒绝重装和卸载，取消后允许修复；适配器仍安装时禁止卸载浏览器依赖。
+缺少包、损坏、协议/实际浏览器版本不匹配时返回稳定错误，不回退系统浏览器，也不在状态检查时自动下载。
+卸载不清理归档、媒体、译文、截帧或永久音色。
+
+运行状态接口为 `GET /api/v1/tools/media-archive/runtime/douyin`。状态查询成功不代表解析可用，应检查
+`data.available` 与 `data.state`；未安装时准确返回 `not-installed`。响应不包含绝对路径、Profile 或认证状态。
+
+截至 MA04 当前验收，只有隔离临时签名包与 Windows 生命周期/匿名读取验证通过；正式 Release 资产、
+嵌入目录登记和 macOS 原生验收尚未完成。不要将测试公钥或测试包源写入正式目录，不要在正式资产发布前宣称旧安装包可用。
+按现有发布流程上传清单、归档、SBOM 和公钥、核验远端资产后再生成正式目录，并重打桌面安装包。
+
 AI 图片 CPU 包通过命令 pnpm components:prepare-image-ai -- --python .package/stage/python-311/python/python.exe --stage .package/stage/image-ai 准备。脚本使用哈希锁定的 CPU wheelhouse、固定 Hugging Face 模型提交和 SHA-256 固定权重，并将 worker、Real-ESRGAN、Big-LaMa、BiRefNet 与 PP-OCRv5 中文模型打入一个可离线自检的能力包。已缓存的上游模型文件可放在默认 .package/image-ai-source-assets 目录；每个文件都会在进入暂存目录前重新校验 SHA-256。准备后以 scripts/component-definitions/image-ai.json 生成签名产物，完成 Release 上传和核验前不会登记到嵌入式能力目录。
 
 参考音色克隆 CPU 包通过 `pnpm components:prepare-chatterbox -- --python .venv-chatterbox/Scripts/python.exe --stage .package/stage/chatterbox` 准备。脚本验证 Python 环境中的 `chatterbox-tts` 元数据来自固定官方提交 `65b18437192794391a0308a8f705b1e33e633948`，并校验哈希锁定 wheelhouse 与 Hugging Face revision `5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18` 下的全部模型文件。源码以 `vendor/` 随包发布；用户安装时仍在最终目标目录由共享 Python 3.11 运行时和锁定 wheelhouse 创建独立 venv，不打包构建机的 `.venv`。模型自动归入两个签名分片，但设置中仍作为一个 Chatterbox 能力管理。准备后使用 `scripts/component-definitions/chatterbox.json` 生成签名产物。当前锁定资产实际生成的三个归档约 3.4 GB；单个最大模型分片约 1.98 GB，小于 GitHub Release 单文件上限。

@@ -8,10 +8,11 @@ import { getConfig } from "../config";
 describe("api app", () => {
   it("returns health information", async () => {
     const app = await createApp();
-    const [response, live, ready] = await Promise.all([
+    const [response, live, ready, douyin] = await Promise.all([
       app.inject({ method: "GET", url: "/api/v1/health" }),
       app.inject({ method: "GET", url: "/health/live" }),
-      app.inject({ method: "GET", url: "/health/ready" })
+      app.inject({ method: "GET", url: "/health/ready" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/media-archive/runtime/douyin" })
     ]);
 
     expect(response.statusCode).toBe(200);
@@ -27,6 +28,21 @@ describe("api app", () => {
       success: true,
       requestId: expect.any(String),
       data: { status: "ready", database: "ok", storage: "ok" }
+    });
+    expect(douyin.statusCode).toBe(200);
+    const douyinPlatformSupported =
+      (process.platform === "win32" && process.arch === "x64") ||
+      (process.platform === "darwin" && process.arch === "arm64");
+    expect(douyin.json()).toMatchObject({
+      success: true,
+      requestId: expect.any(String),
+      data: {
+        platform: "douyin",
+        mode: "anonymous",
+        available: false,
+        state: douyinPlatformSupported ? "not-installed" : "unavailable",
+        errorCode: douyinPlatformSupported ? "DOUYIN_COMPONENT_NOT_INSTALLED" : "DOUYIN_PLATFORM_UNSUPPORTED"
+      }
     });
     await app.close();
   });

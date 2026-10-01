@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import type { ComponentPackageManifest } from "./component-manager";
+import { isDouyinAdapterManifest } from "@toolbox/shared";
 
 type ProcessRunner = (
   executable: string,
@@ -49,7 +50,8 @@ const requiredFiles: Record<string, string[]> = {
     "model/target.spm",
     "model/manifest.json"
   ],
-  "xhs-browser": []
+  "xhs-browser": [],
+  "douyin-archive": ["adapter/manifest.json"]
 };
 
 export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runProcessDefault) {
@@ -68,6 +70,14 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
     ];
     if (!required.length) throw new Error(`桌面能力 ${manifest.id} 尚未注册安装自检`);
     await verifyRequiredFiles(manifest, generationRoot, required);
+    if (manifest.id === "douyin-archive") {
+      const descriptorPath = path.join(generationRoot, "adapter", "manifest.json");
+      if ((await fs.stat(descriptorPath)).size > 4096) throw new Error("抖音适配器描述超过大小上限");
+      if (!isDouyinAdapterManifest(JSON.parse(await fs.readFile(descriptorPath, "utf8"))))
+        throw new Error("抖音匿名适配器协议与应用不兼容");
+      if (!manifest.dependencyIds.includes("xhs-browser")) throw new Error("抖音归档缺少受管浏览器依赖");
+      return;
+    }
     if (isMacOS) {
       const executablePaths = [
         ...(manifest.id === "ffmpeg" ? [`bin/${ffmpegName}`, `bin/${ffprobeName}`] : []),

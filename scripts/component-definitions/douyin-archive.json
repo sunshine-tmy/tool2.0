@@ -1,0 +1,15 @@
+{
+  "id": "douyin-archive",
+  "groupId": "archive",
+  "displayName": "抖音公开内容归档（匿名）",
+  "purpose": "启用应用内固定版本的抖音匿名作品适配器；复用已签名 Chromium 资产，但不读取小红书或系统浏览器登录资料。",
+  "dependencyIds": ["xhs-browser"],
+  "taskToolIds": ["xhs-archive"],
+  "installConditions": [
+    "先安装受管 Chromium 能力（历史 ID 为 xhs-browser），不重复打包浏览器或安装 Python。",
+    "仅获取匿名可访问的公开作品；登录要求、验证码和平台限流不会被绕过。",
+    "卸载只移除能力包，保留历史归档、媒体、译文和截帧。"
+  ],
+  "version": "1.0.0-anonymous-27468de",
+  "installedBytes": 4096
+}

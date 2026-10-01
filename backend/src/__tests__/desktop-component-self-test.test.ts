@@ -9,11 +9,49 @@ import type { ComponentPackageManifest } from "../modules/components/component-m
 let temporaryRoot = "";
 
 afterEach(async () => {
-  if (temporaryRoot) await fs.rm(temporaryRoot, { recursive: true, force: true });
+  if (temporaryRoot) {
+    if (
+      !path.resolve(temporaryRoot).startsWith(path.resolve(os.tmpdir()) + path.sep) ||
+      !path.basename(temporaryRoot).startsWith("desktop-component-self-test-")
+    )
+      throw new Error("自检测试清理路径越界");
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
+  }
   temporaryRoot = "";
 });
 
 describe("desktop component self-test", () => {
+  it.each(["win32-x64", "darwin-arm64"] as const)("抖音 %s 描述包只做本地协议自检，不启动进程", async (platform) => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const descriptor = await fs.readFile(
+      new URL("../../../packaging/components/douyin-archive/adapter/manifest.json", import.meta.url),
+      "utf8"
+    );
+    await writeAsset("adapter/manifest.json", descriptor);
+    const component = manifest("douyin-archive", ["adapter/manifest.json"], "3.11", platform);
+    component.dependencyIds = ["xhs-browser"];
+    const runProcess = vi.fn(async () => "");
+    await createDesktopComponentSelfTest(runProcess)(component, temporaryRoot);
+    expect(runProcess).not.toHaveBeenCalled();
+  });
+
+  it.each(["invalid", "oversized", "dependency"] as const)("抖音能力自检拒绝 %s，不激活损坏能力", async (failure) => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const descriptor = await fs.readFile(
+      new URL("../../../packaging/components/douyin-archive/adapter/manifest.json", import.meta.url),
+      "utf8"
+    );
+    await writeAsset(
+      "adapter/manifest.json",
+      failure === "invalid" ? "{}" : failure === "oversized" ? "x".repeat(4097) : descriptor
+    );
+    const component = manifest("douyin-archive", ["adapter/manifest.json"]);
+    component.dependencyIds = failure === "dependency" ? [] : ["xhs-browser"];
+    const runProcess = vi.fn(async () => "");
+    await expect(createDesktopComponentSelfTest(runProcess)(component, temporaryRoot)).rejects.toThrow(/抖音/);
+    expect(runProcess).not.toHaveBeenCalled();
+  });
+
   it("runs the Edge-TTS check in its package-local Python environment with downloads disabled", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
     await writeAsset("scripts/edge-tts-generate.py");
