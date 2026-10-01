@@ -172,7 +172,26 @@
 
 分享链接只接受抖音、小红书、TikTok 主域或真实子域，并校验所选平台与链接域名一致。解析结果默认短缓存 5 分钟；TikTok 主解析失败时可降级到官方 oEmbed 预览。远程媒体统一限制为 HTTP(S) 80/443、无凭证、非私网地址、最多 3 次逐跳验证重定向、默认 120 秒与 2 GiB。
 
-## 小红书内容归档
+## 多媒体内容归档（中性接口，开发验收中）
+
+基础路径 `/api/v1/tools/media-archive`。当前开发分支已接入下列后端能力；正式双平台页面、能力发布及最终安装包尚未通过完整验收，不能据此宣称安装版抖音已可用。抖音仅处理可匿名访问的公开作品，本期不提供登录接口。
+
+- `POST /items`：JSON `{ url, platform?: "auto" | "xiaohongshu" | "douyin" }` 创建获取任务，返回 202。
+- `GET /tasks/:taskId`、`DELETE /tasks/:taskId`：查询/取消获取任务；进度复用 `/api/v1/tasks/:id/events`，中断不会自动重跑。
+- `GET /items?platform=&keyword=&type=&page=&pageSize=`、`GET /items/:id`：列表/详情使用共享 `ContentArchiveItem` 身份 `platform`/`contentId`。
+- `POST /items/:id/refresh`、`DELETE /items/:id`：刷新或删除；共享配额与存储，不另建第二套媒体目录。
+- `GET /items/:id/media/:mediaId`：本地预览/Range，`?download=1` 下载；`GET /items/:id/download.zip` 包含原文、平台/作品元数据、有效译文、媒体及截帧，媒体缺失或大小不符返回 409。
+- `POST /items/:id/frames`：multipart `file`（PNG）、`sourceMediaId`、`timestampMs`；校验实际像素解码、20 MiB/40 MP 上限并追加到原归档。
+- `GET /translation/runtime`：读取共用本地翻译运行时状态。
+- `POST /items/:id/translation`：JSON `{ force?: boolean }`；新任务返回 202 及共享任务对象，译文已是最新返回 200。
+- `GET /translation/tasks/:taskId`：读取批次状态、作品 ID 与完成计数；统一事件任务标识为 `media-archive-translation`，小红书单平台保持 `xhs-translation`。
+- `POST /translation/batches`：选中模式 `{ mode: "selected", itemIds }`（1–100 条、不可重复）；补全模式 `{ mode: "missing-or-stale", filter?: { platform?, keyword?, type? } }` 限定筛选范围，分页处理前 100 条。等待队列最多 16 个作业；队列满 429，批次包含其他正在运行项目 409，不静默漏译其余项目。
+- `PATCH /items/:id/translation`：JSON `{ sourceHash, title: { edited }, description?: { edited }, topics: [{ topicId, edited }] }`。事务内核对当前原文及 ready 状态，原文变化或译文未就绪返回 409，未知/重复话题返回 400；机器译文保持独立。
+- `POST /items/:id/translation/reset`：移除人工编辑、保留机器译文，不把过期/进行中的译文强制标为 ready。
+
+成功/失败统一使用标准响应封装及 requestId；Schema 拒绝 Cookie、认证信息及未声明输入。LAN 写操作要求管理员会话、精确 Origin/CSRF，不对访客开放。抖音翻译保留完整原文，不套用小红书清洗；刷新/删除/新任务会阻止旧任务迟到覆盖。旧小红书接口共用实现但只暴露小红书 ID，纯抖音任务/记录通过旧入口查询为 404。
+
+## 小红书内容归档（兼容接口）
 
 - `POST /api/v1/tools/xhs-archive/items`：JSON `{ url }` 创建获取任务；`url` 可为链接或包含链接的分享文案。
 - `GET /api/v1/tools/xhs-archive/tasks/:taskId`：读取环境安装、链接解析、媒体下载和写入存档进度。
@@ -181,7 +200,7 @@
 - `POST /api/v1/tools/xhs-archive/items/:id/refresh`：重新获取并原子更新相同笔记。
 - `DELETE /api/v1/tools/xhs-archive/items/:id`：永久删除记录和本地媒体。
 - `GET /api/v1/tools/xhs-archive/items/:id/media/:mediaId`：本地媒体预览；`?download=1` 强制下载，视频支持 Range。
-- `GET /api/v1/tools/xhs-archive/items/:id/download.zip`：流式下载 `内容.txt`、`metadata.json` 和顺序编号媒体。
+- `GET /api/v1/tools/xhs-archive/items/:id/download.zip`：流式下载中文/原始文案、有效英文/双语译文、`metadata.json`、顺序编号媒体及截帧；复用中性导出实现。
 - `GET /api/v1/tools/xhs-archive/runtime`：读取固定版本解析环境及登录状态。
 - `POST /api/v1/tools/xhs-archive/auth/start`、`GET /api/v1/tools/xhs-archive/auth/:sessionId`：打开本机浏览器登录并读取结果。
 

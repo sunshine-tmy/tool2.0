@@ -414,4 +414,52 @@ pnpm --filter backend exec tsx ../.package/ma05-store-http-smoke.ts
 
 ### 下一节点与边界
 
-继续 MA06 中性翻译接口、平台文本规则及编辑冲突验证，再接入完整双平台列表/详情/任务/截帧/导出前端。MA04 正式能力发布/macOS、MA07 安全清理、MA08 最终安装包及 MA09 最终文档仍待验收；正式抖音按钮没有开放。本次仅本地提交，不推送远程、不打包、不修改用户数据库，MA02 原有未提交更名改动仍保持独立。
+该节点结束时计划继续 MA06 中性翻译接口、平台文本规则及编辑冲突验证，再接入完整双平台列表/详情/任务/截帧/导出前端。MA04 正式能力发布/macOS、MA07 安全清理、MA08 最终安装包及 MA09 最终文档仍待验收；正式抖音按钮没有开放。本次仅本地提交，不推送远程、不打包、不修改用户数据库，MA02 原有未提交更名改动仍保持独立。
+
+## 2026-10-01 MA06：双平台共用翻译与异步一致性
+
+代码提交：`e62446e`；差异基线 `4a66b94`。本次是中性翻译接口的独立验收节点，不把 MA06 整项标为完成；继续跳过抖音登录。
+
+### 实现与保护边界
+
+- 增加中性翻译运行时、单条/批次创建、任务查询、人工编辑及重置接口；请求和响应复用共享 Schema，不维护平行 DTO。旧小红书路由变为薄适配，处理同一存储与队列，只允许小红书 ID。
+- 抖音使用完整原始文案，小红书继续独立清洗表情/话题。旧小红书 sourceHash 保持兼容；抖音原始文案与展示正文都参与版本判定，任一刷新变化会让旧结果过期，不改变媒体或原始文案。
+- 入队串行去重，每批最多 100 条、等待队列最多 16 个作业、内存任务历史最多 500 条（仅淘汰终态）。批次包含其他正在运行项目时明确返回 409，不静默只返回首个已有任务而遗漏剩余作品。入队元数据失败释放去重键、标记已入队记录失败，可显式重试。
+- 翻译完成及编辑都在逐条存储事务内核对原文哈希；翻译额外核对 taskId，拒绝刷新、删除或被新任务替代后的迟到结果。人工编辑仅针对 ready 且哈希一致的译文；未知/重复话题拒绝，未提交字段保持不变。
+- 完成落库采用事务内最新人工编辑；运行期间重置过的话题编辑不会从旧快照恢复。机器译文和人工编辑独立保存；ZIP 及重启读取复用同一元数据。
+- 中性缺失/过期补全支持平台、关键词和内容类型筛选，分页收集前 100 条；选中模式只处理显式 ID。AJV 移除额外字段前拒绝 Cookie、未知筛选或分页输入，不把非法请求静默转成合法请求。
+- 混合平台任务向旧接口投影时过滤抖音 ID、当前作品 ID 和计数；纯抖音任务通过旧入口查询为 404。新平台任务使用 `media-archive-translation` 统一任务事件标识，小红书单平台保留原 `xhs-translation` 标识。
+- 共用 Worker/模型及有界退出；两平台启动恢复只标记中断，不自动重跑。Web 可选自动翻译扩展到抖音，翻译失败不改变获取成功或媒体；桌面仍由能力管理安装翻译运行时。
+- 服务拆为 HTTP 路由、领域队列、纯状态/版本规则和文本分段/Worker 网关；没有新增模型依赖、改变数据库 Schema 或媒体物理目录。
+
+### 自动化与覆盖率
+
+新增后端 44 项（API 19、异步一致性 13、执行网关 12），共享契约 3 项。覆盖平台原文、混合批次、旧接口隔离、筛选分页、权限/CSRF、去重/队列额度、Worker 异常输出、长正文分段、令牌仅附带本机、编辑/刷新/删除竞态、元数据故障、关闭恢复和重启。
+
+```text
+pnpm check
+pnpm coverage
+pnpm --filter backend exec vitest run src/__tests__/content-archive-translation.test.ts src/__tests__/archive-translation-concurrency.test.ts src/__tests__/archive-translation-engine.test.ts src/__tests__/archive-translation-shutdown.test.ts src/__tests__/xhs-translation-service.test.ts src/__tests__/xhs-archive.test.ts src/__tests__/content-archive-api.test.ts src/__tests__/content-archive-store.test.ts --coverage --coverage.include=src/modules/media-archive/translation-service.ts --coverage.include=src/modules/media-archive/translation-state.ts --coverage.include=src/modules/media-archive/translation-engine.ts --coverage.include=src/modules/media-archive/translation-routes.ts --coverage.include=src/modules/media-archive/text.ts --coverage.include=src/modules/xhs-archive/translation-service.ts --coverage.include=src/modules/xhs-archive/translation-routes.ts --coverage.reportsDirectory=../.package/ma06-translation-targeted-coverage
+pnpm coverage:diff --base 4a66b94 --threshold 90 --lcov backend/coverage/lcov.info --lcov packages/shared/coverage/lcov.info --lcov frontend/coverage/lcov.info
+git diff --check
+```
+
+最终全量检查、覆盖率及差异覆盖率退出码均为 0，未降低门槛。全量：共享 97、后端 599（跳过 5）、前端 128、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3 项通过。
+共享/后端/前端行、分支、函数覆盖率为 93.87%/75.00%/94.44%、94.76%/79.48%/88.32%、76.13%/78.32%/90.00%。
+八个文件定向 100 项通过；七个翻译/兼容模块行/语句 96.91%、分支 90.32%、函数 100%。本次提交变更可执行行 940/969，通过 90% 门槛（97.01%），未混入既有未提交 MA02 改动。
+日志：`.package/ma06-translation-check-final.log`、`.package/ma06-translation-check-verified.log`、`.package/ma06-translation-coverage-final.log`、`.package/ma06-translation-targeted-final.log`。最后一次全量检查包含代码提交后的验收文档，退出码为 0。报告 `.package/ma06-translation-targeted-coverage`；独立暂存核对记录 `.package/ma06-translation-diff-coverage.json` 与正式提交后的差异门禁一致。
+
+### 实际运行与数据补验
+
+真实 HTTP 命令 `pnpm --filter backend exec tsx ../.package/ma06-translation-http-smoke.ts`，证据 `.package/ma06-translation-http-Tffvxg/result.json` 为 `PASSED`：后端实际监听回环，两个平台混合批次完成（2/2），人工编辑保存、过期哈希返回 409、ZIP 包含人工译文和完整媒体，重启后编辑仍存在；两次健康接口 200、SQLite integrity=ok、无外键错误。旧任务入口只返回小红书 ID/计数。
+
+该验收 Worker 是独立本机固定协议夹具，6 次真实 HTTP Worker 请求验证令牌与输入输出链路；**不代表真实模型翻译质量已验收**。媒体为测试生成的 12×8 PNG，字节保持不变，不声称在线作品获取或完整产品页面通过。本次没有修改正式前端，不以固定 Worker 或单元测试代替后续实际页面/模型验收。
+
+旧库命令 `pnpm --filter backend exec tsx ../.package/ma03-smoke.ts`，证据 `.package/ma03-smoke-4MwHnf/result.json`：dry-run、迁移校验、v6→v5 整库回滚及两次启动 12 项健康/旧接口/PNG/ZIP 检查通过，旧媒体/清单不变。
+混合平台命令 `pnpm --filter backend exec tsx ../.package/ma05-store-http-smoke.ts`，证据 `.package/ma05-store-http-Pwc03k/result.json`：重启、4 条文件索引、旧接口隔离、PNG/ZIP 和数据库校验通过。
+
+初次测试发现新夹具缺少 await 导致连接先关闭，以及 Worker 认证头断言误用 Authorization；修正夹具后重新通过。拆分时曾漏保留退出错误类的导入，已补齐并通过类型检查、关闭和全量回归。抖音 rawText 与展示正文不同步时的版本判定也已修正并补齐三类原文变化测试，没有放宽安全/覆盖率门槛。失败日志保留，不作为通过证据。
+
+### 后续范围
+
+下一节点接入双平台列表、详情、任务、翻译编辑、截帧和导出的完整前端，并完成实际页面操作验证。MA04 正式能力发布/macOS、MA07 综合安全清理、MA08 安装包/升级、MA09 最终文档仍待验收。前端抖音正式按钮保持禁用；用户数据库、媒体、音色和模型未触碰。本次仅本地独立提交，不推送或生成安装包，MA02 原有未提交更名改动仍保持独立。
