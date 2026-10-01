@@ -535,3 +535,9 @@ MA04 正式签名能力发布及嵌入目录/macOS 实测仍待完成；MA05/MA0
 定向测试：`pnpm --filter frontend exec vitest run src/modules/xhs-archive/ArchiveTaskPanel.test.ts src/modules/xhs-archive/page.test.ts`，27 项通过；`pnpm --filter frontend typecheck` 通过。覆盖待处理/运行态取消入口、取消中禁用、归档提交期提示、失败终态隐藏入口、页面调用取消 API、取消成功反馈，以及取消与正常完成/原子提交冲突的竞态。定向 Vue 覆盖行/语句 96.19%、分支 76.15%、函数 95.23%；以 `5af15bf` 为基线的变更行门禁覆盖 43/46（93.48%，高于 90%）。
 
 本次最终 `pnpm check`、`pnpm coverage` 与 `git diff --check` 均通过；全局行/语句、分支、函数覆盖率分别为：共享 93.87%/75.00%/94.44%，后端 94.78%/79.60%/88.35%，前端 78.38%/81.70%/91.15%，未调整任何门槛。真实浏览器补验 `pnpm test:e2e` 5/5 通过，新增取消流程确认页面发送一次 DELETE、展示“获取任务已取消”及重试入口；同时修正旧验收脚本仍使用旧标题/API 路径和缺少 `platform` 响应字段的问题。此功能不开放被 MA04/MA08 门禁保护的抖音在线获取，不代表 MA05/MA06 整体验收完成。
+
+### MA07 LAN 归档写接口权限逐路由验收
+
+扩展 `content-archive-api.test.ts` 的 LAN 安全场景，对创建、刷新、删除归档、取消任务、保存截帧、单条翻译、批量翻译、编辑译文和重置译文 9 个中性写接口逐一发送访客请求及管理员 Cookie + 非法 Origin 请求；9/9 访客请求均为 401，9/9 非法 Origin 请求均为 403。另验证正确 Origin 但缺少 CSRF Token 返回 403，而管理员会话、精确 Origin 和 CSRF Token 齐全时创建请求仍返回 202。媒体帧使用隔离生成的 PNG multipart，不访问在线平台或用户存档。
+
+`pnpm --filter backend exec vitest run src/__tests__/content-archive-api.test.ts --reporter=dot` 10 项通过；`pnpm --filter backend typecheck` 与 `git diff --check` 通过。此处验证的是中性归档所有写接口，访客文件传输白名单不变；MA07 其他 SSRF、限流、配额和清理恢复专项仍需单独验收。

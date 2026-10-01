@@ -266,17 +266,65 @@ describe("多媒体归档 API 与兼容性", () => {
     config.adminPin = "2468";
     config.corsOrigins = ["http://localhost:5173"];
     const app = await appWith();
-    expect((await app.inject({ method: "POST", url: `${prefix}/items`, payload: { url } })).statusCode).toBe(401);
-    expect((await app.inject({ method: "DELETE", url: `${prefix}/items/missing_123456` })).statusCode).toBe(401);
+    const boundary = "----archive-guest-frame";
+    const frameUpload = {
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      payload: Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="sourceMediaId"\r\n\r\nmedia_123456\r\n` +
+            `--${boundary}\r\nContent-Disposition: form-data; name="timestampMs"\r\n\r\n1000\r\n` +
+            `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="frame.png"\r\nContent-Type: image/png\r\n\r\n`
+        ),
+        png,
+        Buffer.from(`\r\n--${boundary}--\r\n`)
+      ])
+    };
+    // 覆盖中性接口全部 JSON/multipart 写入口；LAN 访客只能使用被显式放行的文件传输接口。
+    const mutations = [
+      { method: "POST" as const, url: `${prefix}/items`, payload: { url } },
+      { method: "POST" as const, url: `${prefix}/items/missing_123456/refresh` },
+      { method: "DELETE" as const, url: `${prefix}/items/missing_123456` },
+      { method: "DELETE" as const, url: `${prefix}/tasks/missing_task123` },
+      { method: "POST" as const, url: `${prefix}/items/missing_123456/frames`, ...frameUpload },
+      { method: "POST" as const, url: `${prefix}/items/missing_123456/translation`, payload: { force: false } },
+      {
+        method: "POST" as const,
+        url: `${prefix}/translation/batches`,
+        payload: { mode: "selected", itemIds: ["missing_123456"] }
+      },
+      {
+        method: "PATCH" as const,
+        url: `${prefix}/items/missing_123456/translation`,
+        payload: { sourceHash: "a".repeat(64), title: { edited: "标题" }, topics: [] }
+      },
+      { method: "POST" as const, url: `${prefix}/items/missing_123456/translation/reset` }
+    ];
+    const guestResults = await Promise.all(mutations.map((request) => app.inject(request)));
+    expect(guestResults.map((response) => response.statusCode)).toEqual(mutations.map(() => 401));
     const login = await app.inject({ method: "POST", url: "/api/v1/session", payload: { pin: "2468" } });
     const cookie = String(login.headers["set-cookie"]).split(";")[0];
+    const csrfToken = login.json().data.csrfToken as string;
+    const wrongOriginResults = await Promise.all(
+      mutations.map((request) =>
+        app.inject({
+          ...request,
+          headers: {
+            ...("headers" in request ? request.headers : {}),
+            cookie,
+            origin: "http://evil.test",
+            "x-csrf-token": csrfToken
+          }
+        })
+      )
+    );
+    expect(wrongOriginResults.map((response) => response.statusCode)).toEqual(mutations.map(() => 403));
     expect(
       (
         await app.inject({
           method: "POST",
           url: `${prefix}/items`,
           payload: { url },
-          headers: { cookie, origin: "http://evil.test" }
+          headers: { cookie, origin: "http://localhost:5173" }
         })
       ).statusCode
     ).toBe(403);
@@ -284,7 +332,7 @@ describe("多媒体归档 API 与兼容性", () => {
       method: "POST",
       url: `${prefix}/items`,
       payload: { url },
-      headers: { cookie, origin: "http://localhost:5173", "x-csrf-token": login.json().data.csrfToken }
+      headers: { cookie, origin: "http://localhost:5173", "x-csrf-token": csrfToken }
     });
     expect(created.statusCode).toBe(202);
     expect((await terminal(app, created.json().data.id)).status).toBe("completed");
