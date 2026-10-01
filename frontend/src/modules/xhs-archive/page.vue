@@ -3,9 +3,9 @@
   <ToolLayout>
     <section class="main-column xhs-main">
       <ToolPageHeader
-        title="小红书内容归档"
-        description="获取小红书标题、正文和媒体并保存到本机，远程链接失效后仍可预览和下载。"
-        kicker="LOCAL XHS ARCHIVE"
+        title="多媒体内容归档"
+        description="将作品正文与媒体保存到本机，支持预览、翻译与视频截帧。当前支持小红书，抖音接入验证中。"
+        kicker="LOCAL MEDIA ARCHIVE"
       />
 
       <n-alert type="info" :bordered="false" class="license-note">
@@ -29,7 +29,9 @@
 
       <ArchiveTaskPanel
         v-model:input-url="inputUrl"
+        v-model:platform="platform"
         :task="task"
+        :submitting="submitting"
         :auth-waiting="authWaiting"
         @submit="startFetch"
         @login="loginAndRetry"
@@ -91,6 +93,8 @@ import { NAlert, NButton, useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import {
   normalizeXhsText,
+  identifyArchiveLink,
+  type ArchivePlatformSelection,
   parseXhsContentText,
   resolveXhsTranslationField,
   type XhsArchiveItem,
@@ -120,7 +124,9 @@ const desktopMode = computed(() => Boolean(window.toolboxDesktop));
 const translationRuntime = ref<XhsTranslationRuntimeStatus>();
 const translationRuntimeLoading = ref(false);
 const inputUrl = ref("");
+const platform = ref<ArchivePlatformSelection>("auto");
 const task = ref<XhsArchiveTask>();
+const submitting = ref(false);
 const streamedTaskId = computed(() =>
   task.value && !["completed", "failed"].includes(task.value.status) ? task.value.id : undefined
 );
@@ -184,11 +190,26 @@ function handlePagePaste(event: ClipboardEvent) {
 }
 async function startFetch() {
   if (!inputUrl.value.trim()) return;
+  if (submitting.value) return;
+  if (task.value && ["running", "pending"].includes(task.value.status)) return;
+  const link = identifyArchiveLink(inputUrl.value, platform.value);
+  if (!link.ok) {
+    message.warning(link.message);
+    return;
+  }
+  // 抖音真实解析尚未验收，不能将它误交给小红书 Worker，或对外宣称归档成功。
+  if (link.platform === "douyin") {
+    message.warning("抖音归档接入验证中，暂不能提交。小红书归档与已保存内容仍可正常使用。");
+    return;
+  }
+  submitting.value = true;
   try {
     // 创建获取任务立即返回 taskId；后续进度由 SSE 驱动，不阻塞页面输入和浏览。
-    task.value = await xhsArchiveApi.create(inputUrl.value);
+    task.value = await xhsArchiveApi.create(link.url);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取失败"));
+  } finally {
+    submitting.value = false;
   }
 }
 async function refreshItem(id: string) {
@@ -412,7 +433,7 @@ async function removeItem() {
   const item = detail.value;
   const accepted = await confirm(
     `将永久删除“${normalizeXhsText(item.title)}”及 ${item.media.length} 个本地媒体（${formatBytes(item.totalBytes)}）。此操作无法撤销。`,
-    { title: "删除小红书存档", positiveText: "确认删除" }
+    { title: "删除内容存档", positiveText: "确认删除" }
   );
   if (!accepted) return;
   await xhsArchiveApi.remove(item.id);
@@ -439,7 +460,7 @@ async function removeSelected() {
   const bytes = selected.reduce((sum, item) => sum + item.totalBytes, 0);
   const accepted = await confirm(
     `将永久删除 ${selected.length} 条存档、${mediaCount} 个本地媒体（${formatBytes(bytes)}）。此操作无法撤销。`,
-    { title: "批量删除小红书存档", positiveText: "确认全部删除" }
+    { title: "批量删除内容存档", positiveText: "确认全部删除" }
   );
   if (!accepted) return;
   await Promise.all(selected.map((item) => xhsArchiveApi.remove(item.id)));

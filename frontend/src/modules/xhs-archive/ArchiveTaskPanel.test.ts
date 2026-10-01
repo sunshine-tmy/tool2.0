@@ -6,7 +6,7 @@
 import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import type { XhsArchiveTask } from "@toolbox/shared";
+import type { ArchivePlatformSelection, XhsArchiveTask } from "@toolbox/shared";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
 
 const ButtonStub = defineComponent({
@@ -38,7 +38,15 @@ function task(overrides: Partial<XhsArchiveTask> = {}): XhsArchiveTask {
   };
 }
 
-function mountPanel(overrides: Partial<{ inputUrl: string; task: XhsArchiveTask; authWaiting: boolean }> = {}) {
+function mountPanel(
+  overrides: Partial<{
+    inputUrl: string;
+    platform: ArchivePlatformSelection;
+    task: XhsArchiveTask;
+    authWaiting: boolean;
+    submitting: boolean;
+  }> = {}
+) {
   return mount(ArchiveTaskPanel, {
     props: {
       inputUrl: "https://www.xiaohongshu.com/explore/note-1",
@@ -50,6 +58,7 @@ function mountPanel(overrides: Partial<{ inputUrl: string; task: XhsArchiveTask;
         NButton: ButtonStub,
         NInput: InputStub,
         NProgress: true,
+        NSelect: true,
         Archive: true,
         Box: true,
         Check: true,
@@ -62,6 +71,37 @@ function mountPanel(overrides: Partial<{ inputUrl: string; task: XhsArchiveTask;
 }
 
 describe("XHS archive task panel", () => {
+  it("显示识别平台，阻止未接入的抖音、错误链接及平台不符提交", async () => {
+    const wrapper = mountPanel({ inputUrl: "https://v.douyin.com/PrWnsoVIg78/" });
+    expect(wrapper.text()).toContain("已识别：抖音");
+    expect(wrapper.text()).toContain("暂不能提交");
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toBeUndefined();
+    await wrapper.setProps({ inputUrl: "https://xhslink.com/a/123", platform: "douyin" });
+    expect(wrapper.text()).toContain("不一致");
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toBeUndefined();
+    await wrapper.setProps({ inputUrl: "https://example.org" });
+    expect(wrapper.text()).toContain("仅支持");
+    wrapper.unmount();
+  });
+
+  it("执行中和登录等待期间，回车也不能重复创建任务", async () => {
+    const wrapper = mountPanel({ task: task() });
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toBeUndefined();
+    await wrapper.setProps({ task: undefined, submitting: true });
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toBeUndefined();
+    await wrapper.setProps({ submitting: false, authWaiting: true });
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toBeUndefined();
+    await wrapper.setProps({ authWaiting: false });
+    expect(wrapper.text()).toContain("已识别：小红书");
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+    wrapper.unmount();
+  });
   it("renders task progress and emits submit without owning request behavior", async () => {
     // 面板只负责展示阶段和派发事件，不应在组件内部直接发起网络请求。
     const wrapper = mountPanel({ task: task() });

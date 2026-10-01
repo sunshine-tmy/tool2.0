@@ -71,7 +71,8 @@ const tools = listTools();
 const readyTools = computed(() => tools.filter((tool) => tool.status === "ready"));
 const lastTool = computed(() => {
   const path = typeof window === "undefined" ? "" : localStorage.getItem("toolbox:last-tool");
-  return tools.find((tool) => tool.routePath === path);
+  const currentPath = path === "/tools/xhs-archive" ? "/tools/media-archive" : path;
+  return tools.find((tool) => tool.routePath === currentPath);
 });
 
 const iconByTool: Record<string, unknown> = {

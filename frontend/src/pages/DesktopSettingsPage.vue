@@ -328,7 +328,7 @@ const componentGroupLabels: Record<ComponentGroup, string> = {
   media: "视频与媒体",
   audio: "语音与配音",
   image: "AI 图片处理",
-  archive: "内容归档",
+  archive: "多媒体内容归档",
   translation: "翻译"
 };
 const componentGroups = computed(() => {

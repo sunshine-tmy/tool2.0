@@ -6,19 +6,26 @@
         v-model:value="inputUrl"
         size="large"
         clearable
-        placeholder="直接按 Ctrl+V / Command+V 粘贴小红书链接或分享文案"
-        @keyup.enter="$emit('submit')"
+        placeholder="直接按 Ctrl+V / Command+V 粘贴小红书或抖音作品分享文案"
+        @keyup.enter="submit"
       />
       <n-button
         size="large"
         type="primary"
-        :loading="task?.status === 'running' || task?.status === 'pending'"
-        :disabled="!inputUrl.trim()"
-        @click="$emit('submit')"
+        :loading="submitting || task?.status === 'running' || task?.status === 'pending'"
+        :disabled="!canSubmit"
+        @click="submit"
       >
         <template #icon><Archive :size="16" /></template>
         获取并存档
       </n-button>
+    </div>
+    <div class="platform-row">
+      <span>来源平台</span>
+      <n-select v-model:value="platform" :options="platformOptions" aria-label="归档来源平台" style="width: 160px" />
+      <span v-if="inputUrl.trim()" class="platform-hint" :class="{ warning: !link.ok || link.platform === 'douyin' }">
+        {{ linkHint }}
+      </span>
     </div>
 
     <div v-if="task" class="task-progress">
@@ -64,7 +71,7 @@
         >
           登录小红书并重试
         </n-button>
-        <n-button v-else size="small" @click="$emit('submit')">重新尝试</n-button>
+        <n-button v-else size="small" :disabled="!canSubmit" @click="submit">重新尝试</n-button>
       </div>
     </div>
   </section>
@@ -72,21 +79,54 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { NButton, NInput, NProgress } from "naive-ui";
+import { NButton, NInput, NProgress, NSelect } from "naive-ui";
 import { Archive, Box, Check, Download, FileSearch, HardDriveDownload } from "lucide-vue-next";
-import type { XhsArchiveTask, XhsArchiveTaskStage } from "@toolbox/shared";
+import {
+  identifyArchiveLink,
+  type ArchivePlatformSelection,
+  type XhsArchiveTask,
+  type XhsArchiveTaskStage
+} from "@toolbox/shared";
 
 const props = defineProps<{
   task?: XhsArchiveTask;
+  submitting?: boolean;
   authWaiting: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   submit: [];
   login: [];
 }>();
 
 const inputUrl = defineModel<string>("inputUrl", { required: true });
+const platform = defineModel<ArchivePlatformSelection>("platform", { default: "auto" });
+const platformOptions = [
+  { label: "自动识别", value: "auto" },
+  { label: "小红书", value: "xiaohongshu" },
+  { label: "抖音（接入中）", value: "douyin" }
+];
+const link = computed(() => identifyArchiveLink(inputUrl.value, platform.value));
+const linkHint = computed(() =>
+  !link.value.ok
+    ? link.value.message
+    : link.value.platform === "douyin"
+      ? "已识别：抖音。归档接入验证中，暂不能提交。"
+      : "已识别：小红书"
+);
+const canSubmit = computed(
+  () =>
+    link.value.ok &&
+    link.value.platform === "xiaohongshu" &&
+    !props.submitting &&
+    !props.authWaiting &&
+    !["running", "pending"].includes(props.task?.status || "")
+);
+
+function submit() {
+  // 按钮、回车和失败重试共用门禁，避免绕过平台校验或重复创建正在执行的任务。
+  if (canSubmit.value) emit("submit");
+}
 const stages: Array<{ key: XhsArchiveTaskStage; label: string; icon: unknown }> = [
   { key: "installing", label: "准备解析环境", icon: HardDriveDownload },
   { key: "parsing", label: "链接解析", icon: FileSearch },
@@ -113,6 +153,18 @@ function stageClass(stage: XhsArchiveTaskStage) {
 <style scoped>
 .fetch-panel {
   padding: 22px;
+}
+.platform-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: #64748b;
+  font-size: 13px;
+}
+.platform-hint.warning {
+  color: #b45309;
 }
 .input-row {
   display: flex;

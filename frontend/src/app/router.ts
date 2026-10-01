@@ -49,9 +49,14 @@ export const router = createRouter({
       component: () => import("../modules/short-video/page.vue")
     },
     {
-      path: "/tools/xhs-archive",
+      path: "/tools/media-archive",
       name: "xhs-archive",
       component: () => import("../modules/xhs-archive/page.vue")
+    },
+    {
+      // 旧收藏与桌面深链接沿用入口；仅页面重定向，不改变当前 API 或媒体路径。
+      path: "/tools/xhs-archive",
+      redirect: (to) => ({ path: "/tools/media-archive", query: to.query, hash: to.hash })
     }
   ]
 });

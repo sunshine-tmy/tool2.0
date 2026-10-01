@@ -53,7 +53,8 @@ describe("tool registry", () => {
       apiNamespace: "/api/v1/tools/short-video"
     });
     expect(getToolById("xhs-archive")).toMatchObject({
-      routePath: "/tools/xhs-archive",
+      title: "多媒体内容归档",
+      routePath: "/tools/media-archive",
       apiNamespace: "/api/v1/tools/xhs-archive"
     });
   });

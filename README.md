@@ -35,7 +35,7 @@
 | 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`   | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                        |
 | 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`     | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                              |
 | 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`  | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                           |
-| 小红书内容归档 | `/tools/xhs-archive`    | `/api/v1/tools/xhs-archive/*`  | 小红书图文、视频、Live Photo 本地归档、预览与中英翻译                       |
+| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/xhs-archive/*`  | 当前支持小红书图文、视频、Live Photo 归档、翻译与截帧；抖音接入验证中       |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
@@ -216,7 +216,9 @@ Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windo
 
 Windows 桌面版的能力必须在“设置 → 能力管理”中由用户主动安装、重装或卸载；打开工具页或提交任务不会静默下载依赖。下载失败时，可使用能力卡片提供的 GitHub 来源和“离线导入”，并选择同一版本清单中的全部离线包。卸载能力只移除对应运行时和模型，不删除作品、任务历史、个人素材或登录状态。详细步骤见[桌面应用使用帮助](./docs/desktop-application-help.md)。
 
-### 小红书内容归档
+### 多媒体内容归档
+
+当前可用平台仍为小红书；抖音正在进行真实作品解析和完整媒体下载验收，尚不能提交归档。新页面入口为 `/tools/media-archive`，旧 `/tools/xhs-archive` 收藏链接自动跳转。平台选择会校验分享链接，阻止多链接及平台不符的输入。此阶段保留原有版本化 API、能力包 ID 和存储目录，升级不会迁移或删除现有归档。
 
 Web/开发版首次点击“获取并存档”时，模块会优先复用 Python 3.12；若本机没有，则通过固定版本 uv 把受管 Python、虚拟环境和固定提交的 XHS-Downloader 2.7 安装到 `.runtime/xhs-downloader`。普通项目启动不会安装或等待该环境。桌面版须先从能力管理中安装对应能力。解析 Worker 只监听回环地址，媒体获取完成后写入当前运行模式的数据目录。
 
