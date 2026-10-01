@@ -12,6 +12,7 @@
     "start": "node dist/server.js",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
+    "probe:douyin": "tsx src/modules/media-archive/douyin-probe.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
