@@ -285,6 +285,30 @@ if (mode === "extract") {
     );
   });
 
+  it("allows concurrent browser preview probes without consuming remote-fetch quota", async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockImplementation(
+        () => new Response("remote-video", { status: 200, headers: { "content-type": "video/mp4" } })
+      );
+    const app = await createApp({ remoteAddressResolver: publicTestResolver });
+    const responses = [];
+
+    for (let requestNumber = 0; requestNumber < 12; requestNumber += 1) {
+      responses.push(
+        await app.inject({
+          method: "GET",
+          url: `/api/v1/tools/video-text/remote-video?url=${encodeURIComponent("https://cdn.test/video.mp4")}`,
+          headers: { range: `bytes=${requestNumber}-${requestNumber + 1}` }
+        })
+      );
+    }
+
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+    expect((await app.inject("/health/live")).statusCode).toBe(200);
+    await app.close();
+  });
+
   it("attaches optional transcriber quality metadata from sidecar output", async () => {
     const helperPath = path.join(storageRoot, "video-text-quality-helper.cjs");
     await fs.writeFile(

@@ -581,3 +581,9 @@ git diff --check
 新增真实 Fastify 路由级 429 契约测试，覆盖 LAN 上传会话（30 次/分钟）、分片请求（120 次/分钟）、批量下载（10 次/分钟），以及多媒体归档单条翻译（20 次/分钟）和批量翻译（5 次/分钟）。测试先耗尽单一路由额度，再确认超额请求返回统一 `RATE_LIMIT_EXCEEDED` 信封和 `requestId`；LAN 不同路径、翻译动态 ID 及单条/批量接口分别使用独立桶，触发限额后 `/health/live` 仍可用。使用无效/不存在资源的请求触发入口，不写入文件、不创建模型任务，也不访问在线平台。
 
 定向命令：`pnpm --filter backend exec vitest run src/__tests__/lan-transfer.test.ts src/__tests__/content-archive-translation.test.ts --reporter=dot`，50 项通过。最终 `pnpm check`、`git diff --check` 通过：共享 97、后端 627（5 项跳过）、前端 192、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；生产构建、Bundle Budget 和启动 smoke 通过。此验收覆盖限流矩阵中的这些 HTTP 路由，不替代全量业务容量压测，也不改变现有限额。
+
+### MA07 视频文案播放器独立预览额度
+
+代码复查发现 `/api/v1/tools/video-text/remote-video` 虽用于浏览器播放，却误用了远程抓取的低频额度（10 次/分钟）；浏览器加载元数据、拖动进度和 Range 请求时可能误触 429。现改用专用 `mediaPreview` 额度，与短视频播放器保持一致；远程 URL 解析/创建任务仍使用 `remoteFetch` 额度，未放宽 SSRF 校验或抓取限额。
+
+在真实 Fastify 应用测试中连续请求 12 个视频预览探测（带不同 Range），均返回 200，`/health/live` 保持可用；视频文案定向测试 15 项通过。`pnpm check`、`git diff --check` 通过：共享 97、后端 628（5 项跳过）、前端 192、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；生产构建、Bundle Budget 和启动 smoke 通过。

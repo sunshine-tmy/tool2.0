@@ -183,7 +183,8 @@ export async function registerVideoTextRoutes({
   app.get<{ Querystring: { url: string } }>(
     "/api/v1/tools/video-text/remote-video",
     {
-      config: REQUEST_QUOTAS.remoteFetch,
+      // 浏览器播放会并发请求元数据和多个 Range 片段，使用媒体预览额度，避免挤占低频远程抓取额度。
+      config: REQUEST_QUOTAS.mediaPreview,
       schema: {
         querystring: VideoTextRemoteQuerySchema,
         response: { 400: ApiFailureSchema, 502: ApiFailureSchema }
