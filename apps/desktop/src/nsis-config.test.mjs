@@ -81,6 +81,10 @@ test("Windows installation acceptance has explicit signed and unsigned-test mode
   expect(acceptance).not.toContain("Join-Path $installBaseRoot 'Ecommerce Toolbox'");
   expect(acceptance).toContain("PreviousInstallerPath");
   expect(acceptance).toContain("TestComponentLifecycle");
+  expect(acceptance).toContain("ValidateSet('edge-tts', 'douyin-archive')");
+  expect(acceptance).toContain("'--component-id', $ComponentId");
+  expect(acceptance).toContain("@('xhs-browser', 'douyin-archive')");
+  expect(workflow).toContain("-ComponentId douyin-archive");
   expect(acceptance).toContain("TestExplicitDataDeletion");
   expect(acceptance).toContain("desktop-install-acceptance-report.json");
   expect(acceptance).not.toContain("Get-Process -Name 'EcommerceToolbox'");
@@ -115,6 +119,7 @@ test("signed Windows acceptance is manual, read-only, and never publishes a Rele
   expect(workflow).toContain("WINDOWS_SIGNING_CERTIFICATE_PASSWORD");
   expect(workflow).toContain("WINDOWS_SIGNING_SUBJECT");
   expect(workflow).toContain("-TestComponentLifecycle");
+  expect(workflow).toContain('"-ComponentId", "douyin-archive"');
   expect(workflow).toContain("-TestExplicitDataDeletion");
   expect(workflow).toContain("gh release download");
   expect(releaseMentions).toHaveLength(0);

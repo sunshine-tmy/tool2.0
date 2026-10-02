@@ -165,7 +165,7 @@ describe("匿名抖音与异步取消", () => {
     expect(first.rawText).toBe(source.description);
     expect(first.topics).toEqual(second.topics);
     expect(first.topics[0].id).toHaveLength(16);
-    expect(extract.mock.calls[0][1]).toEqual({ signal });
+    expect(extract.mock.calls[0][1]).toMatchObject({ signal, onInstallProgress: expect.any(Function) });
     await adapter.close();
     expect(close).toHaveBeenCalledOnce();
   });

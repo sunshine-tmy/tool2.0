@@ -67,6 +67,7 @@ storage/quarantine/**
 .runtime/xhs-translation-model-cache/
 .runtime/xhs-browser-profile/
 .runtime/playwright-browsers/
+.runtime/packages/
 
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep

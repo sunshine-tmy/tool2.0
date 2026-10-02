@@ -8,6 +8,7 @@ import ArchiveFacts from "./ArchiveFacts.vue";
 import BilingualContent from "./BilingualContent.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import { archiveFixture, translationFixture } from "./__tests__/fixtures";
+import { formatArchiveDate } from "./format-date";
 
 describe("双平台内容展示与编辑", () => {
   it.each(["xiaohongshu", "douyin"] as const)("%s 显示真实作品身份，未知作者和缺失时间不编造", (platform) => {
@@ -30,6 +31,17 @@ describe("双平台内容展示与编辑", () => {
     expect(wrapper.text()).toContain("发布时间");
     expect(wrapper.text()).toContain("2026-09-01");
     expect(wrapper.text()).toContain("作者");
+    wrapper.unmount();
+  });
+  it("打开旧归档时安全展示无法识别的发布时间，不让详情渲染崩溃", () => {
+    const wrapper = mount(ArchiveFacts, {
+      props: {
+        item: archiveFixture({ publishedAt: "unavailable" }),
+        formatDate: formatArchiveDate
+      }
+    });
+    expect(wrapper.text()).toContain("发布时间");
+    expect(wrapper.text()).toContain("未知");
     wrapper.unmount();
   });
   it("抖音保留原始正文与字面标记，小红书使用其独有的文本规则", () => {

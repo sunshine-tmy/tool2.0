@@ -23,7 +23,13 @@
     <div class="platform-row">
       <span>来源平台</span>
       <n-select v-model:value="platform" :options="platformOptions" aria-label="归档来源平台" style="width: 160px" />
-      <span v-if="inputUrl.trim()" class="platform-hint" :class="{ warning: !link.ok || link.platform === 'douyin' }">
+      <span
+        v-if="inputUrl.trim()"
+        class="platform-hint"
+        :class="{
+          warning: !link.ok || (link.platform === 'douyin' && !douyinAvailable && !douyinCanAutoInstall)
+        }"
+      >
         {{ linkHint }}
       </span>
     </div>
@@ -109,6 +115,9 @@ const props = defineProps<{
   task?: ContentArchiveTask;
   submitting?: boolean;
   cancelling?: boolean;
+  douyinAvailable?: boolean;
+  douyinCanAutoInstall?: boolean;
+  douyinMessage?: string;
   authWaiting: boolean;
 }>();
 
@@ -123,20 +132,24 @@ const platform = defineModel<ArchivePlatformSelection>("platform", { default: "a
 const platformOptions = [
   { label: "自动识别", value: "auto" },
   { label: "小红书", value: "xiaohongshu" },
-  { label: "抖音（接入中）", value: "douyin" }
+  { label: "抖音", value: "douyin" }
 ];
 const link = computed(() => identifyArchiveLink(inputUrl.value, platform.value));
 const linkHint = computed(() =>
   !link.value.ok
     ? link.value.message
     : link.value.platform === "douyin"
-      ? "已识别：抖音。归档接入验证中，暂不能提交。"
+      ? props.douyinAvailable
+        ? "已识别：抖音。仅归档公开可访问作品，不使用登录 Cookie。"
+        : props.douyinCanAutoInstall
+          ? "已识别：抖音。首次获取时将自动安装并校验匿名归档能力，仅处理公开可访问作品。"
+          : `已识别：抖音。${props.douyinMessage || "抖音归档能力尚未就绪，请刷新环境状态。"}`
       : "已识别：小红书"
 );
 const canSubmit = computed(
   () =>
     link.value.ok &&
-    link.value.platform === "xiaohongshu" &&
+    (link.value.platform === "xiaohongshu" || props.douyinAvailable === true || props.douyinCanAutoInstall === true) &&
     !props.submitting &&
     !props.authWaiting &&
     !["running", "pending"].includes(props.task?.status || "")

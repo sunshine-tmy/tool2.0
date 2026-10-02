@@ -202,6 +202,7 @@ jobs:
             "-ExpectedSubject", $env:WINDOWS_SIGNING_SUBJECT,
             "-InstallDirectory", (Join-Path $env:RUNNER_TEMP "Ecommerce Toolbox Signed Acceptance"),
             "-TestComponentLifecycle",
+            "-ComponentId", "douyin-archive",
             "-TestExplicitDataDeletion"
           )
           if (-not [string]::IsNullOrWhiteSpace($env:PREVIOUS_DESKTOP_VERSION)) {

@@ -2,49 +2,66 @@
  * 中文模块说明：测试 backend/src/__tests__/app.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createApp } from "../app";
 import { getConfig } from "../config";
+import { createDevelopmentRuntimeLayout } from "../runtime/runtime-layout";
 
 describe("api app", () => {
   it("returns health information", async () => {
-    const app = await createApp();
-    const [response, live, ready, douyin] = await Promise.all([
-      app.inject({ method: "GET", url: "/api/v1/health" }),
-      app.inject({ method: "GET", url: "/health/live" }),
-      app.inject({ method: "GET", url: "/health/ready" }),
-      app.inject({ method: "GET", url: "/api/v1/tools/media-archive/runtime/douyin" })
-    ]);
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-app-health-"));
+    const layout = createDevelopmentRuntimeLayout({
+      configRoot: path.join(root, "config"),
+      storageRoot: path.join(root, "storage"),
+      runtimeRoot: path.join(root, "runtime"),
+      modelsRoot: path.join(root, "models")
+    });
+    const app = await createApp({
+      config: getConfig({ layout, dotenvPath: false, environment: { NODE_ENV: "test" } })
+    });
+    try {
+      const [response, live, ready, douyin] = await Promise.all([
+        app.inject({ method: "GET", url: "/api/v1/health" }),
+        app.inject({ method: "GET", url: "/health/live" }),
+        app.inject({ method: "GET", url: "/health/ready" }),
+        app.inject({ method: "GET", url: "/api/v1/tools/media-archive/runtime/douyin" })
+      ]);
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      success: true,
-      requestId: expect.any(String),
-      data: {
-        status: "ok"
-      }
-    });
-    expect(live.json()).toMatchObject({ success: true, requestId: expect.any(String), data: { status: "ok" } });
-    expect(ready.json()).toMatchObject({
-      success: true,
-      requestId: expect.any(String),
-      data: { status: "ready", database: "ok", storage: "ok" }
-    });
-    expect(douyin.statusCode).toBe(200);
-    const douyinPlatformSupported =
-      (process.platform === "win32" && process.arch === "x64") ||
-      (process.platform === "darwin" && process.arch === "arm64");
-    expect(douyin.json()).toMatchObject({
-      success: true,
-      requestId: expect.any(String),
-      data: {
-        platform: "douyin",
-        mode: "anonymous",
-        available: false,
-        state: douyinPlatformSupported ? "not-installed" : "unavailable",
-        errorCode: douyinPlatformSupported ? "DOUYIN_COMPONENT_NOT_INSTALLED" : "DOUYIN_PLATFORM_UNSUPPORTED"
-      }
-    });
-    await app.close();
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        success: true,
+        requestId: expect.any(String),
+        data: {
+          status: "ok"
+        }
+      });
+      expect(live.json()).toMatchObject({ success: true, requestId: expect.any(String), data: { status: "ok" } });
+      expect(ready.json()).toMatchObject({
+        success: true,
+        requestId: expect.any(String),
+        data: { status: "ready", database: "ok", storage: "ok" }
+      });
+      expect(douyin.statusCode).toBe(200);
+      const douyinPlatformSupported =
+        (process.platform === "win32" && process.arch === "x64") ||
+        (process.platform === "darwin" && process.arch === "arm64");
+      expect(douyin.json()).toMatchObject({
+        success: true,
+        requestId: expect.any(String),
+        data: {
+          platform: "douyin",
+          mode: "anonymous",
+          available: false,
+          state: douyinPlatformSupported ? "not-installed" : "unavailable",
+          errorCode: douyinPlatformSupported ? "DOUYIN_COMPONENT_NOT_INSTALLED" : "DOUYIN_PLATFORM_UNSUPPORTED"
+        }
+      });
+    } finally {
+      await app.close();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 
   it("returns schema-stable task errors with a request id", async () => {
@@ -125,7 +142,7 @@ describe("api app", () => {
     await app.close();
   });
 
-  // 清理接口会启动受控子进程，Windows CI 冷启动可能超过 Vitest 默认的 5 秒。
+  // 清理接口会启动受控子进程，Windows CI 冷启动可能超过 Vitest 默认的 5 秒，因此提高该测试的局部超时。
   it("exposes only whitelisted cleanup categories and rejects paths", async () => {
     const app = await createApp();
     const inspected = await app.inject({ method: "GET", url: "/api/v1/maintenance/cleanup" });
@@ -142,7 +159,7 @@ describe("api app", () => {
     expect(rejected.statusCode).toBe(400);
     expect(rejected.json().error.code).toBe("CLEANUP_FAILED");
     await app.close();
-  }, 15_000);
+  }, 30_000);
 
   it("allows CORS preflight requests for chunk upload PUT requests", async () => {
     process.env.CORS_ORIGINS = "http://192.168.1.241:5173";

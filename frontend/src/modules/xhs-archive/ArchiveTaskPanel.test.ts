@@ -47,6 +47,9 @@ function mountPanel(
     authWaiting: boolean;
     submitting: boolean;
     cancelling: boolean;
+    douyinAvailable: boolean;
+    douyinCanAutoInstall: boolean;
+    douyinMessage: string;
   }> = {}
 ) {
   return mount(ArchiveTaskPanel, {
@@ -73,18 +76,37 @@ function mountPanel(
 }
 
 describe("XHS archive task panel", () => {
-  it("显示识别平台，阻止未接入的抖音、错误链接及平台不符提交", async () => {
-    const wrapper = mountPanel({ inputUrl: "https://v.douyin.com/PrWnsoVIg78/" });
+  it("显示识别平台，阻止未就绪的抖音、错误链接及平台不符提交", async () => {
+    const wrapper = mountPanel({ inputUrl: "https://v.douyin.com/PrWnsoVIg78/", douyinMessage: "抖音组件未安装" });
     expect(wrapper.text()).toContain("已识别：抖音");
-    expect(wrapper.text()).toContain("暂不能提交");
+    expect(wrapper.text()).toContain("抖音组件未安装");
     await wrapper.find("input").trigger("keyup", { key: "Enter" });
     expect(wrapper.emitted("submit")).toBeUndefined();
+    await wrapper.setProps({ douyinAvailable: true, douyinMessage: "匿名解析环境已就绪" });
+    expect(wrapper.text()).toContain("仅归档公开可访问作品");
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toHaveLength(1);
     await wrapper.setProps({ inputUrl: "https://xhslink.com/a/123", platform: "douyin" });
     expect(wrapper.text()).toContain("不一致");
     await wrapper.find("input").trigger("keyup", { key: "Enter" });
-    expect(wrapper.emitted("submit")).toBeUndefined();
+    expect(wrapper.emitted("submit")).toHaveLength(1);
     await wrapper.setProps({ inputUrl: "https://example.org" });
     expect(wrapper.text()).toContain("仅支持");
+    wrapper.unmount();
+  });
+
+  it("网页签名目录完整时允许首次任务自动安装，但不展示单独安装操作", async () => {
+    const wrapper = mountPanel({
+      inputUrl: "https://v.douyin.com/PrWnsoVIg78/",
+      douyinCanAutoInstall: true,
+      douyinMessage: "首次获取时自动安装"
+    });
+    expect(wrapper.text()).toContain("首次获取时将自动安装");
+    const submitButton = wrapper.findAll("button").find((button) => button.text().includes("获取并存档"));
+    expect(submitButton?.attributes("disabled")).toBeUndefined();
+    expect(wrapper.findAll("button").some((button) => button.text().includes("安装抖音"))).toBe(false);
+    await submitButton?.trigger("click");
+    expect(wrapper.emitted("submit")).toHaveLength(1);
     wrapper.unmount();
   });
 

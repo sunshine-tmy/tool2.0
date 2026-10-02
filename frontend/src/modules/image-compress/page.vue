@@ -171,9 +171,9 @@ import { resolveBackendUrl } from "../../config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { imageCompressApi, type ImageToolResponse } from "./api";
 import { createImageItemId } from "./image-id";
+import { findImageCompressionPreset, imageCompressionPresets, type ImageCompressionPresetValue } from "./presets";
 
 type ImageStatus = "pending" | "processing" | "done" | "failed";
-type PresetValue = "balanced" | "clear" | "small";
 type OutputFormat = ImageToolResponse["outputFormat"];
 
 type ImageItem = {
@@ -194,13 +194,8 @@ const downloading = ref(false);
 const quality = ref(78);
 const width = ref<number | null>(null);
 const outputFormat = ref<OutputFormat>("png");
-const activePreset = ref<PresetValue>("balanced");
-
-const presets: Array<{ label: string; value: PresetValue; quality: number; format: OutputFormat }> = [
-  { label: "均衡", value: "balanced", quality: 78, format: "png" },
-  { label: "高清", value: "clear", quality: 88, format: "webp" },
-  { label: "极小", value: "small", quality: 60, format: "webp" }
-];
+const activePreset = ref<ImageCompressionPresetValue>("balanced");
+const presets = imageCompressionPresets;
 
 const formatOptions = [
   { label: "WebP", value: "webp" },
@@ -305,8 +300,8 @@ async function compressItem(
   }
 }
 
-function applyPreset(value: PresetValue) {
-  const preset = presets.find((item) => item.value === value);
+function applyPreset(value: ImageCompressionPresetValue) {
+  const preset = findImageCompressionPreset(value);
   if (!preset) return;
   activePreset.value = value;
   quality.value = preset.quality;

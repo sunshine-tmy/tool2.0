@@ -33,7 +33,9 @@ describe("归档组件交互", () => {
         page: 1
       }
     });
-    expect(wrapper.findAll(".card-platform-badge").map((badge) => badge.text())).toEqual(["抖音", "小红书", "小红书"]);
+    const platformBadges = wrapper.findAll(".card-platform-badge");
+    expect(platformBadges.map((badge) => badge.text())).toEqual(["抖音", "小红书", "小红书"]);
+    expect(platformBadges[0]!.classes()).toContain("platform-douyin");
     expect(wrapper.findAll(".card-type-badge").map((badge) => badge.text())).toEqual(["视频", "Live Photo", "图文"]);
     const selects = wrapper.findAllComponents(NSelect);
     selects[0]!.vm.$emit("update:value", "video");

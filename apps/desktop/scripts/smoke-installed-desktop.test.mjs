@@ -37,7 +37,7 @@ test("installed desktop smoke can select an explicit first-run migration scenari
   );
 });
 
-test("installed desktop smoke can exercise only the fixed signed Edge-TTS component lifecycle", () => {
+test("installed desktop smoke can exercise only fixed signed Edge-TTS and Douyin capability lifecycles", () => {
   assert.deepEqual(
     parseSmokeArguments([
       "--exe",
@@ -59,7 +59,17 @@ test("installed desktop smoke can exercise only the fixed signed Edge-TTS compon
   );
   assert.throws(
     () => parseSmokeArguments(["--exe", "app.exe", "--report", "result.json", "--component-id", "arbitrary"]),
-    /fixed acceptance capability 'edge-tts'/
+    /fixed acceptance capabilities 'edge-tts' or 'douyin-archive'/
+  );
+  assert.deepEqual(
+    parseSmokeArguments(["--exe", "app.exe", "--report", "result.json", "--component-id", "douyin-archive"]),
+    {
+      executable: path.resolve("app.exe"),
+      report: path.resolve("result.json"),
+      timeoutSeconds: 90,
+      componentTimeoutSeconds: 900,
+      componentId: "douyin-archive"
+    }
   );
   assert.throws(
     () => parseSmokeArguments(["--exe", "app.exe", "--report", "result.json", "--component-timeout-seconds", "1200"]),

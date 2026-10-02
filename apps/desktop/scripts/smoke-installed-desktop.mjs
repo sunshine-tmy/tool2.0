@@ -30,8 +30,8 @@ export function parseSmokeArguments(argv) {
   if (startupMigration && startupMigration !== "migrate") {
     throw new Error("--startup-migration only supports the explicit value 'migrate'");
   }
-  if (componentId && componentId !== "edge-tts") {
-    throw new Error("--component-id only supports the fixed acceptance capability 'edge-tts'");
+  if (componentId && !["edge-tts", "douyin-archive"].includes(componentId)) {
+    throw new Error("--component-id only supports fixed acceptance capabilities 'edge-tts' or 'douyin-archive'");
   }
   const expectedOptions =
     2 +
@@ -370,6 +370,93 @@ async function runEdgeTtsComponentLifecycle(origin, options) {
   };
 }
 
+async function runDouyinComponentLifecycle(origin, options) {
+  const componentRoot = path.join(path.dirname(options.executable), "data", "components", "packages");
+  const sentinelPath = path.join(path.dirname(options.executable), "data", "acceptance-user-data-sentinel.txt");
+  const sentinelBefore = await readFile(sentinelPath);
+  const before = await callDesktopApi(origin, "/api/v1/components");
+  const browserBefore = before.find((item) => item?.id === "xhs-browser");
+  const douyinBefore = before.find((item) => item?.id === "douyin-archive");
+  if (!browserBefore || !douyinBefore) {
+    throw new Error("Signed catalog is missing the Chromium or Douyin archive acceptance capability");
+  }
+  if (browserBefore.installed || douyinBefore.installed) {
+    throw new Error("Douyin capability acceptance requires a clean install with both archive capabilities uninstalled");
+  }
+  if (!douyinBefore.dependencyIds.includes("xhs-browser")) {
+    throw new Error("Douyin acceptance capability does not declare its shared Chromium dependency");
+  }
+
+  const browserInstall = await runComponentOperation(origin, "xhs-browser", "install", options.componentTimeoutSeconds);
+  const douyinInstall = await runComponentOperation(
+    origin,
+    options.componentId,
+    "install",
+    options.componentTimeoutSeconds
+  );
+  const installed = await callDesktopApi(origin, "/api/v1/components");
+  for (const componentId of ["xhs-browser", options.componentId]) {
+    const status = installed.find((item) => item?.id === componentId);
+    if (!status?.installed || status.state !== "ready" || status.health !== "healthy") {
+      throw new Error(`Component ${componentId} did not reach the healthy ready state`);
+    }
+    await access(path.join(componentRoot, componentId, "current.json"));
+  }
+
+  const runtimeEnvelope = await callDesktopApi(origin, "/api/v1/tools/media-archive/runtime/douyin");
+  if (!runtimeEnvelope.available || runtimeEnvelope.state !== "ready" || runtimeEnvelope.installMode !== "managed") {
+    throw new Error("Installed desktop Douyin runtime did not report ready in managed mode");
+  }
+
+  const douyinUninstall = await runComponentOperation(
+    origin,
+    options.componentId,
+    "uninstall",
+    options.componentTimeoutSeconds
+  );
+  const browserUninstall = await runComponentOperation(
+    origin,
+    "xhs-browser",
+    "uninstall",
+    options.componentTimeoutSeconds
+  );
+  const removed = await callDesktopApi(origin, "/api/v1/components");
+  for (const componentId of ["xhs-browser", options.componentId]) {
+    const status = removed.find((item) => item?.id === componentId);
+    if (!status || status.installed || !["not-installed", "blocked"].includes(status.state)) {
+      throw new Error(`Component ${componentId} remained installed after its uninstall job`);
+    }
+    if (
+      componentId === options.componentId &&
+      status.state === "blocked" &&
+      !status.blockedReason?.includes("xhs-browser")
+    ) {
+      throw new Error("Uninstalled Douyin capability was blocked for an unexpected dependency");
+    }
+    try {
+      await access(path.join(componentRoot, componentId));
+      throw new Error(`Component ${componentId} left its package directory after uninstall`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  const runtimeAfterUninstall = await callDesktopApi(origin, "/api/v1/tools/media-archive/runtime/douyin");
+  if (runtimeAfterUninstall.available || runtimeAfterUninstall.installMode !== "managed") {
+    throw new Error("Uninstalled desktop Douyin runtime did not return to the unavailable managed state");
+  }
+  const sentinelAfter = await readFile(sentinelPath);
+  assert.deepEqual(sentinelAfter, sentinelBefore, "Douyin capability uninstall must preserve user data");
+  return {
+    componentId: options.componentId,
+    dependencyIds: douyinBefore.dependencyIds,
+    installedHealthy: true,
+    runtimeReady: true,
+    uninstalled: true,
+    userDataPreserved: true,
+    jobs: [browserInstall.id, douyinInstall.id, douyinUninstall.id, browserUninstall.id]
+  };
+}
+
 export const MANAGED_PERSISTENT_DIRECTORIES = [
   ".runtime",
   "config",
@@ -474,7 +561,9 @@ async function smokeInstalledDesktop(options) {
     const settingsFile = await persistAndVerifyDesktopSettings(debugPort, health.origin, options.executable);
     await callDesktopApi(health.origin, "/api/v1/components");
     const componentLifecycle = options.componentId
-      ? await runEdgeTtsComponentLifecycle(health.origin, options)
+      ? options.componentId === "douyin-archive"
+        ? await runDouyinComponentLifecycle(health.origin, options)
+        : await runEdgeTtsComponentLifecycle(health.origin, options)
       : undefined;
     const persistentWriteLocations = await verifyPersistentWriteLocations(options.executable);
     const report = {

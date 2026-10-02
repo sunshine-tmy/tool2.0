@@ -19,13 +19,30 @@ pnpm components:package -- `
   --signing-key-file <受保护位置中的 Ed25519 私钥路径>
 ```
 
-先安装签名浏览器依赖，再显式安装适配器。安装自检只校验本地协议/资产，不访问抖音；读取任务单次占用受管浏览器，
-总时限 120 秒，停止最多等待 5 秒。任务占用期间拒绝重装和卸载，取消后允许修复；适配器仍安装时禁止卸载浏览器依赖。
-缺少包、损坏、协议/实际浏览器版本不匹配时返回稳定错误，不回退系统浏览器，也不在状态检查时自动下载。
+Windows x64 生成并复核后，需上传以下三个文件到既有 `components-v1` GitHub Release（生成目录为 `.package/component-feed`）：
+
+```text
+douyin-archive-1.0.0-anonymous-27468de.tar.gz
+douyin-archive-1.0.0-anonymous-27468de.manifest.json
+douyin-archive-1.0.0-anonymous-27468de.spdx.json
+```
+
+不要上传私钥。打包器输出的 `trusted-keys/<keyId>.pem` 是用于构建时登记受信任公钥的文件；只有在生成并审核
+嵌入目录时将公钥加入应用，在线安装才会信任该 manifest。将三个 Release 资产和本地 feed 核对无误后，
+还须在完整组件 feed 上运行 `pnpm components:catalog -- --feed .package/component-feed` 并重新构建应用；
+仅上传 Release 文件不会更新已安装应用内的受信任目录。Mac arm64 必须在原生 Mac 构建机生成独立平台包和目录，不能复用 Windows 资产。
+
+安装自检只校验本地协议/资产，不访问抖音；读取任务单次占用受管浏览器。桌面端由能力管理显式安装；
+网页端不提供安装入口，在内嵌目录包含完整签名包时，首次归档会先安装 Chromium 依赖、再安装抖音适配器，
+进度显示在归档任务中。状态检查本身不下载；所有在线安装仍由 ComponentManager 校验签名、归档摘要和文件清单。
+浏览器已就绪后的匿名读取总时限为 120 秒，任务占用期间拒绝重装和卸载；适配器仍安装时禁止卸载浏览器依赖。
+缺少目录条目、损坏或协议/实际浏览器版本不匹配时返回稳定错误，不回退系统浏览器。
 卸载不清理归档、媒体、译文、截帧或永久音色。
 
 运行状态接口为 `GET /api/v1/tools/media-archive/runtime/douyin`。状态查询成功不代表解析可用，应检查
-`data.available` 与 `data.state`；未安装时准确返回 `not-installed`。响应不包含绝对路径、Profile 或认证状态。
+`data.available`、`data.state` 与 `data.installMode`。`installMode=automatic` 表示网页首次归档可自动安装，
+`managed` 表示桌面端由能力管理安装，`unavailable` 表示此构建未包含适配平台的完整签名目录。未安装时仍返回
+`not-installed`，但只有前两种模式允许继续创建任务。响应不包含绝对路径、Profile 或认证状态。
 
 截至 MA04 当前验收，只有隔离临时签名包与 Windows 生命周期/匿名读取验证通过；正式 Release 资产、
 嵌入目录登记和 macOS 原生验收尚未完成。不要将测试公钥或测试包源写入正式目录，不要在正式资产发布前宣称旧安装包可用。

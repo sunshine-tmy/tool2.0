@@ -157,6 +157,38 @@ describe("抖音能力安装与资产生命周期", () => {
     expect(await fs.readFile(path.join(root, "storage", "permanent-voice.wav"), "utf8")).toBe("permanent-voice");
   });
 
+  it("网页首次获取按依赖顺序自动安装受信任组件并报告进度", async () => {
+    const f = await setup();
+    runtime = new DouyinRuntimeManager(f.manager, {
+      platform: "win32",
+      arch: "x64",
+      installationMode: "automatic",
+      installTimeoutMs: 30_000,
+      openBrowser: f.openBrowser,
+      readWork: f.readWork
+    });
+    const progress: Array<[number, string]> = [];
+    expect(await runtime.status()).toMatchObject({
+      available: false,
+      state: "not-installed",
+      installMode: "automatic"
+    });
+    expect(
+      await runtime.extract(workUrl, { onInstallProgress: (value, message) => progress.push([value, message]) })
+    ).toMatchObject({
+      source
+    });
+    expect(await f.manager.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "xhs-browser", installed: true }),
+        expect.objectContaining({ id: "douyin-archive", installed: true })
+      ])
+    );
+    expect(progress.some(([value]) => value >= 3)).toBe(true);
+    expect(progress.at(-1)?.[0]).toBe(28);
+    expect(await runtime.status()).toMatchObject({ available: true, installMode: "automatic" });
+  });
+
   it("损坏的描述文件阻止启动，重装受信任包后恢复且保留原 generation", async () => {
     const f = await setup();
     await f.manager.install("xhs-browser");

@@ -29,6 +29,9 @@ export const DouyinRuntimeStatusSchema = Type.Object(
       Type.Literal("unavailable"),
       Type.Literal("stopped")
     ]),
+    installMode: Type.Optional(
+      Type.Union([Type.Literal("automatic"), Type.Literal("managed"), Type.Literal("unavailable")])
+    ),
     message: Type.String({ minLength: 1, maxLength: 240 }),
     errorCode: Type.Optional(Type.String({ minLength: 1, maxLength: 80 }))
   },

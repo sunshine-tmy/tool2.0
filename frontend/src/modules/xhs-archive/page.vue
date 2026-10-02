@@ -4,7 +4,7 @@
     <section class="main-column xhs-main">
       <ToolPageHeader
         title="多媒体内容归档"
-        description="浏览小红书与抖音本地存档，支持预览、翻译与视频截帧。抖音在线获取仍在接入验收中。"
+        description="浏览小红书与抖音本地存档，支持预览、翻译与视频截帧。网页端首次归档自动准备签名能力，桌面端由能力管理提供。"
         kicker="LOCAL MEDIA ARCHIVE"
       />
 
@@ -13,7 +13,10 @@
       </n-alert>
       <div class="platform-runtime" aria-label="分平台解析环境">
         <span>小红书：{{ xhsRuntime?.message || "正在读取环境状态" }}</span>
-        <span>抖音（匿名）：{{ douyinRuntime?.message || "正在读取环境状态" }}；获取入口待正式能力发布验收</span>
+        <span>抖音（匿名）：{{ douyinRuntime?.message || "正在读取环境状态" }}</span>
+        <n-button size="tiny" quaternary :disabled="douyinRuntimeLoading || submitting" @click="refreshDouyinRuntime">
+          刷新抖音状态
+        </n-button>
       </div>
 
       <n-alert
@@ -38,6 +41,9 @@
         :submitting="submitting"
         :cancelling="cancellingTask"
         :auth-waiting="authWaiting"
+        :douyin-available="douyinRuntime?.available === true"
+        :douyin-can-auto-install="douyinRuntime?.installMode === 'automatic' && douyinRuntime.state === 'not-installed'"
+        :douyin-message="douyinRuntime?.message"
         @submit="startFetch"
         @login="loginAndRetry"
         @cancel="cancelFetch"
@@ -123,6 +129,7 @@ import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { contentArchiveApi, contentArchiveZipUrl } from "./content-api";
 import { archiveDisplayTitle, archiveDisplayText, archiveClipboardText, canEditTranslation } from "./presentation";
 import { useArchiveCollection } from "./useArchiveCollection";
+import { formatArchiveDate } from "./format-date";
 
 const message = useMessage();
 const router = useRouter();
@@ -132,6 +139,7 @@ const translationRuntime = ref<XhsTranslationRuntimeStatus>();
 const translationRuntimeLoading = ref(false);
 const xhsRuntime = ref<XhsRuntimeStatus>();
 const douyinRuntime = ref<DouyinRuntimeStatus>();
+const douyinRuntimeLoading = ref(false);
 const inputUrl = ref("");
 const platform = ref<ArchivePlatformSelection>("auto");
 const task = ref<ContentArchiveTask>();
@@ -173,6 +181,7 @@ const editTarget = ref<ContentArchiveItem>();
 const drawerWidth = "min(720px, 100vw)";
 let disposed = false;
 let taskSyncRevision = 0;
+let douyinRuntimeRequest: Promise<DouyinRuntimeStatus | undefined> | undefined;
 
 watch(taskEvents.task, (event) => {
   // 获取任务的每次 SSE 更新都通过 taskSyncRevision 串行补拉，避免旧请求覆盖新状态。
@@ -215,13 +224,16 @@ async function startFetch() {
     message.warning(link.message);
     return;
   }
-  // 抖音真实解析尚未验收，不能将它误交给小红书 Worker，或对外宣称归档成功。
-  if (link.platform === "douyin") {
-    message.warning("抖音归档接入验证中，暂不能提交。小红书归档与已保存内容仍可正常使用。");
-    return;
-  }
   submitting.value = true;
   try {
+    if (link.platform === "douyin") {
+      // 提交前重新读取能力状态，避免页面挂起期间组件被卸载或修复后仍使用过期状态。
+      const runtime = await refreshDouyinRuntime();
+      if (!runtime?.available && !(runtime?.installMode === "automatic" && runtime.state === "not-installed")) {
+        if (runtime) message.warning(`抖音归档环境未就绪：${runtime.message}`);
+        return;
+      }
+    }
     // 创建获取任务立即返回 taskId；后续进度由 SSE 驱动，不阻塞页面输入和浏览。
     task.value = await contentArchiveApi.create({ url: link.url, platform: link.platform }, requestScope.signal);
   } catch (error) {
@@ -229,6 +241,29 @@ async function startFetch() {
   } finally {
     submitting.value = false;
   }
+}
+function refreshDouyinRuntime(): Promise<DouyinRuntimeStatus | undefined> {
+  if (douyinRuntimeRequest) return douyinRuntimeRequest;
+  douyinRuntimeLoading.value = true;
+  const request = contentArchiveApi
+    .douyinRuntime(requestScope.signal)
+    .then((status) => {
+      if (!disposed) douyinRuntime.value = status;
+      return status;
+    })
+    .catch((error: unknown) => {
+      if (!disposed && !isApiErrorCancelled(error)) {
+        douyinRuntime.value = undefined;
+        message.warning(formatApiError(error, "读取抖音环境失败"));
+      }
+      return undefined;
+    })
+    .finally(() => {
+      if (!disposed) douyinRuntimeLoading.value = false;
+      if (douyinRuntimeRequest === request) douyinRuntimeRequest = undefined;
+    });
+  douyinRuntimeRequest = request;
+  return request;
 }
 async function cancelFetch() {
   const active = task.value;
@@ -532,7 +567,7 @@ async function copyItem(item: ContentArchiveItem, language: "zh" | "en" | "both"
 }
 const zipUrl = contentArchiveZipUrl;
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return formatArchiveDate(value);
 }
 function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
@@ -566,14 +601,7 @@ onMounted(() => {
     .catch((error) => {
       if (!disposed && !isApiErrorCancelled(error)) message.warning(formatApiError(error, "读取小红书环境失败"));
     });
-  void contentArchiveApi
-    .douyinRuntime(requestScope.signal)
-    .then((status) => {
-      if (!disposed) douyinRuntime.value = status;
-    })
-    .catch((error) => {
-      if (!disposed && !isApiErrorCancelled(error)) message.warning(formatApiError(error, "读取抖音环境失败"));
-    });
+  void refreshDouyinRuntime();
   if (desktopMode.value) {
     translationRuntimeLoading.value = true;
     void contentArchiveApi

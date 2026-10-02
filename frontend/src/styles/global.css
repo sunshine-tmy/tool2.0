@@ -626,11 +626,13 @@ a {
   position: absolute;
   top: 0;
   bottom: 0;
+  z-index: 2;
   width: 2px;
   background: #ffffff;
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.14);
   transform: translateX(-1px);
-  pointer-events: none;
+  cursor: ew-resize;
+  touch-action: none;
 }
 
 .compare-divider span {
@@ -661,11 +663,11 @@ a {
 }
 
 .compare-label.before {
-  right: 10px;
+  left: 10px;
 }
 
 .compare-label.after {
-  left: 10px;
+  right: 10px;
 }
 
 .compare-slider-row {

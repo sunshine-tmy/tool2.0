@@ -4,6 +4,7 @@ coverage/
 .venv-*/
 models/
 storage/
+.runtime/packages/
 pnpm-lock.yaml
 frontend/src/styles/global.css
 docs/superpowers/

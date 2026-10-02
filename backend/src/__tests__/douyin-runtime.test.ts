@@ -92,6 +92,31 @@ function fixture(platform: NodeJS.Platform = "win32", arch = "x64") {
 }
 
 describe("抖音受管匿名运行时", () => {
+  it("网页没有内嵌完整签名目录时不伪装可自动安装，也不发起下载", async () => {
+    const f = fixture();
+    f.resolve.mockRejectedValue(new ComponentManagerError("COMPONENT_NOT_FOUND", "private package path"));
+    const runtime = new DouyinRuntimeManager(
+      { resolveInstalledAsset: f.resolve, list: vi.fn(async () => []) },
+      {
+        platform: "win32",
+        arch: "x64",
+        installationMode: "automatic",
+        openBrowser: f.openBrowser,
+        readWork: f.readWork
+      }
+    );
+    runtimes.push(runtime);
+
+    expect(await runtime.status()).toMatchObject({
+      available: false,
+      state: "not-installed",
+      installMode: "unavailable",
+      message: expect.stringContaining("尚未内置")
+    });
+    await expect(runtime.extract(url)).rejects.toMatchObject({ code: "DOUYIN_COMPONENT_NOT_INSTALLED" });
+    expect(f.openBrowser).not.toHaveBeenCalled();
+  });
+
   it("离线状态只验证本地签名资产，返回无路径的匿名状态", async () => {
     const f = fixture();
     expect(await f.runtime.status()).toEqual({

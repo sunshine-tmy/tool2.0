@@ -451,6 +451,8 @@ describe("多平台获取生命周期", () => {
 
   it("总时限中断不会占住后续队列，关闭超时有界且不宣称成功", async () => {
     vi.useFakeTimers();
+    // 桌面能力由用户预装，使用普通五分钟任务预算；Web 首次下载的延长预算另有专项回归。
+    config.desktopManagedCapabilities = true;
     vi.mocked(providers[1].extract).mockImplementation(() => new Promise(() => undefined));
     const first = service.create(link());
     await vi.waitFor(() => expect(providers[1].extract).toHaveBeenCalledOnce());
@@ -476,6 +478,17 @@ describe("多平台获取生命周期", () => {
     expect(retry.id).not.toBe(task.id);
     await vi.waitFor(() => expect(providers[0].extract).toHaveBeenCalledTimes(2));
     expect((await service.cancel(retry.id))?.errorCode).toBe("ARCHIVE_CANCELLED");
+  });
+
+  it("Web 抖音首次安装预留签名组件下载预算", async () => {
+    vi.useFakeTimers();
+    vi.mocked(providers[1].extract).mockImplementation(() => new Promise(() => undefined));
+    const task = service.create(link("douyin"));
+    await vi.waitFor(() => expect(providers[1].extract).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(300_000);
+    expect(service.get(task.id)?.status).toBe("running");
+    await vi.advanceTimersByTimeAsync(config.xhsInstallTimeoutMs);
+    expect(service.get(task.id)?.errorCode).toBe("ARCHIVE_TIMEOUT");
   });
 
   it.each(["desktop", "external"])("%s 小红书环境不预留 Web 自动安装预算", async (mode) => {

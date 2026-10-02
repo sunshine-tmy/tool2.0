@@ -2337,6 +2337,47 @@ export const packagedComponentCatalog = {
     },
     {
       "protocolVersion": 1,
+      "id": "douyin-archive",
+      "moduleId": "douyin-archive",
+      "groupId": "archive",
+      "displayName": "抖音公开内容归档（匿名）",
+      "purpose": "启用应用内固定版本的抖音匿名作品适配器；复用已签名 Chromium 资产，但不读取小红书或系统浏览器登录资料。",
+      "dependencyIds": [
+        "xhs-browser"
+      ],
+      "taskToolIds": [
+        "xhs-archive"
+      ],
+      "installConditions": [
+        "先安装受管 Chromium 能力（历史 ID 为 xhs-browser），不重复打包浏览器或安装 Python。",
+        "仅获取匿名可访问的公开作品；登录要求、验证码和平台限流不会被绕过。",
+        "卸载只移除能力包，保留历史归档、媒体、译文和截帧。"
+      ],
+      "version": "1.0.0-anonymous-27468de",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/douyin-archive-1.0.0-anonymous-27468de.tar.gz",
+        "bytes": 280,
+        "sha256": "de426bd977e51eba0cb99254173fee1d941faa6db07de95545c677777ab67c0f",
+        "format": "tar.gz"
+      },
+      "installedBytes": 4096,
+      "files": [
+        {
+          "path": "adapter/manifest.json",
+          "bytes": 308,
+          "sha256": "99c16bc3197e2f3911995f5a02c226ed961e39d74e0e4a501b6af95e33b33ff7"
+        }
+      ],
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/douyin-archive-1.0.0-anonymous-27468de.spdx.json",
+        "sha256": "9ddd01dfeead2aaf4712c6d025b7a68afd3debced5d401913151f2fffe56c6dd"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "ZQkoH+JLF95YrTQk21jAG7q5OWgbC1tpLbYd9PcE0Ias/d1XNQENmzUWIUm7pbQhpHxpNxfFGgtjIQBwtoQ0Bw=="
+    },
+    {
+      "protocolVersion": 1,
       "id": "edge-tts",
       "moduleId": "edge-tts",
       "groupId": "audio",

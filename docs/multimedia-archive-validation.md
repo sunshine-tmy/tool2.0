@@ -1,6 +1,6 @@
 # 多媒体归档接入验收证据
 
-首次记录：2026-09-30；最近更新：2026-10-01。源码基线：`main` / `9f5cbf2`；工作分支：`codex/multimedia-archive`。
+首次记录：2026-09-30；最近更新：2026-10-02。源码基线：`main` / `9f5cbf2`；工作分支：`codex/multimedia-archive`。
 
 本文只记录实际执行结果，不将浏览器可打开、依赖可安装或 mock 测试通过等同于抖音归档功能上线。现有用户数据库、媒体、音色和平台登录 Profile 均未改动。
 
@@ -587,3 +587,58 @@ git diff --check
 代码复查发现 `/api/v1/tools/video-text/remote-video` 虽用于浏览器播放，却误用了远程抓取的低频额度（10 次/分钟）；浏览器加载元数据、拖动进度和 Range 请求时可能误触 429。现改用专用 `mediaPreview` 额度，与短视频播放器保持一致；远程 URL 解析/创建任务仍使用 `remoteFetch` 额度，未放宽 SSRF 校验或抓取限额。
 
 在真实 Fastify 应用测试中连续请求 12 个视频预览探测（带不同 Range），均返回 200，`/health/live` 保持可用；视频文案定向测试 15 项通过。`pnpm check`、`git diff --check` 通过：共享 97、后端 628（5 项跳过）、前端 192、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；生产构建、Bundle Budget 和启动 smoke 通过。
+
+### 多媒体归档：抖音入口按运行时状态开放
+
+移除前端“抖音接入中”的硬编码拦截。抖音任务现在仍通过与小红书相同的中性归档 API 创建，但只有运行时状态报告 `available=true` 时才开放提交；提交前会重新读取一次状态，避免使用旧页面状态。未安装或不可用时继续阻止创建任务，并展示运行时返回的中文原因；页面提供手动刷新状态入口。仅公开可访问作品可进入匿名解析，不增加或使用抖音登录能力。
+
+2026-10-02 定向验收：`pnpm --filter frontend exec vitest run src/modules/xhs-archive/ArchiveTaskPanel.test.ts src/modules/xhs-archive/page.test.ts`，28 项通过；`pnpm --filter frontend typecheck` 通过。全量 `pnpm check` 通过（共享 97、后端 628，5 项既有跳过、前端 193、Python 14，并完成格式、静态检查、构建与 smoke）；`git diff --check` 通过。本节点只验证前端门禁与 API 编排，不代表已安装正式签名能力包后的线上真实作品解析、MA04/macOS 或安装包验收完成。
+
+## 2026-10-02 续：网页首次归档自动准备抖音能力
+
+按用户确认，网页端不增加能力安装入口。状态契约新增 `installMode`：仅当当前平台嵌入目录同时包含签名 `xhs-browser` 与 `douyin-archive` 时，网页状态为 `automatic`，允许创建归档任务；桌面端为 `managed`，继续要求能力管理安装；目录缺项或平台不支持时为 `unavailable` 并禁止创建。状态读取不触发下载。
+
+网页首次获取任务由后端复用 `ComponentManager` 安装签名 Chromium，再安装签名抖音适配器；展示组件下载/校验/安装进度，任务取消仅尝试中止可取消的下载阶段，其他安全切换阶段完成后释放运行时占用。自动安装时限复用 `XHS_INSTALL_TIMEOUT_MS`，并保持既有签名、摘要、路径和实际浏览器版本校验；没有新增任意 URL 下载、登录 Cookie 或系统浏览器回退。桌面端无需改变能力管理界面。
+
+当前工作区正式 Windows/Mac 嵌入目录尚无 `douyin-archive` 条目，因此本地现有构建正确显示“当前版本尚未内置”且仍不能直接首次安装；必须先用组织受保护的 Ed25519 私钥生成并上传以下三个 Release 资产，再核对远端资产并重生成 Windows/Mac 签名目录、构建应用，网页自动安装和桌面能力管理才能可用：`douyin-archive-1.0.0-anonymous-27468de.tar.gz`、`douyin-archive-1.0.0-anonymous-27468de.manifest.json`、`douyin-archive-1.0.0-anonymous-27468de.spdx.json`。公钥由签名打包命令输出后随生成目录嵌入应用，不上传私钥；`xhs-browser` 资产沿用已登记的既有版本，不重复上传。发布目录仍需完成 MA04 的 Windows/macOS 原生验收，不能仅凭本次自动安装模拟测试宣称实机可用。
+
+### Release 上传复核：首次资产是测试包（已由后续正式包替换）
+
+2026-10-02 只读检查 `components-v1` Release 后，三个预期文件名确实均已出现；但不能将它们登记进生产能力目录：签名 manifest 的 `archive.url` 与 `sbom.url` 指向 `https://isolated-smoke.invalid/...`，且 `keyId` 为 `ed25519-ad47b08c3d18c434a4d3a38d`。该 key 仅出现在 `.package/ma05-managed-pipeline-CNFAIa/test-feed` 隔离测试 feed，在当前正式 `.package/component-feed/trusted-keys` 和嵌入目录中均不存在。该 manifest 即使本地能被测试公钥验证，在线下载仍会访问无效域名，正式应用也不信任该测试签名。故本次不下载这些资产、不生成或覆盖 `catalog.generated.ts`，也不尝试手工改签名 manifest。
+
+该结论记录的是首次上传状态，现已由下节正式资产替换记录取代。
+
+### 正式签名能力包上传、Windows 目录与本机安装包
+
+2026-10-02 使用与现有目录受信任公钥匹配的组织 Ed25519 密钥重新生成抖音匿名能力包，`keyId=ed25519-f372f170675a31f5015c6a38`。用户替换 `components-v1` Release 同名测试资产后，重新读取远端 manifest 并下载归档与 SBOM 校验 SHA-256；两者与签名清单及本地文件完全一致，资产 URL 指向正式 GitHub Release。正式资产摘要：归档 `de426bd977e51eba0cb99254173fee1d941faa6db07de95545c677777ab67c0f`，SBOM `9ddd01dfeead2aaf4712c6d025b7a68afd3debced5d401913151f2fffe56c6dd`。
+
+运行 `pnpm components:catalog -- --feed .package/component-feed`，完整 feed 的 13 个组件全部通过签名、归档、SBOM 和依赖校验，Windows `catalog.generated.ts` 加入抖音能力。随后 `pnpm check` 全绿：桌面 39、共享 97、后端 631（5 项跳过）、前端 195、Python 14、工程脚本 41、差异覆盖脚本 3，并完成格式、静态检查、类型检查、构建、Bundle Budget 和 smoke。为适配正式目录启用的 Web 首次自动安装，将旧 API 测试明确限定为桌面托管模式；Web 自动安装生命周期由独立测试覆盖。
+
+之后执行 `pnpm desktop:make`，Windows x64 本机 NSIS 安装包生成于 `apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe`，SHA-256 为 `39DEA4B25BBFBE545BE469675F0442D92DE321B45E74B76C17ED9A14294E8BFE`；打包的后端资源包含新的受信任 key ID 与抖音版本清单。该包是**未签名本机测试包**，不是 GitHub Desktop Release；没有在用户电脑上安装，也没有实测安装后解析或同目录升级。旧 `apps/desktop/out`（含既有安装包）保留于 `.package/desktop-out-backup-20261002`，旧 `.stage` 保留于 `.package/desktop-stage-backup-20261002`，没有删除旧安装产物。macOS arm64 目录、Windows/macOS 实机安装和数据保留验收仍未完成，因此 MA04/MA08 不标记为 `DONE`。
+
+### Windows 打包应用的抖音能力生命周期冒烟
+
+2026-10-02 扩展 `apps/desktop/scripts/smoke-installed-desktop.mjs` 的固定白名单能力生命周期选项，新增 `--component-id douyin-archive`：验证签名目录中 Chromium 与抖音能力均初始未安装，按依赖顺序安装，检查两个包达到 `ready/healthy`、桌面运行时返回 `available=true` 与 `installMode=managed`，之后逆序卸载并确认两个包目录移除、运行时恢复不可用且数据哨兵未变化。卸载后抖音条目因 Chromium 依赖缺失可能报告 `blocked`；验收据 `installed=false`、依赖原因及包目录共同判定，并非误判为残留安装。
+
+定向命令 `pnpm --filter desktop test`：桌面 39 项、安装冒烟脚本 7 项通过。对 `apps/desktop/out/EcommerceToolbox-win32-x64/EcommerceToolbox.exe` 执行真实打包应用冒烟，使用 `.package/ma04-douyin-isolated/localappdata` 隔离旧数据路径；后端 `/health/ready` 与 `/api/v1/health` 均为 200。真实下载、签名校验、自检的 `xhs-browser` 与 `douyin-archive` 均健康，抖音桌面运行时就绪，卸载完成且哨兵保留；结果记录在 `.package/ma04-douyin-isolated/douyin-component-smoke.json`。该运行验证的是 Windows 打包目录中的应用和能力管理 API，不是 NSIS 安装器启动，也未解析真实抖音作品，因此 MA04/MA08 仍未完成；NSIS 同目录升级、Shortcut/卸载流程和真实归档留待独立验收。此次没有触碰用户现有应用目录、storage 或旧桌面产物，未执行 macOS 工作。
+
+同日将 `scripts/accept-windows-desktop-install.ps1` 的能力验收从写死 Edge-TTS 改为仅允许 `edge-tts` / `douyin-archive` 两个固定 ID；抖音选项会检查 Chromium 与抖音能力卸载后的包目录、运行时生命周期及数据哨兵。无签名 CI 与签名验收流程均切换为安装后执行抖音能力生命周期，NSIS 安装器真实执行仍仅可由各自隔离的 Windows Runner 完成。当前工作站未运行此安装流程，避免触碰已有桌面、注册表或用户数据。
+
+### 本机运行时对质量门禁的隔离
+
+检查发现 `.runtime/packages` 是可能含 Chromium 与平台适配器的本机运行数据，不应被 Git 或 Prettier 当作源码扫描；现将该确切目录加入 `.gitignore` 与 `.prettierignore`，保留目录和内容不动。后端归档/健康测试改用独立临时 `runtimeRoot`，不再因本机恰好安装或卸载抖音能力而改变断言。`pnpm check` 全量通过：桌面 39、桌面 smoke 7、共享 97、后端 631（5 项既有跳过）、前端 195、Python 14、工程脚本 41、差异覆盖 3；格式、ESLint、Knip、类型检查、全部测试、构建、Bundle Budget 和启动 smoke 通过；`git diff --check` 通过。该项修复不清理、不覆盖本机 `.runtime/packages`。
+
+## 2026-10-02 非 macOS 范围收尾
+
+用户要求继续完成 macOS 以外的部分。本期范围固定为 Windows x64、Web/开发版及平台无关后端；不构建或验收 macOS，抖音登录仍跳过。根据前文真实解析、存储迁移、获取管线、生产 SPA、权限/安全/清理等隔离验收，计划将 MA01、MA04、MA05、MA06、MA07 标为当前范围内完成。此状态不代表 macOS 已支持，也不代表在用户实际数据库上完成过升级。
+
+MA08 仍在进行：当前站生成的 NSIS 安装包尚未在干净 Windows Runner 安装/覆盖升级。为使下一次 Windows CI 验收真正覆盖抖音，改进 `scripts/accept-windows-desktop-install.ps1`，新增固定白名单 `-ComponentId edge-tts|douyin-archive`；选择抖音时，安装后的打包应用会经桌面 API 安装 Chromium 与抖音能力、确认包健康及受管运行时 ready、反序卸载并检查组件目录清除和用户数据哨兵不变。无签名 PR/手动验收及签名只读验收工作流均选择 `douyin-archive`。该脚本没有在当前用户账户运行，因为它会创建桌面快捷方式及 NSIS 注册信息，必须保持在干净 Runner/VM。
+
+本次验证：
+
+- `pnpm --filter desktop exec vitest run src/nsis-config.test.mjs --reporter=dot`：7 项通过。
+- PowerShell AST 解析 `scripts/accept-windows-desktop-install.ps1`：无语法错误。
+- 全量 `pnpm check`：通过。桌面 39、desktop smoke 7、共享 97、后端 631（5 项既有跳过）、前端 195、Python 14、工程脚本 41、差异覆盖 3 项；格式、ESLint、Knip、类型检查、生产构建、Bundle Budget 与启动 smoke 均通过。
+- `git diff --check`：通过。此次没有提交、推送、运行 NSIS 安装器、操作用户 storage，或执行 macOS 工作。
+
+目前只剩 MA08 的真实 NSIS 安装/同目录升级数据保留和最终安装应用操作待 Windows Runner 产出报告；随后完成 MA09 最终文档验收。macOS 保持延期，不属于本次待办。

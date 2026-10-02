@@ -29,6 +29,8 @@ describe("抖音匿名能力契约", () => {
   it("状态 DTO 明确匿名、不伪造登录状态且拒绝内部路径", () => {
     const status = { platform: "douyin", mode: "anonymous", available: true, state: "ready", message: "匿名环境就绪" };
     expect(Value.Check(DouyinRuntimeStatusSchema, status)).toBe(true);
+    expect(Value.Check(DouyinRuntimeStatusSchema, { ...status, installMode: "automatic" })).toBe(true);
+    expect(Value.Check(DouyinRuntimeStatusSchema, { ...status, installMode: "renderer-download" })).toBe(false);
     expect(Value.Check(DouyinRuntimeStatusSchema, { ...status, executablePath: "C:/private/browser.exe" })).toBe(false);
     expect(Value.Check(DouyinRuntimeStatusSchema, { ...status, authenticated: true })).toBe(false);
   });

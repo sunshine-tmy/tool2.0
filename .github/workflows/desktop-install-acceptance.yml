@@ -64,6 +64,8 @@ jobs:
             -ExpectedVersion $version `
             -InstallDirectory (Join-Path $env:RUNNER_TEMP "Ecommerce Toolbox Acceptance") `
             -TestLegacyMigration `
+            -TestComponentLifecycle `
+            -ComponentId douyin-archive `
             -AllowUnsignedTestArtifact
       - name: Upload acceptance report
         if: always()

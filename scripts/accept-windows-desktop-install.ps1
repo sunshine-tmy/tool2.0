@@ -35,6 +35,9 @@ param(
 
   [switch]$TestComponentLifecycle,
 
+  [ValidateSet('edge-tts', 'douyin-archive')]
+  [string]$ComponentId = 'edge-tts',
+
   [switch]$KeepInstalled
 )
 
@@ -174,7 +177,7 @@ function Invoke-InstalledSmoke {
     '--timeout-seconds', $TimeoutSeconds.ToString()
   )
   if ($ChooseMigration) { $smokeArguments += @('--startup-migration', 'migrate') }
-  if ($TestComponents) { $smokeArguments += @('--component-id', 'edge-tts', '--component-timeout-seconds', '1200') }
+  if ($TestComponents) { $smokeArguments += @('--component-id', $ComponentId, '--component-timeout-seconds', '1200') }
   & node @smokeArguments
   if ($LASTEXITCODE -ne 0) { throw "Installed desktop smoke failed with exit code $LASTEXITCODE" }
   if (-not (Test-Path -LiteralPath $smokeReportPath -PathType Leaf)) {
@@ -336,12 +339,19 @@ try {
   }
 
   if ($TestComponentLifecycle) {
-    foreach ($componentId in @('python-311', 'edge-tts')) {
+    $componentIds = if ($ComponentId -eq 'douyin-archive') {
+      @('xhs-browser', 'douyin-archive')
+    }
+    else {
+      @('python-311', 'edge-tts')
+    }
+    foreach ($componentId in $componentIds) {
       $componentDirectory = Join-Path $dataRoot "components\packages\$componentId"
       if (Test-Path -LiteralPath $componentDirectory) { throw "Capability uninstall left package files outside the expected data directory: $componentDirectory" }
     }
     Assert-DataSentinel -Path $dataSentinelPath -Expected $dataSentinel -Context 'Capability install/uninstall'
-    Set-AcceptanceResult 'componentLifecycle' @{ capability = 'edge-tts'; sharedRuntime = 'python-311'; installHealthyUninstall = $true; userDataPreserved = $true }
+    $dependencies = if ($ComponentId -eq 'douyin-archive') { @('xhs-browser') } else { @('python-311') }
+    Set-AcceptanceResult 'componentLifecycle' @{ capability = $ComponentId; dependencies = $dependencies; installHealthyUninstall = $true; userDataPreserved = $true }
   }
 
   if ($PreviousInstallerPath) {
@@ -385,7 +395,7 @@ try {
   $migrationMode = if ($TestLegacyMigration) { 'legacy migration, ' } else { '' }
   $upgradeMode = if ($PreviousInstallerPath) { "upgrade from $PreviousExpectedVersion, " } else { '' }
   $deletionMode = if ($TestExplicitDataDeletion) { 'explicit data deletion, ' } else { '' }
-  $componentMode = if ($TestComponentLifecycle) { 'signed capability install/uninstall, ' } else { '' }
+  $componentMode = if ($TestComponentLifecycle) { "$ComponentId capability install/uninstall, " } else { '' }
   $summary = "Clean VM desktop acceptance passed: $signatureMode install, ${migrationMode}${upgradeMode}${componentMode}launch, health checks, default uninstall, reinstall, ${deletionMode}data handling."
   Set-AcceptanceResult 'summary' $summary
   Save-AcceptanceReport -Status 'passed'

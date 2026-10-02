@@ -90,8 +90,12 @@ export function douyinProvider(runtime: DouyinRuntimeManager): ArchiveProvider {
   return {
     platform: "douyin",
     async extract(url, signal, progress) {
+      progress("installing", 2, "正在检查抖音匿名归档环境");
+      const { source } = await runtime.extract(url, {
+        signal,
+        onInstallProgress: (value, message) => progress("installing", value, message)
+      });
       progress("parsing", 32, "正在匿名读取抖音公开作品");
-      const { source } = await runtime.extract(url, { signal });
       signal.throwIfAborted();
       const { tags, ...rest } = source;
       return {

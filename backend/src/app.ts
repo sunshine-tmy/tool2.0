@@ -110,7 +110,10 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
       (componentId === "xhs-browser" && Boolean(xhsRuntimeServices.auth?.isActive())) ||
       (["xhs-browser", "douyin-archive"].includes(componentId) && Boolean(douyinRuntime?.isActive()))
   });
-  const douyinRuntime: DouyinRuntimeManager = new DouyinRuntimeManager(componentManager);
+  const douyinRuntime: DouyinRuntimeManager = new DouyinRuntimeManager(componentManager, {
+    installationMode: config.desktopManagedCapabilities ? "managed" : "automatic",
+    installTimeoutMs: config.xhsInstallTimeoutMs
+  });
   const desktopCapabilityRuntime = await configureDesktopCapabilityRuntime(config, componentManager);
   stopCapabilityBeforeUninstall = desktopCapabilityRuntime.beforeUninstall;
   refreshDesktopCapabilities = desktopCapabilityRuntime.afterMutation;

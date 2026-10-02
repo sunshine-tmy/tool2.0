@@ -130,6 +130,7 @@ describe("中性多媒体归档页面", () => {
     expect(mocks.api.translate).toHaveBeenLastCalledWith("archive-123", true, expect.any(AbortSignal));
     expect(result.props("hasEdited")(result.props("current"))).toBe(true);
     expect(result.props("formatDate")("2026-10-01T00:00:00.000Z")).toContain("2026");
+    expect(result.props("formatDate")("unavailable")).toBe("未知");
     await result.props("refreshItem")("archive-123");
     expect(mocks.api.refresh).toHaveBeenCalledWith("archive-123", expect.any(AbortSignal));
     mocks.api.refresh!.mockRejectedValueOnce(new Error("offline"));
@@ -298,7 +299,7 @@ describe("中性多媒体归档页面", () => {
     await flushPromises();
     expect(list.props("selectedIds")).toEqual([]);
   });
-  it("小红书创建改用中性 API，抖音/平台不符仍不可绕过获取门禁", async () => {
+  it("小红书使用中性 API；抖音未就绪或平台不符时不会创建任务", async () => {
     const wrapper = mountPage();
     await flushPromises();
     const input = wrapper.findComponent(ArchiveTaskPanel);
@@ -306,6 +307,7 @@ describe("中性多媒体归档页面", () => {
     input.vm.$emit("submit");
     await flushPromises();
     expect(mocks.api.create).not.toHaveBeenCalled();
+    expect(mocks.message.warning).toHaveBeenCalledWith("抖音归档环境未就绪：抖音组件未安装");
     input.vm.$emit("update:platform", "douyin");
     input.vm.$emit("update:inputUrl", "https://www.xiaohongshu.com/explore/123");
     input.vm.$emit("submit");
@@ -327,6 +329,49 @@ describe("中性多媒体归档页面", () => {
     mocks.streams[0]!.task.value = { id: "task-123", status: "completed" };
     await flushPromises();
     expect(wrapper.findComponent(XhsResultPanel).props("current").platform).toBe("xiaohongshu");
+  });
+  it("仅在实时抖音匿名能力可用时通过中性 API 创建抖音任务", async () => {
+    mocks.api.douyinRuntime!.mockResolvedValue({
+      platform: "douyin",
+      mode: "anonymous",
+      available: true,
+      state: "ready",
+      message: "匿名解析环境已就绪，仅支持公开可访问作品"
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.findComponent(ArchiveTaskPanel);
+    panel.vm.$emit("update:inputUrl", "https://v.douyin.com/PrWnsoVIg78/");
+    panel.vm.$emit("submit");
+    await flushPromises();
+
+    expect(mocks.api.create).toHaveBeenCalledWith(
+      { url: "https://v.douyin.com/PrWnsoVIg78/", platform: "douyin" },
+      expect.any(AbortSignal)
+    );
+    expect(mocks.api.douyinRuntime).toHaveBeenCalledTimes(2);
+  });
+  it("网页端无需安装入口，存在受信任能力目录时允许首次归档触发自动安装", async () => {
+    mocks.api.douyinRuntime!.mockResolvedValue({
+      platform: "douyin",
+      mode: "anonymous",
+      available: false,
+      state: "not-installed",
+      installMode: "automatic",
+      message: "首次归档时会自动安装抖音匿名能力"
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.findComponent(ArchiveTaskPanel);
+    expect(panel.props("douyinCanAutoInstall")).toBe(true);
+    panel.vm.$emit("update:inputUrl", "https://v.douyin.com/PrWnsoVIg78/");
+    panel.vm.$emit("submit");
+    await flushPromises();
+
+    expect(mocks.api.create).toHaveBeenCalledWith(
+      { url: "https://v.douyin.com/PrWnsoVIg78/", platform: "douyin" },
+      expect.any(AbortSignal)
+    );
   });
   it("取消活动获取任务后采用服务端终态并提示用户", async () => {
     mocks.api.create!.mockResolvedValue(taskFixture({ status: "running", stage: "downloading", progress: 45 }));

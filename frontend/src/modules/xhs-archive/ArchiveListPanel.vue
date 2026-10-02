@@ -102,6 +102,7 @@ import { FileImage, Languages, Play, RefreshCw, Search, Sparkles } from "lucide-
 import type { ContentArchiveListResponse, ContentArchiveListQuery } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../config/runtime";
 import { archiveDisplayTitle, archivePlatformLabel } from "./presentation";
+import { formatArchiveDate } from "./format-date";
 
 const props = defineProps<{
   archives: ContentArchiveListResponse;
@@ -171,7 +172,7 @@ function typeName(type: string) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return formatArchiveDate(value);
 }
 
 function formatBytes(value: number) {
@@ -209,8 +210,8 @@ function formatBytes(value: number) {
   font-weight: 600;
 }
 .card-platform-badge.platform-douyin {
-  color: #334155;
-  background: #e2e8f0;
+  color: #7e22ce;
+  background: #f3e8ff;
 }
 .archive-toolbar .n-input {
   flex: 1;

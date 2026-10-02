@@ -155,12 +155,11 @@ export class ContentArchiveTaskService {
   private async process(job: Job) {
     let staging: string | undefined;
     const deadline = new AbortController();
-    // Web 小红书首次使用需要自动安装，不能被媒体获取的五分钟预算提前截断。
+    // Web 的首次小红书/抖音归档可能需要下载签名运行时，不能被媒体获取的五分钟预算提前截断。
     // 桌面受管/外部 Provider 不执行该安装，继续使用较短的获取时限；退出和用户取消不受预算影响。
     const installBudget =
-      job.platform === "xiaohongshu" &&
       !this.options.config.desktopManagedCapabilities &&
-      !this.options.config.xhsProviderUrl
+      ((job.platform === "xiaohongshu" && !this.options.config.xhsProviderUrl) || job.platform === "douyin")
         ? this.options.config.xhsInstallTimeoutMs
         : 0;
     const timeout = setTimeout(

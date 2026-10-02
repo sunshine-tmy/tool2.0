@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { isContentArchiveItem, isContentArchiveTask } from "@toolbox/shared";
 import { createApp } from "../app";
 import { getConfig } from "../config";
+import { createDevelopmentRuntimeLayout } from "../runtime/runtime-layout";
 import { DouyinRuntimeManager } from "../modules/media-archive/douyin-runtime";
 import { ContentArchiveTaskService } from "../modules/media-archive/task-service";
 import { ArchiveTaskError } from "../modules/media-archive/provider";
@@ -40,6 +41,7 @@ function work(): { source: DouyinSource; via: "normal-browser-ssr" } {
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-content-api-"));
   config = getConfig({
+    layout: createDevelopmentRuntimeLayout({ storageRoot: root, runtimeRoot: path.join(root, "runtime") }),
     dotenvPath: false,
     environment: {
       NODE_ENV: "test",
@@ -95,8 +97,8 @@ afterEach(async () => {
     throw new Error("清理目录越界");
   await fs.rm(root, { recursive: true, force: true });
 });
-async function appWith(resolver = async () => [{ address: "93.184.216.34", family: 4 }]) {
-  const app = await createApp({ config, remoteAddressResolver: resolver });
+async function appWith(resolver = async () => [{ address: "93.184.216.34", family: 4 }], appConfig = config) {
+  const app = await createApp({ config: appConfig, remoteAddressResolver: resolver });
   apps.push(app);
   return app;
 }
@@ -184,9 +186,10 @@ describe("多媒体归档 API 与兼容性", () => {
     for (const health of ["/health/live", "/health/ready"])
       expect((await restarted.inject(health)).statusCode).toBe(200);
   });
-  it("未安装的真实运行时不会启动浏览器，任务返回稳定失败码", async () => {
+  it("桌面托管模式下未安装的运行时不会启动浏览器，任务返回稳定失败码", async () => {
     extract.mockRestore();
-    const app = await appWith();
+    // 组件进入正式目录后，Web 模式会按设计首次自动安装；此场景专门验证桌面托管模式的未安装边界。
+    const app = await appWith(undefined, { ...config, desktopManagedCapabilities: true });
     expect(await create(app)).toMatchObject({ status: "failed", errorCode: "ARCHIVE_COMPONENT_NOT_INSTALLED" });
     expect((await app.inject(`${prefix}/items`)).json().data.total).toBe(0);
   });
