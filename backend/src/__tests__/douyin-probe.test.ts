@@ -6,7 +6,7 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  values: { url: "", browser: "", output: "", profile: undefined as string | undefined, headed: false },
+  values: { url: "", browser: "", output: "", headed: false },
   detail: {} as Record<string, unknown>,
   image: Buffer.alloc(0),
   api: undefined as { host: string; status: number; id?: string; body: Buffer } | undefined,
@@ -114,7 +114,6 @@ beforeEach(async () => {
     url: "https://v.douyin.com/D_DcsZsE5O8/",
     browser: "test-browser.exe",
     output: path.join(directory, "output"),
-    profile: undefined,
     headed: false
   };
   state.detail = {
@@ -150,12 +149,6 @@ async function run() {
 }
 
 describe("抖音在线验收工具安全与失败回退", () => {
-  it("Profile 名称不能变成任意用户目录，校验失败不创建输出", async () => {
-    state.values.profile = "../../xhs-archive";
-    await expect(run()).rejects.toThrow("Profile 名称");
-    expect(await fs.readdir(directory)).toEqual([]);
-    expect(state.close).not.toHaveBeenCalled();
-  });
   it("普通视频 SSR 为空时消费正常浏览器的作品 API，而非推荐数据", async () => {
     state.emptySsr = true;
     state.api = {
@@ -246,9 +239,9 @@ describe("抖音在线验收工具安全与失败回退", () => {
     expect(await run()).toMatchObject({ status: "FAILED", longLinkMatches: false, errorCode: "DOUYIN_PARSE_FAILED" });
   });
 
-  it("明确登录门禁保留错误分类，不下载媒体", async () => {
+  it("受限作品保留匿名失败分类，不下载媒体", async () => {
     state.detail.pcNeedLogin = true;
-    expect(await run()).toMatchObject({ status: "FAILED", errorCode: "DOUYIN_AUTH_REQUIRED" });
+    expect(await run()).toMatchObject({ status: "FAILED", errorCode: "DOUYIN_CONTENT_UNAVAILABLE" });
     expect(state.requests).toHaveLength(0);
   });
 

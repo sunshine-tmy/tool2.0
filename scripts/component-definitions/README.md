@@ -6,7 +6,7 @@
 `packaging/components/douyin-archive/adapter/manifest.json`；描述固定匿名模式、读取实现提交
 `27468deae565fcb3d5a074063703d9df88449aed`、Playwright 1.63.0、Chromium revision 1243 / 153.0.8010.12。
 共享浏览器资产沿用历史能力 ID `xhs-browser`，独立进程和全新内存会话不读取或复用小红书 Profile/Cookie。
-本期不提供抖音登录、验证码绕过或环境变量 Cookie 注入。
+只解析公开可访问作品，不自动绕过安全验证或读取外部浏览器会话。
 
 在对应原生构建机上生成产物；Windows x64、macOS arm64 不能互相替代构建和实测：
 

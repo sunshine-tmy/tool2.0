@@ -1,4 +1,4 @@
-/** 平台读取网关：小红书维持原 Worker/登录流程；抖音只调用匿名受管浏览器，不携带任何 Cookie。 */
+/** 平台读取网关：小红书维持原 Worker 流程；抖音只调用匿名受管浏览器，不携带任何 Cookie。 */
 import { createHash } from "node:crypto";
 import type { AppConfig } from "../../config";
 import type { RemoteFetch } from "../../security/remote-fetch";
@@ -6,7 +6,8 @@ import { workerAuthHeaders } from "../../security/worker-auth";
 import type { XhsRuntimeManager } from "../xhs-archive/runtime";
 import type { XhsAuthManager } from "../xhs-archive/auth";
 import { extractXhsUrl, normalizeXhsProviderItem } from "../xhs-archive/provider-item";
-import type { DouyinRuntimeManager } from "./douyin-runtime";
+import { DouyinRuntimeError, type DouyinRuntimeManager } from "./douyin-runtime";
+import { DouyinSourceError } from "./douyin-source";
 import { abortable, ArchiveTaskError, type ArchiveProvider } from "./provider";
 
 export function xhsProvider(
@@ -91,11 +92,18 @@ export function douyinProvider(runtime: DouyinRuntimeManager): ArchiveProvider {
     platform: "douyin",
     async extract(url, signal, progress) {
       progress("installing", 2, "正在检查抖音匿名归档环境");
-      const { source } = await runtime.extract(url, {
-        signal,
-        onInstallProgress: (value, message) => progress("installing", value, message)
-      });
-      progress("parsing", 32, "正在匿名读取抖音公开作品");
+      const { source } = await runtime
+        .extract(url, {
+          signal,
+          onInstallProgress: (value, message) => progress("installing", value, message),
+          onReadStart: () => progress("parsing", 32, "正在匿名读取抖音公开作品")
+        })
+        .catch((error: unknown) => {
+          // 只有运行时自有、已脱敏的业务错误可进入任务提示；未知异常仍由任务层统一隐藏。
+          if (error instanceof DouyinSourceError || error instanceof DouyinRuntimeError)
+            throw new ArchiveTaskError(error.code, error.message);
+          throw error;
+        });
       signal.throwIfAborted();
       const { tags, ...rest } = source;
       return {

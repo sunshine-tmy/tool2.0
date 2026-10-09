@@ -7,7 +7,7 @@ import { openDouyinBrowser, DouyinBrowserError } from "./douyin-browser";
 import { readDouyinWork } from "./douyin-reader";
 import { DouyinSourceError } from "./douyin-source";
 
-class DouyinRuntimeError extends Error {
+export class DouyinRuntimeError extends Error {
   constructor(
     readonly code: string,
     message: string
@@ -105,7 +105,11 @@ export class DouyinRuntimeManager {
   /** 一次只持有一个匿名浏览器；上层任务服务负责排队，运行时不建立第二套任务队列。 */
   async extract(
     input: string,
-    options: { signal?: AbortSignal; onInstallProgress?: (progress: number, message: string) => void } = {}
+    options: {
+      signal?: AbortSignal;
+      onInstallProgress?: (progress: number, message: string) => void;
+      onReadStart?: () => void;
+    } = {}
   ) {
     options.signal?.throwIfAborted();
     if (this.closed) throw new DouyinRuntimeError("DOUYIN_RUNTIME_STOPPED", "抖音运行时已关闭");
@@ -121,7 +125,9 @@ export class DouyinRuntimeManager {
         : 120_000;
     const timer = setTimeout(() => controller.abort(new DOMException("抖音读取超时", "TimeoutError")), runtimeTimeout);
     // 占用先于异步资产检查登记，确保重装/卸载不能在浏览器启动途中删除已选定的 generation。
-    const done = Promise.resolve().then(() => this.run(link.url, signal, options.onInstallProgress));
+    const done = Promise.resolve().then(() =>
+      this.run(link.url, signal, options.onInstallProgress, options.onReadStart)
+    );
     const operation = { controller, done };
     this.operation = operation;
     try {
@@ -161,7 +167,8 @@ export class DouyinRuntimeManager {
   private async run(
     input: string,
     signal: AbortSignal,
-    onInstallProgress?: (progress: number, message: string) => void
+    onInstallProgress?: (progress: number, message: string) => void,
+    onReadStart?: () => void
   ) {
     let browser: Awaited<ReturnType<typeof openDouyinBrowser>> | undefined;
     let result: Awaited<ReturnType<typeof readDouyinWork>> | undefined;
@@ -170,13 +177,14 @@ export class DouyinRuntimeManager {
     try {
       const executablePath = await this.resolveBrowserForTask(signal, onInstallProgress);
       signal.throwIfAborted();
-      // 不传 profileRoot，绝不读取持久化登录目录、Cookie 或 XHS 环境变量。
+      // 每次使用全新临时上下文，不复用浏览器会话或 XHS 环境变量。
       browser = await (this.options.openBrowser ?? openDouyinBrowser)({ executablePath, headless: true, signal });
       signal.throwIfAborted();
       if (browser.browserVersion !== "153.0.8010.12")
         throw new DouyinRuntimeError("DOUYIN_RUNTIME_INCOMPATIBLE", "浏览器版本与抖音适配器不兼容，请修复能力包");
       const page = await browser.context.newPage();
       signal.throwIfAborted();
+      onReadStart?.();
       result = await (this.options.readWork ?? readDouyinWork)(page, input, { signal });
       signal.throwIfAborted();
     } catch (error) {

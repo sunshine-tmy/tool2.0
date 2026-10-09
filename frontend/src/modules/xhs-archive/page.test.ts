@@ -169,7 +169,7 @@ describe("中性多媒体归档页面", () => {
     await flushPromises();
     expect(mocks.message.warning).toHaveBeenCalledTimes(2);
   });
-  it("小红书登录轮询保留并重试原任务，不启动抖音登录", async () => {
+  it("小红书登录轮询保留并重试原任务", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     mocks.api.create!.mockResolvedValue(
       taskFixture({ status: "failed", stage: "failed", errorCode: "ARCHIVE_AUTH_REQUIRED" })

@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getConfig } from "../config";
 import type { XhsRuntimeManager } from "../modules/xhs-archive/runtime";
 import type { XhsAuthManager } from "../modules/xhs-archive/auth";
-import type { DouyinRuntimeManager } from "../modules/media-archive/douyin-runtime";
+import { DouyinRuntimeError, type DouyinRuntimeManager } from "../modules/media-archive/douyin-runtime";
+import { DouyinSourceError } from "../modules/media-archive/douyin-source";
 import { xhsProvider, douyinProvider } from "../modules/media-archive/platform-providers";
-import { abortable } from "../modules/media-archive/provider";
+import { abortable, ArchiveTaskError } from "../modules/media-archive/provider";
 import { extractXhsUrl, normalizeXhsProviderItem } from "../modules/xhs-archive/provider-item";
 
 const link = "https://www.xiaohongshu.com/explore/123456789?xsec_token=public";
@@ -157,7 +158,10 @@ describe("匿名抖音与异步取消", () => {
       tags: ["话题"],
       media: []
     };
-    const extract = vi.fn(async (_url: string, _options: { signal?: AbortSignal }) => ({ source }));
+    const extract = vi.fn(async (_url: string, options: { signal?: AbortSignal; onReadStart?: () => void }) => {
+      options.onReadStart?.();
+      return { source };
+    });
     const close = vi.fn(async () => undefined);
     const adapter = douyinProvider({ extract, close } as unknown as DouyinRuntimeManager);
     const first = await adapter.extract(source.canonicalUrl, signal, progress);
@@ -166,8 +170,28 @@ describe("匿名抖音与异步取消", () => {
     expect(first.topics).toEqual(second.topics);
     expect(first.topics[0].id).toHaveLength(16);
     expect(extract.mock.calls[0][1]).toMatchObject({ signal, onInstallProgress: expect.any(Function) });
+    expect(progress).toHaveBeenCalledWith("parsing", 32, "正在匿名读取抖音公开作品");
     await adapter.close();
     expect(close).toHaveBeenCalledOnce();
+  });
+  it.each([
+    new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", "作品受访问权限限制，匿名归档无法获取"),
+    new DouyinRuntimeError("DOUYIN_COMPONENT_NOT_INSTALLED", "请安装抖音匿名归档能力")
+  ])("平台自有错误转换为可展示的归档任务错误：%o", async (failure) => {
+    const extract = vi.fn().mockRejectedValue(failure);
+    const adapter = douyinProvider({ extract } as unknown as DouyinRuntimeManager);
+    const result = adapter.extract("https://v.douyin.com/test/", signal, progress);
+    await expect(result).rejects.toBeInstanceOf(ArchiveTaskError);
+    await expect(result).rejects.toMatchObject({ code: failure.code, message: failure.message });
+  });
+  it("伪装成平台错误的未知异常不能变成可展示错误", async () => {
+    const failure = Object.assign(new Error("C:/private/profile secretCookie"), {
+      name: "DouyinSourceError",
+      code: "DOUYIN_CONTENT_UNAVAILABLE"
+    });
+    const adapter = douyinProvider({ extract: vi.fn().mockRejectedValue(failure) } as unknown as DouyinRuntimeManager);
+    await expect(adapter.extract("https://v.douyin.com/test/", signal, progress)).rejects.toBe(failure);
+    expect(failure).not.toBeInstanceOf(ArchiveTaskError);
   });
   it("预先取消也观察已创建的异步拒绝，不泄漏监听器或未处理异常", async () => {
     const controller = new AbortController();

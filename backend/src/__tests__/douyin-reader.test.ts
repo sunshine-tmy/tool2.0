@@ -81,8 +81,71 @@ describe("受管浏览器匿名读取", () => {
   });
 
   it.each([
+    "Unable to retrieve content because the page is navigating and changing the content.",
+    "Execution context was destroyed, most likely because of a navigation."
+  ])("页面导航中的临时读取失败可恢复：%s", async (message) => {
+    vi.useFakeTimers();
+    const f = fixture();
+    f.content.mockRejectedValueOnce(new Error(message));
+    const pending = readDouyinWork(f.page, shortUrl);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await pending).toMatchObject({ via: "normal-browser-ssr", source: { contentId: id } });
+    expect(f.content).toHaveBeenCalledTimes(2);
+    expect(f.events.listenerCount("response")).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("页面跳转不会覆盖当前作品 API 返回的权限限制", async () => {
+    const f = fixture();
+    f.content.mockRejectedValue(new Error("Unable to retrieve content because the page is navigating"));
+    f.goto.mockImplementation(async () => {
+      f.events.emit(
+        "response",
+        api({
+          body: async () =>
+            Buffer.from(
+              JSON.stringify({
+                status_code: 0,
+                aweme_detail: null,
+                filter_detail: { aweme_id: id, detail_msg: "因作品权限设置，暂时无法查看" }
+              })
+            )
+        })
+      );
+      return undefined;
+    });
+    await expect(readDouyinWork(f.page, shortUrl)).rejects.toMatchObject({
+      code: "DOUYIN_CONTENT_UNAVAILABLE",
+      message: "该抖音作品受访问权限限制，匿名归档无法获取。请使用公开可访问的作品链接。"
+    });
+    expect(f.events.listenerCount("response")).toBe(0);
+  });
+
+  it("导航期间连续读取失败仍受总时限约束", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    f.content.mockRejectedValue(new Error("Unable to retrieve content because the page is navigating"));
+    const pending = readDouyinWork(f.page, shortUrl, { timeoutMs: 100 });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+    await vi.advanceTimersByTimeAsync(100);
+    await assertion;
+    expect(f.events.listenerCount("response")).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("非导航原因的页面读取失败立即脱敏，不进入重试", async () => {
+    const f = fixture();
+    f.content.mockRejectedValue(new Error("Target closed C:/private ?token=secret"));
+    await expect(readDouyinWork(f.page, shortUrl)).rejects.toMatchObject({
+      code: "DOUYIN_PARSE_FAILED",
+      message: "抖音作品读取失败，请稍后重试"
+    });
+    expect(f.content).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
     [429, "DOUYIN_RATE_LIMITED"],
-    [401, "DOUYIN_AUTH_REQUIRED"],
+    [401, "DOUYIN_CONTENT_UNAVAILABLE"],
     [404, "DOUYIN_CONTENT_UNAVAILABLE"],
     [403, "DOUYIN_CONTENT_UNAVAILABLE"]
   ])("导航状态 %i 保留稳定错误 %s", async (status, code) => {
@@ -95,7 +158,7 @@ describe("受管浏览器匿名读取", () => {
 
   it.each([
     [429, "DOUYIN_RATE_LIMITED"],
-    [401, "DOUYIN_AUTH_REQUIRED"]
+    [401, "DOUYIN_CONTENT_UNAVAILABLE"]
   ])("当前作品 API 状态 %i 分类为 %s", async (status, code) => {
     const f = fixture();
     f.content.mockResolvedValue("");
@@ -106,7 +169,7 @@ describe("受管浏览器匿名读取", () => {
     await expect(readDouyinWork(f.page, canonicalUrl)).rejects.toMatchObject({ code });
   });
 
-  it("403 安全验证页面优先分类，不提示扫码或执行绕过", async () => {
+  it("403 安全验证页面优先分类，不当作作品内容处理", async () => {
     const f = fixture();
     f.goto.mockResolvedValue({ status: () => 403 });
     f.content.mockResolvedValue("<title>验证码中间页</title>");

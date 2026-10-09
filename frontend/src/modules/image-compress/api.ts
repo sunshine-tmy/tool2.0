@@ -18,6 +18,13 @@ class ImageCompressApi {
   async downloadAll(files: Array<{ taskId: string; fileName: string }>) {
     return withApiError(() => httpClient.postBlob("/tools/image-compress/download.zip", { files }), "批量下载失败");
   }
+
+  async downloadOne(fileName: string) {
+    return withApiError(
+      () => httpClient.getBlob(`/files/${encodeURIComponent(fileName)}`),
+      "单张图片下载失败"
+    );
+  }
 }
 
 export const imageCompressApi = new ImageCompressApi();

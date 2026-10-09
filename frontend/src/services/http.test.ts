@@ -77,6 +77,20 @@ describe("api error wrapper", () => {
     );
   });
 
+  it("fetches a download blob and preserves its content disposition", async () => {
+    const blob = new Blob(["image"]);
+    const instance = {
+      get: vi.fn().mockResolvedValue({ data: blob, headers: { "content-disposition": 'attachment; filename="result.png"' } })
+    };
+    const client = createHttpClient(instance as never);
+
+    await expect(client.getBlob("/files/result.png")).resolves.toEqual({
+      blob,
+      contentDisposition: 'attachment; filename="result.png"'
+    });
+    expect(instance.get).toHaveBeenCalledWith("/files/result.png", { responseType: "blob" });
+  });
+
   it("rejects a successful envelope whose data violates the supplied schema", async () => {
     // 即使 HTTP 状态成功，业务 data 不符合共享 Schema 也必须拒绝，防止页面消费脏响应。
     const instance = {

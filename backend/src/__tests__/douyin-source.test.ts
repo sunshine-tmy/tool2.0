@@ -34,13 +34,13 @@ function raw(overrides: Record<string, unknown> = {}) {
 }
 
 describe("抖音普通浏览器数据适配", () => {
-  it("验证码页明确要求人工处理，不把正文中的验证码字样当成访问门禁", () => {
+  it("安全验证页明确失败，不把正文中的验证码字样当成访问门禁", () => {
     try {
       readDouyinPage("<html><title>验证码中间页</title></html>", id);
     } catch (error) {
       expect(error).toMatchObject({ code: "DOUYIN_CHALLENGE_REQUIRED" });
     }
-    expect(() => readDouyinPage("<TITLE> 安全验证 </TITLE>", id)).toThrow("正常完成");
+    expect(() => readDouyinPage("<TITLE> 安全验证 </TITLE>", id)).toThrow("暂时无法获取");
     expect(readDouyinPage(page({ ...detail, desc: "教程：如何使用验证码" }), id)?.description).toContain("验证码");
   });
   it("读取嵌套视频 SSR，保留全文、作者、发布时间并去重话题", () => {
@@ -180,13 +180,43 @@ describe("抖音普通浏览器数据适配", () => {
     expect(result?.media[0].urls).toEqual([`${cdn}/file?token=first`, `${cdn}/file?token=second`]);
   });
 
-  it("明确登录门禁或私有权限时拒绝，不把未知平台状态码猜成登录错误", () => {
-    expect(() => readDouyinApiResponse(raw({ pc_need_login: true }), id)).toThrow("登录");
-    expect(() => readDouyinPage(page({ ...detail, pcNeedLogin: true }), id)).toThrow("登录");
+  it("明确内容访问限制或私有权限时拒绝，不猜测未知平台状态码", () => {
+    expect(() => readDouyinApiResponse(raw({ pc_need_login: true }), id)).toThrow("访问权限限制");
+    expect(() => readDouyinPage(page({ ...detail, pcNeedLogin: true }), id)).toThrow("访问权限限制");
     expect(() => readDouyinPage(page({ ...detail, isPrivate: true }), id)).toThrow("访问权限");
     expect(() => readDouyinPage(page({ ...detail, isFriendLimit: true }), id)).toThrow("访问权限");
     expect(() => readDouyinApiResponse(raw({ status: { is_private: true } }), id)).toThrow("访问权限");
     expect(() => readDouyinApiResponse({ status_code: 8 }, id)).toThrow("没有返回");
+  });
+
+  it("空作品详情中的权限过滤原因给出匿名访问限制提示，不回传上游附带文本", () => {
+    const input = {
+      status_code: 0,
+      aweme_detail: null,
+      filter_detail: {
+        aweme_id: id,
+        detail_msg: "因作品权限设置，暂时无法查看，去看看其他作品吧 secretCookie https://private.test",
+        notice: "secretCookie"
+      }
+    };
+    try {
+      readDouyinApiResponse(input, id);
+      expect.fail("权限受限的作品不能被当作可归档内容");
+    } catch (error) {
+      expect(error).toMatchObject({
+        code: "DOUYIN_CONTENT_UNAVAILABLE",
+        message: "该抖音作品受访问权限限制，匿名归档无法获取。请使用公开可访问的作品链接。"
+      });
+    }
+    expect(() =>
+      readDouyinApiResponse(
+        { ...input, filter_detail: { ...input.filter_detail, aweme_id: "7685962392984216805" } },
+        id
+      )
+    ).toThrow("不一致");
+    expect(() =>
+      readDouyinApiResponse({ ...input, filter_detail: { detail_msg: "unknown secretCookie" } }, id)
+    ).toThrow("抖音没有返回可访问的作品内容");
   });
 
   it("身份不符、畸形响应或异常状态必须失败", () => {

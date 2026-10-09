@@ -60,7 +60,7 @@
     "audit:python": "python scripts/audit-worker-dependencies.py",
     "coverage:diff": "node scripts/check-diff-coverage.mjs",
     "test:python": "python -m pytest",
-    "test:scripts": "node --test scripts/cleanup-engine.test.mjs scripts/check-diff-coverage.test.mjs scripts/worker-locks.test.mjs scripts/build-component-package.test.mjs scripts/component-preparation.test.mjs scripts/image-ai-component-preparation.test.mjs scripts/chatterbox-component-preparation.test.mjs scripts/download-fixed-model-file.test.mjs scripts/desktop-icon-assets.test.mjs",
+    "test:scripts": "node --test scripts/cleanup-engine.test.mjs scripts/check-diff-coverage.test.mjs scripts/worker-locks.test.mjs scripts/build-component-package.test.mjs scripts/component-preparation.test.mjs scripts/image-ai-component-preparation.test.mjs scripts/chatterbox-component-preparation.test.mjs scripts/download-fixed-model-file.test.mjs scripts/desktop-icon-assets.test.mjs scripts/check-format.test.mjs",
     "test:diff-coverage": "node --test scripts/check-diff-coverage.test.mjs",
     "test:e2e": "playwright test",
     "lint:python": "python -m ruff format --check scripts && python -m ruff check scripts && python -m mypy",
@@ -69,7 +69,7 @@
     "lint": "eslint . --max-warnings 0",
     "deadcode": "knip",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "node scripts/check-format.mjs",
     "check": "pnpm format:check && pnpm lint && pnpm deadcode && pnpm typecheck && pnpm test:all && pnpm build"
   },
   "devDependencies": {

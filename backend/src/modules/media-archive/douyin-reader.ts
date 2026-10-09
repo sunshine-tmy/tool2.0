@@ -2,14 +2,20 @@
 import { setTimeout as delay } from "node:timers/promises";
 import type { Page, Response } from "playwright-core";
 import { identifyArchiveLink } from "@toolbox/shared";
-import { DouyinSourceError, readDouyinApiResponse, readDouyinPage, type DouyinSource } from "./douyin-source";
+import {
+  DOUYIN_RESTRICTED_CONTENT_MESSAGE,
+  DouyinSourceError,
+  readDouyinApiResponse,
+  readDouyinPage,
+  type DouyinSource
+} from "./douyin-source";
 
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 /**
  * 页面由调用方拥有：本函数只释放自己的监听和等待，不关闭其他使用者的页面。
  * 调用方必须在任务取消/结束时关闭受管浏览器；signal 同时限定导航、读取和等待的总时长。
- * 不主动调用平台 API、不生成签名、不读取 Cookie；验证或登录要求按失败返回。
+ * 不主动调用平台 API或生成签名；访问限制与验证要求均按失败返回。
  */
 export async function readDouyinWork(
   page: Page,
@@ -63,7 +69,8 @@ export async function readDouyinWork(
       try {
         if (response.status() === 429)
           throw new DouyinSourceError("DOUYIN_RATE_LIMITED", "抖音请求过于频繁，请稍后重试");
-        if (response.status() === 401) throw new DouyinSourceError("DOUYIN_AUTH_REQUIRED", "抖音要求登录后查看此作品");
+        if (response.status() === 401)
+          throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", DOUYIN_RESTRICTED_CONTENT_MESSAGE);
         if (response.status() !== 200) return;
         const length = Number(response.headers()["content-length"]);
         if (Number.isFinite(length) && length > MAX_BODY_BYTES)
@@ -97,7 +104,7 @@ export async function readDouyinWork(
         if (navigation?.status() === 429)
           throw new DouyinSourceError("DOUYIN_RATE_LIMITED", "抖音请求过于频繁，请稍后重试");
         if (navigation?.status() === 401)
-          throw new DouyinSourceError("DOUYIN_AUTH_REQUIRED", "抖音要求登录后查看此作品");
+          throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", DOUYIN_RESTRICTED_CONTENT_MESSAGE);
         if (navigation?.status() === 404)
           throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", "此抖音作品不存在或已不可访问");
         const resolved = new URL(page.url());
@@ -116,7 +123,18 @@ export async function readDouyinWork(
         const deadline = Date.now() + Math.min(30_000, timeoutMs);
         do {
           signal.throwIfAborted();
-          const source = readDouyinPage(await page.content(), expectedId);
+          const html = await page.content().catch((error: unknown) => {
+            // 网站跳转可能暂时销毁页面上下文；继续消费当前作品 API 或有界等待，不能丢失权限原因。
+            if (
+              error instanceof Error &&
+              /Unable to retrieve content because the page is navigating|Execution context was destroyed.*navigation/.test(
+                error.message
+              )
+            )
+              return "";
+            throw error;
+          });
+          const source = readDouyinPage(html, expectedId);
           signal.throwIfAborted();
           if (source) return { source, via: "normal-browser-ssr" as const };
           const apiSource = sources.get(expectedId);

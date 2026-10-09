@@ -1,4 +1,4 @@
-/** 中性客户端的路径、契约、编码和取消传播；XHS 登录不能迁移到抖音或携带 Cookie。 */
+/** 中性客户端的路径、契约、编码和取消传播。 */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ContentArchiveItemSchema,

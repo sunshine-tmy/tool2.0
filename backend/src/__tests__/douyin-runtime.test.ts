@@ -133,6 +133,22 @@ describe("抖音受管匿名运行时", () => {
     expect(f.openBrowser).not.toHaveBeenCalled();
   });
 
+  it("浏览器准备完成后先通知解析阶段，缺少资产时不误报已开始读取作品", async () => {
+    const f = fixture();
+    const onReadStart = vi.fn();
+    f.readWork.mockImplementationOnce(async () => {
+      expect(onReadStart).toHaveBeenCalledOnce();
+      return { source, via: "normal-browser-ssr" };
+    });
+    await f.runtime.extract(url, { onReadStart });
+    onReadStart.mockClear();
+    f.resolve.mockRejectedValue(new ComponentManagerError("COMPONENT_NOT_INSTALLED", "private package path"));
+    await expect(f.runtime.extract(url, { onReadStart })).rejects.toMatchObject({
+      code: "DOUYIN_COMPONENT_NOT_INSTALLED"
+    });
+    expect(onReadStart).not.toHaveBeenCalled();
+  });
+
   it.each(["COMPONENT_NOT_FOUND", "COMPONENT_NOT_INSTALLED", "COMPONENT_DEPENDENCY_MISSING"] as const)(
     "缺少组件 %s 只返回未安装状态，不下载或发现系统浏览器",
     async (code) => {
@@ -198,7 +214,7 @@ describe("抖音受管匿名运行时", () => {
     expect(await f.runtime.status()).toMatchObject({ errorCode: "DOUYIN_RUNTIME_INCOMPATIBLE" });
   });
 
-  it("匿名获取不传 Profile 或凭据，退出时关闭本次浏览器", async () => {
+  it("使用临时浏览器上下文并在退出时关闭", async () => {
     const f = fixture();
     expect(await f.runtime.extract(url)).toEqual({ source, via: "normal-browser-ssr" });
     expect(f.openBrowser).toHaveBeenCalledWith({
@@ -254,8 +270,8 @@ describe("抖音受管匿名运行时", () => {
 
   it("平台解析失败和浏览器启动错误保持稳定分类并关闭资源", async () => {
     const f = fixture();
-    f.readWork.mockRejectedValueOnce(new DouyinSourceError("DOUYIN_AUTH_REQUIRED", "作品要求登录"));
-    await expect(f.runtime.extract(url)).rejects.toMatchObject({ code: "DOUYIN_AUTH_REQUIRED" });
+    f.readWork.mockRejectedValueOnce(new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", "作品不可匿名访问"));
+    await expect(f.runtime.extract(url)).rejects.toMatchObject({ code: "DOUYIN_CONTENT_UNAVAILABLE" });
     f.openBrowser.mockRejectedValueOnce(new DouyinBrowserError("DOUYIN_BROWSER_UNAVAILABLE", "浏览器不可用"));
     await expect(f.runtime.extract(url)).rejects.toMatchObject({ code: "DOUYIN_BROWSER_UNAVAILABLE" });
     expect(f.runtime.isActive()).toBe(false);

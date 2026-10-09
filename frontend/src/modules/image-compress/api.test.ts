@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageCompressResultSchema } from "@toolbox/shared";
 import { imageCompressApi } from "./api";
 
-const httpMock = vi.hoisted(() => ({ post: vi.fn(), postBlob: vi.fn() }));
+const httpMock = vi.hoisted(() => ({ post: vi.fn(), postBlob: vi.fn(), getBlob: vi.fn() }));
 
 vi.mock("../../services/http", () => ({
   withApiError: (operation: () => Promise<unknown>) => operation(),
@@ -19,11 +19,13 @@ describe("image compression api", () => {
   it("uploads one image and downloads selected results", async () => {
     httpMock.post.mockResolvedValue({});
     httpMock.postBlob.mockResolvedValue({ blob: new Blob() });
+    httpMock.getBlob.mockResolvedValue({ blob: new Blob() });
     const form = new FormData();
     const progress = vi.fn();
 
     await imageCompressApi.upload(form, progress);
     await imageCompressApi.downloadAll([{ taskId: "task-1", fileName: "result.webp" }]);
+    await imageCompressApi.downloadOne("task-1.webp");
 
     expect(httpMock.post).toHaveBeenCalledWith("/tools/image-compress", ImageCompressResultSchema, form, {
       onUploadProgress: progress
@@ -31,5 +33,6 @@ describe("image compression api", () => {
     expect(httpMock.postBlob).toHaveBeenCalledWith("/tools/image-compress/download.zip", {
       files: [{ taskId: "task-1", fileName: "result.webp" }]
     });
+    expect(httpMock.getBlob).toHaveBeenCalledWith("/files/task-1.webp");
   });
 });

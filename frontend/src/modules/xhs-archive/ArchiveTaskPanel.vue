@@ -140,7 +140,7 @@ const linkHint = computed(() =>
     ? link.value.message
     : link.value.platform === "douyin"
       ? props.douyinAvailable
-        ? "已识别：抖音。仅归档公开可访问作品，不使用登录 Cookie。"
+        ? "已识别：抖音。仅归档公开可访问作品。"
         : props.douyinCanAutoInstall
           ? "已识别：抖音。首次获取时将自动安装并校验匿名归档能力，仅处理公开可访问作品。"
           : `已识别：抖音。${props.douyinMessage || "抖音归档能力尚未就绪，请刷新环境状态。"}`

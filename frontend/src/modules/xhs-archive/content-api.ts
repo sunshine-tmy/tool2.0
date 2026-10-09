@@ -68,7 +68,7 @@ export const contentArchiveApi = {
       () => httpClient.get("/tools/xhs-archive/runtime", XhsRuntimeStatusSchema, { signal }),
       "读取小红书环境失败"
     ),
-  // 本期跳过抖音登录；这里明确只有 XHS 登录，禁止平台凭据混用。
+  // 兼容登录接口限定为 XHS 平台，平台凭据不跨接口传递。
   startXhsAuth: (signal?: AbortSignal) =>
     withApiError(
       () => httpClient.post("/tools/xhs-archive/auth/start", XhsAuthSessionSchema, undefined, { signal }),

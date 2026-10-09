@@ -17,6 +17,9 @@ import { ArchiveDownloadGateway } from "../modules/media-archive/download-gatewa
 import { ContentArchiveTaskService } from "../modules/media-archive/task-service";
 import { ArchiveTaskError, type ArchiveSource, type ArchiveProvider } from "../modules/media-archive/provider";
 import { archiveTranslationSourceHash } from "../modules/media-archive/text";
+import { douyinProvider } from "../modules/media-archive/platform-providers";
+import type { DouyinRuntimeManager } from "../modules/media-archive/douyin-runtime";
+import { readDouyinApiResponse } from "../modules/media-archive/douyin-source";
 
 let root: string;
 let database: ToolboxDatabase;
@@ -100,6 +103,33 @@ async function terminal(id: string) {
 }
 
 describe("多平台获取生命周期", () => {
+  it("抖音权限过滤原因贯穿解析、适配器和任务响应，失败不误报安装故障也不写归档", async () => {
+    const extract = vi.fn(async (_url: string, options: { onReadStart?: () => void }) => {
+      options.onReadStart?.();
+      return {
+        source: readDouyinApiResponse(
+          {
+            status_code: 0,
+            aweme_detail: null,
+            filter_detail: { aweme_id: "123456789", detail_msg: "因作品权限设置，暂时无法查看，去看看其他作品吧" }
+          },
+          "123456789"
+        )
+      };
+    });
+    providers[1] = douyinProvider({ extract, close: vi.fn(async () => undefined) } as unknown as DouyinRuntimeManager);
+    const result = await terminal(service.create(link()).id);
+    expect(result).toMatchObject({
+      status: "failed",
+      progress: 32,
+      errorCode: "ARCHIVE_CONTENT_UNAVAILABLE",
+      error: "该抖音作品受访问权限限制，匿名归档无法获取。请使用公开可访问的作品链接。"
+    });
+    expect(result.message).toBe(result.error);
+    expect(remote).not.toHaveBeenCalled();
+    expect((await store.list()).total).toBe(0);
+  });
+
   it("文件摘要等待流 close，不能在 Windows 句柄仍被占用时开始目录移动", async () => {
     const file = path.join(root, "metadata.png");
     await fs.writeFile(file, png);

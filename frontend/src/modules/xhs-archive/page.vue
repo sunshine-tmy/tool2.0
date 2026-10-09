@@ -338,7 +338,6 @@ async function syncArchiveTask(taskId: string) {
   }
 }
 async function loginAndRetry() {
-  // 本期抖音不提供登录，不因输入平台切换而误启动 XHS 登录窗口。
   if (task.value?.platform !== "xiaohongshu" || authWaiting.value) return;
   authWaiting.value = true;
   try {

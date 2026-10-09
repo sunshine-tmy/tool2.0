@@ -8,7 +8,12 @@
         kicker="IMAGE OPTIMIZER"
       >
         <template #actions>
-          <n-button secondary :loading="downloading" :disabled="!completedItems.length" @click="downloadAll">
+          <n-button
+            secondary
+            :loading="downloading"
+            :disabled="!completedItems.length || Boolean(downloadingItemId)"
+            @click="downloadAll"
+          >
             <template #icon>
               <Download :size="16" />
             </template>
@@ -85,9 +90,9 @@
                 v-if="item.result"
                 secondary
                 size="small"
-                tag="a"
-                :href="absoluteDownloadUrl(item.result.downloadUrl)"
-                target="_blank"
+                :loading="downloadingItemId === item.id"
+                :disabled="downloading || Boolean(downloadingItemId)"
+                @click="downloadOne(item)"
               >
                 下载
               </n-button>
@@ -167,7 +172,6 @@ import {
 import { Download, ImageDown, Trash2, UploadCloud } from "lucide-vue-next";
 import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
-import { resolveBackendUrl } from "../../config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { imageCompressApi, type ImageToolResponse } from "./api";
 import { createImageItemId } from "./image-id";
@@ -191,6 +195,7 @@ const items = ref<ImageItem[]>([]);
 const isDragging = ref(false);
 const submitting = ref(false);
 const downloading = ref(false);
+const downloadingItemId = ref<string | null>(null);
 const quality = ref(78);
 const width = ref<number | null>(null);
 const outputFormat = ref<OutputFormat>("png");
@@ -336,19 +341,36 @@ async function downloadAll() {
         : []
     );
     const { blob, contentDisposition } = await imageCompressApi.downloadAll(files);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = decodeDownloadFileName(contentDisposition) ?? `图片压缩结果-${Date.now()}.zip`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    triggerDownload(blob, decodeDownloadFileName(contentDisposition) ?? `图片压缩结果-${Date.now()}.zip`);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "批量下载失败"));
   } finally {
     downloading.value = false;
   }
+}
+
+async function downloadOne(item: ImageItem) {
+  if (!item.result || downloading.value || downloadingItemId.value) return;
+  downloadingItemId.value = item.id;
+  try {
+    const { blob, contentDisposition } = await imageCompressApi.downloadOne(item.result.outputName);
+    triggerDownload(blob, decodeDownloadFileName(contentDisposition) ?? batchOutputName(item.result));
+  } catch (error) {
+    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "单张图片下载失败"));
+  } finally {
+    downloadingItemId.value = null;
+  }
+}
+
+function triggerDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function batchOutputName(result: ImageToolResponse) {
@@ -362,10 +384,6 @@ function decodeDownloadFileName(contentDisposition?: string) {
   const encoded = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition)?.[1];
   if (encoded) return decodeURIComponent(encoded);
   return /filename="?([^";]+)"?/i.exec(contentDisposition)?.[1];
-}
-
-function absoluteDownloadUrl(downloadUrl: string) {
-  return resolveBackendUrl(downloadUrl);
 }
 
 function savedPercentLabel(originalSize: number, outputSize: number) {

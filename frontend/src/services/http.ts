@@ -111,6 +111,14 @@ export function createHttpClient(instance: AxiosInstance = api) {
       return response.data;
     },
 
+    async getBlob(url: string, config?: AxiosRequestConfig) {
+      const response = await instance.get<Blob, AxiosResponse<Blob>>(url, { ...config, responseType: "blob" });
+      return {
+        blob: response.data,
+        contentDisposition: response.headers["content-disposition"] as string | undefined
+      };
+    },
+
     async post<T extends TSchema>(
       url: string,
       schema: T,

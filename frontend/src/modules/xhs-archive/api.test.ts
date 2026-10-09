@@ -1,4 +1,4 @@
-/** 登录别名保持短视频解析原有入口和语义，不给抖音添加本期跳过的登录。 */
+/** 兼容登录别名保持短视频解析原有入口和语义。 */
 import { expect, it } from "vitest";
 import { contentArchiveApi } from "./content-api";
 import { xhsArchiveApi } from "./api";

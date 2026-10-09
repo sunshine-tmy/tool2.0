@@ -2,7 +2,6 @@
 export class DouyinSourceError extends Error {
   constructor(
     readonly code:
-      | "DOUYIN_AUTH_REQUIRED"
       | "DOUYIN_CHALLENGE_REQUIRED"
       | "DOUYIN_RATE_LIMITED"
       | "DOUYIN_CONTENT_UNAVAILABLE"
@@ -38,12 +37,20 @@ export type DouyinSource = {
 };
 const MAX_PAGE_BYTES = 4 * 1024 * 1024;
 const MAX_NODES = 25_000;
+export const DOUYIN_RESTRICTED_CONTENT_MESSAGE =
+  "该抖音作品受访问权限限制，匿名归档无法获取。请使用公开可访问的作品链接。";
 
 /** API snake_case 与页面 SSR camelCase 共用严格身份和媒体校验，不把推荐作品当成当前作品。 */
 export function readDouyinApiResponse(input: unknown, expectedId: string): DouyinSource {
   const envelope = record(input);
   const detail = record(envelope.aweme_detail);
   if (!Object.keys(detail).length) {
+    const filter = record(envelope.filter_detail);
+    if (filter.aweme_id != null && filter.aweme_id !== expectedId)
+      throw new DouyinSourceError("DOUYIN_PARSE_FAILED", "返回作品与请求的作品 ID 不一致");
+    // 空详情可能带作品权限原因；只映射已识别的原因，不将上游原始文本或附带字段返回页面。
+    if (/权限|私密|好友可见/.test(text(filter.detail_msg)))
+      throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", DOUYIN_RESTRICTED_CONTENT_MESSAGE);
     throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", "抖音没有返回可访问的作品内容");
   }
   if (envelope.status_code !== 0) throw new DouyinSourceError("DOUYIN_PARSE_FAILED", "抖音作品响应状态异常");
@@ -56,7 +63,7 @@ export function readDouyinPage(html: string, expectedId: string): DouyinSource |
     throw new DouyinSourceError("DOUYIN_RESPONSE_TOO_LARGE", "抖音作品页面超过解析上限");
   // 仅依据真实验证页标题分类，不因文案提到验证码而误判，更不自动绕过平台访问限制。
   if (/<title>\s*(?:验证码中间页|安全验证)\s*<\/title>/i.test(html))
-    throw new DouyinSourceError("DOUYIN_CHALLENGE_REQUIRED", "抖音要求安全验证，请在本机浏览器中正常完成后重试");
+    throw new DouyinSourceError("DOUYIN_CHALLENGE_REQUIRED", "抖音要求安全验证，暂时无法获取该作品");
   let visited = 0;
   const find = (value: unknown, depth: number): Record<string, unknown> | undefined => {
     if (!value || typeof value !== "object") return;
@@ -103,9 +110,9 @@ function normalizeDetail(detail: Record<string, unknown>, expectedId: string): D
   if (!/^\d{5,24}$/.test(expectedId) || contentId !== expectedId)
     throw new DouyinSourceError("DOUYIN_PARSE_FAILED", "返回作品与请求的作品 ID 不一致");
   if (detail.pcNeedLogin === true || detail.pc_need_login === true)
-    throw new DouyinSourceError("DOUYIN_AUTH_REQUIRED", "抖音要求登录后查看此作品");
+    throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", DOUYIN_RESTRICTED_CONTENT_MESSAGE);
   if (detail.isPrivate === true || detail.isFriendLimit === true || record(detail.status).is_private === true)
-    throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", "此抖音作品的访问权限受限");
+    throw new DouyinSourceError("DOUYIN_CONTENT_UNAVAILABLE", DOUYIN_RESTRICTED_CONTENT_MESSAGE);
   const images = detail.images;
   if (images != null && !Array.isArray(images))
     throw new DouyinSourceError("DOUYIN_PARSE_FAILED", "抖音图片列表格式异常");
@@ -175,7 +182,7 @@ function urls(input: unknown): string[] {
     const candidate = typeof value === "string" ? value : text(record(value).src);
     try {
       const url = new URL(candidate);
-      // 下载端仍必须执行 DNS 固定、逐跳 SSRF 校验；这里绝不返回 Cookie 或其他页面认证字段。
+      // 下载端仍必须执行 DNS 固定、逐跳 SSRF 校验；输出仅包含白名单归档字段。
       if (url.protocol !== "https:" || url.username || url.password || url.port || !url.hostname) continue;
       if (!result.includes(url.href)) result.push(url.href);
     } catch {

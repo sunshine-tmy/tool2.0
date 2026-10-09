@@ -19,15 +19,12 @@ const { values } = parseArgs({
     url: { type: "string" },
     browser: { type: "string" },
     output: { type: "string" },
-    profile: { type: "string" },
     headed: { type: "boolean", default: false }
   }
 });
 const link = identifyArchiveLink(values.url || "", "douyin");
 if (!link.ok || !values.browser || !values.output)
   throw new Error("请显式提供 --url 抖音作品 --browser 浏览器可执行文件 --output .package 内的新目录");
-if (values.profile && !/^[a-z0-9][a-z0-9-]{0,39}$/.test(values.profile))
-  throw new Error("测试 Profile 名称只能包含小写字母、数字和连字符");
 const output = path.resolve(values.output);
 const base = path.join(root, ".package");
 const relative = path.relative(base, output);
@@ -45,7 +42,6 @@ const lifetime = new AbortController();
 const browser = await openDouyinBrowser({
   executablePath: path.resolve(values.browser),
   headless: !values.headed,
-  profileRoot: values.profile ? path.join(base, "ma01-douyin", "profiles", values.profile) : undefined,
   signal: lifetime.signal
 });
 const fetchRemote = createRemoteFetch({ requireHttps: true, maxRedirects: 3 });
@@ -61,8 +57,7 @@ const report: {
   longLinkMatches?: boolean;
   errorCode?: string;
   network?: ReturnType<typeof browser.networkStatus>;
-  profileUsed?: boolean;
-} = { status: "IN_PROGRESS", browserVersion: browser.browserVersion, profileUsed: Boolean(values.profile), media: [] };
+} = { status: "IN_PROGRESS", browserVersion: browser.browserVersion, media: [] };
 const totalTimeout = setTimeout(() => lifetime.abort(new DOMException("验收超时", "TimeoutError")), 6 * 60 * 1000);
 const cancel = () => lifetime.abort(new DOMException("验收已取消", "AbortError"));
 process.once("SIGINT", cancel);
@@ -75,7 +70,7 @@ try {
   report.contentId = source.contentId;
   report.type = source.type;
   report.canonicalUrl = source.canonicalUrl;
-  // 只保存规范化作品字段，不把页面或 API 的 Cookie、认证令牌和账户状态落盘。
+  // 只保存规范化归档字段，不把无关页面状态写入验收结果。
   await fs.writeFile(path.join(output, "source.json"), JSON.stringify(source, null, 2), { flag: "wx" });
   let totalBytes = 0;
   for (const [position, media] of source.media.entries()) {
