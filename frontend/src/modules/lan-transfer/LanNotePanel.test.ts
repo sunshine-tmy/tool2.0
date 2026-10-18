@@ -67,8 +67,12 @@ describe("LAN note panel", () => {
     await wrapper.get('[aria-label="选择 收货码"]').trigger("click");
     expect(wrapper.emitted("toggle-note")).toEqual([[note.id, true]]);
 
-    const copyButton = wrapper.findAll("button").find((button) => button.text().includes("复制文字"));
-    await copyButton?.trigger("click");
+    const copyTitleButton = wrapper.findAll("button").find((button) => button.text().includes("复制标题"));
+    await copyTitleButton?.trigger("click");
+    expect(wrapper.emitted("copy-title")).toEqual([[note]]);
+
+    const copyBodyButton = wrapper.findAll("button").find((button) => button.text().includes("复制正文"));
+    await copyBodyButton?.trigger("click");
     expect(wrapper.emitted("copy-content")).toEqual([[note]]);
 
     const publishButton = wrapper.findAll("button").find((button) => button.text().includes("发布图文"));

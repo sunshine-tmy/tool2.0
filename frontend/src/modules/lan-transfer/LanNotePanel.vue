@@ -92,8 +92,9 @@
             </div>
           </div>
           <div class="lan-note-actions">
+            <n-button v-if="note.title" secondary size="small" @click="$emit('copy-title', note)">复制标题</n-button>
             <n-button v-if="note.content" secondary size="small" @click="$emit('copy-content', note)"
-              >复制文字</n-button
+              >复制正文</n-button
             >
             <n-button v-if="canManage" tertiary size="small" @click="$emit('extend-expiry', note)">保留30天</n-button>
             <n-button v-if="canManage" tertiary size="small" type="error" @click="$emit('delete-note', note)"
@@ -169,6 +170,7 @@ const emit = defineEmits<{
   paste: [event: ClipboardEvent];
   "remove-image": [index: number];
   publish: [];
+  "copy-title": [note: LanNoteView];
   "copy-content": [note: LanNoteView];
   "copy-image-link": [url: string];
   "extend-expiry": [note: LanNoteView];

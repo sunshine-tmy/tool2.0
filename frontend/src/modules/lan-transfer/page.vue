@@ -63,6 +63,7 @@
               @paste="onNotePaste"
               @remove-image="removeNoteImage"
               @publish="publishNote"
+              @copy-title="copyNoteTitle"
               @copy-content="copyNoteContent"
               @copy-image-link="copyNoteImageLink"
               @extend-expiry="extendNoteExpiry"
@@ -395,6 +396,11 @@ async function publishNote() {
 
 async function copyNoteContent(note: LanNoteView) {
   await copyText(note.content);
+}
+
+async function copyNoteTitle(note: LanNoteView) {
+  if (!note.title) return;
+  await copyText(note.title);
 }
 
 async function copyNoteImageLink(previewUrl: string) {
