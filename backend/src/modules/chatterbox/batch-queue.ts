@@ -75,9 +75,18 @@ export class ChatterboxBatchQueue {
   async close() {
     // 停止接收新任务并中止当前 Worker；调用方等待 activeDone 后再关闭进程资源。
     this.stopped = true;
-    this.pending.length = 0;
+    const pending = this.pending.splice(0);
     this.activeController?.abort();
-    await this.activeDone;
+    await Promise.all([
+      ...pending.map(async ({ batchId, itemId }) => {
+        await this.options.store.updateItem(batchId, itemId, {
+          status: "failed",
+          progress: 0,
+          error: "应用退出，任务尚未执行，请手动重新生成"
+        });
+      }),
+      this.activeDone
+    ]);
   }
 
   private pump() {
@@ -178,12 +187,13 @@ export class ChatterboxBatchQueue {
         { deferTerminalStatus: true }
       );
     } catch (error) {
+      const reason = this.stopped ? "任务因应用退出中断，请手动重新生成" : readableBatchError(error);
       await this.options.store.updateItem(
         batchId,
         itemId,
         hadAudio
-          ? { status: "completed", progress: 100, error: `重新生成失败：${readableBatchError(error)}` }
-          : { status: "failed", progress: 100, error: readableBatchError(error) },
+          ? { status: "completed", progress: 100, error: `重新生成失败：${reason}` }
+          : { status: "failed", progress: 100, error: reason },
         { deferTerminalStatus: true }
       );
     } finally {

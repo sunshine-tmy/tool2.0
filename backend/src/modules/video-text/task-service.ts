@@ -138,7 +138,11 @@ async function processVideoTextTask(input: {
     terminalPatch = {
       status: "failed",
       progress: 100,
-      error: error instanceof Error ? error.message : "视频文本解析失败"
+      error: signal.aborted
+        ? "任务因应用退出中断，请手动重试"
+        : error instanceof Error
+          ? error.message
+          : "视频文本解析失败"
     };
   }
   try {
@@ -255,7 +259,7 @@ function replaceCommandPlaceholders(argument: string, values: Record<string, str
   return rendered;
 }
 
-function parseCommandTemplate(template: string) {
+export function parseCommandTemplate(template: string) {
   const args: string[] = [];
   let current = "";
   let quote: '"' | "'" | null = null;

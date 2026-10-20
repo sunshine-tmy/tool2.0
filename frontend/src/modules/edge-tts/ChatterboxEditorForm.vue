@@ -332,6 +332,7 @@
         克隆服务正在准备或启动失败。首次一键启动会自动安装环境和下载模型；请保持启动窗口开启并查看其中的错误提示。
       </p>
       <p v-if="panel.errorMessage" class="edge-tts-error">{{ panel.errorMessage }}</p>
+      <DiagnosticErrorLink :error="panel.errorMessage" module="edge-tts" />
     </aside>
   </section>
 
@@ -375,6 +376,7 @@
 </template>
 
 <script setup lang="ts">
+import DiagnosticErrorLink from "../../components/DiagnosticErrorLink.vue";
 import { NButton, NCard, NCheckbox, NEmpty, NInput, NInputNumber, NModal, NSelect, NSlider } from "naive-ui";
 import {
   ArrowDown,

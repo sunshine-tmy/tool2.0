@@ -4,6 +4,7 @@
 import { fileURLToPath } from "node:url";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig, loadEnv } from "vite";
+import { getConfig } from "../backend/src/config";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -11,8 +12,10 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, repositoryRoot, "VITE_");
   const apiProxy = {
     "/api": {
-      target: env.VITE_API_PROXY_TARGET?.trim() || "http://127.0.0.1:3100",
-      changeOrigin: true
+      target: env.VITE_API_PROXY_TARGET?.trim() || `http://127.0.0.1:${getConfig().port}`,
+      changeOrigin: true,
+      // 保留真正的前端连接来源；后端只放行整个转发链均为回环的诊断请求。
+      xfwd: true
     }
   };
   return {
@@ -36,6 +39,8 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      port: Number(env.VITE_DEV_PORT || 5173),
+      strictPort: true,
       host: env.VITE_DEV_HOST?.trim() || "127.0.0.1",
       proxy: apiProxy
     },

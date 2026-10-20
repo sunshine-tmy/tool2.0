@@ -4,24 +4,10 @@
 import http, { type IncomingHttpHeaders, type Server, type ServerResponse } from "node:http";
 import net from "node:net";
 import { isPrivateLanIPv4 } from "../modules/lan-transfer/access";
+import { listTools } from "@toolbox/shared";
 
-const LAN_API_PREFIX = "/api/v1/tools/lan-transfer";
-const LAN_TOOL_API_PREFIXES = [
-  LAN_API_PREFIX,
-  "/api/v1/tools/audio-library",
-  "/api/v1/tools/image-ai",
-  "/api/v1/tools/video-text",
-  "/api/v1/tools/edge-tts",
-  "/api/v1/tools/xhs-archive"
-];
-const LAN_TOOL_PAGES = new Set([
-  "/tools/lan-transfer",
-  "/tools/audio-library",
-  "/tools/image-ai",
-  "/tools/video-text",
-  "/tools/edge-tts",
-  "/tools/xhs-archive"
-]);
+const LAN_TOOL_API_PREFIXES = [...listTools().map((tool) => tool.apiNamespace), "/api/v1/tools/media-archive"];
+const LAN_TOOL_PAGES = new Set(["/", ...listTools().map((tool) => tool.routePath), "/tools/xhs-archive"]);
 const PUBLIC_ASSETS = new Set(["/favicon.ico", "/favicon-32x32.png", "/ecommerce-toolbox-icon-32.png"]);
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -41,7 +27,7 @@ export type DesktopLanGateway = {
 };
 
 /**
- * 只向局域网开放文件传输、AI 图片处理、视频转写、配音和小红书归档所需路由；
+ * 从业务工具注册表生成允许列表，覆盖全部业务工具及其进度、媒体、下载路由；
  * 能力管理、维护、会话和其它 API 不转发。绑定所有 IPv4 网卡以便同一局域网访问，
  * 但只接受 RFC1918 与 loopback 客户端。
  */
@@ -54,7 +40,14 @@ export async function startDesktopLanGateway(
     throw new Error("Desktop LAN gateway upstream must be a loopback HTTP origin");
   }
 
-  const preferred = Number.isInteger(preferredPort) && preferredPort > 0 && preferredPort <= 65535 ? preferredPort : 0;
+  // Windows 允许不同接口上的部分端口复用；绝不能让网关与它的 loopback 上游同端口。
+  const preferred =
+    Number.isInteger(preferredPort) &&
+    preferredPort > 0 &&
+    preferredPort <= 65535 &&
+    preferredPort !== Number(upstream.port || 80)
+      ? preferredPort
+      : 0;
   let server: Server;
   let port: number;
   try {
@@ -110,7 +103,12 @@ function proxyAllowedRequest(request: http.IncomingMessage, response: ServerResp
     return;
   }
 
-  const parsedUrl = new URL(request.url ?? "/", "http://lan-gateway.local");
+  const parsedUrl = safeRequestUrl(request);
+  if (!parsedUrl) {
+    response.writeHead(403, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+    response.end("Only same-origin LAN requests are allowed");
+    return;
+  }
   if (!isAllowedRoute(request.method ?? "GET", parsedUrl.pathname)) {
     response.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
     response.end("Not found");
@@ -121,12 +119,16 @@ function proxyAllowedRequest(request: http.IncomingMessage, response: ServerResp
   headers.host = upstream.host;
   // Same-origin requests need no CORS Origin header; remove it before forwarding to the loopback API.
   delete headers.origin;
+  delete headers.forwarded;
+  delete headers["x-real-ip"];
+  for (const name of Object.keys(headers)) if (name.startsWith("x-forwarded-")) delete headers[name];
+  headers["x-forwarded-for"] = request.socket.remoteAddress;
   const upstreamRequest = http.request(
     {
       hostname: upstream.hostname,
       port: upstream.port,
       method: request.method,
-      path: request.url,
+      path: parsedUrl.pathname + parsedUrl.search,
       headers
     },
     (upstreamResponse) => {
@@ -142,7 +144,7 @@ function proxyAllowedRequest(request: http.IncomingMessage, response: ServerResp
       return;
     }
     response.writeHead(502, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
-    response.end("LAN transfer service is temporarily unavailable");
+    response.end("Toolbox service is temporarily unavailable");
   });
   request.on("aborted", () => upstreamRequest.destroy());
   response.on("close", () => {
@@ -152,17 +154,57 @@ function proxyAllowedRequest(request: http.IncomingMessage, response: ServerResp
 }
 
 function isAllowedRoute(method: string, pathname: string) {
+  if (!["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"].includes(method)) return false;
   if (method === "GET" || method === "HEAD") {
     if (
-      LAN_TOOL_PAGES.has(pathname.replace(/\/+$/, "")) ||
+      LAN_TOOL_PAGES.has(pathname.replace(/\/+$/, "") || "/") ||
       pathname.startsWith("/assets/") ||
       PUBLIC_ASSETS.has(pathname)
     ) {
       return true;
     }
-    if (pathname === "/api/v1/health") return true;
+    if (["/api/v1/health", "/api/v1/tools", "/api/v1/lan-access", "/api/v1/tasks"].includes(pathname)) return true;
+    if (/^\/api\/v1\/tasks\/[A-Za-z0-9_-]+(?:\/events)?$/.test(pathname)) return true;
+    if (/^\/api\/v1\/files\/[^/]+$/.test(pathname)) return true;
   }
+  if (method === "POST" && pathname === "/api/v1/lan-access/playback") return true;
   return LAN_TOOL_API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+/** 只接收本机/私网 IP Host；先验证浏览器来源再剥离 Origin，避免跨站写入及 DNS 重绑定。 */
+function safeRequestUrl(request: http.IncomingMessage): URL | undefined {
+  try {
+    const host = request.headers.host;
+    if (!host) return;
+    const origin = new URL(`http://${host}`);
+    if (
+      origin.username ||
+      origin.password ||
+      origin.pathname !== "/" ||
+      origin.search ||
+      origin.hash ||
+      !isPrivateLanClientAddress(origin.hostname) ||
+      Number(origin.port || 80) !== request.socket.localPort
+    )
+      return;
+    const target = request.url || "/";
+    if (
+      !target.startsWith("/") ||
+      target.startsWith("//") ||
+      target.includes("\u0000") ||
+      /\\|%(?:2f|5c|00)/i.test(target.split("?", 1)[0]!)
+    )
+      return;
+    const url = new URL(target, origin);
+    if (url.origin !== origin.origin || url.hash) return;
+    // 代理与后端必须对路径边界达成一致，不转发二次编码路径。
+    if (/%25/i.test(url.pathname)) return;
+    if (request.headers["sec-fetch-site"] === "cross-site") return;
+    if (request.headers.origin && request.headers.origin !== origin.origin) return;
+    return url;
+  } catch {
+    return;
+  }
 }
 
 function filterHeaders(headers: IncomingHttpHeaders): IncomingHttpHeaders {

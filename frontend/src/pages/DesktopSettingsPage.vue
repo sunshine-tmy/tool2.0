@@ -12,11 +12,21 @@
         kicker="DESKTOP · STORAGE"
       />
 
+      <section class="workspace-panel">
+        <div class="panel-heading">
+          <div>
+            <h3>启动与环境诊断</h3>
+            <p class="panel-description">查看服务、运行环境和能力状态；深度检查与恢复须手动确认。</p>
+          </div>
+          <n-button secondary @click="$router.push('/settings/diagnostics')">打开诊断</n-button>
+        </div>
+      </section>
       <n-alert v-if="!desktop" type="info" :bordered="false">
         此页面仅在桌面应用中提供。Web 开发模式不会读取或修改本机桌面设置。
       </n-alert>
 
       <template v-else>
+        <section class="workspace-panel"><DesktopLanAccess mode="panel" /></section>
         <input
           ref="offlineArchiveInput"
           class="offline-archive-input"
@@ -145,7 +155,7 @@
           >
         </section>
 
-        <section class="workspace-panel capability-panel">
+        <section id="capability-management" class="workspace-panel capability-panel">
           <div class="panel-heading">
             <div>
               <h3>能力管理</h3>
@@ -170,6 +180,7 @@
                 <div class="component-list">
                   <DesktopComponentCard
                     v-for="component in group.items"
+                    :id="`capability-${component.id}`"
                     :key="component.id"
                     :component="component"
                     :job="componentJobs[component.id]"
@@ -244,7 +255,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import {
   NAlert,
   NButton,
@@ -267,6 +279,7 @@ import {
 } from "@toolbox/shared";
 import ToolLayout from "../layouts/ToolLayout.vue";
 import ToolPageHeader from "../components/tool/ToolPageHeader.vue";
+import DesktopLanAccess from "../components/DesktopLanAccess.vue";
 import DesktopComponentCard from "./DesktopComponentCard.vue";
 import { useConfirmDialog } from "../composables/useConfirmDialog";
 import { formatApiError, httpClient, isApiErrorCancelled } from "../services/http";
@@ -292,6 +305,7 @@ type DesktopSettingsState = {
 };
 
 const desktop = computed(() => window.toolboxDesktop);
+const route = useRoute();
 const message = useMessage();
 const confirm = useConfirmDialog();
 const settings = ref<DesktopSettingsState>();
@@ -379,6 +393,11 @@ async function loadComponents() {
   componentsError.value = "";
   try {
     components.value = await componentApi.list();
+    const componentId = route.query.component;
+    if (typeof componentId === "string" && /^[a-z0-9-]{1,80}$/.test(componentId)) {
+      await nextTick();
+      document.getElementById(`capability-${componentId}`)?.scrollIntoView({ block: "center" });
+    }
     // 组件卡片在页面刷新后通过服务端公开的 activeJobId 恢复进度订阅。
     await Promise.all(
       components.value
@@ -725,6 +744,26 @@ function formatBytes(value: number) {
 </script>
 
 <style scoped>
+.desktop-settings-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+/* 隐藏的上传控件和条件提示不能影响卡片间距，也不叠加全局相邻卡片的 margin。 */
+.desktop-settings-main > .workspace-panel,
+.desktop-settings-main > .settings-alert {
+  margin: 0;
+}
+
+.desktop-settings-main > :deep(.tool-page-header) {
+  margin-bottom: var(--space-1, 4px);
+}
+
+.desktop-settings-main > .workspace-panel > .panel-heading:only-child {
+  margin-bottom: 0;
+}
+
 .offline-archive-input {
   display: none;
 }

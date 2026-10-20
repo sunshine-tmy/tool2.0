@@ -6,6 +6,7 @@ import { ApiFailureSchema, apiSuccessSchema, type ApiResponse } from "@toolbox/s
 import type { Static, TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import { apiBaseUrl } from "../config/runtime";
+import { diagnosticConnection } from "./diagnostic-connection";
 
 type BackendFailure = Extract<ApiResponse<unknown>, { success: false }>;
 
@@ -71,6 +72,7 @@ export async function withApiError<T>(operation: () => Promise<T>, fallbackMessa
 }
 
 export function normalizeApiError(error: unknown, fallbackMessage = "请求失败") {
+  if (isOfflineError(error) && !isRequestCancelled(error)) diagnosticConnection.value = "offline";
   if (error instanceof ApiRequestError) {
     return error;
   }
@@ -206,7 +208,10 @@ function unwrapResponse<T extends TSchema>(data: unknown, schema: T, status?: nu
 export function describeApiError(error: unknown, fallbackMessage = "请求失败"): ApiErrorPresentation {
   const normalized = normalizeApiError(error, fallbackMessage);
   const category = classifyApiError(normalized);
-  const suggestion = apiErrorSuggestion(category, normalized.status, normalized.retryable);
+  const suggestion =
+    normalized.code === "LOCAL_DIAGNOSTICS_ONLY"
+      ? "请在运行工具箱的电脑上使用 localhost 或 127.0.0.1 地址打开诊断；此限制不需要重新登录"
+      : apiErrorSuggestion(category, normalized.status, normalized.retryable);
   const metadata = [
     `错误码 ${normalized.code}`,
     normalized.requestId ? `请求 ID ${normalized.requestId}` : undefined

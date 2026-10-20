@@ -4,11 +4,16 @@ param(
   [switch]$NoBrowser,
   [switch]$CheckOnly,
   [switch]$ForceRestart,
+  [switch]$DiagnoseOnly,
   [string]$LanHost = ""
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+if ($DiagnoseOnly) {
+  & node (Join-Path $PSScriptRoot "doctor.mjs")
+  exit $LASTEXITCODE
+}
 
 function Write-Step {
   param([string]$Message)
@@ -293,7 +298,12 @@ function Test-HttpOk {
   param([string]$Url)
   try {
     $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3
-    return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+    if ($response.StatusCode -ne 200) { return $false }
+    if ($Url -match '/api/v1/health$') {
+      $body = $response.Content | ConvertFrom-Json
+      return $body.success -eq $true -and $body.data.name -eq 'toolbox-api'
+    }
+    return $true
   } catch {
     return $false
   }
@@ -377,9 +387,13 @@ $FrontendBindHost = if (
 ) { "0.0.0.0" } else { "127.0.0.1" }
 $env:VITE_DEV_HOST = $FrontendBindHost
 $FrontendDisplayHost = if ($FrontendBindHost -eq "0.0.0.0") { $LanHost } else { "127.0.0.1" }
-$FrontendUrl = "http://${FrontendDisplayHost}:5173"
-$FrontendHealthUrl = "http://127.0.0.1:5173"
-$BackendUrl = "http://127.0.0.1:3100/api/v1/health"
+$diagnosticTargets = (& node (Join-Path $PSScriptRoot "doctor.mjs") --targets) | ConvertFrom-Json
+if (-not $diagnosticTargets.backendPort -or -not $diagnosticTargets.frontendPort) { throw "Cannot resolve effective startup configuration. Run pnpm doctor first." }
+$BackendPort = [int]$diagnosticTargets.backendPort
+$FrontendPort = [int]$diagnosticTargets.frontendPort
+$FrontendUrl = "http://${FrontendDisplayHost}:$FrontendPort"
+$FrontendHealthUrl = $diagnosticTargets.frontend
+$BackendUrl = $diagnosticTargets.backendHealth
 $ImageAiHealthUrl = "http://127.0.0.1:3210/health"
 $ChatterboxHealthUrl = "http://127.0.0.1:3220/health"
 $ChatterboxPython = Join-Path $Root ".venv-chatterbox\Scripts\python.exe"
@@ -388,8 +402,8 @@ $ChatterboxSetup = Join-Path $Root "scripts\setup-chatterbox.ps1"
 
 Write-Step "Checking for an existing Ecommerce Toolbox instance"
 $processes = Get-ProcessSnapshot
-$backendListeners = @(Get-PortListenerProcessIds 3100)
-$frontendListeners = @(Get-PortListenerProcessIds 5173)
+$backendListeners = @(Get-PortListenerProcessIds $BackendPort)
+$frontendListeners = @(Get-PortListenerProcessIds $FrontendPort)
 $existingInstanceIsOwned =
   $backendListeners.Count -gt 0 -and
   $frontendListeners.Count -gt 0 -and
@@ -475,10 +489,10 @@ if ($EdgeTtsReady) {
 }
 
 Write-Step "Preparing backend port"
-Clear-PortForStartup 3100 "backend"
+Clear-PortForStartup $BackendPort "backend"
 
 Write-Step "Preparing frontend port"
-Clear-PortForStartup 5173 "frontend"
+Clear-PortForStartup $FrontendPort "frontend"
 
 $ImageAiWorker = $null
 $ImageAiPython = Join-Path $Root ".venv-image-ai\Scripts\python.exe"
@@ -571,14 +585,17 @@ if ((Test-PortBusy 3220) -and (Test-HttpOk $ChatterboxHealthUrl)) {
 }
 
 if (-not $NoBrowser) {
-  Start-Job -ArgumentList $FrontendUrl, $BackendUrl -ScriptBlock {
-    param([string]$FrontendUrl, [string]$BackendUrl)
+  Start-Job -ArgumentList $FrontendUrl, $BackendUrl, $diagnosticTargets.backendReady -ScriptBlock {
+    param([string]$FrontendUrl, [string]$BackendUrl, [string]$BackendReadyUrl)
 
     function Test-HttpOk {
       param([string]$Url)
       try {
         $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 3
-        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+        if ($response.StatusCode -ne 200) { return $false }
+        if ($Url -match '/api/v1/health$') { $body = $response.Content | ConvertFrom-Json; return $body.success -eq $true -and $body.data.name -eq 'toolbox-api' }
+        if ($Url -match '/health/ready$') { $body = $response.Content | ConvertFrom-Json; return $body.success -eq $true -and $body.data.status -eq 'ready' }
+        return $response.Content -match 'id="app"|/@vite/client'
       } catch {
         return $false
       }
@@ -586,7 +603,7 @@ if (-not $NoBrowser) {
 
     $deadline = (Get-Date).AddSeconds(45)
     while ((Get-Date) -lt $deadline) {
-      if ((Test-HttpOk $FrontendUrl) -and (Test-HttpOk $BackendUrl)) {
+      if ((Test-HttpOk $FrontendUrl) -and (Test-HttpOk $BackendUrl) -and (Test-HttpOk $BackendReadyUrl)) {
         Start-Process $FrontendUrl
         return
       }

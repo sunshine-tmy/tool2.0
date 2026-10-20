@@ -2,12 +2,14 @@
 <template>
   <section class="workspace-panel result-panel">
     <div class="result-head">
-      <div>
-        <n-tag :bordered="false" type="success">已存档</n-tag>
-        <h3>获取结果</h3>
+      <div class="result-summary">
+        <div class="result-title">
+          <h3>获取结果</h3>
+          <n-tag :bordered="false" type="success">已存档</n-tag>
+        </div>
         <p>内容和媒体已保存到本机，可随时预览或下载。</p>
       </div>
-      <div class="result-actions">
+      <div class="result-actions" role="group" aria-label="归档结果操作">
         <n-button secondary @click="props.copyDescription">
           <template #icon><Copy :size="15" /></template>复制正文
         </n-button>
@@ -80,31 +82,50 @@ const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem] }>();
 }
 .result-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
   gap: 10px;
   align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid #e6ebf2;
 }
 .result-head {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
   margin-bottom: 18px;
 }
+.result-summary {
+  min-width: 0;
+}
+.result-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
 .result-head h3 {
-  margin: 8px 0 4px;
+  margin: 0;
   font-size: 22px;
+  line-height: 1.4;
 }
 .result-head p {
-  margin: 0;
+  margin: 6px 0 0;
   color: #758096;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
 }
 .result-detail-layout {
   display: grid;
-  grid-template-columns: minmax(420px, 560px) minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   align-items: start;
   gap: 32px;
 }
 .result-meta {
+  min-width: 0;
   margin-top: 0;
   padding: 20px;
   border: 1px solid #e6ebf2;
@@ -136,14 +157,6 @@ const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem] }>();
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-@media (max-width: 900px) {
-  .result-head {
-    flex-direction: column;
-  }
-  .result-actions {
-    flex-wrap: wrap;
-  }
 }
 @media (max-width: 1100px) {
   .result-detail-layout {

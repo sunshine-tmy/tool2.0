@@ -30,6 +30,15 @@ describe("startBackend", () => {
       const response = await fetch(`${backend.origin}/health/ready`);
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ success: true, data: { status: "ready" } });
+      expect(backend.shutdown.prepare(false)).toMatchObject({ prepared: true });
+      const late = await fetch(`${backend.origin}/api/v1/diagnostics/playback`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientId: "test", active: true })
+      });
+      expect(late.status).toBe(503);
+      expect(await late.json()).toMatchObject({ error: { code: "APP_SHUTTING_DOWN" } });
+      expect((await fetch(`${backend.origin}/health/ready`)).status).toBe(200);
     } finally {
       await backend.close();
     }

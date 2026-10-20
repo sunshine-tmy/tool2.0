@@ -666,6 +666,69 @@ describe("Chatterbox voice cloning module", () => {
     }
   }, 20000);
 
+  it("keeps active and waiting batch text and reference audio after shutdown and does not auto-resume", async () => {
+    const app = await createApp();
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    beforeGenerate = () => blocked;
+    const ids: string[] = [];
+    try {
+      for (const text of ["Interrupted active item.", "Interrupted waiting item."]) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/edge-tts/chatterbox/batches",
+          ...multipartRequest(createPcmWav(6), {
+            segments: JSON.stringify([{ text, referenceTranslation: "中文对照" }]),
+            language: "en",
+            authorization: "self",
+            consentConfirmed: "true",
+            exaggeration: "0.5",
+            cfgWeight: "0.5",
+            temperature: "0.8",
+            seed: "0",
+            includeSubtitles: "false"
+          })
+        });
+        expect(response.statusCode).toBe(202);
+        ids.push(response.json().data.id);
+      }
+      await vi.waitFor(() => expect(generateRequests).toHaveLength(1), { timeout: 5000 });
+      await app.close();
+      release();
+      beforeGenerate = undefined;
+      const restarted = await createApp();
+      try {
+        for (const id of ids) {
+          const response = await restarted.inject({
+            method: "GET",
+            url: `/api/v1/tools/edge-tts/chatterbox/batches/${id}`
+          });
+          expect(response.json().data).toMatchObject({
+            referenceAvailable: true,
+            items: [
+              expect.objectContaining({
+                status: "failed",
+                referenceTranslation: "中文对照",
+                error: expect.stringContaining("应用退出")
+              })
+            ]
+          });
+          expect(
+            (await fsp.stat(path.join(testRoot, "storage", "chatterbox", "batches", id, "reference.wav"))).size
+          ).toBeGreaterThan(0);
+        }
+        expect(generateRequests).toHaveLength(1);
+      } finally {
+        await restarted.close();
+      }
+    } finally {
+      release();
+      await app.close();
+    }
+  }, 20000);
+
   it.each(["ms", "pt-BR"])("saves, previews, reuses and deletes a reference voice in %s", async (language) => {
     const app = await createApp();
     const saveRequest = multipartRequest(createPcmWav(6), {

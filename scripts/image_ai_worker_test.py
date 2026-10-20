@@ -146,5 +146,24 @@ class LamaModelLoadingTests(unittest.TestCase):
                 self.assertEqual(output.size, (10, 12))
 
 
+class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_light_does_not_load_weights(self):
+        with patch.object(worker.manager, "get_lama") as load:
+            result = await worker.diagnostics_light()
+        self.assertEqual(result["protocolVersion"], 1)
+        load.assert_not_called()
+
+    async def test_deep_preserves_an_already_loaded_model(self):
+        with patch.object(worker.manager, "gpu_model", object()), patch.object(worker.manager, "get_lama") as load:
+            result = await worker.diagnostics_deep()
+        self.assertTrue(result["available"])
+        load.assert_not_called()
+
+    async def test_deep_does_not_interrupt_busy_worker(self):
+        async with worker.manager.lock:
+            result = await worker.diagnostics_deep()
+        self.assertEqual(result["code"], "WORKER_BUSY")
+
+
 if __name__ == "__main__":
     unittest.main()

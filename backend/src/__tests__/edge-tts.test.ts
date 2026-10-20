@@ -4,7 +4,7 @@
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 
 let testRoot = "";
@@ -31,6 +31,50 @@ afterEach(async () => {
 });
 
 describe("edge tts module", () => {
+  it("retains running and queued tasks as interrupted after close, without automatically regenerating", async () => {
+    const app = await createApp();
+    const ids: string[] = [];
+    try {
+      for (let n = 0; n < 2; n++) {
+        const created = await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/edge-tts/tasks",
+          payload: {
+            text: "slow generation",
+            language: "en-US",
+            voice: "en-US-JennyNeural",
+            rate: 0,
+            volume: 0,
+            pitch: 0,
+            includeSubtitles: false
+          }
+        });
+        expect(created.statusCode).toBe(202);
+        ids.push(created.json().data.id);
+      }
+      await vi.waitFor(async () => {
+        const response = await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${ids[0]}` });
+        expect(response.json().data.status).toBe("processing");
+      });
+    } finally {
+      await app.close();
+    }
+    const restarted = await createApp();
+    try {
+      for (const id of ids) {
+        const response = await restarted.inject({ method: "GET", url: `/api/v1/tools/edge-tts/tasks/${id}` });
+        expect(response.json().data).toMatchObject({
+          status: "failed",
+          text: "slow generation",
+          error: expect.stringContaining("应用退出")
+        });
+      }
+      const health = await restarted.inject({ method: "GET", url: "/api/v1/tools/edge-tts/health" });
+      expect(health.json().data.queue).toMatchObject({ active: 0, queued: 0 });
+    } finally {
+      await restarted.close();
+    }
+  });
   it("reports health and filters the live voice list", async () => {
     const app = await createApp();
     const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/health" });

@@ -12,7 +12,7 @@
       <video
         v-else
         ref="videoElement"
-        :key="media.id"
+        :key="thumbnailKey(media)"
         :src="mediaUrl(media.previewUrl)"
         crossorigin="anonymous"
         controls
@@ -55,7 +55,7 @@
       <div class="media-thumbs">
         <button
           v-for="(entry, index) in item.media"
-          :key="entry.id"
+          :key="thumbnailKey(entry)"
           type="button"
           :aria-label="`预览媒体 ${index + 1}`"
           :class="{ active: selected === index }"
@@ -70,12 +70,19 @@
           <video
             v-else
             :src="mediaUrl(entry.previewUrl)"
+            :poster="videoThumbnails.get(thumbnailKey(entry))"
+            crossorigin="anonymous"
             muted
             playsinline
             :preload="selected === index ? 'metadata' : 'none'"
             @loadedmetadata="showFirstVideoFrame"
+            @loadeddata="rememberVideoThumbnail(entry, $event)"
+            @seeked="rememberVideoThumbnail(entry, $event)"
           />
-          <span v-if="isVideoMedia(entry) && selected !== index" class="video-thumb-placeholder">
+          <span
+            v-if="isVideoMedia(entry) && selected !== index && !videoThumbnails.has(thumbnailKey(entry))"
+            class="video-thumb-placeholder"
+          >
             <Play :size="18" aria-hidden="true" />视频
           </span>
           <span
@@ -136,6 +143,8 @@ const videoPaused = ref(true);
 const videoFrameReady = ref(false);
 const savingFrame = ref(false);
 const frameMessage = ref("");
+// 只缓存已经解码的微缩画面；切换为 preload=none 后也能显示，不预加载整组视频。
+const videoThumbnails = ref(new Map<string, string | undefined>());
 const canCaptureFrame = computed(
   () =>
     isVideoMedia(media.value) &&
@@ -158,7 +167,7 @@ watch(
 );
 
 watch(
-  () => media.value?.id,
+  () => (media.value ? thumbnailKey(media.value) : undefined),
   () => {
     videoPaused.value = true;
     videoFrameReady.value = false;
@@ -166,8 +175,54 @@ watch(
   }
 );
 
+watch(
+  () => props.item.media.map(thumbnailKey),
+  (keys) => {
+    const current = new Set(keys);
+    for (const key of videoThumbnails.value.keys()) {
+      if (!current.has(key)) videoThumbnails.value.delete(key);
+    }
+  }
+);
+
 function mediaUrl(url: string) {
   return resolveBackendUrl(url);
+}
+
+function thumbnailKey(entry: ContentArchiveItem["media"][number]) {
+  return JSON.stringify([props.item.id, entry.id, entry.checksum, entry.previewUrl]);
+}
+
+function rememberVideoThumbnail(entry: ContentArchiveItem["media"][number], event: Event) {
+  const video = event.currentTarget as HTMLVideoElement;
+  const key = thumbnailKey(entry);
+  if (
+    video.readyState < 2 ||
+    !video.closest(".media-thumbs") ||
+    video.seeking ||
+    !video.videoWidth ||
+    !video.videoHeight ||
+    video.getAttribute("src") !== mediaUrl(entry.previewUrl) ||
+    !props.item.media.some((current) => thumbnailKey(current) === key)
+  )
+    return;
+
+  let poster = videoThumbnails.value.get(key);
+  try {
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 160 / Math.max(video.videoWidth, video.videoHeight));
+    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+    const context = canvas.getContext("2d");
+    if (context) {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const image = canvas.toDataURL("image/jpeg", 0.75);
+      if (image.startsWith("data:image/jpeg")) poster = image;
+    }
+  } catch {
+    // 无法导出缩略图时仍保留视频已解码的画面，不覆盖占位，也不影响原有 PNG 截帧功能。
+  }
+  videoThumbnails.value.set(key, poster);
 }
 
 function showFirstVideoFrame(event: Event) {

@@ -4,6 +4,8 @@
 // @vitest-environment happy-dom
 
 import { defineComponent } from "vue";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import type { ArchivePlatformSelection, ContentArchiveTask } from "@toolbox/shared";
@@ -149,6 +151,10 @@ describe("XHS archive task panel", () => {
     const wrapper = mountPanel({ task: task({ status: "pending", stage: "installing" }) });
     const cancelButton = wrapper.findAll("button").find((button) => button.text().includes("取消获取"));
     expect(cancelButton).toBeDefined();
+    const headerActions = wrapper.get('.task-head [role="group"][aria-label="获取任务进度与操作"]');
+    expect(headerActions.get("button").text()).toContain("取消获取");
+    expect(headerActions.get(".task-percentage").text()).toBe("60%");
+    expect(wrapper.find(".task-actions").exists()).toBe(false);
     await cancelButton?.trigger("click");
     expect(wrapper.emitted("cancel")).toHaveLength(1);
 
@@ -163,6 +169,20 @@ describe("XHS archive task panel", () => {
     await wrapper.setProps({ task: task({ status: "failed", stage: "failed" }) });
     expect(wrapper.text()).not.toContain("暂不可取消");
     expect(wrapper.findAll("button").some((button) => button.text().includes("取消获取"))).toBe(false);
+    await wrapper.setProps({ task: task({ status: "completed", stage: "completed", progress: 100 }) });
+    expect(wrapper.get(".task-head-actions").find("button").exists()).toBe(false);
+    expect(wrapper.get(".task-head-actions .task-percentage").text()).toBe("100%");
+    wrapper.unmount();
+  });
+
+  it("keeps the cancel action beside progress and wraps the header on narrow cards", () => {
+    const source = readFileSync(resolve("src/modules/xhs-archive/ArchiveTaskPanel.vue"), "utf8");
+    expect(source.match(/\.task-head\s*\{([^}]+)\}/)?.[1]).toContain("flex-wrap: wrap;");
+    expect(source.match(/\.task-head-actions\s*\{([^}]+)\}/)?.[1]).toContain("margin-left: auto;");
+    expect(source).toMatch(
+      /@media \(max-width: 640px\)[\s\S]*\.task-head-actions\s*\{\s*width: 100%;\s*justify-content: space-between;/
+    );
+    expect(source).not.toContain('class="task-actions"');
   });
 
   it("routes authentication failures to the login action", async () => {

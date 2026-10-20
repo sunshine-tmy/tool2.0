@@ -56,14 +56,6 @@ watch(
   ],
   persist
 );
-watch(
-  () => player.phase,
-  (phase) => {
-    void window.toolboxDesktop
-      ?.setAudioPlaybackActive?.(["playing", "loading", "waiting"].includes(phase))
-      .catch(() => undefined);
-  }
-);
 let saveTimer: ReturnType<typeof setInterval> | undefined,
   disposed = false;
 onMounted(async () => {

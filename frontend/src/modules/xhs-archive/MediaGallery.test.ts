@@ -143,6 +143,80 @@ describe("XHS video frame capture", () => {
     expect(wrapper.find(".media-stage video").exists()).toBe(true);
     wrapper.unmount();
   });
+  it.each(["xiaohongshu", "douyin"] as const)(
+    "%s 切到截帧后保留视频缩略图，不再用占位遮住已加载画面",
+    async (platform) => {
+      const drawImage = vi.fn();
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+        drawImage
+      } as unknown as CanvasRenderingContext2D);
+      const toDataURL = vi
+        .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+        .mockReturnValue("data:image/jpeg;base64,dGVzdA==");
+      const { wrapper } = mountGallery({ ...archiveWithFrame, platform });
+      const thumb = wrapper.get(".media-thumbs video");
+      setVideoState(thumb.element as HTMLVideoElement, { readyState: 4, videoWidth: 1280, videoHeight: 720 });
+      await thumb.trigger("loadeddata");
+      expect(toDataURL).toHaveBeenCalledWith("image/jpeg", 0.75);
+      expect(drawImage.mock.calls[0]?.slice(1)).toEqual([0, 0, 160, 90]);
+
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      expect(wrapper.find(".captured-frame-badge").exists()).toBe(true);
+      expect(wrapper.get(".media-thumbs video").attributes("poster")).toBe("data:image/jpeg;base64,dGVzdA==");
+      expect(wrapper.get(".media-thumbs video").attributes("preload")).toBe("none");
+      expect(wrapper.find(".video-thumb-placeholder").exists()).toBe(false);
+      expect(wrapper.findAll(".captured-frame-thumb-badge")).toHaveLength(1);
+
+      // 新截帧回写归档时，同一视频版本的预览仍保留。
+      await wrapper.setProps({ item: { ...archiveWithFrame, platform, updatedAt: "2026-10-20T23:00:00.000Z" } });
+      expect(wrapper.get(".media-thumbs video").attributes("poster")).toContain("data:image/jpeg");
+      await wrapper.get('[aria-label="预览媒体 1"]').trigger("click");
+      expect(wrapper.find(".media-stage video").exists()).toBe(true);
+      expect(wrapper.get(".media-stage video").attributes("autoplay")).toBeUndefined();
+      wrapper.unmount();
+    }
+  );
+
+  it("视频刷新或切换归档时清除旧缩略图，不借用另一条视频的截帧", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn()
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/jpeg;base64,dGVzdA==");
+    const { wrapper } = mountGallery(archiveWithFrame);
+    const thumb = wrapper.get(".media-thumbs video");
+    setVideoState(thumb.element as HTMLVideoElement, { readyState: 4, videoWidth: 640, videoHeight: 360 });
+    await thumb.trigger("seeked");
+    await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+    const refreshed = {
+      ...archiveWithFrame,
+      media: [{ ...archive.media[0]!, checksum: "c".repeat(64) }, archiveWithFrame.media[1]!]
+    };
+    await wrapper.setProps({ item: refreshed });
+    expect(wrapper.get(".media-thumbs video").attributes("poster")).toBeUndefined();
+    expect(wrapper.find(".video-thumb-placeholder").exists()).toBe(true);
+    expect(wrapper.get(".media-thumbs video").element).not.toBe(thumb.element);
+    await wrapper.setProps({ item: { ...refreshed, id: "other-archive" } });
+    expect(wrapper.find(".media-stage video").exists()).toBe(true);
+    expect(wrapper.get(".media-thumbs video").attributes("poster")).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("无法导出缩略图时仍显示已解码视频，未加载的视频保留占位且不提前加载", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
+      throw new Error("canvas unavailable");
+    });
+    const otherVideo = { ...archive.media[0]!, id: "live-456", kind: "live-photo" as const };
+    const { wrapper } = mountGallery({ ...archiveWithFrame, media: [...archiveWithFrame.media, otherVideo] });
+    const thumb = wrapper.get(".media-thumbs video");
+    setVideoState(thumb.element as HTMLVideoElement, { readyState: 2, videoWidth: 640, videoHeight: 360 });
+    await thumb.trigger("loadeddata");
+    await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+    expect(wrapper.get('[aria-label="预览媒体 1"]').find(".video-thumb-placeholder").exists()).toBe(false);
+    expect(wrapper.get('[aria-label="预览媒体 3"]').find(".video-thumb-placeholder").exists()).toBe(true);
+    expect(wrapper.get('[aria-label="预览媒体 3"] video').attributes("preload")).toBe("none");
+    expect(contentArchiveApi.addFrame).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
   it("marks captured frames in the top-right corner of the preview and thumbnail", async () => {
     const { wrapper } = mountGallery(archiveWithFrame);
 

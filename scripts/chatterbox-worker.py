@@ -8,11 +8,13 @@ import argparse
 import asyncio
 import hmac
 import importlib.metadata
+import importlib.util
 import json
 import logging
 import os
 import random
 import re
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -190,7 +192,7 @@ class ModelManager:
         self.device: str | None = None
         self.lock = asyncio.Lock()
 
-    def load(self, requested_device: str | None = None) -> Any:
+    def load(self, requested_device: str | None = None, local_only: bool = False) -> Any:
         device = selected_device(requested_device)
         if self.model is not None and self.device == device:
             return self.model
@@ -198,7 +200,7 @@ class ModelManager:
             # 设备切换必须先释放旧实例，防止切到 GPU 时 CPU/GPU 同时保留整套权重。
             self.unload()
         try:
-            self.model = load_multilingual_model(device)
+            self.model = load_multilingual_model(device, local_only=True) if local_only else load_multilingual_model(device)
             self.device = device
             return self.model
         except Exception as exc:
@@ -308,24 +310,29 @@ def load_safetensors_incrementally(checkpoint: Path, device: str) -> dict[str, A
     return state
 
 
-def load_multilingual_model(device: str) -> Any:
+def load_multilingual_model(device: str, *, local_only: bool = False) -> Any:
     """加载 V3 模型，并在 CUDA 上避免主内存或显存中同时保留两份权重。"""
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
     if device != "cuda":
-        if DESKTOP_MANAGED:
+        if DESKTOP_MANAGED or local_only:
+            checkpoint_root = MODELS_ROOT
+            if local_only and not DESKTOP_MANAGED:
+                from huggingface_hub import snapshot_download
+
+                checkpoint_root = Path(snapshot_download(repo_id="ResembleAI/chatterbox", revision=CHATTERBOX_MODEL_REVISION, local_files_only=True))
             required = [
                 "ve.pt",
                 "t3_mtl23ls_v3.safetensors",
                 "s3gen.pt",
                 "grapheme_mtl_merged_expanded_v1.json",
             ]
-            missing = [name for name in required if not (MODELS_ROOT / name).is_file()]
+            missing = [name for name in required if not (checkpoint_root / name).is_file()]
             if missing:
                 raise FileNotFoundError("能力包模型文件缺失：" + ", ".join(missing))
             # Desktop models are installed by the signed capability package. Loading
             # from_local prevents a hidden Hugging Face download on first generation.
-            return ChatterboxMultilingualTTS.from_local(MODELS_ROOT, device=device, t3_model="v3")
+            return ChatterboxMultilingualTTS.from_local(checkpoint_root, device=device, t3_model="v3")
         # Web/development keeps the existing upstream download behavior.
         return ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model="v3")
 
@@ -362,6 +369,7 @@ def load_multilingual_model(device: str) -> Any:
                     "Cangjie5_TC.json",
                 ],
                 token=os.getenv("HF_TOKEN"),
+                local_files_only=local_only,
             )
         )
 
@@ -449,6 +457,8 @@ app = FastAPI(title="Chatterbox Multilingual V3 Worker", docs_url=None, redoc_ur
 
 @app.middleware("http")
 async def require_worker_token(request: Request, call_next: Any) -> Any:
+    if request.url.path.startswith("/diagnostics/") and request.headers.get("x-toolbox-diagnostic") != "1":
+        return JSONResponse(status_code=403, content={"code": "DIAGNOSTIC_HEADER_REQUIRED"})
     if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
         return JSONResponse(
             status_code=401,
@@ -525,6 +535,44 @@ async def generate(payload: GenerateRequest) -> dict[str, Any]:
         result = await asyncio.to_thread(manager.generate, payload)
     schedule_idle_unload()
     return {"success": True, "data": result}
+
+
+@app.get("/diagnostics/light")
+async def diagnostics_light() -> dict[str, Any]:
+    # 不检查权重摘要、不加载模型；CUDA 状态仅在 torch 已被现有流程导入后读取。
+    torch = sys.modules.get("torch")
+    cuda = bool(torch.cuda.is_available()) if torch is not None else None
+    return {
+        "protocolVersion": 1,
+        "available": importlib.util.find_spec("chatterbox") is not None,
+        "modelLoaded": manager.model is not None,
+        "busy": manager.lock.locked(),
+        **({"cudaAvailable": cuda} if cuda is not None else {}),
+    }
+
+
+@app.post("/diagnostics/deep")
+async def diagnostics_deep() -> dict[str, Any]:
+    if manager.lock.locked():
+        return {"protocolVersion": 1, "available": False, "code": "WORKER_BUSY"}
+    cancel_idle_unload_timer()
+    async with manager.lock:
+        previous = os.environ.get("HF_HUB_OFFLINE")
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        try:
+            await asyncio.to_thread(manager.load, manager.device, True)
+            return {"protocolVersion": 1, "available": True, "modelLoaded": True}
+        except Exception as error:
+            # 不输出异常正文，其中可能包含用户路径和第三方令牌。
+            cause = error.__cause__ or error
+            code = "CUDA_OUT_OF_MEMORY" if type(cause).__name__ == "OutOfMemoryError" else "MODEL_LOAD_FAILED"
+            return {"protocolVersion": 1, "available": False, "code": code}
+        finally:
+            if previous is None:
+                os.environ.pop("HF_HUB_OFFLINE", None)
+            else:
+                os.environ["HF_HUB_OFFLINE"] = previous
+            schedule_idle_unload()
 
 
 async def unload_after_idle() -> None:

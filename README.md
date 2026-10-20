@@ -1,5 +1,7 @@
 # 电商工具箱
 
+启动异常时可从顶部状态或设置进入“启动与环境诊断”；开发环境运行 `pnpm run doctor`（只读，不会安装、清端口或修改配置）。详细说明见 [启动与环境诊断](docs/startup-diagnostics.md)。
+
 一个本地优先、免账号登录的电商素材处理工作台，提供 Windows 桌面安装版、Apple Silicon macOS 内部测试包和 Web/开发版。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
 
 > [!WARNING]

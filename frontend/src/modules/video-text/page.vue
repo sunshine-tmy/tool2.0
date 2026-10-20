@@ -24,6 +24,7 @@
         :on-video-change="onVideoChange"
         :submit="submit"
       />
+      <DiagnosticErrorLink :error="currentTask?.error" module="video-text" />
       <VideoHistoryPanel
         v-model:keyword="historyKeyword"
         :history-loading="historyLoading"
@@ -61,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import DiagnosticErrorLink from "../../components/DiagnosticErrorLink.vue";
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useMessage } from "naive-ui";

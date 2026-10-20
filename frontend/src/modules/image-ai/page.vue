@@ -15,6 +15,7 @@
               <small>{{ healthLabel }}</small>
             </div>
             <n-button size="small" tertiary :loading="loadingHealth" @click="loadHealth">刷新</n-button>
+            <DiagnosticErrorLink v-if="health && !health.available" error="AI 图片服务不可用" module="image-ai" />
           </div>
         </template>
       </ToolPageHeader>
@@ -86,6 +87,7 @@
 </template>
 
 <script setup lang="ts">
+import DiagnosticErrorLink from "../../components/DiagnosticErrorLink.vue";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton, NTabPane, NTabs, useMessage } from "naive-ui";
 import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";

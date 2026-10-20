@@ -11,6 +11,7 @@
       <div class="topbar-leading">
         <n-button
           class="sidebar-toggle"
+          :style="shellIconButtonStyle"
           circle
           quaternary
           :aria-label="sidebarToggleLabel"
@@ -48,22 +49,49 @@
         </n-input>
       </div>
 
-      <n-button quaternary circle aria-label="桌面设置" title="桌面设置" @click="$router.push('/settings')">
-        <Settings :size="19" />
-      </n-button>
-
-      <button
-        v-if="!isDesktop"
-        type="button"
-        class="topbar-status"
-        :class="{ 'is-offline': apiState === 'offline', 'is-loading': apiState === 'checking' }"
-        aria-label="查看本地服务状态"
-        @click="openServiceDrawer"
-      >
-        <span class="status-dot" />
-        <span>{{ apiState === "offline" ? "服务异常" : apiState === "checking" ? "检查中" : "本地服务可用" }}</span>
-        <ChevronRight :size="15" />
-      </button>
+      <div class="topbar-actions" role="group" aria-label="应用设置与服务状态">
+        <DesktopLanAccess v-if="isDesktop" />
+        <n-button
+          v-if="localDiagnosticsAvailable"
+          class="shell-icon-button"
+          :style="shellIconButtonStyle"
+          quaternary
+          circle
+          aria-label="桌面设置"
+          title="桌面设置"
+          @click="$router.push('/settings')"
+        >
+          <template #icon><Settings :size="19" /></template>
+        </n-button>
+        <n-button
+          v-if="!isDesktop"
+          class="shell-icon-button"
+          :style="shellIconButtonStyle"
+          quaternary
+          circle
+          aria-label="本地服务与管理员会话"
+          title="本地服务与管理员会话"
+          @click="openServiceDrawer"
+          ><template #icon><ServerCog :size="18" /></template
+        ></n-button>
+        <button
+          v-if="localDiagnosticsAvailable"
+          type="button"
+          class="topbar-status"
+          :class="{
+            'is-offline': diagnosticConnection === 'offline',
+            'is-loading': diagnosticConnection === 'checking',
+            'is-partial': diagnosticConnection === 'partial'
+          }"
+          :aria-label="`${serviceStatusLabel}，查看环境诊断`"
+          :title="`${serviceStatusLabel}，查看环境诊断`"
+          @click="$router.push('/settings/diagnostics')"
+        >
+          <span class="status-dot" aria-hidden="true" />
+          <span class="topbar-status-label">{{ serviceStatusLabel }}</span>
+          <ChevronRight :size="15" aria-hidden="true" />
+        </button>
+      </div>
     </header>
 
     <section class="shell">
@@ -76,7 +104,7 @@
         <div class="sidebar-head">
           <p class="sidebar-section-title">工具模块</p>
           <div class="sidebar-head-actions">
-            <span>{{ filteredTools.length }}</span>
+            <span class="sidebar-count">{{ filteredTools.length }}</span>
             <n-button
               v-if="isCompact"
               circle
@@ -125,6 +153,20 @@
       />
 
       <div class="content">
+        <n-alert
+          v-if="
+            localDiagnosticsAvailable && diagnosticConnection === 'offline' && route.path !== '/settings/diagnostics'
+          "
+          type="warning"
+          :bordered="false"
+        >
+          本地服务暂不可用，已加载的内容不会被清除。<n-button
+            text
+            type="primary"
+            @click="$router.push({ path: '/settings/diagnostics', query: { module: route.path.split('/').pop() } })"
+            >查看诊断</n-button
+          >
+        </n-alert>
         <n-alert v-if="desktopCapabilityHint" type="info" :bordered="false" class="desktop-capability-hint">
           <div class="desktop-capability-hint-content">
             <div>
@@ -137,6 +179,12 @@
               secondary
               @click="$router.push('/settings')"
               >{{ desktopCapabilityHint.actionLabel }}</n-button
+            >
+            <n-button
+              size="small"
+              secondary
+              @click="$router.push({ path: '/settings/diagnostics', query: { module: route.path.split('/').pop() } })"
+              >查看诊断</n-button
             >
           </div>
         </n-alert>
@@ -216,7 +264,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput, useMessage } from "naive-ui";
 import { ApiHealthSchema, listTools, type ComponentPackageStatus } from "@toolbox/shared";
@@ -242,13 +290,27 @@ import {
 import { formatApiError, httpClient, isApiErrorCancelled } from "../services/http";
 import { authenticateAdmin, restoreAdminSession, signOutAdmin } from "../services/admin-session";
 import { componentApi, getToolComponentReadiness } from "../services/components";
+import { diagnosticConnection, diagnosticsApi, localDiagnosticsAvailable } from "../services/diagnostics";
+
+// 局域网地址面板包含多网卡选择器；按需加载，避免将其依赖带进所有页面的首屏主包。
+const DesktopLanAccess = defineAsyncComponent(() => import("../components/DesktopLanAccess.vue"));
 
 const route = useRoute();
+const shellIconButtonStyle = { width: "var(--shell-icon-size, 36px)", height: "var(--shell-icon-size, 36px)" };
 const message = useMessage();
 const keyword = ref("");
 const searchInput = ref<{ focus: () => void }>();
 const isCompact = ref(typeof window !== "undefined" && window.matchMedia("(max-width: 900px)").matches);
 const isDesktop = computed(() => Boolean(window.toolboxDesktop));
+const serviceStatusLabel = computed(() =>
+  diagnosticConnection.value === "offline"
+    ? "基础服务异常"
+    : diagnosticConnection.value === "checking"
+      ? "正在启动"
+      : diagnosticConnection.value === "partial"
+        ? "部分能力不可用"
+        : "基础服务正常"
+);
 const desktopSidebarCollapsed = ref(false);
 const mobileDrawerOpen = ref(false);
 const serviceDrawerOpen = ref(false);
@@ -263,6 +325,7 @@ let sessionRestoreAttempted = false;
 const componentStatuses = ref<ComponentPackageStatus[]>();
 const componentStatusError = ref(false);
 const tools = listTools();
+let diagnosticTimer: ReturnType<typeof setInterval> | undefined;
 
 const iconByTool: Record<string, unknown> = {
   "image-compress": ImageDown,
@@ -376,11 +439,9 @@ function closeMobileDrawer() {
 }
 
 function openServiceDrawer() {
-  // 服务抽屉只呈现运行状态；桌面端不提供此入口。
   serviceDrawerOpen.value = true;
   void loadServiceStatus();
 }
-
 async function loadServiceStatus() {
   apiState.value = "checking";
   try {
@@ -454,6 +515,11 @@ function isEditableTarget(target: EventTarget | null) {
 }
 
 onMounted(() => {
+  if (localDiagnosticsAvailable) void diagnosticsApi.snapshot().catch(() => undefined);
+  if (localDiagnosticsAvailable)
+    diagnosticTimer = setInterval(() => {
+      void diagnosticsApi.snapshot(true).catch(() => undefined);
+    }, 15000);
   // 统一注册响应式布局和快捷键监听，卸载时成对移除，避免热更新叠加事件处理器。
   compactQuery = window.matchMedia("(max-width: 900px)");
   syncCompactLayout();
@@ -478,6 +544,7 @@ async function loadDesktopComponentStatuses() {
 }
 
 onBeforeUnmount(() => {
+  clearInterval(diagnosticTimer);
   compactQuery?.removeEventListener("change", syncCompactLayout);
   window.removeEventListener("keydown", onWindowKeydown);
   document.body.classList.remove("sidebar-drawer-active");

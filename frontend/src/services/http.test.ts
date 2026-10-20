@@ -80,7 +80,9 @@ describe("api error wrapper", () => {
   it("fetches a download blob and preserves its content disposition", async () => {
     const blob = new Blob(["image"]);
     const instance = {
-      get: vi.fn().mockResolvedValue({ data: blob, headers: { "content-disposition": 'attachment; filename="result.png"' } })
+      get: vi
+        .fn()
+        .mockResolvedValue({ data: blob, headers: { "content-disposition": 'attachment; filename="result.png"' } })
     };
     const client = createHttpClient(instance as never);
 
@@ -172,5 +174,13 @@ describe("api error wrapper", () => {
     expect(presentation).toMatchObject({ category: "cancelled", cancelled: true, retryable: false });
     expect(presentation.suggestion).toBeUndefined();
     expect(presentation.text).toBe("请求已取消；错误码 REQUEST_ABORTED");
+  });
+  it("does not mislabel a local diagnostics access restriction as an administrator login failure", () => {
+    const presentation = describeApiError(
+      new ApiRequestError("诊断仅供本机使用", { code: "LOCAL_DIAGNOSTICS_ONLY", status: 403 })
+    );
+    expect(presentation.suggestion).toContain("localhost");
+    expect(presentation.suggestion).not.toContain("请重新登录");
+    expect(presentation.suggestion).not.toContain("管理员权限");
   });
 });

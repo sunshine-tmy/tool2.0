@@ -507,6 +507,8 @@ app = FastAPI(title="Toolbox Image AI Worker", docs_url=None, redoc_url=None)
 
 @app.middleware("http")
 async def require_worker_token(request: Request, call_next: Any) -> Any:
+    if request.url.path.startswith("/diagnostics/") and request.headers.get("x-toolbox-diagnostic") != "1":
+        return JSONResponse(status_code=403, content={"code": "DIAGNOSTIC_HEADER_REQUIRED"})
     if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
         return JSONResponse(
             status_code=401,
@@ -611,6 +613,35 @@ async def health() -> dict[str, Any]:
             "models": models,
         },
     }
+
+
+@app.get("/diagnostics/light")
+async def diagnostics_light() -> dict[str, Any]:
+    torch = sys.modules.get("torch")
+    cuda = bool(torch.cuda.is_available()) if torch is not None else None
+    return {
+        "protocolVersion": 1,
+        "available": importlib.util.find_spec("torch") is not None,
+        "modelLoaded": manager.gpu_model is not None,
+        "busy": manager.lock.locked(),
+        **({"cudaAvailable": cuda} if cuda is not None else {}),
+    }
+
+
+@app.post("/diagnostics/deep")
+async def diagnostics_deep() -> dict[str, Any]:
+    if manager.lock.locked():
+        return {"protocolVersion": 1, "available": False, "code": "WORKER_BUSY"}
+    async with manager.lock:
+        try:
+            # 已加载模型不切换；否则仅加载本地 LaMa，不下载、不卸载其他模型。
+            if manager.gpu_model is None:
+                await asyncio.to_thread(manager.get_lama)
+            return {"protocolVersion": 1, "available": True, "modelLoaded": True}
+        except Exception as error:
+            cause = error.__cause__ or error
+            code = "CUDA_OUT_OF_MEMORY" if type(cause).__name__ == "OutOfMemoryError" else "MODEL_LOAD_FAILED"
+            return {"protocolVersion": 1, "available": False, "code": code}
 
 
 @app.post("/watermark/suggestions")

@@ -3,6 +3,7 @@
  */
 import http from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+import { listTools } from "@toolbox/shared";
 import { isPrivateLanIPv4 } from "../modules/lan-transfer/access";
 import { isPrivateLanClientAddress, startDesktopLanGateway } from "../runtime/desktop-lan-gateway";
 
@@ -58,7 +59,14 @@ describe("desktop LAN gateway", () => {
       "/api/v1/tools/video-text/history",
       "/api/v1/tools/edge-tts/chatterbox/health",
       "/api/v1/tools/audio-library/items",
-      "/api/v1/tools/xhs-archive/items"
+      "/api/v1/tools/xhs-archive/items",
+      "/api/v1/tools/media-archive/items",
+      "/api/v1/tools/short-video/parse",
+      "/api/v1/tools/image-compress/tasks",
+      "/api/v1/tasks/task-123/events",
+      "/api/v1/files/result.webp",
+      "/api/v1/lan-access",
+      "/api/v1/tools"
     ]) {
       const payload = await fetch(`http://127.0.0.1:${gateway.port}${apiPath}`, {
         method: apiPath.endsWith("/files") ? "POST" : "GET",
@@ -80,7 +88,7 @@ describe("desktop LAN gateway", () => {
     });
     const denied = await fetch(`http://127.0.0.1:${gateway.port}/api/v1/components`);
     const deniedSession = await fetch(`http://127.0.0.1:${gateway.port}/api/v1/session`);
-    const deniedOtherTool = await fetch(`http://127.0.0.1:${gateway.port}/api/v1/tools/short-video/parse`);
+    const deniedOtherTool = await fetch(`http://127.0.0.1:${gateway.port}/api/v1/diagnostics`);
     const hiddenPage = await fetch(`http://127.0.0.1:${gateway.port}/settings`, {
       headers: { accept: "text/html" }
     });
@@ -88,22 +96,97 @@ describe("desktop LAN gateway", () => {
     expect(deniedSession.status).toBe(404);
     expect(deniedOtherTool.status).toBe(404);
     expect(hiddenPage.status).toBe(404);
-    expect(requests).toHaveLength(7);
+    expect(requests).toHaveLength(14);
 
-    for (const pagePath of [
-      "/tools/image-ai",
-      "/tools/video-text",
-      "/tools/edge-tts",
-      "/tools/xhs-archive",
-      "/tools/audio-library"
-    ]) {
+    for (const pagePath of ["/", ...listTools().map((tool) => tool.routePath), "/tools/xhs-archive"]) {
       const modulePage = await fetch(`http://127.0.0.1:${gateway.port}${pagePath}`, {
         headers: { accept: "text/html" }
       });
       expect(modulePage.status).toBe(201);
       expect(await modulePage.json()).toEqual({ path: pagePath });
     }
-    expect(requests).toHaveLength(12);
+    expect(requests).toHaveLength(24);
+  });
+
+  it("rejects cross-site, forged Host and ambiguous paths before forwarding", async () => {
+    let count = 0;
+    upstream = http.createServer((_request, response) => {
+      count++;
+      response.end("ok");
+    });
+    gateway = await startDesktopLanGateway(await listen(upstream), 0);
+    const origin = `http://127.0.0.1:${gateway.port}`;
+    for (const headers of [
+      { origin: "https://evil.example" },
+      { "sec-fetch-site": "cross-site" },
+      { host: `evil.example:${gateway.port}` },
+      { host: "127.0.0.1:1" }
+    ])
+      expect(await rawStatus(`${origin}/api/v1/tools/audio-library/items`, headers)).toBe(403);
+    for (const path of [
+      "/api/v1/tools/media-archive%2f..%2fcomponents",
+      "/api/v1/tools/media-archive/%252e%252e/components"
+    ])
+      expect((await fetch(origin + path)).status).toBe(403);
+    for (const path of [
+      "/api/v1/components",
+      "/api/v1/diagnostics/actions",
+      "/api/v1/session",
+      "/api/v1/tools/image-ai-evil/tasks",
+      "/settings/diagnostics"
+    ])
+      expect((await fetch(origin + path, { method: "POST" })).status).toBe(404);
+    expect(count).toBe(0);
+  });
+
+  it("streams multipart uploads, Range media and task events through the actual fallback port", async () => {
+    upstream = http.createServer((request, response) => {
+      if (request.url?.endsWith("/events")) {
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.end('data: {"progress":1}\n\n');
+      } else if (request.headers.range) {
+        response.writeHead(206, { "content-range": "bytes 1-3/5", "accept-ranges": "bytes" });
+        response.end("bcd");
+      } else {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () =>
+          response.end(
+            JSON.stringify({
+              body: Buffer.concat(chunks).toString(),
+              contentType: request.headers["content-type"],
+              forwarded: request.headers["x-forwarded-for"],
+              real: request.headers["x-real-ip"],
+              origin: request.headers.origin
+            })
+          )
+        );
+      }
+    });
+    const upstreamOrigin = await listen(upstream);
+    const occupiedPort = Number(new URL(upstreamOrigin).port);
+    gateway = await startDesktopLanGateway(upstreamOrigin, occupiedPort);
+    expect(gateway.port).not.toBe(occupiedPort);
+    const origin = `http://127.0.0.1:${gateway.port}`;
+    const form = new FormData();
+    form.set("file", new Blob(["image-payload"]), "photo.png");
+    const upload = await fetch(`${origin}/api/v1/tools/image-compress/tasks`, {
+      method: "POST",
+      body: form,
+      headers: { origin, "x-forwarded-for": "8.8.8.8", "x-real-ip": "8.8.8.8" }
+    });
+    expect(await upload.json()).toMatchObject({
+      contentType: expect.stringContaining("multipart/form-data"),
+      body: expect.stringContaining("image-payload"),
+      forwarded: "127.0.0.1"
+    });
+    const media = await fetch(`${origin}/api/v1/files/result.mp4`, { headers: { range: "bytes=1-3" } });
+    expect(media.status).toBe(206);
+    expect(media.headers.get("content-range")).toBe("bytes 1-3/5");
+    expect(await media.text()).toBe("bcd");
+    const events = await fetch(`${origin}/api/v1/tasks/task-123/events`);
+    expect(events.headers.get("content-type")).toBe("text/event-stream");
+    expect(await events.text()).toContain('data: {"progress":1}');
   });
 
   it("accepts only RFC1918 IPv4 interfaces and clients (plus loopback for local diagnostics)", () => {
@@ -138,5 +221,16 @@ function listen(server: http.Server) {
 function closeServer(server: http.Server) {
   return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+function rawStatus(url: string, headers: http.OutgoingHttpHeaders) {
+  return new Promise<number | undefined>((resolve, reject) => {
+    const request = http.request(url, { method: "POST", headers }, (response) => {
+      response.resume();
+      response.on("end", () => resolve(response.statusCode));
+    });
+    request.on("error", reject);
+    request.end();
   });
 }

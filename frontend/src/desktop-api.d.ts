@@ -34,6 +34,7 @@ declare global {
 
   interface Window {
     toolboxDesktop?: {
+      saveDiagnosticReport?(content: string): Promise<void>;
       getVersion(): Promise<string>;
       setAudioPlaybackActive?(active: boolean): Promise<void>;
       getSettings(): Promise<DesktopSettingsState>;

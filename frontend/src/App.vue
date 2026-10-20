@@ -1,9 +1,10 @@
 <!-- 中文模块说明：前端应用层，负责 页面布局、共享组件、服务或工具能力 -->
 <template>
   <n-config-provider :theme-overrides="themeOverrides">
-    <n-message-provider>
+    <n-message-provider :max="diagnosticConnection === 'offline' ? 1 : undefined">
       <n-dialog-provider>
         <AudioLibraryPlayback />
+        <DiagnosticPlaybackGuard />
         <UiErrorBoundary>
           <router-view v-slot="{ Component }">
             <Suspense>
@@ -24,6 +25,8 @@ import { NConfigProvider, NDialogProvider, NMessageProvider, type GlobalThemeOve
 import UiErrorBoundary from "./components/UiErrorBoundary.vue";
 import RouteLoading from "./components/RouteLoading.vue";
 import AudioLibraryPlayback from "./modules/audio-library/AudioLibraryPlayback.vue";
+import DiagnosticPlaybackGuard from "./components/DiagnosticPlaybackGuard.vue";
+import { diagnosticConnection } from "./services/diagnostic-connection";
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {

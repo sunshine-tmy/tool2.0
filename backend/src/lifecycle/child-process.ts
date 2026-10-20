@@ -9,7 +9,8 @@ export async function terminateChildProcess(child: ChildProcess, timeoutMs = 3_0
   child.kill();
   if (await waitForExit(exited, timeoutMs)) return;
   child.kill("SIGKILL");
-  await waitForExit(exited, Math.min(timeoutMs, 1_000));
+  if (!(await waitForExit(exited, Math.min(timeoutMs, 1_000))))
+    throw Object.assign(new Error("子进程退出尚未确认"), { code: "CHILD_EXIT_UNCONFIRMED" });
 }
 
 async function waitForExit(exited: Promise<void>, timeoutMs: number) {

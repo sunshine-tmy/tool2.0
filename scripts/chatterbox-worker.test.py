@@ -186,5 +186,28 @@ class DesktopModelLoadingTests(unittest.TestCase):
         upstream.ChatterboxMultilingualTTS.from_pretrained.assert_not_called()
 
 
+class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_light_check_never_loads_model(self):
+        with patch.object(worker.manager, "load") as load:
+            result = await worker.diagnostics_light()
+        self.assertEqual(result["protocolVersion"], 1)
+        load.assert_not_called()
+
+    async def test_deep_check_is_local_only_and_preserves_selected_device(self):
+        with (
+            patch.object(worker.manager, "load", return_value=Mock()) as load,
+            patch.object(worker.manager, "device", "cpu"),
+            patch.object(worker, "schedule_idle_unload"),
+        ):
+            result = await worker.diagnostics_deep()
+        self.assertTrue(result["available"])
+        load.assert_called_once_with("cpu", True)
+
+    async def test_deep_check_refuses_busy_worker(self):
+        async with worker.manager.lock:
+            result = await worker.diagnostics_deep()
+        self.assertEqual(result["code"], "WORKER_BUSY")
+
+
 if __name__ == "__main__":
     unittest.main()

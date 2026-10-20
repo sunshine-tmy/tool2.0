@@ -29,6 +29,26 @@ afterEach(async () => {
 });
 
 describe("ComponentManager", () => {
+  it("diagnoses only signed artifacts, preserves generated files and never switches the current generation", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manager = createManager(fixture.manifest, fixture.archivePath);
+    const job = await manager.startInstall("edge-tts");
+    expect((await waitForJob(manager, job.id)).state).toBe("completed");
+    const asset = await manager.resolveInstalledAsset("edge-tts", fixture.manifest.files[0].path);
+    await fs.mkdir(path.join(asset.generationRoot, "venv"));
+    await fs.writeFile(path.join(asset.generationRoot, "venv", "generated.txt"), "legitimate generated runtime");
+    const tester = vi.fn(async () => undefined);
+    await manager.verifyCurrent("edge-tts", new AbortController().signal, tester);
+    expect(tester).toHaveBeenCalledOnce();
+    await fs.writeFile(asset.path, "damaged");
+    await expect(manager.verifyCurrent("edge-tts", new AbortController().signal, tester)).rejects.toMatchObject({
+      code: "COMPONENT_INSTALL_FAILED"
+    });
+    expect((await manager.list())[0].installed).toBe(true);
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(manager.verifyCurrent("edge-tts", aborted.signal)).rejects.toBeDefined();
+  });
   it("rejects signed Windows packages before offline import on Apple Silicon", async () => {
     const fixture = await createFixture("1.0.0");
     const manager = new ComponentManager({

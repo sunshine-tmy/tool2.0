@@ -46,9 +46,18 @@ export class EdgeTtsQueue {
 
   async close() {
     this.stopped = true;
-    this.pending.length = 0;
+    const pending = this.pending.splice(0);
     for (const job of this.active.values()) job.controller.abort();
-    await Promise.allSettled(Array.from(this.active.values(), (job) => job.done));
+    await Promise.all([
+      ...pending.map((id) =>
+        this.options.store.update(id, {
+          status: "failed",
+          progress: 0,
+          error: "应用退出，任务尚未执行，请手动重新生成"
+        })
+      ),
+      ...Array.from(this.active.values(), (job) => job.done)
+    ]);
   }
 
   private pump() {
@@ -80,9 +89,13 @@ export class EdgeTtsQueue {
       if (!this.options.store.get(id)) return;
       const cancelled = controller.signal.aborted;
       await this.options.store.update(id, {
-        status: cancelled ? "cancelled" : "failed",
+        status: cancelled && !this.stopped ? "cancelled" : "failed",
         progress: cancelled ? 0 : 100,
-        error: cancelled ? "任务已取消" : readableRunnerError(error)
+        error: this.stopped
+          ? "任务因应用退出中断，请手动重新生成"
+          : cancelled
+            ? "任务已取消"
+            : readableRunnerError(error)
       });
     }
   }

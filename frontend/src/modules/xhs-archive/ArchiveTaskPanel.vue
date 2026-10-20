@@ -46,8 +46,24 @@
             <strong>{{ task.message }}</strong>
           </div>
         </div>
-        <span class="task-percentage">{{ task.progress }}%</span>
+        <div class="task-head-actions" role="group" aria-label="获取任务进度与操作">
+          <span class="task-percentage">{{ task.progress }}%</span>
+          <n-button
+            v-if="activeTask && task.stage !== 'archiving'"
+            size="small"
+            type="warning"
+            secondary
+            :loading="cancelling"
+            :disabled="cancelling"
+            @click="emit('cancel')"
+          >
+            {{ cancelling ? "正在取消…" : "取消获取" }}
+          </n-button>
+        </div>
       </div>
+      <p v-if="activeTask && task.stage === 'archiving'" class="task-commit-note" role="status">
+        正在安全提交归档，暂不可取消
+      </p>
       <n-progress
         type="line"
         :percentage="task.progress"
@@ -65,20 +81,6 @@
           </span>
           <span class="stage-label">{{ stage.label }}</span>
         </div>
-      </div>
-      <div v-if="activeTask" class="task-actions">
-        <span v-if="task?.stage === 'archiving'" class="task-commit-note">正在安全提交归档，暂不可取消</span>
-        <n-button
-          v-else
-          size="small"
-          type="warning"
-          secondary
-          :loading="cancelling"
-          :disabled="cancelling"
-          @click="emit('cancel')"
-        >
-          {{ cancelling ? "正在取消…" : "取消获取" }}
-        </n-button>
       </div>
       <div v-if="task.status === 'failed'" class="task-error">
         <span>{{ task.error }}</span>
@@ -217,13 +219,25 @@ function stageClass(stage: XhsArchiveTaskStage) {
 }
 .task-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
 }
+.task-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 100%;
+  margin-left: auto;
+}
 .task-status {
   display: flex;
+  flex: 1 1 220px;
   min-width: 0;
   align-items: center;
   gap: 11px;
@@ -352,16 +366,20 @@ function stageClass(stage: XhsArchiveTaskStage) {
   margin-top: 14px;
   color: #d03050;
 }
-.task-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
 .task-commit-note {
+  margin: -4px 0 12px;
   color: #8a94a6;
   font-size: 12px;
 }
 @media (max-width: 640px) {
+  .task-status {
+    flex-basis: 100%;
+  }
+  .task-head-actions {
+    width: 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
   .input-row {
     flex-wrap: wrap;
   }

@@ -247,6 +247,33 @@ export class ComponentManager {
     });
   }
 
+  hasActiveJobs() {
+    return this.activeByComponent.size > 0;
+  }
+
+  /** 仅校验当前代，不安装、不切换版本。取消只中止本次只读检查。 */
+  async verifyCurrent(componentId: string, signal: AbortSignal, selfTest?: ComponentManagerOptions["selfTest"]) {
+    await this.initialize();
+    signal.throwIfAborted();
+    const manifest = this.getManifest(componentId);
+    this.verifyManifest(manifest);
+    const current = await this.readCurrent(this.componentRoot(componentId), componentId);
+    if (!current) throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "该能力尚未安装");
+    const versions = await fsp.realpath(path.join(this.componentRoot(componentId), "versions"));
+    const root = await fsp.realpath(safeChildPath(versions, current.directory));
+    if (!isPathWithin(versions, root)) throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力路径无效");
+    if (current.manifestSha256 !== sha256Text(canonicalManifest(manifest)))
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "当前版本不匹配");
+    // 安装完成后可能新增合法 venv 和缓存；只逐一校验签名工件，不能误判生成目录为篡改。
+    for (const file of manifest.files) {
+      signal.throwIfAborted();
+      await this.resolveInstalledAsset(componentId, file.path);
+    }
+    signal.throwIfAborted();
+    await (selfTest ?? this.selfTest)?.(manifest, root);
+    signal.throwIfAborted();
+  }
+
   async getJob(jobId: string) {
     await this.initialize();
     const job = this.jobs.get(jobId)?.value;
@@ -1114,13 +1141,14 @@ export class ComponentManager {
     }
   }
 
-  private async verifyInstalledFiles(root: string, manifest: ComponentPackageManifest) {
+  private async verifyInstalledFiles(root: string, manifest: ComponentPackageManifest, signal?: AbortSignal) {
     const actual = await listRegularFiles(root);
     const expected = new Map(manifest.files.map((file) => [file.path, file]));
     if (actual.length !== expected.size || actual.some((file) => !expected.has(file.path))) {
       throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包文件清单校验失败");
     }
     for (const file of actual) {
+      signal?.throwIfAborted();
       const expectedFile = expected.get(file.path);
       if (
         !expectedFile ||

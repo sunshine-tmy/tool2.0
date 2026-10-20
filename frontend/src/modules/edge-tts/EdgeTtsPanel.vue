@@ -92,8 +92,10 @@
         </p>
         <p v-if="!panel.health?.available" class="edge-tts-error">
           在线配音环境未就绪，请运行 scripts/setup-edge-tts.ps1 或在桌面能力管理中更新 Edge-TTS。
+          <DiagnosticErrorLink error="在线配音服务不可用" module="edge-tts" />
         </p>
         <p v-if="panel.error" class="edge-tts-error">{{ panel.error }}</p>
+        <DiagnosticErrorLink :error="panel.error" module="edge-tts" />
       </aside>
     </section>
     <section v-if="panel.current" class="edge-tts-result" :class="`status-${panel.current.status}`">
@@ -284,6 +286,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import DiagnosticErrorLink from "../../components/DiagnosticErrorLink.vue";
 import { provide, reactive, watch } from "vue";
 import { NButton, NCheckbox, NSelect, NSlider, NEmpty, NPagination } from "naive-ui";
 import { UserRound, Check, ListTree, Layers3, RefreshCw, Trash2, X, RotateCcw } from "lucide-vue-next";

@@ -1,6 +1,19 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type { StartupSnapshot } from "./startup-progress";
 
 contextBridge.exposeInMainWorld("toolboxDesktop", {
+  getStartupDiagnostics: () => ipcRenderer.invoke("diagnostics:startup-state"),
+  onStartupDiagnostics: (callback: (state: StartupSnapshot) => void) => {
+    const listener = (_event: unknown, state: StartupSnapshot) => callback(state);
+    ipcRenderer.on("diagnostics:startup-updated", listener);
+    return () => ipcRenderer.removeListener("diagnostics:startup-updated", listener);
+  },
+  saveDiagnosticReport: (content: string) => ipcRenderer.invoke("desktop:save-diagnostic-report", content),
+  retryStartup: () => ipcRenderer.invoke("diagnostics:startup-retry"),
+  copyStartupDiagnostics: () => ipcRenderer.invoke("diagnostics:startup-copy"),
+  exportStartupDiagnostics: () => ipcRenderer.invoke("diagnostics:startup-export"),
+  revealStartupLogs: () => ipcRenderer.invoke("diagnostics:startup-logs"),
+  exitStartupDiagnostics: () => ipcRenderer.invoke("diagnostics:startup-exit"),
   getVersion: () => ipcRenderer.invoke("desktop:get-version") as Promise<string>,
   setAudioPlaybackActive: (active: boolean) => ipcRenderer.invoke("desktop:audio-playback", active) as Promise<void>,
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),

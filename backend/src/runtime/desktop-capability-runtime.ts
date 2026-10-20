@@ -11,8 +11,14 @@ import type { ComponentJobOperation } from "@toolbox/shared";
 import type { AppConfig } from "../config";
 import { ComponentManager, ComponentManagerError } from "../modules/components/component-manager";
 import { workerAuthHeaders } from "../security/worker-auth";
+import { DiagnosticJournal } from "./diagnostic-journal";
+import { terminateChildProcess } from "../lifecycle/child-process";
 
 type ManagedWorker = { componentId: string; url: string; token: string; stop: () => Promise<void> };
+const preparing = new WeakSet<AppConfig>();
+export function desktopCapabilitiesPreparing(config: AppConfig) {
+  return preparing.has(config);
+}
 
 /**
  * Configure all optional desktop runtimes from fixed component ids and asset paths.
@@ -163,6 +169,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
           generationRoot,
           healthUrlPath: "/health",
           tempDirectory: config.tempDir,
+          diagnosticsDirectory: path.join(config.storageRoot, "..", "logs"),
           signal,
           environment: {
             TOOLBOX_DESKTOP_MANAGED: "1",
@@ -219,6 +226,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
             generationRoot: selectedRuntime.script.generationRoot,
             healthUrlPath: "/health",
             tempDirectory: config.tempDir,
+            diagnosticsDirectory: path.join(config.storageRoot, "..", "logs"),
             signal,
             environment: {
               TOOLBOX_DESKTOP_MANAGED: "1",
@@ -266,7 +274,8 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     await configureImageAi(signal);
     await configureChatterbox(signal, ffmpeg, ffprobe);
   };
-  initializing = configureAll(startup.signal);
+  preparing.add(config);
+  initializing = configureAll(startup.signal).finally(() => preparing.delete(config));
   void initializing.catch((error) => {
     if (!startup.signal.aborted) {
       console.warn(`桌面能力运行时初始化失败：${error instanceof Error ? error.message : "未知错误"}`);
@@ -450,6 +459,7 @@ async function startWorker(options: {
   generationRoot: string;
   healthUrlPath: string;
   tempDirectory: string;
+  diagnosticsDirectory: string;
   signal: AbortSignal;
   environment: Record<string, string>;
   available: (payload: Record<string, unknown>) => boolean;
@@ -472,16 +482,22 @@ async function startWorker(options: {
   const child = spawn(options.pythonPath, [options.scriptPath, "--host", "127.0.0.1", "--port", String(port)], {
     cwd: options.generationRoot,
     env: environment,
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true
   });
+  const journal = new DiagnosticJournal(options.diagnosticsDirectory);
+  journal.record(options.componentId, "WORKER_STARTING");
+  child.stdout?.on("data", (chunk: Buffer) => journal.consume(options.componentId, chunk));
+  child.stderr?.on("data", (chunk: Buffer) => journal.consume(options.componentId, chunk));
   const exit = new Promise<{ code: number | null; error?: Error }>((resolve) => {
     child.once("error", (error) => resolve({ code: null, error }));
     child.once("close", (code) => resolve({ code }));
   });
   try {
     await waitForWorker(`${url}${options.healthUrlPath}`, token, exit, options.available, options.signal);
+    journal.record(options.componentId, "WORKER_READY");
   } catch (error) {
+    journal.record(options.componentId, "WORKER_START_FAILED");
     await stopChild(child, exit);
     throw error;
   }
@@ -518,10 +534,9 @@ async function waitForWorker(
 }
 
 async function stopChild(child: ChildProcess, exit: Promise<{ code: number | null; error?: Error }>) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill("SIGTERM");
-  const stopped = await Promise.race([exit.then(() => true), delay(5000).then(() => false)]);
-  if (!stopped) child.kill("SIGKILL");
+  // 等待真正的进程退出，而不是仅凭 kill() 返回值宣布模型资源已释放。
+  await terminateChildProcess(child, 5000);
+  await exit;
 }
 
 async function reserveLoopbackPort() {

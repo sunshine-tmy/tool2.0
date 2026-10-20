@@ -9,7 +9,7 @@ import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
-import fastify from "fastify";
+import fastify, { type FastifyInstance } from "fastify";
 import {
   ApiFailureSchema,
   ApiHealthSchema,
@@ -60,8 +60,19 @@ import { createDesktopComponentSelfTest } from "./modules/components/desktop-com
 import { DouyinRuntimeManager } from "./modules/media-archive/douyin-runtime";
 import { registerMediaArchiveRuntimeRoutes } from "./modules/media-archive/runtime-routes";
 import { LOG_REDACTION_PATHS, safeErrorLogFields, safeRequestLogPath } from "./security/log-sanitization";
+import { DiagnosticsService } from "./modules/diagnostics/service";
+import { registerDiagnosticRoutes } from "./modules/diagnostics/routes";
+import { registerLanApplicationAccess } from "./modules/lan-access";
+import { DesktopShutdown } from "./lifecycle/desktop-shutdown";
 
-export async function createApp(options: { remoteAddressResolver?: AddressResolver; config?: AppConfig } = {}) {
+type AppOptions = {
+  remoteAddressResolver?: AddressResolver;
+  config?: AppConfig;
+  onStage?: (stage: string) => void;
+  shutdown?: DesktopShutdown;
+  onShutdownStage?: (stage: string) => void;
+};
+export async function createApp(options: AppOptions = {}) {
   const app = fastify({
     logger:
       process.env.NODE_ENV === "test"
@@ -76,7 +87,17 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     bodyLimit: 1024 * 1024,
     requestIdHeader: "x-request-id"
   });
+  try {
+    return await initializeApp(app, options);
+  } catch (error) {
+    await app.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function initializeApp(app: FastifyInstance, options: AppOptions) {
   const config = options.config ?? getConfig();
+  options.onStage?.("database");
   // 启动阶段先打开数据库并创建共享仓储，后续所有路由都复用这些实例，避免各模块各自维护连接。
   const { database } = await openToolboxDatabase(config);
   const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
@@ -90,6 +111,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     auth?: XhsAuthManager;
     translationRuntime?: XhsTranslationRuntime;
   } = {};
+  const diagnosticsState: { service?: DiagnosticsService } = {};
   const componentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
     catalog: bundledComponentCatalogForRuntime(),
@@ -103,6 +125,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     },
     onAfterMutation: (componentId, operation) => refreshDesktopCapabilities(componentId, operation),
     isInUse: (componentId, taskToolIds) =>
+      Boolean(diagnosticsState.service?.isBusy(true)) ||
       taskStore
         .list()
         .some(
@@ -124,14 +147,56 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
   const xhsRuntime = xhsRuntimeServices.runtime;
   const xhsAuth = xhsRuntimeServices.auth;
   const xhsTranslationRuntime = xhsRuntimeServices.translationRuntime;
+  const diagnosticService = new DiagnosticsService(
+    config,
+    database,
+    componentManager,
+    (id) => desktopCapabilityRuntime.afterMutation(id, "install"),
+    () => Boolean(xhsAuth.isActive() || douyinRuntime.isActive())
+  );
+  diagnosticsState.service = diagnosticService;
+  const shutdown = options.shutdown ?? new DesktopShutdown();
+  shutdown.bind(() => {
+    const blocked = componentManager.hasActiveJobs() || diagnosticService.gate.locked;
+    return {
+      busy: diagnosticService.isBusy(),
+      blocked,
+      ...(blocked ? { reason: "能力安装、更新或环境维护正在执行，请完成后再退出" } : {})
+    };
+  });
+  // 写请求从进入到响应结束均受保护；诊断自身的白名单操作由独占锁保护。
+  app.addHook("onRequest", async (request) => {
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) shutdown.enter(request);
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && !request.url.startsWith("/api/v1/diagnostics")) {
+      if (componentManager.hasActiveJobs() && !request.url.startsWith("/api/v1/component-jobs/"))
+        throw Object.assign(new Error("能力组件操作尚未完成，请等待空闲后重试"), {
+          statusCode: 409,
+          code: "MAINTENANCE_BUSY"
+        });
+      if (request.url.startsWith("/api/v1/components/") && diagnosticService.isBusy())
+        throw Object.assign(new Error("有任务、安装或播放尚未结束"), { statusCode: 409, code: "DIAGNOSTICS_BUSY" });
+      diagnosticService.gate.enterRequest(request.id);
+    }
+  });
+  app.addHook("onResponse", async (request) => {
+    shutdown.leave(request);
+    diagnosticService.gate.leaveRequest(request.id);
+  });
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   // Fastify 的 onClose 按后注册先执行：领域队列先退出，随后关闭共享运行时和数据库。
   // SSE 则在 preClose 结束连接，避免长连接阻塞服务关闭。
-  app.addHook("onClose", async () => desktopCapabilityRuntime.close());
-  app.addHook("onClose", async () => database.close());
+  app.addHook("onClose", async () => {
+    options.onShutdownStage?.("database");
+    database.close();
+  });
+  app.addHook("onClose", async () => {
+    options.onShutdownStage?.("workers");
+    await desktopCapabilityRuntime.close();
+  });
   app.addHook("onClose", async () => douyinRuntime?.close());
   app.addHook("preClose", async () => {
+    options.onShutdownStage?.("tasks");
     for (const stream of taskEventStreams) stream.end();
     taskEventStreams.clear();
   });
@@ -181,6 +246,8 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     throwFileSizeLimit: false
   });
   await registerAdminSecurity(app, config, database);
+  registerLanApplicationAccess(app, config, diagnosticService);
+  registerDiagnosticRoutes(app, diagnosticService);
 
   // 统一把 requestId 注入 JSON 响应，确保前端能把提示、日志和审计事件关联到同一次请求。
   app.addHook("preSerialization", async (request, _reply, payload) => {
@@ -226,6 +293,19 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     const normalized = error instanceof Error ? error : new Error("Unknown request error");
     const reportedStatus = (normalized as Error & { statusCode?: number }).statusCode;
     const statusCode = reportedStatus && reportedStatus >= 400 ? reportedStatus : 500;
+    if (
+      reported.code &&
+      [
+        "APP_SHUTTING_DOWN",
+        "DIAGNOSTICS_BUSY",
+        "MAINTENANCE_BUSY",
+        "CONFIRMATION_REQUIRED",
+        "INVALID_TARGET",
+        "DIAGNOSTIC_NOT_FOUND",
+        "DESKTOP_REQUIRED"
+      ].includes(reported.code)
+    )
+      return reply.code(statusCode).send(fail(reported.code, normalized.message));
     return reply
       .code(statusCode)
       .send(
@@ -255,6 +335,7 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
     config.xhsArchiveItemsDir,
     config.xhsArchiveStagingDir
   ];
+  options.onStage?.("storage");
   // 所有领域目录在注册路由前创建，保证首次启动和健康检查不会因缺失目录失败。
   await Promise.all(requiredStorageDirectories.map((directory) => fsp.mkdir(directory, { recursive: true })));
 

@@ -18,6 +18,11 @@
     </div>
 
     <ChatterboxEditorForm />
+    <DiagnosticErrorLink
+      v-if="panel.health && !panel.health.available"
+      error="参考音色克隆服务不可用"
+      module="edge-tts"
+    />
     <ChatterboxCurrentBatch />
     <ChatterboxBatchHistory />
     <ChatterboxBatchDetail />
@@ -27,6 +32,7 @@
 <script setup lang="ts">
 import { provide, reactive } from "vue";
 import { NTag } from "naive-ui";
+import DiagnosticErrorLink from "../../components/DiagnosticErrorLink.vue";
 import { ShieldCheck } from "lucide-vue-next";
 import ChatterboxBatchDetail from "./ChatterboxBatchDetail.vue";
 import ChatterboxBatchHistory from "./ChatterboxBatchHistory.vue";

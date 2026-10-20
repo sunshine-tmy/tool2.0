@@ -43,9 +43,18 @@ export class ChatterboxQueue {
 
   async close() {
     this.stopped = true;
-    this.pending.length = 0;
+    const pending = this.pending.splice(0);
     this.activeController?.abort();
-    await this.activeDone;
+    await Promise.all([
+      ...pending.map((id) =>
+        this.options.store.update(id, {
+          status: "failed",
+          progress: 0,
+          error: "应用退出，任务尚未执行，请手动重新生成"
+        })
+      ),
+      this.activeDone
+    ]);
   }
 
   private pump() {
@@ -98,12 +107,13 @@ export class ChatterboxQueue {
       await this.options.store.update(id, {
         status: "failed",
         progress: 100,
-        error: readableGenerationError(error)
+        error: this.stopped ? "任务因应用退出中断，请手动重新生成" : readableGenerationError(error)
       });
     } finally {
       await Promise.all([
-        fsp.rm(paths.referenceUpload, { force: true }),
-        fsp.rm(paths.reference, { force: true }),
+        ...(!this.stopped
+          ? [fsp.rm(paths.referenceUpload, { force: true }), fsp.rm(paths.reference, { force: true })]
+          : []),
         fsp.rm(paths.outputWav, { force: true })
       ]);
     }

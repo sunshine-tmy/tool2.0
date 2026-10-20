@@ -31,6 +31,9 @@ import {
   desktopInstallRoot
 } from "./runtime-layout";
 import { isSafeExternalUrl, isTrustedBackendUrl } from "./window-security";
+import { StartupDiagnostics } from "./startup-diagnostics";
+import { QuitCoordinator } from "./quit-coordinator";
+import { ShutdownWindow } from "./shutdown-window";
 
 let mainWindow: BrowserWindow | undefined;
 let startupMigrationWindow: BrowserWindow | undefined;
@@ -39,9 +42,17 @@ let backendOrigin: string | undefined;
 let updater: DesktopUpdater | undefined;
 let automaticUpdateTimer: NodeJS.Timeout | undefined;
 let quitting = false;
+let desktopOperationInProgress = false;
+let audioPlaybackActive = false;
+let quitCoordinator: QuitCoordinator | undefined;
+let shutdownWindow: ShutdownWindow | undefined;
 let startupMigrationState: StartupDataMigrationState | undefined;
 let startupMigrationResolve: ((completed: boolean) => void) | undefined;
 let startupMigrationCompleted = false;
+let startupDiagnostics: StartupDiagnostics | undefined;
+let desktopIpcRegistered = false;
+let versionIpcRegistered = false;
+let startupMigrationIpcRegistered = false;
 
 const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const desktopIconPath =
@@ -56,14 +67,18 @@ const legacyDataRoot = path.join(
   process.platform === "win32" ? "EcommerceToolboxData" : "EcommerceToolboxData-Windows-Legacy"
 );
 const dataRoot = desktopDataRoot(app.isPackaged, app.getPath("exe"), process.env.LOCALAPPDATA, app.getPath("appData"));
-const installRootWritable =
-  !app.isPackaged ||
-  (process.platform === "darwin"
-    ? canWriteDirectory(dataRoot, true)
-    : !desktopPathsOverlap(dataRoot, legacyDataRoot) &&
-      canWriteDirectory(installRoot) &&
-      canWriteDirectory(dataRoot, true));
-if (installRootWritable) {
+function desktopRootsWritable() {
+  return (
+    !app.isPackaged ||
+    (process.platform === "darwin"
+      ? canWriteDirectory(dataRoot, true)
+      : !desktopPathsOverlap(dataRoot, legacyDataRoot) &&
+        canWriteDirectory(installRoot) &&
+        canWriteDirectory(dataRoot, true))
+  );
+}
+function initializeDesktopPaths() {
+  if (!desktopRootsWritable()) throw Object.assign(new Error("数据目录不可写"), { code: "EACCES" });
   fs.mkdirSync(path.join(dataRoot, ".runtime"), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, "models"), { recursive: true });
   fs.mkdirSync(path.join(dataRoot, "profile"), { recursive: true });
@@ -89,7 +104,24 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 async function boot() {
+  let pathError: unknown;
+  try {
+    initializeDesktopPaths();
+  } catch (error) {
+    pathError = error;
+  }
   await app.whenReady();
+  startupDiagnostics ??= new StartupDiagnostics({
+    dataRoot,
+    preload: path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs"),
+    retry: boot
+  });
+  startupDiagnostics.show();
+  startupDiagnostics.stage("storage");
+  if (pathError) {
+    startupDiagnostics.fail(pathError);
+    return;
+  }
   if (process.platform === "darwin") {
     Menu.setApplicationMenu(
       Menu.buildFromTemplate([
@@ -114,17 +146,10 @@ async function boot() {
     // product commands and exposes irrelevant browser/window controls.
     Menu.setApplicationMenu(null);
   }
-  if (!installRootWritable) {
-    dialog.showErrorBox(
-      process.platform === "darwin" ? "无法访问用户数据目录" : "需要重新选择安装目录",
-      process.platform === "darwin"
-        ? `无法在用户数据目录中创建或写入应用数据：\n${dataRoot}\n\n请检查当前用户对此目录的访问权限。`
-        : `当前安装目录或其 data 子目录不可由当前用户写入：\n${installRoot}\n\n请重新运行安装程序，并选择当前用户具有写入权限的目录。此版本不会通过管理员提权或改写目录权限。`
-    );
-    app.quit();
-    return;
+  if (!versionIpcRegistered) {
+    ipcMain.handle("desktop:get-version", () => app.getVersion());
+    versionIpcRegistered = true;
   }
-  ipcMain.handle("desktop:get-version", () => app.getVersion());
 
   const layout = createDesktopRuntimeLayout({
     packaged: app.isPackaged,
@@ -133,18 +158,33 @@ async function boot() {
   });
 
   try {
-    startupMigrationState =
-      process.platform === "win32"
-        ? await prepareStartupDataMigration({ dataRoot, legacyDataRoot })
-        : { required: false, destinationDirectory: dataRoot, sourceBytes: 0, sourceFiles: 0 };
+    startupDiagnostics.stage("migration");
+    desktopOperationInProgress = true;
+    try {
+      startupMigrationState =
+        process.platform === "win32"
+          ? await prepareStartupDataMigration({ dataRoot, legacyDataRoot })
+          : { required: false, destinationDirectory: dataRoot, sourceBytes: 0, sourceFiles: 0 };
+    } finally {
+      desktopOperationInProgress = false;
+    }
     if (startupMigrationState.required) {
-      registerStartupMigrationIpc();
+      if (!startupMigrationIpcRegistered) {
+        registerStartupMigrationIpc();
+        startupMigrationIpcRegistered = true;
+      }
       const completed = await showStartupMigrationWindow(startupMigrationState);
       if (!completed) return;
     }
 
     // 在后端打开任何数据库或业务文件之前恢复未完成切换，防止半迁移目录被误认为有效数据。
-    await recoverDesktopDataMigrations(migrationOptions(layout));
+    desktopOperationInProgress = true;
+    try {
+      await recoverDesktopDataMigrations(migrationOptions(layout));
+    } finally {
+      desktopOperationInProgress = false;
+    }
+    startupDiagnostics.stage("proxy");
     const componentProxyUrl = await session.defaultSession
       .resolveProxy("https://github.com")
       .then(componentProxyUrlFromResolution)
@@ -152,18 +192,27 @@ async function boot() {
         console.warn("Unable to resolve the system proxy for component downloads", error);
         return undefined;
       });
+    startupDiagnostics.stage("process");
     backend = new BackendSupervisor({
       entrypoint: desktopBackendEntrypoint(app.isPackaged, process.resourcesPath),
       runtimeLayout: layout,
       componentProxyUrl,
+      bootId: startupDiagnostics.bootId,
       onUnexpectedExit: (message) => {
-        void dialog.showErrorBox("本地服务已停止", `${message}，请重新启动应用。`);
-      }
+        startupDiagnostics?.fail(new Error(message), false);
+      },
+      onStage: (stage) => startupDiagnostics?.stage(stage === "storage" ? "directories" : stage),
+      onShutdownStage: (stage) => shutdownWindow?.show(stage)
     });
-    registerDesktopIpc(layout);
+    if (!desktopIpcRegistered) {
+      registerDesktopIpc(layout);
+      desktopIpcRegistered = true;
+    }
     backendOrigin = await backend.start();
     backend.monitorUnexpectedExit();
-    createWindow(backendOrigin);
+    startupDiagnostics.stage("window");
+    await createWindow(backendOrigin);
+    startupDiagnostics.ready();
     updater = createDesktopUpdater({
       resourcesPath: process.resourcesPath,
       packaged: app.isPackaged,
@@ -178,17 +227,7 @@ async function boot() {
       console.warn("Desktop update preference is unavailable", error);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "未知错误";
-    const details = error instanceof Error ? (error.stack ?? error.message) : String(error);
-    const logsRoot = path.join(dataRoot, "logs");
-    fs.mkdirSync(logsRoot, { recursive: true });
-    fs.appendFileSync(path.join(logsRoot, "desktop-startup.log"), `${new Date().toISOString()} ${details}\n\n`, "utf8");
-    console.error("Desktop boot failed", error);
-    process.stderr.write(
-      `Desktop boot failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`
-    );
-    dialog.showErrorBox("电商工具箱无法启动", message);
-    app.exit(1);
+    startupDiagnostics.fail(error, backend?.startupTerminated ?? true);
   }
 }
 
@@ -196,7 +235,14 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
   const selectedLegacyDirectories = new Map<string, { path: string; expiresAt: number }>();
   const options = migrationOptions(layout);
   const assertTrustedSender = (event: IpcMainInvokeEvent) => {
-    if (!mainWindow || event.sender !== mainWindow.webContents) throw new Error("未授权的桌面调用");
+    if (
+      !mainWindow ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame ||
+      !backendOrigin ||
+      !isTrustedBackendUrl(event.senderFrame.url, backendOrigin)
+    )
+      throw new Error("未授权的桌面调用");
   };
   const currentSettings = async () => {
     const saved = await readDesktopSettings(layout.configRoot);
@@ -221,7 +267,19 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
   ipcMain.handle("desktop:audio-playback", (event, active: unknown) => {
     assertTrustedSender(event);
     if (typeof active !== "boolean") throw new Error("无效的播放状态");
+    audioPlaybackActive = active;
     mainWindow?.webContents.setBackgroundThrottling(!active);
+  });
+  ipcMain.handle("desktop:save-diagnostic-report", async (event, content: unknown) => {
+    assertTrustedSender(event);
+    if (typeof content !== "string" || content.length > 256_000) throw new Error("诊断报告无效");
+    const value = JSON.parse(content) as { application?: string; schemaVersion?: number };
+    if (value.application !== "ecommerce-toolbox" || value.schemaVersion !== 1) throw new Error("诊断报告格式无效");
+    const selected = await dialog.showSaveDialog(mainWindow!, {
+      defaultPath: "toolbox-diagnostics.json",
+      filters: [{ name: "JSON", extensions: ["json"] }]
+    });
+    if (!selected.canceled && selected.filePath) await fs.promises.writeFile(selected.filePath, content, "utf8");
   });
   ipcMain.handle("desktop:update-settings", async (event, value: unknown) => {
     assertTrustedSender(event);
@@ -314,37 +372,49 @@ function registerStartupMigrationIpc() {
   });
   ipcMain.handle("desktop:migrate-startup-data", async (event) => {
     assertMigrationSender(event);
+    if (desktopOperationInProgress) throw new Error("数据迁移尚未结束");
     if (!startupMigrationState?.required) throw new Error("当前没有待迁移的旧版数据");
-    let result: Awaited<ReturnType<typeof migrateLegacyDesktopData>>;
+    desktopOperationInProgress = true;
     try {
-      result = await migrateLegacyDesktopData({ dataRoot, legacyDataRoot });
-    } catch (error) {
+      let result: Awaited<ReturnType<typeof migrateLegacyDesktopData>>;
       try {
-        startupMigrationState = await prepareStartupDataMigration({ dataRoot, legacyDataRoot });
-        if (!startupMigrationState.required) {
-          completeStartupMigration();
-          return;
+        result = await migrateLegacyDesktopData({ dataRoot, legacyDataRoot });
+      } catch (error) {
+        try {
+          startupMigrationState = await prepareStartupDataMigration({ dataRoot, legacyDataRoot });
+          if (!startupMigrationState.required) {
+            completeStartupMigration();
+            return;
+          }
+        } catch {
+          // Preserve the actionable error from the failed attempt; an incomplete
+          // journal remains on disk for the next startup recovery pass.
         }
-      } catch {
-        // Preserve the actionable error from the failed attempt; an incomplete
-        // journal remains on disk for the next startup recovery pass.
+        throw error;
       }
-      throw error;
+      startupMigrationState = {
+        required: false,
+        destinationDirectory: dataRoot,
+        sourceBytes: result.bytes,
+        sourceFiles: result.files
+      };
+      completeStartupMigration();
+      return result;
+    } finally {
+      desktopOperationInProgress = false;
     }
-    startupMigrationState = {
-      required: false,
-      destinationDirectory: dataRoot,
-      sourceBytes: result.bytes,
-      sourceFiles: result.files
-    };
-    completeStartupMigration();
-    return result;
   });
   ipcMain.handle("desktop:choose-fresh-startup-data", async (event) => {
     assertMigrationSender(event);
-    await chooseFreshDesktopData({ dataRoot, legacyDataRoot });
-    startupMigrationState = await prepareStartupDataMigration({ dataRoot, legacyDataRoot });
-    completeStartupMigration();
+    if (desktopOperationInProgress) throw new Error("数据迁移尚未结束");
+    desktopOperationInProgress = true;
+    try {
+      await chooseFreshDesktopData({ dataRoot, legacyDataRoot });
+      startupMigrationState = await prepareStartupDataMigration({ dataRoot, legacyDataRoot });
+      completeStartupMigration();
+    } finally {
+      desktopOperationInProgress = false;
+    }
   });
   ipcMain.handle("desktop:exit-startup-migration", (event) => {
     assertMigrationSender(event);
@@ -379,6 +449,12 @@ async function showStartupMigrationWindow(state: StartupDataMigrationState) {
     }
   });
   startupMigrationWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  startupMigrationWindow.on("close", (event) => {
+    if (desktopOperationInProgress) {
+      event.preventDefault();
+      app.quit();
+    }
+  });
   startupMigrationWindow.on("closed", () => {
     startupMigrationWindow = undefined;
     if (!startupMigrationCompleted) {
@@ -511,31 +587,49 @@ function startupMigrationHtml() {
 }
 
 async function withBackendStopped<T>(operation: () => Promise<T>) {
+  if (desktopOperationInProgress) throw new Error("已有桌面维护操作正在执行");
   if (!backend) throw new Error("本地服务尚未启动");
-  await backend.stop();
-  let result: T | undefined;
-  let operationError: unknown;
+  desktopOperationInProgress = true;
   try {
-    result = await operation();
-  } catch (error) {
-    operationError = error;
+    const state = await backend.inspectShutdown(false);
+    if (!state.prepared) throw new Error(state.reason || "请先结束任务和播放，再执行数据迁移");
+    const stopped = await backend.stop();
+    if (!stopped.clean) throw new Error("后台未正常完成收尾，已停止迁移。请重新打开应用并检查中断任务后再试。");
+    let result: T | undefined;
+    let operationError: unknown;
+    try {
+      result = await operation();
+    } catch (error) {
+      operationError = error;
+    }
+    try {
+      backendOrigin = await backend.start();
+      backend.monitorUnexpectedExit();
+      if (mainWindow && backendOrigin) await mainWindow.loadURL(backendOrigin);
+    } catch (restartError) {
+      throw new Error(`本地服务重启失败：${message(restartError)}`);
+    }
+    if (operationError) throw operationError;
+    return result!;
+  } finally {
+    desktopOperationInProgress = false;
   }
-  try {
-    backendOrigin = await backend.start();
-    backend.monitorUnexpectedExit();
-    if (mainWindow && backendOrigin) await mainWindow.loadURL(backendOrigin);
-  } catch (restartError) {
-    throw new Error(`本地服务重启失败：${message(restartError)}`);
-  }
-  if (operationError) throw operationError;
-  return result!;
 }
 
 async function installDownloadedUpdate() {
   if (!backend) throw new Error("本地服务尚未启动");
-  await backend.stop();
-  quitting = true;
-  getDesktopAutoUpdater().quitAndInstall();
+  if (desktopOperationInProgress || audioPlaybackActive) throw new Error("请先结束维护操作和音频播放，再安装更新");
+  desktopOperationInProgress = true;
+  try {
+    const state = await backend.inspectShutdown(false);
+    if (!state.prepared) throw new Error(state.reason || "请先结束后台任务，再安装更新");
+    const stopped = await backend.stop();
+    if (!stopped.clean) throw new Error("后台未正常完成收尾，已停止更新安装。请重新打开应用并检查后再试。");
+    quitting = true;
+    getDesktopAutoUpdater().quitAndInstall();
+  } finally {
+    desktopOperationInProgress = false;
+  }
 }
 
 function scheduleConfiguredUpdateCheck(currentUpdater: DesktopUpdater, settings: { automaticUpdateChecks: boolean }) {
@@ -597,7 +691,7 @@ const disabledUpdater: DesktopUpdater = {
   checkForUpdates: async () => ({ enabled: false, checking: false })
 };
 
-function createWindow(origin: string) {
+async function createWindow(origin: string) {
   const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.cjs");
   mainWindow = new BrowserWindow({
     ...(desktopIconPath ? { icon: desktopIconPath } : {}),
@@ -628,13 +722,62 @@ function createWindow(origin: string) {
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
   });
   mainWindow.once("ready-to-show", () => mainWindow?.show());
-  void mainWindow.loadURL(origin);
+  mainWindow.on("close", (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    app.quit();
+  });
+  await mainWindow.loadURL(origin);
 }
 
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", (event) => {
   if (quitting) return;
   event.preventDefault();
-  quitting = true;
-  void (backend?.stop() ?? Promise.resolve()).finally(() => app.exit(0));
+  quitCoordinator ??= new QuitCoordinator({
+    critical: () => desktopOperationInProgress,
+    playing: () => audioPlaybackActive,
+    inspect: async (confirmed) =>
+      backend?.inspectShutdown(confirmed) ?? { busy: false, blocked: false, prepared: true },
+    confirm: async () => {
+      const result = await dialog.showMessageBox({
+        type: "warning",
+        title: "退出电商工具箱",
+        message: "有任务、等待队列或音频播放尚未结束，仍要退出吗？",
+        detail: "退出会停止播放并中断未完成的生成任务，保留文案、参考音色和已生成作品；中断任务需手动重试。",
+        buttons: ["继续使用", "停止并退出"],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true
+      });
+      return result.response === 1;
+    },
+    notify: async (text) => {
+      await dialog.showMessageBox({ type: "warning", title: "退出尚未完成", message: text });
+    },
+    begin: () => {
+      if (automaticUpdateTimer) clearTimeout(automaticUpdateTimer);
+      shutdownWindow ??= new ShutdownWindow(() => app.quit());
+      shutdownWindow.show();
+      // 确认退出后销毁业务 renderer，立即停止独立/队列/WebAudio 播放，不依赖页面响应。
+      mainWindow?.destroy();
+      mainWindow = undefined;
+      audioPlaybackActive = false;
+    },
+    stop: async () => {
+      const result = await backend?.stop();
+      if (result && !result.clean)
+        await dialog.showMessageBox({
+          type: "warning",
+          title: "后台服务已回收",
+          message: "部分任务收尾异常或子服务已被强制回收。",
+          detail: "后台进程已退出；下次启动请检查中断任务并手动重试。现有作品和模型文件不会删除。"
+        });
+    },
+    finish: () => {
+      quitting = true;
+      app.exit(0);
+    }
+  });
+  void quitCoordinator.request();
 });

@@ -7,6 +7,7 @@ import ToolHomePage from "../pages/ToolHomePage.vue";
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
+    { path: "/settings/diagnostics", name: "diagnostics", component: () => import("../pages/DiagnosticsPage.vue") },
     {
       path: "/",
       name: "home",

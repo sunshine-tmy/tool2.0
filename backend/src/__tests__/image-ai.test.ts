@@ -6,7 +6,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createApp } from "../app";
 import { ToolboxDatabase } from "../database/toolbox-database";
@@ -15,8 +15,10 @@ let storageRoot: string;
 let workerServer: http.Server;
 let workerUrl: string;
 let app: FastifyInstance | undefined;
+let beforeProcess: (() => Promise<void>) | undefined;
 
 beforeEach(async () => {
+  beforeProcess = undefined;
   storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-image-ai-"));
   workerServer = createFakeWorker();
   await new Promise<void>((resolve) => workerServer.listen(0, "127.0.0.1", resolve));
@@ -41,6 +43,47 @@ afterEach(async () => {
 });
 
 describe("image ai api", () => {
+  it("persists queued and running images as interrupted and never auto-runs them on restart", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const processCall = vi.fn(() => blocked);
+    beforeProcess = processCall;
+    app = await createApp();
+    const ids: string[] = [];
+    try {
+      for (let n = 0; n < 2; n++) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/image-ai/tasks",
+          ...multipartPayload(
+            [
+              { field: "files", fileName: `retained-${n}.png`, mimeType: "image/png", content: await testImage(20, 20) }
+            ],
+            { operation: "background_remove" }
+          )
+        });
+        expect(response.statusCode).toBe(202);
+        ids.push(response.json().data.id);
+      }
+      await vi.waitFor(() => expect(processCall).toHaveBeenCalledTimes(1));
+      await app.close();
+      release();
+      beforeProcess = undefined;
+      app = await createApp();
+      for (const id of ids) {
+        const response = await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${id}` });
+        expect(response.json().data).toMatchObject({
+          status: "failed",
+          error: expect.stringMatching(/应用退出|服务关闭/)
+        });
+      }
+      expect(processCall).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+    }
+  });
   it("reports local worker model and license health", async () => {
     app = await createApp();
     const response = await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/health" });
@@ -268,6 +311,8 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
     }
 
     if (request.url === "/process") {
+      await beforeProcess?.();
+      if (response.destroyed) return;
       const metadata = await sharp(body.input_path).metadata();
       const scale = body.operation === "enhance" ? Number(body.scale || 2) : 1;
       await sharp(body.input_path)

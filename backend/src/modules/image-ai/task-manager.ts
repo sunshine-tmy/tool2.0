@@ -63,9 +63,20 @@ export function createImageAiTaskManager(
   async function close() {
     // 关闭时停止接收新任务、终止 Worker 信号并等待当前 drain 收敛，避免留下 running 状态。
     stopped = true;
-    queue.length = 0;
+    const pending = queue.splice(0);
     shutdownController.abort();
     if (cleanupTimer) clearInterval(cleanupTimer);
+    for (const id of pending) {
+      const task = tasks.get(id);
+      if (!task) continue;
+      patchTask(task, {
+        status: "failed",
+        progress: 0,
+        queuePosition: null,
+        error: "应用退出，任务尚未执行，请手动重试"
+      });
+      await persist(task);
+    }
     await drainPromise;
   }
 

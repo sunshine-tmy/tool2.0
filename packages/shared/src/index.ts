@@ -23,3 +23,5 @@ export * from "./douyin-runtime";
 export * from "./video-text-api";
 export * from "./component-packages";
 export * from "./audio-library";
+export * from "./diagnostics";
+export * from "./lan-access";

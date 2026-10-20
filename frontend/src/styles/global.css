@@ -204,7 +204,7 @@ a {
   margin-bottom: 12px;
 }
 
-.sidebar-head span {
+.sidebar-count {
   display: inline-flex;
   min-width: 24px;
   height: 24px;
