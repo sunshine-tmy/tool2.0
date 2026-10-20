@@ -13,6 +13,17 @@ async function readScript(name) {
 }
 
 describe("Windows AI Worker CPU dependency locks", () => {
+  it("pins Edge-TTS to the upstream 403 fix with verified package hashes", async () => {
+    const requirements = await readScript("edge-tts-requirements.txt");
+    const lock = await readScript("edge-tts.lock.txt");
+    const definition = JSON.parse(await readScript("component-definitions/edge-tts.json"));
+    assert.match(requirements, /^edge-tts==7\.3\.1$/m);
+    assert.match(lock, /^edge-tts==7\.3\.1 \\/m);
+    assert.ok(lock.includes("2a3c79d6235a7a736d681233823ce5492e829b43eb47beae49aa181237a8f9a4"));
+    assert.ok(lock.includes("ee1fabf911b9ea83b38ae93aee5619ee41eaf0b109fef6e65d797dc4ebf1f20f"));
+    assert.equal(definition.version, "7.3.1-1");
+  });
+
   it("pins Chatterbox to CPU-only PyTorch", async () => {
     const lock = await readScript("chatterbox.lock.txt");
     const generator = await readScript("lock-worker-dependencies.ps1");

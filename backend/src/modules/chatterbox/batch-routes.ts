@@ -191,7 +191,7 @@ export async function registerChatterboxBatchRoutes(options: {
   );
   cleanupTimer.unref();
   app.addHook("onClose", async () => clearInterval(cleanupTimer));
-  return queue;
+  return Object.assign(queue, { archiveStore: store });
 }
 
 function positiveInteger(value: string | undefined, fallback: number) {

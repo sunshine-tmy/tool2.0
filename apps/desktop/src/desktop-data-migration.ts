@@ -17,6 +17,7 @@ const LEGACY_MARKERS = [
   "image-ai",
   "edge-tts",
   "chatterbox",
+  "audio-library",
   "video-text",
   "uploads",
   "outputs"

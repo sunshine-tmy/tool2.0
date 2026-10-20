@@ -26,6 +26,8 @@ export async function reconcileFileMetadataStorage(
 ): Promise<FileConsistencyResult> {
   const result: FileConsistencyResult = { checked: 0, quarantined: 0, removedMetadata: 0, failures: [] };
   for (const metadata of database.listFiles()) {
+    // 永久音频库由其恢复清单管理；缺失或损坏只报告，不能移入随后会被清空的全局隔离区。
+    if (metadata.entityKind === "audio-library-item") continue;
     result.checked += 1;
     const target = resolveStoragePath(config.storageRoot, metadata.relativePath);
     if (!target) {
@@ -87,6 +89,7 @@ function managedDirectories(config: AppConfig) {
     config.imageAiOutputsDir,
     config.imageAiTasksDir,
     config.edgeTtsTasksDir,
+    path.join(path.dirname(config.edgeTtsTasksDir), "batches"),
     config.chatterboxTasksDir,
     path.join(config.chatterboxDir, "batches"),
     path.join(config.chatterboxDir, "voices"),

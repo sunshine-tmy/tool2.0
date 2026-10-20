@@ -20,6 +20,7 @@
     "clean": "node scripts/clean.mjs",
     "clear:generated": "node scripts/clear-generated.mjs",
     "smoke": "node scripts/smoke-build.mjs",
+    "smoke:audio-library": "pnpm --filter backend exec tsx ../scripts/smoke-audio-library.mjs",
     "smoke:standalone": "node scripts/smoke-standalone.mjs",
     "start": "pnpm --filter backend start",
     "preview:web": "pnpm --filter frontend preview",

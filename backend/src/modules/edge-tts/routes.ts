@@ -30,6 +30,7 @@ import type { TaskStore } from "../../tasks/task-store";
 import { sendTaskFile } from "./files";
 import { parseCreateInput } from "./input";
 import { EdgeTtsTaskService, toPublicTask } from "./task-service";
+import { registerEdgeTtsBatchRoutes } from "./batch-routes";
 
 type RegisterEdgeTtsRoutesOptions = {
   app: FastifyInstance;
@@ -48,6 +49,7 @@ export async function registerEdgeTtsRoutes({
 }: RegisterEdgeTtsRoutesOptions) {
   const service = new EdgeTtsTaskService(config, database, taskStore, fileMetadata);
   await service.initialize();
+  const batches = await registerEdgeTtsBatchRoutes(app, config, database, service, fileMetadata);
 
   app.addHook("onClose", async () => {
     await service.close();
@@ -155,16 +157,20 @@ export async function registerEdgeTtsRoutes({
     {
       schema: {
         params: TaskIdParamsSchema,
-        response: { 200: apiSuccessSchema(EdgeTtsRemovalSchema), 404: ApiFailureSchema }
+        response: { 200: apiSuccessSchema(EdgeTtsRemovalSchema), 404: ApiFailureSchema, 409: ApiFailureSchema }
       }
     },
     async (request, reply) => {
+      if (service.get(request.params.taskId)?.batchId) {
+        return reply.code(409).send(fail("EDGE_TTS_BATCH_TASK", "请在批次详情中删除该文案段"));
+      }
       if (!(await service.remove(request.params.taskId))) {
         return reply.code(404).send(fail("EDGE_TTS_TASK_NOT_FOUND", "语音任务不存在"));
       }
       return ok({ removed: true as const });
     }
   );
+  return batches;
 }
 
 function isSupportedLanguage(value: string): value is EdgeTtsCreateTaskInput["language"] {

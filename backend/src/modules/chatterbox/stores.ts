@@ -131,6 +131,18 @@ export class ChatterboxVoiceStore {
 
 export class ChatterboxBatchStore {
   private readonly batches = new Map<string, ChatterboxBatch>();
+  private readonly artifactLocks = new Map<string, Promise<unknown>>();
+
+  withArtifact<T>(batchId: string, operation: () => Promise<T>): Promise<T> {
+    const task = (this.artifactLocks.get(batchId) ?? Promise.resolve()).catch(() => undefined).then(operation);
+    this.artifactLocks.set(batchId, task);
+    void task
+      .finally(() => {
+        if (this.artifactLocks.get(batchId) === task) this.artifactLocks.delete(batchId);
+      })
+      .catch(() => undefined);
+    return task;
+  }
 
   constructor(
     private readonly root: string,
@@ -237,23 +249,27 @@ export class ChatterboxBatchStore {
     patch: Partial<ChatterboxBatchItem>,
     options: { deferTerminalStatus?: boolean } = {}
   ) {
-    const batch = this.batches.get(batchId);
-    const index = batch?.items.findIndex((item) => item.id === itemId) ?? -1;
-    if (!batch || index < 0) return undefined;
-    const current = batch.items[index];
-    const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
-    if (patch.error === undefined && (patch.status === "processing" || patch.status === "completed")) delete next.error;
-    batch.items[index] = next;
-    this.applyAggregate(batch);
-    if (
-      options.deferTerminalStatus &&
-      !batch.items.some((item) => item.status === "queued" || item.status === "processing")
-    ) {
-      batch.status = "processing";
-      batch.progress = 99;
-    }
-    await this.write(batch);
-    return cloneBatch(batch);
+    return this.withArtifact(batchId, async () => {
+      const batch = this.batches.get(batchId);
+      const index = batch?.items.findIndex((item) => item.id === itemId) ?? -1;
+      if (!batch || index < 0) return undefined;
+      const current = batch.items[index];
+      const next = { ...current, ...patch, updatedAt: new Date().toISOString() };
+      if (patch.error === undefined && (patch.status === "processing" || patch.status === "completed"))
+        delete next.error;
+      batch.items[index] = next;
+      batch.updatedAt = next.updatedAt;
+      this.applyAggregate(batch);
+      if (
+        options.deferTerminalStatus &&
+        !batch.items.some((item) => item.status === "queued" || item.status === "processing")
+      ) {
+        batch.status = "processing";
+        batch.progress = 99;
+      }
+      await this.write(batch);
+      return cloneBatch(batch);
+    });
   }
 
   async updateBatch(batchId: string, patch: Partial<ChatterboxBatch>) {
@@ -287,17 +303,19 @@ export class ChatterboxBatchStore {
   }
 
   async removeItem(batchId: string, itemId: string) {
-    const batch = this.batches.get(batchId);
-    if (!batch) return undefined;
-    batch.items = batch.items
-      .filter((item) => item.id !== itemId)
-      .sort((a, b) => a.order - b.order)
-      .map((item, index) => ({ ...item, order: index + 1 }));
-    await fsp.rm(this.itemPaths(batchId, itemId).dir, { recursive: true, force: true });
-    this.applyAggregate(batch);
-    batch.updatedAt = new Date().toISOString();
-    await this.write(batch);
-    return cloneBatch(batch);
+    return this.withArtifact(batchId, async () => {
+      const batch = this.batches.get(batchId);
+      if (!batch) return undefined;
+      batch.items = batch.items
+        .filter((item) => item.id !== itemId)
+        .sort((a, b) => a.order - b.order)
+        .map((item, index) => ({ ...item, order: index + 1 }));
+      await fsp.rm(this.itemPaths(batchId, itemId).dir, { recursive: true, force: true });
+      this.applyAggregate(batch);
+      batch.updatedAt = new Date().toISOString();
+      await this.write(batch);
+      return cloneBatch(batch);
+    });
   }
 
   async extendExpiry(batchId: string, retentionDays: number) {
@@ -305,18 +323,20 @@ export class ChatterboxBatchStore {
   }
 
   async remove(id: string) {
-    if (!isSafeId(id)) return false;
-    const batch = this.batches.get(id);
-    this.batches.delete(id);
-    this.database.transaction(() => {
-      for (const item of batch?.items ?? []) this.database.remove("chatterbox-item", item.id);
-      this.database.remove("chatterbox-batch", id);
+    return this.withArtifact(id, async () => {
+      if (!isSafeId(id)) return false;
+      const batch = this.batches.get(id);
+      this.batches.delete(id);
+      this.database.transaction(() => {
+        for (const item of batch?.items ?? []) this.database.remove("chatterbox-item", item.id);
+        this.database.remove("chatterbox-batch", id);
+      });
+      this.taskStore.remove(id);
+      this.fileMetadata?.removeForEntity("chatterbox-batch", id);
+      for (const item of batch?.items ?? []) this.fileMetadata?.removeForEntity("chatterbox-item", item.id);
+      await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      return true;
     });
-    this.taskStore.remove(id);
-    this.fileMetadata?.removeForEntity("chatterbox-batch", id);
-    for (const item of batch?.items ?? []) this.fileMetadata?.removeForEntity("chatterbox-item", item.id);
-    await fsp.rm(this.paths(id).dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-    return true;
   }
 
   async cleanupExpired(isActive: (id: string) => boolean = () => false, now = Date.now()) {

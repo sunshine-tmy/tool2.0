@@ -34,6 +34,7 @@ export class EdgeTtsTaskService {
   private runtimeCache: { value: RuntimeInfo; expiresAt: number } | undefined;
   private voiceCache: VoiceCache | undefined;
   private cleanupTimer: NodeJS.Timeout | undefined;
+  private submissionTail: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly config: AppConfig,
@@ -106,21 +107,45 @@ export class EdgeTtsTaskService {
   }
 
   async create(input: EdgeTtsCreateTaskInput): Promise<EdgeTtsCreateResult> {
-    const runtime = await this.getRuntimeInfo();
-    if (!runtime.available)
-      return {
-        success: false,
-        statusCode: 409,
-        code: this.config.desktopManagedCapabilities ? "COMPONENT_NOT_INSTALLED" : "EDGE_TTS_NOT_INSTALLED",
-        message: runtime.message
-      };
-    const stats = this.queue.stats();
-    if (stats.active + stats.queued >= this.config.edgeTtsQueueLimit) {
-      return { success: false, statusCode: 429, code: "EDGE_TTS_QUEUE_FULL", message: "语音生成队列已满，请稍后重试" };
-    }
-    const task = await this.repository.create(input, this.config.edgeTtsRetentionDays);
-    this.queue.enqueue(task.id);
-    return { success: true, task };
+    const result = await this.createMany([input]);
+    return result.success ? { success: true, task: result.tasks[0] } : result;
+  }
+
+  createMany(inputs: EdgeTtsCreateTaskInput[], batchId?: string, prepare?: (tasks: EdgeTtsTask[]) => Promise<void>) {
+    const operation = this.submissionTail
+      .catch(() => undefined)
+      .then(async () => {
+        const runtime = await this.getRuntimeInfo();
+        if (!runtime.available)
+          return {
+            success: false as const,
+            statusCode: 409 as const,
+            code: this.config.desktopManagedCapabilities ? "COMPONENT_NOT_INSTALLED" : "EDGE_TTS_NOT_INSTALLED",
+            message: runtime.message
+          };
+        const stats = this.queue.stats();
+        if (stats.active + stats.queued + inputs.length > this.config.edgeTtsQueueLimit) {
+          return {
+            success: false as const,
+            statusCode: 429 as const,
+            code: "EDGE_TTS_QUEUE_FULL",
+            message: "本批次超过当前队列剩余容量，请减少段数或稍后重试"
+          };
+        }
+        const tasks: EdgeTtsTask[] = [];
+        try {
+          for (const input of inputs)
+            tasks.push(await this.repository.create(input, this.config.edgeTtsRetentionDays, batchId));
+          await prepare?.(tasks);
+        } catch (error) {
+          await Promise.all(tasks.map((task) => this.repository.remove(task.id)));
+          throw error;
+        }
+        for (const task of tasks) this.queue.enqueue(task.id);
+        return { success: true as const, tasks };
+      });
+    this.submissionTail = operation;
+    return operation;
   }
 
   get(id: string) {
@@ -129,7 +154,7 @@ export class EdgeTtsTaskService {
   }
 
   list(page: number, pageSize: number): EdgeTtsTaskList {
-    const tasks = this.repository.list();
+    const tasks = this.repository.list().filter((task) => !task.batchId);
     const total = tasks.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(page, totalPages);

@@ -2,6 +2,7 @@
   "ignoreBinaries": ["python", "pwsh"],
   "ignoreDependencies": ["electron-builder", "tslib"],
   "workspaces": {
+    ".": { "entry": ["scripts/smoke-audio-library.mjs"] },
     "backend": {
       "entry": ["src/database/cli.ts", "src/database/benchmark.ts", "scripts/generate-desktop-icon-assets.mjs"]
     },

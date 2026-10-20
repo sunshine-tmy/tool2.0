@@ -60,6 +60,7 @@ export const EdgeTtsCreateTaskInputSchema = Type.Object(EdgeTtsCreateTaskPropert
 
 const EdgeTtsTaskProperties = {
   ...EdgeTtsCreateTaskProperties,
+  batchId: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9_-]{6,64}$" })),
   id: Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
   status: EdgeTtsTaskStatusSchema,
   progress: Type.Number({ minimum: 0, maximum: 100 }),

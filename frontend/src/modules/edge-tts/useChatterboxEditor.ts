@@ -1,7 +1,7 @@
 /**
  * 中文模块说明：配音前端模块，负责 Edge-TTS 与 Chatterbox 的编辑、任务和音色交互
  */
-import { computed, onBeforeUnmount, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
 import {
   CHATTERBOX_MAX_BATCH_SEGMENTS,
   CHATTERBOX_MAX_BATCH_TEXT_LENGTH,
@@ -70,7 +70,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const autoSegmentVisible = ref(false);
   const autoSegmentText = ref("");
   const language = ref<ChatterboxLanguage>("ms");
-  const device = ref<ChatterboxDevice>("cpu");
+  const device = ref<ChatterboxDevice>("cuda");
   const authorization = ref<ChatterboxVoiceAuthorization>("self");
   const consentConfirmed = ref(false);
   const exaggeration = ref(0.5);
@@ -79,12 +79,19 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const seed = ref(0);
   const includeSubtitles = ref(true);
   const subtitleMode = ref<ChatterboxSubtitleMode>("sentences");
-  const referenceRetained = ref(false);
   const creating = ref(false);
   const currentBatch = ref<ChatterboxBatch>();
   const itemDrafts = reactive<Record<string, ItemDraft>>({});
   const dragItemId = ref<string>();
   const errorMessage = ref("");
+  let initialDeviceResolved = false;
+
+  watch(health, (value) => {
+    if (initialDeviceResolved || !value?.available) return;
+    initialDeviceResolved = true;
+    // 首次就绪时优先 GPU；无 CUDA 时使用 CPU，后续状态刷新不覆盖用户选择。
+    if (device.value === "cuda" && value.cudaAvailable !== true) device.value = "cpu";
+  });
 
   // 统一在 composable 计算表单约束，页面按钮只依赖 canCreate，避免出现校验分支不一致。
   const totalCharacters = computed(() => segments.value.reduce((sum, item) => sum + item.text.length, 0));
@@ -94,6 +101,11 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     () => parsedAutoSegments.value.filter((item) => item.referenceTranslation).length
   );
   const isCurrentRunning = computed(() => currentBatch.value && isBatchRunning(currentBatch.value));
+  const hasBatchDraft = computed(
+    () =>
+      Boolean(batchName.value.trim() || autoSegmentText.value.trim()) ||
+      segments.value.some((item) => item.text.trim() || item.referenceTranslation.trim() || item.fileName.trim())
+  );
   const cudaAvailable = computed(() => health.value?.cudaAvailable === true);
   const languageSavedVoices = computed(() => savedVoices.value.filter((voice) => voice.language === language.value));
   const hasSelectedReference = computed(() =>
@@ -107,10 +119,12 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
       (device.value === "cpu" || cudaAvailable.value) &&
       hasSelectedReference.value &&
       consentConfirmed.value &&
+      segments.value.length > 0 &&
+      segments.value.length <= maxBatchSegments &&
       segments.value.every((item) => item.text.trim() && item.text.length <= maxTextLength) &&
       segments.value.every((item) => item.referenceTranslation.length <= maxReferenceTranslationLength) &&
       totalCharacters.value <= maxBatchTextLength &&
-      !isCurrentRunning.value
+      !creating.value
     )
   );
   const healthLabel = computed(() =>
@@ -149,6 +163,24 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   }
   function removeEditorSegment(index: number) {
     if (segments.value.length > 1) segments.value.splice(index, 1);
+  }
+  async function clearBatchDraft() {
+    if (creating.value || !hasBatchDraft.value) return;
+    if (
+      !(await options.confirmAction(
+        "清空当前待提交的批次名称、全部文案、中文翻译和文件名？已加入队列的任务和生成结果不受影响。",
+        { title: "清空当前批次内容", positiveText: "确认清空", danger: true }
+      ))
+    ) {
+      return;
+    }
+    // 只重置编辑草稿，音色、生成参数和服务端批次保持不变。
+    batchName.value = "";
+    segments.value = [newEditorSegment()];
+    autoSegmentText.value = "";
+    autoSegmentVisible.value = false;
+    dragItemId.value = undefined;
+    options.message.success("当前批次内容已清空");
   }
   function moveSegment(index: number, delta: number) {
     const target = index + delta;
@@ -294,7 +326,6 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     seed,
     includeSubtitles,
     subtitleMode,
-    referenceRetained,
     creating,
     currentBatch,
     itemDrafts,
@@ -305,6 +336,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     parsedAutoSegments,
     translatedAutoSegmentCount,
     isCurrentRunning,
+    hasBatchDraft,
     canCreate,
     healthLabel,
     languageSavedVoices,
@@ -312,6 +344,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     addSegment,
     duplicateSegment,
     removeEditorSegment,
+    clearBatchDraft,
     moveSegment,
     startSegmentDrag,
     allowSegmentDrop,

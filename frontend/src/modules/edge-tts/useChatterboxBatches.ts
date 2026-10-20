@@ -1,11 +1,12 @@
 /**
  * 中文模块说明：配音前端模块，负责 Edge-TTS 与 Chatterbox 的编辑、任务和音色交互
  */
-import { computed, onMounted, ref, watch, type Ref } from "vue";
+import { computed, onMounted, onScopeDispose, ref, watch, type Ref } from "vue";
 import type { ChatterboxBatch, ChatterboxBatchList, ChatterboxTaskList, TaskDto } from "@toolbox/shared";
 import { chatterboxApi } from "./chatterbox-api";
 import type { ChatterboxEditorState } from "./useChatterboxEditor";
 import { ApiRequestError, formatApiError, isApiErrorCancelled } from "../../services/http";
+import { useSpeechBatchSelection } from "./useSpeechBatchSelection";
 
 type BatchMessage = {
   success: (message: string) => void;
@@ -32,6 +33,8 @@ export function useChatterboxBatches(options: {
 }) {
   const editor = options.editor;
   const loadingBatches = ref(false);
+  const batchPage = ref(1);
+  let batchesRequestId = 0;
   const batchHistory = ref<ChatterboxBatchList>({
     batches: [],
     pagination: { page: 1, pageSize: 10, total: 0, totalPages: 1 }
@@ -43,7 +46,30 @@ export function useChatterboxBatches(options: {
   const detailBatch = ref<ChatterboxBatch>();
   const detailVisible = ref(false);
   const regeneratingItemId = ref<string>();
+  const reusingBatchId = ref<string>();
   const errorMessage = editor.errorMessage;
+  let disposed = false;
+  let mutationVersion = 0;
+  let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingRefresh: { id: string; notify: boolean } | undefined;
+  let refreshPromise: Promise<void> | undefined;
+  let refreshController: AbortController | undefined;
+  let refreshError: string | undefined;
+  const notifiedRuns = new Set<string>();
+  const batchSelection = useSpeechBatchSelection({
+    batches: computed(() => batchHistory.value.batches),
+    blocked: () => loadingBatches.value,
+    remove: (id) => chatterboxApi.removeBatch(id),
+    onRemoved: forgetBatch,
+    reload: loadBatches,
+    confirm: options.confirmAction,
+    message: options.message
+  });
+  function forgetBatch(id: string) {
+    mutationVersion++;
+    if (editor.currentBatch.value?.id === id) editor.currentBatch.value = undefined;
+    if (detailBatch.value?.id === id) detailVisible.value = false;
+  }
 
   const orderedDetailItems = computed(() =>
     detailBatch.value ? [...detailBatch.value.items].sort((a, b) => a.order - b.order) : []
@@ -61,40 +87,113 @@ export function useChatterboxBatches(options: {
   // 页面进入时并行读取新批次和旧任务历史；旧历史读取失败不阻断新批次功能。
   onMounted(() => void Promise.all([loadBatches(), loadLegacyHistory()]));
   watch(options.taskEvents.task, (task) => {
-    // SSE 只更新当前编辑批次，其他任务的进度交给各自页面或任务中心处理。
+    // 通用任务事件不包含分段状态和音频时长，必须同步完整批次，不能只移动进度条。
     const current = editor.currentBatch.value;
     if (!task || task.id !== current?.id) return;
-    const next: ChatterboxBatch = {
-      ...current,
-      status:
-        task.status === "pending"
-          ? "queued"
-          : task.status === "running"
-            ? "processing"
-            : task.status === "completed"
-              ? "completed"
-              : "partial_failed",
-      progress: task.progress,
-      updatedAt: task.updatedAt
-    };
-    editor.currentBatch.value = next;
-    if (detailBatch.value?.id === task.id) setDetailBatch(next);
-    if (task.status === "completed" || task.status === "failed") void finishStreamedBatch(task.id);
+    void refreshBatch(task.id, task.status === "completed" || task.status === "failed");
   });
   watch(options.taskEvents.error, (error) => {
     if (error && !isApiErrorCancelled(error)) errorMessage.value = formatApiError(error);
   });
+  watch([() => editor.currentBatch.value?.id, editor.isCurrentRunning], ([id], [previousId]) => {
+    if (id !== previousId) refreshController?.abort();
+    schedulePoll();
+  });
+  onScopeDispose(() => {
+    disposed = true;
+    pendingRefresh = undefined;
+    refreshController?.abort();
+    if (pollTimer) clearTimeout(pollTimer);
+  });
+
+  function schedulePoll() {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = undefined;
+    const batch = editor.currentBatch.value;
+    if (disposed || !batch || !isBatchRunning(batch)) return;
+    // SSE 断连、静默或事件遗漏时仍每两秒补齐一次真实快照，不制造估算进度。
+    pollTimer = setTimeout(async () => {
+      await refreshBatch(batch.id);
+      schedulePoll();
+    }, 2000);
+  }
+
+  function refreshBatch(id: string, notify = false): Promise<void> {
+    if (disposed || editor.currentBatch.value?.id !== id) return Promise.resolve();
+    pendingRefresh = { id, notify: notify || (pendingRefresh?.id === id && pendingRefresh.notify) };
+    if (!refreshPromise)
+      refreshPromise = drainRefreshes().finally(() => {
+        refreshPromise = undefined;
+      });
+    return refreshPromise;
+  }
+
+  async function drainRefreshes() {
+    while (!disposed && pendingRefresh) {
+      const request = pendingRefresh;
+      pendingRefresh = undefined;
+      const version = mutationVersion;
+      const controller = new AbortController();
+      refreshController = controller;
+      try {
+        const batch = await chatterboxApi.batch(request.id, controller.signal);
+        const previous = editor.currentBatch.value;
+        if (disposed || controller.signal.aborted || previous?.id !== request.id || version !== mutationVersion)
+          continue;
+        if (refreshError && errorMessage.value === refreshError) errorMessage.value = "";
+        refreshError = undefined;
+        editor.currentBatch.value = batch;
+        if (detailBatch.value?.id === batch.id) setDetailBatch(batch, true);
+        const terminal = !isBatchRunning(batch);
+        if (terminal && (request.notify || isBatchRunning(previous))) {
+          const run = `${batch.id}:${batch.items.map((item) => `${item.id}:${item.attempt}`).join(",")}`;
+          if (!notifiedRuns.has(run)) {
+            notifiedRuns.add(run);
+            if (batch.status === "completed") options.message.success("批量声音克隆生成完成");
+            else options.message.warning("批次已结束，请查看失败或取消的文案段");
+          }
+        }
+        if (terminal || previous.completedItems !== batch.completedItems || previous.failedItems !== batch.failedItems)
+          void loadBatches();
+      } catch (error) {
+        if (
+          !disposed &&
+          !controller.signal.aborted &&
+          version === mutationVersion &&
+          editor.currentBatch.value?.id === request.id &&
+          !isApiErrorCancelled(error)
+        ) {
+          refreshError = formatApiError(error, "批次进度读取失败");
+          errorMessage.value = refreshError;
+        }
+      } finally {
+        if (refreshController === controller) refreshController = undefined;
+      }
+    }
+  }
 
   async function loadBatches() {
+    const requestId = ++batchesRequestId;
     loadingBatches.value = true;
     try {
       // 列表刷新使用共享 API 和 Schema 解码，取消请求不显示为业务错误。
-      batchHistory.value = await chatterboxApi.batches(1, 10);
+      const result = await chatterboxApi.batches(batchPage.value, 10);
+      if (disposed || requestId !== batchesRequestId) return;
+      batchHistory.value = result;
+      // 删除最后一页的最后一条后，沿用服务端校正后的页码。
+      batchPage.value = result.pagination.page;
     } catch (error) {
+      if (disposed || requestId !== batchesRequestId) return;
+      batchPage.value = batchHistory.value.pagination.page;
       if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次记录读取失败");
     } finally {
-      loadingBatches.value = false;
+      if (!disposed && requestId === batchesRequestId) loadingBatches.value = false;
     }
+  }
+  async function changeBatchPage(page: number) {
+    if (!Number.isInteger(page) || page < 1 || page > batchHistory.value.pagination.totalPages) return;
+    batchPage.value = page;
+    await loadBatches();
   }
   async function loadLegacyHistory() {
     try {
@@ -108,6 +207,7 @@ export function useChatterboxBatches(options: {
     if (!editor.canCreate.value) return;
     // canCreate 已集中校验音色、授权、文本长度和模型状态，提交函数只负责组装 DTO 与刷新列表。
     editor.creating.value = true;
+    mutationVersion++;
     errorMessage.value = "";
     try {
       editor.currentBatch.value = await chatterboxApi.createBatch({
@@ -129,9 +229,10 @@ export function useChatterboxBatches(options: {
         seed: editor.seed.value || 0,
         includeSubtitles: editor.includeSubtitles.value,
         subtitleMode: editor.subtitleMode.value,
-        referenceRetained: editor.referenceRetained.value
+        referenceRetained: true
       });
       options.message.success("批次已加入生成队列");
+      batchPage.value = 1;
       await loadBatches();
     } catch (error) {
       if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "声音克隆批次创建失败");
@@ -140,19 +241,8 @@ export function useChatterboxBatches(options: {
     }
   }
 
-  async function finishStreamedBatch(batchId: string) {
-    try {
-      // 收到终态事件后再拉取一次完整批次，确保媒体 URL、失败文案和排序信息不是旧快照。
-      const batch = await chatterboxApi.batch(batchId);
-      if (editor.currentBatch.value?.id !== batchId) return;
-      editor.currentBatch.value = batch;
-      if (detailBatch.value?.id === batchId) setDetailBatch(batch);
-      if (batch.status === "completed") options.message.success("批量声音克隆生成完成");
-      else options.message.warning("批次已结束，请查看失败文案段");
-      await loadBatches();
-    } catch (error) {
-      if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次结果读取失败");
-    }
+  function finishStreamedBatch(batchId: string) {
+    return refreshBatch(batchId, true);
   }
 
   async function openBatch(id: string) {
@@ -165,9 +255,10 @@ export function useChatterboxBatches(options: {
       notifyError(options.message, error, "批次详情读取失败");
     }
   }
-  function setDetailBatch(batch: ChatterboxBatch) {
+  function setDetailBatch(batch: ChatterboxBatch, preserveDrafts = false) {
     detailBatch.value = batch;
     for (const item of batch.items) {
+      if (preserveDrafts && editor.itemDrafts[item.id]) continue;
       editor.itemDrafts[item.id] = {
         text: item.text,
         referenceTranslation: item.referenceTranslation || "",
@@ -190,6 +281,7 @@ export function useChatterboxBatches(options: {
       return options.message.warning("请先选择永久参考音色或重新上传音频");
     }
     regeneratingItemId.value = itemId;
+    mutationVersion++;
     try {
       // 重生成沿用当前批次参数，只覆盖当前段草稿；服务端负责重新排队并保持其他段的音频。
       const draft = editor.itemDrafts[itemId];
@@ -222,6 +314,7 @@ export function useChatterboxBatches(options: {
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
     [ids[index], ids[target]] = [ids[target], ids[index]];
+    mutationVersion++;
     try {
       setDetailBatch(await chatterboxApi.reorder(detailBatch.value.id, ids));
       await loadBatches();
@@ -232,6 +325,7 @@ export function useChatterboxBatches(options: {
   async function removeBatchItem(itemId: string) {
     if (!detailBatch.value) return;
     if (!(await options.confirmAction("删除这一段及其音频，并重建总 SRT？", { title: "删除文案段" }))) return;
+    mutationVersion++;
     try {
       const result = await chatterboxApi.removeBatchItem(detailBatch.value.id, itemId);
       if (result.batch) setDetailBatch(result.batch);
@@ -249,8 +343,10 @@ export function useChatterboxBatches(options: {
       }))
     )
       return;
+    mutationVersion++;
     try {
       editor.currentBatch.value = await chatterboxApi.cancelBatch(id);
+      if (detailBatch.value?.id === id) setDetailBatch(editor.currentBatch.value, true);
       await loadBatches();
     } catch (error) {
       notifyError(options.message, error, "取消失败");
@@ -261,6 +357,7 @@ export function useChatterboxBatches(options: {
       !(await options.confirmAction("提前删除参考音色后，再次生成需要重新上传。确定删除？", { title: "删除参考音色" }))
     )
       return;
+    mutationVersion++;
     try {
       await chatterboxApi.removeBatchReference(id);
       await refreshDetail();
@@ -270,15 +367,61 @@ export function useChatterboxBatches(options: {
     }
   }
   async function removeBatch(id: string) {
+    if (batchSelection.deletingBatches.value) return;
     if (!(await options.confirmAction("删除整个批次、全部音频和总 SRT？", { title: "删除整个批次" }))) return;
+    mutationVersion++;
     try {
       await chatterboxApi.removeBatch(id);
-      if (editor.currentBatch.value?.id === id) editor.currentBatch.value = undefined;
-      if (detailBatch.value?.id === id) detailVisible.value = false;
+      forgetBatch(id);
       await loadBatches();
       options.message.success("批次已删除");
     } catch (error) {
       notifyError(options.message, error, "删除批次失败");
+    }
+  }
+  async function reuseBatch(id: string) {
+    if (disposed || editor.creating.value || reusingBatchId.value) return;
+    reusingBatchId.value = id;
+    try {
+      // 列表只含预览摘要；必须读取完整文案及中文，不能将截断预览写回输入区。
+      const batch = await chatterboxApi.batch(id);
+      if (disposed) return;
+      if (
+        editor.hasBatchDraft.value &&
+        !(await options.confirmAction("用该批次的完整文案和设置覆盖当前待提交内容？已排队任务及原批次不受影响。", {
+          title: "重新填入批次",
+          positiveText: "确认填入",
+          danger: false
+        }))
+      )
+        return;
+      if (disposed || editor.creating.value) return;
+      editor.segments.value = [...batch.items]
+        .sort((a, b) => a.order - b.order)
+        .map((item) => editor.newEditorSegment(item.text, item.fileName || "", item.referenceTranslation || ""));
+      editor.batchName.value = batch.name || "";
+      editor.language.value = batch.language;
+      editor.device.value =
+        batch.device === "cuda" && editor.health.value?.cudaAvailable !== true ? "cpu" : batch.device || "cpu";
+      editor.authorization.value = batch.authorization;
+      editor.consentConfirmed.value = false;
+      editor.exaggeration.value = batch.exaggeration;
+      editor.cfgWeight.value = batch.cfgWeight;
+      editor.temperature.value = batch.temperature;
+      editor.seed.value = batch.seed;
+      editor.includeSubtitles.value = batch.includeSubtitles;
+      editor.subtitleMode.value = batch.subtitleMode;
+      editor.autoSegmentText.value = "";
+      editor.autoSegmentVisible.value = false;
+      editor.dragItemId.value = undefined;
+      document
+        .querySelector<HTMLElement>(".chatterbox-panel .batch-editor")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      options.message.success("文案和设置已重新填入，请确认参考音色与授权后生成；原批次不变");
+    } catch (error) {
+      if (!disposed) notifyError(options.message, error, "重新填入批次失败");
+    } finally {
+      if (!disposed) reusingBatchId.value = undefined;
     }
   }
   async function reuseLegacy(id: string) {
@@ -310,16 +453,19 @@ export function useChatterboxBatches(options: {
   }
 
   return {
+    ...batchSelection,
     loadingBatches,
     batchHistory,
     legacyHistory,
     detailBatch,
     detailVisible,
     regeneratingItemId,
+    reusingBatchId,
     errorMessage,
     orderedDetailItems,
     retryVoiceOptions,
     loadBatches,
+    changeBatchPage,
     createBatch,
     openBatch,
     regenerateItem,
@@ -329,6 +475,7 @@ export function useChatterboxBatches(options: {
     removeReference,
     removeBatch,
     reuseLegacy,
+    reuseBatch,
     removeLegacy,
     finishStreamedBatch
   };

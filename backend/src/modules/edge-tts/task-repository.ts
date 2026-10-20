@@ -69,10 +69,11 @@ export class EdgeTtsTaskRepository {
     }
   }
 
-  async create(input: EdgeTtsCreateTaskInput, retentionDays: number) {
+  async create(input: EdgeTtsCreateTaskInput, retentionDays: number, batchId?: string) {
     const now = new Date();
     const task: EdgeTtsTask = {
       ...input,
+      ...(batchId ? { batchId } : {}),
       id: nanoid(12),
       status: "queued",
       progress: 0,

@@ -74,6 +74,17 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/v1/tools/edge-tts"
   },
   {
+    id: "audio-library",
+    title: "直播音频库",
+    description: "永久保存双语直播音频，按分组整理并组织循环播放。",
+    category: "audio",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["audio/mpeg", "audio/wav", "audio/mp4", "audio/flac"],
+    routePath: "/tools/audio-library",
+    apiNamespace: "/api/v1/tools/audio-library"
+  },
+  {
     id: "short-video",
     title: "短视频解析",
     description: "解析抖音、小红书、TikTok 分享链接，提取公开视频、图集、封面和作者信息。",

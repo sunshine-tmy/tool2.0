@@ -2080,7 +2080,8 @@ a {
   box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.1);
 }
 
-.chatterbox-panel {
+.chatterbox-panel,
+.online-tts-panel {
   display: grid;
   width: 100%;
   min-width: 0;
@@ -2405,6 +2406,7 @@ a {
 .edge-tts-result-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
 }
 

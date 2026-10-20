@@ -16,6 +16,7 @@ describe("tool registry", () => {
       "lan-transfer",
       "video-text",
       "edge-tts",
+      "audio-library",
       "short-video",
       "xhs-archive"
     ]);

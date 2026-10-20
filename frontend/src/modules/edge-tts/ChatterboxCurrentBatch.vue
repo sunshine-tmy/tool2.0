@@ -9,7 +9,10 @@
           {{ panel.batchStatusLabel(panel.currentBatch.status) }} · {{ panel.currentBatch.completedItems }}/{{
             panel.currentBatch.items.length
           }}
-          完成 · {{ panel.formatDuration(panel.currentBatch.totalAudioDurationSeconds) }}
+          完成 · 累计音频 {{ formatAudioDuration(panel.currentBatch.totalAudioDurationSeconds) }}
+        </p>
+        <p v-if="panel.isCurrentRunning" class="chatterbox-live-progress" aria-live="polite">
+          {{ progressPercent }}% · {{ currentPhase }}
         </p>
       </div>
       <span
@@ -18,47 +21,29 @@
         >{{ panel.batchStatusLabel(panel.currentBatch.status) }}</span
       >
     </div>
-    <div v-if="panel.isCurrentRunning" class="edge-tts-progress">
-      <span :style="{ width: `${Math.max(4, panel.currentBatch.progress)}%` }" />
+    <div
+      v-if="panel.isCurrentRunning"
+      class="edge-tts-progress"
+      role="progressbar"
+      aria-label="声音克隆批次进度"
+      :aria-valuenow="progressPercent"
+      :aria-valuemin="0"
+      :aria-valuemax="100"
+    >
+      <span :style="{ width: `${progressPercent}%` }" />
     </div>
     <div class="edge-tts-result-actions">
-      <n-button secondary @click="panel.openBatch(panel.currentBatch.id)"><ListTree :size="17" />查看详情</n-button>
-      <a
-        v-if="panel.currentBatch.archiveUrl"
-        class="download-button primary"
-        :href="panel.mediaUrl(panel.currentBatch.archiveUrl)"
+      <SaveToAudioLibrary
+        toolbar
+        :batch-id="panel.currentBatch.id"
+        :items="panel.currentBatch.items"
+        label="全部加入音频库"
+      />
+      <n-button size="small" @click="panel.openBatch(panel.currentBatch.id)"
+        ><template #icon><ListTree :size="15" /></template>查看详情</n-button
       >
-        <Archive :size="17" />下载全部 ZIP
-      </a>
-      <a
-        v-if="panel.currentBatch.combinedAudioUrl"
-        class="download-button"
-        :href="panel.mediaUrl(panel.currentBatch.combinedAudioUrl)"
-      >
-        <FileAudio :size="17" />下载总音频
-      </a>
-      <a
-        v-if="panel.currentBatch.subtitleUrl"
-        class="download-button"
-        :href="panel.mediaUrl(panel.currentBatch.subtitleUrl)"
-      >
-        <Captions :size="17" />下载原文 SRT
-      </a>
-      <a
-        v-if="panel.currentBatch.translationSubtitleUrl"
-        class="download-button"
-        :href="panel.mediaUrl(panel.currentBatch.translationSubtitleUrl)"
-      >
-        <Languages :size="17" />下载中文 SRT
-      </a>
-      <a
-        v-if="panel.currentBatch.bilingualSubtitleUrl"
-        class="download-button"
-        :href="panel.mediaUrl(panel.currentBatch.bilingualSubtitleUrl)"
-      >
-        <Languages :size="17" />下载双语 SRT
-      </a>
-      <n-button v-if="panel.isCurrentRunning" secondary @click="panel.cancelBatch(panel.currentBatch.id)"
+      <SpeechBatchDownloads toolbar :batch="panel.currentBatch" />
+      <n-button v-if="panel.isCurrentRunning" size="small" @click="panel.cancelBatch(panel.currentBatch.id)"
         >取消剩余</n-button
       >
     </div>
@@ -66,9 +51,29 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import { NButton } from "naive-ui";
-import { Archive, Captions, FileAudio, Languages, ListTree } from "lucide-vue-next";
+import { ListTree } from "lucide-vue-next";
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
+import SaveToAudioLibrary from "../audio-library/SaveToAudioLibrary.vue";
+import SpeechBatchDownloads from "./SpeechBatchDownloads.vue";
+import { formatAudioDuration } from "./speech-batch-display";
 
 const panel = useChatterboxPanelContext();
+const progressPercent = computed(() => Math.min(100, Math.max(0, Math.round(panel.currentBatch?.progress || 0))));
+const currentPhase = computed(() => {
+  const batch = panel.currentBatch;
+  if (!batch) return "";
+  const index = batch.items.findIndex((item) => item.status === "processing");
+  if (index >= 0) {
+    const progress = batch.items[index].progress;
+    return progress >= 99
+      ? "正在整理总音频与字幕"
+      : progress >= 82
+        ? `正在处理第 ${index + 1} 段音频`
+        : `正在生成第 ${index + 1} 段`;
+  }
+  const queued = batch.items.findIndex((item) => item.status === "queued");
+  return queued >= 0 ? `等待处理第 ${queued + 1} 段` : "正在整理总音频与字幕";
+});
 </script>

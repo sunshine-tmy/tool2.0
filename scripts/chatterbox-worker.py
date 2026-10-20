@@ -288,6 +288,26 @@ class ModelManager:
             torch.cuda.empty_cache()
 
 
+def load_safetensors_incrementally(checkpoint: Path, device: str) -> dict[str, Any]:
+    """逐个张量搬运，避开 Windows/PyTorch 大文件 Storage 切片的原生访问冲突。
+
+    固定的 V3 检查点使用 NumPy 支持的 F32。safe_open 的 NumPy 路径由
+    safetensors 校验文件结构，每次只复制一个张量；不在 CPU 保留整套权重，也不
+    手工解析或放宽检查点格式。CPU 临时副本在同步传输完成后即可释放。
+    """
+    import torch
+    from safetensors import safe_open
+
+    state: dict[str, Any] = {}
+    with safe_open(checkpoint, framework="numpy", device="cpu") as tensors:
+        for name in tensors.keys():
+            array = tensors.get_tensor(name)
+            cpu_tensor = torch.from_numpy(array)
+            state[name] = cpu_tensor.to(device)
+            del cpu_tensor, array
+    return state
+
+
 def load_multilingual_model(device: str) -> Any:
     """加载 V3 模型，并在 CUDA 上避免主内存或显存中同时保留两份权重。"""
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
@@ -319,7 +339,6 @@ def load_multilingual_model(device: str) -> Any:
     from chatterbox.models.voice_encoder import VoiceEncoder
     from chatterbox.mtl_tts import Conditionals
     from huggingface_hub import snapshot_download
-    from safetensors.torch import load_file as load_safetensors
 
     t3_model = "t3_mtl23ls_v3.safetensors"
     if DESKTOP_MANAGED:
@@ -355,7 +374,7 @@ def load_multilingual_model(device: str) -> Any:
     # 因此先在 meta 设备上建立结构，再把直接加载到 GPU 的权重绑定给模型，全程只保留一份。
     with torch.device("meta"):
         t3 = T3(T3Config.multilingual())
-    t3_state = load_safetensors(checkpoint_dir / t3_model, device=0)
+    t3_state = load_safetensors_incrementally(checkpoint_dir / t3_model, device)
     if "model" in t3_state:
         t3_state = t3_state["model"][0]
     t3.load_state_dict(t3_state, assign=True)

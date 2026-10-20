@@ -271,15 +271,6 @@ export function registerChatterboxBatchItemRoutes(options: {
           );
         }
       }
-      const snapshot = store.get(batchId);
-      if (
-        snapshot &&
-        !snapshot.referenceRetained &&
-        !snapshot.items.some((item) => item.status === "queued" || item.status === "processing")
-      ) {
-        await fsp.rm(store.paths(batchId).reference, { force: true });
-        await store.updateBatch(batchId, { referenceAvailable: false });
-      }
       const updated = await store.recalculate(batchId);
       return ok(toPublicBatch(updated!));
     }

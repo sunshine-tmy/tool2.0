@@ -17,6 +17,20 @@ afterEach(async () => {
 });
 
 describe("desktop data migration", () => {
+  it("recognizes an audio-library-only data root and retains its permanent manifest and media", async () => {
+    const { options, sourceRoot } = await createFixture();
+    const audioRoot = path.join(root!, "audio-only");
+    await fs.mkdir(options.dataRoot, { recursive: true });
+    await fs.mkdir(path.join(audioRoot, "audio-library", "items", "sample"), { recursive: true });
+    await fs.writeFile(path.join(audioRoot, "audio-library", "library.json"), '{"version":1}');
+    await fs.writeFile(path.join(audioRoot, "audio-library", "items", "sample", "audio.wav"), "audio");
+    await importDesktopData(options, audioRoot);
+    expect(
+      await fs.readFile(path.join(options.storageRoot, "audio-library", "items", "sample", "audio.wav"), "utf8")
+    ).toBe("audio");
+    expect(await fs.readFile(path.join(audioRoot, "audio-library", "library.json"), "utf8")).toBe('{"version":1}');
+    void sourceRoot;
+  });
   it("copies verified legacy data, atomically switches the live root, and retains an isolated rollback backup", async () => {
     const { options, sourceRoot } = await createFixture();
     await fs.mkdir(path.join(options.storageRoot, "outputs"), { recursive: true });

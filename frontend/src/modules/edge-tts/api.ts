@@ -9,9 +9,45 @@ import {
   EdgeTtsTaskSchema,
   EdgeTtsVoicesSchema
 } from "@toolbox/shared";
+import {
+  EdgeTtsBatchSchema,
+  EdgeTtsBatchListSchema,
+  type EdgeTtsBatchCreate,
+  type EdgeTtsBatchRegenerate
+} from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
 
 export const edgeTtsApi = {
+  createBatch(input: EdgeTtsBatchCreate) {
+    return withApiError(() =>
+      httpClient.post("/tools/edge-tts/batches", EdgeTtsBatchSchema, input, { timeout: 30_000 })
+    );
+  },
+  batches(page = 1, pageSize = 10) {
+    return withApiError(() =>
+      httpClient.get("/tools/edge-tts/batches", EdgeTtsBatchListSchema, { params: { page, pageSize } })
+    );
+  },
+  batch(id: string) {
+    return withApiError(() => httpClient.get(`/tools/edge-tts/batches/${id}`, EdgeTtsBatchSchema));
+  },
+  cancelBatch(id: string) {
+    return withApiError(() => httpClient.post(`/tools/edge-tts/batches/${id}/cancel`, EdgeTtsBatchSchema));
+  },
+  removeBatch(id: string) {
+    return withApiError(() => httpClient.delete(`/tools/edge-tts/batches/${id}`, EdgeTtsRemovalSchema));
+  },
+  regenerate(id: string, itemId: string, input: EdgeTtsBatchRegenerate) {
+    return withApiError(() =>
+      httpClient.post(`/tools/edge-tts/batches/${id}/items/${itemId}/regenerate`, EdgeTtsBatchSchema, input)
+    );
+  },
+  reorder(id: string, itemIds: string[]) {
+    return withApiError(() => httpClient.patch(`/tools/edge-tts/batches/${id}/order`, EdgeTtsBatchSchema, { itemIds }));
+  },
+  removeBatchItem(id: string, itemId: string) {
+    return withApiError(() => httpClient.delete(`/tools/edge-tts/batches/${id}/items/${itemId}`, EdgeTtsBatchSchema));
+  },
   health() {
     return withApiError(() => httpClient.get("/tools/edge-tts/health", EdgeTtsHealthSchema), "无法读取语音服务状态");
   },

@@ -246,6 +246,8 @@ async function discoverGenerated(directory, category, targets) {
   for (const entry of entries) {
     const target = path.join(directory, entry.name);
     if (entry.isDirectory()) {
+      // 音频库中的清单、音频与恢复文件是永久资产，不递归扫描其缓存/日志文件名。
+      if (entry.name === "audio-library" && path.basename(directory) === "storage") continue;
       if (ignored.has(entry.name) || entry.name.startsWith(".venv-")) continue;
       if (category === "dev-cache" && cacheNames.has(entry.name)) {
         targets.push(target);

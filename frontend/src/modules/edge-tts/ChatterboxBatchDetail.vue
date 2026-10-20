@@ -12,51 +12,29 @@
           <span>{{ panel.batchStatusLabel(panel.detailBatch.status) }}</span>
           <span>运行设备：{{ panel.detailBatch.device === "cuda" ? "GPU" : "CPU" }}</span>
           <span>{{ panel.detailBatch.completedItems }}/{{ panel.detailBatch.items.length }} 完成</span>
-          <span>总时长 {{ panel.formatDuration(panel.detailBatch.totalAudioDurationSeconds) }}</span>
+          <span>总时长 {{ formatAudioDuration(panel.detailBatch.totalAudioDurationSeconds) }}</span>
           <span>参考音色：{{ panel.detailBatch.referenceAvailable ? "可用于重生成" : "已删除" }}</span>
         </div>
         <div class="edge-tts-result-actions detail-top-actions">
-          <a
-            v-if="panel.detailBatch.archiveUrl"
-            class="download-button primary"
-            :href="panel.mediaUrl(panel.detailBatch.archiveUrl)"
-          >
-            <Archive :size="17" />下载全部 ZIP
-          </a>
-          <a
-            v-if="panel.detailBatch.combinedAudioUrl"
-            class="download-button"
-            :href="panel.mediaUrl(panel.detailBatch.combinedAudioUrl)"
-          >
-            <FileAudio :size="17" />下载总音频
-          </a>
-          <a
-            v-if="panel.detailBatch.subtitleUrl"
-            class="download-button"
-            :href="panel.mediaUrl(panel.detailBatch.subtitleUrl)"
-          >
-            <Captions :size="17" />下载原文 SRT
-          </a>
-          <a
-            v-if="panel.detailBatch.translationSubtitleUrl"
-            class="download-button"
-            :href="panel.mediaUrl(panel.detailBatch.translationSubtitleUrl)"
-          >
-            <Languages :size="17" />下载中文 SRT
-          </a>
-          <a
-            v-if="panel.detailBatch.bilingualSubtitleUrl"
-            class="download-button"
-            :href="panel.mediaUrl(panel.detailBatch.bilingualSubtitleUrl)"
-          >
-            <Languages :size="17" />下载双语 SRT
-          </a>
+          <SaveToAudioLibrary
+            toolbar
+            :batch-id="panel.detailBatch.id"
+            :items="
+              selectedIds.length
+                ? panel.orderedDetailItems.filter((x) => selectedIds.includes(x.id))
+                : panel.orderedDetailItems
+            "
+            :label="selectedIds.length ? '所选加入音频库' : '全部加入音频库'"
+          />
+          <SpeechBatchDownloads toolbar :batch="panel.detailBatch" />
           <n-button
             v-if="panel.detailBatch.referenceAvailable && !panel.isBatchRunning(panel.detailBatch)"
+            size="small"
+            type="error"
             secondary
             @click="panel.removeReference(panel.detailBatch.id)"
           >
-            提前删除参考音色
+            <template #icon><Trash2 :size="15" /></template>提前删除参考音色
           </n-button>
         </div>
         <div class="retry-reference">
@@ -80,58 +58,69 @@
         <div class="batch-detail-items">
           <article v-for="(item, index) in panel.orderedDetailItems" :key="item.id" class="batch-detail-item">
             <header>
+              <n-checkbox
+                :checked="selectedIds.includes(item.id)"
+                :disabled="item.status !== 'completed'"
+                :aria-label="`选择段落 ${index + 1}`"
+                @update:checked="
+                  (checked) =>
+                    (selectedIds = checked ? [...selectedIds, item.id] : selectedIds.filter((id) => id !== item.id))
+                "
+              />
               <strong>{{ String(index + 1).padStart(2, "0") }} · {{ item.fileName || `segment-${index + 1}` }}</strong>
               <n-tag :type="panel.taskTagType(item.status)" size="small"
                 >{{ panel.taskStatusLabel(item.status) }}
               </n-tag>
             </header>
-            <n-input
-              v-model:value="panel.itemDrafts[item.id].text"
-              type="textarea"
-              :maxlength="panel.maxTextLength"
-              show-count
-              :autosize="{ minRows: 3, maxRows: 8 }"
-            />
-            <n-input
-              v-model:value="panel.itemDrafts[item.id].referenceTranslation"
-              type="textarea"
-              :maxlength="panel.maxReferenceTranslationLength"
-              show-count
-              :autosize="{ minRows: 2, maxRows: 6 }"
-              placeholder="中文翻译（生成单独的中文 SRT，不参与配音）"
-            />
-            <div class="detail-item-fields">
-              <n-input v-model:value="panel.itemDrafts[item.id].fileName" maxlength="100" placeholder="文件名" />
-              <n-input-number
-                v-model:value="panel.itemDrafts[item.id].seed"
-                :min="0"
-                :max="2147483647"
-                :precision="0"
-                placeholder="随机种子"
+            <div class="detail-item-form">
+              <n-input
+                v-model:value="panel.itemDrafts[item.id].text"
+                type="textarea"
+                :maxlength="panel.maxTextLength"
+                show-count
+                :autosize="{ minRows: 3, maxRows: 8 }"
               />
-            </div>
-            <div class="detail-item-parameters">
-              <label
-                >情绪强度<n-input-number
-                  v-model:value="panel.itemDrafts[item.id].exaggeration"
-                  :min="0.25"
-                  :max="1.5"
-                  :step="0.05"
-              /></label>
-              <label
-                >音色遵循<n-input-number
-                  v-model:value="panel.itemDrafts[item.id].cfgWeight"
-                  :min="0"
-                  :max="1"
-                  :step="0.05"
-              /></label>
-              <label
-                >随机度<n-input-number
-                  v-model:value="panel.itemDrafts[item.id].temperature"
-                  :min="0.1"
-                  :max="1.5"
-                  :step="0.05"
-              /></label>
+              <n-input
+                v-model:value="panel.itemDrafts[item.id].referenceTranslation"
+                type="textarea"
+                :maxlength="panel.maxReferenceTranslationLength"
+                show-count
+                :autosize="{ minRows: 2, maxRows: 6 }"
+                placeholder="中文翻译（生成单独的中文 SRT，不参与配音）"
+              />
+              <n-input v-model:value="panel.itemDrafts[item.id].fileName" maxlength="100" placeholder="文件名" />
+              <div class="detail-item-parameters detail-item-parameters--clone">
+                <label
+                  ><span>情绪强度</span
+                  ><n-input-number
+                    v-model:value="panel.itemDrafts[item.id].exaggeration"
+                    :min="0.25"
+                    :max="1.5"
+                    :step="0.05"
+                /></label>
+                <label class="detail-item-parameter--seed">
+                  <span>随机种子</span>
+                  <n-input-number
+                    v-model:value="panel.itemDrafts[item.id].seed"
+                    :min="0"
+                    :max="2147483647"
+                    :precision="0"
+                    placeholder="随机种子"
+                  />
+                </label>
+                <label
+                  ><span>音色遵循</span
+                  ><n-input-number v-model:value="panel.itemDrafts[item.id].cfgWeight" :min="0" :max="1" :step="0.05"
+                /></label>
+                <label
+                  ><span>随机度</span
+                  ><n-input-number
+                    v-model:value="panel.itemDrafts[item.id].temperature"
+                    :min="0.1"
+                    :max="1.5"
+                    :step="0.05"
+                /></label>
+              </div>
             </div>
             <audio
               v-if="item.audioUrl"
@@ -141,43 +130,20 @@
               :src="panel.mediaUrl(item.audioUrl)"
             />
             <p v-if="item.error" class="edge-tts-error">{{ item.error }}</p>
-            <div class="detail-item-actions">
-              <n-button
-                size="small"
-                :disabled="index === 0 || panel.isBatchRunning(panel.detailBatch)"
-                @click="panel.moveDetailItem(index, -1)"
-              >
-                <ArrowUp :size="15" />上移
-              </n-button>
-              <n-button
-                size="small"
-                :disabled="index === panel.orderedDetailItems.length - 1 || panel.isBatchRunning(panel.detailBatch)"
-                @click="panel.moveDetailItem(index, 1)"
-              >
-                <ArrowDown :size="15" />下移
-              </n-button>
-              <a v-if="item.downloadUrl" class="download-button compact" :href="panel.mediaUrl(item.downloadUrl)">
-                <Download :size="15" />下载
-              </a>
-              <n-button
-                size="small"
-                type="primary"
-                :loading="panel.regeneratingItemId === item.id"
-                :disabled="item.status === 'queued' || item.status === 'processing'"
-                @click="panel.regenerateItem(item.id)"
-              >
-                <RotateCcw :size="15" />重新生成
-              </n-button>
-              <n-button
-                size="small"
-                type="error"
-                secondary
-                :disabled="panel.orderedDetailItems.length <= 1 || item.status === 'processing'"
-                @click="panel.removeBatchItem(item.id)"
-              >
-                <Trash2 :size="15" />删除
-              </n-button>
-            </div>
+            <SpeechDetailItemActions
+              :batch-id="panel.detailBatch.id"
+              :item="item"
+              :disable-move-up="index === 0 || panel.isBatchRunning(panel.detailBatch)"
+              :disable-move-down="
+                index === panel.orderedDetailItems.length - 1 || panel.isBatchRunning(panel.detailBatch)
+              "
+              :regenerating="panel.regeneratingItemId === item.id"
+              :disable-regenerate="item.status === 'queued' || item.status === 'processing'"
+              :disable-remove="panel.orderedDetailItems.length <= 1 || item.status === 'processing'"
+              @move="panel.moveDetailItem(index, $event)"
+              @regenerate="panel.regenerateItem(item.id)"
+              @remove="panel.removeBatchItem(item.id)"
+            />
           </article>
         </div>
       </template>
@@ -187,22 +153,23 @@
 
 <script setup lang="ts">
 import type { ComponentPublicInstance } from "vue";
-import { NButton, NCard, NInput, NInputNumber, NModal, NSelect, NTag } from "naive-ui";
-import {
-  Archive,
-  ArrowDown,
-  ArrowUp,
-  Captions,
-  Download,
-  FileAudio,
-  Languages,
-  RotateCcw,
-  Trash2,
-  UploadCloud
-} from "lucide-vue-next";
+import { NButton, NCard, NInput, NInputNumber, NModal, NSelect, NTag, NCheckbox } from "naive-ui";
+import { ref, watch } from "vue";
+import SaveToAudioLibrary from "../audio-library/SaveToAudioLibrary.vue";
+import SpeechDetailItemActions from "./SpeechDetailItemActions.vue";
+import SpeechBatchDownloads from "./SpeechBatchDownloads.vue";
+import { Trash2, UploadCloud } from "lucide-vue-next";
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
+import { formatAudioDuration } from "./speech-batch-display";
 
 const panel = useChatterboxPanelContext();
+const selectedIds = ref<string[]>([]);
+watch(
+  () => panel.detailBatch?.id,
+  () => {
+    selectedIds.value = [];
+  }
+);
 
 function setRetryReferenceInput(value: Element | ComponentPublicInstance | null) {
   panel.retryReferenceInput = value instanceof HTMLInputElement ? value : undefined;

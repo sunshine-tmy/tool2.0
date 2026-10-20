@@ -117,6 +117,14 @@
         <n-button secondary :disabled="panel.segments.length >= panel.maxBatchSegments" @click="panel.addSegment">
           <Plus :size="16" />添加一段
         </n-button>
+        <n-button
+          secondary
+          type="error"
+          :disabled="panel.creating || !panel.hasBatchDraft"
+          @click="panel.clearBatchDraft"
+        >
+          <Trash2 :size="16" />清空当前批次内容
+        </n-button>
       </div>
 
       <div class="segment-editor-list">
@@ -224,13 +232,6 @@
       <div class="control-section">
         <label>本批次运行设备</label>
         <div class="chatterbox-device-options" role="radiogroup" aria-label="本批次运行设备">
-          <label class="chatterbox-device-option" :class="{ active: panel.device === 'cpu' }">
-            <input v-model="panel.device" type="radio" name="chatterbox-device" value="cpu" />
-            <span class="chatterbox-device-option-copy">
-              <strong>CPU</strong>
-              <small>兼容优先</small>
-            </span>
-          </label>
           <label
             v-if="!isMacOSDesktop"
             class="chatterbox-device-option"
@@ -251,6 +252,13 @@
             <span class="chatterbox-device-option-copy">
               <strong>GPU</strong>
               <small>{{ panel.cudaAvailable ? panel.health?.gpuName || "CUDA 加速" : "CUDA 未就绪" }}</small>
+            </span>
+          </label>
+          <label class="chatterbox-device-option" :class="{ active: panel.device === 'cpu' }">
+            <input v-model="panel.device" type="radio" name="chatterbox-device" value="cpu" />
+            <span class="chatterbox-device-option-copy">
+              <strong>CPU</strong>
+              <small>兼容优先</small>
             </span>
           </label>
         </div>
@@ -302,26 +310,23 @@
         <label>字幕分段方式</label>
         <n-select v-model:value="panel.subtitleMode" :options="panel.subtitleModeOptions" />
         <n-checkbox v-model:checked="panel.includeSubtitles">生成总 SRT；填写中文时同时生成中文与双语 SRT</n-checkbox>
-        <n-checkbox v-model:checked="panel.referenceRetained">保留标准化参考音色 3 天，支持一键重新生成</n-checkbox>
       </div>
 
       <n-button
         type="primary"
         size="large"
         block
-        :loading="panel.creating || panel.isCurrentRunning"
+        :loading="panel.creating"
         :disabled="!panel.canCreate"
         @click="panel.createBatch"
       >
         <template #icon><Layers3 :size="18" /></template>
-        {{
-          panel.isCurrentRunning
-            ? `批量生成中 ${panel.currentBatch?.progress || 0}%`
-            : `批量生成 ${panel.validSegmentCount} 个音频`
-        }}
+        {{ panel.creating ? "正在加入队列…" : `添加 ${panel.validSegmentCount} 个音频到生成队列` }}
       </n-button>
-      <p v-if="!panel.referenceRetained" class="chatterbox-hint">
-        批次结束后会删除参考音色；以后重新生成单段时需要再次上传。
+      <p class="chatterbox-hint">任务按入队顺序依次生成；执行期间可继续编辑并添加新批次，不影响已提交的内容。</p>
+      <p class="chatterbox-hint">
+        参考音色随批次保留
+        {{ panel.health?.retentionDays || 3 }} 天，批次结束后可直接重新生成；也可在详情中手动删除参考音色。
       </p>
       <p v-if="!panel.health?.available" class="edge-tts-error">
         克隆服务正在准备或启动失败。首次一键启动会自动安装环境和下载模型；请保持启动窗口开启并查看其中的错误提示。

@@ -129,7 +129,17 @@ async def synthesize(input_path: str, audio_path: str, subtitle_path: str | None
     audio_target.unlink(missing_ok=True)
     if subtitle_target:
         subtitle_target.unlink(missing_ok=True)
-    raise RuntimeError(str(last_error) if last_error else "Speech generation failed")
+    raise RuntimeError(generation_error_message(last_error))
+
+
+def generation_error_message(error: Exception | None) -> str:
+    if getattr(error, "status", None) == 403:
+        # 不把握手 URL、连接标识和服务令牌展示给用户。
+        return (
+            "在线语音服务拒绝请求（HTTP 403）。请将 Edge-TTS 组件更新至 7.3.1 或更高版本；"
+            "如已更新，请稍后重试并检查网络。"
+        )
+    return str(error) if error else "Speech generation failed"
 
 
 def parser() -> argparse.ArgumentParser:

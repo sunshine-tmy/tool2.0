@@ -141,7 +141,8 @@ export function parseBatchFields(
       language: fields.language,
       device: parseDevice(fields.device),
       referenceFileName,
-      referenceRetained: fields.referenceRetained === "true",
+      // 兼容旧客户端传入 false，但不再允许批次终态自动删除参考音色。
+      referenceRetained: true,
       authorization: fields.authorization,
       consentConfirmed: true,
       exaggeration,

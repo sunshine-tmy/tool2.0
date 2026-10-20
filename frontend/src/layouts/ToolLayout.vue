@@ -270,6 +270,7 @@ const iconByTool: Record<string, unknown> = {
   "lan-transfer": FileArchive,
   "video-text": FileVideo,
   "edge-tts": AudioLines,
+  "audio-library": AudioLines,
   "short-video": Clapperboard,
   "xhs-archive": LibraryBig
 };
@@ -282,7 +283,7 @@ const filteredTools = computed(() => {
 
 const toolGroupDefinitions = [
   { label: "图片工具", ids: ["image-compress", "image-ai"] },
-  { label: "视频与文案", ids: ["video-text", "edge-tts", "short-video", "xhs-archive"] },
+  { label: "视频与文案", ids: ["video-text", "edge-tts", "audio-library", "short-video", "xhs-archive"] },
   { label: "文件协作", ids: ["lan-transfer"] }
 ];
 

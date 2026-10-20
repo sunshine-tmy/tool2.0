@@ -37,6 +37,13 @@ export class EdgeTtsQueue {
     return { active: this.active.size, queued: this.pending.length };
   }
 
+  cancelPending(id: string) {
+    const index = this.pending.indexOf(id);
+    if (index < 0) return false;
+    this.pending.splice(index, 1);
+    return true;
+  }
+
   async close() {
     this.stopped = true;
     this.pending.length = 0;

@@ -164,11 +164,11 @@ function batch(status: ChatterboxBatch["status"] = "completed"): ChatterboxBatch
   };
 }
 
-function batchList(): ChatterboxBatchList {
+function batchList(page = 1, total = 1): ChatterboxBatchList {
   const current = batch();
   return {
     batches: [{ ...current, itemPreviews: current.items.map((item) => ({ ...item, textPreview: item.text })) }],
-    pagination: { page: 1, pageSize: 10, total: 1, totalPages: 1 }
+    pagination: { page, pageSize: 10, total, totalPages: Math.max(1, Math.ceil(total / 10)) }
   };
 }
 
@@ -244,6 +244,310 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("useChatterboxPanel", () => {
+  it("bulk deletes selected clone batches and clears matching current/detail state", async () => {
+    const { panel, wrapper } = await mountPanel();
+    await panel.openBatch("batch-1");
+    panel.currentBatch.value = batch();
+    panel.toggleAllPageBatches(true);
+    mocks.api.batches.mockResolvedValue(batchList(1, 0));
+    await panel.removeSelectedBatches();
+    expect(mocks.api.removeBatch).toHaveBeenCalledExactlyOnceWith("batch-1");
+    expect(panel.currentBatch.value).toBeUndefined();
+    expect(panel.detailVisible.value).toBe(false);
+    expect(panel.selectedBatchIds.value).toEqual([]);
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("1 个批次"),
+      expect.objectContaining({ title: "删除所选批次" })
+    );
+    wrapper.unmount();
+  });
+  it("refills complete bilingual batch drafts in order without changing the source batch or running queue", async () => {
+    const { panel, wrapper } = await mountPanel();
+    const source = batch();
+    source.items.reverse();
+    source.seed = 42;
+    source.device = "cuda";
+    mocks.api.batch.mockResolvedValue(source);
+    panel.health.value = { ...health(), cudaAvailable: true };
+    panel.currentBatch.value = { ...batch("processing"), id: "running-other" };
+    const selectedReference = new File(["reference"], "selected.wav");
+    panel.referenceFile.value = selectedReference;
+    panel.consentConfirmed.value = true;
+    const original = JSON.stringify(source);
+    await panel.reuseBatch(source.id);
+    expect(
+      panel.segments.value.map(({ text, fileName, referenceTranslation }) => ({ text, fileName, referenceTranslation }))
+    ).toEqual([
+      { text: "First line", fileName: "one", referenceTranslation: "第一行" },
+      { text: "Second line", fileName: "", referenceTranslation: "" }
+    ]);
+    expect(panel.segments.value[0].id).not.toBe("item-1");
+    expect(panel.batchName.value).toBe(source.name);
+    expect(panel.seed.value).toBe(42);
+    expect(panel.device.value).toBe("cuda");
+    expect(panel.consentConfirmed.value).toBe(false);
+    expect(panel.referenceFile.value).toMatchObject({ name: "selected.wav", size: selectedReference.size });
+    expect(panel.currentBatch.value.id).toBe("running-other");
+    expect(JSON.stringify(source)).toBe(original);
+    expect(mocks.api.createBatch).not.toHaveBeenCalled();
+    expect(mocks.api.cancelBatch).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("preserves the existing clone draft when replacement is cancelled or loading fails", async () => {
+    const { panel, wrapper } = await mountPanel();
+    panel.segments.value[0].text = "Keep this draft";
+    mocks.confirm.mockResolvedValue(false);
+    await panel.reuseBatch("batch-1");
+    expect(panel.segments.value[0].text).toBe("Keep this draft");
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ title: "重新填入批次" }));
+    mocks.api.batch.mockRejectedValue(new Error("missing batch"));
+    await panel.reuseBatch("missing");
+    expect(panel.segments.value[0].text).toBe("Keep this draft");
+    expect(panel.reusingBatchId.value).toBeUndefined();
+    expect(mocks.message.error).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("blocks clone refilling during submission and duplicate in-flight refills", async () => {
+    const { panel, wrapper } = await mountPanel();
+    panel.creating.value = true;
+    await panel.reuseBatch("batch-1");
+    expect(mocks.api.batch).not.toHaveBeenCalled();
+    panel.creating.value = false;
+    let finish!: (value: ChatterboxBatch) => void;
+    mocks.api.batch.mockImplementationOnce(
+      () =>
+        new Promise<ChatterboxBatch>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const pending = panel.reuseBatch("batch-1");
+    await panel.reuseBatch("batch-2");
+    expect(mocks.api.batch).toHaveBeenCalledTimes(1);
+    finish(batch());
+    await pending;
+    expect(panel.reusingBatchId.value).toBeUndefined();
+    wrapper.unmount();
+  });
+
+  it("paginates batch history and preserves the current page when refreshing", async () => {
+    mocks.api.batches.mockImplementation(async (page: number) => batchList(page, 25));
+    const { panel, wrapper } = await mountPanel();
+    expect(mocks.api.batches).toHaveBeenLastCalledWith(1, 10);
+    await panel.changeBatchPage(2);
+    expect(mocks.api.batches).toHaveBeenLastCalledWith(2, 10);
+    expect(panel.batchHistory.value.pagination).toMatchObject({ page: 2, total: 25, totalPages: 3 });
+    await panel.loadBatches();
+    expect(mocks.api.batches).toHaveBeenLastCalledWith(2, 10);
+    const calls = mocks.api.batches.mock.calls.length;
+    await panel.changeBatchPage(0);
+    await panel.changeBatchPage(4);
+    await panel.changeBatchPage(1.5);
+    expect(mocks.api.batches).toHaveBeenCalledTimes(calls);
+    wrapper.unmount();
+  });
+
+  it("keeps the displayed page and supports retry after a page request fails", async () => {
+    mocks.api.batches.mockImplementation(async (page: number) => batchList(page, 25));
+    const { panel, wrapper } = await mountPanel();
+    mocks.api.batches.mockRejectedValueOnce(new Error("Page unavailable"));
+    await panel.changeBatchPage(2);
+    expect(panel.batchHistory.value.pagination.page).toBe(1);
+    expect(panel.loadingBatches.value).toBe(false);
+    expect(panel.errorMessage.value).toContain("批次记录读取失败");
+    await panel.loadBatches();
+    expect(mocks.api.batches).toHaveBeenLastCalledWith(1, 10);
+    await panel.changeBatchPage(2);
+    expect(panel.batchHistory.value.pagination.page).toBe(2);
+    wrapper.unmount();
+  });
+
+  it("ignores older page responses when requests finish out of order", async () => {
+    mocks.api.batches.mockResolvedValue(batchList(1, 25));
+    const { panel, wrapper } = await mountPanel();
+    let resolveSecond!: (value: ChatterboxBatchList) => void;
+    mocks.api.batches.mockImplementationOnce(
+      () => new Promise<ChatterboxBatchList>((resolve) => (resolveSecond = resolve))
+    );
+    const older = panel.changeBatchPage(2);
+    expect(panel.loadingBatches.value).toBe(true);
+    mocks.api.batches.mockResolvedValueOnce(batchList(3, 25));
+    await panel.changeBatchPage(3);
+    expect(panel.batchHistory.value.pagination.page).toBe(3);
+    resolveSecond(batchList(2, 25));
+    await older;
+    expect(panel.batchHistory.value.pagination.page).toBe(3);
+    expect(panel.loadingBatches.value).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("uses the corrected page after deleting the last batch on the last page", async () => {
+    mocks.api.batches.mockImplementation(async (page: number) => batchList(page, 11));
+    const { panel, wrapper } = await mountPanel();
+    await panel.changeBatchPage(2);
+    mocks.api.batches.mockResolvedValue(batchList(1, 10));
+    await panel.removeBatch("batch-1");
+    expect(panel.batchHistory.value.pagination).toMatchObject({ page: 1, total: 10, totalPages: 1 });
+    await panel.loadBatches();
+    expect(mocks.api.batches).toHaveBeenLastCalledWith(1, 10);
+    wrapper.unmount();
+  });
+
+  it("returns to the first history page after submitting a new batch", async () => {
+    mocks.api.batches.mockImplementation(async (page: number) => batchList(page, 25));
+    const { panel, wrapper } = await mountPanel();
+    await panel.changeBatchPage(2);
+    panel.selectedVoiceId.value = "voice-1";
+    panel.consentConfirmed.value = true;
+    panel.segments.value[0].text = "New batch";
+    await panel.createBatch();
+    expect(mocks.api.createBatch).toHaveBeenCalledTimes(1);
+    expect(mocks.api.createBatch).toHaveBeenCalledWith(expect.objectContaining({ referenceRetained: true }));
+    expect(mocks.api.batches).toHaveBeenLastCalledWith(1, 10);
+    expect(panel.batchHistory.value.pagination.page).toBe(1);
+    wrapper.unmount();
+  });
+
+  it("defaults to GPU when CUDA is available without overriding later manual selection", async () => {
+    const gpuHealth = { ...health(), cudaAvailable: true, gpuName: "Test GPU" };
+    mocks.api.health.mockResolvedValue(gpuHealth);
+    const { panel, wrapper } = await mountPanel();
+    expect(panel.device.value).toBe("cuda");
+    panel.device.value = "cpu";
+    await panel.loadHealth();
+    await flushPromises();
+    expect(panel.device.value).toBe("cpu");
+    wrapper.unmount();
+  });
+
+  it("defaults to CPU when the ready worker has no CUDA support", async () => {
+    mocks.api.health.mockResolvedValue({ ...health(), cudaAvailable: false });
+    const { panel, wrapper } = await mountPanel();
+    expect(panel.device.value).toBe("cpu");
+    wrapper.unmount();
+  });
+
+  it("waits for worker readiness before resolving the default device", async () => {
+    mocks.api.health
+      .mockReset()
+      .mockResolvedValueOnce(unavailableHealth())
+      .mockResolvedValue({
+        ...health(),
+        cudaAvailable: true
+      });
+    const { panel, wrapper } = await mountPanel();
+    expect(panel.device.value).toBe("cuda");
+    await panel.loadHealth();
+    await flushPromises();
+    expect(panel.cudaAvailable.value).toBe(true);
+    expect(panel.device.value).toBe("cuda");
+    wrapper.unmount();
+  });
+
+  it.each(["queued", "processing"] as const)("allows another batch while the current batch is %s", async (status) => {
+    const { panel, wrapper } = await mountPanel();
+    panel.currentBatch.value = batch(status);
+    panel.referenceSource.value = "saved";
+    panel.selectedVoiceId.value = "voice-1";
+    panel.consentConfirmed.value = true;
+    panel.segments.value[0].text = "Next batch";
+    expect(panel.canCreate.value).toBe(true);
+
+    await panel.createBatch();
+    panel.segments.value[0].text = "Another batch";
+    expect(panel.canCreate.value).toBe(true);
+    await panel.createBatch();
+
+    expect(mocks.api.createBatch).toHaveBeenCalledTimes(2);
+    expect(mocks.api.createBatch.mock.calls.map(([input]) => input.segments[0].text)).toEqual([
+      "Next batch",
+      "Another batch"
+    ]);
+    expect(mocks.api.cancelBatch).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("blocks duplicate submissions only until the request settles and allows retry after failure", async () => {
+    const { panel, wrapper } = await mountPanel();
+    panel.referenceSource.value = "saved";
+    panel.selectedVoiceId.value = "voice-1";
+    panel.consentConfirmed.value = true;
+    panel.segments.value[0].text = "Queued text";
+    let rejectSubmission!: (error: Error) => void;
+    mocks.api.createBatch.mockImplementationOnce(
+      () => new Promise<ChatterboxBatch>((_resolve, reject) => (rejectSubmission = reject))
+    );
+
+    const submission = panel.createBatch();
+    expect(panel.creating.value).toBe(true);
+    expect(panel.canCreate.value).toBe(false);
+    await panel.createBatch();
+    await panel.clearBatchDraft();
+    expect(panel.segments.value[0].text).toBe("Queued text");
+    expect(mocks.api.createBatch).toHaveBeenCalledTimes(1);
+    rejectSubmission(new Error("Queue full"));
+    await submission;
+    expect(panel.creating.value).toBe(false);
+    expect(panel.canCreate.value).toBe(true);
+    expect(panel.segments.value[0].text).toBe("Queued text");
+    await panel.createBatch();
+    expect(mocks.api.createBatch).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
+  it("clears the editor draft after confirmation without changing queued work, voice or parameters", async () => {
+    const { panel, wrapper } = await mountPanel();
+    panel.currentBatch.value = batch("processing");
+    panel.referenceSource.value = "saved";
+    panel.selectedVoiceId.value = "voice-1";
+    panel.consentConfirmed.value = true;
+    panel.exaggeration.value = 0.7;
+    panel.batchName.value = "Draft";
+    panel.segments.value = [panel.newEditorSegment("Text", "file", "中文"), panel.newEditorSegment("Next")];
+    panel.autoSegmentText.value = "Pasted text";
+    panel.autoSegmentVisible.value = true;
+    panel.dragItemId.value = panel.segments.value[0].id;
+    const runningBatch = panel.currentBatch.value;
+
+    await panel.clearBatchDraft();
+
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("已加入队列"), {
+      title: "清空当前批次内容",
+      positiveText: "确认清空",
+      danger: true
+    });
+    expect(panel.batchName.value).toBe("");
+    expect(panel.segments.value).toEqual([
+      { id: expect.any(String), text: "", fileName: "", referenceTranslation: "" }
+    ]);
+    expect(panel.autoSegmentText.value).toBe("");
+    expect(panel.autoSegmentVisible.value).toBe(false);
+    expect(panel.dragItemId.value).toBeUndefined();
+    expect(panel.hasBatchDraft.value).toBe(false);
+    expect(panel.canCreate.value).toBe(false);
+    expect(panel.currentBatch.value).toBe(runningBatch);
+    expect(panel.selectedVoiceId.value).toBe("voice-1");
+    expect(panel.consentConfirmed.value).toBe(true);
+    expect(panel.language.value).toBe("ms");
+    expect(panel.exaggeration.value).toBe(0.7);
+    expect(mocks.api.cancelBatch).not.toHaveBeenCalled();
+    expect(mocks.api.removeBatch).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("keeps the draft when clearing is cancelled and ignores an empty draft", async () => {
+    const { panel, wrapper } = await mountPanel();
+    await panel.clearBatchDraft();
+    expect(mocks.confirm).not.toHaveBeenCalled();
+    panel.segments.value[0].referenceTranslation = "仅中文";
+    expect(panel.hasBatchDraft.value).toBe(true);
+    mocks.confirm.mockResolvedValueOnce(false);
+    await panel.clearBatchDraft();
+    expect(panel.segments.value[0].referenceTranslation).toBe("仅中文");
+    wrapper.unmount();
+  });
+
   it("retries Chatterbox health until the worker becomes available", async () => {
     vi.useFakeTimers();
     mocks.api.health.mockReset().mockResolvedValueOnce(unavailableHealth()).mockResolvedValue(health());

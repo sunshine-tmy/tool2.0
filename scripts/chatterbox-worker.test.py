@@ -55,6 +55,36 @@ class LanguageTests(unittest.TestCase):
             worker.GenerateRequest(text="Hello", language="xx", reference_path="unused", output_path="unused")
 
 
+class IncrementalSafetensorsTests(unittest.TestCase):
+    def test_loads_exact_tensors_without_using_torch_file_storage(self):
+        from safetensors.torch import save_file
+
+        expected = {
+            "matrix": torch.arange(24, dtype=torch.float32).reshape(4, 6),
+            "bias": torch.tensor([1.0, -2.0], dtype=torch.float16),
+            "index": torch.tensor([0, 3], dtype=torch.int64),
+        }
+        with tempfile.TemporaryDirectory(prefix="chatterbox-safe-load-") as directory:
+            checkpoint = Path(directory) / "weights.safetensors"
+            save_file(expected, checkpoint)
+            with patch.object(
+                torch.UntypedStorage, "from_file", side_effect=AssertionError("不能进入崩溃的大文件 Storage 路径")
+            ):
+                actual = worker.load_safetensors_incrementally(checkpoint, "cpu")
+        self.assertEqual(actual.keys(), expected.keys())
+        for name, tensor in actual.items():
+            self.assertEqual(tensor.dtype, expected[name].dtype)
+            self.assertEqual(tuple(tensor.shape), tuple(expected[name].shape))
+            self.assertTrue(torch.equal(tensor, expected[name]))
+
+    def test_invalid_checkpoint_is_rejected_without_falling_back_to_unsafe_loading(self):
+        with tempfile.TemporaryDirectory(prefix="chatterbox-bad-load-") as directory:
+            checkpoint = Path(directory) / "weights.safetensors"
+            checkpoint.write_bytes(b"not a safetensors checkpoint")
+            with self.assertRaises(Exception):
+                worker.load_safetensors_incrementally(checkpoint, "cpu")
+
+
 class MetaTensorRecoveryTests(unittest.TestCase):
     def test_restores_non_registered_runtime_tensors_created_on_meta_device(self):
         """上游 S3Gen 把位置编码作为普通属性保存。

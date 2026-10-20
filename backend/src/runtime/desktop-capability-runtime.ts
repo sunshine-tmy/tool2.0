@@ -38,6 +38,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     config.edgeTtsCapabilityReady = false;
     config.edgeTtsPythonPath = "";
     config.edgeTtsScriptPath = "";
+    config.edgeTtsFfmpegPath = "";
   };
   const resetImageConfiguration = () => {
     config.imageAiCapabilityReady = false;
@@ -114,6 +115,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
         if (signal.aborted || !python || !script) return;
         config.edgeTtsPythonPath = python.path;
         config.edgeTtsScriptPath = script.path;
+        config.edgeTtsFfmpegPath = (await resolveMediaTools())[0]?.path || "";
         config.edgeTtsCapabilityReady = true;
       },
       signal
@@ -301,6 +303,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
         const controller = new AbortController();
         controllers.set(componentId, controller);
         if (["ffmpeg", "video-text", "whisper-small"].includes(componentId)) {
+          if (componentId === "ffmpeg") config.edgeTtsFfmpegPath = (await resolveMediaTools())[0]?.path || "";
           await configureVideo(controller.signal, (await resolveMediaTools())[0]);
           if (
             operation !== "uninstall" &&

@@ -19,6 +19,7 @@ export type AppConfig = {
   port: number;
   corsOrigins: string[];
   storageRoot: string;
+  audioLibraryMaxStorageBytes: number;
   databasePath: string;
   migrationBackupDir: string;
   quarantineDir: string;
@@ -80,6 +81,7 @@ export type AppConfig = {
   edgeTtsTasksDir: string;
   edgeTtsPythonPath: string;
   edgeTtsScriptPath: string;
+  edgeTtsFfmpegPath: string;
   edgeTtsTimeoutMs: number;
   edgeTtsRetentionDays: number;
   edgeTtsQueueLimit: number;
@@ -143,6 +145,12 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     port: readInteger("API_PORT", getEnv("API_PORT", fileEnv, environment), 3100, 1, 65535),
     corsOrigins: readCorsOrigins(fileEnv, environment),
     storageRoot,
+    audioLibraryMaxStorageBytes: readInteger(
+      "AUDIO_LIBRARY_MAX_STORAGE_BYTES",
+      getEnv("AUDIO_LIBRARY_MAX_STORAGE_BYTES", fileEnv, environment),
+      10 * 1024 ** 3,
+      1
+    ),
     databasePath: resolveDatabasePath(runtime, pathEnv("DATABASE_PATH"), environment.NODE_ENV, storageRoot),
     migrationBackupDir: path.join(storageRoot, "migration-backups"),
     quarantineDir: path.join(storageRoot, "quarantine"),
@@ -333,6 +341,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
       1000
     ),
     edgeTtsDir,
+    edgeTtsFfmpegPath: desktopManagedCapabilities ? "" : runtimeEnv("EDGE_TTS_FFMPEG_PATH")?.trim() || "ffmpeg",
     edgeTtsTasksDir: path.join(edgeTtsDir, "tasks"),
     edgeTtsPythonPath: desktopManagedCapabilities
       ? ""

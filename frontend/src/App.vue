@@ -3,6 +3,7 @@
   <n-config-provider :theme-overrides="themeOverrides">
     <n-message-provider>
       <n-dialog-provider>
+        <AudioLibraryPlayback />
         <UiErrorBoundary>
           <router-view v-slot="{ Component }">
             <Suspense>
@@ -22,6 +23,7 @@
 import { NConfigProvider, NDialogProvider, NMessageProvider, type GlobalThemeOverrides } from "naive-ui";
 import UiErrorBoundary from "./components/UiErrorBoundary.vue";
 import RouteLoading from "./components/RouteLoading.vue";
+import AudioLibraryPlayback from "./modules/audio-library/AudioLibraryPlayback.vue";
 
 const themeOverrides: GlobalThemeOverrides = {
   common: {

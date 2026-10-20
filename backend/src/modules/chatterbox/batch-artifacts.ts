@@ -14,7 +14,7 @@ import {
 import type { ChatterboxMediaTools } from "./batch-queue";
 import type { ChatterboxBatchStore, StoredVoice } from "./stores";
 
-type TimingSegment = { text: string; startSeconds: number; endSeconds: number };
+export type TimingSegment = { text: string; startSeconds: number; endSeconds: number };
 
 export async function rebuildBatchAudio(
   store: ChatterboxBatchStore,
@@ -241,7 +241,7 @@ export function contentDisposition(fileName: string) {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
-async function writeSrt(filePath: string, cues: TimingSegment[]) {
+export async function writeSrt(filePath: string, cues: TimingSegment[]) {
   const content = cues
     .map(
       (cue, index) =>
@@ -251,7 +251,7 @@ async function writeSrt(filePath: string, cues: TimingSegment[]) {
   await fsp.writeFile(filePath, `${content}\n`, "utf8");
 }
 
-function buildBilingualCues(
+export function buildBilingualCues(
   cues: TimingSegment[],
   sourceText: string,
   referenceTranslation: string | undefined,
@@ -273,7 +273,7 @@ function formatSubtitleCueText(text: string) {
     .join("\n");
 }
 
-function buildTranslationCues(
+export function buildTranslationCues(
   cues: TimingSegment[],
   referenceTranslation: string | undefined,
   duration: number
@@ -287,7 +287,7 @@ function buildTranslationCues(
   return cues.map((cue, index) => ({ ...cue, text: translatedSentences[index] }));
 }
 
-function buildSentenceCues(text: string, durationSeconds: number, segments?: TimingSegment[]): TimingSegment[] {
+export function buildSentenceCues(text: string, durationSeconds: number, segments?: TimingSegment[]): TimingSegment[] {
   const sentences = splitSentences(text);
   const sentenceWeights = sentences.map(textWeight);
   const totalSentenceWeight = sentenceWeights.reduce((sum, weight) => sum + weight, 0);

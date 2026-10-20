@@ -191,13 +191,7 @@ export class ChatterboxBatchQueue {
         fsp.rm(itemPaths.outputWav, { force: true }),
         fsp.rm(itemPaths.candidateAudio, { force: true })
       ]);
-      const snapshot = this.options.store.get(batchId);
-      if (snapshot && !snapshot.items.some((entry) => entry.status === "queued" || entry.status === "processing")) {
-        if (!snapshot.referenceRetained) {
-          await fsp.rm(batchPaths.reference, { force: true });
-          await this.options.store.updateBatch(batchId, { referenceAvailable: false });
-        }
-      }
+      // 终态只清理生成中间文件；参考音色随批次保留，供失败重试和单段重新生成使用。
     }
   }
 }

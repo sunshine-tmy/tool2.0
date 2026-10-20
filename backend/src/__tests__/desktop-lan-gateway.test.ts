@@ -57,6 +57,7 @@ describe("desktop LAN gateway", () => {
       "/api/v1/tools/image-ai/health",
       "/api/v1/tools/video-text/history",
       "/api/v1/tools/edge-tts/chatterbox/health",
+      "/api/v1/tools/audio-library/items",
       "/api/v1/tools/xhs-archive/items"
     ]) {
       const payload = await fetch(`http://127.0.0.1:${gateway.port}${apiPath}`, {
@@ -87,16 +88,22 @@ describe("desktop LAN gateway", () => {
     expect(deniedSession.status).toBe(404);
     expect(deniedOtherTool.status).toBe(404);
     expect(hiddenPage.status).toBe(404);
-    expect(requests).toHaveLength(6);
+    expect(requests).toHaveLength(7);
 
-    for (const pagePath of ["/tools/image-ai", "/tools/video-text", "/tools/edge-tts", "/tools/xhs-archive"]) {
+    for (const pagePath of [
+      "/tools/image-ai",
+      "/tools/video-text",
+      "/tools/edge-tts",
+      "/tools/xhs-archive",
+      "/tools/audio-library"
+    ]) {
       const modulePage = await fetch(`http://127.0.0.1:${gateway.port}${pagePath}`, {
         headers: { accept: "text/html" }
       });
       expect(modulePage.status).toBe(201);
       expect(await modulePage.json()).toEqual({ path: pagePath });
     }
-    expect(requests).toHaveLength(10);
+    expect(requests).toHaveLength(12);
   });
 
   it("accepts only RFC1918 IPv4 interfaces and clients (plus loopback for local diagnostics)", () => {

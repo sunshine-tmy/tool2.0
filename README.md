@@ -27,15 +27,16 @@
 
 ## 功能矩阵
 
-| 模块           | 前端路由                | API 命名空间                    | 能力                                                                        |
-| -------------- | ----------------------- | ------------------------------- | --------------------------------------------------------------------------- |
-| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress`  | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                      |
-| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`      | 去水印、清晰度增强、商品图抠图，本地模型推理                                |
-| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*`  | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理 |
-| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`    | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                        |
-| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                              |
-| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`   | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                           |
-| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书与抖音本地存档浏览、翻译、截帧及导出；抖音在线获取待发布验收          |
+| 模块           | 前端路由                | API 命名空间                    | 能力                                                                                                      |
+| -------------- | ----------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress`  | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                                                    |
+| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`      | 去水印、清晰度增强、商品图抠图，本地模型推理                                                              |
+| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*`  | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理                               |
+| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`    | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                                                      |
+| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                                                            |
+| 直播音频库     | `/tools/audio-library`  | `/api/v1/tools/audio-library/*` | 克隆结果一键永久归档、本地上传、双语检索、分类分组、队列播放与备份恢复；[使用说明](docs/audio-library.md) |
+| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`   | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                                                         |
+| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书与抖音本地存档浏览、翻译、截帧及导出；抖音在线获取待发布验收                                        |
 
 短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 

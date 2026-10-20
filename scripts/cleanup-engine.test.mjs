@@ -140,6 +140,10 @@ describe("executeCleanup", () => {
       "storage/xhs-archive/index.json"
     ];
     const permanentVoiceFixtures = [
+      "storage/audio-library/library.json",
+      "storage/audio-library/library.json.bak",
+      "storage/audio-library/items/permanent-audio/audio.wav",
+      "storage/audio-library/items/permanent-audio/.cache/keep.bin",
       "storage/chatterbox/voices/voice-kept/meta.json",
       "storage/chatterbox/voices/voice-kept/reference.wav"
     ];

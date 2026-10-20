@@ -8,6 +8,7 @@ import { isPrivateLanIPv4 } from "../modules/lan-transfer/access";
 const LAN_API_PREFIX = "/api/v1/tools/lan-transfer";
 const LAN_TOOL_API_PREFIXES = [
   LAN_API_PREFIX,
+  "/api/v1/tools/audio-library",
   "/api/v1/tools/image-ai",
   "/api/v1/tools/video-text",
   "/api/v1/tools/edge-tts",
@@ -15,6 +16,7 @@ const LAN_TOOL_API_PREFIXES = [
 ];
 const LAN_TOOL_PAGES = new Set([
   "/tools/lan-transfer",
+  "/tools/audio-library",
   "/tools/image-ai",
   "/tools/video-text",
   "/tools/edge-tts",

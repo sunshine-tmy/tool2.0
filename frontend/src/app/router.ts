@@ -44,6 +44,11 @@ export const router = createRouter({
       component: () => import("../modules/edge-tts/page.vue")
     },
     {
+      path: "/tools/audio-library",
+      name: "audio-library",
+      component: () => import("../modules/audio-library/page.vue")
+    },
+    {
       path: "/tools/short-video",
       name: "short-video",
       component: () => import("../modules/short-video/page.vue")

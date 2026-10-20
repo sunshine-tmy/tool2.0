@@ -218,6 +218,11 @@ function registerDesktopIpc(layout: ReturnType<typeof createDesktopRuntimeLayout
     assertTrustedSender(event);
     return currentSettings();
   });
+  ipcMain.handle("desktop:audio-playback", (event, active: unknown) => {
+    assertTrustedSender(event);
+    if (typeof active !== "boolean") throw new Error("无效的播放状态");
+    mainWindow?.webContents.setBackgroundThrottling(!active);
+  });
   ipcMain.handle("desktop:update-settings", async (event, value: unknown) => {
     assertTrustedSender(event);
     if (!isSettingsUpdate(value)) throw new Error("设置参数无效");

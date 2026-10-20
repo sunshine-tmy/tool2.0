@@ -35,6 +35,7 @@ declare global {
   interface Window {
     toolboxDesktop?: {
       getVersion(): Promise<string>;
+      setAudioPlaybackActive?(active: boolean): Promise<void>;
       getSettings(): Promise<DesktopSettingsState>;
       getStartupDataMigrationState(): Promise<StartupDataMigrationState>;
       migrateStartupData(): Promise<{

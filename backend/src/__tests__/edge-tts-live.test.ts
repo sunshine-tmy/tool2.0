@@ -14,10 +14,12 @@ describe.skipIf(!live)("edge tts live service", () => {
   beforeAll(async () => {
     storageRoot = await fsp.mkdtemp(path.join(os.tmpdir(), "toolbox-edge-tts-live-"));
     process.env.STORAGE_ROOT = storageRoot;
+    process.env.DATABASE_PATH = path.join(storageRoot, "toolbox.db");
   });
 
   afterAll(async () => {
     delete process.env.STORAGE_ROOT;
+    delete process.env.DATABASE_PATH;
     await fsp.rm(storageRoot, { recursive: true, force: true });
   });
 
@@ -25,7 +27,7 @@ describe.skipIf(!live)("edge tts live service", () => {
     const app = await createApp();
     try {
       const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/health" });
-      expect(health.json().data).toMatchObject({ available: true, version: "7.2.8" });
+      expect(health.json().data).toMatchObject({ available: true, version: "7.3.1" });
       const voices = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/voices" });
       const voiceNames = voices.json().data.voices.map((voice: { shortName: string }) => voice.shortName);
       expect(voiceNames).toEqual(expect.arrayContaining(["ms-MY-YasminNeural", "en-US-JennyNeural"]));
@@ -68,6 +70,55 @@ describe.skipIf(!live)("edge tts live service", () => {
         expect(isMp3(audio.rawPayload)).toBe(true);
         expect(subtitle.statusCode).toBe(200);
         expect(subtitle.body).toContain("-->");
+      }
+    } finally {
+      await app.close();
+    }
+  }, 240_000);
+  it("generates real ordered bilingual batches and merged downloads in all supported languages", async () => {
+    const app = await createApp();
+    try {
+      for (const sample of [
+        { language: "ms-MY", voice: "ms-MY-YasminNeural", texts: ["Selamat datang.", "Terima kasih."] },
+        { language: "en-US", voice: "en-US-JennyNeural", texts: ["Welcome to our store.", "Thank you."] },
+        { language: "pt-BR", voice: "pt-BR-FranciscaNeural", texts: ["Bem-vindo.", "Obrigado."] }
+      ]) {
+        const created = await app.inject({
+          method: "POST",
+          url: "/api/v1/tools/edge-tts/batches",
+          payload: {
+            language: sample.language,
+            voice: sample.voice,
+            rate: 0,
+            volume: 0,
+            pitch: 0,
+            includeSubtitles: true,
+            subtitleMode: "sentences",
+            segments: sample.texts.map((text, index) => ({
+              text,
+              referenceTranslation: index === 0 ? "欢迎。" : "谢谢。"
+            }))
+          }
+        });
+        expect(created.statusCode, created.body).toBe(202);
+        const id = created.json().data.id;
+        let batch = created.json().data;
+        for (let count = 0; count < 180 && ["queued", "processing"].includes(batch.status); count++) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          batch = (await app.inject({ method: "GET", url: `/api/v1/tools/edge-tts/batches/${id}` })).json().data;
+        }
+        expect(batch.status, JSON.stringify(batch.items)).toBe("completed");
+        expect(batch.items.map((item: { text: string }) => item.text)).toEqual(sample.texts);
+        const audio = await app.inject({ method: "GET", url: batch.combinedAudioUrl });
+        expect(audio.statusCode, audio.body).toBe(200);
+        expect(isMp3(audio.rawPayload)).toBe(true);
+        const chinese = await app.inject({ method: "GET", url: batch.translationSubtitleUrl });
+        expect(chinese.statusCode).toBe(200);
+        expect(chinese.body).toContain("欢迎。");
+        expect(chinese.body).toContain("谢谢。");
+        const zip = await app.inject({ method: "GET", url: batch.archiveUrl });
+        expect(zip.statusCode).toBe(200);
+        expect(zip.rawPayload.subarray(0, 2).toString()).toBe("PK");
       }
     } finally {
       await app.close();

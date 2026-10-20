@@ -2,13 +2,20 @@
  * 中文模块说明：测试 frontend/src/modules/edge-tts/api.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { EdgeTtsTaskListSchema, EdgeTtsTaskSchema, EdgeTtsVoicesSchema } from "@toolbox/shared";
+import {
+  EdgeTtsTaskListSchema,
+  EdgeTtsTaskSchema,
+  EdgeTtsVoicesSchema,
+  EdgeTtsBatchSchema,
+  EdgeTtsBatchListSchema
+} from "@toolbox/shared";
 import { edgeTtsApi } from "./api";
 
 const httpMock = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
-  delete: vi.fn()
+  delete: vi.fn(),
+  patch: vi.fn()
 }));
 
 vi.mock("../../services/http", () => ({
@@ -17,6 +24,30 @@ vi.mock("../../services/http", () => ({
 }));
 
 describe("edge tts api", () => {
+  it("uses batch contracts for ordered generation, paging and per-segment regeneration", async () => {
+    const input = {
+      language: "en-US" as const,
+      voice: "en-US-JennyNeural",
+      rate: 0,
+      volume: 0,
+      pitch: 0,
+      includeSubtitles: true,
+      subtitleMode: "sentences" as const,
+      segments: [{ text: "Hello", referenceTranslation: "你好" }]
+    };
+    await edgeTtsApi.createBatch(input);
+    await edgeTtsApi.batches(2, 10);
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/batches", EdgeTtsBatchSchema, input, {
+      timeout: 30000
+    });
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/batches", EdgeTtsBatchListSchema, {
+      params: { page: 2, pageSize: 10 }
+    });
+    await edgeTtsApi.reorder("batch-1", ["item-2", "item-1"]);
+    expect(httpMock.patch).toHaveBeenCalledWith("/tools/edge-tts/batches/batch-1/order", EdgeTtsBatchSchema, {
+      itemIds: ["item-2", "item-1"]
+    });
+  });
   beforeEach(() => vi.clearAllMocks());
 
   // 配音任务可能运行较久，测试固定超时配置，避免后续重构意外恢复默认短超时。

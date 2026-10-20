@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("toolboxDesktop", {
   getVersion: () => ipcRenderer.invoke("desktop:get-version") as Promise<string>,
+  setAudioPlaybackActive: (active: boolean) => ipcRenderer.invoke("desktop:audio-playback", active) as Promise<void>,
   getSettings: () => ipcRenderer.invoke("desktop:get-settings"),
   getStartupDataMigrationState: () => ipcRenderer.invoke("desktop:get-startup-data-migration"),
   migrateStartupData: () => ipcRenderer.invoke("desktop:migrate-startup-data"),

@@ -124,6 +124,7 @@ describe("api app", () => {
       "lan-transfer",
       "video-text",
       "edge-tts",
+      "audio-library",
       "short-video",
       "xhs-archive"
     ]);

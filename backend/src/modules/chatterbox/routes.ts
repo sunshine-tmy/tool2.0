@@ -327,6 +327,7 @@ export async function registerChatterboxRoutes(
   );
   cleanupTimer.unref();
   app.addHook("onClose", async () => clearInterval(cleanupTimer));
+  return { batches: batchQueue.archiveStore };
 }
 
 async function receiveMultipartTask(

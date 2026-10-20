@@ -134,9 +134,9 @@ export const chatterboxApi = {
     );
   },
 
-  batch(batchId: string) {
+  batch(batchId: string, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.get(`/tools/edge-tts/chatterbox/batches/${batchId}`, ChatterboxBatchSchema),
+      () => httpClient.get(`/tools/edge-tts/chatterbox/batches/${batchId}`, ChatterboxBatchSchema, { signal }),
       "读取声音克隆批次失败"
     );
   },

@@ -11,6 +11,7 @@ import { resolveBackendUrl } from "../../config/runtime";
 import { useChatterboxBatches } from "./useChatterboxBatches";
 import { useChatterboxEditor } from "./useChatterboxEditor";
 import { useChatterboxVoices } from "./useChatterboxVoices";
+import { batchTagType, formatDate, formatDuration, taskTagType } from "./speech-batch-display";
 
 export function useChatterboxPanel() {
   // 面板 composable 负责组装编辑器、音色、批次和任务事件，页面组件只绑定统一状态对象。
@@ -85,36 +86,8 @@ function batchStatusLabel(status: ChatterboxBatchStatus) {
   }[status];
 }
 
-function batchTagType(status: ChatterboxBatchStatus): "success" | "warning" | "error" | "default" {
-  return status === "completed"
-    ? "success"
-    : status === "partial_failed" || status === "cancelled"
-      ? "error"
-      : "warning";
-}
-
 function taskStatusLabel(status: ChatterboxTaskStatus) {
   return { queued: "排队中", processing: "生成中", completed: "已完成", failed: "失败", cancelled: "已取消" }[status];
-}
-
-function taskTagType(status: ChatterboxTaskStatus): "success" | "warning" | "error" | "default" {
-  return status === "completed" ? "success" : status === "failed" || status === "cancelled" ? "error" : "warning";
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(new Date(value));
-}
-
-function formatDuration(value?: number) {
-  if (!value) return "0 秒";
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.round(value % 60);
-  return minutes ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`;
 }
 
 function formatBytes(bytes: number) {

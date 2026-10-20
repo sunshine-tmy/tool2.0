@@ -32,6 +32,7 @@ import { registerImageCompressRoutes } from "./modules/image-compress/routes";
 import { registerImageAiRoutes } from "./modules/image-ai/routes";
 import { registerEdgeTtsRoutes } from "./modules/edge-tts";
 import { registerChatterboxRoutes } from "./modules/chatterbox/routes";
+import { registerAudioLibraryRoutes } from "./modules/audio-library/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
 import { registerShortVideoRoutes } from "./modules/short-video";
 import { registerVideoTextRoutes } from "./modules/video-text";
@@ -414,8 +415,9 @@ export async function createApp(options: { remoteAddressResolver?: AddressResolv
 
   registerImageCompressRoutes(app, config, taskStore, fileMetadata);
   await registerImageAiRoutes(app, config, database, taskStore, fileMetadata);
-  await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
-  await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
+  const edgeTtsBatches = await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
+  const chatterboxArchive = await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
+  await registerAudioLibraryRoutes(app, config, database, chatterboxArchive.batches, edgeTtsBatches);
   await registerLanTransferRoutes({ app, config, database, fileMetadata });
   await registerVideoTextRoutes({ app, config, taskStore, remoteFetch, fileMetadata });
   await registerShortVideoRoutes({ app, config, remoteFetch, xhsRuntime, xhsAuth });
