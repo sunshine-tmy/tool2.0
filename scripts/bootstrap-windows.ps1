@@ -167,6 +167,7 @@ try {
   # Effective configuration and ports are checked again by the TypeScript CLI before package mutations.
   Write-Host '[3/6] Workspace dependencies and shared contracts' -ForegroundColor Cyan
   Invoke-Checked $node @($pnpm, 'install', '--frozen-lockfile', '--prefer-offline')
+  Invoke-Checked $node @((Join-Path $Root 'scripts\check-source-native.mjs'))
   Invoke-Checked $node @($pnpm, 'build:shared')
   if ($BuildDesktop) {
     Write-Host 'Explicit desktop build requested; skipping capability downloads and service startup.' -ForegroundColor Cyan
