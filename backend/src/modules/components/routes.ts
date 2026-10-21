@@ -1,4 +1,4 @@
-/** 中文模块说明：能力包管理 API，只接收目录中的能力 id，不接受 renderer 提供的下载地址或本机路径。 */
+/** 中文模块说明：能力管理 API 接收目录 id 或固定的旧运行时卸载标识，不接受下载地址或本机路径。 */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   ApiFailureSchema,

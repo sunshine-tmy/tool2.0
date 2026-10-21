@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   IMAGE_AI_MODEL_ASSETS,
   IMAGE_AI_SOURCE_DISTRIBUTIONS,
+  prepareImageAiComponent,
   omitImageAiSourceDistributions,
   validateImageAiCpuLock,
   verifyImageAiAssets
@@ -16,17 +17,44 @@ import {
 
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 
+test("a corrupt cached source archive is rejected before creating a large staging package", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "image-ai-source-cache-"));
+  try {
+    const cache = path.join(root, "cache");
+    await fs.mkdir(path.join(cache, "python-sources"), { recursive: true });
+    await fs.writeFile(path.join(cache, "python-sources", IMAGE_AI_SOURCE_DISTRIBUTIONS[0].fileName), "tampered");
+    let commands = 0;
+    await assert.rejects(
+      prepareImageAiComponent({
+        pythonExecutablePath: path.join(root, "python.exe"),
+        stagingDirectory: path.join(root, "stage"),
+        assetCacheDirectory: cache,
+        assets: [],
+        runCommand: () => {
+          commands += 1;
+          return "3.12\n";
+        }
+      }),
+      /源码归档缓存 SHA-256 不匹配/
+    );
+    assert.equal(commands, 1, "only the interpreter version check may run");
+    await assert.rejects(fs.access(path.join(root, "stage")), { code: "ENOENT" });
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test("image AI package uses pinned offline CPU model assets and one signed worker component", async () => {
   const definition = JSON.parse(
     await fs.readFile(path.join(SCRIPT_DIRECTORY, "component-definitions/image-ai.json"), "utf8")
   );
   assert.equal(definition.id, "image-ai");
-  assert.equal(definition.version, "1.0.0-cpu2");
-  assert.deepEqual(definition.dependencyIds, ["python-311"]);
+  assert.equal(definition.version, "1.0.0-py312-cpu1");
+  assert.deepEqual(definition.dependencyIds, ["python-312"]);
   assert.deepEqual(definition.taskToolIds, ["image-ai"]);
   assert.ok(definition.installedBytes >= 5_000_000_000);
   assert.ok(definition.installConditions.some((condition) => condition.includes("8 GB 内存")));
-  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.11");
+  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.12");
   assert.equal(IMAGE_AI_MODEL_ASSETS.length, 10);
   assert.ok(IMAGE_AI_MODEL_ASSETS.every((asset) => new URL(asset.url).protocol === "https:"));
   assert.ok(IMAGE_AI_MODEL_ASSETS.every((asset) => /^[a-f0-9]{64}$/.test(asset.sha256)));

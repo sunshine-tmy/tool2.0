@@ -1,5 +1,11 @@
 # Windows 能力包准备与发布
 
+## Python 3.12 统一构建
+
+新构建的在线配音、图片 AI、音色克隆 CPU/GPU、归档与翻译全部依赖 `python-312`，各能力仍使用独立 venv。
+迁移流程和发布前检查见 [Python 运行时统一迁移](../../docs/python-runtime-unification.md)。旧的 `python-311` 准备器和安装兼容逻辑仅为历史包保留，不应加入新的统一 feed。
+源码定义变化不会修改现有签名包；未完成新包验收、签名、远端资产核验和目录生成前，正式嵌入目录仍保留历史包，以免破坏已可用能力。
+
 ## 抖音公开内容归档（匿名，MA04）
 
 固定解析代码随应用发布，能力包仅包含受签名保护的协议描述，不复制第二套业务源码、不安装 Python。模板位于
@@ -48,20 +54,20 @@ douyin-archive-1.0.0-anonymous-27468de.spdx.json
 嵌入目录登记和 macOS 原生验收尚未完成。不要将测试公钥或测试包源写入正式目录，不要在正式资产发布前宣称旧安装包可用。
 按现有发布流程上传清单、归档、SBOM 和公钥、核验远端资产后再生成正式目录，并重打桌面安装包。
 
-AI 图片 CPU 包通过命令 pnpm components:prepare-image-ai -- --python .package/stage/python-311/python/python.exe --stage .package/stage/image-ai 准备。脚本使用哈希锁定的 CPU wheelhouse、固定 Hugging Face 模型提交和 SHA-256 固定权重，并将 worker、Real-ESRGAN、Big-LaMa、BiRefNet 与 PP-OCRv5 中文模型打入一个可离线自检的能力包。已缓存的上游模型文件可放在默认 .package/image-ai-source-assets 目录；每个文件都会在进入暂存目录前重新校验 SHA-256。准备后以 scripts/component-definitions/image-ai.json 生成签名产物，完成 Release 上传和核验前不会登记到嵌入式能力目录。
+AI 图片 CPU 包通过命令 pnpm components:prepare-image-ai -- --python .package/stage/python-312/python/python.exe --stage .package/stage/image-ai 准备。脚本使用哈希锁定的 CPU wheelhouse、固定 Hugging Face 模型提交和 SHA-256 固定权重，并将 worker、Real-ESRGAN、Big-LaMa、BiRefNet 与 PP-OCRv5 中文模型打入一个可离线自检的能力包。已缓存的上游模型文件可放在默认 .package/image-ai-source-assets 目录；每个文件都会在进入暂存目录前重新校验 SHA-256。准备后以 scripts/component-definitions/image-ai.json 生成签名产物，完成 Release 上传和核验前不会登记到嵌入式能力目录。
 
-参考音色克隆 CPU 包通过 `pnpm components:prepare-chatterbox -- --python .venv-chatterbox/Scripts/python.exe --stage .package/stage/chatterbox` 准备。脚本验证 Python 环境中的 `chatterbox-tts` 元数据来自固定官方提交 `65b18437192794391a0308a8f705b1e33e633948`，并校验哈希锁定 wheelhouse 与 Hugging Face revision `5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18` 下的全部模型文件。源码以 `vendor/` 随包发布；用户安装时仍在最终目标目录由共享 Python 3.11 运行时和锁定 wheelhouse 创建独立 venv，不打包构建机的 `.venv`。模型自动归入两个签名分片，但设置中仍作为一个 Chatterbox 能力管理。准备后使用 `scripts/component-definitions/chatterbox.json` 生成签名产物。当前锁定资产实际生成的三个归档约 3.4 GB；单个最大模型分片约 1.98 GB，小于 GitHub Release 单文件上限。
+参考音色克隆 CPU 包通过 `pnpm components:prepare-chatterbox -- --python .venv-chatterbox-py312/Scripts/python.exe --stage .package/stage/chatterbox` 准备。脚本验证 Python 环境中的 `chatterbox-tts` 元数据来自固定官方提交 `65b18437192794391a0308a8f705b1e33e633948`，并校验哈希锁定 wheelhouse 与 Hugging Face revision `5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18` 下的全部模型文件。源码以 `vendor/` 随包发布；用户安装时仍在最终目标目录由共享 Python 3.12 运行时和锁定 wheelhouse 创建独立 venv，不打包构建机的 `.venv`。模型自动归入两个签名分片，但设置中仍作为一个 Chatterbox 能力管理。准备后使用 `scripts/component-definitions/chatterbox.json` 生成签名产物。当前锁定资产实际生成的三个归档约 3.4 GB；单个最大模型分片约 1.98 GB，小于 GitHub Release 单文件上限。
 
-桌面 NVIDIA GPU 加速是独立可选扩展，不替换 CPU 基础包，也不再次下载模型。扩展 ID 为 `chatterbox-cuda`，依赖已安装的 `chatterbox` 与共享 `python-311`；卸载扩展会自动回退 CPU。该扩展锁定 PyTorch/torchaudio `2.6.0+cu124`，此组合见 [PyTorch 官方安装文档](https://docs.pytorch.org/get-started/previous-versions/)；需要 NVIDIA GPU 与兼容驱动，但不会安装或修改显卡驱动。CUDA 包只有在签名归档、SBOM 上传到既有 `components-v1` Release 并更新嵌入式目录后，才会出现在桌面版“设置 → 能力管理”中；已有安装包不会凭此源码改动自动获得 CUDA 包。
+桌面 NVIDIA GPU 加速是独立可选扩展，不替换 CPU 基础包，也不再次下载模型。扩展 ID 为 `chatterbox-cuda`，依赖已安装的 `chatterbox` 与共享 `python-312`；卸载扩展会自动回退 CPU。该扩展锁定 PyTorch/torchaudio `2.6.0+cu124`，此组合见 [PyTorch 官方安装文档](https://docs.pytorch.org/get-started/previous-versions/)；需要 NVIDIA GPU 与兼容驱动，但不会安装或修改显卡驱动。CUDA 包只有在签名归档、SBOM 上传到既有 `components-v1` Release 并更新嵌入式目录后，才会出现在桌面版“设置 → 能力管理”中；已有安装包不会凭此源码改动自动获得 CUDA 包。
 
 Windows PyTorch CUDA wheel 可能超过 GitHub Release 的单资产大小限制。准备器会把超限的 Torch wheel 切成有序分片，签名清单同时固定每片及完整 wheel 的大小和 SHA-256；桌面安装器校验所有分片后重组完整 wheel，校验整体 SHA-256，再离线安装并删除临时分片。不要手动改名、排序或替换这些分片。
 
-构建 CUDA 扩展需准备一个安装了固定 Chatterbox 官方提交及 PyTorch CUDA 12.4 的 Python 3.11 环境（当前构建环境为 `.venv-chatterbox`），然后生成锁文件和 wheelhouse：
+构建 CUDA 扩展需准备一个安装了固定 Chatterbox 官方提交及 PyTorch CUDA 12.4 的 Python 3.12 环境（例如新建 `.venv-chatterbox-py312`，不要覆盖已有 3.11 环境），然后生成锁文件和 wheelhouse：
 
 ```powershell
 pnpm lock:python
 New-Item -ItemType Directory -Force .package/chatterbox-cuda-wheelhouse | Out-Null
-.\.venv-chatterbox\Scripts\python.exe -m pip download `
+.\.venv-chatterbox-py312\Scripts\python.exe -m pip download `
   --require-hashes `
   --no-deps `
   --index-url https://pypi.org/simple `
@@ -70,7 +76,7 @@ New-Item -ItemType Directory -Force .package/chatterbox-cuda-wheelhouse | Out-Nu
   -r scripts/chatterbox-cuda.lock.txt
 
 pnpm components:prepare-chatterbox-cuda -- `
-  --python .venv-chatterbox/Scripts/python.exe `
+  --python .venv-chatterbox-py312/Scripts/python.exe `
   --stage .package/stage/chatterbox-cuda `
   --wheelhouse .package/chatterbox-cuda-wheelhouse
 
@@ -89,25 +95,25 @@ pnpm components:package -- `
 
 | 能力        | 固定版本           |         下载大小 | SHA-256                                                            |
 | ----------- | ------------------ | ---------------: | ------------------------------------------------------------------ |
-| Python 3.11 | `3.11.16-20260901` | 25,189,257 bytes | `06cbe479e039f5b9cb5640c286d790074d63f549f92a32d599a3748293bd4510` |
+| Python 3.12 | `3.12.14-20260901` | 21,980,728 bytes | `7c45c9622400d578709a9b2cddbe8124cc21d382409d9f13406d706d28e31b14` |
 
-官方上游资产：[python-build-standalone 20260901](https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.11.16%2B20260901-x86_64-pc-windows-msvc-install_only_stripped.tar.gz)。
+官方上游资产：[python-build-standalone 20260901](https://github.com/astral-sh/python-build-standalone/releases/download/20260901/cpython-3.12.14%2B20260901-x86_64-pc-windows-msvc-install_only_stripped.tar.gz)。
 
 准备阶段产物都放在被 Git 忽略的 `.package` 下：
 
 ```powershell
-node scripts/prepare-python-311-runtime.mjs `
-  --archive .package/python-311-upstream-stripped.tar.gz `
-  --stage .package/stage/python-311
+node scripts/prepare-python-312-runtime.mjs `
+  --archive .package/python-312-upstream-stripped.tar.gz `
+  --stage .package/stage/python-312
 
 node scripts/prepare-edge-tts-component.mjs `
-  --python .package/stage/python-311/python/python.exe `
+  --python .package/stage/python-312/python/python.exe `
   --stage .package/stage/edge-tts
 ```
 
 两个准备脚本只生成暂存目录；Python wheelhouse 由 `scripts/edge-tts.lock.txt` 的哈希约束并仅允许 Windows wheel。签名私钥必须保存在受保护目录，不能放入暂存目录、Release 资产或 Git。
 
-用 `scripts/component-definitions/python-311.json` 和 `edge-tts.json` 分别调用 `scripts/build-component-package.mjs`，输出目录都指定为 `.package/component-feed`，Release 地址固定为 `https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/`。每个版本需要上传其 `.manifest.json`、`.spdx.json` 和清单引用的全部 `.tar.gz` 文件；普通包通常是一个归档，大模型包可由多个归档分片组成。所有 GitHub Release 资产都必须上传，不得上传私钥。构建器会拒绝达到 2 GiB 的单个 GitHub 归档，并为分片清单签名每个资产摘要及互不重叠的文件路径。文件全部上传后，再运行：
+用 `scripts/component-definitions/python-312.json` 和 `edge-tts.json` 分别调用 `scripts/build-component-package.mjs`，输出目录都指定为 `.package/component-feed`，Release 地址固定为 `https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/`。每个版本需要上传其 `.manifest.json`、`.spdx.json` 和清单引用的全部 `.tar.gz` 文件；普通包通常是一个归档，大模型包可由多个归档分片组成。所有 GitHub Release 资产都必须上传，不得上传私钥。构建器会拒绝达到 2 GiB 的单个 GitHub 归档，并为分片清单签名每个资产摘要及互不重叠的文件路径。文件全部上传后，再运行：
 
 ```powershell
 node scripts/assemble-component-catalog.mjs --feed .package/component-feed

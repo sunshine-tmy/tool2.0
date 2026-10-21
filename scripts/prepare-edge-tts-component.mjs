@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WORKER_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "edge-tts-generate.py");
@@ -22,7 +23,7 @@ export async function prepareEdgeTtsComponent({ pythonExecutablePath, stagingDir
       env: cleanPythonEnvironment()
     }
   );
-  if (version.trim() !== "3.11") throw new Error("Edge-TTS wheelhouse 必须由 Python 3.11 准备");
+  assertWorkerPythonVersion(version);
   if (await pathExists(stage)) throw new Error("Edge-TTS 暂存目录已存在，拒绝覆盖");
 
   let stageCreated = false;
@@ -63,6 +64,7 @@ export async function prepareEdgeTtsComponent({ pythonExecutablePath, stagingDir
     if (!wheels.length || wheels.some((entry) => !entry.isFile() || !entry.name.endsWith(".whl"))) {
       throw new Error("Edge-TTS wheelhouse 必须只包含通过哈希锁校验的 wheel 文件");
     }
+    for (const entry of wheels) assertWorkerWheelPython(entry.name);
     return { stagingDirectory: stage, wheelCount: wheels.length };
   } catch (error) {
     if (stageCreated) await fs.rm(stage, { recursive: true, force: true }).catch(() => undefined);
@@ -104,7 +106,7 @@ function parseArguments(argv) {
   }
   if (values.size !== 2 || !values.has("python") || !values.has("stage")) {
     throw new Error(
-      "用法：node scripts/prepare-edge-tts-component.mjs --python <Python 3.11 python.exe> --stage <新暂存目录>"
+      "用法：node scripts/prepare-edge-tts-component.mjs --python <Python 3.12 python.exe> --stage <新暂存目录>"
     );
   }
   return { pythonExecutablePath: values.get("python"), stagingDirectory: values.get("stage") };

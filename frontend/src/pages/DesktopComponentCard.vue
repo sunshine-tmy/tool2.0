@@ -6,13 +6,14 @@
         <div class="component-title-row">
           <h4>{{ component.displayName }}</h4>
           <n-tag size="small" :type="statusType">{{ statusLabel }}</n-tag>
+          <n-tag v-if="updateAvailable && !component.retired" size="small" type="warning">待更新</n-tag>
           <n-tag v-if="component.health === 'unhealthy'" size="small" type="error">自检异常</n-tag>
         </div>
         <p class="component-purpose">{{ component.purpose }}</p>
       </div>
       <n-space>
         <n-button
-          v-if="!component.installed"
+          v-if="!component.installed && !component.retired"
           type="primary"
           size="small"
           :disabled="busy || component.state === 'blocked'"
@@ -22,15 +23,16 @@
           <template #icon><Download :size="15" /></template>安装
         </n-button>
         <n-button
-          v-else
+          v-else-if="!component.retired"
           size="small"
           :disabled="busy"
           :loading="operationLoading"
           @click="$emit('reinstall', component)"
         >
-          <template #icon><RefreshCw :size="15" /></template>重装
+          <template #icon><RefreshCw :size="15" /></template>{{ updateAvailable ? "更新" : "重装" }}
         </n-button>
         <n-button
+          v-if="!component.retired"
           size="small"
           secondary
           :disabled="busy || component.state === 'blocked'"
@@ -87,7 +89,9 @@
       }}</a>
     </p>
     <p v-if="component.dependentIds.length" class="component-note">
-      被其他能力依赖：{{ component.dependentIds.join("、") }}；请先卸载依赖它的能力。
+      被其他能力依赖：{{ component.dependentIds.join("、") }}；{{
+        component.retired ? "请先将这些能力更新为 Python 3.12 版本。" : "请先卸载依赖它的能力。"
+      }}
     </p>
     <p v-if="component.installConditions.length" class="component-note">
       安装条件：{{ component.installConditions.join("；") }}
@@ -160,7 +164,11 @@ const busy = computed(
     ["downloading", "installing"].includes(props.component.state) ||
     Boolean(props.job && ["queued", "running"].includes(props.job.state))
 );
+const updateAvailable = computed(() =>
+  Boolean(props.component.installedVersion && props.component.installedVersion !== props.component.version)
+);
 const statusLabel = computed(() => {
+  if (props.component.retired) return "旧版 · 仅供卸载";
   if (props.job?.state === "queued") return "等待中";
   if (props.job?.state === "running") return props.job.phase === "downloading" ? "下载中" : "安装处理中";
   if (props.component.state === "ready") return props.component.health === "healthy" ? "健康可用" : "已安装";

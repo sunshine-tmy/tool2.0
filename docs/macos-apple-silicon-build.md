@@ -32,16 +32,15 @@ DMG 输出到 `apps/desktop/out/mac-arm64/EcommerceToolbox-mac-arm64.dmg`。也�
 
 所有以下准备、签名、打包操作都必须在 Apple Silicon 原生构建机完成。Windows wheel、Windows 浏览器与现有 `win32-x64` manifest 不得改名后复用。`.package/` 是本机临时工作区，不应提交 Git。
 
-Mac 首版有 9 个可构建的受管能力 ID：
+Mac 首版有 8 个可构建的受管能力 ID：
 
 | 能力 ID           | Mac 资产要点                                                                |
 | ----------------- | --------------------------------------------------------------------------- |
-| `python-311`      | Python 3.11 共享运行时；图片 AI、配音使用                                   |
-| `python-312`      | Python 3.12 共享运行时；小红书归档/翻译使用                                 |
+| `python-312`      | Python 3.12 共享运行时；配音、图片 AI、归档与翻译共用                       |
 | `ffmpeg`          | 从固定 FFmpeg 官方源码在 Mac 原生构建静态 `ffmpeg`/`ffprobe`                |
-| `edge-tts`        | Python 3.11 与 Mac wheelhouse                                               |
-| `image-ai`        | Python 3.11、CPU PyTorch/Paddle、固定模型及哈希 wheelhouse                  |
-| `chatterbox`      | Python 3.11、Chatterbox CPU wheelhouse 与固定声学模型                       |
+| `edge-tts`        | Python 3.12 与 Mac wheelhouse                                               |
+| `image-ai`        | Python 3.12、CPU PyTorch/Paddle、固定模型及哈希 wheelhouse                  |
+| `chatterbox`      | Python 3.12、Chatterbox CPU wheelhouse 与固定声学模型                       |
 | `xhs-archive`     | Python 3.12、XHS-Downloader 固定源码和 Mac wheelhouse                       |
 | `xhs-translation` | Python 3.12、CTranslate2 CPU wheelhouse 与固定 OPUS-MT 模型                 |
 | `xhs-browser`     | Playwright 固定版本对应的 Apple Silicon Chromium；系统 Chrome/Edge 可选复用 |
@@ -50,13 +49,11 @@ Mac 首版有 9 个可构建的受管能力 ID：
 
 ### 2.1 Python 与依赖锁
 
-从准备器显示的固定 Astral URL 下载 Python 3.11/3.12 归档，再校验、解包。归档字节数和 SHA-256 已固定在准备器中：
+从准备器显示的固定 Astral URL 下载 Python 3.12 归档，再校验、解包。归档字节数和 SHA-256 已固定在准备器中：
 
 ```sh
 mkdir -p .package/downloads
-curl -fL 'https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.11.16%2B20260924-aarch64-apple-darwin-install_only_stripped.tar.gz' -o .package/downloads/python-311-mac-arm64.tar.gz
 curl -fL 'https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.12.14%2B20260924-aarch64-apple-darwin-install_only_stripped.tar.gz' -o .package/downloads/python-312-mac-arm64.tar.gz
-pnpm components:prepare-python-311 -- --archive .package/downloads/python-311-mac-arm64.tar.gz --stage .package/stage/python-311
 pnpm components:prepare-python-312 -- --archive .package/downloads/python-312-mac-arm64.tar.gz --stage .package/stage/python-312
 ```
 
@@ -66,7 +63,6 @@ pnpm components:prepare-python-312 -- --archive .package/downloads/python-312-ma
 
 ```sh
 pnpm components:lock-macos-dependencies \
-  --python-311 .package/stage/python-311/python/bin/python3.11 \
   --python-312 .package/stage/python-312/python/bin/python3.12
 ```
 
@@ -78,9 +74,9 @@ pnpm components:lock-macos-dependencies \
 
 ```sh
 pnpm components:prepare-ffmpeg -- --stage .package/stage/ffmpeg
-pnpm components:prepare-edge-tts -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/edge-tts
-pnpm components:prepare-image-ai -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/image-ai
-pnpm components:prepare-chatterbox -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/chatterbox
+pnpm components:prepare-edge-tts -- --python .package/stage/python-312/python/bin/python3.12 --stage .package/stage/edge-tts
+pnpm components:prepare-image-ai -- --python .package/stage/python-312/python/bin/python3.12 --stage .package/stage/image-ai
+pnpm components:prepare-chatterbox -- --python .package/stage/python-312/python/bin/python3.12 --stage .package/stage/chatterbox
 pnpm components:prepare-xhs-archive -- --python .package/stage/python-312/python/bin/python3.12 --archive .package/downloads/xhs-downloader-afaf2fb459980fccef9eec74e304a39af2c49cab.zip --stage .package/stage/xhs-archive
 pnpm components:prepare-xhs-browser -- --stage .package/stage/xhs-browser
 ```
@@ -104,14 +100,14 @@ pnpm components:prepare-xhs-translation -- --python .package/stage/python-312/py
 
 ```sh
 pnpm components:package -- \
-  --definition scripts/component-definitions/python-311.json \
-  --stage .package/stage/python-311 \
+  --definition scripts/component-definitions/python-312.json \
+  --stage .package/stage/python-312 \
   --output .package/macos-component-feed \
   --github-release-url https://github.com/<org>/<repo>/releases/download/<mac-feed-version> \
   --signing-key-file <安全保存的 Ed25519 私钥文件>
 ```
 
-全部 9 个包上传并完成远端摘要核对后，在 Mac 构建机生成并检查 Mac 专属目录：
+全部 8 个包上传并完成远端摘要核对后，在 Mac 构建机生成并检查 Mac 专属目录：
 
 ```sh
 pnpm components:catalog -- --platform darwin-arm64 --feed .package/macos-component-feed

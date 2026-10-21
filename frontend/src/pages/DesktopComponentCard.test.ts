@@ -65,6 +65,26 @@ function mountCard(props: {
 }
 
 describe("DesktopComponentCard", () => {
+  it("makes a newer approved capability version discoverable without reinstalling automatically", async () => {
+    const wrapper = mountCard({
+      component: component({ installed: true, installedVersion: "old", version: "new", state: "ready" })
+    });
+    expect(wrapper.text()).toContain("待更新");
+    const button = wrapper.findAll("button").find((item) => item.text() === "更新");
+    await button?.trigger("click");
+    expect(wrapper.emitted("reinstall")?.[0]?.[0]).toMatchObject({ id: "ffmpeg" });
+  });
+
+  it("offers only uninstall for a retired installed runtime", async () => {
+    const wrapper = mountCard({
+      component: component({ id: "python-311", retired: true, installed: true, state: "ready", downloadBytes: 0 })
+    });
+    expect(wrapper.text()).toContain("旧版 · 仅供卸载");
+    expect(wrapper.findAll("button").map((button) => button.text())).toEqual(["卸载"]);
+    await wrapper.find("button").trigger("click");
+    expect(wrapper.emitted("uninstall")?.[0]?.[0]).toMatchObject({ id: "python-311" });
+  });
+
   it("offers installation for an approved uninstalled component", async () => {
     const wrapper = mountCard({ component: component() });
     const install = wrapper.findAll("button").find((button) => button.text().includes("安装"));

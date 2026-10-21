@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LOCK_SOURCE =
@@ -105,6 +106,7 @@ export async function verifyChatterboxWheelhouse(wheelhouseDirectory, lockText) 
     if (!entry.isFile() || !/\.(?:whl|zip|tar\.gz)$/i.test(entry.name)) {
       throw new Error(`Chatterbox wheelhouse 包含非归档资产：${entry.name}`);
     }
+    assertWorkerWheelPython(entry.name);
     const assetPath = path.join(wheelhouse, entry.name);
     const stat = await fs.lstat(assetPath);
     if (stat.isSymbolicLink() || !stat.isFile() || stat.size === 0) {
@@ -150,6 +152,7 @@ export async function prepareChatterboxComponent({
   wheelhouseDirectory = DEFAULT_WHEELHOUSE,
   modelSnapshotDirectory = DEFAULT_MODEL_SNAPSHOT,
   lockFilePath = LOCK_SOURCE,
+  sourceVendorDirectory,
   runCommand = execFileSync,
   assets = CHATTERBOX_MODEL_ASSETS
 }) {
@@ -166,12 +169,17 @@ export async function prepareChatterboxComponent({
     ["-I", "-X", "utf8", "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 30_000, env: cleanEnvironment() }
   );
-  if (pythonVersion.trim() !== "3.11") throw new Error("Chatterbox 能力包必须使用 Python 3.11 环境");
-  const sitePackagesDirectory = runCommand(
-    python,
-    ["-I", "-X", "utf8", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 30_000, env: cleanEnvironment() }
-  ).trim();
+  assertWorkerPythonVersion(pythonVersion);
+  // 固定纯 Python 源码可从已校验 vendor 复用；原生依赖仍必须来自新的 3.12 wheelhouse。
+  const sitePackagesDirectory =
+    sourceVendorDirectory ??
+    runCommand(python, ["-I", "-X", "utf8", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      timeout: 30_000,
+      env: cleanEnvironment()
+    }).trim();
   const source = await verifyChatterboxSource(sitePackagesDirectory);
   const lockText = await fs.readFile(lockFilePath, "utf8");
   const wheelhouse = await verifyChatterboxWheelhouse(wheelhouseDirectory, lockText);
@@ -237,6 +245,9 @@ export async function copyTreeWithoutBytecode(source, destination) {
     const destinationPath = path.join(destination, entry.name);
     const stat = await fs.lstat(sourcePath);
     if (stat.isSymbolicLink()) throw new Error(`Chatterbox 源码不允许包含符号链接：${sourcePath}`);
+    if (/\.(?:pyd|so|dll|dylib)(?:\.\d+)*$/i.test(entry.name)) {
+      throw new Error(`Chatterbox vendor 只允许纯 Python 源码，不能复制旧原生依赖：${entry.name}`);
+    }
     if (stat.isDirectory()) await copyTreeWithoutBytecode(sourcePath, destinationPath);
     else if (stat.isFile()) await fs.copyFile(sourcePath, destinationPath, fsConstants.COPYFILE_EXCL);
     else throw new Error(`Chatterbox 源码包含不支持的文件类型：${sourcePath}`);
@@ -301,16 +312,17 @@ function parseArguments(argv) {
     values.set(key.slice(2), value);
   }
   const required = ["python", "stage"];
-  const allowed = [...required, "wheelhouse", "model-snapshot"];
+  const allowed = [...required, "wheelhouse", "model-snapshot", "source-vendor"];
   if (required.some((key) => !values.has(key)) || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(
-      "用法：pnpm components:prepare-chatterbox -- --python <已安装 chatterbox-tts 的 Python 3.11 python.exe> --stage <新暂存目录> [--wheelhouse <已校验 wheelhouse>] [--model-snapshot <固定 revision 模型目录>]"
+      "用法：pnpm components:prepare-chatterbox -- --python <Python 3.12 python.exe> --stage <新暂存目录> [--wheelhouse <已校验 wheelhouse>] [--model-snapshot <固定 revision 模型目录>] [--source-vendor <固定提交的纯 Python vendor>]"
     );
   }
   return {
     pythonExecutablePath: values.get("python"),
     stagingDirectory: values.get("stage"),
     ...(values.has("wheelhouse") ? { wheelhouseDirectory: values.get("wheelhouse") } : {}),
+    ...(values.has("source-vendor") ? { sourceVendorDirectory: values.get("source-vendor") } : {}),
     ...(values.has("model-snapshot") ? { modelSnapshotDirectory: values.get("model-snapshot") } : {})
   };
 }

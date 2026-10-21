@@ -29,6 +29,114 @@ afterEach(async () => {
 });
 
 describe("ComponentManager", () => {
+  it("keeps retired Python hidden on fresh installations and exposes only safe uninstall for old installations", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-python-"));
+    const root = path.join(temporaryRoot, "packages");
+    const manager = new ComponentManager({
+      root,
+      platform: "win32-x64",
+      catalog: { manifests: [], trustedPublicKeys: {} }
+    });
+    expect(await manager.list()).toEqual([]);
+    await seedCurrent(root, "python-311", "3.11.16-20260901");
+    const sentinel = path.join(root, "python-312", "model.bin");
+    await fs.mkdir(path.dirname(sentinel), { recursive: true });
+    await fs.writeFile(sentinel, "keep new runtime and models");
+    expect(await manager.list()).toMatchObject([{ id: "python-311", retired: true, downloadBytes: 0 }]);
+    await expect(manager.startInstall("python-311")).rejects.toMatchObject({ code: "COMPONENT_NOT_FOUND" });
+    await expect(manager.startReinstall("python-311")).rejects.toMatchObject({ code: "COMPONENT_NOT_FOUND" });
+    await expect(manager.getOfflineImportRequirements("python-311")).rejects.toMatchObject({
+      code: "COMPONENT_NOT_FOUND"
+    });
+    const job = await manager.startUninstall("python-311");
+    expect((await waitForJob(manager, job.id)).state).toBe("completed");
+    expect(await fs.readFile(sentinel, "utf8")).toBe("keep new runtime and models");
+    expect(await manager.list()).toEqual([]);
+  });
+
+  it.each(["old", "corrupt"])("refuses retired runtime deletion with a %s dependent marker", async (kind) => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-dependent-"));
+    const root = path.join(temporaryRoot, "packages");
+    await seedCurrent(root, "python-311", "3.11.16-20260901");
+    await seedCurrent(root, "image-ai", "1.0.0-cpu2");
+    if (kind === "corrupt") await fs.writeFile(path.join(root, "image-ai", "current.json"), "invalid");
+    const manager = new ComponentManager({
+      root,
+      platform: "win32-x64",
+      catalog: { manifests: [], trustedPublicKeys: {} }
+    });
+    expect((await manager.list())[0].dependentIds).toEqual(["image-ai"]);
+    const job = await manager.startUninstall("python-311");
+    expect(await waitForJob(manager, job.id)).toMatchObject({ state: "failed", errorCode: "COMPONENT_IN_USE" });
+    await fs.access(path.join(root, "python-311", "current.json"));
+  });
+
+  it("rechecks busy state after the shutdown hook before removing a retired runtime", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-busy-"));
+    const root = path.join(temporaryRoot, "packages");
+    await seedCurrent(root, "python-311", "3.11.16-20260901");
+    let busy = false;
+    const manager = new ComponentManager({
+      root,
+      platform: "win32-x64",
+      catalog: { manifests: [], trustedPublicKeys: {} },
+      isInUse: async () => busy,
+      onBeforeUninstall: async () => {
+        busy = true;
+      }
+    });
+    const job = await manager.startUninstall("python-311");
+    expect(await waitForJob(manager, job.id)).toMatchObject({ state: "failed", errorCode: "COMPONENT_IN_USE" });
+    await fs.access(path.join(root, "python-311", "current.json"));
+  });
+
+  it("permits old runtime removal after a dependent matches the trusted Python 3.12 generation", async () => {
+    const fixture = await createFixture("7.3.1-py312-1", {
+      dependencyIds: ["python-312"],
+      pythonEnvironment: "python-312"
+    });
+    const runtime = await createFixture("3.12.14-20260901", { id: "python-312" });
+    fixture.manifest.pythonEnvironment!.expectedPythonVersion = "3.12";
+    fixture.manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(fixture.manifest)), keyPair.privateKey)
+      .toString("base64");
+    const root = path.join(temporaryRoot, "packages");
+    await seedCurrent(root, "python-311", "3.11.16-20260901");
+    await seedCurrent(root, "edge-tts", fixture.manifest.version);
+    const marker = path.join(root, "edge-tts", "current.json");
+    const record = JSON.parse(await fs.readFile(marker, "utf8"));
+    record.manifestSha256 = crypto.createHash("sha256").update(canonicalManifest(fixture.manifest)).digest("hex");
+    await fs.writeFile(marker, JSON.stringify(record));
+    const manager = new ComponentManager({
+      root,
+      platform: "win32-x64",
+      catalog: { manifests: [runtime.manifest, fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } }
+    });
+    expect((await manager.list()).find((item) => item.retired)?.dependentIds).toEqual([]);
+    const job = await manager.startUninstall("python-311");
+    expect((await waitForJob(manager, job.id)).state).toBe("completed");
+    expect(JSON.parse(await fs.readFile(marker, "utf8"))).toEqual(record);
+  });
+
+  it("refuses deletion when the fixed legacy directory is a link to another location", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-link-"));
+    const root = path.join(temporaryRoot, "packages");
+    const externalRoot = path.join(temporaryRoot, "outside");
+    await seedCurrent(externalRoot, "python-311", "3.11.16-20260901");
+    await fs.mkdir(root);
+    await fs.symlink(path.join(externalRoot, "python-311"), path.join(root, "python-311"), "junction");
+    const manager = new ComponentManager({
+      root,
+      platform: "win32-x64",
+      catalog: { manifests: [], trustedPublicKeys: {} }
+    });
+    const job = await manager.startUninstall("python-311");
+    expect(await waitForJob(manager, job.id)).toMatchObject({
+      state: "failed",
+      errorCode: "COMPONENT_MANIFEST_INVALID"
+    });
+    await fs.access(path.join(externalRoot, "python-311", "current.json"));
+  });
   it("diagnoses only signed artifacts, preserves generated files and never switches the current generation", async () => {
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath);
@@ -1280,6 +1388,22 @@ function createManager(
     downloadArchive,
     ...extra
   });
+}
+
+async function seedCurrent(root: string, id: string, version: string) {
+  const directory = path.join(root, id);
+  await fs.mkdir(path.join(directory, "versions", version), { recursive: true });
+  await fs.writeFile(
+    path.join(directory, "current.json"),
+    JSON.stringify({
+      protocolVersion: 1,
+      id,
+      version,
+      directory: version,
+      installedAt: new Date().toISOString(),
+      manifestSha256: "a".repeat(64)
+    })
+  );
 }
 
 async function waitForJob(manager: ComponentManager, jobId: string) {

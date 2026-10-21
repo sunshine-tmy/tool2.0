@@ -18,15 +18,15 @@ $archivePath = if ($Platform -eq "windows") {
 
 $python = if ($Platform -eq "windows") {
   @{
-    File = "python-3.11.9-amd64.exe"
-    Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-    Sha256 = "5EE42C4EEE1E6B4464BB23722F90B45303F79442DF63083F05322F1785F5FDDE"
+    File = "python-3.12.10-amd64.exe"
+    Url = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
+    Sha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB"
   }
 } else {
   @{
-    File = "python-3.11.9-macos11.pkg"
-    Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-macos11.pkg"
-    Sha256 = "B6CFDEE2571CA56EE895043CA1E7110FB78A878CEE3EB0C21ACCB2DE34D24B55"
+    File = "python-3.12.10-macos11.pkg"
+    Url = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-macos11.pkg"
+    Sha256 = "8373E58DA4EA146B3EB1C1F9834F19A319440B6B679B06050B1F9EE3237AA8E4"
   }
 }
 

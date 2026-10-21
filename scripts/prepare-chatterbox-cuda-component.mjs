@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { finished } from "node:stream/promises";
+import { assertWorkerPythonVersion } from "./worker-python-policy.mjs";
 import {
   CHATTERBOX_PACKAGE_VERSION,
   copyTreeWithoutBytecode,
@@ -71,6 +72,7 @@ export async function prepareChatterboxCudaComponent({
   stagingDirectory,
   wheelhouseDirectory = DEFAULT_WHEELHOUSE,
   lockFilePath = LOCK_SOURCE,
+  sourceVendorDirectory,
   definitionPath = DEFINITION_SOURCE,
   generatedDefinitionPath,
   runCommand = execFileSync
@@ -88,13 +90,17 @@ export async function prepareChatterboxCudaComponent({
     ["-I", "-X", "utf8", "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
     { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 30_000, env: cleanEnvironment() }
   );
-  if (pythonVersion.trim() !== "3.11") throw new Error("Chatterbox CUDA 扩展必须使用 Python 3.11 环境");
+  assertWorkerPythonVersion(pythonVersion);
 
-  const sitePackagesDirectory = runCommand(
-    python,
-    ["-I", "-X", "utf8", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
-    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], windowsHide: true, timeout: 30_000, env: cleanEnvironment() }
-  ).trim();
+  const sitePackagesDirectory =
+    sourceVendorDirectory ??
+    runCommand(python, ["-I", "-X", "utf8", "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      timeout: 30_000,
+      env: cleanEnvironment()
+    }).trim();
   const cudaTorchOutput = runCommand(
     python,
     [
@@ -303,10 +309,10 @@ function parseArguments(argv) {
     values.set(key.slice(2), value);
   }
   const required = ["python", "stage"];
-  const allowed = [...required, "wheelhouse", "lock", "definition", "definition-output"];
+  const allowed = [...required, "wheelhouse", "lock", "definition", "definition-output", "source-vendor"];
   if (required.some((key) => !values.has(key)) || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(
-      "用法：pnpm components:prepare-chatterbox-cuda -- --python <已安装 CUDA PyTorch 与固定 Chatterbox 源码的 Python 3.11 python.exe> --stage <新暂存目录> [--wheelhouse <哈希校验 CUDA wheelhouse>] [--lock <CUDA 锁文件>] [--definition <能力定义>] [--definition-output <构建器使用的生成定义>]"
+      "用法：pnpm components:prepare-chatterbox-cuda -- --python <已安装 CUDA PyTorch 的 Python 3.12 python.exe> --stage <新暂存目录> [--wheelhouse <哈希校验 CUDA wheelhouse>] [--lock <CUDA 锁文件>] [--definition <能力定义>] [--definition-output <构建器使用的生成定义>] [--source-vendor <固定提交的纯 Python vendor>]"
     );
   }
   return {
@@ -314,6 +320,7 @@ function parseArguments(argv) {
     stagingDirectory: values.get("stage"),
     ...(values.has("wheelhouse") ? { wheelhouseDirectory: values.get("wheelhouse") } : {}),
     ...(values.has("lock") ? { lockFilePath: values.get("lock") } : {}),
+    ...(values.has("source-vendor") ? { sourceVendorDirectory: values.get("source-vendor") } : {}),
     ...(values.has("definition") ? { definitionPath: values.get("definition") } : {}),
     ...(values.has("definition-output") ? { generatedDefinitionPath: values.get("definition-output") } : {})
   };

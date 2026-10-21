@@ -11,6 +11,7 @@ import {
   CHATTERBOX_MODEL_REVISION,
   CHATTERBOX_PACKAGE_VERSION,
   CHATTERBOX_SOURCE_COMMIT,
+  copyTreeWithoutBytecode,
   prepareChatterboxComponent,
   verifyChatterboxModelAssets,
   verifyChatterboxSource,
@@ -40,12 +41,12 @@ test("Chatterbox component pins its source, CPU model set and one user-facing mo
     await fs.readFile(path.join(SCRIPT_DIRECTORY, "component-definitions/chatterbox.json"), "utf8")
   );
   assert.equal(definition.id, "chatterbox");
-  assert.equal(definition.version, "1.0.0-cpu1");
-  assert.deepEqual(definition.dependencyIds, ["ffmpeg", "python-311"]);
+  assert.equal(definition.version, "1.0.0-py312-cpu1");
+  assert.deepEqual(definition.dependencyIds, ["ffmpeg", "python-312"]);
   assert.deepEqual(definition.taskToolIds, ["chatterbox"]);
   assert.equal(definition.additionalArchives.length, 2);
   assert.equal(definition.additionalArchives[0].paths[0], "models/chatterbox/t3_mtl23ls_v3.safetensors");
-  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.11");
+  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.12");
   assert.equal(CHATTERBOX_PACKAGE_VERSION, "0.1.7");
   assert.equal(CHATTERBOX_SOURCE_COMMIT.length, 40);
   assert.equal(CHATTERBOX_MODEL_REVISION.length, 40);
@@ -62,9 +63,9 @@ test("CUDA Chatterbox capability is a separately managed extension that reuses t
   const cpuLock = await fs.readFile(path.join(SCRIPT_DIRECTORY, "chatterbox.lock.txt"), "utf8");
 
   assert.equal(definition.id, "chatterbox-cuda");
-  assert.deepEqual(definition.dependencyIds, ["chatterbox", "python-311"]);
+  assert.deepEqual(definition.dependencyIds, ["chatterbox", "python-312"]);
   assert.deepEqual(definition.taskToolIds, ["chatterbox"]);
-  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.11");
+  assert.equal(definition.pythonEnvironment.expectedPythonVersion, "3.12");
   assert.match(cudaLock, /^torch==2\.6\.0\+cu124\s/m);
   assert.match(cudaLock, /^torchaudio==2\.6\.0\+cu124\s/m);
   assert.match(cpuLock, /^torch==2\.6\.0\+cpu\s/m);
@@ -75,8 +76,8 @@ test("CUDA wheel archives keep framework and NVIDIA runtime wheels in separate s
   assert.deepEqual(
     groupCudaWheelhouseAssets([
       "fastapi-0.141.1-py3-none-any.whl",
-      "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl",
-      "torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl",
+      "torch-2.6.0+cu124-cp312-cp312-win_amd64.whl",
+      "torchaudio-2.6.0+cu124-cp312-cp312-win_amd64.whl",
       "nvidia_cublas_cu12-12.4.5.8-py3-none-win_amd64.whl"
     ]),
     [
@@ -86,25 +87,25 @@ test("CUDA wheel archives keep framework and NVIDIA runtime wheels in separate s
       },
       {
         name: "cuda-torch",
-        paths: ["wheelhouse/torch-2.6.0+cu124-cp311-cp311-win_amd64.whl"]
+        paths: ["wheelhouse/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl"]
       },
       {
         name: "cuda-torchaudio",
-        paths: ["wheelhouse/torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"]
+        paths: ["wheelhouse/torchaudio-2.6.0+cu124-cp312-cp312-win_amd64.whl"]
       }
     ]
   );
-  assert.throws(() => groupCudaWheelhouseAssets(["torch-2.6.0+cu124-cp311-cp311-win_amd64.whl"]), /torchaudio/);
+  assert.throws(() => groupCudaWheelhouseAssets(["torch-2.6.0+cu124-cp312-cp312-win_amd64.whl"]), /torchaudio/);
   assert.deepEqual(
     groupCudaWheelhouseAssets([
-      { name: "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl.part-0001", path: "wheelhouse/.parts/torch.whl.part-0001" },
-      { name: "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl.part-0002", path: "wheelhouse/.parts/torch.whl.part-0002" },
-      "torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"
+      { name: "torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0001", path: "wheelhouse/.parts/torch.whl.part-0001" },
+      { name: "torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0002", path: "wheelhouse/.parts/torch.whl.part-0002" },
+      "torchaudio-2.6.0+cu124-cp312-cp312-win_amd64.whl"
     ]),
     [
       { name: "cuda-torch-part-0001", paths: ["wheelhouse/.parts/torch.whl.part-0001"] },
       { name: "cuda-torch-part-0002", paths: ["wheelhouse/.parts/torch.whl.part-0002"] },
-      { name: "cuda-torchaudio", paths: ["wheelhouse/torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"] }
+      { name: "cuda-torchaudio", paths: ["wheelhouse/torchaudio-2.6.0+cu124-cp312-cp312-win_amd64.whl"] }
     ]
   );
   assert.throws(
@@ -143,8 +144,8 @@ test("CUDA preparation vendors the fixed worker and generates exact wheel archiv
   const torchHash = createHash("sha256").update(torchWheel).digest("hex");
   const audioHash = createHash("sha256").update(torchaudioWheel).digest("hex");
   const antlrHash = createHash("sha256").update(antlrSource).digest("hex");
-  await fs.writeFile(path.join(wheelhouse, "torch-2.6.0+cu124-cp311-cp311-win_amd64.whl"), torchWheel);
-  await fs.writeFile(path.join(wheelhouse, "torchaudio-2.6.0+cu124-cp311-cp311-win_amd64.whl"), torchaudioWheel);
+  await fs.writeFile(path.join(wheelhouse, "torch-2.6.0+cu124-cp312-cp312-win_amd64.whl"), torchWheel);
+  await fs.writeFile(path.join(wheelhouse, "torchaudio-2.6.0+cu124-cp312-cp312-win_amd64.whl"), torchaudioWheel);
   await fs.writeFile(path.join(wheelhouse, "antlr4-python3-runtime-4.9.3.tar.gz"), antlrSource);
   const lockPath = path.join(root, "requirements.lock");
   await fs.writeFile(
@@ -162,7 +163,7 @@ test("CUDA preparation vendors the fixed worker and generates exact wheel archiv
   const python = path.join(root, "python.exe");
   const runCommand = (_executable, args) => {
     const command = args.at(-1);
-    if (command.includes("sys.version_info")) return "3.11\n";
+    if (command.includes("sys.version_info")) return "3.12\n";
     if (command.includes("sysconfig")) return sitePackages + "\n";
     if (command.includes("torch.__version__")) return '{"version":"2.6.0+cu124","cuda":"12.4"}\n';
     throw new Error("Unexpected preparation command");
@@ -211,6 +212,16 @@ test("source metadata must point to the exact official Chatterbox commit", async
   await assert.rejects(verifyChatterboxSource(sitePackages), /固定的官方 Git 提交/);
 });
 
+test("reusing pure Python vendor must not copy a native library from an old environment", async () => {
+  const root = await makeRoot();
+  const sitePackages = await makeSitePackages(root);
+  await fs.writeFile(path.join(sitePackages, "chatterbox", "native.cp311-win_amd64.pyd"), "old native library");
+  await assert.rejects(
+    copyTreeWithoutBytecode(path.join(sitePackages, "chatterbox"), path.join(root, "copy")),
+    /旧原生依赖/
+  );
+});
+
 test("wheelhouse rejects assets not authorized by the pinned lock hashes", async () => {
   const root = await makeRoot();
   const wheelhouse = path.join(root, "wheelhouse");
@@ -245,6 +256,14 @@ test("model assets are size- and SHA-256-verified from the pinned snapshot", asy
   await assert.rejects(verifyChatterboxModelAssets(snapshot, [asset]), /SHA-256 不匹配/);
 });
 
+test("wheelhouse rejects a Python 3.11 native wheel even when its hash is authorized", async () => {
+  const root = await makeRoot();
+  const payload = Buffer.from("old ABI wheel");
+  const sha256 = createHash("sha256").update(payload).digest("hex");
+  await fs.writeFile(path.join(root, "torch-2.6.0+cpu-cp311-cp311-win_amd64.whl"), payload);
+  await assert.rejects(verifyChatterboxWheelhouse(root, `torch==2.6.0+cpu --hash=sha256:${sha256}`), /不兼容/);
+});
+
 test("preparation copies a clean vendor package and signed payload without copying a venv", async () => {
   const root = await makeRoot();
   const sitePackages = await makeSitePackages(root);
@@ -268,7 +287,7 @@ test("preparation copies a clean vendor package and signed payload without copyi
   };
   await fs.writeFile(path.join(snapshot, asset.name), model);
   const python = path.join(root, "python.exe");
-  const runCommand = (_executable, args) => (args.at(-1).includes("sys.version_info") ? "3.11\n" : sitePackages + "\n");
+  const runCommand = (_executable, args) => (args.at(-1).includes("sys.version_info") ? "3.12\n" : sitePackages + "\n");
   const stage = path.join(root, "stage");
 
   const result = await prepareChatterboxComponent({
@@ -280,6 +299,21 @@ test("preparation copies a clean vendor package and signed payload without copyi
     runCommand,
     assets: [asset]
   });
+
+  const vendorResult = await prepareChatterboxComponent({
+    pythonExecutablePath: python,
+    stagingDirectory: path.join(root, "stage-vendor"),
+    wheelhouseDirectory: wheelhouse,
+    modelSnapshotDirectory: snapshot,
+    lockFilePath: lockPath,
+    sourceVendorDirectory: sitePackages,
+    runCommand: (_executable, args) => {
+      assert.ok(args.at(-1).includes("sys.version_info"), "vendor reuse must not query the old interpreter");
+      return "3.12\n";
+    },
+    assets: [asset]
+  });
+  assert.equal(vendorResult.wheelCount, 1);
 
   assert.equal(result.wheelCount, 1);
   assert.equal(result.modelBytes, model.length);

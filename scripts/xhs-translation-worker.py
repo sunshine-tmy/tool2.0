@@ -29,7 +29,10 @@ async def require_worker_token(request: Request, call_next):
     if WORKER_TOKEN and not hmac.compare_digest(request.headers.get("x-toolbox-worker-token", ""), WORKER_TOKEN):
         return JSONResponse(
             status_code=401,
-            content={"success": False, "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"}},
+            content={
+                "success": False,
+                "error": {"code": "WORKER_AUTH_REQUIRED", "message": "Worker authentication required"},
+            },
         )
     return await call_next(request)
 

@@ -550,11 +550,17 @@ function cancelOfflineImport(component: ComponentPackageStatus) {
 
 async function uninstallComponent(component: ComponentPackageStatus) {
   if (component.dependentIds.length) {
-    message.warning(`该组件仍被 ${component.dependentIds.join("、")} 依赖，请先卸载依赖能力`);
+    message.warning(
+      component.retired
+        ? `请先将 ${component.dependentIds.join("、")} 更新至 Python 3.12 版本`
+        : `该组件仍被 ${component.dependentIds.join("、")} 依赖，请先卸载依赖能力`
+    );
     return;
   }
   const accepted = await confirm(
-    `将删除“${component.displayName}”的运行时、依赖和模型。作品、历史任务、个人素材、登录状态及其他应用数据均会保留。`,
+    component.retired
+      ? "仅移除已不再被依赖的 Python 3.11 旧运行时。新的 Python 3.12、模型、个人音色、音频和其他业务数据均会保留。"
+      : `将删除“${component.displayName}”的运行时、依赖和模型。作品、历史任务、个人素材、登录状态及其他应用数据均会保留。`,
     { title: "确认卸载能力", positiveText: "仅卸载能力", danger: true }
   );
   if (accepted) await startComponentOperation(component, "uninstall");

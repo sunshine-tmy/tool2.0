@@ -15,14 +15,14 @@ Set-Location -LiteralPath $Root
 
 if (-not $Python) {
   try {
-    $Python = (& py -3.11 -c "import sys; print(sys.executable)").Trim()
+    $Python = (& py -3.12 -c "import sys; print(sys.executable)").Trim()
   } catch {
-    throw "Python 3.11 is required. Install it or pass -Python with its python.exe path."
+    throw "Python 3.12 is required. Install it or pass -Python with its python.exe path."
   }
 }
 
-& $Python -c "import sys; assert sys.version_info[:2] == (3, 11), 'Chatterbox requires Python 3.11 for the supported runtime'"
-if ($LASTEXITCODE -ne 0) { throw "Python 3.11 is required" }
+& $Python -c "import sys; assert sys.version_info[:2] == (3, 12), 'Chatterbox requires Python 3.12 for the supported runtime'"
+if ($LASTEXITCODE -ne 0) { throw "Python 3.12 is required" }
 
 if (-not (Test-Path $Venv)) {
   & $Python -m venv $Venv
@@ -30,6 +30,8 @@ if (-not (Test-Path $Venv)) {
 }
 
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
+& $VenvPython -I -c "import sys; assert sys.version_info[:2] == (3, 12), 'Existing environment is not Python 3.12; use a new -VenvPath instead of overwriting it'"
+if ($LASTEXITCODE -ne 0) { throw "保留已有环境；请通过 -VenvPath 指定新的 Python 3.12 环境目录。" }
 & $VenvPython -m pip install --disable-pip-version-check --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "Unable to upgrade pip" }
 

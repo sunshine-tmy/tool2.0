@@ -78,10 +78,12 @@ class IncrementalSafetensorsTests(unittest.TestCase):
             self.assertTrue(torch.equal(tensor, expected[name]))
 
     def test_invalid_checkpoint_is_rejected_without_falling_back_to_unsafe_loading(self):
+        from safetensors import SafetensorError
+
         with tempfile.TemporaryDirectory(prefix="chatterbox-bad-load-") as directory:
             checkpoint = Path(directory) / "weights.safetensors"
             checkpoint.write_bytes(b"not a safetensors checkpoint")
-            with self.assertRaises(Exception):
+            with self.assertRaises(SafetensorError):
                 worker.load_safetensors_incrementally(checkpoint, "cpu")
 
 

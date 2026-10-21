@@ -200,7 +200,9 @@ class ModelManager:
             # 设备切换必须先释放旧实例，防止切到 GPU 时 CPU/GPU 同时保留整套权重。
             self.unload()
         try:
-            self.model = load_multilingual_model(device, local_only=True) if local_only else load_multilingual_model(device)
+            self.model = (
+                load_multilingual_model(device, local_only=True) if local_only else load_multilingual_model(device)
+            )
             self.device = device
             return self.model
         except Exception as exc:
@@ -320,7 +322,11 @@ def load_multilingual_model(device: str, *, local_only: bool = False) -> Any:
             if local_only and not DESKTOP_MANAGED:
                 from huggingface_hub import snapshot_download
 
-                checkpoint_root = Path(snapshot_download(repo_id="ResembleAI/chatterbox", revision=CHATTERBOX_MODEL_REVISION, local_files_only=True))
+                checkpoint_root = Path(
+                    snapshot_download(
+                        repo_id="ResembleAI/chatterbox", revision=CHATTERBOX_MODEL_REVISION, local_files_only=True
+                    )
+                )
             required = [
                 "ve.pt",
                 "t3_mtl23ls_v3.safetensors",

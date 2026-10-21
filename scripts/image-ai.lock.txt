@@ -3,15 +3,21 @@
 absl-py==2.5.0 \
     --hash=sha256:0c996f25c0490700fadabe6351630f6111534fa0ae252cc6d2014ea3b141135f \
     --hash=sha256:0f17b89f2a4eaaedc4f28c622998aa690564b3012a396a4ffad0821007fe03ba
-    # via tb-nightly
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   tb-nightly
 addict==2.4.0 \
     --hash=sha256:249bb56bbfd3cdc2a004ea0ff4c2b6ddc84d53bc2194761636eb314d5cfa5dfc \
     --hash=sha256:b3b2210e0e067a281f5646c8c5db92e99b7231ea8b0eb5f74dbdf9e259d4e494
-    # via basicsr
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   basicsr
 aiohappyeyeballs==2.7.1 \
     --hash=sha256:065665c041c42a5938ed220bdcd7230f22527fbec085e1853d2402c8a3615d9d \
     --hash=sha256:9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472
-    # via aiohttp
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   aiohttp
 aiohttp==3.14.3 \
     --hash=sha256:03cd2bde3d7f085b64e549c985f4bb928cad7e8ecf5323bfca320db548d81b39 \
     --hash=sha256:041badb8f84396357c4d3ad26de6afd7a32b112f43d3c63045c0c8278cfd2043 \
@@ -132,51 +138,66 @@ aiohttp==3.14.3 \
     --hash=sha256:f8fb78a83c9e5f741ca3a68cfb455c1f5bb83b4e7249a3848b3cd78d0a8563b0 \
     --hash=sha256:fa9467a8113aa69d3d7c55a70ef0b7c636010a40993f3df9d9d0d73b3eb7ef24 \
     --hash=sha256:fd51ebf9d3a00c074df4ede271023f4d2dba289bcc740b88191872716014e3c5
-    # via paddleocr
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddleocr
 aiosignal==1.4.0 \
     --hash=sha256:053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e \
     --hash=sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7
-    # via aiohttp
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   aiohttp
 aistudio-sdk==0.3.9 \
     --hash=sha256:41621d052ddb7a58643438a7ca541f58ef0ab94a2acdfff0a71db81bf68dc027
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 annotated-doc==0.0.5 \
     --hash=sha256:117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101 \
     --hash=sha256:c7e58ce09192557605d8bbd92836d7e1d520ac9580096042c0bfd197efacf1bb
     # via
+    #   -c scripts/image-ai.lock.txt
     #   fastapi
     #   typer
 annotated-types==0.8.0 \
     --hash=sha256:13b2beaad985e05e2d6407ee4c4f35590b11f8d693a258a561055cac8f64cab7 \
     --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
-    # via pydantic
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   pydantic
 anyio==4.15.1 \
     --hash=sha256:6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101 \
     --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
     # via
+    #   -c scripts/image-ai.lock.txt
     #   httpx
     #   starlette
 attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309 \
     --hash=sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aiohttp
     #   jsonschema
     #   referencing
 basicsr==1.4.2 \
     --hash=sha256:b89b595a87ef964cda9913b4d99380ddb6554c965577c0c10cb7b78e31301e87
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   gfpgan
     #   realesrgan
 bce-python-sdk==0.9.79 \
     --hash=sha256:71799ac8740505e0759d30873f6f1a478fa8f83aedf425d511f1419a5f30082e \
     --hash=sha256:cd77476b43347ed28d0211d5ad557e524e1ec648bd093d57c6a6d3de075a7508
-    # via aistudio-sdk
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   aistudio-sdk
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
     --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
     # via
+    #   -c scripts/image-ai.lock.txt
     #   httpcore
     #   httpx
     #   requests
@@ -281,7 +302,9 @@ cffi==2.1.1 \
     --hash=sha256:f8ec5e643a9a937f64e1999eb9f75d072263751912dc5cd06d3c85f8f44be7c3 \
     --hash=sha256:fb92203a88b3d3053034db775110081c49d28be6551923805e039924093761e4 \
     --hash=sha256:fcd22650c908d7b7da162bbfaab594a1227a15d1643a98c68b122ac642fa2264
-    # via cryptography
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   cryptography
 chardet==7.6.0 \
     --hash=sha256:089e3bb81a0a07e94f15461ded9f9ee66d349615b1a9fd557d4de1003e2fc12e \
     --hash=sha256:0ad9bc6dab4f338673353fa3f0dc96122f559aaf746087408106e2fcbf132fe8 \
@@ -329,7 +352,9 @@ chardet==7.6.0 \
     --hash=sha256:f14f46ef1977e41ce1f4814ca6984cea7f8b6baf8cbc6626ef7bf3d13cf7ea13 \
     --hash=sha256:f2ec3c78cc6b54bf8e091ec4ee885473078b5d7ef18ab1b01c86ae1e98bf88f7 \
     --hash=sha256:fc1e1571321baf8927582fe34363ad7f02279f11c8c2839c14b4c76894148db6
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 charset-normalizer==3.5.1 \
     --hash=sha256:00668ebb0609751758682eb0b5857e7c35b9f00e84dfdef062e103244ec94d45 \
     --hash=sha256:012a22b88a77ca2e59b98ac5889b0deb604147666032f45e6d6e217634d2550d \
@@ -503,11 +528,14 @@ charset-normalizer==3.5.1 \
     --hash=sha256:fd0350afdc3aabd5576f60ea109228bd5538139713c7b094c5cd27c73a98bc6f \
     --hash=sha256:fd0a274c0e5f9a21565cd9d3dd749b61f96b7aa1e20a93aa1ba4029518f2e5c0 \
     --hash=sha256:fdb8a068947befafba9952162645dc2fecaeb400e64584829ed5e9b2fbe21a7f
-    # via requests
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   requests
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
     --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aistudio-sdk
     #   huggingface-hub
     #   uvicorn
@@ -515,13 +543,16 @@ colorama==0.4.6 \
     --hash=sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44 \
     --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6
     # via
+    #   -c scripts/image-ai.lock.txt
     #   colorlog
     #   tqdm
     #   typer
 colorlog==6.12.0 \
     --hash=sha256:2a7924c1dadf18b22a0eb8b06d1c7b01d5341707ec1641eb6fcc4fde0c3e8e5f \
     --hash=sha256:30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 contourpy==1.3.2 \
     --hash=sha256:0475b1f6604896bc7c53bb070e355e9321e1bc0d381735421a2d2068ec56531f \
     --hash=sha256:106fab697af11456fcba3e352ad50effe493a90f893fca6c2ca5c033820cea92 \
@@ -580,7 +611,9 @@ contourpy==1.3.2 \
     --hash=sha256:f26b383144cf2d2c29f01a1e8170f50dacf0eac02d64139dcd709a8ac4eb3cfe \
     --hash=sha256:f939a054192ddc596e031e50bb13b657ce318cf13d264f095ce9db7dc6ae81c0 \
     --hash=sha256:fd93cc7f3139b6dd7aab2f26a90dde0aa9fc264dbf70f6740d498a70b860b82c
-    # via matplotlib
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   matplotlib
 crc32c==2.9.post0 \
     --hash=sha256:0006c8b71066c81fed655bd24ef7f2749a7a58c1457ac228f9cc928467f8d1c2 \
     --hash=sha256:01a47fe1149c649a44ec63a3934b468d2561a96e80aad65cfcac90fd3a759c46 \
@@ -696,7 +729,9 @@ crc32c==2.9.post0 \
     --hash=sha256:f9d838e95284eee955e50c75c806b5c566c3206c731c4b47e6af5bc136eaee38 \
     --hash=sha256:fb8bab3a7c63353a5d904e71a4bbb1d3c4584830f634b448cd62fd3b0ba97d66 \
     --hash=sha256:fe2baba912a8aa2e73567b2559c4343e1a205b316c200358223ec5bd860ca1ab
-    # via bce-python-sdk
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   bce-python-sdk
 cryptography==50.0.1 \
     --hash=sha256:01f41478cf33fc605a6a089cd56d28b45c6c0b45a1928b61797f2621a04bac71 \
     --hash=sha256:05ba322c4da95b262a212c345af888ef2c37c88c0509756ea00a0e6d68850f23 \
@@ -744,11 +779,15 @@ cryptography==50.0.1 \
     --hash=sha256:fc3ed7ebd2a8c96f5b166de0ab9b624996bef3b07bbeb19364dfb78222c22c80 \
     --hash=sha256:fd3718b960d0b5dd213cdf03f3bcb7000e69dda0de8b956061947ff6bcff5558 \
     --hash=sha256:ff838d62ec1bfce4f9ba7fa16f4a7b554cd8d0c299e6be37502161a660c84eef
-    # via modelscope-hub
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   modelscope-hub
 cycler==0.12.1 \
     --hash=sha256:85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30 \
     --hash=sha256:88bb128f02ba341da8ef447245a9e138fae777f6a23943da4540077d3601eb1c
-    # via matplotlib
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   matplotlib
 cython==3.1.3 \
     --hash=sha256:00264cafcc451dcefc01eaf29ed5ec150fb73af21d4d21105d97e9d829a53e99 \
     --hash=sha256:08ac646ff42781827f23b7a9b61669cdb92055f52724cd8cbe0e1defc56fce2e \
@@ -820,21 +859,27 @@ cython==3.1.3 \
     --hash=sha256:f63b4e351ffa434b3b07629ab9068c25bfe322edc0c8f6b0310d950598ca5214 \
     --hash=sha256:fd2de686b64bef9a9efe059f826705b2a885cbcb9eff5eb8d42c290bdc72debd \
     --hash=sha256:ff4a2cb84798faffb3988bd94636c3ad31a95ff44ef017f09121abffc56f84cf
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 facexlib==0.3.0 \
     --hash=sha256:245d58861537b820c616e8b3ef618ccfad2a24724a2d74be2b0542643c01a878 \
     --hash=sha256:7ae784a520eb52e05583e8bf9f68f77f45083239ac754d646d635017b49e7763
     # via
+    #   -c scripts/image-ai.lock.txt
     #   gfpgan
     #   realesrgan
 fastapi==0.141.1 \
     --hash=sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3 \
     --hash=sha256:e8822fc40db1e1858054d7a949a888695bc9bdce70139178e33bd2871a453ca1
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 filelock==3.32.6 \
     --hash=sha256:3f16ecd0117feae0dfc147e8c62eb5daeccd8bd800378c3ddf416de9b4feb6b1 \
     --hash=sha256:a3f55a18af3652a94d8f47d6055df434f254ca1d02ef2524850c6d249ca2512c
     # via
+    #   -c scripts/image-ai.lock.txt
     #   huggingface-hub
     #   modelscope
     #   modelscope-hub
@@ -842,10 +887,14 @@ filelock==3.32.6 \
     #   torch
 filterpy==1.4.5 \
     --hash=sha256:4f2a4d39e4ea601b9ab42b2db08b5918a9538c168cff1c6895ae26646f3d73b1
-    # via facexlib
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   facexlib
 flatbuffers==25.12.19 \
     --hash=sha256:7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4
-    # via onnxruntime
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   onnxruntime
 fonttools==4.65.0 \
     --hash=sha256:04f73dd01005752a6e75cf4a8dc6b70dc724d1d4bc34cc89522153f4a2f07680 \
     --hash=sha256:05595385ae99f4b9626cebb973bf171b8fe38a8f40708e6e42abba0ed7537778 \
@@ -913,7 +962,9 @@ fonttools==4.65.0 \
     --hash=sha256:fb53892b570f7f1f0055e75fc4de32673e32f749c4c8a606b63d5c436650e634 \
     --hash=sha256:fcf39949f56911348514b466714efa9118bec3d2be249e1c487263f7cda6edab \
     --hash=sha256:ffc918702661f1d74d2fbb2f5551036b64f6d2d743139e105289b694bcd16f54
-    # via matplotlib
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   matplotlib
 frozenlist==1.8.0 \
     --hash=sha256:0325024fe97f94c41c08872db482cf8ac4800d80e79222c6b0b7b162d5b13686 \
     --hash=sha256:032efa2674356903cd0261c4317a561a6850f3ac864a63fc1583147fb05a79b0 \
@@ -1046,24 +1097,29 @@ frozenlist==1.8.0 \
     --hash=sha256:fb30f9626572a76dfe4293c7194a09fb1fe93ba94c7d4f720dfae3b646b45027 \
     --hash=sha256:fe3c58d2f5db5fbd18c2987cba06d51b0529f52bc3a6cdc33d3f4eab725104bd
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aiohttp
     #   aiosignal
 fsspec==2026.7.0 \
     --hash=sha256:b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279 \
     --hash=sha256:c803c40f4cf860b49dea58ee3e1c33cb9c790520e233537e1340049f89b82a88
     # via
+    #   -c scripts/image-ai.lock.txt
     #   huggingface-hub
     #   torch
 future==1.0.0 \
     --hash=sha256:929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216 \
     --hash=sha256:bd2968309307861edae1458a4f8a4f3598c03be43b97521076aebf5d94c07b05
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   bce-python-sdk
 gfpgan==1.3.8 \
     --hash=sha256:21618b06ce8ea6230448cb526b012004f23a9ab956b55c833f69b9fc8a60c4f9 \
     --hash=sha256:3d8386df6320aa9dfb0dd4cd09d9f8ed12ae0bbd9b2df257c3d21aefac5d8b85
-    # via realesrgan
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   realesrgan
 grpcio==1.83.1 \
     --hash=sha256:0468b627f2987c9a77f7580030207cbd85457ffe52998beff4f0b5c38c58a72c \
     --hash=sha256:05ba265193fbd9f63355311ec7567bba32a72aeb8e9fd7b3443e4fcad87b0750 \
@@ -1116,11 +1172,14 @@ grpcio==1.83.1 \
     --hash=sha256:e572da3e247b28a98f46636d33c756e81ffb0f5def96c231ba45332333060595 \
     --hash=sha256:e844cdb25c3c93c7572e0a37137c12305efea493be4eb65801b3ee93f180c186 \
     --hash=sha256:f732feb060ef57c1a040c24cee072ba9fab99bd0a7d2c916ef3f1c4d84b98974
-    # via tb-nightly
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   tb-nightly
 h11==0.16.0 \
     --hash=sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
+    #   -c scripts/image-ai.lock.txt
     #   httpcore
     #   uvicorn
 hf-xet==1.6.0 \
@@ -1141,21 +1200,27 @@ hf-xet==1.6.0 \
     --hash=sha256:f0906082d9932ae0c0057fa194041c22b4e2cdb46b2592ef3b91f020d62a081a \
     --hash=sha256:f2f7278c05c22fd60cb436cda1269649b3e81db65ecdc8496e5e164aa4143e7b \
     --hash=sha256:fb4fadde1b2b70bf4c0c14a6dccbe7194b1c28947fefd5bbe3fed9d940676c3b
-    # via huggingface-hub
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   huggingface-hub
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
-    # via httpx
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   httpx
 httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
+    #   -c scripts/image-ai.lock.txt
     #   huggingface-hub
     #   paddlepaddle
 huggingface-hub==1.31.0 \
     --hash=sha256:9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667 \
     --hash=sha256:f8e9e710a210613fa5d0f26bba6da05ef4aef9fba5a0f23f508f5ac4d08b6f90
     # via
+    #   -c scripts/image-ai.lock.txt
     #   paddlex
     #   tokenizers
     #   transformers
@@ -1163,6 +1228,7 @@ idna==3.19 \
     --hash=sha256:5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15 \
     --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
     # via
+    #   -c scripts/image-ai.lock.txt
     #   anyio
     #   httpx
     #   requests
@@ -1170,23 +1236,33 @@ idna==3.19 \
 imageio==2.37.4 \
     --hash=sha256:1ab2e22c8debf700f24c3ac43e8f95f3b3a8110c83b93411e97b4b0b2cd1c7e6 \
     --hash=sha256:e45cbc5e83502047fb138f7f585f7f105a136a57eea5f4b3cfc6ce1b52720bd3
-    # via scikit-image
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   scikit-image
 imagesize==2.0.1 \
     --hash=sha256:b2ba6a4dea487a7ebcd53248d3476aca449d30db12a2dde5e0c5ca9624fd77e5 \
     --hash=sha256:ea0c9a0384df69ed86a943a15cde37d0360b82491b3910dc2215e202e62b5b02
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 jinja2==3.1.6 \
     --hash=sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d \
     --hash=sha256:85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67
-    # via torch
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   torch
 jsonschema==4.26.0 \
     --hash=sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326 \
     --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
-    # via rembg
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   rembg
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
-    # via jsonschema
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   jsonschema
 kiwisolver==1.5.1 \
     --hash=sha256:007a5553dfc4f4e8d184f588a0200e2cd4b63a59cc8796df3c39909e679dc7a0 \
     --hash=sha256:0324cd2567259b7a095f6cf18a52b0ffc6f3de9e69528ff1bc0e7a37bd43ff1a \
@@ -1329,11 +1405,15 @@ kiwisolver==1.5.1 \
     --hash=sha256:f9b1c4900736e489a812c529100de4b8fb617d4db075e931e213c57424b83d9b \
     --hash=sha256:fc271a6f0a2126958f4090e5507b9da5848927dae331f8f763bd4aa642b3d2cd \
     --hash=sha256:febcce10f2bcdbb80b4ea919238a6a4ac13dbc4c7cadbe8d5d75c3682f8b5404
-    # via matplotlib
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   matplotlib
 lazy-loader==0.5 \
     --hash=sha256:717f9179a0dbed357012ddad50a5ad3d5e4d9a0b8712680d4e687f5e6e6ed9b3 \
     --hash=sha256:ab0ea149e9c554d4ffeeb21105ac60bed7f3b4fd69b1d2360a4add51b170b005
-    # via scikit-image
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   scikit-image
 llvmlite==0.49.0 \
     --hash=sha256:00f16db782f4a13c78c5804aedc434e46794a77e89999a168f9401106270e50a \
     --hash=sha256:039fa4054a06f537fb39248d4472284ca96be311a142ec09e69f95630ab469cc \
@@ -1361,7 +1441,9 @@ llvmlite==0.49.0 \
     --hash=sha256:e32adb84fdaae28aeb86fdb6253084ee707ee157289a2e98fe3caf48a62bee82 \
     --hash=sha256:ee81e96c15a6f870918f1eb60c913551c16aa23defb4f5f1acfa660d6a0aaac2 \
     --hash=sha256:f3f2ff0aeb17d34fcce9f79b99baac441cfd3efa41b83e233ca4530a72381f72
-    # via numba
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   numba
 lmdb==2.3.0 \
     --hash=sha256:0b704763ec2b1dc9b73020311ab4be196da84f0fac637b1fb2e38d95b57a1b80 \
     --hash=sha256:131ea41c72e387715141cbf240648337f59b717c0a01655f6fd78315fea60afe \
@@ -1402,16 +1484,21 @@ lmdb==2.3.0 \
     --hash=sha256:fa49ef15ae97b217961f49e54e7f02d2f7ee18b342a08bcf12ab4cc329bfca49 \
     --hash=sha256:fb152db6fab0bb71858b2040e93003cf873a75c698bd89e7e75097f10fd86a3c
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   gfpgan
 markdown==3.10.3 \
     --hash=sha256:3589362618f743188b4d955b874402bc814f4f83f544dc207719f4baa7d9c45f \
     --hash=sha256:fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea
-    # via tb-nightly
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   tb-nightly
 markdown-it-py==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
     --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
-    # via rich
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   rich
 markupsafe==3.0.3 \
     --hash=sha256:0303439a41979d9e74d18ff5e2dd8c43ed6c6001fd40e5bf2e43f7bd9bbc523f \
     --hash=sha256:068f375c472b3e7acbe2d5318dea141359e6900156b5b2ba06a30b169086b91a \
@@ -1503,6 +1590,7 @@ markupsafe==3.0.3 \
     --hash=sha256:f9e130248f4462aaa8e2552d547f36ddadbeaa573879158d721bbd33dfe4743a \
     --hash=sha256:fed51ac40f757d41b7c48425901843666a6677e3e8eb0abcff09e4ba6e664f50
     # via
+    #   -c scripts/image-ai.lock.txt
     #   jinja2
     #   werkzeug
 matplotlib==3.10.9 \
@@ -1561,23 +1649,33 @@ matplotlib==3.10.9 \
     --hash=sha256:f4399f64b3e94cd500195490972ae1ee81170df1636fa15364d157d5bdd7b921 \
     --hash=sha256:f76e640a5268850bfda54b5131b1b1941cc685e42c5fa98ed9f2d64038308cba \
     --hash=sha256:fd66508e8c6877d98e586654b608a0456db8d7e8a546eb1e2600efd957302358
-    # via filterpy
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   filterpy
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
     --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
-    # via markdown-it-py
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   markdown-it-py
 modelscope==1.40.0 \
     --hash=sha256:2b1d7076bc7eac19f8ac32d4467d021649e374c968f3a42cc36c699da5aae075 \
     --hash=sha256:ed2a3882bdd2aa652f1ec692cee8e999ba7809a371a0b863f33649bb2f2de6ef
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 modelscope-hub==0.4.2 \
     --hash=sha256:ddf47b859ae812738850f53c3cc7a935df5cf5ee58c4678cf4fbeefe3d203f43 \
     --hash=sha256:f8547b21891a18a4a4eddd085b7f0aa5fc40a1d5abcbff964fdd3165e866f7de
-    # via modelscope
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   modelscope
 mpmath==1.3.0 \
     --hash=sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f \
     --hash=sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c
-    # via sympy
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   sympy
 multidict==6.8.0 \
     --hash=sha256:003a3bddb32915c3f67096ea41d24e53edf710edb65a1f5d0c70ab40b0e4d20b \
     --hash=sha256:00be37bde741bf60871082cd347a093218c44886e99231b7516671c70f2c280d \
@@ -1751,12 +1849,14 @@ multidict==6.8.0 \
     --hash=sha256:fc5460940f50dff00731b4132366840ba9685286ea88ea104b661899084f3fea \
     --hash=sha256:fd789a294d8e098528be29b2669b83005ce569339f8cef167fc0274c3115c34c
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aiohttp
     #   yarl
 networkx==3.6.1 \
     --hash=sha256:26b7c357accc0c8cde558ad486283728b65b6a95d85ee1cd66bafab4c8168509 \
     --hash=sha256:d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762
     # via
+    #   -c scripts/image-ai.lock.txt
     #   paddlepaddle
     #   scikit-image
     #   torch
@@ -1788,6 +1888,7 @@ numba==0.67.0 \
     --hash=sha256:f63d43db06b4756424d6d2484737c902e0ae944a0eec3e8b0b4de2c695b15caa \
     --hash=sha256:f99f880ff25f418a67f9a1d00d0ddfbc63430f627b523e515085a592a7567f4b
     # via
+    #   -c scripts/image-ai.lock.txt
     #   facexlib
     #   pymatting
 numpy==2.3.5 \
@@ -1866,6 +1967,7 @@ numpy==2.3.5 \
     --hash=sha256:ffe22d2b05504f786c867c8395de703937f934272eb67586817b46188b4ded6d \
     --hash=sha256:fffe29a1ef00883599d1dc2c51aa2e5d80afe49523c261a74933df395c15c520
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   basicsr
     #   contourpy
@@ -1918,7 +2020,9 @@ onnxruntime==1.30.0 \
     --hash=sha256:f36c87ec504f4f328e968ee322e4ba9682abe66280b3425625afcbed5333fed7 \
     --hash=sha256:fa688e7891a6aa206636fe7372e27ee75fd17713289f6b4fc7b190e0a7de9328 \
     --hash=sha256:fd54b314ea385bcecac69ab431f020ba503e3878dad4ebb645fec5a24b041242
-    # via rembg
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   rembg
 opencv-contrib-python==4.10.0.84 \
     --hash=sha256:040575b69e4f3aa761676bace4e3d1b8485fbfaf77ef77b266ab6bda5a3b5e9b \
     --hash=sha256:2a36257ec1375d1bec2a62177ea39828ff9804de6831ee39646bdc875c343cec \
@@ -1927,7 +2031,9 @@ opencv-contrib-python==4.10.0.84 \
     --hash=sha256:a261223db41f6e512d76deaf21c8fcfb4fbbcbc2de62ca7f74a05f2c9ee489ef \
     --hash=sha256:dea80d4db73b8acccf9e16b5744bf3654f47b22745074263f0a6c10de26c5ef5 \
     --hash=sha256:ee4b0919026d8c533aeb69b16c6ec4a891a2f6844efaa14121bf68838753209c
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 opencv-python==4.11.0.86 \
     --hash=sha256:03d60ccae62304860d232272e4a4fda93c39d595780cb40b161b310244b736a4 \
     --hash=sha256:085ad9b77c18853ea66283e98affefe2de8cc4c1f43eda4c100cf9b2721142ec \
@@ -1937,6 +2043,7 @@ opencv-python==4.11.0.86 \
     --hash=sha256:810549cb2a4aedaa84ad9a1c92fbfdfc14090e2749cedf2c1589ad8359aa169b \
     --hash=sha256:9d05ef13d23fe97f575153558653e2d6e87103995d54e6a35db3f282fe1f9c66
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   facexlib
     #   gfpgan
@@ -1949,15 +2056,20 @@ opencv-python-headless==4.11.0.86 \
     --hash=sha256:996eb282ca4b43ec6a3972414de0e2331f5d9cda2b41091a49739c19fb843798 \
     --hash=sha256:a66c1b286a9de872c343ee7c3553b084244299714ebb50fbdcd76f07ebbe6c81 \
     --hash=sha256:f447d8acbb0b6f2808da71fddd29c1cdd448d2bc98f72d9bb78a7a898fc9621b
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 opt-einsum==3.3.0 \
     --hash=sha256:2455e59e3947d3c275477df7f5205b30635e266fe6dc300e3d9f9646bfcea147 \
     --hash=sha256:59f6475f77bbc37dcf7cd748519c0ec60722e91e63ca114e68821c0c54a46549
-    # via paddlepaddle
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlepaddle
 packaging==24.2 \
     --hash=sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759 \
     --hash=sha256:c228a6dc5e932d346bc5739379109d49e8853dd8223571c7c5b55260edc0b97f
     # via
+    #   -c scripts/image-ai.lock.txt
     #   huggingface-hub
     #   lazy-loader
     #   matplotlib
@@ -1971,7 +2083,9 @@ packaging==24.2 \
 paddleocr==3.7.0 \
     --hash=sha256:9b81eb62cf37e590d4873e60262ff56f968ff9de6ce1f565749760ceb1c422e2 \
     --hash=sha256:c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 paddlepaddle==3.3.1 \
     --hash=sha256:1203e2e1114b49e73a8440b68837ce5c93fdab51fe4838c5e5874ab40f58f747 \
     --hash=sha256:21894d89e600b3dacbdd4e23c55fdf45be7893beac4ae6a06fec4acaf1ccbbdc \
@@ -1988,11 +2102,15 @@ paddlepaddle==3.3.1 \
     --hash=sha256:bb22396233d807f6957d9c4a6a1edc76693fb589c4ee3d17caf7e39113ca4047 \
     --hash=sha256:d7827d867503b502a881c718e3743d9b91648a62d01f93bcd5ba3d7846de5ab5 \
     --hash=sha256:e2661ca8087498e534eef02b64bff4d458d3182afd7ac850bab9904833d35774
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 paddlex==3.7.2 \
     --hash=sha256:6a60b4595e2d51460f7f51326672adca86b89ff9ecfd02ac348fb69739e0093c \
     --hash=sha256:f1678bf650bbaccfd8f0d4e49d0ae631b4685c829fdae6e802ccd90d4fcb9a7f
-    # via paddleocr
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddleocr
 pandas==2.2.3 \
     --hash=sha256:062309c1b9ea12a50e8ce661145c6aab431b1e99530d3cd60640e255778bd43a \
     --hash=sha256:15c0e1e02e93116177d29ff83e8b1619c93ddc9c49083f237d4312337a61165d \
@@ -2037,6 +2155,7 @@ pandas==2.2.3 \
     --hash=sha256:f3a255b2c19987fbbe62a9dfd6cff7ff2aa9ccab3fc75218fd4b7530f01efa24 \
     --hash=sha256:fffb8ae78d8af97f849404f21411c95062db1496aeb3e56f146f0355c9989319
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   paddlex
 pillow==12.3.0 \
@@ -2128,6 +2247,7 @@ pillow==12.3.0 \
     --hash=sha256:fe3cca2e4e8a592be0f269a1ca4835c25199d9f3ce815c8491048f785b0a0198 \
     --hash=sha256:ffd0c5368496f41b0944be820fcb7a838aa6e623d250b01acf2643939c3f99d7
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   basicsr
     #   facexlib
@@ -2145,16 +2265,20 @@ platformdirs==4.11.8 \
     --hash=sha256:52f2f181bbfde907966932cc8312d967d02976422d66d537ea16092b8e291081 \
     --hash=sha256:f23abafea7dd4276d1f29104b83598d7dcc567cafd07c9c951e66665645437fc
     # via
+    #   -c scripts/image-ai.lock.txt
     #   pooch
     #   yapf
 pooch==1.9.0 \
     --hash=sha256:de46729579b9857ffd3e741987a2f6d5e0e03219892c167c6578c0091fb511ed \
     --hash=sha256:f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b
-    # via rembg
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   rembg
 prettytable==3.18.0 \
     --hash=sha256:439217116152244369caf3d9f1caf2f9fe29b03bd79e88d2928c8e718c95d680 \
     --hash=sha256:b3346e0e6f79180833aebaac088ae926340586cf6d7d991b9eb125b65f72313a
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aistudio-sdk
     #   paddlex
 propcache==0.5.2 \
@@ -2280,6 +2404,7 @@ propcache==0.5.2 \
     --hash=sha256:fc88b26f08d634f7bc819a7852e5214f5802641ab8d9fd5326892292eee1993e \
     --hash=sha256:fe67a3d11cd9b4efabfa45c3d00ffba2b26811442a73a581a94b67c2b5faccf6
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aiohttp
     #   yarl
 protobuf==7.36.1 \
@@ -2292,6 +2417,7 @@ protobuf==7.36.1 \
     --hash=sha256:97198b77e369a0abd8e262b8f6c7266c55ddb796a3a12c76d7b8881188ed83aa \
     --hash=sha256:d0f6470f0ce2b84e3feaea2d4b816378b37ba4d4aa08a274305373de93e2d524
     # via
+    #   -c scripts/image-ai.lock.txt
     #   onnxruntime
     #   paddlepaddle
     #   tb-nightly
@@ -2317,11 +2443,15 @@ psutil==7.2.2 \
     --hash=sha256:ed0cace939114f62738d808fdcecd4c869222507e266e574799e9c0faa17d486 \
     --hash=sha256:eed63d3b4d62449571547b60578c5b2c4bcccc5387148db46e0c2313dad0ee00 \
     --hash=sha256:fd04ef36b4a6d599bbdb225dd1d3f51e00105f6d48a28f006da7f9822f2606d8
-    # via aistudio-sdk
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   aistudio-sdk
 py-cpuinfo==9.0.0 \
     --hash=sha256:3cdbbf3fac90dc6f118bfd64384f309edeadd902d7c8fb17f02ffa1fc3f49690 \
     --hash=sha256:859625bc251f64e21f077d099d4162689c762b5d6a4c3c97553d56241c9674d5
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 pyclipper==1.4.0 \
     --hash=sha256:0a4d2736fb3c42e8eb1d38bf27a720d1015526c11e476bded55138a977c17d9d \
     --hash=sha256:0b74a9dd44b22a7fd35d65fb1ceeba57f3817f34a97a28c3255556362e491447 \
@@ -2359,11 +2489,15 @@ pyclipper==1.4.0 \
     --hash=sha256:f2a50c22c3a78cb4e48347ecf06930f61ce98cf9252f2e292aa025471e9d75b1 \
     --hash=sha256:f3672dbafbb458f1b96e1ee3e610d174acb5ace5bd2ed5d1252603bb797f2fc6 \
     --hash=sha256:fd24849d2b94ec749ceac7c34c9f01010d23b6e9d9216cf2238b8481160e703d
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 pycparser==3.0 \
     --hash=sha256:600f49d217304a5902ac3c37e1281c9fe94e4d0489de643a9504c5cdfdfc6b29 \
     --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
-    # via cffi
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   cffi
 pycryptodome==3.23.0 \
     --hash=sha256:0011f7f00cdb74879142011f95133274741778abba114ceca229adbf8e62c3e4 \
     --hash=sha256:11eeeb6917903876f134b56ba11abe95c0b0fd5e3330def218083c7d98bbcb3c \
@@ -2406,11 +2540,14 @@ pycryptodome==3.23.0 \
     --hash=sha256:dea827b4d55ee390dc89b2afe5927d4308a8b538ae91d9c6f7a5090f397af1aa \
     --hash=sha256:e3f2d0aaf8080bda0587d58fc9fe4766e012441e2eed4269a77de6aea981c8be \
     --hash=sha256:eb8f24adb74984aa0e5d07a2368ad95276cf38051fe2dc6605cbcf482e04f2a7
-    # via bce-python-sdk
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   bce-python-sdk
 pydantic==2.13.5 \
     --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73 \
     --hash=sha256:51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   fastapi
     #   paddlex
@@ -2535,19 +2672,27 @@ pydantic-core==2.46.5 \
     --hash=sha256:fc5d783bd4a2387e97b8a2d5ec781cfb92b3d893bf82370548e99db5915935d3 \
     --hash=sha256:fc8515076c11f3cfdf4fb142dcca0fe384b1230a3b5415458ac84f3e0903ec13 \
     --hash=sha256:ff218293c9c806138dca139765e3b067621be52bcd93cdc14c7711be7ddc90a9
-    # via pydantic
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   pydantic
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c
-    # via rich
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   rich
 pymatting==1.1.16 \
     --hash=sha256:656e16f07c941b8792c8cd341b49791e74d1949ceae4d8c45fb4e10d3c6e7d77 \
     --hash=sha256:6ad3f787f90d7720b60e9734c33588cb30f98a66abf7bd772fa499d3a32b466a
-    # via rembg
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   rembg
 pyparsing==3.3.2 \
     --hash=sha256:850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d \
     --hash=sha256:c777f4d763f140633dcb6d8a3eda953bf7a214dc4eff598413c070bcdc117cbc
-    # via matplotlib
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   matplotlib
 pypdfium2==5.13.0 \
     --hash=sha256:07f58e91b8c45ca144a1ff3008faf3c73ef8a5e9fb32988831788363288228cd \
     --hash=sha256:2abedfb5c70992b19c780ed58d7f7b929e8ce8ee52c9140158f44317c90ec6c7 \
@@ -2571,7 +2716,9 @@ pypdfium2==5.13.0 \
     --hash=sha256:d96929bde3bd64c771ab3558ca1ffd7704cc4d872ab92cd9f8f8b8a20f7f36b8 \
     --hash=sha256:d96beb7f379e6c76d874ca93fcd182ac3168dd499056407070f9927fb1061b8e \
     --hash=sha256:da5c7b74eebf40b5c1fbe1de01aa1edc8827a79fb1efd999616bc20dcaf77ba4
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 python-bidi==0.6.11 \
     --hash=sha256:034090c597af250d699299d7e7f1e83eb016f9e47b3b707bd89ab2bdec77bce0 \
     --hash=sha256:0608bddcc1c53dfa5293499de13ca9935b31aa46d1c722c404a88c703d1a4e47 \
@@ -2698,17 +2845,22 @@ python-bidi==0.6.11 \
     --hash=sha256:fc3b0a6e2460f68de9ab98f71e3098bb21bb984563417ad104dec7ab08ebcadc \
     --hash=sha256:fccd1808bb427d6a6d34168461bef551faa93ce3dda489fcef9073bcd9b34a5e \
     --hash=sha256:ff675d036823bff05a2e0f8cdb13f5414274ff517d13b0d57c15527015eb6acb
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 python-dateutil==2.9.0.post0 \
     --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
     --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
     # via
+    #   -c scripts/image-ai.lock.txt
     #   matplotlib
     #   pandas
 pytz==2026.3.post1 \
     --hash=sha256:2211d3fcf9a797d3405cac96ac7f61d80e6a644f72a3309607282fe8a2010c5d \
     --hash=sha256:dd95840dd199baea12d9cc096a1d452caa6596a1c1e4b5f3dbd1541855d5e815
-    # via pandas
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   pandas
 pyyaml==6.0.2 \
     --hash=sha256:01179a4a8559ab5de078078f37e5c1a30d76bb88519906844fd7bdea1b7729ff \
     --hash=sha256:0833f8694549e586547b576dcfaba4a6b55b9e96098b36cdc7ebefe667dfed48 \
@@ -2764,6 +2916,7 @@ pyyaml==6.0.2 \
     --hash=sha256:f753120cb8181e736c57ef7636e83f31b9c0d1722c516f7e86cf15b7aa57ff12 \
     --hash=sha256:ff3824dc5261f50c9b0dfb3be22b4567a6f938ccce4587b38952d85fd9e9afe4
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   gfpgan
     #   huggingface-hub
@@ -2773,11 +2926,14 @@ pyyaml==6.0.2 \
 realesrgan==0.3.0 \
     --hash=sha256:0d36da96ab9f447071606e91f502ccdfb08f80cc82ee4f8caf720c7745ccec7e \
     --hash=sha256:59336c16c30dd5130eff350dd27424acb9b7281d18a6810130e265606c9a6088
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 referencing==0.37.0 \
     --hash=sha256:381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231 \
     --hash=sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8
     # via
+    #   -c scripts/image-ai.lock.txt
     #   jsonschema
     #   jsonschema-specifications
 regex==2026.9.10 \
@@ -2911,15 +3067,20 @@ regex==2026.9.10 \
     --hash=sha256:ff4d7b14ea19e50c8d9d6d83f45bd9b45cbb624c07ac1fa54db0a019049abed7 \
     --hash=sha256:ff6b3267318661dfddf6b3628663e00e5946bd0a5c8fa678537a1401f0388f91 \
     --hash=sha256:ffc2da104e43db716ce30cef9f28049a1faa6aca385dd8771b033268d0730b07
-    # via transformers
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   transformers
 rembg==2.0.84 \
     --hash=sha256:3f27854a35b2e65aa74cc144040423f701a1a7bf8031359e2fb7a5e00ec355fe \
     --hash=sha256:f180a7443c8552d1d45b15464a8266f6b585ec39fbeb6883899da8037bbeef0b
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aistudio-sdk
     #   basicsr
     #   modelscope
@@ -2930,7 +3091,9 @@ requests==2.34.2 \
 rich==15.0.0 \
     --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb \
     --hash=sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36
-    # via typer
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   typer
 rpds-py==2026.6.3 \
     --hash=sha256:0be972be84cfcaf46c8c6edf690ca0f154ac17babf1f6a955a51579b34ad2dc5 \
     --hash=sha256:127565fead0a10943b282957bd5447804ff3160ad79f2ad2635e6d249e380680 \
@@ -3049,12 +3212,15 @@ rpds-py==2026.6.3 \
     --hash=sha256:f90938e92afda60266da758ee7d363447f7f0138c9559f9e1811629580582d90 \
     --hash=sha256:faa679d19a6696fd54259ad321251ad77a13e70e03dd834daa762a44fb6196ef
     # via
+    #   -c scripts/image-ai.lock.txt
     #   jsonschema
     #   referencing
 ruamel-yaml==0.19.1 \
     --hash=sha256:27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93 \
     --hash=sha256:53eb66cd27849eff968ebf8f0bf61f46cdac2da1d1f3576dd4ccee9b25c31993
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 safetensors==0.8.0 \
     --hash=sha256:040070828e36dc8e122178bbbd5830ff9e97920affb84cbe0f46442497bed358 \
     --hash=sha256:096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f \
@@ -3074,6 +3240,7 @@ safetensors==0.8.0 \
     --hash=sha256:fcdd41ec4628fee5799f807c73c353629130fbd942aa23d83c623dd6c9d52d78 \
     --hash=sha256:fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   paddlepaddle
     #   transformers
@@ -3128,6 +3295,7 @@ scikit-image==0.26.0 \
     --hash=sha256:f775f0e420faac9c2aa6757135f4eb468fb7b70e0b67fa77a5e79be3c30ee331 \
     --hash=sha256:fac96a1f9b06cd771cbbb3cd96c5332f36d4efd839b1d8b053f79e5887acde62
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   rembg
 scipy==1.17.1 \
@@ -3193,6 +3361,7 @@ scipy==1.17.1 \
     --hash=sha256:f8885db0bc2bffa59d5c1b72fad7a6a92d3e80e7257f967dd81abb553a90d293 \
     --hash=sha256:fcb310ddb270a06114bb64bbe53c94926b943f5b7f0842194d585c65eb4edd76
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   facexlib
     #   filterpy
@@ -3204,9 +3373,12 @@ setuptools==80.9.0 \
     --hash=sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922 \
     --hash=sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   modelscope
+    #   paddlepaddle
     #   tb-nightly
+    #   torch
 shapely==2.1.2 \
     --hash=sha256:0036ac886e0923417932c2e6369b6c52e38e0ff5d9120b90eef5cd9a5fc5cae9 \
     --hash=sha256:01d0d304b25634d60bd7cf291828119ab55a3bab87dc4af1e44b07fb225f188b \
@@ -3265,41 +3437,54 @@ shapely==2.1.2 \
     --hash=sha256:fe2533caae6a91a543dec62e8360fe86ffcdc42a7c55f9dfd0128a977a896b94 \
     --hash=sha256:fe7b77dc63d707c09726b7908f575fc04ff1d1ad0f3fb92aec212396bc6cfe5e \
     --hash=sha256:fe9627c39c59e553c90f5bc3128252cb85dc3b3be8189710666d2f8bc3a5503e
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 shellingham==1.5.4 \
     --hash=sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686 \
     --hash=sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de
-    # via typer
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   typer
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
     # via
+    #   -c scripts/image-ai.lock.txt
     #   bce-python-sdk
     #   python-dateutil
 starlette==1.6.0 \
     --hash=sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c \
     --hash=sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   fastapi
 sympy==1.13.1 \
     --hash=sha256:9cebf7e04ff162015ce31c9c6c9144daa34a93bd082f54fd8f12deca4f47515f \
     --hash=sha256:db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8
-    # via torch
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   torch
 tb-nightly==2.21.0a20251023 \
     --hash=sha256:369f8f7c160b87d15515a35b49f49ac3212ef0547ed20e4dee37cf0ea7079d28
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   gfpgan
 tensorboard-data-server==0.7.2 \
     --hash=sha256:7e0610d205889588983836ec05dc098e80f97b7e7bbff7e994ebb78f578d0ddb \
     --hash=sha256:9fe5d24221b29625dbc7328b0436ca7fc1c23de4acf4d272f1180856e32f9f60 \
     --hash=sha256:ef687163c24185ae9754ed5650eb5bc4d84ff257aabdc33f0cc6f74d8ba54530
-    # via tb-nightly
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   tb-nightly
 tifffile==2026.3.3 \
     --hash=sha256:d9a1266bed6f2ee1dd0abde2018a38b4f8b2935cb843df381d70ac4eac5458b7 \
     --hash=sha256:e8be15c94273113d31ecb7aa3a39822189dd11c4967e3cc88c178f1ad2fd1170
-    # via scikit-image
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   scikit-image
 tokenizers==0.23.2 \
     --hash=sha256:12f0835dc2ee694746a76adf7b1567d4346a4a502ebe93fb1f5f80ea49799b78 \
     --hash=sha256:2e96f5699d5249c9c64aa8412e044f727aae3a4098cf830f9901ec1afc361cde \
@@ -3318,7 +3503,9 @@ tokenizers==0.23.2 \
     --hash=sha256:e49c394456dd9985787fec76132438ba3fb8911f857b1bf3d40119f9292d41aa \
     --hash=sha256:eb2f9c8a24da020ea8c11a01a19c1c2547912d92121ae4a01cfbca46125dee40 \
     --hash=sha256:f486f402f6f9abee5bb032553736813af0c710a86b2e0ca592634c55cea1f835
-    # via transformers
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   transformers
 torch==2.6.0+cpu \
     --hash=sha256:24c9d3d13b9ea769dd7bd5c11cfa1fc463fd7391397156565484565ca685d908 \
     --hash=sha256:2ab9c6b3d6eea506bda9b82a0155e974d8ef8e38b417589d144568b4fa59afe1 \
@@ -3338,6 +3525,7 @@ torch==2.6.0+cpu \
     --hash=sha256:e70ee2e37ad27a90201d101a41c2e10df7cf15a9ebd17c084f54cf2518c57bdf \
     --hash=sha256:fb34d6cc4e6e20e66d74852c3d84e0301dc5e1a7c822076ef288886f978390f0
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   basicsr
     #   facexlib
@@ -3356,6 +3544,7 @@ torchvision==0.21.0+cpu \
     --hash=sha256:d67081026aad9642c46d3b14035f8ae69117468c09a07d628f3eafc7ae74841f \
     --hash=sha256:d6874431e678ba107b60a83f255c33f3755f06bad587b1b919aa514ec325dcd8
     # via
+    #   -c scripts/image-ai.lock.txt
     #   -r scripts/image-ai-requirements.txt
     #   basicsr
     #   facexlib
@@ -3365,6 +3554,7 @@ tqdm==4.70.1 \
     --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 \
     --hash=sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aistudio-sdk
     #   basicsr
     #   facexlib
@@ -3378,15 +3568,20 @@ tqdm==4.70.1 \
 transformers==5.17.0 \
     --hash=sha256:78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801 \
     --hash=sha256:a153be279169b55b92d8000bf4af294aed684503d091cca7804da2dd8a9de000
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 typer==0.27.2 \
     --hash=sha256:269b7eb9d3c202ca84b4bc9618cb04ebb43d3d4d1e567e4c768607232c05f945 \
     --hash=sha256:b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d
-    # via transformers
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   transformers
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
+    #   -c scripts/image-ai.lock.txt
     #   aiohttp
     #   aiosignal
     #   anyio
@@ -3406,12 +3601,15 @@ typing-inspection==0.4.4 \
     --hash=sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47 \
     --hash=sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147
     # via
+    #   -c scripts/image-ai.lock.txt
     #   fastapi
     #   pydantic
 tzdata==2026.4 \
     --hash=sha256:c2169a8b0a7a5e9674da5a135ccdfb2b3e671b333ed9fed17b41f73c34476e81 \
     --hash=sha256:f1b8bd365d8d210c55353f4d7f8d6d8561c0ba50d704b700d195a9424bba0d79
-    # via pandas
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   pandas
 ujson==6.0.0 \
     --hash=sha256:02148bd4706f42b063bb95f6cc309e16554fb4c250db4683688c0a3eb83048ad \
     --hash=sha256:03a385e523f67dec6d4dad0970f20a080cad045b56d9a3564d07807090a9c106 \
@@ -3532,30 +3730,40 @@ ujson==6.0.0 \
     --hash=sha256:fc115cca04dbdfd98a67ec89ba5ffd8a87f3201171af54980cfd550997611c41 \
     --hash=sha256:fd26d4b182b7138fc948cda55fe2e91b70d987731e169e628f42ba22cc6e3cce \
     --hash=sha256:ff3b33d8c8dbbe32936d2056296324371a07ed0b29177e2eb8ec46569436817f
-    # via paddlex
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   paddlex
 urllib3==2.7.0 \
     --hash=sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c \
     --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
     # via
+    #   -c scripts/image-ai.lock.txt
     #   modelscope
     #   modelscope-hub
     #   requests
 uvicorn==0.52.4 \
     --hash=sha256:73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86 \
     --hash=sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1
-    # via -r scripts/image-ai-requirements.txt
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   -r scripts/image-ai-requirements.txt
 wcwidth==0.8.3 \
     --hash=sha256:d128512515fbf4612e0ff21fd6380399210318b7b54a9af59dff8454cf9730eb \
     --hash=sha256:d5b73dba6158a595ec9370350e7f2637bcac8d6c5e4fde34f30fcffb6103a5e4
-    # via prettytable
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   prettytable
 werkzeug==3.1.8 \
     --hash=sha256:63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50 \
     --hash=sha256:9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44
-    # via tb-nightly
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   tb-nightly
 yapf==0.43.0 \
     --hash=sha256:00d3aa24bfedff9420b2e0d5d9f5ab6d9d4268e72afbf59bb3fa542781d5218e \
     --hash=sha256:224faffbc39c428cb095818cf6ef5511fdab6f7430a10783fdfb292ccf2852ca
     # via
+    #   -c scripts/image-ai.lock.txt
     #   basicsr
     #   gfpgan
 yarl==1.24.5 \
@@ -3663,4 +3871,6 @@ yarl==1.24.5 \
     --hash=sha256:ff330d3c30db4eb6b01d79e29d2d0b407a7ecad39cfd9ec993ece57396a2ec0d \
     --hash=sha256:ff405d91509d88e8d44129cd87b18d70acd1f0c1aeabd7bc3c46792b1fe2acba \
     --hash=sha256:ffcd54362564dc1a30fb74d8b8a6e5a6b11ebd5e27266adc3b7427a21a6c9104
-    # via aiohttp
+    # via
+    #   -c scripts/image-ai.lock.txt
+    #   aiohttp

@@ -339,18 +339,23 @@ try {
   }
 
   if ($TestComponentLifecycle) {
+    $componentSmoke = (Get-Content -LiteralPath $smokeReportPath -Raw | ConvertFrom-Json).componentLifecycle
+    $pythonComponentId = $componentSmoke.pythonComponentId
+    if ($ComponentId -ne 'douyin-archive' -and $pythonComponentId -notin @('python-311', 'python-312')) {
+      throw 'Component acceptance report did not identify its shared Python runtime'
+    }
     $componentIds = if ($ComponentId -eq 'douyin-archive') {
       @('xhs-browser', 'douyin-archive')
     }
     else {
-      @('python-311', 'edge-tts')
+      @($pythonComponentId, 'edge-tts')
     }
     foreach ($componentId in $componentIds) {
       $componentDirectory = Join-Path $dataRoot "components\packages\$componentId"
       if (Test-Path -LiteralPath $componentDirectory) { throw "Capability uninstall left package files outside the expected data directory: $componentDirectory" }
     }
     Assert-DataSentinel -Path $dataSentinelPath -Expected $dataSentinel -Context 'Capability install/uninstall'
-    $dependencies = if ($ComponentId -eq 'douyin-archive') { @('xhs-browser') } else { @('python-311') }
+    $dependencies = if ($ComponentId -eq 'douyin-archive') { @('xhs-browser') } else { @($pythonComponentId) }
     Set-AcceptanceResult 'componentLifecycle' @{ capability = $ComponentId; dependencies = $dependencies; installHealthyUninstall = $true; userDataPreserved = $true }
   }
 

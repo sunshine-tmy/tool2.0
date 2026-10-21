@@ -91,7 +91,7 @@ Web/开发版按功能可选：
 
 - PowerShell 5.1+：Windows 一键启动与环境安装脚本
 - ffmpeg：视频音频提取
-- Python 3.10–3.12（推荐 3.11）：配音和图片 AI
+- Python 3.12：配音和图片 AI
 - NVIDIA CUDA：可显著加速 Chatterbox、Real-ESRGAN 等模型；没有 CUDA 时可使用 CPU 配置
 
 Windows 桌面安装版不要求用户预装 Node.js 或 Python；可选能力会在设置中显示所需运行时、下载量和空间估算。模型和大型 Worker 不包含在基础安装器内。
@@ -235,7 +235,7 @@ Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服
 
 #### Chatterbox Multilingual V3 声音克隆（Web/开发版）
 
-以下脚本仅用于 Web/开发版源码环境，需要 Python 3.11 和 ffmpeg，推荐 NVIDIA CUDA GPU。桌面版请先在“设置 → 能力管理”安装声音克隆能力。源码环境首次单独安装并下载模型：
+以下脚本仅用于 Web/开发版源码环境，需要 Python 3.12 和 ffmpeg，推荐 NVIDIA CUDA GPU。桌面版请先在“设置 → 能力管理”安装声音克隆能力。源码环境首次单独安装并下载模型：
 
 ```powershell
 .\scripts\setup-chatterbox.ps1 -DownloadModel
@@ -270,7 +270,7 @@ pnpm dev:ai
 | `pnpm test`                         | 运行全部 TypeScript/Vue 测试                         |
 | `pnpm coverage`                     | 执行 75/65 全局覆盖率门槛                            |
 | `pnpm test:python`                  | 运行无需模型的 Worker 单元测试                       |
-| `pnpm lock:python`                  | 生成 Python 3.11/Windows x64 Worker 哈希锁           |
+| `pnpm lock:python`                  | 生成 Python 3.12/Windows x64 Worker 哈希锁           |
 | `pnpm audit:python`                 | 审计四组 Python Worker 运行时依赖                    |
 | `pnpm lint`                         | ESLint（TypeScript + Vue）                           |
 | `pnpm deadcode`                     | Knip 未使用文件、依赖与导出检查                      |

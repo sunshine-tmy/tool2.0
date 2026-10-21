@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCRIPT_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "image-ai-worker.py");
@@ -161,7 +162,7 @@ export async function prepareImageAiComponent({
       env: cleanPythonEnvironment()
     }
   );
-  if (version.trim() !== "3.11") throw new Error("图片 AI wheelhouse 必须由 Python 3.11 准备");
+  assertWorkerPythonVersion(version);
   if (await pathExists(stage)) throw new Error("图片 AI 暂存目录已存在，拒绝覆盖");
 
   const lockText = await fs.readFile(lockFilePath, "utf8");
@@ -169,6 +170,18 @@ export async function prepareImageAiComponent({
   const { downloadLockText } = omitImageAiSourceDistributions(lockText);
   await ensureImageAiAssets({ assetCacheDirectory, assets, runCommand });
   const verifiedAssets = await verifyImageAiAssets(assetCacheDirectory, assets);
+  // 少量源码归档先下载并缓存，避免最后一个网络请求失败后丢弃整个大型 wheelhouse。
+  const sourceCache = path.join(path.resolve(assetCacheDirectory), "python-sources");
+  await fs.mkdir(sourceCache, { recursive: true });
+  for (const sourceDistribution of IMAGE_AI_SOURCE_DISTRIBUTIONS) {
+    const sourcePath = path.join(sourceCache, sourceDistribution.fileName);
+    if (!(await pathExists(sourcePath))) {
+      await downloadPinnedFile(sourceDistribution.url, sourcePath, sourceDistribution.sha256, runCommand);
+    }
+    if ((await sha256File(sourcePath)) !== sourceDistribution.sha256) {
+      throw new Error(`Python 源码归档缓存 SHA-256 不匹配：${sourceDistribution.fileName}`);
+    }
+  }
 
   let stageCreated = false;
   try {
@@ -217,7 +230,11 @@ export async function prepareImageAiComponent({
     await fs.rm(downloadLock);
     for (const sourceDistribution of IMAGE_AI_SOURCE_DISTRIBUTIONS) {
       const sourceDestination = path.join(wheelhouse, sourceDistribution.fileName);
-      await downloadPinnedFile(sourceDistribution.url, sourceDestination, sourceDistribution.sha256, runCommand);
+      await fs.copyFile(
+        path.join(sourceCache, sourceDistribution.fileName),
+        sourceDestination,
+        fsConstants.COPYFILE_EXCL
+      );
     }
     const wheels = await fs.readdir(wheelhouse, { withFileTypes: true });
     if (
@@ -231,6 +248,7 @@ export async function prepareImageAiComponent({
     ) {
       throw new Error("图片 AI 离线包必须只包含通过哈希锁校验的 Python wheel 或源码分发包");
     }
+    for (const entry of wheels) assertWorkerWheelPython(entry.name);
     const modelBytes = verifiedAssets.reduce((total, asset) => total + asset.bytes, 0);
     return { stagingDirectory: stage, wheelCount: wheels.length, modelBytes };
   } catch (error) {
@@ -330,7 +348,7 @@ function parseArguments(argv) {
     [...values.keys()].some((key) => ![...required, "asset-cache"].includes(key))
   ) {
     throw new Error(
-      "用法：pnpm components:prepare-image-ai -- --python <Python 3.11 python.exe> --stage <新暂存目录> [--asset-cache <模型缓存目录>]"
+      "用法：pnpm components:prepare-image-ai -- --python <Python 3.12 python.exe> --stage <新暂存目录> [--asset-cache <模型缓存目录>]"
     );
   }
   return {

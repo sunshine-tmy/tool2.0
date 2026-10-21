@@ -14,54 +14,57 @@ afterEach(async () => {
 });
 
 describe("buildPythonEnvironment", () => {
-  it("builds the venv at its immutable final location using only a hash-locked offline wheelhouse", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-python-env-"));
-    await fs.mkdir(path.join(temporaryRoot, "wheelhouse"));
-    await fs.writeFile(path.join(temporaryRoot, "python.exe"), "signed test interpreter");
-    const lockPath = path.join(temporaryRoot, "requirements.lock");
-    const lock = "sample==1.2.3 --hash=sha256:" + "a".repeat(64) + "\n";
-    await fs.writeFile(lockPath, lock);
-    const invocations: Array<{
-      executable: string;
-      args: string[];
-      cwd: string;
-      environment?: Record<string, string>;
-    }> = [];
-    const runProcess = vi.fn(
-      async (executable: string, args: string[], cwd: string, environment?: Record<string, string>) => {
-        invocations.push({ executable, args, cwd, environment });
-        return args[0] === "-c" ? "3.11\n" : "";
-      }
-    );
+  it.each(["3.11", "3.12"] as const)(
+    "builds Python %s at its immutable final location using only an offline wheelhouse",
+    async (version) => {
+      temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-python-env-"));
+      await fs.mkdir(path.join(temporaryRoot, "wheelhouse"));
+      await fs.writeFile(path.join(temporaryRoot, "python.exe"), "signed test interpreter");
+      const lockPath = path.join(temporaryRoot, "requirements.lock");
+      const lock = "sample==1.2.3 --hash=sha256:" + "a".repeat(64) + "\n";
+      await fs.writeFile(lockPath, lock);
+      const invocations: Array<{
+        executable: string;
+        args: string[];
+        cwd: string;
+        environment?: Record<string, string>;
+      }> = [];
+      const runProcess = vi.fn(
+        async (executable: string, args: string[], cwd: string, environment?: Record<string, string>) => {
+          invocations.push({ executable, args, cwd, environment });
+          return args[0] === "-c" ? `${version}\n` : "";
+        }
+      );
 
-    const result = await buildPythonEnvironment({
-      packageRoot: temporaryRoot,
-      platform: "win32-x64",
-      pythonExecutablePath: "python.exe",
-      wheelhousePath: "wheelhouse",
-      requirementsLockPath: "requirements.lock",
-      requirementsLockSha256: crypto.createHash("sha256").update(lock).digest("hex"),
-      expectedPythonVersion: "3.11",
-      runProcess
-    });
+      const result = await buildPythonEnvironment({
+        packageRoot: temporaryRoot,
+        platform: "win32-x64",
+        pythonExecutablePath: "python.exe",
+        wheelhousePath: "wheelhouse",
+        requirementsLockPath: "requirements.lock",
+        requirementsLockSha256: crypto.createHash("sha256").update(lock).digest("hex"),
+        expectedPythonVersion: version,
+        runProcess
+      });
 
-    expect(result.environmentDirectory).toBe(path.join(temporaryRoot, "venv"));
-    expect(invocations[1]).toMatchObject({
-      args: ["-m", "venv", path.join(temporaryRoot, "venv")],
-      cwd: temporaryRoot
-    });
-    expect(invocations[3].args).toContain("--no-index");
-    expect(invocations[3].args).toContain("--no-cache-dir");
-    expect(invocations[3].args).toContain("--require-hashes");
-    expect(invocations[3].args).toContain(path.join(temporaryRoot, "wheelhouse"));
-    expect(invocations[3].environment).toMatchObject({
-      TEMP: path.join(temporaryRoot, ".python-build-temp"),
-      TMP: path.join(temporaryRoot, ".python-build-temp"),
-      TMPDIR: path.join(temporaryRoot, ".python-build-temp")
-    });
-    await expect(fs.access(path.join(temporaryRoot, ".python-build-temp"))).rejects.toThrow();
-    expect(invocations[4].args).toEqual(["-m", "pip", "--isolated", "check"]);
-  });
+      expect(result.environmentDirectory).toBe(path.join(temporaryRoot, "venv"));
+      expect(invocations[1]).toMatchObject({
+        args: ["-m", "venv", path.join(temporaryRoot, "venv")],
+        cwd: temporaryRoot
+      });
+      expect(invocations[3].args).toContain("--no-index");
+      expect(invocations[3].args).toContain("--no-cache-dir");
+      expect(invocations[3].args).toContain("--require-hashes");
+      expect(invocations[3].args).toContain(path.join(temporaryRoot, "wheelhouse"));
+      expect(invocations[3].environment).toMatchObject({
+        TEMP: path.join(temporaryRoot, ".python-build-temp"),
+        TMP: path.join(temporaryRoot, ".python-build-temp"),
+        TMPDIR: path.join(temporaryRoot, ".python-build-temp")
+      });
+      await expect(fs.access(path.join(temporaryRoot, ".python-build-temp"))).rejects.toThrow();
+      expect(invocations[4].args).toEqual(["-m", "pip", "--isolated", "check"]);
+    }
+  );
 
   it("creates an isolated macOS venv without linking back to its shared Python runtime", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-python-env-mac-"));

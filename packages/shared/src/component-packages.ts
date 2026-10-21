@@ -49,7 +49,8 @@ export const ComponentPackageStatusSchema = Type.Object(
     installConditions: Type.Array(Type.String({ minLength: 1, maxLength: 300 })),
     version: Type.String({ minLength: 1, maxLength: 80 }),
     platform: ComponentPlatformSchema,
-    downloadBytes: Type.Integer({ minimum: 1 }),
+    // 退役组件只提供卸载入口，没有可下载的归档。
+    downloadBytes: Type.Integer({ minimum: 0 }),
     /** Exact local archive basenames accepted by the desktop offline-import endpoint. */
     archiveFileNames: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }))),
     /** Verified GitHub Releases page derived from the signed archive asset URLs. */
@@ -73,7 +74,9 @@ export const ComponentPackageStatusSchema = Type.Object(
     licenseName: Type.String({ minLength: 1, maxLength: 160 }),
     licenseUrl: Type.Optional(Type.String({ pattern: "^https://[^\\s]+$" })),
     failureReason: Type.Optional(Type.String({ maxLength: 240 })),
-    blockedReason: Type.Optional(Type.String({ maxLength: 300 }))
+    blockedReason: Type.Optional(Type.String({ maxLength: 300 })),
+    /** An installed legacy runtime is removable but must never be installed again. */
+    retired: Type.Optional(Type.Boolean())
   },
   { additionalProperties: false }
 );

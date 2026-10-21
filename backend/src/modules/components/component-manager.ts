@@ -220,7 +220,7 @@ export class ComponentManager {
     const statuses = await Promise.all(
       [...this.manifests.values()].sort((a, b) => a.id.localeCompare(b.id)).map((manifest) => this.status(manifest))
     );
-    return statuses.map((status) => {
+    const result = statuses.map((status): ComponentPackageStatus => {
       const jobId = this.activeByComponent.get(status.id);
       const active = jobId ? this.jobs.get(jobId)?.value : undefined;
       const failure = this.lastFailures.get(status.id);
@@ -245,6 +245,118 @@ export class ComponentManager {
         ...(missing.length && !active ? { state: "blocked", blockedReason: "缺少依赖：" + missing.join("、") } : {})
       };
     });
+    const retired = await this.retiredPythonStatus();
+    if (retired) result.push(retired);
+    return result;
+  }
+
+  /** 仅管理目录退役后留下的固定旧解释器，不信任或执行旧安装目录中的代码。 */
+  private async retiredPythonDependents() {
+    const dependents: string[] = [];
+    for (const id of ["edge-tts", "image-ai", "chatterbox", "chatterbox-cuda"]) {
+      const current = await this.readCurrent(this.componentRoot(id), id);
+      if (!current) {
+        // 损坏的 current 也不能当作“已经升级或卸载”。
+        if (await pathExists(path.join(this.componentRoot(id), "current.json"))) dependents.push(id);
+        continue;
+      }
+      const target = this.manifests.get(id);
+      if (
+        !target ||
+        target.pythonEnvironment?.pythonComponentId !== "python-312" ||
+        target.pythonEnvironment.expectedPythonVersion !== "3.12" ||
+        !target.dependencyIds.includes("python-312") ||
+        target.version !== current.version ||
+        sha256Text(canonicalManifest(target)) !== current.manifestSha256
+      )
+        dependents.push(id);
+      else this.verifyManifest(target);
+    }
+    return dependents;
+  }
+
+  private async retiredPythonStatus(): Promise<ComponentPackageStatus | undefined> {
+    if (this.manifests.has("python-311") || !this.platform) return;
+    const current = await this.readCurrent(this.componentRoot("python-311"), "python-311");
+    if (!current || !current.version.startsWith("3.11.")) return;
+    const dependentIds = await this.retiredPythonDependents();
+    const activeJobId = this.activeByComponent.get("python-311");
+    return {
+      id: "python-311",
+      moduleId: "python-311",
+      groupId: "shared",
+      platform: this.platform,
+      displayName: "Python 3.11 旧运行时",
+      retired: true,
+      purpose: "仅为旧安装提供安全卸载入口；新能力统一使用 Python 3.12，不再提供旧版安装或重装。",
+      taskToolIds: [],
+      dependencyIds: [],
+      dependentIds,
+      installConditions: ["先将依赖能力更新至 Python 3.12 版本，再在无任务、安装和播放时卸载旧运行时。"],
+      version: current.version,
+      installedVersion: current.version,
+      installedAt: current.installedAt,
+      installed: true,
+      installedBytes: current.installedBytes ?? 0,
+      downloadBytes: 0,
+      archiveFileNames: [],
+      state: activeJobId ? "installing" : "ready",
+      health: "unknown",
+      licenseName: "Python Software Foundation License Version 2",
+      ...(activeJobId ? { activeJobId } : {}),
+      ...(dependentIds.length ? { blockedReason: "仍有能力未完成 Python 3.12 升级，请先更新依赖能力。" } : {}),
+      ...(this.lastFailures.get("python-311") ? { failureReason: this.lastFailures.get("python-311")!.message } : {})
+    };
+  }
+
+  private async startRetiredPythonUninstall() {
+    await this.initialize();
+    if (!(await this.retiredPythonStatus()))
+      throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "未找到可卸载的旧 Python 运行时");
+    if (this.hasActiveJobs()) throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "能力管理作业尚未完成");
+    const job = this.createJob("python-311", "uninstall", "queued", "queued", 0, 0);
+    const internal: InternalJob = { value: job };
+    this.jobs.set(job.id, internal);
+    this.activeByComponent.set("python-311", job.id);
+    void (async () => {
+      let stopped = false;
+      const check = async () => {
+        if (
+          (await this.retiredPythonDependents()).length ||
+          (await this.isInUse("python-311", ["edge-tts", "image-ai", "chatterbox"]))
+        ) {
+          throw new ComponentManagerError(
+            "COMPONENT_IN_USE",
+            "旧运行时仍被依赖，或存在任务、安装或播放；请先完成升级并保持空闲"
+          );
+        }
+      };
+      try {
+        this.updateJob(internal, { state: "running", phase: "uninstalling" });
+        await check();
+        await this.onBeforeUninstall?.("python-311");
+        stopped = true;
+        await check();
+        const target = this.componentRoot("python-311");
+        const root = await fsp.realpath(this.root);
+        if (
+          (await fsp.lstat(target)).isSymbolicLink() ||
+          (await fsp.realpath(target)) !== path.join(root, "python-311")
+        ) {
+          throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "旧运行时路径异常，拒绝删除");
+        }
+        await fsp.rm(target, { recursive: true, force: true });
+        this.lastFailures.delete("python-311");
+        await this.notifyAfterMutation("python-311", "uninstall");
+        this.updateJob(internal, { state: "completed", phase: "complete", progress: zeroProgress() });
+      } catch (error) {
+        if (stopped) await this.notifyAfterMutation("python-311", "uninstall").catch(() => undefined);
+        this.failJob(internal, error);
+      } finally {
+        this.activeByComponent.delete("python-311");
+      }
+    })();
+    return job;
   }
 
   hasActiveJobs() {
@@ -378,6 +490,7 @@ export class ComponentManager {
   }
 
   startUninstall(componentId: string) {
+    if (componentId === "python-311" && !this.manifests.has(componentId)) return this.startRetiredPythonUninstall();
     return this.startJob(componentId, "uninstall");
   }
 

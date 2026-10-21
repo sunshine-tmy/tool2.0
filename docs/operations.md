@@ -138,7 +138,7 @@ Windows 安装版的应用管理持久数据根默认是用户在安装向导选
 
 桌面设置页可启用/停用自动检查或手动检查。只有从已签名 NSIS 安装器安装、且带有受控 `app-update.yml` 的包会检查更新；开发启动和直接解压的输出目录均不会检查。下载完成后用户可选择立即重启安装，应用会先停止本地后端。发布 CI 会检查安装器和安装目录中的所有 `.exe` Authenticode Subject，必须与受控 `WINDOWS_SIGNING_SUBJECT` 完全一致。
 
-发布 job 在全新的 Windows runner 中验收来自签名打包 job 的真实资产。若存在较早稳定语义版本 Release，且它同时含桌面安装器和 SHA-256 sidecar，会下载并校验 Authenticode 后执行旧版安装 → 当前版升级 → 启动健康检查；没有可升级的旧安装器时仅跳过升级用例。之后通过真实本地 API 安装并自检已签名的 Edge-TTS 与共享 Python 3.11 包，再分别卸载，确认能力运行时写入安装根 `data/components/` 且不会删除数据哨兵。最后验证静默卸载保留安装根 `data/`、同目录重装仍可读取原数据，再通过匹配本应用两次确认文本的临时 UI 自动化验证显式删除。验收安装目录位于临时目录且包含空格。工作流中的 `release` job 明确要求 `package` 与 `clean-vm-acceptance` 成功；任一失败或跳过都不会创建/更新 GitHub Release。验收 JSON 作为独立 CI artifact 保存，不混入用户下载的发布资产。
+发布 job 在全新的 Windows runner 中验收来自签名打包 job 的真实资产。若存在较早稳定语义版本 Release，且它同时含桌面安装器和 SHA-256 sidecar，会下载并校验 Authenticode 后执行旧版安装 → 当前版升级 → 启动健康检查；没有可升级的旧安装器时仅跳过升级用例。之后通过真实本地 API 安装并自检已签名的 Edge-TTS 与共享 Python 3.12 包，再分别卸载，确认能力运行时写入安装根 `data/components/` 且不会删除数据哨兵。最后验证静默卸载保留安装根 `data/`、同目录重装仍可读取原数据，再通过匹配本应用两次确认文本的临时 UI 自动化验证显式删除。验收安装目录位于临时目录且包含空格。工作流中的 `release` job 明确要求 `package` 与 `clean-vm-acceptance` 成功；任一失败或跳过都不会创建/更新 GitHub Release。验收 JSON 作为独立 CI artifact 保存，不混入用户下载的发布资产。
 
 ## 9. standalone 构建与发布
 

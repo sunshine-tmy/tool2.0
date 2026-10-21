@@ -7,15 +7,14 @@ import { fileURLToPath } from "node:url";
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const LOCK_ROOT = path.join(REPOSITORY_ROOT, ".package", "macos-locks");
 const DEFINITIONS = [
-  { name: "edge-tts", python: "3.11", input: "edge-tts-requirements.txt" },
-  { name: "chatterbox", python: "3.11", input: "chatterbox-requirements.txt", torchBackend: "cpu" },
-  { name: "image-ai", python: "3.11", input: "image-ai-requirements.txt", torchBackend: "cpu" },
+  { name: "edge-tts", python: "3.12", input: "edge-tts-requirements.txt" },
+  { name: "chatterbox", python: "3.12", input: "chatterbox-requirements.txt", torchBackend: "cpu" },
+  { name: "image-ai", python: "3.12", input: "image-ai-requirements.txt", torchBackend: "cpu" },
   { name: "xhs-archive", python: "3.12", input: "xhs-archive.lock.txt" },
   { name: "xhs-translation", python: "3.12", input: "xhs-translation-requirements.txt" }
 ];
 
 export async function generateMacOSComponentLocks({
-  python311 = path.join(REPOSITORY_ROOT, ".package", "stage", "python-311", "python", "bin", "python3.11"),
   python312 = path.join(REPOSITORY_ROOT, ".package", "stage", "python-312", "python", "bin", "python3.12"),
   uv = "uv",
   run = execFileSync
@@ -24,7 +23,7 @@ export async function generateMacOSComponentLocks({
     throw new Error("macOS 能力依赖锁必须在 Apple Silicon 原生构建机上生成");
   }
   await fs.mkdir(LOCK_ROOT, { recursive: true });
-  const pythonPaths = { 3.11: path.resolve(python311), 3.12: path.resolve(python312) };
+  const pythonPaths = { 3.12: path.resolve(python312) };
   for (const [version, executable] of Object.entries(pythonPaths)) {
     const output = run(
       executable,
@@ -76,10 +75,9 @@ function parseArguments(argv) {
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
-  const allowed = new Set(["python-311", "python-312", "uv"]);
+  const allowed = new Set(["python-312", "uv"]);
   if ([...values.keys()].some((key) => !allowed.has(key))) throw new Error("命令行参数无效");
   return {
-    ...(values.has("python-311") ? { python311: values.get("python-311") } : {}),
     ...(values.has("python-312") ? { python312: values.get("python-312") } : {}),
     ...(values.has("uv") ? { uv: values.get("uv") } : {})
   };

@@ -11,6 +11,24 @@ const catalogs: Array<[string, ComponentCatalog]> = [
 ];
 
 describe("embedded component catalog signatures", () => {
+  it("uses only Python 3.12 for new Windows installations", () => {
+    expect(
+      windowsCatalog.manifests.filter((manifest) => manifest.id.startsWith("python-")).map((manifest) => manifest.id)
+    ).toEqual(["python-312"]);
+    for (const manifest of windowsCatalog.manifests) {
+      expect(manifest.dependencyIds).not.toContain("python-311");
+      if (!manifest.pythonEnvironment) continue;
+      expect(manifest.pythonEnvironment.pythonComponentId).toBe("python-312");
+      expect(manifest.pythonEnvironment.expectedPythonVersion).toBe("3.12");
+      expect(manifest.dependencyIds).toContain("python-312");
+    }
+    for (const id of ["edge-tts", "image-ai", "chatterbox", "chatterbox-cuda"]) {
+      const manifest = windowsCatalog.manifests.find((item) => item.id === id);
+      expect(manifest?.version, id).toContain("py312");
+      expect(manifest?.pythonEnvironment?.expectedPythonVersion, id).toBe("3.12");
+    }
+  });
+
   it.each(catalogs)("keeps the %s dependency graph closed after capability removal", (_platform, catalog) => {
     const ids = new Set(catalog.manifests.map((manifest) => manifest.id));
     for (const manifest of catalog.manifests)

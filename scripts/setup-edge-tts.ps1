@@ -10,8 +10,8 @@ $Venv = Join-Path $Root $VenvPath
 $Requirements = Join-Path $PSScriptRoot "edge-tts.lock.txt"
 
 Set-Location -LiteralPath $Root
-& $Python -c "import sys; assert sys.version_info[:2] == (3, 11), 'Python 3.11 is required'"
-if ($LASTEXITCODE -ne 0) { throw "Python 3.11 is required" }
+& $Python -c "import sys; assert sys.version_info[:2] == (3, 12), 'Python 3.12 is required'"
+if ($LASTEXITCODE -ne 0) { throw "Python 3.12 is required" }
 
 if (-not (Test-Path $Venv)) {
   & $Python -m venv $Venv
@@ -19,6 +19,8 @@ if (-not (Test-Path $Venv)) {
 }
 
 $VenvPython = Join-Path $Venv "Scripts\python.exe"
+& $VenvPython -I -c "import sys; assert sys.version_info[:2] == (3, 12), 'Existing environment is not Python 3.12; use a new -VenvPath instead of overwriting it'"
+if ($LASTEXITCODE -ne 0) { throw "保留已有环境；请通过 -VenvPath 指定新的 Python 3.12 环境目录。" }
 & $VenvPython -m pip install --disable-pip-version-check --require-hashes -r $Requirements
 if ($LASTEXITCODE -ne 0) { throw "Unable to install Edge-TTS dependencies" }
 

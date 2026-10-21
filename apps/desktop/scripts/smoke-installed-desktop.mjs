@@ -306,18 +306,19 @@ async function runEdgeTtsComponentLifecycle(origin, options) {
   const sentinelPath = path.join(path.dirname(options.executable), "data", "acceptance-user-data-sentinel.txt");
   const sentinelBefore = await readFile(sentinelPath);
   const before = await callDesktopApi(origin, "/api/v1/components");
-  const pythonBefore = before.find((item) => item?.id === "python-311");
   const edgeTtsBefore = before.find((item) => item?.id === options.componentId);
+  const pythonId = edgeTtsBefore?.dependencyIds.find((id) => id === "python-312" || id === "python-311");
+  const pythonBefore = before.find((item) => item?.id === pythonId);
   if (!pythonBefore || !edgeTtsBefore)
     throw new Error("Signed catalog is missing the fixed Python or Edge-TTS acceptance capability");
   if (pythonBefore.installed || edgeTtsBefore.installed) {
-    throw new Error("Component acceptance requires a clean install with Python 3.11 and Edge-TTS not installed");
+    throw new Error("Component acceptance requires a clean install with shared Python and Edge-TTS not installed");
   }
-  if (!edgeTtsBefore.dependencyIds.includes("python-311")) {
+  if (!pythonId) {
     throw new Error("Edge-TTS acceptance capability does not declare its shared Python dependency");
   }
 
-  const pythonInstall = await runComponentOperation(origin, "python-311", "install", options.componentTimeoutSeconds);
+  const pythonInstall = await runComponentOperation(origin, pythonId, "install", options.componentTimeoutSeconds);
   const edgeTtsInstall = await runComponentOperation(
     origin,
     options.componentId,
@@ -325,7 +326,7 @@ async function runEdgeTtsComponentLifecycle(origin, options) {
     options.componentTimeoutSeconds
   );
   const installed = await callDesktopApi(origin, "/api/v1/components");
-  for (const componentId of ["python-311", options.componentId]) {
+  for (const componentId of [pythonId, options.componentId]) {
     const status = installed.find((item) => item?.id === componentId);
     if (!status?.installed || status.state !== "ready" || status.health !== "healthy") {
       throw new Error(`Component ${componentId} did not reach the healthy ready state`);
@@ -339,14 +340,9 @@ async function runEdgeTtsComponentLifecycle(origin, options) {
     "uninstall",
     options.componentTimeoutSeconds
   );
-  const pythonUninstall = await runComponentOperation(
-    origin,
-    "python-311",
-    "uninstall",
-    options.componentTimeoutSeconds
-  );
+  const pythonUninstall = await runComponentOperation(origin, pythonId, "uninstall", options.componentTimeoutSeconds);
   const removed = await callDesktopApi(origin, "/api/v1/components");
-  for (const componentId of ["python-311", options.componentId]) {
+  for (const componentId of [pythonId, options.componentId]) {
     const status = removed.find((item) => item?.id === componentId);
     if (!status || status.installed || status.state !== "not-installed") {
       throw new Error(`Component ${componentId} remained installed after its uninstall job`);
@@ -362,6 +358,7 @@ async function runEdgeTtsComponentLifecycle(origin, options) {
   assert.deepEqual(sentinelAfter, sentinelBefore, "component uninstall must preserve user data");
   return {
     componentId: options.componentId,
+    pythonComponentId: pythonId,
     dependencyIds: edgeTtsBefore.dependencyIds,
     installedHealthy: true,
     uninstalled: true,

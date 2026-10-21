@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalManifest } from "./build-component-package.mjs";
+import { assertUnifiedPythonCatalog } from "./worker-python-policy.mjs";
 
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIRECTORY, "..");
@@ -81,8 +82,15 @@ export async function assembleComponentCatalog(feedDirectory, platform = compone
   return { manifests, trustedPublicKeys };
 }
 
-export async function writeGeneratedCatalog(feedDirectory, outputPath, platform = componentPlatformForBuildHost()) {
+export async function writeGeneratedCatalog(
+  feedDirectory,
+  outputPath,
+  platform = componentPlatformForBuildHost(),
+  pythonVersion
+) {
+  if (pythonVersion !== undefined && pythonVersion !== "3.12") throw new Error("统一目录只支持 Python 3.12");
   const catalog = await assembleComponentCatalog(feedDirectory, platform);
+  if (pythonVersion === "3.12") assertUnifiedPythonCatalog(catalog);
   const resolvedOutput = path.resolve(
     outputPath ??
       path.join(
@@ -367,20 +375,20 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const values = new Map();
     if (args.length % 2 !== 0)
       throw new Error(
-        "用法：node scripts/assemble-component-catalog.mjs --feed <目录> [--platform win32-x64|darwin-arm64] [--output <TS 文件>]"
+        "用法：node scripts/assemble-component-catalog.mjs --feed <目录> [--platform win32-x64|darwin-arm64] [--output <TS 文件>] [--python-version 3.12]"
       );
     for (let index = 0; index < args.length; index += 2) {
       const key = args[index];
       const value = args[index + 1];
       if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
-      if (!["feed", "output", "platform"].includes(key.slice(2))) throw new Error(`未知参数 ${key}`);
+      if (!["feed", "output", "platform", "python-version"].includes(key.slice(2))) throw new Error(`未知参数 ${key}`);
       values.set(key.slice(2), value);
     }
     if (!values.has("feed")) throw new Error("缺少参数 --feed");
     const feedDirectory = path.resolve(values.get("feed"));
     const outputPath = values.has("output") ? path.resolve(values.get("output")) : undefined;
     const platform = values.get("platform") ?? componentPlatformForBuildHost();
-    const result = await writeGeneratedCatalog(feedDirectory, outputPath, platform);
+    const result = await writeGeneratedCatalog(feedDirectory, outputPath, platform, values.get("python-version"));
     console.log(`已核验并写入 ${result.manifestCount} 个能力包：${result.outputPath}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "能力目录组装失败");

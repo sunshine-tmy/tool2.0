@@ -56,6 +56,34 @@ after(async () => {
 });
 
 describe("buildComponentPackage", () => {
+  it("the Python 3.12 catalog gate verifies real signatures and preserves output when legacy Python remains", async () => {
+    const root = await makeRoot();
+    const key = await createSigningKey(root);
+    const output = path.join(root, "catalog.ts");
+    await fs.writeFile(output, "existing trusted catalog");
+    for (const id of ["python-311", "python-312"]) {
+      const stage = path.join(root, `stage-${id}`);
+      await fs.mkdir(stage);
+      await fs.writeFile(path.join(stage, "runtime.txt"), "signed runtime fixture");
+      const feed = path.join(root, `feed-${id}`);
+      await buildComponentPackage({
+        definitionPath: await writeDefinition(root, definition({ id, groupId: "shared", taskToolIds: [] })),
+        stagingDirectory: stage,
+        outputDirectory: feed,
+        assetBaseUrl: "https://packages.example.test/components/",
+        signingKeyPath: key.privateKeyPath
+      });
+      if (id === "python-311") {
+        await assert.rejects(writeGeneratedCatalog(feed, output, "win32-x64", "3.12"), /旧 python-311/);
+        assert.equal(await fs.readFile(output, "utf8"), "existing trusted catalog");
+      } else {
+        const result = await writeGeneratedCatalog(feed, output, "win32-x64", "3.12");
+        assert.equal(result.manifestCount, 1);
+        assert.match(await fs.readFile(output, "utf8"), /python-312/);
+      }
+    }
+  });
+
   it("抖音匿名能力从真实分发模板生成签名与 SBOM，不重复打包浏览器", async () => {
     const root = await makeRoot();
     const key = await createSigningKey(root);

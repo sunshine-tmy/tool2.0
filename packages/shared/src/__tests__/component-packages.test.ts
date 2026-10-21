@@ -28,6 +28,17 @@ const packageStatus = {
 } as const;
 
 describe("component package contracts", () => {
+  it("allows an installed retired runtime with no download payload", () => {
+    expect(
+      Value.Check(ComponentPackageStatusSchema, {
+        ...packageStatus,
+        id: "python-311",
+        retired: true,
+        installed: true,
+        downloadBytes: 0
+      })
+    ).toBe(true);
+  });
   it("validates the visible capability state while rejecting untrusted transport fields", () => {
     expect(
       Value.Check(ComponentPackageStatusSchema, packageStatus),

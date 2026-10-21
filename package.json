@@ -34,6 +34,7 @@
     "desktop:make": "pnpm desktop:build && pnpm desktop:rebuild-native && pnpm --filter desktop make",
     "components:package": "node scripts/build-component-package.mjs",
     "components:catalog": "node scripts/assemble-component-catalog.mjs",
+    "components:catalog-python312": "node scripts/assemble-component-catalog.mjs --python-version 3.12",
     "components:prepare-python-311": "node scripts/prepare-python-311-runtime.mjs",
     "components:prepare-python-312": "node scripts/prepare-python-312-runtime.mjs",
     "components:prepare-ffmpeg": "node scripts/prepare-ffmpeg-component.mjs",
