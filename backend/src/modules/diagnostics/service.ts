@@ -207,13 +207,9 @@ export class DiagnosticsService {
     }
     if (!this.config.desktopManagedCapabilities) {
       for (const [id, title, files] of [
-        ["edge-tts", "在线配音本地环境", [this.config.edgeTtsPythonPath, this.config.edgeTtsScriptPath]],
-        ["video-text", "视频转写配置", []]
+        ["edge-tts", "在线配音本地环境", [this.config.edgeTtsPythonPath, this.config.edgeTtsScriptPath]]
       ] as const) {
-        let present =
-          id === "video-text"
-            ? Boolean(this.config.videoTextAudioExtractCommand && this.config.videoTextTranscribeCommand)
-            : true;
+        let present = true;
         for (const file of files) {
           try {
             await fsp.access(file);
@@ -228,7 +224,7 @@ export class DiagnosticsService {
           status: present ? "ok" : "not-installed",
           code: present ? "CONFIGURED_NOT_TESTED" : "OPTIONAL_NOT_INSTALLED",
           message: present ? "配置路径存在；依赖和实际运行需手动深检" : "可选运行环境尚未配置或文件缺失",
-          impact: id === "edge-tts" ? "在线配音生成" : "视频文本解析",
+          impact: "在线配音生成",
           suggestion: present ? "故障时执行对应深检" : "按模块指引手动准备环境",
           modules: [id]
         });
@@ -379,7 +375,6 @@ export class DiagnosticsService {
     const allowed = new Set([
       "image-ai",
       "chatterbox",
-      "video-text",
       "edge-tts",
       ...(await this.components.list()).map((c) => `integrity-${c.id}`)
     ]);

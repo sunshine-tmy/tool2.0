@@ -64,7 +64,7 @@ describe("application shell header layout", () => {
       const actions = wrapper.get(".topbar-actions");
       expect(actions.findAll("button")).toHaveLength(3);
       expect(actions.text()).toContain("基础服务正常");
-      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("8");
+      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("6");
       expect(wrapper.get(".sidebar-head").find('[aria-label="本地服务与管理员会话"]').exists()).toBe(false);
       await actions.get('[aria-label="桌面设置"]').trigger("click");
       await flushPromises();

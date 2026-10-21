@@ -801,19 +801,6 @@ body {
   border-color: var(--color-border);
 }
 
-.video-text-grid {
-  gap: var(--space-5);
-}
-
-.video-status-panel {
-  padding: var(--space-4);
-  border: 1px solid #e8edf4;
-}
-
-.short-video-form {
-  gap: var(--space-4);
-}
-
 .edge-tts-page {
   gap: var(--space-4);
 }

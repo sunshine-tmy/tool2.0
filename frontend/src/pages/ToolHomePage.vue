@@ -55,10 +55,8 @@ import { listTools } from "@toolbox/shared";
 import {
   ArrowRight,
   AudioLines,
-  Clapperboard,
   Clock3,
   FileArchive,
-  FileVideo,
   ImageDown,
   LibraryBig,
   ScanLine,
@@ -79,9 +77,7 @@ const iconByTool: Record<string, unknown> = {
   "image-compress": ImageDown,
   "image-ai": ScanLine,
   "lan-transfer": FileArchive,
-  "video-text": FileVideo,
   "edge-tts": AudioLines,
-  "short-video": Clapperboard,
   "xhs-archive": LibraryBig
 };
 

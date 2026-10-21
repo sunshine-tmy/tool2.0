@@ -34,7 +34,6 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
-        "@toolbox/shared/video-text": fileURLToPath(new URL("../packages/shared/src/video-text.ts", import.meta.url)),
         "@toolbox/shared": fileURLToPath(new URL("../packages/shared/src/index.ts", import.meta.url))
       }
     },

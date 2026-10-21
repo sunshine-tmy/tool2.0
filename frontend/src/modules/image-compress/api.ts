@@ -20,10 +20,7 @@ class ImageCompressApi {
   }
 
   async downloadOne(fileName: string) {
-    return withApiError(
-      () => httpClient.getBlob(`/files/${encodeURIComponent(fileName)}`),
-      "单张图片下载失败"
-    );
+    return withApiError(() => httpClient.getBlob(`/files/${encodeURIComponent(fileName)}`), "单张图片下载失败");
   }
 }
 

@@ -314,7 +314,7 @@ MA05 保持 `IN_PROGRESS`，本次只交付共享存储基础。统一获取服�
 定向命令：
 
 ```text
-pnpm --filter backend exec vitest run src/__tests__/content-archive-task.test.ts src/__tests__/content-archive-api.test.ts src/__tests__/archive-download-gateway.test.ts src/__tests__/archive-platform-providers.test.ts src/__tests__/archive-translation-shutdown.test.ts src/__tests__/xhs-archive.test.ts src/__tests__/xhs-runtime.test.ts src/__tests__/short-video.test.ts
+pnpm --filter backend exec vitest run src/__tests__/content-archive-task.test.ts src/__tests__/content-archive-api.test.ts src/__tests__/archive-download-gateway.test.ts src/__tests__/archive-platform-providers.test.ts src/__tests__/archive-translation-shutdown.test.ts src/__tests__/xhs-archive.test.ts src/__tests__/xhs-runtime.test.ts
 pnpm check
 pnpm coverage
 git diff --check
@@ -462,7 +462,7 @@ git diff --check
 
 ### 本次实现
 
-- 页面业务 API 改用 `/api/v1/tools/media-archive`，全部请求消费共享 Schema 并传递 AbortSignal。旧前端 `api.ts` 只保留小红书兼容入口供短视频解析模块使用。
+- 页面业务 API 改用 `/api/v1/tools/media-archive`，全部请求消费共享 Schema 并传递 AbortSignal。小红书登录由中性归档客户端统一处理。
 - 混合列表显示来源平台；平台、内容类型、关键词筛选共同约束未选择时的批量补译。显式选择只提交选中 ID；切换范围/分页清空选择，删除部分失败不谎报全部成功且失败项仍可重试。
 - 抽取列表/详情 composable，取消旧请求并校验请求代际。抽屉关闭、页面卸载、筛选变化不会被迟到结果覆盖，也不会把取消当作业务失败。两平台运行时状态独立读取，能力未安装不隐藏本地归档。
 - 详情与结果共用平台、作品 ID、作者、发布时间及原作品链接信息。抖音保留完整原始文案；只有小红书使用已有表情/话题清洗规则。复制、翻译、人工编辑/恢复和 ZIP 使用一致的数据与中性接口。
@@ -573,12 +573,6 @@ git diff --check
 新增真实 Fastify 路由级 429 契约测试，覆盖 LAN 上传会话（30 次/分钟）、分片请求（120 次/分钟）、批量下载（10 次/分钟），以及多媒体归档单条翻译（20 次/分钟）和批量翻译（5 次/分钟）。测试先耗尽单一路由额度，再确认超额请求返回统一 `RATE_LIMIT_EXCEEDED` 信封和 `requestId`；LAN 不同路径、翻译动态 ID 及单条/批量接口分别使用独立桶，触发限额后 `/health/live` 仍可用。使用无效/不存在资源的请求触发入口，不写入文件、不创建模型任务，也不访问在线平台。
 
 定向命令：`pnpm --filter backend exec vitest run src/__tests__/lan-transfer.test.ts src/__tests__/content-archive-translation.test.ts --reporter=dot`，50 项通过。最终 `pnpm check`、`git diff --check` 通过：共享 97、后端 627（5 项跳过）、前端 192、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；生产构建、Bundle Budget 和启动 smoke 通过。此验收覆盖限流矩阵中的这些 HTTP 路由，不替代全量业务容量压测，也不改变现有限额。
-
-### MA07 视频文案播放器独立预览额度
-
-代码复查发现 `/api/v1/tools/video-text/remote-video` 虽用于浏览器播放，却误用了远程抓取的低频额度（10 次/分钟）；浏览器加载元数据、拖动进度和 Range 请求时可能误触 429。现改用专用 `mediaPreview` 额度，与短视频播放器保持一致；远程 URL 解析/创建任务仍使用 `remoteFetch` 额度，未放宽 SSRF 校验或抓取限额。
-
-在真实 Fastify 应用测试中连续请求 12 个视频预览探测（带不同 Range），均返回 200，`/health/live` 保持可用；视频文案定向测试 15 项通过。`pnpm check`、`git diff --check` 通过：共享 97、后端 628（5 项跳过）、前端 192、桌面 39、桌面脚本 7、Python 14、工程脚本 41、差异覆盖率脚本 3；生产构建、Bundle Budget 和启动 smoke 通过。
 
 ### 多媒体归档：抖音入口按运行时状态开放
 

@@ -14,10 +14,8 @@ describe("tool registry", () => {
       "image-compress",
       "image-ai",
       "lan-transfer",
-      "video-text",
       "edge-tts",
       "audio-library",
-      "short-video",
       "xhs-archive"
     ]);
     expect(tools.every((tool) => tool.requiresAuth === false)).toBe(true);
@@ -41,17 +39,9 @@ describe("tool registry", () => {
       routePath: "/tools/lan-transfer",
       apiNamespace: "/api/v1/tools/lan-transfer"
     });
-    expect(getToolById("video-text")).toMatchObject({
-      routePath: "/tools/video-text",
-      apiNamespace: "/api/v1/tools/video-text"
-    });
     expect(getToolById("edge-tts")).toMatchObject({
       routePath: "/tools/edge-tts",
       apiNamespace: "/api/v1/tools/edge-tts"
-    });
-    expect(getToolById("short-video")).toMatchObject({
-      routePath: "/tools/short-video",
-      apiNamespace: "/api/v1/tools/short-video"
     });
     expect(getToolById("xhs-archive")).toMatchObject({
       title: "多媒体内容归档",

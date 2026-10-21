@@ -8,7 +8,6 @@ const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)
 const LOCK_ROOT = path.join(REPOSITORY_ROOT, ".package", "macos-locks");
 const DEFINITIONS = [
   { name: "edge-tts", python: "3.11", input: "edge-tts-requirements.txt" },
-  { name: "video-transcribe", python: "3.11", input: "video-transcribe-requirements.txt" },
   { name: "chatterbox", python: "3.11", input: "chatterbox-requirements.txt", torchBackend: "cpu" },
   { name: "image-ai", python: "3.11", input: "image-ai-requirements.txt", torchBackend: "cpu" },
   { name: "xhs-archive", python: "3.12", input: "xhs-archive.lock.txt" },

@@ -4,6 +4,23 @@ import { describe, expect, it } from "vitest";
 import { router } from "./router";
 
 describe("多媒体归档路由兼容", () => {
+  it("只注册保留的六个业务模块及归档兼容跳转", () => {
+    expect(
+      router
+        .getRoutes()
+        .filter((route) => route.path.startsWith("/tools/"))
+        .map((route) => route.path)
+        .sort()
+    ).toEqual([
+      "/tools/audio-library",
+      "/tools/edge-tts",
+      "/tools/image-ai",
+      "/tools/image-compress",
+      "/tools/lan-transfer",
+      "/tools/media-archive",
+      "/tools/xhs-archive"
+    ]);
+  });
   it("新入口继续复用已有页面懒加载与稳定路由名", () => {
     expect(router.resolve("/tools/media-archive").name).toBe("xhs-archive");
     expect(router.getRoutes().find((route) => route.path === "/tools/media-archive")?.components?.default).toBeTypeOf(

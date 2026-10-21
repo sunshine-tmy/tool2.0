@@ -95,11 +95,6 @@ export const ApiHealthSchema = Type.Object({
   status: Type.Literal("ok"),
   name: Type.Literal("toolbox-api"),
   deploymentMode: Type.Union([Type.Literal("local"), Type.Literal("lan")]),
-  videoText: Type.Object({
-    audioExtractorConfigured: Type.Boolean(),
-    transcriberConfigured: Type.Boolean()
-  }),
-  shortVideo: Type.Object({ providerConfigured: Type.Boolean() }),
   xhsArchive: Type.Object({
     providerConfigured: Type.Boolean(),
     translationProviderConfigured: Type.Boolean()

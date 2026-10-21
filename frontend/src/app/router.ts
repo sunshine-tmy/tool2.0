@@ -35,11 +35,6 @@ export const router = createRouter({
       component: () => import("../modules/lan-transfer/page.vue")
     },
     {
-      path: "/tools/video-text",
-      name: "video-text",
-      component: () => import("../modules/video-text/page.vue")
-    },
-    {
       path: "/tools/edge-tts",
       name: "edge-tts",
       component: () => import("../modules/edge-tts/page.vue")
@@ -48,11 +43,6 @@ export const router = createRouter({
       path: "/tools/audio-library",
       name: "audio-library",
       component: () => import("../modules/audio-library/page.vue")
-    },
-    {
-      path: "/tools/short-video",
-      name: "short-video",
-      component: () => import("../modules/short-video/page.vue")
     },
     {
       path: "/tools/media-archive",

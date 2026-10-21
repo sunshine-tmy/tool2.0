@@ -81,8 +81,7 @@ describe("api app", () => {
     const app = await createApp({
       config: getConfig({ desktopManagedCapabilities: true, dotenvPath: false, environment: { NODE_ENV: "test" } })
     });
-    const [video, image, edgeTts, chatterbox] = await Promise.all([
-      app.inject({ method: "POST", url: "/api/v1/tools/video-text/tasks" }),
+    const [image, edgeTts, chatterbox] = await Promise.all([
       app.inject({ method: "POST", url: "/api/v1/tools/image-ai/tasks" }),
       app.inject({
         method: "POST",
@@ -100,7 +99,7 @@ describe("api app", () => {
       app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks" })
     ]);
 
-    for (const response of [video, image, edgeTts, chatterbox]) {
+    for (const response of [image, edgeTts, chatterbox]) {
       expect(response.statusCode).toBe(409);
       expect(response.json()).toMatchObject({
         success: false,
@@ -122,12 +121,22 @@ describe("api app", () => {
       "image-compress",
       "image-ai",
       "lan-transfer",
-      "video-text",
       "edge-tts",
       "audio-library",
-      "short-video",
       "xhs-archive"
     ]);
+    // 退役模块的负向回归：旧接口不可继续解析、下载或创建任务。
+    for (const moduleId of ["video-text", "short-video"]) {
+      for (const endpoint of ["tasks", "history", "parse", "preview", "download"]) {
+        for (const method of ["GET", "POST"] as const) {
+          const removed = await app.inject({ method, url: `/api/v1/tools/${moduleId}/${endpoint}` });
+          expect(removed.statusCode).toBe(404);
+        }
+      }
+      expect((await app.inject({ method: "POST", url: `/api/v1/components/${moduleId}/install` })).statusCode).toBe(
+        404
+      );
+    }
     await app.close();
   });
 

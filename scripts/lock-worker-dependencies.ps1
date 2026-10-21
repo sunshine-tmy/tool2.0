@@ -31,7 +31,6 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 $Locks = @(
   @{ Input = "edge-tts-requirements.txt"; Output = "edge-tts.lock.txt"; Torch = $null },
-  @{ Input = "video-transcribe-requirements.txt"; Output = "video-transcribe.lock.txt"; Torch = $null },
   # Stage 5 ships CPU packages first. CUDA variants are separate capabilities and
   # must not leak into the baseline lock or inflate the default installer.
   @{ Input = "chatterbox-requirements.txt"; Output = "chatterbox.lock.txt"; Torch = "cpu" },

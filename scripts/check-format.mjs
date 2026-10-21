@@ -1,5 +1,6 @@
 /** 只把 Git 纳入项目的文件交给 Prettier，避免不可读的本机缓存阻断格式门禁。 */
 import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -7,16 +8,20 @@ const workspaceRoot = fileURLToPath(new URL("../", import.meta.url));
 const prettierCli = fileURLToPath(new URL("../node_modules/prettier/bin/prettier.cjs", import.meta.url));
 const MAX_BATCH_CHARS = 12_000;
 
-export function listProjectFiles() {
-  const output = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
+export function listProjectFiles({ list = execFileSync, exists = existsSync } = {}) {
+  const output = list("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
     cwd: workspaceRoot,
     maxBuffer: 8 * 1024 * 1024
   });
-  return output
-    .toString("utf8")
-    .split("\0")
-    .filter(Boolean)
-    .map((file) => path.resolve(workspaceRoot, file));
+  return (
+    output
+      .toString("utf8")
+      .split("\0")
+      .filter(Boolean)
+      .map((file) => path.resolve(workspaceRoot, file))
+      // 尚未提交的删除仍会出现在 Git 索引中，不应作为 Prettier 的输入。
+      .filter((file) => exists(file))
+  );
 }
 
 export function createBatches(files, maxChars = MAX_BATCH_CHARS) {

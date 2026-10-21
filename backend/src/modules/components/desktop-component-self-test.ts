@@ -14,8 +14,6 @@ type ProcessRunner = (
 ) => Promise<string>;
 
 const requiredFiles: Record<string, string[]> = {
-  "video-text": ["scripts/video-transcribe-faster-whisper.py"],
-  "whisper-small": ["model/config.json", "model/model.bin", "model/tokenizer.json"],
   "edge-tts": ["scripts/edge-tts-generate.py"],
   "image-ai": [
     "scripts/image-ai-worker.py",
@@ -106,11 +104,6 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
       return;
     }
 
-    if (manifest.id === "whisper-small") {
-      JSON.parse(await fs.readFile(path.join(generationRoot, "model", "config.json"), "utf8"));
-      return;
-    }
-
     if (manifest.id === "xhs-browser") {
       const output = await runProcess(
         path.join(generationRoot, ...browserPath.split("/")),
@@ -141,17 +134,6 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
         environment
       );
       assertJsonAvailable(output, "Edge-TTS");
-      return;
-    }
-
-    if (manifest.id === "video-text") {
-      const output = await runProcess(
-        pythonPath,
-        [path.join(generationRoot, "scripts", "video-transcribe-faster-whisper.py"), "--check"],
-        generationRoot,
-        environment
-      );
-      assertJsonAvailable(output, "faster-whisper");
       return;
     }
 

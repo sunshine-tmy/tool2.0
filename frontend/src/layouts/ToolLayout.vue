@@ -271,10 +271,8 @@ import { ApiHealthSchema, listTools, type ComponentPackageStatus } from "@toolbo
 import {
   AudioLines,
   ChevronRight,
-  Clapperboard,
   LibraryBig,
   FileArchive,
-  FileVideo,
   ImageDown,
   Menu,
   PanelLeftClose,
@@ -331,10 +329,8 @@ const iconByTool: Record<string, unknown> = {
   "image-compress": ImageDown,
   "image-ai": ScanLine,
   "lan-transfer": FileArchive,
-  "video-text": FileVideo,
   "edge-tts": AudioLines,
   "audio-library": AudioLines,
-  "short-video": Clapperboard,
   "xhs-archive": LibraryBig
 };
 
@@ -346,7 +342,7 @@ const filteredTools = computed(() => {
 
 const toolGroupDefinitions = [
   { label: "图片工具", ids: ["image-compress", "image-ai"] },
-  { label: "视频与文案", ids: ["video-text", "edge-tts", "audio-library", "short-video", "xhs-archive"] },
+  { label: "视频与文案", ids: ["edge-tts", "audio-library", "xhs-archive"] },
   { label: "文件协作", ids: ["lan-transfer"] }
 ];
 
@@ -365,7 +361,6 @@ const sidebarHidden = computed(() => isCompact.value && !mobileDrawerOpen.value)
 const desktopCapabilityHint = computed(() => {
   if (!window.toolboxDesktop) return undefined;
   const titles: Record<string, string> = {
-    "/tools/video-text": "视频转写能力",
     "/tools/edge-tts": "配音与参考音色能力",
     "/tools/image-ai": "AI 图片处理能力",
     "/tools/media-archive": "多媒体归档、翻译与登录浏览器能力"
@@ -526,10 +521,7 @@ onMounted(() => {
   compactQuery.addEventListener("change", syncCompactLayout);
   window.addEventListener("keydown", onWindowKeydown);
   if (!isDesktop.value) void loadServiceStatus();
-  if (
-    window.toolboxDesktop &&
-    ["/tools/video-text", "/tools/edge-tts", "/tools/image-ai", "/tools/media-archive"].includes(route.path)
-  ) {
+  if (window.toolboxDesktop && ["/tools/edge-tts", "/tools/image-ai", "/tools/media-archive"].includes(route.path)) {
     void loadDesktopComponentStatuses();
   }
 });

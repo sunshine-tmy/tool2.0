@@ -34,8 +34,6 @@ import { registerEdgeTtsRoutes } from "./modules/edge-tts";
 import { registerChatterboxRoutes } from "./modules/chatterbox/routes";
 import { registerAudioLibraryRoutes } from "./modules/audio-library/routes";
 import { registerLanTransferRoutes } from "./modules/lan-transfer";
-import { registerShortVideoRoutes } from "./modules/short-video";
-import { registerVideoTextRoutes } from "./modules/video-text";
 import { registerXhsArchiveRoutes } from "./modules/xhs-archive/routes";
 import { XhsAuthManager } from "./modules/xhs-archive/auth";
 import { XhsRuntimeManager } from "./modules/xhs-archive/runtime";
@@ -324,9 +322,6 @@ async function initializeApp(app: FastifyInstance, options: AppOptions) {
     config.outputDir,
     config.tempDir,
     config.lanTransferFilesDir,
-    config.videoTextUploadsDir,
-    config.videoTextAudioDir,
-    config.videoTextResultsDir,
     config.imageAiInputsDir,
     config.imageAiOutputsDir,
     config.imageAiTasksDir,
@@ -384,13 +379,6 @@ async function initializeApp(app: FastifyInstance, options: AppOptions) {
       status: "ok",
       name: "toolbox-api",
       deploymentMode: config.deploymentMode,
-      videoText: {
-        audioExtractorConfigured: Boolean(config.videoTextAudioExtractCommand),
-        transcriberConfigured: Boolean(config.videoTextTranscribeCommand)
-      },
-      shortVideo: {
-        providerConfigured: Boolean(config.shortVideoParseApiUrl)
-      },
       xhsArchive: {
         providerConfigured: Boolean(config.xhsProviderUrl),
         translationProviderConfigured: Boolean(config.xhsTranslationProviderUrl)
@@ -500,8 +488,6 @@ async function initializeApp(app: FastifyInstance, options: AppOptions) {
   const chatterboxArchive = await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
   await registerAudioLibraryRoutes(app, config, database, chatterboxArchive.batches, edgeTtsBatches);
   await registerLanTransferRoutes({ app, config, database, fileMetadata });
-  await registerVideoTextRoutes({ app, config, taskStore, remoteFetch, fileMetadata });
-  await registerShortVideoRoutes({ app, config, remoteFetch, xhsRuntime, xhsAuth });
   await registerXhsArchiveRoutes({
     app,
     config,

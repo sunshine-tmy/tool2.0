@@ -14,7 +14,7 @@ import { ArchiveTaskRepository } from "../media-archive/task-repository";
 import { ArchiveDownloadGateway } from "../media-archive/download-gateway";
 import { xhsProvider, douyinProvider } from "../media-archive/platform-providers";
 
-export { extractXhsUrl, normalizeXhsProviderItem } from "./provider-item";
+export { extractXhsUrl } from "./provider-item";
 
 export class XhsArchiveTaskService {
   readonly content: ContentArchiveTaskService;

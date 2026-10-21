@@ -7,9 +7,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     "edge-tts": "src/edge-tts.ts",
-    chatterbox: "src/chatterbox.ts",
-    "short-video": "src/short-video.ts",
-    "video-text": "src/video-text.ts"
+    chatterbox: "src/chatterbox.ts"
   },
   outDir: "dist",
   format: ["esm"],

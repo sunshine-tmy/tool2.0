@@ -3,7 +3,6 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import type { DiagnosticCheck } from "@toolbox/shared";
 import { createDesktopComponentSelfTest } from "../components/desktop-component-self-test";
-import { parseCommandTemplate } from "../video-text/task-service";
 import type { DiagnosticsService } from "./service";
 import { diagnosticError } from "./service";
 
@@ -102,43 +101,6 @@ export async function executeDeepCheck(
           signal
         );
         if ((await fsp.stat(audio)).size < 16) throw diagnosticError("EMPTY_TEST_AUDIO", "测试音频为空", 422);
-      } else if (target === "video-text") {
-        title = "视频文本提取与转写";
-        if (!config.videoTextAudioExtractCommand || !config.videoTextTranscribeCommand)
-          throw diagnosticError("CAPABILITY_MISSING", "提取或转写环境未配置", 422);
-        // 固定一秒静音 WAV，无个人素材；验证提取、模型加载与转写路径，不评估识别准确率。
-        const source = path.join(root, "source.wav"),
-          extracted = path.join(root, "audio.wav"),
-          output = path.join(root, "result.srt");
-        const wav = Buffer.alloc(44 + 32000);
-        wav.write("RIFF");
-        wav.writeUInt32LE(wav.length - 8, 4);
-        wav.write("WAVEfmt ", 8);
-        wav.writeUInt32LE(16, 16);
-        wav.writeUInt16LE(1, 20);
-        wav.writeUInt16LE(1, 22);
-        wav.writeUInt32LE(16000, 24);
-        wav.writeUInt32LE(32000, 28);
-        wav.writeUInt16LE(2, 32);
-        wav.writeUInt16LE(16, 34);
-        wav.write("data", 36);
-        wav.writeUInt32LE(32000, 40);
-        await fsp.writeFile(source, wav);
-        for (const [template, values] of [
-          [config.videoTextAudioExtractCommand, { input: source, output: extracted }],
-          [config.videoTextTranscribeCommand, { input: extracted, output }]
-        ] as const) {
-          const [executable, ...args] = parseCommandTemplate(template).map((part) =>
-            part.replaceAll("{input}", values.input).replaceAll("{output}", values.output)
-          );
-          if (!executable) throw diagnosticError("CAPABILITY_MISSING", "运行命令未配置", 422);
-          await diagnosticProcess(executable, args, signal, undefined, {
-            ...process.env,
-            HF_HUB_OFFLINE: "1",
-            TRANSFORMERS_OFFLINE: "1"
-          });
-        }
-        await fsp.access(output);
       }
     } finally {
       await fsp.rm(root, { recursive: true, force: true });

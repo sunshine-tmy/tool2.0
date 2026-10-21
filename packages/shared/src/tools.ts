@@ -52,17 +52,6 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/v1/tools/lan-transfer"
   },
   {
-    id: "video-text",
-    title: "视频文本解析",
-    description: "从商品讲解、直播切片和素材视频中提取文本内容。",
-    category: "video",
-    status: "ready",
-    requiresAuth: false,
-    acceptedTypes: ["video/mp4", "video/webm", "video/quicktime"],
-    routePath: "/tools/video-text",
-    apiNamespace: "/api/v1/tools/video-text"
-  },
-  {
     id: "edge-tts",
     title: "多国语言配音",
     description: "支持马来语、英语和巴西葡萄牙语的在线配音，以及 Chatterbox V3 本机参考音色克隆。",
@@ -83,17 +72,6 @@ const tools: ToolDefinition[] = [
     acceptedTypes: ["audio/mpeg", "audio/wav", "audio/mp4", "audio/flac"],
     routePath: "/tools/audio-library",
     apiNamespace: "/api/v1/tools/audio-library"
-  },
-  {
-    id: "short-video",
-    title: "短视频解析",
-    description: "解析抖音、小红书、TikTok 分享链接，提取公开视频、图集、封面和作者信息。",
-    category: "video",
-    status: "ready",
-    requiresAuth: false,
-    acceptedTypes: ["text/plain"],
-    routePath: "/tools/short-video",
-    apiNamespace: "/api/v1/tools/short-video"
   },
   {
     id: "xhs-archive",

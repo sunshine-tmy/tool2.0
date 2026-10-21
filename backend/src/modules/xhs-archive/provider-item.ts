@@ -1,4 +1,4 @@
-/** 小红书现有作品字段映射；保留分享令牌和原规范化规则，短视频模块也复用该纯函数。 */
+/** 小红书作品字段映射；为归档管线保留分享令牌和原规范化规则。 */
 import { normalizeXhsText, parseXhsContentText, type XhsArchiveItem, type XhsArchiveMedia } from "@toolbox/shared";
 import { ArchiveTaskError } from "../media-archive/provider";
 

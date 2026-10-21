@@ -231,7 +231,6 @@ function statusType(status: DiagnosticCheck["status"]): "default" | "success" | 
 const deepTargets = computed(() => [
   { value: "image-ai", label: "AI 图片：实际加载本地模型（占用内存 / GPU）" },
   { value: "chatterbox", label: "参考音色克隆：实际加载本地模型（占用内存 / GPU）" },
-  { value: "video-text", label: "视频文本：固定测试音频提取与转写（占用内存，可能较慢）" },
   { value: "edge-tts", label: "在线自然音色：固定英文短句真实合成（需要联网）" },
   ...(run.value?.checks ?? [])
     .filter(

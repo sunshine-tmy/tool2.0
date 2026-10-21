@@ -10,7 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AUDITS = [
     ("edge-tts.lock.txt", []),
-    ("video-transcribe.lock.txt", []),
     ("chatterbox.lock.txt", []),
     # BasicSR has no fixed PyPI release. Its medium-severity issue requires a
     # locally attacker-controlled SLURM_NODELIST; image-ai-worker.py deletes

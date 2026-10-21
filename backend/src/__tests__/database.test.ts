@@ -341,9 +341,9 @@ describe("toolbox database", () => {
       )
       .run(
         "legacy-file",
-        "video-text-result",
+        "image-ai-task",
         "task-1",
-        "video-text/results/task-1.json",
+        "image-ai/tasks/task-1.json",
         2,
         "aa",
         "application/json",
@@ -356,7 +356,7 @@ describe("toolbox database", () => {
     expect(upgraded.connection.pragma("table_info(files)")).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "owner" })])
     );
-    expect(upgraded.getFile("legacy-file")).toMatchObject({ relativePath: "video-text/results/task-1.json" });
+    expect(upgraded.getFile("legacy-file")).toMatchObject({ relativePath: "image-ai/tasks/task-1.json" });
     upgraded.close();
 
     const restarted = new ToolboxDatabase(databasePath);

@@ -1,11 +1,42 @@
 /** 中文模块说明：验证桌面端 CUDA 扩展选择与 CPU 回退。 */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ComponentManager, ComponentManagerError } from "../modules/components/component-manager";
-import { resolveChatterboxWorkerRuntime } from "../runtime/desktop-capability-runtime";
+import {
+  configureDesktopCapabilityRuntime,
+  resolveChatterboxWorkerRuntime
+} from "../runtime/desktop-capability-runtime";
+import { getConfig } from "../config";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("desktop Chatterbox runtime selection", () => {
+  it("still refreshes shared FFmpeg paths for both retained speech engines", async () => {
+    const config = getConfig({
+      dotenvPath: false,
+      environment: { NODE_ENV: "test" },
+      desktopManagedCapabilities: true
+    });
+    const components = {
+      resolveInstalledPython: vi.fn(async () => {
+        throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "not installed");
+      }),
+      resolveInstalledAsset: vi.fn(async (id: string, asset: string) => {
+        if (id !== "ffmpeg") throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "not installed");
+        return { path: `shared-ffmpeg/${asset}`, generationRoot: "shared-ffmpeg", manifest: {} };
+      })
+    };
+    const runtime = await configureDesktopCapabilityRuntime(config, components as unknown as ComponentManager);
+    try {
+      await runtime.afterMutation("ffmpeg", "install");
+      config.chatterboxCapabilityReady = true;
+      await runtime.afterMutation("ffmpeg", "reinstall");
+      expect(config.edgeTtsFfmpegPath).toContain("shared-ffmpeg/bin/ffmpeg");
+      expect(config.chatterboxFfmpegPath).toBe(config.edgeTtsFfmpegPath);
+      expect(config.chatterboxFfprobePath).toContain("shared-ffmpeg/bin/ffprobe");
+    } finally {
+      await runtime.close();
+    }
+  });
   it("uses the separate CUDA worker and venv while the installed CPU capability supplies model assets", async () => {
     const result = await resolveChatterboxWorkerRuntime(makeComponents({ cudaInstalled: true }));
 

@@ -28,7 +28,7 @@ describe("desktop root migration", () => {
     await put(legacyDataRoot, "config/preferences.json", '{"theme":"dark"}');
     await put(legacyDataRoot, "data/toolbox.db", "sqlite-data");
     await put(legacyDataRoot, "components/ffmpeg/bin/ffmpeg.exe", "ffmpeg-runtime");
-    await put(legacyDataRoot, "models/whisper/model.bin", "model-data");
+    await put(legacyDataRoot, "models/chatterbox/model.bin", "model-data");
     await put(legacyDataRoot, "profile/Local Storage/leveldb/000001.log", "browser-login-state");
     await put(legacyDataRoot, "logs/desktop-startup.log", "old-log");
     await put(legacyDataRoot, "migration-backups/old-snapshot.db", "backup");

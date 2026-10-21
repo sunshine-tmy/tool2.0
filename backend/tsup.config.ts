@@ -20,5 +20,5 @@ export default defineConfig({
   clean: true,
   minify: false,
   keepNames: true,
-  external: ["@toolbox/shared", "@toolbox/shared/video-text", "@toolbox/shared/short-video"]
+  external: ["@toolbox/shared"]
 });

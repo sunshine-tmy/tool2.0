@@ -35,11 +35,6 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     };
   }
 
-  const resetVideoConfiguration = () => {
-    config.videoTextCapabilityReady = false;
-    config.videoTextAudioExtractCommand = "";
-    config.videoTextTranscribeCommand = undefined;
-  };
   const resetEdgeTtsConfiguration = () => {
     config.edgeTtsCapabilityReady = false;
     config.edgeTtsPythonPath = "";
@@ -59,7 +54,6 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     config.chatterboxFfprobePath = "";
   };
   const resetConfiguration = () => {
-    resetVideoConfiguration();
     resetEdgeTtsConfiguration();
     resetImageConfiguration();
     resetChatterboxConfiguration();
@@ -79,35 +73,6 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
       optionalAsset(components, "ffmpeg", ffmpegExecutable),
       optionalAsset(components, "ffmpeg", ffprobeExecutable)
     ]);
-
-  const configureVideo = async (signal: AbortSignal, ffmpeg?: Awaited<ReturnType<typeof optionalAsset>>) => {
-    resetVideoConfiguration();
-    await tryConfigure(
-      "视频文本解析",
-      async () => {
-        const [python, script, model] = await Promise.all([
-          optionalPython(components, "video-text"),
-          optionalAsset(components, "video-text", "scripts/video-transcribe-faster-whisper.py"),
-          optionalAsset(components, "whisper-small", "model/config.json")
-        ]);
-        if (signal.aborted || !python || !script || !model || !ffmpeg) return;
-        config.videoTextAudioExtractCommand = [
-          quote(ffmpeg.path),
-          "-nostdin -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}"
-        ].join(" ");
-        config.videoTextTranscribeCommand = [
-          quote(python.path),
-          quote(script.path),
-          "--input {input} --output {output} --metadata-output {output}.meta.json",
-          "--model",
-          quote(path.dirname(model.path)),
-          "--device cpu --compute-type int8"
-        ].join(" ");
-        config.videoTextCapabilityReady = true;
-      },
-      signal
-    );
-  };
 
   const configureEdgeTts = async (signal: AbortSignal) => {
     resetEdgeTtsConfiguration();
@@ -269,7 +234,6 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
   const configureAll = async (signal: AbortSignal) => {
     await fsp.mkdir(config.tempDir, { recursive: true });
     const [ffmpeg, ffprobe] = await resolveMediaTools();
-    await configureVideo(signal, ffmpeg);
     await configureEdgeTts(signal);
     await configureImageAi(signal);
     await configureChatterbox(signal, ffmpeg, ffprobe);
@@ -311,17 +275,9 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
 
         const controller = new AbortController();
         controllers.set(componentId, controller);
-        if (["ffmpeg", "video-text", "whisper-small"].includes(componentId)) {
-          if (componentId === "ffmpeg") config.edgeTtsFfmpegPath = (await resolveMediaTools())[0]?.path || "";
-          await configureVideo(controller.signal, (await resolveMediaTools())[0]);
-          if (
-            operation !== "uninstall" &&
-            (await areInstalled(components, ["ffmpeg", "video-text", "whisper-small"])) &&
-            !config.videoTextCapabilityReady
-          ) {
-            throw new Error("视频文本解析依赖已安装，但运行时自检未就绪");
-          }
-          if (componentId === "ffmpeg" && config.chatterboxCapabilityReady) {
+        if (componentId === "ffmpeg") {
+          config.edgeTtsFfmpegPath = (await resolveMediaTools())[0]?.path || "";
+          if (config.chatterboxCapabilityReady) {
             const [ffmpeg, ffprobe] = await resolveMediaTools();
             if (ffmpeg && ffprobe) {
               config.chatterboxFfmpegPath = ffmpeg.path;
@@ -405,13 +361,6 @@ async function isInstalled(components: ComponentManager, componentId: string) {
   return (await components.list()).some((component) => component.id === componentId && component.installed);
 }
 
-async function areInstalled(components: ComponentManager, componentIds: string[]) {
-  const statuses = await components.list();
-  return componentIds.every((componentId) =>
-    statuses.some((component) => component.id === componentId && component.installed)
-  );
-}
-
 async function optionalAsset(components: ComponentManager, componentId: string, assetPath: string) {
   try {
     return await components.resolveInstalledAsset(componentId, assetPath);
@@ -446,10 +395,6 @@ function isUnavailableComponent(error: unknown) {
     error instanceof ComponentManagerError &&
     (error.code === "COMPONENT_NOT_FOUND" || error.code === "COMPONENT_NOT_INSTALLED")
   );
-}
-
-function quote(value: string) {
-  return `"${value.replaceAll('"', '\\"')}"`;
 }
 
 async function startWorker(options: {

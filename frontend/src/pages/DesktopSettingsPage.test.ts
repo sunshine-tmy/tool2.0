@@ -14,7 +14,7 @@ vi.mock("../services/lan-access", () => ({
       status: "ready",
       urls: ["http://192.168.1.2:5173/"],
       port: 5173,
-      toolCount: 8,
+      toolCount: 6,
       message: "可使用业务模块"
     }))
   }

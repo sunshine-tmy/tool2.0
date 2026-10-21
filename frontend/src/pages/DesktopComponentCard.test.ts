@@ -22,7 +22,7 @@ function component(overrides: Partial<ComponentPackageStatus> = {}): ComponentPa
     displayName: "FFmpeg",
     groupId: "shared",
     purpose: "媒体编解码",
-    taskToolIds: ["video-text"],
+    taskToolIds: ["edge-tts"],
     dependencyIds: [],
     dependentIds: [],
     installConditions: [],
@@ -118,11 +118,11 @@ describe("DesktopComponentCard", () => {
 
   it("prevents removing a shared dependency while another package depends on it", () => {
     const wrapper = mountCard({
-      component: component({ installed: true, state: "ready", health: "healthy", dependentIds: ["video-text"] })
+      component: component({ installed: true, state: "ready", health: "healthy", dependentIds: ["edge-tts"] })
     });
     const uninstall = wrapper.findAll("button").find((button) => button.text().includes("卸载"));
     expect(uninstall?.attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("被其他能力依赖：video-text");
+    expect(wrapper.text()).toContain("被其他能力依赖：edge-tts");
   });
 
   it("shows download progress and exposes cancel only during download", async () => {

@@ -9,7 +9,6 @@ export type AppConfig = {
   runtime: RuntimeLayout;
   /** When true, optional desktop runtimes may only come from verified component generations. */
   desktopManagedCapabilities: boolean;
-  videoTextCapabilityReady: boolean;
   edgeTtsCapabilityReady: boolean;
   imageAiCapabilityReady: boolean;
   chatterboxCapabilityReady: boolean;
@@ -37,17 +36,6 @@ export type AppConfig = {
   lanTransferWebPort: number;
   lanTransferPin?: string;
   lanTransferGuestMode: "full" | "upload-only" | "download-only" | "disabled";
-  videoTextUploadsDir: string;
-  videoTextAudioDir: string;
-  videoTextResultsDir: string;
-  videoTextAudioExtractCommand: string;
-  videoTextTranscribeCommand?: string;
-  shortVideoParseApiUrl: string;
-  shortVideoParseTimeoutMs: number;
-  shortVideoCacheTtlMs: number;
-  shortVideoParseRetries: number;
-  shortVideoTikTokOembedFallback: boolean;
-  shortVideoXhsLocalFallback: boolean;
   xhsArchiveDir: string;
   xhsArchiveItemsDir: string;
   xhsArchiveStagingDir: string;
@@ -135,7 +123,6 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
   return {
     runtime,
     desktopManagedCapabilities,
-    videoTextCapabilityReady: false,
     edgeTtsCapabilityReady: false,
     imageAiCapabilityReady: false,
     chatterboxCapabilityReady: false,
@@ -202,46 +189,6 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     ),
     lanTransferPin: getEnv("LAN_TRANSFER_PIN", fileEnv, environment)?.trim() || undefined,
     lanTransferGuestMode: readLanTransferGuestMode(getEnv("LAN_TRANSFER_GUEST_MODE", fileEnv, environment)),
-    videoTextUploadsDir: path.join(storageRoot, "video-text", "uploads"),
-    videoTextAudioDir: path.join(storageRoot, "video-text", "audio"),
-    videoTextResultsDir: path.join(storageRoot, "video-text", "results"),
-    videoTextAudioExtractCommand:
-      runtimeEnv("VIDEO_TEXT_AUDIO_EXTRACT_COMMAND")?.trim() ||
-      (desktopManagedCapabilities ? "" : "ffmpeg -y -i {input} -vn -acodec pcm_s16le -ar 16000 -ac 1 {output}"),
-    videoTextTranscribeCommand: runtimeEnv("VIDEO_TEXT_TRANSCRIBE_COMMAND")?.trim() || undefined,
-    shortVideoParseApiUrl:
-      getEnv("SHORT_VIDEO_PARSE_API_URL", fileEnv, environment)?.trim() || "https://api.bugpk.com/api/short_videos",
-    shortVideoParseTimeoutMs: readInteger(
-      "SHORT_VIDEO_PARSE_TIMEOUT_MS",
-      getEnv("SHORT_VIDEO_PARSE_TIMEOUT_MS", fileEnv, environment),
-      20000,
-      1000,
-      120000
-    ),
-    shortVideoCacheTtlMs: readInteger(
-      "SHORT_VIDEO_CACHE_TTL_MS",
-      getEnv("SHORT_VIDEO_CACHE_TTL_MS", fileEnv, environment),
-      5 * 60 * 1000,
-      0,
-      60 * 60 * 1000
-    ),
-    shortVideoParseRetries: readInteger(
-      "SHORT_VIDEO_PARSE_RETRIES",
-      getEnv("SHORT_VIDEO_PARSE_RETRIES", fileEnv, environment),
-      1,
-      0,
-      3
-    ),
-    shortVideoTikTokOembedFallback: readBoolean(
-      "SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK",
-      getEnv("SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK", fileEnv, environment),
-      true
-    ),
-    shortVideoXhsLocalFallback: readBoolean(
-      "SHORT_VIDEO_XHS_LOCAL_FALLBACK",
-      getEnv("SHORT_VIDEO_XHS_LOCAL_FALLBACK", fileEnv, environment),
-      true
-    ),
     xhsArchiveDir,
     xhsArchiveItemsDir: path.join(xhsArchiveDir, "items"),
     xhsArchiveStagingDir: path.join(xhsArchiveDir, "staging"),
@@ -494,14 +441,6 @@ function readInteger(
     throw new Error(`${name} must be an integer between ${min} and ${max}`);
   }
   return parsed;
-}
-
-function readBoolean(name: string, value: string | undefined, fallback: boolean) {
-  if (value === undefined || value.trim() === "") return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
-  if (normalized === "false" || normalized === "0" || normalized === "no") return false;
-  throw new Error(`${name} must be true or false`);
 }
 
 function readLoopbackWorkerUrl(name: string, value: string | undefined, fallback: string) {

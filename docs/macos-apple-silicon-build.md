@@ -1,6 +1,6 @@
 # Apple Silicon macOS 内部测试包
 
-本文记录 Windows 桌面版向 Apple Silicon macOS 的迁移边界和可重复构建顺序。当前代码包含 macOS 桌面壳、能力包平台隔离和若干 Mac 原生资产准备器；**它尚不等于七模块可用的发布包**。必须先在 Apple Silicon Mac 构建、签名、安装并实测全部必需能力包，再将 Mac feed 嵌入应用。
+本文记录 Windows 桌面版向 Apple Silicon macOS 的迁移边界和可重复构建顺序。当前代码包含 macOS 桌面壳、能力包平台隔离和若干 Mac 原生资产准备器；**它尚不等于全部业务模块可用的发布包**。必须先在 Apple Silicon Mac 构建、签名、安装并实测全部必需能力包，再将 Mac feed 嵌入应用。
 
 ## 首版范围
 
@@ -32,23 +32,21 @@ DMG 输出到 `apps/desktop/out/mac-arm64/EcommerceToolbox-mac-arm64.dmg`。也�
 
 所有以下准备、签名、打包操作都必须在 Apple Silicon 原生构建机完成。Windows wheel、Windows 浏览器与现有 `win32-x64` manifest 不得改名后复用。`.package/` 是本机临时工作区，不应提交 Git。
 
-Mac 首版有 11 个可构建的受管能力 ID：
+Mac 首版有 9 个可构建的受管能力 ID：
 
 | 能力 ID           | Mac 资产要点                                                                |
 | ----------------- | --------------------------------------------------------------------------- |
-| `python-311`      | Python 3.11 共享运行时；图片 AI、视频转写、配音使用                         |
+| `python-311`      | Python 3.11 共享运行时；图片 AI、配音使用                                   |
 | `python-312`      | Python 3.12 共享运行时；小红书归档/翻译使用                                 |
 | `ffmpeg`          | 从固定 FFmpeg 官方源码在 Mac 原生构建静态 `ffmpeg`/`ffprobe`                |
-| `whisper-small`   | 固定 revision 的 Whisper small 模型；可供转写能力离线使用                   |
 | `edge-tts`        | Python 3.11 与 Mac wheelhouse                                               |
-| `video-text`      | Python 3.11、faster-whisper 与 FFmpeg                                       |
 | `image-ai`        | Python 3.11、CPU PyTorch/Paddle、固定模型及哈希 wheelhouse                  |
 | `chatterbox`      | Python 3.11、Chatterbox CPU wheelhouse 与固定声学模型                       |
 | `xhs-archive`     | Python 3.12、XHS-Downloader 固定源码和 Mac wheelhouse                       |
 | `xhs-translation` | Python 3.12、CTranslate2 CPU wheelhouse 与固定 OPUS-MT 模型                 |
 | `xhs-browser`     | Playwright 固定版本对应的 Apple Silicon Chromium；系统 Chrome/Edge 可选复用 |
 
-`chatterbox-cuda` 不属于 Mac 首版。图片压缩、短视频公开链接解析及局域网传输没有独立 Python 能力包，但仍须在 Mac 上验证真实模块任务和防火墙/手机访问。
+`chatterbox-cuda` 不属于 Mac 首版。图片压缩及局域网传输没有独立 Python 能力包，但仍须在 Mac 上验证真实模块任务和防火墙/手机访问。
 
 ### 2.1 Python 与依赖锁
 
@@ -80,9 +78,7 @@ pnpm components:lock-macos-dependencies \
 
 ```sh
 pnpm components:prepare-ffmpeg -- --stage .package/stage/ffmpeg
-pnpm components:prepare-whisper-small -- --stage .package/stage/whisper-small
 pnpm components:prepare-edge-tts -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/edge-tts
-pnpm components:prepare-video-text -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/video-text
 pnpm components:prepare-image-ai -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/image-ai
 pnpm components:prepare-chatterbox -- --python .package/stage/python-311/python/bin/python3.11 --stage .package/stage/chatterbox
 pnpm components:prepare-xhs-archive -- --python .package/stage/python-312/python/bin/python3.12 --archive .package/downloads/xhs-downloader-afaf2fb459980fccef9eec74e304a39af2c49cab.zip --stage .package/stage/xhs-archive
@@ -115,7 +111,7 @@ pnpm components:package -- \
   --signing-key-file <安全保存的 Ed25519 私钥文件>
 ```
 
-全部 11 个包上传并完成远端摘要核对后，在 Mac 构建机生成并检查 Mac 专属目录：
+全部 9 个包上传并完成远端摘要核对后，在 Mac 构建机生成并检查 Mac 专属目录：
 
 ```sh
 pnpm components:catalog -- --platform darwin-arm64 --feed .package/macos-component-feed
@@ -133,13 +129,11 @@ pnpm components:catalog -- --platform darwin-arm64 --feed .package/macos-compone
 | -------------- | -------------------------------------------------------------------------------------- |
 | 图片压缩       | 压缩 JPG、PNG、WebP 并检查结果与历史记录                                               |
 | AI 图片处理    | CPU 推理完成一次修复、增强、抠图或 OCR；模型自检通过                                   |
-| 视频文本解析   | 由 FFmpeg 提取音频，Whisper small 离线转写并导出                                       |
 | 多国语言配音   | Edge-TTS 在线生成；Chatterbox CPU 成功克隆马来语/英语/巴葡短音频；界面不出现 CUDA 选项 |
-| 短视频解析     | 验收分享链接解析及“提取文案”联动；系统浏览器登录路径不依赖 PowerShell                  |
 | 小红书归档     | 实测登录、归档、媒体保存、离线翻译与受管 Chromium 启动                                 |
 | 局域网文件传输 | Mac 防火墙允许后，用 iPhone/Android 扫码访问、上传、下载和图文快传                     |
 
-安装、自检、在线安装/离线导入、重装、卸载和拒绝异平台包都要在真实 Mac 上通过。若任一必需资产、模块真实任务或权限检查失败，暂停发布“七模块可用”版本，并将问题作为该阶段阻塞项处理。
+安装、自检、在线安装/离线导入、重装、卸载和拒绝异平台包都要在真实 Mac 上通过。若任一必需资产、模块真实任务或权限检查失败，暂停发布“全部业务模块可用”版本，并将问题作为该阶段阻塞项处理。
 
 ## 当前实现与后续明确不做项
 

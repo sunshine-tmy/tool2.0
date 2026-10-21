@@ -18,7 +18,6 @@ const LEGACY_MARKERS = [
   "edge-tts",
   "chatterbox",
   "audio-library",
-  "video-text",
   "uploads",
   "outputs"
 ];

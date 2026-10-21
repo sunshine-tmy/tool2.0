@@ -11,15 +11,12 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const sharedDist = path.join(repoRoot, "packages", "shared", "dist");
 const backendDist = path.join(repoRoot, "backend", "dist");
 
-await assertCleanOutput(sharedDist, ["index.js", "index.d.ts", "short-video.js", "video-text.js"]);
+await assertCleanOutput(sharedDist, ["index.js", "index.d.ts"]);
 await assertCleanOutput(backendDist, ["app.js", "server.js"]);
 
 const shared = await importFile(path.join(sharedDist, "index.js"));
 assert.equal(typeof shared.ok, "function", "shared dist must export ok()");
 assert.equal(typeof shared.listTools, "function", "shared dist must export listTools()");
-
-const videoText = await importFile(path.join(sharedDist, "video-text.js"));
-assert.equal(typeof videoText.parseTranscriptCues, "function", "video-text subpath must be importable");
 
 const temporaryStorage = await mkdtemp(path.join(os.tmpdir(), "toolbox-build-smoke-"));
 const previousStorageRoot = process.env.STORAGE_ROOT;

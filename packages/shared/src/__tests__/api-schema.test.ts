@@ -28,8 +28,6 @@ describe("core api schemas", () => {
         status: "ok",
         name: "toolbox-api",
         deploymentMode: "local",
-        videoText: { audioExtractorConfigured: true, transcriberConfigured: false },
-        shortVideo: { providerConfigured: true },
         xhsArchive: { providerConfigured: false, translationProviderConfigured: false },
         imageAi: { deploymentUsage: "commercial" },
         edgeTts: { retentionDays: 3 },

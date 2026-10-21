@@ -55,14 +55,6 @@ export const cleanupDefinitions = [
     targets: ["storage/lan-transfer"]
   },
   {
-    id: "video-text",
-    label: "视频文案运行数据",
-    risk: "medium",
-    requiresStop: true,
-    defaults: false,
-    targets: ["storage/video-text"]
-  },
-  {
     id: "voice",
     // 保存音色是可复用的用户资产；全量清理只删除可重新生成的任务和批次产物。
     label: "多国语言配音任务数据",
@@ -70,14 +62,6 @@ export const cleanupDefinitions = [
     requiresStop: true,
     defaults: false,
     targets: ["storage/edge-tts", "storage/chatterbox/tasks", "storage/chatterbox/batches"]
-  },
-  {
-    id: "short-video",
-    label: "短视频解析缓存",
-    risk: "low",
-    requiresStop: false,
-    defaults: false,
-    targets: ["storage/short-video"]
   },
   {
     id: "metadata",

@@ -37,7 +37,6 @@ describe("desktop LAN application access", () => {
         "/api/v1/tools",
         "/api/v1/tools/image-ai/health",
         "/api/v1/tools/lan-transfer/info",
-        "/api/v1/tools/video-text/history",
         "/api/v1/tools/edge-tts/health",
         "/api/v1/tools/edge-tts/chatterbox/batches",
         "/api/v1/tools/audio-library/items",
@@ -48,16 +47,6 @@ describe("desktop LAN application access", () => {
         expect(response.status, route).toBe(route === "/api/v1/tools/image-ai/health" ? 503 : 200);
         expect((await response.json()).success, route).toBe(route !== "/api/v1/tools/image-ai/health");
       }
-      // 不访问外网：非法业务输入应到达解析器并返回校验错误，而不是被网关拦成 404。
-      expect(
-        (
-          await fetch(`${origin}/api/v1/tools/short-video/parse`, {
-            method: "POST",
-            headers: { origin, "content-type": "application/json" },
-            body: "{}"
-          })
-        ).status
-      ).toBe(400);
       const image = await sharp({ create: { width: 12, height: 12, channels: 3, background: "#ff0000" } })
         .png()
         .toBuffer();
@@ -116,7 +105,7 @@ describe("desktop LAN application access", () => {
         status: "ready",
         urls: [`http://192.168.1.241:${gateway.port}/`],
         port: gateway.port,
-        toolCount: 8
+        toolCount: 6
       });
       vi.mocked(os.networkInterfaces).mockReturnValue({});
       expect((await (await fetch(`${origin}/api/v1/lan-access`)).json()).data).toMatchObject({

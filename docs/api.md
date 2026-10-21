@@ -4,7 +4,7 @@
 
 ## 系统
 
-- `GET /api/v1/health`：服务、转写、短视频 Provider 和图片 AI 配置状态。
+- `GET /api/v1/health`：主服务、配音、归档与图片 AI 配置状态。
 - `GET /health/live`：仅表示进程存活；供进程守护使用。
 - `GET /health/ready`：检查 SQLite 和必需 storage 目录；依赖不可用时返回 `503 NOT_READY`。
 - `GET /api/v1/tools`：工具注册表。
@@ -150,28 +150,6 @@
 
 每个 `segments` 项可包含最多 2,000 字符的 `referenceTranslation?`。该字段作为中文参考元数据保存，不发送给 Worker，也不参与音频生成或列表摘要；它会用于生成独立中文 SRT 和双语 SRT。单段重新生成接口也可传入该字段并同步重建字幕。
 
-## 视频文本解析
-
-- `POST /api/v1/tools/video-text/tasks`：字段 `file`，上传视频并执行本地转写。
-- `POST /api/v1/tools/video-text/tasks/from-url`：JSON `{ url, fileName? }`。
-- `GET /api/v1/tools/video-text/remote-video?url=...`：为浏览器代理远程视频，支持 Range。
-- `GET /api/v1/tools/video-text/tasks/:taskId`：任务及可选结果。
-- `GET /api/v1/tools/video-text/tasks/:taskId/result`：结果详情。
-- `GET /api/v1/tools/video-text/tasks/:taskId/export?format=txt|srt|json`：导出结果。
-- `DELETE /api/v1/tools/video-text/tasks/:taskId`：删除任务和结果。
-- `GET /api/v1/tools/video-text/history`：`keyword/page/pageSize` 历史查询。
-- `GET /api/v1/tools/video-text/history/:taskId`：历史详情。
-- `DELETE /api/v1/tools/video-text/history/:taskId`：删除历史和关联文件。
-
-任务 ID 只允许 1–64 位字母、数字、下划线和连字符。转写命令不经过 shell；上传视频、WAV 和转写中间文件在任务结束后删除。
-
-## 短视频
-
-- `POST /api/v1/tools/short-video/parse`：JSON `{ input, platform? }`，平台为 `auto | douyin | xiaohongshu | tiktok`。
-- `GET /api/v1/tools/short-video/download?url=...&filename=...`：以附件形式代理媒体。
-
-分享链接只接受抖音、小红书、TikTok 主域或真实子域，并校验所选平台与链接域名一致。解析结果默认短缓存 5 分钟；TikTok 主解析失败时可降级到官方 oEmbed 预览。远程媒体统一限制为 HTTP(S) 80/443、无凭证、非私网地址、最多 3 次逐跳验证重定向、默认 120 秒与 2 GiB。
-
 ## 多媒体内容归档（中性接口，开发验收中）
 
 基础路径 `/api/v1/tools/media-archive`。当前开发分支的归档页面已消费下列中性接口，支持两平台本地浏览、翻译、截帧与导出；抖音在线获取入口仍受正式能力发布、macOS 及最终安装包验收门禁保护，不能据此宣称安装版抖音已可用。抖音仅处理可公开访问的作品。小红书原有运行时仍使用独立兼容接口。
@@ -228,9 +206,6 @@
 | `CHATTERBOX_CONSENT_REQUIRED`                                     | 未确认拥有合法声音授权           |
 | `CHATTERBOX_REFERENCE_DURATION_INVALID`                           | 参考音频不在 5–30 秒范围         |
 | `CHATTERBOX_QUEUE_FULL`                                           | 本地声音克隆队列已满             |
-| `VIDEO_DOWNLOAD_FAILED`                                           | 远程地址被拒绝、超时或响应异常   |
-| `SHORT_VIDEO_PROVIDER_UNAVAILABLE`                                | 第三方解析服务不可用             |
-| `SHORT_VIDEO_PLATFORM_MISMATCH`                                   | 选择的平台与分享链接不匹配       |
 | `XHS_AUTH_REQUIRED`                                               | 内容不完整，需要登录后重试       |
 | `XHS_MEDIA_DOWNLOAD_PARTIAL`                                      | 部分媒体失败，旧存档保持不变     |
 | `XHS_STORAGE_QUOTA_EXCEEDED`                                      | 小红书存档空间不足               |

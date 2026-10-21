@@ -29,8 +29,7 @@ export function reject(code: string, message: string, status = 400): never {
 }
 const clone = <T>(value: T): T => structuredClone(value);
 const normalized = (value: string) => value.normalize("NFKC").trim().toLocaleLowerCase();
-export const validCatalog = (value: unknown): value is AudioLibraryCatalog =>
-  Value.Check(AudioLibraryCatalogSchema, value);
+const validCatalog = (value: unknown): value is AudioLibraryCatalog => Value.Check(AudioLibraryCatalogSchema, value);
 /** 仅读取旧清单/备份时移除退役字段，其他未知字段仍交由严格 Schema 拒绝。 */
 export function readCatalog(value: unknown): AudioLibraryCatalog | undefined {
   if (!value || typeof value !== "object" || !Array.isArray((value as { items?: unknown }).items)) return undefined;

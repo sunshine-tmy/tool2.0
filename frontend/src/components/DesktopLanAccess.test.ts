@@ -15,7 +15,7 @@ beforeEach(() => {
     status: "ready",
     urls: ["http://192.168.1.241:54321/"],
     port: 54321,
-    toolCount: 8,
+    toolCount: 6,
     message: "业务模块可用"
   });
   mocks.copy.mockResolvedValue(undefined);
@@ -49,7 +49,7 @@ describe("desktop LAN address entry", () => {
         status: "no-network",
         urls: [],
         port: 54321,
-        toolCount: 8,
+        toolCount: 6,
         message: "未检测到局域网地址"
       });
       await wrapper.get('[aria-label="刷新局域网地址"]').trigger("click");

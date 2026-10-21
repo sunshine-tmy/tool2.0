@@ -82,19 +82,19 @@ describe("componentApi", () => {
   });
 
   it("resolves missing shared dependencies and requires every package to be healthy", () => {
-    const worker = componentStatus("video-worker", ["video-text"], ["python-311"]);
+    const worker = componentStatus("edge-worker", ["edge-tts"], ["python-311"]);
     const python = componentStatus("python-311", []);
-    const missing = getToolComponentReadiness("video-text", [worker, python]);
+    const missing = getToolComponentReadiness("edge-tts", [worker, python]);
     expect(missing.registered).toBe(true);
-    expect(missing.missing.map((item) => item.id)).toEqual(["video-worker", "python-311"]);
+    expect(missing.missing.map((item) => item.id)).toEqual(["edge-worker", "python-311"]);
 
-    const ready = getToolComponentReadiness("video-text", [
-      componentStatus("video-worker", ["video-text"], ["python-311"], true),
+    const ready = getToolComponentReadiness("edge-tts", [
+      componentStatus("edge-worker", ["edge-tts"], ["python-311"], true),
       componentStatus("python-311", [], [], true)
     ]);
     expect(ready.missing).toEqual([]);
     expect(ready.unresolvedIds).toEqual([]);
-    expect(getToolComponentReadiness("edge-tts", [worker, python]).registered).toBe(false);
+    expect(getToolComponentReadiness("image-ai", [worker, python]).registered).toBe(false);
   });
 
   it("subscribes to typed progress events and closes the stream", () => {

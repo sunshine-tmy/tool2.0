@@ -34,21 +34,17 @@
 | 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress`  | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                                                    |
 | AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`      | 去水印、清晰度增强、商品图抠图，本地模型推理                                                              |
 | 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*`  | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理                               |
-| 视频文本解析   | `/tools/video-text`     | `/api/v1/tools/video-text/*`    | 本地音频提取、Whisper 转写、时间轴、摘要、历史和导出                                                      |
 | 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                                                            |
 | 直播音频库     | `/tools/audio-library`  | `/api/v1/tools/audio-library/*` | 克隆结果一键永久归档、本地上传、双语检索、分类分组、队列播放与备份恢复；[使用说明](docs/audio-library.md) |
-| 短视频解析     | `/tools/short-video`    | `/api/v1/tools/short-video/*`   | 抖音/小红书/TikTok 公开分享链接解析及媒体下载代理                                                         |
 | 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书与抖音本地存档浏览、翻译、截帧及导出；抖音在线获取待发布验收                                        |
-
-短视频解析会把分享链接发送给配置的第三方解析服务；其可用性、隐私政策和使用条款不由本项目控制。
 
 ## 选择使用方式
 
-| 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                   |
-| ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装 |
-| Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表七模块可用      |
-| Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                        |
+| 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                    |
+| ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装  |
+| Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表全部业务模块可用 |
+| Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                         |
 
 桌面版安装、数据迁移、能力离线导入、升级和卸载说明见[桌面应用使用帮助](./docs/desktop-application-help.md)。桌面安装器是交互式安装程序，不是免安装便携版；安装时可选择目录，但应选择当前 Windows 用户有写入权限的位置。
 
@@ -64,7 +60,6 @@ Browser
        └─ /api（开发/预览由 Vite 反向代理）
             └─ Fastify + TypeScript
                  ├─ Sharp：图片压缩与输出清洗
-                 ├─ ffmpeg + faster-whisper：视频转写（可选）
                  ├─ Python AI Worker：抠图、增强、去水印（可选）
                  ├─ Chatterbox V3 Worker：参考音色克隆（可选）
                  ├─ XHS-Downloader Worker：开发版可按需配置；桌面版由能力管理安装
@@ -96,8 +91,8 @@ Web/开发版按功能可选：
 
 - PowerShell 5.1+：Windows 一键启动与环境安装脚本
 - ffmpeg：视频音频提取
-- Python 3.10–3.12（推荐 3.11）：视频转写和图片 AI
-- NVIDIA CUDA：可显著加速 Whisper、Real-ESRGAN 等模型；没有 CUDA 时可使用 CPU 配置
+- Python 3.10–3.12（推荐 3.11）：配音和图片 AI
+- NVIDIA CUDA：可显著加速 Chatterbox、Real-ESRGAN 等模型；没有 CUDA 时可使用 CPU 配置
 
 Windows 桌面安装版不要求用户预装 Node.js 或 Python；可选能力会在设置中显示所需运行时、下载量和空间估算。模型和大型 Worker 不包含在基础安装器内。
 
@@ -107,7 +102,7 @@ Windows 桌面安装版不要求用户预装 Node.js 或 Python；可选能力�
 
 1. 从 [GitHub Releases](https://github.com/sunshine-tmy/tool2.0/releases) 下载 `EcommerceToolboxSetup.exe` 并运行。
 2. 在安装向导中选择当前用户可写的安装目录。此安装模式不支持 Program Files 等受保护目录。
-3. 从桌面快捷方式或开始菜单启动。需要 AI、转写、归档、翻译或克隆配音时，进入“设置 → 能力管理”按需安装。
+3. 从桌面快捷方式或开始菜单启动。需要 AI、归档、翻译或克隆配音时，进入“设置 → 能力管理”按需安装。
 
 应用管理的数据默认保存在 `<安装目录>\data`。如果检测到旧版 `%LOCALAPPDATA%\EcommerceToolboxData`，首次启动会先询问是否迁移；旧源保留不删除。普通卸载、静默卸载和升级默认保留数据，只有在交互卸载中主动选择并再次确认才会删除。详见[桌面应用使用帮助](./docs/desktop-application-help.md)。
 
@@ -182,11 +177,6 @@ Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windo
 | `LAN_TRANSFER_GUEST_MODE`               | `full`                  | `full`、`upload-only`、`download-only` 或 `disabled` |
 | `REMOTE_FETCH_TIMEOUT_MS`               | `120000`                | 远程媒体建立连接并收到响应头的超时                   |
 | `REMOTE_MEDIA_MAX_BYTES`                | `2147483648`            | 远程媒体最大 2 GiB；同时校验响应头和实际流量         |
-| `SHORT_VIDEO_PARSE_API_URL`             | BugPk 示例地址          | 可信的短视频解析服务                                 |
-| `SHORT_VIDEO_PARSE_TIMEOUT_MS`          | `20000`                 | 单次短视频解析请求超时                               |
-| `SHORT_VIDEO_CACHE_TTL_MS`              | `300000`                | 解析结果本地短缓存时间；`0` 表示关闭                 |
-| `SHORT_VIDEO_PARSE_RETRIES`             | `1`                     | 网络、限流或 5xx 的额外重试次数                      |
-| `SHORT_VIDEO_TIKTOK_OEMBED_FALLBACK`    | `true`                  | 主解析失败时启用 TikTok 官方预览降级                 |
 | `XHS_PROVIDER_URL`                      | 空                      | 可选的兼容解析适配器地址；留空使用隔离本机运行时     |
 | `XHS_PROVIDER_PORT`                     | `5556`                  | 本机小红书解析 Worker 端口，仅监听 `127.0.0.1`       |
 | `XHS_INSTALL_TIMEOUT_MS`                | `1200000`               | 首次安装小红书解析环境的最长等待时间                 |
@@ -257,23 +247,6 @@ Edge-TTS 不需要 API Key，但会把输入文案发送到微软在线语音服
 
 每段文案可以额外保存最多 2,000 字符的中文翻译。该翻译不参与语音生成和文案字符统计，原文 SRT、中文 SRT 和原文在上中文在下的双语 SRT 分开提供下载，ZIP 内也会同时包含。字幕以批次随机 ID 的前 8 位作为稳定哈希后缀，例如 `马来语-aB12cd34.srt`、`中文字幕-aB12cd34.srt` 与 `双语字幕-aB12cd34.srt`；总音频命名为 `总音频-aB12cd34.mp3`。选择按句分段时，原文与中文句数相同会逐句对应；句数不同时，该文案段的中文字幕及双语字幕会合并为一个完整字幕块，避免遗漏或错配中文。
 
-### 视频文本解析（Web/开发版）
-
-1. 安装 ffmpeg，并确认 `ffmpeg -version` 可运行。
-2. 创建独立 Python 环境：
-
-```powershell
-.\scripts\setup-video-text.ps1 -Python py
-```
-
-3. 在 `.env` 中设置转写命令。桌面版请改为在“设置 → 能力管理”安装并检查视频文本解析能力，不使用以下开发环境配置步骤。
-
-```dotenv
-VIDEO_TEXT_TRANSCRIBE_COMMAND=.venv-video-text/Scripts/python.exe scripts/video-transcribe-faster-whisper.py --input {input} --output {output} --model large-v3-turbo --language zh --device cuda --compute-type int8_float16
-```
-
-无 CUDA 时改为 `--device cpu --compute-type int8`。命令模板会被解析为独立参数并通过 `execFile` 执行，不经过 shell；请不要使用管道、重定向或 `&&`。
-
 ### AI 图片处理
 
 以下脚本用于 Web/开发版源码环境；桌面版需在“设置 → 能力管理”安装 AI 图片处理能力。
@@ -296,7 +269,7 @@ pnpm dev:ai
 | `pnpm dev:web` / `pnpm dev:api`     | 单独启动某一侧                                       |
 | `pnpm test`                         | 运行全部 TypeScript/Vue 测试                         |
 | `pnpm coverage`                     | 执行 75/65 全局覆盖率门槛                            |
-| `pnpm test:python`                  | 运行无需模型的 faster-whisper 单元测试               |
+| `pnpm test:python`                  | 运行无需模型的 Worker 单元测试                       |
 | `pnpm lock:python`                  | 生成 Python 3.11/Windows x64 Worker 哈希锁           |
 | `pnpm audit:python`                 | 审计四组 Python Worker 运行时依赖                    |
 | `pnpm lint`                         | ESLint（TypeScript + Vue）                           |
@@ -337,7 +310,7 @@ pnpm desktop:make
 
 ## Apple Silicon macOS 内部测试包
 
-当前内部流程面向 Apple Silicon、macOS 13+，通过 GitHub Actions 中的 `macOS Apple Silicon internal desktop build` 手动生成不含 Developer ID 签名/公证的测试 DMG（使用 ad-hoc 签名）。该流程只验证应用壳、桌面资源、类型和桌面单测；它不会自动制作或发布 Python、FFmpeg、AI 模型、浏览器等能力包。Mac 能力目录现为空，因此不能把该 DMG 宣称为“七模块可用”。完整步骤和阶段门禁请按[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)执行。
+当前内部流程面向 Apple Silicon、macOS 13+，通过 GitHub Actions 中的 `macOS Apple Silicon internal desktop build` 手动生成不含 Developer ID 签名/公证的测试 DMG（使用 ad-hoc 签名）。该流程只验证应用壳、桌面资源、类型和桌面单测；它不会自动制作或发布 Python、FFmpeg、AI 模型、浏览器等能力包。Mac 能力目录现为空，因此不能把该 DMG 宣称为“全部业务模块可用”。完整步骤和阶段门禁请按[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)执行。
 
 ## 生产构建与部署
 
@@ -372,7 +345,6 @@ Standalone 不是第二套源码。运行 `pwsh ./scripts/package-standalone.ps1
 - API 默认不反射任意 Origin；`CORS_ORIGINS` 只接受精确来源。
 - 远程媒体只允许 HTTP(S) 80/443，不允许凭证；会解析 A/AAAA，拒绝环回、私网、链路本地和保留地址，并逐跳复查最多 3 次重定向。
 - 图片压缩限制 20 MiB/4000 万像素，真实内容由 Sharp 解码校验，输出采用流式下载。
-- 视频任务的原视频、WAV 和转写中间文件在处理结束后立即删除，仅保留结果 JSON。
 - Chatterbox 参考音频只在本机标准化和推理，生成完成或失败后立即删除；服务端强制要求声明授权来源并确认合法使用权。
 - 局域网分片先合并到同盘临时文件，校验大小并 `fsync` 后原子提交；失败不会破坏原分片。
 - 图文快传按纯文本展示，图片限制为 JPG/PNG/GIF/WebP/AVIF 并校验文件签名；图片随便签过期或删除。
@@ -432,10 +404,6 @@ GET /api/v1/health
 
 Web/开发版请确认 Windows 防火墙允许 5173、设备处于同一网络，并使用启动日志检测到的 LAN IP。默认不需要开放 3100。桌面版局域网访问也应使用应用显示的地址，并确认 Windows 防火墙允许前端端口。
 
-### 视频解析提示未配置转写
-
-确认 ffmpeg、`.venv-video-text` 和 `VIDEO_TEXT_TRANSCRIBE_COMMAND`。先用 CPU `int8` 验证链路，再启用 CUDA。
-
 ### 图片 AI 健康检查失败
 
 Web/开发版查看 `.logs/image-ai-worker.error.log`，确认 `.venv-image-ai`、模型目录、磁盘空间和 `DEPLOYMENT_USAGE`。桌面版请在“设置 → 能力管理”检查安装状态与空间；Worker 冷启动可能需要几十秒。
@@ -454,4 +422,4 @@ Web/开发版查看 `.logs/image-ai-worker.error.log`，确认 `.venv-image-ai`�
 
 ## 项目范围与第三方资产
 
-本项目当前按组织内部使用维护。依赖来源、版本、签名清单、SPDX/SBOM 和第三方说明用于资产追溯、故障排查与内部运维，不是用户安装或内部验收的审批步骤。短视频解析等外部服务的数据传输边界见[数据、安全与隐私](#数据安全与隐私)。
+本项目当前按组织内部使用维护。依赖来源、版本、签名清单、SPDX/SBOM 和第三方说明用于资产追溯、故障排查与内部运维，不是用户安装或内部验收的审批步骤。在线配音等外部服务的数据传输边界见[数据、安全与隐私](#数据安全与隐私)。

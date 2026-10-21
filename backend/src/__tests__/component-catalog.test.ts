@@ -11,6 +11,13 @@ const catalogs: Array<[string, ComponentCatalog]> = [
 ];
 
 describe("embedded component catalog signatures", () => {
+  it.each(catalogs)("keeps the %s dependency graph closed after capability removal", (_platform, catalog) => {
+    const ids = new Set(catalog.manifests.map((manifest) => manifest.id));
+    for (const manifest of catalog.manifests)
+      for (const dependency of manifest.dependencyIds) expect(ids.has(dependency)).toBe(true);
+    expect([...ids]).not.toEqual(expect.arrayContaining(["video-text"]));
+    expect([...ids]).not.toEqual(expect.arrayContaining(["whisper-small"]));
+  });
   it.each(catalogs)("keeps all %s manifests verifiable", (platform, catalog) => {
     for (const manifest of catalog.manifests) {
       const publicKey = catalog.trustedPublicKeys[manifest.keyId];

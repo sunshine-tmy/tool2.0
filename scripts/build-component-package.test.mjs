@@ -353,10 +353,10 @@ describe("buildComponentPackage", () => {
     const definitionPath = await writeDefinition(
       root,
       definition({
-        id: "video-text",
+        id: "edge-tts",
         groupId: "media",
         dependencyIds: ["python-311"],
-        taskToolIds: ["video-text"],
+        taskToolIds: ["edge-tts"],
         pythonEnvironment: {
           pythonComponentId: "python-311",
           pythonExecutablePath: "python/python.exe",
