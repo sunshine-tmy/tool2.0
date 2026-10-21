@@ -75,6 +75,34 @@ describe("source bootstrap", () => {
     expect(spies.startInstall).toHaveBeenCalledTimes(1);
   });
 
+  it("labels a failed complete-phase job as failure and reports only confirmed reasons", async () => {
+    const { manager, spies } = fixture();
+    const messages: string[] = [];
+    spies.getJob.mockResolvedValue({
+      state: "failed",
+      phase: "complete",
+      errorCode: "COMPONENT_INSTALL_FAILED",
+      errorMessage: "ETIMEDOUT: secret URL https://example.com/?token=secret 中文文案",
+      progress: { downloadedBytes: 13, totalDownloadBytes: 21, processedFiles: 0, totalFiles: 3 }
+    } as ComponentJob);
+    await expect(prepareSourceComponents(manager, (message) => messages.push(message))).rejects.toThrow(
+      "ETIMEDOUT: 下载连接或分段读取超时"
+    );
+    expect(messages.at(-1)).toContain("：失败；");
+    expect(messages.at(-1)).not.toContain("：完成；");
+    expect(messages.at(-1)).toContain("下载 13/21 字节");
+    expect(spies.startInstall).toHaveBeenCalledTimes(1);
+    await expect(prepareSourceComponents(manager, () => undefined)).rejects.not.toThrow("secret");
+    spies.getJob.mockResolvedValue({
+      state: "failed",
+      phase: "complete",
+      errorCode: "COMPONENT_INSTALL_FAILED",
+      errorMessage: "private unknown Worker output",
+      progress: {}
+    } as ComponentJob);
+    await expect(prepareSourceComponents(manager, () => undefined)).rejects.toThrow("证据不足");
+  });
+
   it("rejects incomplete catalogs, active operations and cancelled initialization before writes", async () => {
     const { manager, spies, statuses } = fixture();
     statuses.pop();

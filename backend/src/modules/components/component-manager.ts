@@ -24,6 +24,7 @@ import type {
 } from "@toolbox/shared";
 import { createRemoteFetch, type RemoteFetch } from "../../security/remote-fetch";
 import { componentPlatformForRuntime } from "./component-platform";
+import { knownInstallFailure } from "./install-diagnostics";
 
 const COMPONENT_PROTOCOL_VERSION = 1;
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
@@ -1500,6 +1501,17 @@ export async function downloadComponentArchive(
       let nextRangeStart = DOWNLOAD_RANGE_BYTES;
       options.onProgress?.(downloadedBytes);
 
+      const deferred: Array<{ start: number; end: number }> = [];
+      const writeRange = async (start: number, end: number) => {
+        const result = await readArchiveRange(manifest, start, end, signal, remoteFetch);
+        if (result.response)
+          throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包下载服务未返回有效的分段响应");
+        throwIfDownloadAborted(signal);
+        await writeBufferAt(file!, result.buffer, start);
+        downloadedBytes += result.buffer.byteLength;
+        options.onProgress?.(downloadedBytes);
+      };
+
       const downloadWorker = async () => {
         while (true) {
           throwIfDownloadAborted(signal);
@@ -1507,14 +1519,17 @@ export async function downloadComponentArchive(
           if (rangeStart >= manifest.archive.bytes) return;
           nextRangeStart += DOWNLOAD_RANGE_BYTES;
           const rangeEnd = Math.min(rangeStart + DOWNLOAD_RANGE_BYTES, manifest.archive.bytes) - 1;
-          const result = await readArchiveRange(manifest, rangeStart, rangeEnd, signal, remoteFetch);
-          if (result.response) {
-            throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包下载服务未返回有效的分段响应");
+          try {
+            await writeRange(rangeStart, rangeEnd);
+          } catch (error) {
+            // Exhausted transient parallel requests do not discard already verified chunks.
+            // Integrity, protocol and user-cancellation errors must still fail immediately.
+            if (!signal.aborted && (isRetryableDownloadError(error) || error instanceof RetryableRangeReadError)) {
+              deferred.push({ start: rangeStart, end: rangeEnd });
+              return;
+            }
+            throw error;
           }
-          throwIfDownloadAborted(signal);
-          await writeBufferAt(file!, result.buffer, rangeStart);
-          downloadedBytes += result.buffer.byteLength;
-          options.onProgress?.(downloadedBytes);
         }
       };
 
@@ -1524,6 +1539,17 @@ export async function downloadComponentArchive(
       );
       try {
         await Promise.all(workers);
+        if (deferred.length) {
+          console.warn("能力包并发下载暂时失败，保留本次已完成分段，降为串行补下载；仍将校验大小和摘要。");
+          while (nextRangeStart < manifest.archive.bytes) {
+            deferred.push({
+              start: nextRangeStart,
+              end: Math.min(nextRangeStart + DOWNLOAD_RANGE_BYTES, manifest.archive.bytes) - 1
+            });
+            nextRangeStart += DOWNLOAD_RANGE_BYTES;
+          }
+          for (const range of deferred) await writeRange(range.start, range.end);
+        }
       } catch (error) {
         controller.abort(error);
         await Promise.allSettled(workers);
@@ -1559,7 +1585,9 @@ async function readArchiveRange(
       });
     } catch (error) {
       if (signal?.aborted) throw new Error("download cancelled");
-      if (attempt + 1 >= DOWNLOAD_RANGE_ATTEMPTS || !isRetryableDownloadError(error)) throw error;
+      const failure = requestSignal.aborted ? Object.assign(new Error("能力包下载超时"), { code: "ETIMEDOUT" }) : error;
+      if (attempt + 1 >= DOWNLOAD_RANGE_ATTEMPTS || !isRetryableDownloadError(failure)) throw failure;
+      reportRangeRetry(start, end, attempt);
       await delayDownloadRetry(attempt, signal);
       continue;
     }
@@ -1567,12 +1595,16 @@ async function readArchiveRange(
     if (response.status === 200 && start === 0) return { response };
     if (isRetryableDownloadStatus(response.status) && attempt + 1 < DOWNLOAD_RANGE_ATTEMPTS) {
       await response.body?.cancel().catch(() => undefined);
+      reportRangeRetry(start, end, attempt);
       await delayDownloadRetry(attempt, signal);
       continue;
     }
     if (response.status !== 206) {
       await response.body?.cancel().catch(() => undefined);
-      throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包下载服务未返回有效的分段响应");
+      throw new ComponentManagerError(
+        "COMPONENT_INSTALL_FAILED",
+        `能力包下载服务未返回有效的分段响应（HTTP ${response.status}）`
+      );
     }
 
     const expectedRangeBytes = end - start + 1;
@@ -1580,12 +1612,17 @@ async function readArchiveRange(
     try {
       return { buffer: await readExactRange(response, expectedRangeBytes, signal) };
     } catch (error) {
+      if (signal?.aborted) throw new Error("download cancelled");
+      const failure = requestSignal.aborted
+        ? Object.assign(new Error("能力包分段读取超时"), { code: "ETIMEDOUT" })
+        : error;
       if (
         attempt + 1 >= DOWNLOAD_RANGE_ATTEMPTS ||
-        (!isRetryableDownloadError(error) && !(error instanceof RetryableRangeReadError))
+        (!isRetryableDownloadError(failure) && !(failure instanceof RetryableRangeReadError))
       ) {
-        throw error;
+        throw failure;
       }
+      reportRangeRetry(start, end, attempt);
       await delayDownloadRetry(attempt, signal);
     }
   }
@@ -1595,6 +1632,10 @@ async function readArchiveRange(
 function createDownloadRequestSignal(signal?: AbortSignal) {
   const timeout = AbortSignal.timeout(DOWNLOAD_REQUEST_TIMEOUT_MS);
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
+function reportRangeRetry(start: number, end: number, attempt: number) {
+  console.warn(`能力包分段 ${start}-${end} 下载暂时失败，正在重试（${attempt + 2}/${DOWNLOAD_RANGE_ATTEMPTS}）。`);
 }
 
 function validateRangeResponse(
@@ -1881,6 +1922,8 @@ function pathExists(candidate: string) {
 }
 
 function safeErrorMessage(error: unknown) {
+  const known = knownInstallFailure(error);
+  if (known) return known;
   const message = error instanceof Error ? error.message : "能力包安装失败";
   return message
     .replace(/[A-Za-z]:\\[^\r\n'"]+/g, "[本地路径]")

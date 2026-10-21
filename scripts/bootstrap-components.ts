@@ -32,5 +32,11 @@ const manager = new ComponentManager({
   catalog: bundledComponentCatalogForRuntime(),
   selfTest: createDesktopComponentSelfTest()
 });
-await prepareSourceComponents(manager, console.log, undefined, undefined, process.argv.includes("--with-cuda"));
-console.log("基础能力已安装；尚未测试外部语音服务、平台登录或真实素材生成。");
+try {
+  await prepareSourceComponents(manager, console.log, undefined, undefined, process.argv.includes("--with-cuda"));
+  console.log("基础能力已安装；尚未测试外部语音服务、平台登录或真实素材生成。");
+} catch (error) {
+  // Only the fixed bootstrap summary is shown, not an irrelevant stack of source paths.
+  console.error(error instanceof Error ? error.message : "能力初始化失败，请运行诊断");
+  process.exitCode = 1;
+}

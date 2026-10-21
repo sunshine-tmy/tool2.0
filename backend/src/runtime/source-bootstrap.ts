@@ -1,5 +1,6 @@
 /** 串行安装全功能 CPU 基线；每个已完成的签名 generation 是独立续跑点，不信任额外成功标记。 */
 import type { ComponentManager } from "../modules/components/component-manager";
+import { installFailureAdvice } from "../modules/components/install-diagnostics";
 
 export const sourceComponentIds = [
   "python-312",
@@ -66,14 +67,20 @@ export async function prepareSourceComponents(
       signal.throwIfAborted();
       const current = await manager.getJob(job.id);
       const p = current.progress;
+      const label =
+        current.state === "failed"
+          ? "失败"
+          : current.state === "cancelled"
+            ? "已取消"
+            : (phases[current.phase] ?? current.phase);
       report(
-        `${prefix}：${phases[current.phase] ?? current.phase}；耗时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒；下载 ${p.downloadedBytes}/${p.totalDownloadBytes} 字节；文件 ${p.processedFiles}/${p.totalFiles}`
+        `${prefix}：${label}；耗时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒；下载 ${p.downloadedBytes}/${p.totalDownloadBytes} 字节；文件 ${p.processedFiles}/${p.totalFiles}`
       );
       if (current.state === "completed") break;
       if (current.state === "failed" || current.state === "cancelled") {
         // Avoid persisting/raw-printing unknown Worker output, URL credentials or user paths.
         throw new Error(
-          `${status.displayName} 安装未完成（${current.errorCode ?? current.state}），停止后续步骤；请检查网络/磁盘或运行诊断后重试`
+          `${status.displayName} 安装未完成（${current.errorCode ?? current.state}）；${installFailureAdvice(current.errorCode, current.errorMessage)}。停止后续步骤，已完成能力保留。`
         );
       }
       await wait();

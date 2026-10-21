@@ -330,6 +330,161 @@ describe("ComponentManager", () => {
     await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("keeps successful ranges and serially recovers exhausted parallel requests, including unclaimed ranges", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "serial-recovery.partial");
+    const rangeBytes = 1024 * 1024;
+    const bytes = Buffer.concat(Array.from({ length: 7 }, (_, index) => Buffer.alloc(rangeBytes, index + 1)));
+    fixture.manifest.archive.bytes = bytes.length;
+    const attempts = new Map<number, number>();
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const progress: number[] = [];
+    const remoteFetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      const [, from, to] = /^bytes=(\d+)-(\d+)$/.exec(new Headers(init?.headers).get("range")!)!;
+      const start = Number(from),
+        end = Number(to);
+      const count = (attempts.get(start) ?? 0) + 1;
+      attempts.set(start, count);
+      if (start > 0 && start <= 4 * rangeBytes && count <= 5) {
+        throw Object.assign(new Error("private network output"), { code: "ECONNRESET" });
+      }
+      return new Response(bytes.subarray(start, end + 1), {
+        status: 206,
+        headers: { "content-range": `bytes ${start}-${end}/${bytes.length}` }
+      });
+    });
+    await downloadComponentArchive(fixture.manifest, destination, { onProgress: (n) => progress.push(n) }, remoteFetch);
+    expect((await fs.readFile(destination)).equals(bytes)).toBe(true);
+    expect(attempts.get(0)).toBe(1);
+    for (let index = 1; index <= 4; index++) expect(attempts.get(index * rangeBytes)).toBe(6);
+    expect(attempts.get(5 * rangeBytes)).toBe(1);
+    expect(attempts.get(6 * rangeBytes)).toBe(1);
+    expect(progress).toEqual(Array.from({ length: 7 }, (_, index) => (index + 1) * rangeBytes));
+    expect(warnings.mock.calls.some(([message]) => message.includes("降为串行补下载"))).toBe(true);
+  }, 15000);
+
+  it("retries a body aborted by the request timeout instead of hiding it as a generic read failure", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "body-timeout.partial");
+    const bytes = await fs.readFile(fixture.archivePath);
+    const timeout = new AbortController();
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    timeoutSpy.mockReturnValueOnce(timeout.signal);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    let calls = 0;
+    const remoteFetch = vi.fn(async () => {
+      const body =
+        ++calls === 1
+          ? new ReadableStream({
+              start(controller) {
+                timeout.abort(new DOMException("timeout private output", "TimeoutError"));
+                controller.error(new DOMException("generic fetch body abort", "AbortError"));
+              }
+            })
+          : bytes;
+      return new Response(body, {
+        status: 206,
+        headers: { "content-range": `bytes 0-${bytes.length - 1}/${bytes.length}` }
+      });
+    });
+    await downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch);
+    expect(remoteFetch).toHaveBeenCalledTimes(2);
+    expect(timeoutSpy).toHaveBeenCalledWith(60000);
+    await expect(fs.readFile(destination)).resolves.toEqual(bytes);
+  });
+
+  it("never serially retries user cancellation and removes the partial archive", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "cancel-download.partial");
+    const abort = new AbortController();
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const total = 3 * 1024 * 1024;
+    fixture.manifest.archive.bytes = total;
+    const remoteFetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(Buffer.alloc(1024 * 1024), {
+          status: 206,
+          headers: { "content-range": `bytes 0-1048575/${total}` }
+        })
+      )
+      .mockImplementation(async () => {
+        abort.abort();
+        throw new DOMException("cancelled", "AbortError");
+      });
+    await expect(
+      downloadComponentArchive(fixture.manifest, destination, { signal: abort.signal }, remoteFetch)
+    ).rejects.toThrow("download cancelled");
+    expect(remoteFetch).toHaveBeenCalledTimes(2);
+    expect(warnings).not.toHaveBeenCalled();
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("bounds repeated body timeouts and retains the timeout code after final failure", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "exhausted-timeout.partial");
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(() =>
+      AbortSignal.abort(new DOMException("private", "TimeoutError"))
+    );
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const remoteFetch = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new DOMException("generic body abort", "AbortError"));
+            }
+          }),
+          {
+            status: 206,
+            headers: {
+              "content-range": `bytes 0-${fixture.manifest.archive.bytes - 1}/${fixture.manifest.archive.bytes}`
+            }
+          }
+        )
+    );
+    await expect(downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch)).rejects.toMatchObject({
+      code: "ETIMEDOUT"
+    });
+    expect(remoteFetch).toHaveBeenCalledTimes(5);
+    expect(warnings).toHaveBeenCalledTimes(4);
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15000);
+
+  it("does not downgrade an invalid later range to serial retries", async () => {
+    const fixture = await createFixture("1.0.0");
+    const destination = path.join(temporaryRoot, "invalid-later-range.partial");
+    fixture.manifest.archive.bytes = 2 * 1024 * 1024;
+    const warnings = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const remoteFetch = vi.fn(
+      async () =>
+        new Response(Buffer.alloc(1024 * 1024), {
+          status: 206,
+          headers: { "content-range": `bytes 0-1048575/${fixture.manifest.archive.bytes}` }
+        })
+    );
+    await expect(downloadComponentArchive(fixture.manifest, destination, {}, remoteFetch)).rejects.toThrow(
+      "能力包分段范围校验失败"
+    );
+    expect(remoteFetch).toHaveBeenCalledTimes(2);
+    expect(warnings).not.toHaveBeenCalled();
+    await expect(fs.access(destination)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("retains a safe nested network reason on the failed install job", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manager = createManager(fixture.manifest, fixture.archivePath, async () => {
+      throw new TypeError("https://user:secret@example.com/?token=private", {
+        cause: Object.assign(new Error("C:\\Users\\private 中文文案"), { code: "ECONNRESET" })
+      });
+    });
+    const job = await manager.startInstall("edge-tts");
+    const failed = await waitForJob(manager, job.id);
+    expect(failed.state).toBe("failed");
+    expect(failed.errorMessage).toContain("ECONNRESET");
+    expect(failed.errorMessage).not.toMatch(/secret|private|中文文案/);
+  });
+
   it("does not remove a pre-existing destination when exclusive creation fails", async () => {
     const fixture = await createFixture("1.0.0");
     const destination = path.join(temporaryRoot, "existing-download.partial");
