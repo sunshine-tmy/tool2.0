@@ -5,6 +5,7 @@ coverage/
 models/
 storage/
 .runtime/packages/
+.runtime/bootstrap/
 .package/
 .pytest_cache/
 .mypy_cache/

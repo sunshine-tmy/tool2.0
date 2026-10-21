@@ -1,6 +1,7 @@
 ﻿# 中文模块说明：工程与 Worker 脚本，负责 开发、清理、构建或发布自动化
 param(
   [switch]$NoInstall,
+  [switch]$ManagedCapabilities,
   [switch]$NoBrowser,
   [switch]$CheckOnly,
   [switch]$ForceRestart,
@@ -411,7 +412,7 @@ $existingInstanceIsOwned =
   @($frontendListeners | Where-Object { -not (Test-ProjectProcess $_ $processes) }).Count -eq 0
 
 $ChatterboxInstalled = $false
-if ((Test-Path $ChatterboxPython) -and (Test-Path $ChatterboxScript)) {
+if (-not $ManagedCapabilities -and (Test-Path $ChatterboxPython) -and (Test-Path $ChatterboxScript)) {
   & $ChatterboxPython $ChatterboxScript --check | Out-Null
   $ChatterboxInstalled = $LASTEXITCODE -eq 0
 }
@@ -444,7 +445,7 @@ if (-not $NoInstall) {
   }
 }
 
-if (-not $ChatterboxInstalled -and -not $NoInstall) {
+if (-not $ManagedCapabilities -and -not $ChatterboxInstalled -and -not $NoInstall) {
   Write-Step "Preparing Chatterbox Multilingual V3 for first use"
   Write-Host "The first startup installs the local runtime and downloads the model; later startups reuse it." -ForegroundColor Cyan
   try {
@@ -467,12 +468,12 @@ $EdgeTtsScript = Join-Path $Root "scripts\edge-tts-generate.py"
 $EdgeTtsSetup = Join-Path $Root "scripts\setup-edge-tts.ps1"
 $EdgeTtsReady = $false
 
-if ((Test-Path $EdgeTtsPython) -and (Test-Path $EdgeTtsScript)) {
+if (-not $ManagedCapabilities -and (Test-Path $EdgeTtsPython) -and (Test-Path $EdgeTtsScript)) {
   & $EdgeTtsPython $EdgeTtsScript check | Out-Null
   $EdgeTtsReady = $LASTEXITCODE -eq 0
 }
 
-if (-not $EdgeTtsReady -and -not $NoInstall -and (Test-CommandExists "python")) {
+if (-not $ManagedCapabilities -and -not $EdgeTtsReady -and -not $NoInstall -and (Test-CommandExists "python")) {
   Write-Step "Installing the optional Edge-TTS runtime"
   try {
     & $EdgeTtsSetup -Python "python"
@@ -482,7 +483,9 @@ if (-not $EdgeTtsReady -and -not $NoInstall -and (Test-CommandExists "python")) 
   }
 }
 
-if ($EdgeTtsReady) {
+if ($ManagedCapabilities) {
+  Write-Host 'Edge-TTS and AI runtimes will be resolved from signed packages by the API.' -ForegroundColor Green
+} elseif ($EdgeTtsReady) {
   Write-Host "Edge-TTS runtime ready: $EdgeTtsPython" -ForegroundColor Green
 } else {
   Write-Host "Edge-TTS runtime is unavailable; run scripts\setup-edge-tts.ps1 to enable speech generation." -ForegroundColor Yellow
@@ -501,7 +504,7 @@ $ImageAiLogDir = Join-Path $Root ".logs"
 $ImageAiOutputLog = Join-Path $ImageAiLogDir "image-ai-worker.log"
 $ImageAiErrorLog = Join-Path $ImageAiLogDir "image-ai-worker.error.log"
 
-if ((Test-Path $ImageAiPython) -and (Test-PortBusy 3210) -and -not (Test-HttpOk $ImageAiHealthUrl)) {
+if (-not $ManagedCapabilities -and (Test-Path $ImageAiPython) -and (Test-PortBusy 3210) -and -not (Test-HttpOk $ImageAiHealthUrl)) {
   if ($ForceRestart) {
     Write-Step "Preparing image AI worker port"
     Restart-Port 3210 "image AI worker" | Out-Null
@@ -510,7 +513,7 @@ if ((Test-Path $ImageAiPython) -and (Test-PortBusy 3210) -and -not (Test-HttpOk 
   }
 }
 
-if ((Test-Path $ImageAiPython) -and -not (Test-PortBusy 3210)) {
+if (-not $ManagedCapabilities -and (Test-Path $ImageAiPython) -and -not (Test-PortBusy 3210)) {
   Write-Step "Starting local image AI worker"
   New-Item -ItemType Directory -Path $ImageAiLogDir -Force | Out-Null
   $ImageAiWorker = Start-Process `
@@ -532,11 +535,11 @@ if ((Test-Path $ImageAiPython) -and -not (Test-PortBusy 3210)) {
     }
     $ImageAiWorker = $null
   }
-} elseif (-not (Test-Path $ImageAiPython)) {
+} elseif (-not $ManagedCapabilities -and -not (Test-Path $ImageAiPython)) {
   Write-Host "Image AI runtime is not installed; run scripts\setup-image-ai.ps1 when AI tools are needed." -ForegroundColor Yellow
 }
 
-if ((Test-PortBusy 3210) -and (Test-HttpOk $ImageAiHealthUrl)) {
+if (-not $ManagedCapabilities -and (Test-PortBusy 3210) -and (Test-HttpOk $ImageAiHealthUrl)) {
   Write-Host "Using the existing healthy image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
 }
 
@@ -576,11 +579,11 @@ if ($ChatterboxInstalled -and -not (Test-PortBusy 3220)) {
     }
     $ChatterboxWorker = $null
   }
-} elseif (-not $ChatterboxInstalled) {
+} elseif (-not $ManagedCapabilities -and -not $ChatterboxInstalled) {
   Write-Host "Chatterbox could not be prepared automatically; review the startup output and retry one-click startup." -ForegroundColor Yellow
 }
 
-if ((Test-PortBusy 3220) -and (Test-HttpOk $ChatterboxHealthUrl)) {
+if (-not $ManagedCapabilities -and (Test-PortBusy 3220) -and (Test-HttpOk $ChatterboxHealthUrl)) {
   Write-Host "Using the existing healthy Chatterbox worker: $ChatterboxHealthUrl" -ForegroundColor Green
 }
 
@@ -618,12 +621,18 @@ Write-Host ""
 Write-Step "Starting frontend and backend in this terminal"
 Write-Host "Frontend: $FrontendUrl" -ForegroundColor Green
 Write-Host "Backend health: $BackendUrl" -ForegroundColor Green
-Write-Host "Image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
-Write-Host "Chatterbox V3 worker: $ChatterboxHealthUrl" -ForegroundColor Green
+if (-not $ManagedCapabilities) {
+  Write-Host "Image AI worker: $ImageAiHealthUrl" -ForegroundColor Green
+  Write-Host "Chatterbox V3 worker: $ChatterboxHealthUrl" -ForegroundColor Green
+}
 Write-Host "Press Ctrl+C in this terminal to stop frontend, backend, and local AI workers." -ForegroundColor Green
 Write-Host ""
 
 try {
+  if ($ManagedCapabilities) {
+    $env:TOOLBOX_SOURCE_MANAGED = '1'
+    Write-Host 'Signed capability mode: API manages Workers on dynamic loopback ports; legacy venvs are not started.' -ForegroundColor Cyan
+  }
   pnpm --parallel --filter frontend --filter backend dev
 } finally {
   if ($ImageAiWorker -and -not $ImageAiWorker.HasExited) {

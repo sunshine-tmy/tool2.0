@@ -66,10 +66,12 @@ function Test-ProjectServiceProcess {
   $commandText = ConvertTo-NormalizedCommandLine $Process.CommandLine
   $serviceMarkers = @(
     "/scripts/start-dev.ps1",
+    "/scripts/bootstrap-windows.ps1",
     "/scripts/image-ai-worker.py",
     "/scripts/chatterbox-worker.py",
     "/scripts/edge-tts-generate.py",
     "vite --host 0.0.0.0 --port 5173",
+    "/node_modules/vite/bin/vite.js",
     "tsx watch src/server.ts",
     "--filter frontend --filter backend dev",
     "--filter backend --filter frontend dev"

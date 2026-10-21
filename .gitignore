@@ -71,6 +71,7 @@ storage/quarantine/**
 .runtime/xhs-browser-profile/
 .runtime/playwright-browsers/
 .runtime/packages/
+.runtime/bootstrap/
 
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep
