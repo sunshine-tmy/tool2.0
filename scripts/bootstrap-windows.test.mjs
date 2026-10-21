@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const script = path.join(root, "scripts/bootstrap-windows.ps1");
@@ -74,6 +74,40 @@ test("the actual ASCII shim preserves Chinese paths and spaced arguments", { ski
       `[Console]::OutputEncoding=New-Object Text.UTF8Encoding; $env:TOOLBOX_BOOTSTRAP_NODE=${quote(process.execPath)}; $env:TOOLBOX_BOOTSTRAP_PNPM=${quote(entry)}; ${assignment}; [IO.File]::WriteAllText(${quote(shim)},$shim,[Text.Encoding]::ASCII); & ${quote(shim)} 'argument with space' '中文'; if($LASTEXITCODE){exit $LASTEXITCODE}`
     );
     assert.deepEqual(JSON.parse(output.trim()), ["argument with space", "中文"]);
+  } finally {
+    await fs.rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("a first runtime download returns exactly one path in Windows PowerShell 5.1", { skip: !windows }, async () => {
+  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-bootstrap-download-"));
+  try {
+    const source = path.join(scratch, "source.bin");
+    const destination = path.join(scratch, "tool2.0-main (1)", ".runtime", "bootstrap");
+    await fs.writeFile(source, "abc");
+    await fs.mkdir(destination, { recursive: true });
+    const output = run(
+      `$ErrorActionPreference='Stop'; $e=$null;$t=$null; $ast=[System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$t,[ref]$e); foreach($name in @('Test-ArchiveHash','Get-PinnedArchive')){ $fn=$ast.Find({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true); . ([scriptblock]::Create($fn.Extent.Text)) }; $BootstrapRoot=${quote(destination)}; foreach($attempt in 1..2){ $result=@(Get-PinnedArchive ${quote(pathToFileURL(source).href)} 'node-test.zip' SHA256 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'); if($result.Count -ne 1 -or $result[0] -isnot [string]){throw "Download returned $($result.Count) objects instead of one path: $($result | ForEach-Object {$_.GetType().FullName})"}; if(-not (Test-Path -LiteralPath $result[0] -PathType Leaf)){throw 'Invalid archive path'} }; 'cold and cached path checks passed'`
+    );
+    assert.match(output, /cold and cached path checks passed/);
+  } finally {
+    await fs.rm(scratch, { recursive: true, force: true });
+  }
+});
+
+test("cold and cached downloads can be extracted by real Windows tar in spaced paths", { skip: !windows }, async () => {
+  const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-bootstrap-extract-"));
+  try {
+    const input = path.join(scratch, "input");
+    const archive = path.join(scratch, "source.zip");
+    const destination = path.join(scratch, "中文 tool2.0-main (1)", ".runtime", "bootstrap");
+    await fs.mkdir(input);
+    await fs.writeFile(path.join(input, "runtime-fixture.txt"), "bootstrap fixture");
+    await fs.mkdir(destination, { recursive: true });
+    const output = run(
+      `$ErrorActionPreference='Stop'; [Reflection.Assembly]::LoadWithPartialName('System.IO.Compression.FileSystem') | Out-Null; [IO.Compression.ZipFile]::CreateFromDirectory(${quote(input)},${quote(archive)}); $h=[Security.Cryptography.SHA256]::Create();$s=[IO.File]::OpenRead(${quote(archive)});try{$expected=[BitConverter]::ToString($h.ComputeHash($s)).Replace('-','').ToLowerInvariant()}finally{$s.Dispose();$h.Dispose()}; $e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$t,[ref]$e); foreach($name in @('Test-ArchiveHash','Get-PinnedArchive','Invoke-Checked')){$fn=$ast.Find({param($n)$n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true);. ([scriptblock]::Create($fn.Extent.Text))}; $BootstrapRoot=${quote(destination)}; foreach($attempt in 1..2){$result=Get-PinnedArchive ${quote(pathToFileURL(archive).href)} 'node-test.zip' SHA256 $expected; $target=Join-Path $BootstrapRoot "extracted-$attempt"; [IO.Directory]::CreateDirectory($target)|Out-Null; Invoke-Checked 'tar.exe' @('-xf',$result,'-C',$target); if([IO.File]::ReadAllText((Join-Path $target 'runtime-fixture.txt')) -ne 'bootstrap fixture'){throw 'Extracted content mismatch'}}; 'actual cold and cached extraction passed'`
+    );
+    assert.match(output, /actual cold and cached extraction passed/);
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
   }

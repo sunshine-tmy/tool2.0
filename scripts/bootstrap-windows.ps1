@@ -55,7 +55,9 @@ function Get-PinnedArchive {
       Write-Progress -Activity "Downloading $Name" -Status ("{0:N1} MiB received; {1:N0}s elapsed" -f ($length / 1MB), $timer.Elapsed.TotalSeconds)
       Start-Sleep -Milliseconds 500
     }
-    $download.GetAwaiter().GetResult()
+    # Windows PowerShell 5.1 can emit the Task's empty result into the success pipeline.
+    # Suppress it, otherwise callers receive an array and tar gets a leading-space path.
+    [void]$download.GetAwaiter().GetResult()
     if (-not (Test-ArchiveHash $partial $Algorithm $Expected)) { throw "Digest mismatch for $Name; refusing to extract or execute." }
     Move-Item -LiteralPath $partial -Destination $destination -Force
     return $destination
