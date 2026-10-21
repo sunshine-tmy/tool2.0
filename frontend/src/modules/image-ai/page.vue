@@ -34,7 +34,7 @@
               :watermark-dimensions-label="watermarkDimensionsLabel"
               :is-busy="isBusy"
               :suggesting="suggesting"
-              :active-task="activeTask"
+              :active-task="activeTask?.operation === 'watermark_remove' ? activeTask : undefined"
               :operation-available="operationAvailable"
               :select-watermark="selectWatermark"
               :clear-watermark="clearWatermark"
@@ -51,6 +51,7 @@
             <ImageAiOperationPanel
               v-model:files="enhanceFiles"
               operation="enhance"
+              :unavailable-reason="operationUnavailableReason('enhance')"
               :scale="enhanceScale"
               :is-busy="isBusy"
               :active-task="activeTask"
@@ -68,6 +69,7 @@
             <ImageAiOperationPanel
               v-model:files="cutoutFiles"
               operation="background_remove"
+              :unavailable-reason="operationUnavailableReason('background_remove')"
               :scale="enhanceScale"
               :is-busy="isBusy"
               :active-task="activeTask"
@@ -115,8 +117,13 @@ const cutoutFiles = ref<File[]>([]);
 const activeTaskFiles = ref<File[]>([]);
 const enhanceScale = ref<2 | 4>(2);
 const activeTask = ref<ImageAiTask>();
-const isBusy = computed(() => activeTask.value?.status === "pending" || activeTask.value?.status === "running");
-const streamedTaskId = computed(() => (isBusy.value ? activeTask.value?.id : undefined));
+const submitting = ref(false);
+const isBusy = computed(
+  () => submitting.value || activeTask.value?.status === "pending" || activeTask.value?.status === "running"
+);
+const streamedTaskId = computed(() =>
+  activeTask.value && ["pending", "running"].includes(activeTask.value.status) ? activeTask.value.id : undefined
+);
 const requestScope = useRequestScope();
 const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 const healthLabel = computed(() => {
@@ -159,6 +166,19 @@ watch(taskEvents.task, (task) => {
 watch(taskEvents.error, (error) => {
   if (error && !isApiErrorCancelled(error)) message.warning(formatApiError(error));
 });
+
+// Selecting new input is not a completed task, even when the previous input has a result.
+for (const [files, operation] of [
+  [enhanceFiles, "enhance"],
+  [cutoutFiles, "background_remove"]
+] as const) {
+  watch(files, () => {
+    if (!isBusy.value && activeTask.value?.operation === operation) {
+      activeTask.value = undefined;
+      activeTaskFiles.value = [];
+    }
+  });
+}
 
 async function loadHealth() {
   loadingHealth.value = true;
@@ -216,7 +236,8 @@ async function suggestWatermark(applySuggestions?: (suggestions: WatermarkSugges
 }
 
 async function submitWatermark(editor?: { toMaskBlob: () => Promise<Blob> }) {
-  if (!watermarkFile.value || !editor) return;
+  if (!watermarkFile.value || !editor || isBusy.value || !operationAvailable("watermark_remove")) return;
+  submitting.value = true;
   try {
     // 先把画布转换为 PNG Blob，再与原图一起提交；服务端负责尺寸和像素上限校验。
     const mask = await editor.toMaskBlob();
@@ -227,12 +248,15 @@ async function submitWatermark(editor?: { toMaskBlob: () => Promise<Blob> }) {
     activeTask.value = await imageAiApi.createTask(form);
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "去水印失败"));
+  } finally {
+    submitting.value = false;
   }
 }
 
 async function submitBatch(operation: "enhance" | "background_remove") {
   const files = operation === "enhance" ? enhanceFiles.value : cutoutFiles.value;
-  if (!files.length) return;
+  if (!files.length || isBusy.value || !operationAvailable(operation)) return;
+  submitting.value = true;
   // 批量任务只发送用户当前选中的文件快照，提交后页面可继续选择其它文件。
   const form = new FormData();
   form.append("operation", operation);
@@ -243,6 +267,8 @@ async function submitBatch(operation: "enhance" | "background_remove") {
     activeTaskFiles.value = [...files];
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "图片处理失败"));
+  } finally {
+    submitting.value = false;
   }
 }
 
@@ -303,6 +329,18 @@ function operationAvailable(operation: ImageAiOperation) {
   if (operation === "watermark_remove") return readyProviders.has("lama");
   if (operation === "enhance") return readyProviders.has("real-esrgan");
   return readyProviders.has("bria-rmbg-2.0") || readyProviders.has("birefnet-general");
+}
+
+function operationUnavailableReason(operation: ImageAiOperation) {
+  if (!health.value) return "无法读取模型状态，请刷新服务状态或查看启动与环境诊断。";
+  const providers =
+    operation === "enhance"
+      ? ["real-esrgan"]
+      : ["birefnet-general", ...(health.value.deploymentUsage === "internal-noncommercial" ? ["bria-rmbg-2.0"] : [])];
+  const reasons = health.value.models
+    .filter((model) => providers.includes(model.provider))
+    .map((model) => `${model.model}：${model.reason || "未就绪"}`);
+  return `${reasons.join("；") || "所需模型未就绪"}。请刷新状态或前往设置中的能力管理检查。上传图片不会自动开始处理。`;
 }
 
 function formatBytes(bytes: number) {

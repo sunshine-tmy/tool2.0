@@ -38,6 +38,21 @@ class TrustedPathTests(unittest.TestCase):
 
 
 class DesktopInstallCheckTests(unittest.TestCase):
+    def test_birefnet_uses_packaged_nested_path_and_legacy_flat_path_only_when_unmanaged(self):
+        with tempfile.TemporaryDirectory(prefix="birefnet-path-") as directory:
+            home = Path(directory)
+            flat = home / "birefnet-general.onnx"
+            flat.write_bytes(b"test")
+            nested = home / "models" / "birefnet-general" / flat.name
+            with patch.dict(os.environ, {"U2NET_HOME": str(home)}):
+                with patch.object(worker, "DESKTOP_MANAGED", True):
+                    self.assertEqual(worker.birefnet_model_path(), nested)
+                with patch.object(worker, "DESKTOP_MANAGED", False):
+                    self.assertEqual(worker.birefnet_model_path(), flat)
+                    nested.parent.mkdir(parents=True)
+                    nested.write_bytes(b"test")
+                    self.assertEqual(worker.birefnet_model_path(), nested)
+
     def test_check_reports_missing_packaged_models_without_starting_the_worker(self):
         with tempfile.TemporaryDirectory(prefix="image-ai-check-") as directory:
             root = Path(directory)
@@ -116,8 +131,15 @@ class LamaModelLoadingTests(unittest.TestCase):
     def test_loads_torchscript_through_unicode_safe_binary_stream(self):
         local_manager = worker.ModelManager()
         fake_torchscript = MagicMock()
-        with patch("torch.jit.load", return_value=fake_torchscript) as load:
-            model = local_manager.get_lama()
+        with tempfile.TemporaryDirectory(prefix="lama-test-") as directory:
+            checkpoint = Path(directory) / "hub" / "checkpoints" / "big-lama.pt"
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"mock-torchscript")
+            with (
+                patch.dict(os.environ, {"TORCH_HOME": directory}),
+                patch("torch.jit.load", return_value=fake_torchscript) as load,
+            ):
+                model = local_manager.get_lama()
 
         load_argument = load.call_args.args[0]
         self.assertTrue(hasattr(load_argument, "read"))
@@ -147,6 +169,24 @@ class LamaModelLoadingTests(unittest.TestCase):
 
 
 class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_health_checks_the_packaged_birefnet_path_without_loading_the_model(self):
+        with tempfile.TemporaryDirectory(prefix="birefnet-health-") as directory:
+            home = Path(directory)
+            weight = home / "models" / "birefnet-general" / "birefnet-general.onnx"
+            weight.parent.mkdir(parents=True)
+            weight.write_bytes(b"mock-model")
+            with (
+                patch.dict(os.environ, {"U2NET_HOME": directory}),
+                patch.object(worker, "DESKTOP_MANAGED", True),
+                patch.object(worker.manager, "device", return_value="cpu"),
+                patch.object(worker, "model_health", return_value={"available": True}) as check,
+                patch.object(worker.manager, "get_birefnet") as load,
+            ):
+                await worker.health()
+                birefnet = next(call for call in check.call_args_list if call.args[0] == "birefnet-general")
+                self.assertEqual(birefnet.kwargs["weight_files"], [weight])
+                load.assert_not_called()
+
     async def test_light_does_not_load_weights(self):
         with patch.object(worker.manager, "get_lama") as load:
             result = await worker.diagnostics_light()

@@ -84,6 +84,16 @@ MODELS_ROOT = project_path(os.getenv("IMAGE_AI_MODELS_ROOT", "models/image-ai"))
 PORT = int(os.getenv("IMAGE_AI_WORKER_PORT", "3210"))
 HOST = os.getenv("IMAGE_AI_WORKER_HOST", "127.0.0.1")
 WORKER_TOKEN = os.getenv("IMAGE_AI_WORKER_TOKEN", "")
+
+
+def birefnet_model_path() -> Path:
+    home = Path(os.environ["U2NET_HOME"])
+    packaged = home / "models" / "birefnet-general" / "birefnet-general.onnx"
+    if DESKTOP_MANAGED or packaged.is_file():
+        return packaged
+    return home / "birefnet-general.onnx"
+
+
 _OCR_ALIAS_ROOT: Path | None = None
 _OCR_ALIAS_PATHS: list[Path] = []
 
@@ -485,7 +495,7 @@ class ModelManager:
             raise WorkerFailure("BIREFNET_UNAVAILABLE", "未安装 rembg/BiRefNet 推理组件") from exc
         try:
             if DESKTOP_MANAGED:
-                model_file = Path(os.environ["U2NET_HOME"]) / "models" / "birefnet-general" / "birefnet-general.onnx"
+                model_file = birefnet_model_path()
                 if not model_file.is_file():
                     raise WorkerFailure("BIREFNET_WEIGHTS_MISSING", "BiRefNet 权重未安装，请前往设置安装图像模型")
                 self.gpu_model = new_session("birefnet-general", providers=["CPUExecutionProvider"])
@@ -599,7 +609,7 @@ async def health() -> dict[str, Any]:
             "MIT",
             "rembg",
             device,
-            weight_files=[Path(os.environ["U2NET_HOME"]) / "birefnet-general.onnx"],
+            weight_files=[birefnet_model_path()],
         ),
         model_health("paddleocr", "PP-OCRv5", "Apache-2.0", "paddleocr", "cpu"),
     ]
@@ -918,10 +928,7 @@ def main() -> None:
             model_root / "torch" / "hub" / "checkpoints" / "big-lama.pt",
             model_root / "RealESRGAN_x2plus.pth",
             model_root / "RealESRGAN_x4plus.pth",
-            Path(os.environ.get("U2NET_HOME", "models/rembg"))
-            / "models"
-            / "birefnet-general"
-            / "birefnet-general.onnx",
+            birefnet_model_path(),
             Path(os.environ.get("IMAGE_AI_OCR_DETECTION_MODEL_DIR", "")) / "inference.yml",
             Path(os.environ.get("IMAGE_AI_OCR_RECOGNITION_MODEL_DIR", "")) / "inference.yml",
         ]

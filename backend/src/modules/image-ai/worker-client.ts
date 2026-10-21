@@ -12,6 +12,9 @@ import {
   type ImageWorkerSuggestion
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
+import fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import crypto from "node:crypto";
 import { workerAuthHeaders } from "../../security/worker-auth";
 
 export class ImageAiWorkerError extends Error {
@@ -27,6 +30,31 @@ export class ImageAiWorkerError extends Error {
 }
 
 export function createImageAiWorkerClient(config: AppConfig) {
+  let verifiedWeightStamp = "";
+  async function legacyBirefnetWeightReady() {
+    const asset = config.imageAiBirefnetAsset;
+    if (!config.desktopManagedCapabilities || !config.imageAiCapabilityReady || asset?.version !== "1.0.0-py312-cpu1")
+      return undefined;
+    try {
+      const stat = await fs.lstat(asset.path);
+      if (
+        !stat.isFile() ||
+        stat.size !== asset.bytes ||
+        config.imageAiBirefnetAsset !== asset ||
+        !config.imageAiCapabilityReady
+      )
+        return undefined;
+      const stamp = `${asset.path}:${asset.sha256}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+      if (verifiedWeightStamp === stamp) return asset.sha256;
+      const hash = crypto.createHash("sha256");
+      for await (const chunk of createReadStream(asset.path)) hash.update(chunk);
+      if (hash.digest("hex") !== asset.sha256) return undefined;
+      verifiedWeightStamp = stamp;
+      return config.imageAiBirefnetAsset === asset && config.imageAiCapabilityReady ? asset.sha256 : undefined;
+    } catch {
+      return undefined;
+    }
+  }
   return {
     async health(): Promise<ImageWorkerHealth> {
       // A cold worker may need a few seconds to inspect and fingerprint large local model files.
@@ -40,6 +68,21 @@ export function createImageAiWorkerClient(config: AppConfig) {
       );
       if (health.protocolVersion !== WORKER_PROTOCOL_VERSION) {
         throw new ImageAiWorkerError("WORKER_PROTOCOL_MISMATCH", "AI Worker 协议版本与主程序不兼容");
+      }
+      // The released CPU1 worker checks rembg's obsolete flat path in /health only.
+      // Its loader already uses the packaged nested path. Correct this one known
+      // false-negative only with the runtime's signed, verified model; never waive
+      // missing Python dependencies, licensing restrictions or unknown errors.
+      const birefnet = health.models.find((model) => model.provider === "birefnet-general");
+      const verifiedSha =
+        birefnet?.available === false && birefnet.reason === "缺少本地模型权重"
+          ? await legacyBirefnetWeightReady()
+          : undefined;
+      if (birefnet && verifiedSha) {
+        birefnet.available = true;
+        birefnet.reason = null;
+        birefnet.sha256 = verifiedSha;
+        health.available = true;
       }
       return health;
     },

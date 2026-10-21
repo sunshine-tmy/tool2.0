@@ -11,6 +11,8 @@ export type AppConfig = {
   desktopManagedCapabilities: boolean;
   edgeTtsCapabilityReady: boolean;
   imageAiCapabilityReady: boolean;
+  /** Internal only: resolved and hash-verified by ComponentManager, never read from user configuration. */
+  imageAiBirefnetAsset?: { path: string; bytes: number; sha256: string; version: string };
   chatterboxCapabilityReady: boolean;
   deploymentMode: "local" | "lan";
   adminPin?: string;

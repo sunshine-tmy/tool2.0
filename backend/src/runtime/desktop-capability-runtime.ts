@@ -43,6 +43,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
   };
   const resetImageConfiguration = () => {
     config.imageAiCapabilityReady = false;
+    config.imageAiBirefnetAsset = undefined;
     config.imageAiWorkerUrl = "http://127.0.0.1:1";
     config.imageAiWorkerToken = undefined;
   };
@@ -161,6 +162,16 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
         config.imageAiWorkerUrl = worker.url;
         config.imageAiWorkerToken = worker.token;
         config.imageAiCapabilityReady = true;
+        const weight = birefnet.manifest.files.find(
+          (file) => file.path === "models/image-ai/rembg/models/birefnet-general/birefnet-general.onnx"
+        );
+        if (weight)
+          config.imageAiBirefnetAsset = {
+            path: birefnet.path,
+            bytes: weight.bytes,
+            sha256: weight.sha256,
+            version: birefnet.manifest.version
+          };
       },
       signal
     );

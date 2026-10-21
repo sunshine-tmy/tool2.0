@@ -2,6 +2,10 @@
  * 中文模块说明：测试 backend/src/__tests__/worker-client.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import crypto from "node:crypto";
 import type { AppConfig } from "../config";
 import { createChatterboxWorkerClient } from "../modules/chatterbox/worker-client";
 import { createImageAiWorkerClient } from "../modules/image-ai/worker-client";
@@ -18,6 +22,77 @@ const config = {
 
 describe("Worker clients", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it.each(["verified", "missing", "tampered", "python-missing", "unmanaged", "unknown-version", "not-ready"])(
+    "corrects only the known packaged BiRefNet health false-negative (%s)",
+    async (scenario) => {
+      const directory = await fs.mkdtemp(path.join(os.tmpdir(), "birefnet-health-"));
+      try {
+        const file = path.join(directory, "birefnet-general.onnx");
+        const content = Buffer.from("verified-model");
+        await fs.writeFile(file, scenario === "tampered" ? Buffer.from("tampered-model") : content);
+        if (scenario === "missing") await fs.unlink(file);
+        const local = {
+          ...config,
+          desktopManagedCapabilities: scenario !== "unmanaged",
+          imageAiCapabilityReady: scenario !== "not-ready",
+          imageAiBirefnetAsset: {
+            path: file,
+            bytes: content.length,
+            sha256: crypto.createHash("sha256").update(content).digest("hex"),
+            version: scenario === "unknown-version" ? "other" : "1.0.0-py312-cpu1"
+          }
+        };
+        const reason = scenario === "python-missing" ? "缺少 Python 包：rembg" : "缺少本地模型权重";
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async () =>
+            jsonResponse({
+              success: true,
+              data: {
+                protocolVersion: 1,
+                available: false,
+                deploymentUsage: "commercial",
+                workerUrl: "http://127.0.0.1:3210",
+                models: [
+                  {
+                    provider: "birefnet-general",
+                    model: "BiRefNet",
+                    version: "2.0.84",
+                    license: "MIT",
+                    device: "cpu",
+                    available: false,
+                    reason
+                  },
+                  {
+                    provider: "bria-rmbg-2.0",
+                    model: "BRIA",
+                    version: "test",
+                    license: "CC-BY-NC-4.0",
+                    device: "cpu",
+                    available: false,
+                    reason: "当前部署模式禁止使用非商用模型"
+                  }
+                ]
+              }
+            })
+          )
+        );
+        const client = createImageAiWorkerClient(local);
+        const health = await client.health();
+        expect(health.models[0].available).toBe(scenario === "verified");
+        expect(health.models[1].available).toBe(false);
+        expect(JSON.stringify(health)).not.toContain(directory);
+        if (scenario === "verified") {
+          expect((await client.health()).models[0].available).toBe(true);
+          await fs.writeFile(file, "tampered-model");
+          expect((await client.health()).models[0].available).toBe(false);
+        }
+      } finally {
+        await fs.rm(directory, { recursive: true, force: true });
+      }
+    }
+  );
 
   it("distinguishes a protocol mismatch from malformed image data", async () => {
     vi.stubGlobal(

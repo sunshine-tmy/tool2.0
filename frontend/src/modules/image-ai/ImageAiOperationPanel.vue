@@ -40,6 +40,9 @@
           <ShieldCheck :size="18" />
           <span>{{ props.modelPolicyLabel }}</span>
         </div>
+        <n-alert v-if="!props.operationAvailable(props.operation)" type="warning" :bordered="false">
+          {{ props.unavailableReason || "当前操作所需模型未就绪，请刷新状态或查看设置中的能力管理。" }}
+        </n-alert>
         <n-button
           block
           type="primary"
@@ -52,7 +55,7 @@
           /></template>
           {{ props.operation === "enhance" ? "开始变清晰" : "开始抠图" }}
         </n-button>
-        <ImageAiTaskStatusCard :task="props.activeTask" @cancel="props.cancelActiveTask" />
+        <ImageAiTaskStatusCard :task="resultTask" @cancel="props.cancelActiveTask" />
       </aside>
     </div>
     <ImageAiResultGallery
@@ -66,7 +69,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { NButton, NRadioButton, NRadioGroup, NTag } from "naive-ui";
+import { NAlert, NButton, NRadioButton, NRadioGroup, NTag } from "naive-ui";
 import { Scan, ShieldCheck, Sparkles } from "lucide-vue-next";
 import type { ImageAiOperation, ImageAiTask } from "@toolbox/shared";
 import ImageAiBatchPicker from "./ImageAiBatchPicker.vue";
@@ -83,6 +86,7 @@ const props = defineProps<{
   activeTask?: ImageAiTask;
   activeTaskFiles: File[];
   modelPolicyLabel: string;
+  unavailableReason?: string;
   operationAvailable: (operation: ImageAiOperation) => boolean;
   validateFile: (file: File) => boolean;
   formatBytes: (bytes: number) => string;
