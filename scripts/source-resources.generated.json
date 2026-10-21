@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "directory": "offline-resources/components",
+  "releasePage": "https://github.com/sunshine-tmy/tool2.0/releases/tag/components-v1",
+  "bootstrap": [
+    {
+      "filename": "node-v24.22.1-win-x64.zip",
+      "url": "https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip",
+      "algorithm": "SHA256",
+      "digest": "d2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5"
+    },
+    {
+      "filename": "pnpm-11.7.0.tgz",
+      "url": "https://registry.npmjs.org/pnpm/-/pnpm-11.7.0.tgz",
+      "algorithm": "SHA512",
+      "digest": "GcyFLBIMcSV2DyRD7mvgyltA+fUFmN4aCaHxd1A+AQ5Xwjx3ZG4B52HeWb+HT7IqM5jDOrlpH8E+uUa28PTWIA=="
+    }
+  ],
+  "components": [
+    {
+      "id": "python-312",
+      "displayName": "Python 3.12 共享运行时",
+      "version": "3.12.14-20260901",
+      "required": true,
+      "manifestSha256": "9f176e46f5c17a93e82201c92ce9e71c9606fba998bd23c7034d6b8e5909d8af",
+      "archives": [
+        {
+          "filename": "python-312-3.12.14-20260901.tar.gz",
+          "bytes": 21865874,
+          "sha256": "2d0b49e2b64fbffa8cba4e539d9c1ebe1f3a5e18b5291ae09ac02aa750215794",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/python-312-3.12.14-20260901.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "ffmpeg",
+      "displayName": "FFmpeg（共享媒体运行时）",
+      "version": "8.1.2",
+      "required": true,
+      "manifestSha256": "ae005fceb4cc757549ec988d7e32eb2643387cb9e39c38278475ca4e61bb49c1",
+      "archives": [
+        {
+          "filename": "ffmpeg-8.1.2.tar.gz",
+          "bytes": 102795156,
+          "sha256": "504dbff58072a927e22b2f54e097394406c0a0deb311ea62e5e733f89314b86a",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/ffmpeg-8.1.2.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "edge-tts",
+      "displayName": "在线自然配音（Edge-TTS）",
+      "version": "7.3.1-py312-1",
+      "required": true,
+      "manifestSha256": "dba5e4a31a1f6af8b31e523314ebde0a7668f82b9ec7a8283b08f285df4e11e5",
+      "archives": [
+        {
+          "filename": "edge-tts-7.3.1-py312-1.tar.gz",
+          "bytes": 1131429,
+          "sha256": "0cc9b16d83c2e9c83d54a341b6b329729b8a7c76c94f81c1c0a2e633fb9e4180",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/edge-tts-7.3.1-py312-1.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "image-ai",
+      "displayName": "AI 图片处理（CPU）",
+      "version": "1.0.0-py312-cpu1",
+      "required": true,
+      "manifestSha256": "e276a859f11f0efd6c4d6773bfabc10a6b3e3927739a0ef65d710b7ae8ea673f",
+      "archives": [
+        {
+          "filename": "image-ai-1.0.0-py312-cpu1.tar.gz",
+          "bytes": 1806180251,
+          "sha256": "b87cc998805e5dde0db7831ccf7fb735a9957369758f994473ab972ffb485f1e",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.0.0-py312-cpu1.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "chatterbox",
+      "displayName": "参考音色克隆（CPU）",
+      "version": "1.0.0-py312-cpu1",
+      "required": true,
+      "manifestSha256": "4072b528e0c0f4d14cb7c94e16a2034a05ac648431304666337c1b4c6bde4923",
+      "archives": [
+        {
+          "filename": "chatterbox-1.0.0-py312-cpu1.tar.gz",
+          "bytes": 421067150,
+          "sha256": "bef1382bad5b7c0df9a56b7a3ab685152b18401e2a8db32bde62e849cabe86f2",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1.tar.gz"
+        },
+        {
+          "filename": "chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz",
+          "bytes": 1980678922,
+          "sha256": "54f58d9feeed3a286c537c5c66e8b65bf6d9dc1f7d131b12654bcb58515fd682",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz"
+        },
+        {
+          "filename": "chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz",
+          "bytes": 984526575,
+          "sha256": "89537f803a54c904e0c2dc7fa697a9dca6d666c6d20e60c57527711a0a0d46e8",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "xhs-browser",
+      "displayName": "小红书登录浏览器（Chromium）",
+      "version": "1.63.0-chromium-1243",
+      "required": true,
+      "manifestSha256": "9fb17274fde8c1b39c2e4da45bcc6500bd88ab7e30534f9b98ef14d8bcad3f72",
+      "archives": [
+        {
+          "filename": "xhs-browser-1.63.0-chromium-1243.tar.gz",
+          "bytes": 209088995,
+          "sha256": "bc83e88844a27e1cf4fd2b01a15439c27a9c2ab4f5cafe415873b0bf91ae36c1",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/xhs-browser-1.63.0-chromium-1243.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "xhs-archive",
+      "displayName": "小红书内容归档运行时",
+      "version": "2.7-afaf2fb",
+      "required": true,
+      "manifestSha256": "b9c6b8233d59b1aaffa5779e8d13a885ad91c8ddc109625249a76cff012b98eb",
+      "archives": [
+        {
+          "filename": "xhs-archive-2.7-afaf2fb.tar.gz",
+          "bytes": 31999323,
+          "sha256": "0ded3d422f749649e664231a6a69b568aa4daf4caafb16311f0ece7bba199369",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/xhs-archive-2.7-afaf2fb.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "xhs-translation",
+      "displayName": "小红书中英离线翻译",
+      "version": "1.0.0-ct2-cf109095",
+      "required": true,
+      "manifestSha256": "37f565d8eb14eae53684054e05c4de7059edd250eff70b0c261e8de08f04fd8d",
+      "archives": [
+        {
+          "filename": "xhs-translation-1.0.0-ct2-cf109095.tar.gz",
+          "bytes": 181112891,
+          "sha256": "d77a05e293b5a391f93c35b43bcc72d6a01e1a65e2140676f17f0b5beb1813a2",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/xhs-translation-1.0.0-ct2-cf109095.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "douyin-archive",
+      "displayName": "抖音公开内容归档（匿名）",
+      "version": "1.0.0-anonymous-27468de",
+      "required": true,
+      "manifestSha256": "b71e640b0e0db1148fc5977b21a8b245fa6a4496648cd63ab2d488ed3580d90a",
+      "archives": [
+        {
+          "filename": "douyin-archive-1.0.0-anonymous-27468de.tar.gz",
+          "bytes": 280,
+          "sha256": "de426bd977e51eba0cb99254173fee1d941faa6db07de95545c677777ab67c0f",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/douyin-archive-1.0.0-anonymous-27468de.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "chatterbox-cuda",
+      "displayName": "参考音色克隆 GPU 加速",
+      "version": "1.0.0-py312-cu1241",
+      "required": false,
+      "manifestSha256": "4905c510dbe9c5e48a5eef06652c068f2125a59dff69d80e35df7dacef9dd85a",
+      "archives": [
+        {
+          "filename": "chatterbox-cuda-1.0.0-py312-cu1241.tar.gz",
+          "bytes": 210511812,
+          "sha256": "cf031a1283b9c68dd49504ca6dd996cbf1f64b5d6f64b81a4a5af71a397ea964",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241.tar.gz"
+        },
+        {
+          "filename": "chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "bytes": 1498292694,
+          "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz"
+        },
+        {
+          "filename": "chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "bytes": 1028311500,
+          "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz"
+        },
+        {
+          "filename": "chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz",
+          "bytes": 4116387,
+          "sha256": "38dff6b27cc3b0fd318aaf355ec087bf0f7cd6649648d913128ccf32a942b7e3",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz"
+        }
+      ]
+    }
+  ]
+}

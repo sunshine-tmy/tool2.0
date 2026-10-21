@@ -73,6 +73,16 @@ storage/quarantine/**
 .runtime/packages/
 .runtime/bootstrap/
 
+# User-provided startup archives are local resources, never source-control uploads.
+offline-resources/**
+!offline-resources/README.md
+!offline-resources/bootstrap/
+offline-resources/bootstrap/*
+!offline-resources/bootstrap/.gitkeep
+!offline-resources/components/
+offline-resources/components/*
+!offline-resources/components/.gitkeep
+
 !storage/uploads/.gitkeep
 !storage/outputs/.gitkeep
 !storage/temp/.gitkeep

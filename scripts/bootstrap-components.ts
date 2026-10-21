@@ -8,6 +8,7 @@ import { prepareSourceComponents } from "../backend/src/runtime/source-bootstrap
 import { ComponentManager } from "../backend/src/modules/components/component-manager";
 import { bundledComponentCatalogForRuntime } from "../backend/src/modules/components/catalog";
 import { createDesktopComponentSelfTest } from "../backend/src/modules/components/desktop-component-self-test";
+import { createSourceOfflineInstaller } from "../backend/src/runtime/source-offline-resources";
 
 if (process.argv.slice(2).some((arg) => arg !== "--with-cuda") || process.argv.length > 3)
   throw new Error("初始化入口只接受可选的 --with-cuda 参数");
@@ -27,13 +28,25 @@ for (const port of [config.port, frontendPort]) {
     probe.listen(port, "127.0.0.1", () => probe.close(() => resolve()));
   });
 }
+const catalog = bundledComponentCatalogForRuntime();
 const manager = new ComponentManager({
   root: path.join(config.runtime.runtimeRoot, "packages"),
-  catalog: bundledComponentCatalogForRuntime(),
-  selfTest: createDesktopComponentSelfTest()
+  catalog,
+  selfTest: createDesktopComponentSelfTest(),
+  downloadArchive: async () => {
+    throw new Error("源码启动仅使用本地能力包，不自动联网下载");
+  }
 });
 try {
-  await prepareSourceComponents(manager, console.log, undefined, undefined, process.argv.includes("--with-cuda"));
+  const withCuda = process.argv.includes("--with-cuda");
+  const install = await createSourceOfflineInstaller(
+    manager,
+    catalog,
+    path.join(config.runtime.appRoot, "offline-resources", "components"),
+    console.log,
+    withCuda
+  );
+  await prepareSourceComponents(manager, console.log, undefined, undefined, withCuda, install);
   console.log("基础能力已安装；尚未测试外部语音服务、平台登录或真实素材生成。");
 } catch (error) {
   // Only the fixed bootstrap summary is shown, not an irrelevant stack of source paths.

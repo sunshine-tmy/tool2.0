@@ -53,7 +53,15 @@ describe("source bootstrap", () => {
     const messages: string[] = [];
     await prepareSourceComponents(manager, (value) => messages.push(value));
     expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual(sourceComponentIds);
-    expect(messages.some((message) => message.includes("下载 10/10 字节"))).toBe(true);
+    expect(messages.some((message) => message.includes("归档 10/10 字节"))).toBe(true);
+  });
+
+  it("uses the supplied offline installer exclusively instead of silently downloading packages", async () => {
+    const { manager, spies } = fixture();
+    const offline = vi.fn(async (id: string) => ({ id }) as ComponentJob);
+    await prepareSourceComponents(manager, () => undefined, undefined, undefined, false, offline);
+    expect(offline.mock.calls.map(([id]) => id)).toEqual(sourceComponentIds);
+    expect(spies.startInstall).not.toHaveBeenCalled();
   });
 
   it("resumes by resolving installed packages without downloading them again", async () => {
@@ -90,7 +98,7 @@ describe("source bootstrap", () => {
     );
     expect(messages.at(-1)).toContain("：失败；");
     expect(messages.at(-1)).not.toContain("：完成；");
-    expect(messages.at(-1)).toContain("下载 13/21 字节");
+    expect(messages.at(-1)).toContain("归档 13/21 字节");
     expect(spies.startInstall).toHaveBeenCalledTimes(1);
     await expect(prepareSourceComponents(manager, () => undefined)).rejects.not.toThrow("secret");
     spies.getJob.mockResolvedValue({

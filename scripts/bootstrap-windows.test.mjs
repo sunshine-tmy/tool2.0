@@ -59,6 +59,101 @@ test("entry and safeguards preserve legacy development without global installs",
   );
 });
 
+test("the generated resource list matches the signed catalog", () => {
+  assert.match(
+    execFileSync(process.execPath, [path.join(root, "scripts/generate-source-resources.mjs"), "--check"], {
+      encoding: "utf8"
+    }),
+    /matches the signed catalog/
+  );
+});
+
+test("the optional bootstrap download list matches the launcher's pinned tool versions and digests", async () => {
+  const plan = JSON.parse(await fs.readFile(path.join(root, "scripts/source-resources.generated.json"), "utf8"));
+  const shell = await fs.readFile(script, "utf8");
+  for (const [versionKey, hashKey, index] of [
+    ["NodeVersion", "NodeHash", 0],
+    ["PnpmVersion", "PnpmHash", 1]
+  ]) {
+    const version = new RegExp(`\\$${versionKey} = '([^']+)'`).exec(shell)?.[1];
+    const hash = new RegExp(`\\$${hashKey} = '([^']+)'`).exec(shell)?.[1];
+    assert.ok(version);
+    assert.equal(plan.bootstrap[index].digest, hash);
+    assert.ok(plan.bootstrap[index].filename.includes(version));
+    assert.ok(plan.bootstrap[index].url.includes(version));
+  }
+});
+
+test("resource-list mode works before Node and does not create an install", { skip: !windows }, () => {
+  const output = run(`& ${quote(script)} -ListResources`);
+  assert.match(output, /python-312-3\.12\.14-20260901\.tar\.gz/);
+  assert.match(output, /offline-resources/);
+  assert.doesNotMatch(output, /chatterbox-cuda-1/);
+});
+
+test(
+  "a fresh clone with no archives stops before any tool download or dependency install",
+  { skip: !windows },
+  async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-source-cold-"));
+    try {
+      await fs.mkdir(path.join(scratch, "scripts"));
+      for (const file of ["bootstrap-windows.ps1", "source-resources.generated.json"])
+        await fs.copyFile(path.join(root, "scripts", file), path.join(scratch, "scripts", file));
+      // Dynamic free ports avoid relying on the development server being stopped during tests.
+      const output = run(
+        `$ErrorActionPreference='Stop';$p1=New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,0);$p2=New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,0);$p1.Start();$p2.Start();$one=$p1.LocalEndpoint.Port;$two=$p2.LocalEndpoint.Port;$p1.Stop();$p2.Stop();[IO.File]::WriteAllText(${quote(path.join(scratch, ".env.example"))},("API_PORT="+$one+"\nVITE_DEV_PORT="+$two+"\n"));$env:API_PORT=$null;$env:VITE_DEV_PORT=$null;& ${quote(path.join(scratch, "scripts/bootstrap-windows.ps1"))};if($LASTEXITCODE -ne 1){throw 'Missing resources were not rejected'};'missing archives stopped startup'`
+      );
+      assert.match(output, /missing archives stopped startup/);
+      assert.match(output, /python-312-3\.12\.14-20260901\.tar\.gz/);
+      assert.match(output, /douyin-archive/);
+      assert.doesNotMatch(output, /Downloading |Workspace dependencies/);
+      assert.deepEqual((await fs.readdir(path.join(scratch, ".runtime/bootstrap"))).sort(), ["launcher.lock"]);
+      assert.equal(await fs.stat(path.join(scratch, "node_modules")).catch(() => null), null);
+      assert.equal(await fs.stat(path.join(scratch, ".runtime/packages")).catch(() => null), null);
+    } finally {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
+  "preflight lists all missing local files and rejects wrong sizes before installing",
+  { skip: !windows },
+  async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-source-preflight-"));
+    try {
+      const source = await fs.readFile(script, "utf8");
+      const preflight = source.indexOf("if (-not $BuildDesktop) { Assert-LocalComponentResources }");
+      assert.ok(preflight > 0 && preflight < source.indexOf("$node = Initialize-Node"));
+      const output = run(
+        `$ErrorActionPreference='Stop';$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$t,[ref]$e);foreach($name in @('Assert-LocalComponentResources','Test-PreparedSourceComponent')){$fn=$ast.Find({param($n)$n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true);. ([scriptblock]::Create($fn.Extent.Text))};$Root=${quote(scratch)};$OfflineRoot=Join-Path $Root 'offline-resources';$WithCuda=$false;function Get-SourceResourcePlan {return @{components=@(@{id='first';version='1';required=$true;manifestSha256='a';archives=@(@{filename='first.tar.gz';bytes=3;url='https://example.com/first'})},@{id='last';version='1';required=$true;manifestSha256='b';archives=@(@{filename='last.tar.gz';bytes=3;url='https://example.com/last'})})}};try{Assert-LocalComponentResources;throw 'should reject'}catch{if($_.Exception.Message -notmatch 'Prepare the listed archives'){throw}};[IO.Directory]::CreateDirectory((Join-Path $OfflineRoot 'components'))|Out-Null;[IO.File]::WriteAllText((Join-Path $OfflineRoot 'components/first.tar.gz'),'abc');[IO.File]::WriteAllText((Join-Path $OfflineRoot 'components/last.tar.gz'),'abc');Assert-LocalComponentResources;Write-Output 'complete local set accepted'`
+      );
+      assert.match(output, /first.tar.gz/);
+      assert.match(output, /last.tar.gz/);
+      assert.match(output, /complete local set accepted/);
+    } finally {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
+  "verified local runtime archives bypass downloads and corrupt files never fall back",
+  { skip: !windows },
+  async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-runtime-local-"));
+    try {
+      const output = run(
+        `$ErrorActionPreference='Stop';$e=$null;$t=$null;$ast=[System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$t,[ref]$e);foreach($name in @('Test-ArchiveHash','Get-PinnedArchive')){$fn=$ast.Find({param($n)$n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true);. ([scriptblock]::Create($fn.Extent.Text))};$OfflineRoot=Join-Path ${quote(scratch)} 'offline-resources';$BootstrapRoot=Join-Path ${quote(scratch)} 'cache';[IO.Directory]::CreateDirectory((Join-Path $OfflineRoot 'bootstrap'))|Out-Null;[IO.Directory]::CreateDirectory($BootstrapRoot)|Out-Null;$local=Join-Path $OfflineRoot 'bootstrap/manual.zip';[IO.File]::WriteAllText($local,'abc');$result=@(Get-PinnedArchive 'https://invalid.invalid/unreachable' 'cache.zip' SHA256 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' 'manual.zip');if($result.Count -ne 1 -or [IO.File]::ReadAllText($result[0]) -ne 'abc'){throw 'local cache failed'};[IO.File]::WriteAllText($local,'wrong');try{Get-PinnedArchive 'https://invalid.invalid/unreachable' 'uncached.zip' SHA256 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad' 'manual.zip';throw 'should reject'}catch{if($_.Exception.Message -notmatch 'Local runtime digest mismatch'){throw}};'local reuse and corruption guard passed'`
+      );
+      assert.match(output, /local reuse and corruption guard passed/);
+    } finally {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+);
+
 test("the actual ASCII shim preserves Chinese paths and spaced arguments", { skip: !windows }, async () => {
   const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-bootstrap-shim-"));
   try {

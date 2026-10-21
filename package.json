@@ -10,6 +10,7 @@
   },
   "scripts": {
     "doctor": "node scripts/doctor.mjs",
+    "source:resources": "node scripts/generate-source-resources.mjs",
     "dev": "pnpm --parallel --filter frontend --filter backend dev",
     "dev:web": "pnpm --filter frontend dev",
     "dev:api": "pnpm --filter backend dev",

@@ -1,5 +1,6 @@
 /** 串行安装全功能 CPU 基线；每个已完成的签名 generation 是独立续跑点，不信任额外成功标记。 */
 import type { ComponentManager } from "../modules/components/component-manager";
+import type { ComponentJob } from "@toolbox/shared";
 import { installFailureAdvice } from "../modules/components/install-diagnostics";
 
 export const sourceComponentIds = [
@@ -40,7 +41,8 @@ export async function prepareSourceComponents(
   report: (message: string) => void,
   signal: AbortSignal = new AbortController().signal,
   wait: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 1000)),
-  withCuda = false
+  withCuda = false,
+  install: (id: string) => Promise<ComponentJob> = (id) => manager.startInstall(id)
 ) {
   const ids: readonly string[] = withCuda ? [...sourceComponentIds, "chatterbox-cuda"] : sourceComponentIds;
   const initial = await manager.list();
@@ -62,7 +64,7 @@ export async function prepareSourceComponents(
     }
     report(`${prefix}：准备安装；已完成 ${index} 项`);
     const startedAt = Date.now();
-    const job = await manager.startInstall(id);
+    const job = await install(id);
     while (true) {
       signal.throwIfAborted();
       const current = await manager.getJob(job.id);
@@ -74,7 +76,7 @@ export async function prepareSourceComponents(
             ? "已取消"
             : (phases[current.phase] ?? current.phase);
       report(
-        `${prefix}：${label}；耗时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒；下载 ${p.downloadedBytes}/${p.totalDownloadBytes} 字节；文件 ${p.processedFiles}/${p.totalFiles}`
+        `${prefix}：${label}；耗时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒；归档 ${p.downloadedBytes}/${p.totalDownloadBytes} 字节；文件 ${p.processedFiles}/${p.totalFiles}`
       );
       if (current.state === "completed") break;
       if (current.state === "failed" || current.state === "cancelled") {

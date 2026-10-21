@@ -1,6 +1,7 @@
 # One-command Windows source bootstrap. No elevation or persistent PATH changes.
 param(
   [switch]$PlanOnly,
+  [switch]$ListResources,
   [switch]$NoBrowser,
   [switch]$PrepareOnly,
   [switch]$BuildDesktop,
@@ -10,6 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $Root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $BootstrapRoot = Join-Path $Root '.runtime\bootstrap'
+$OfflineRoot = Join-Path $Root 'offline-resources'
 $NodeVersion = '24.22.1'
 $NodeHash = 'd2046d28c2c3dcd211ac5145c0bf30e2047ef9dfb306693c8c6e2eccd8b95fa5'
 $PnpmVersion = '11.7.0'
@@ -34,9 +36,17 @@ function Test-ArchiveHash {
 }
 
 function Get-PinnedArchive {
-  param([string]$Url, [string]$Name, [string]$Algorithm, [string]$Expected)
+  param([string]$Url, [string]$Name, [string]$Algorithm, [string]$Expected, [string]$OfflineName = '')
   $destination = Join-Path $BootstrapRoot $Name
   if (Test-ArchiveHash $destination $Algorithm $Expected) { return $destination }
+  if (-not $OfflineName) { $OfflineName = $Name }
+  $localArchive = if ($OfflineRoot) { Join-Path $OfflineRoot (Join-Path 'bootstrap' $OfflineName) } else { $null }
+  if ($localArchive -and (Test-Path -LiteralPath $localArchive)) {
+    if (-not (Test-ArchiveHash $localArchive $Algorithm $Expected)) { throw "Local runtime digest mismatch: $localArchive. Replace this file with the exact documented version; no network fallback was attempted." }
+    [IO.File]::Copy($localArchive, $destination, $true)
+    Write-Host "Using verified local runtime: $OfflineName"
+    return $destination
+  }
   $partial = "$destination.partial"
   $client = New-Object Net.WebClient
   $timer = [Diagnostics.Stopwatch]::StartNew()
@@ -61,6 +71,8 @@ function Get-PinnedArchive {
     if (-not (Test-ArchiveHash $partial $Algorithm $Expected)) { throw "Digest mismatch for $Name; refusing to extract or execute." }
     Move-Item -LiteralPath $partial -Destination $destination -Force
     return $destination
+  } catch {
+    throw "Runtime preparation failed for $OfflineName. Download $Url in a browser and place the unchanged archive in offline-resources\bootstrap\$OfflineName, then rerun start.bat. The existing cache and business data are retained."
   } finally {
     $client.Dispose()
     Write-Progress -Activity "Downloading $Name" -Completed
@@ -79,7 +91,7 @@ function Initialize-Node {
   $folder = Join-Path $BootstrapRoot "node-v$NodeVersion-win-x64"
   $executable = Join-Path $folder 'node.exe'
   if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
-    $archive = Get-PinnedArchive "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-x64.zip" "node-$NodeVersion.zip" 'SHA256' $NodeHash
+    $archive = Get-PinnedArchive "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-win-x64.zip" "node-$NodeVersion.zip" 'SHA256' $NodeHash "node-v$NodeVersion-win-x64.zip"
     # The entire archive is digest-pinned before extraction; no user-supplied URL or archive is accepted.
     Invoke-Checked 'tar.exe' @('-xf', $archive, '-C', $BootstrapRoot)
   }
@@ -117,12 +129,71 @@ function Assert-ServicesStopped {
   }
 }
 
+function Get-SourceResourcePlan {
+  return ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'source-resources.generated.json'), [Text.Encoding]::UTF8) | ConvertFrom-Json)
+}
+
+function Test-PreparedSourceComponent {
+  param($Component)
+  $componentRoot = Join-Path $Root ('.runtime\packages\' + $Component.id)
+  $marker = Join-Path $componentRoot 'current.json'
+  try {
+    if (-not (Test-Path -LiteralPath $marker -PathType Leaf) -or (Get-Item -LiteralPath $marker).Length -gt 65536) { return $false }
+    $current = [IO.File]::ReadAllText($marker, [Text.Encoding]::UTF8) | ConvertFrom-Json
+    return $current.protocolVersion -eq 1 -and $current.id -eq $Component.id -and $current.version -eq $Component.version -and $current.manifestSha256 -ceq $Component.manifestSha256 -and $current.directory -match '^[A-Za-z0-9][A-Za-z0-9._-]*$' -and (Test-Path -LiteralPath (Join-Path $componentRoot ('versions\' + $current.directory)) -PathType Container)
+  } catch { return $false }
+}
+
+function Show-SourceResources {
+  $plan = Get-SourceResourcePlan
+  Write-Host 'Before first startup: download the signed capability archives listed below.' -ForegroundColor Cyan
+  Write-Host ("Place them in: " + (Join-Path $OfflineRoot 'components'))
+  Write-Host 'Keep original filenames; do not extract. Existing installed capabilities are validated again by the manager.'
+  foreach ($component in $plan.components) {
+    if (-not $component.required -and -not $WithCuda) { continue }
+    Write-Host ("  " + $component.id + ' ' + $component.version)
+    foreach ($archive in $component.archives) { Write-Host ("    " + $archive.filename + ' (' + $archive.bytes + ' bytes)'); Write-Host ("    " + $archive.url) }
+  }
+  Write-Host 'Optional Node/pnpm runtime archives: offline-resources\bootstrap\'
+  foreach ($archive in $plan.bootstrap) { Write-Host ("  " + $archive.filename); Write-Host ("  " + $archive.url) }
+  Write-Host 'Full preparation guide: docs\source-resources.md'
+}
+
+function Assert-LocalComponentResources {
+  $plan = Get-SourceResourcePlan
+  $missing = @()
+  foreach ($component in $plan.components) {
+    if (-not $component.required -and -not $WithCuda) { continue }
+    if (Test-PreparedSourceComponent $component) { continue }
+    foreach ($archive in $component.archives) {
+      $flat = Join-Path $OfflineRoot ('components\' + $archive.filename)
+      $nested = Join-Path $OfflineRoot ('components\' + $component.id + '\' + $component.version + '\' + $archive.filename)
+      $valid = $false
+      foreach ($candidate in @($flat, $nested)) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+          $file = Get-Item -LiteralPath $candidate
+          if ($file.Length -eq $archive.bytes -and -not ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { $valid = $true; break }
+        }
+      }
+      if (-not $valid) { $missing += $archive }
+    }
+  }
+  if ($missing.Count) {
+    Write-Host 'Missing or wrong-sized local capability archives (all required files are listed):' -ForegroundColor Yellow
+    foreach ($archive in $missing) { Write-Host ("  " + $archive.filename + ' (' + $archive.bytes + ' bytes)'); Write-Host ("  " + $archive.url) }
+    Write-Host ("Place unchanged files in: " + (Join-Path $OfflineRoot 'components'))
+    throw 'Prepare the listed archives first. No model downloads or capability installs were attempted. See docs\source-resources.md or run start.bat -ListResources.'
+  }
+}
+
+if ($ListResources) { Show-SourceResources; exit 0 }
+
 if ($PlanOnly) {
   Write-Host 'Plan only: no downloads, writes, installs, models or services.'
-  Write-Host '1/6 Check Windows x64 and preserve .env'
+  Write-Host '1/6 Check Windows x64, local capability archives and preserve .env'
   Write-Host "2/6 Reuse Node 24 or prepare isolated Node $NodeVersion; pinned pnpm $PnpmVersion"
   Write-Host '3/6 Install frozen workspace dependencies and build shared contracts'
-  Write-Host '4/6 Install missing signed CPU capabilities in dependency order (real download/file progress)'
+  Write-Host '4/6 Import signed CPU capabilities from offline-resources\components (no model downloads)'
   Write-Host '5/6 Reuse managed Python/FFmpeg/models; no developer venv or system changes'
   Write-Host '6/6 Start API, managed Workers and frontend; platform login/online tests remain manual'
   exit 0
@@ -146,6 +217,7 @@ try {
   $envPath = Join-Path $Root '.env'
   if (-not (Test-Path -LiteralPath $envPath)) { [IO.File]::Copy((Join-Path $Root '.env.example'), $envPath, $false) }
   Assert-ServicesStopped
+  if (-not $BuildDesktop) { Assert-LocalComponentResources }
 
   Write-Host '[2/6] Node and pnpm runtimes' -ForegroundColor Cyan
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -175,7 +247,7 @@ try {
     exit 0
   }
 
-  Write-Host '[4/6] Signed CPU capabilities (first setup downloads several GiB)' -ForegroundColor Cyan
+  Write-Host '[4/6] Importing signed local CPU capabilities (no automatic model downloads)' -ForegroundColor Cyan
   $componentArgs = @((Join-Path $Root 'backend\node_modules\tsx\dist\cli.mjs'), '--tsconfig', (Join-Path $Root 'backend\tsconfig.json'), (Join-Path $Root 'scripts\bootstrap-components.ts'))
   if ($WithCuda) { $componentArgs += '--with-cuda' }
   Invoke-Checked $node $componentArgs
