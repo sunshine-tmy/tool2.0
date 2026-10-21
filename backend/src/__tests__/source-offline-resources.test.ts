@@ -147,6 +147,35 @@ describe("source offline resources", () => {
     );
   });
 
+  it.each([false, true])(
+    "requires and imports all four GPU archives without reinstalling healthy CPU packages (nested=%s)",
+    async (nested) => {
+      const { root, catalog, manager, populate } = await fixture([...sourceComponentIds]);
+      const archives = ["cuda", "cuda-torch-part-0001", "cuda-torch-part-0002", "cuda-torchaudio"].map((name) => ({
+        ...catalog.manifests[0].archive,
+        url: `https://example.com/${name}.tar.gz`
+      }));
+      catalog.manifests.push({
+        ...catalog.manifests[0],
+        id: "chatterbox-cuda",
+        archive: archives[0],
+        additionalArchives: archives.slice(1)
+      });
+      const missing = await createSourceOfflineInstaller(manager, catalog, root, () => undefined, true).catch(
+        (error) => error as Error
+      );
+      for (const archive of archives)
+        expect((missing as Error).message).toContain(path.posix.basename(new URL(archive.url).pathname));
+      expect(manager.startOfflineImport).not.toHaveBeenCalled();
+      await populate(nested);
+      const install = await createSourceOfflineInstaller(manager, catalog, root, () => undefined, true);
+      await install("chatterbox-cuda");
+      expect(manager.startOfflineImport).toHaveBeenCalledOnce();
+      expect(manager.startOfflineImport.mock.calls[0][0]).toBe("chatterbox-cuda");
+      await expect(install("chatterbox")).rejects.toThrow("拒绝联网安装");
+    }
+  );
+
   it("keeps the early PowerShell checklist in sync with the signed catalog and CPU order", () => {
     expect(plan.components.filter((item) => item.required).map((item) => item.id)).toEqual(sourceComponentIds);
     expect(plan.components).toHaveLength(packagedComponentCatalog.manifests.length);

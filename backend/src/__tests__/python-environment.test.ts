@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildPythonEnvironment } from "../modules/components/python-environment";
+import type { ComponentPythonBuildProgress } from "@toolbox/shared";
 
 let temporaryRoot = "";
 
@@ -29,9 +30,20 @@ describe("buildPythonEnvironment", () => {
         cwd: string;
         environment?: Record<string, string>;
       }> = [];
+      const progress: ComponentPythonBuildProgress[] = [];
       const runProcess = vi.fn(
-        async (executable: string, args: string[], cwd: string, environment?: Record<string, string>) => {
+        async (
+          executable: string,
+          args: string[],
+          cwd: string,
+          environment?: Record<string, string>,
+          onOutput?: (chunk: string) => void
+        ) => {
           invocations.push({ executable, args, cwd, environment });
+          if (args.includes("install"))
+            onOutput?.(
+              "Processing C:\\Users\\private\\sample-1.2.3-py3-none-any.whl\nInstalling collected packages: sample\n"
+            );
           return args[0] === "-c" ? `${version}\n` : "";
         }
       );
@@ -44,7 +56,8 @@ describe("buildPythonEnvironment", () => {
         requirementsLockPath: "requirements.lock",
         requirementsLockSha256: crypto.createHash("sha256").update(lock).digest("hex"),
         expectedPythonVersion: version,
-        runProcess
+        runProcess,
+        onProgress: (value) => progress.push(value)
       });
 
       expect(result.environmentDirectory).toBe(path.join(temporaryRoot, "venv"));
@@ -63,6 +76,20 @@ describe("buildPythonEnvironment", () => {
       });
       await expect(fs.access(path.join(temporaryRoot, ".python-build-temp"))).rejects.toThrow();
       expect(invocations[4].args).toEqual(["-m", "pip", "--isolated", "check"]);
+      expect([...new Set(progress.map((value) => value.step))]).toEqual([
+        "check-base",
+        "create-venv",
+        "check-venv",
+        "install-dependencies",
+        "check-dependencies"
+      ]);
+      expect(progress.at(-1)?.completedSteps).toBe(5);
+      expect(progress.find((value) => value.activity === "installing")).toMatchObject({
+        preparedDependencies: 1,
+        currentDependency: "sample",
+        completedSteps: 4
+      });
+      expect(JSON.stringify(progress)).not.toContain("private");
     }
   );
 

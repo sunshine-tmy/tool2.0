@@ -5,8 +5,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import type { ComponentPlatform } from "@toolbox/shared";
+import type { ComponentPlatform, ComponentPythonBuildProgress } from "@toolbox/shared";
 import { componentPlatformForRuntime } from "./component-platform";
+import { createPythonBuildProgress } from "./python-build-progress";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const SAFE_RELATIVE_PATH = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
@@ -23,11 +24,13 @@ export type PythonEnvironmentBuildOptions = {
   requirementsLockPath: string;
   requirementsLockSha256: string;
   expectedPythonVersion: PythonRuntimeVersion;
+  onProgress?: (progress: ComponentPythonBuildProgress) => void;
   runProcess?: (
     executable: string,
     args: string[],
     cwd: string,
-    environment?: Record<string, string>
+    environment?: Record<string, string>,
+    onOutput?: (chunk: string) => void
   ) => Promise<string>;
 };
 
@@ -55,13 +58,21 @@ export async function buildPythonEnvironment(options: PythonEnvironmentBuildOpti
   const temporaryDirectory = path.join(packageRoot, ".python-build-temp");
   if (await pathExists(temporaryDirectory)) throw new Error("Python 构建临时目录已存在，拒绝覆盖");
   await fs.mkdir(temporaryDirectory);
-  const run = options.runProcess ?? runProcess;
+  const tracker = createPythonBuildProgress(
+    await fs.readFile(requirementsLock, "utf8"),
+    options.onProgress ?? (() => undefined)
+  );
+  const execute = options.runProcess ?? runProcess;
+  const run = (executable: string, args: string[], cwd: string, environment: Record<string, string>) =>
+    execute(executable, args, cwd, environment, (chunk) => tracker.output(chunk));
   const temporaryEnvironment = {
     TEMP: temporaryDirectory,
     TMP: temporaryDirectory,
-    TMPDIR: temporaryDirectory
+    TMPDIR: temporaryDirectory,
+    PYTHONUNBUFFERED: "1"
   };
   try {
+    tracker.step("check-base");
     const baseVersion = await run(
       pythonExecutable,
       ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
@@ -69,15 +80,19 @@ export async function buildPythonEnvironment(options: PythonEnvironmentBuildOpti
       temporaryEnvironment
     );
     assertExpectedVersion(baseVersion, options.expectedPythonVersion);
+    tracker.completeStep();
     const isMacOS = platform === "darwin-arm64";
+    tracker.step("create-venv");
     await run(
       pythonExecutable,
       ["-m", "venv", ...(isMacOS ? ["--copies"] : []), environmentDirectory],
       packageRoot,
       temporaryEnvironment
     );
+    tracker.completeStep();
 
     const environmentPython = path.join(environmentDirectory, isMacOS ? "bin/python" : "Scripts/python.exe");
+    tracker.step("check-venv");
     const environmentVersion = await run(
       environmentPython,
       ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
@@ -85,6 +100,8 @@ export async function buildPythonEnvironment(options: PythonEnvironmentBuildOpti
       temporaryEnvironment
     );
     assertExpectedVersion(environmentVersion, options.expectedPythonVersion);
+    tracker.completeStep();
+    tracker.step("install-dependencies");
     await run(
       environmentPython,
       [
@@ -104,9 +121,13 @@ export async function buildPythonEnvironment(options: PythonEnvironmentBuildOpti
       packageRoot,
       temporaryEnvironment
     );
+    tracker.completeStep();
+    tracker.step("check-dependencies");
     await run(environmentPython, ["-m", "pip", "--isolated", "check"], packageRoot, temporaryEnvironment);
+    tracker.completeStep();
     return { environmentDirectory, pythonExecutable: environmentPython, pythonVersion: options.expectedPythonVersion };
   } finally {
+    tracker.dispose();
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
 }
@@ -141,7 +162,13 @@ async function sha256File(filePath: string) {
   return digest.digest("hex");
 }
 
-async function runProcess(executable: string, args: string[], cwd: string, environment?: Record<string, string>) {
+async function runProcess(
+  executable: string,
+  args: string[],
+  cwd: string,
+  environment?: Record<string, string>,
+  onOutput?: (chunk: string) => void
+) {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
@@ -165,7 +192,9 @@ async function runProcess(executable: string, args: string[], cwd: string, envir
     );
     timeout.unref();
     const collect = (chunk: Buffer) => {
-      if (output.length < 16_000) output += chunk.toString("utf8").slice(0, 16_000 - output.length);
+      const text = chunk.toString("utf8");
+      onOutput?.(text);
+      output = (output + text).slice(-16_000);
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);

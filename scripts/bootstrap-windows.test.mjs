@@ -89,7 +89,49 @@ test("resource-list mode works before Node and does not create an install", { sk
   assert.match(output, /python-312-3\.12\.14-20260901\.tar\.gz/);
   assert.match(output, /offline-resources/);
   assert.doesNotMatch(output, /chatterbox-cuda-1/);
+  assert.match(output, /GPU is NOT installed/);
 });
+
+test("CUDA resource-list and plan modes explicitly include all four GPU archives", { skip: !windows }, async () => {
+  const plan = JSON.parse(await fs.readFile(path.join(root, "scripts/source-resources.generated.json"), "utf8"));
+  const cpu = plan.components.filter((item) => item.required);
+  const cuda = plan.components.find((item) => item.id === "chatterbox-cuda");
+  assert.equal(cpu.flatMap((item) => item.archives).length, 11);
+  assert.equal(cuda.archives.length, 4);
+  const output = run(`& ${quote(script)} -ListResources -WithCuda`);
+  for (const item of [...cpu, cuda]) for (const archive of item.archives) assert.ok(output.includes(archive.filename));
+  assert.match(output, /15 archives/);
+  assert.match(run(`& ${quote(script)} -PlanOnly -WithCuda`), /NVIDIA voice cloning GPU extension/);
+});
+
+test(
+  "the double-click GPU entry delegates arguments and failure status to the same launcher",
+  { skip: !windows },
+  async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-gpu-entry-"));
+    try {
+      const directory = path.join(scratch, "中文 project (1)");
+      await fs.mkdir(directory);
+      await fs.copyFile(path.join(root, "start-gpu.bat"), path.join(directory, "start-gpu.bat"));
+      await fs.writeFile(path.join(directory, "start.bat"), "@echo off\r\necho ARGS=%*\r\nexit /b 7\r\n");
+      let failure;
+      try {
+        execFileSync("cmd.exe", ["/d", "/c", "start-gpu.bat", "-ListResources"], {
+          cwd: directory,
+          encoding: "utf8",
+          timeout: 20000,
+          windowsHide: true
+        });
+      } catch (error) {
+        failure = error;
+      }
+      assert.equal(failure?.status, 7);
+      assert.match(failure.stdout, /ARGS=-WithCuda -ListResources/);
+    } finally {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+);
 
 test(
   "a fresh clone with no archives stops before any tool download or dependency install",

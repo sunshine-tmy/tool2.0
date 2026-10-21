@@ -3,9 +3,11 @@
 
 import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ComponentJob, ComponentPackageStatus } from "@toolbox/shared";
 import DesktopComponentCard from "./DesktopComponentCard.vue";
+
+afterEach(() => vi.useRealTimers());
 
 const ButtonStub = defineComponent({
   inheritAttrs: false,
@@ -162,5 +164,45 @@ describe("DesktopComponentCard", () => {
     const cancel = wrapper.findAll("button").find((button) => button.text().includes("取消下载"));
     await cancel?.trigger("click");
     expect(wrapper.emitted("cancel")?.[0]?.[0]).toEqual(job);
+  });
+
+  it("shows real Python build details and live output age without using archive percentage as installation progress", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-24T00:00:01Z"));
+    const job: ComponentJob = {
+      id: "00000000-0000-4000-8000-000000000001",
+      componentId: "ffmpeg",
+      operation: "install",
+      state: "running",
+      phase: "building-python",
+      progress: {
+        downloadedBytes: 100,
+        totalDownloadBytes: 100,
+        processedFiles: 141,
+        totalFiles: 141,
+        percentage: 100,
+        python: {
+          step: "install-dependencies",
+          completedSteps: 3,
+          totalSteps: 5,
+          preparedDependencies: 2,
+          totalDependencies: 10,
+          currentDependency: "sample",
+          activity: "installing",
+          lastOutputAt: "2026-09-24T00:00:01Z"
+        }
+      },
+      createdAt: "2026-09-24T00:00:00Z",
+      updatedAt: "2026-09-24T00:00:01Z"
+    };
+    const wrapper = mountCard({ component: component(), job });
+    expect(wrapper.text()).toContain("已解析依赖 2/10");
+    expect(wrapper.text()).toContain("已完成 3/5 步");
+    expect(wrapper.text()).not.toContain("100%");
+    expect(wrapper.text()).not.toContain("0/141");
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(wrapper.text()).toContain("最近安装器输出 12 秒前");
+    wrapper.unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

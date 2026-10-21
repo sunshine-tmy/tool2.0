@@ -106,14 +106,22 @@
     <div v-if="job" class="component-job" aria-live="polite">
       <div class="component-job-heading">
         <strong>{{ operationLabel(job.operation) }} · {{ phaseLabel(job.phase) }}</strong>
-        <span>{{ job.progress.percentage }}%</span>
+        <span v-if="job.phase !== 'building-python'">{{ job.progress.percentage }}%</span>
       </div>
       <n-progress
+        v-if="job.phase !== 'building-python'"
         type="line"
         :percentage="job.progress.percentage"
         :show-indicator="false"
         :status="job.state === 'failed' ? 'error' : 'default'"
       />
+      <p v-if="job.phase === 'building-python'" class="component-note">
+        {{
+          job.progress.python
+            ? formatComponentPythonProgress(job.progress.python, progressNow)
+            : "正在准备 Python 安装器；此阶段不使用归档文件计数。"
+        }}
+      </p>
       <p v-if="job.phase === 'downloading'" class="component-note">
         {{ formatBytes(job.progress.downloadedBytes) }} / {{ formatBytes(job.progress.totalDownloadBytes) }}
       </p>
@@ -134,10 +142,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { NAlert, NButton, NCard, NProgress, NSpace, NTag } from "naive-ui";
 import { Download, RefreshCw, Trash2, Upload } from "lucide-vue-next";
 import type { ComponentJob, ComponentPackageStatus } from "@toolbox/shared";
+import { formatComponentPythonProgress } from "@toolbox/shared";
 
 const props = defineProps<{
   component: ComponentPackageStatus;
@@ -147,6 +156,19 @@ const props = defineProps<{
   offlineUploading?: boolean;
   offlineUploadProgress?: number;
 }>();
+
+// Output may be silent while pip writes files; keep the last-output age live without fabricating work.
+const progressNow = ref(Date.now());
+watch(
+  () => props.job?.phase === "building-python" && props.job.state === "running",
+  (active, _previous, onCleanup) => {
+    progressNow.value = Date.now();
+    if (!active) return;
+    const timer = setInterval(() => (progressNow.value = Date.now()), 1000);
+    onCleanup(() => clearInterval(timer));
+  },
+  { immediate: true }
+);
 
 defineEmits<{
   install: [component: ComponentPackageStatus];

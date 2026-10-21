@@ -1,7 +1,12 @@
 /** 中文模块说明：验证能力目录状态和异步作业的共享接口契约。 */
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import { ComponentJobIdParamsSchema, ComponentJobSchema, ComponentPackageStatusSchema } from "../component-packages";
+import {
+  ComponentJobIdParamsSchema,
+  ComponentJobSchema,
+  ComponentPackageStatusSchema,
+  formatComponentPythonProgress
+} from "../component-packages";
 
 const packageStatus = {
   id: "edge-tts",
@@ -89,5 +94,33 @@ describe("component package contracts", () => {
     expect(Value.Check(ComponentJobIdParamsSchema, { jobId: job.id })).toBe(true);
     expect(Value.Check(ComponentJobIdParamsSchema, { jobId: "not-a-uuid" })).toBe(false);
     expect(Value.Check(ComponentJobSchema, { ...job, progress: { ...job.progress, percentage: 101 } })).toBe(false);
+    const python = {
+      step: "install-dependencies" as const,
+      completedSteps: 3,
+      totalSteps: 5 as const,
+      preparedDependencies: 1,
+      totalDependencies: 10,
+      currentDependency: "sample",
+      activity: "installing" as const,
+      lastOutputAt: "2026-09-24T00:00:00.000Z"
+    };
+    expect(Value.Check(ComponentJobSchema, { ...job, progress: { ...job.progress, python } })).toBe(true);
+    expect(
+      Value.Check(ComponentJobSchema, {
+        ...job,
+        progress: { ...job.progress, python: { ...python, currentDependency: "C:\\Users\\secret" } }
+      })
+    ).toBe(false);
+    expect(
+      Value.Check(ComponentJobSchema, {
+        ...job,
+        progress: { ...job.progress, python: { ...python, rawOutput: "private" } }
+      })
+    ).toBe(false);
+    const text = formatComponentPythonProgress(python, Date.parse("2026-09-24T00:00:12.000Z"));
+    expect(text).toContain("已完成 3/5 步");
+    expect(text).toContain("不代表安装完成");
+    expect(text).toContain("12 秒前");
+    expect(text).not.toContain("%");
   });
 });

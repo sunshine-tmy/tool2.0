@@ -109,13 +109,34 @@ export const ComponentJobPhaseSchema = Type.Union([
   Type.Literal("complete")
 ]);
 
+export const ComponentPythonBuildProgressSchema = Type.Object(
+  {
+    step: Type.Union([
+      Type.Literal("check-base"),
+      Type.Literal("create-venv"),
+      Type.Literal("check-venv"),
+      Type.Literal("install-dependencies"),
+      Type.Literal("check-dependencies")
+    ]),
+    completedSteps: Type.Integer({ minimum: 0, maximum: 5 }),
+    totalSteps: Type.Literal(5),
+    preparedDependencies: Type.Integer({ minimum: 0 }),
+    totalDependencies: Type.Integer({ minimum: 0 }),
+    currentDependency: Type.Optional(Type.String({ minLength: 1, maxLength: 100, pattern: "^[a-z0-9][a-z0-9-]*$" })),
+    activity: Type.Union([Type.Literal("preparing"), Type.Literal("installing")]),
+    lastOutputAt: Type.Optional(Type.String({ pattern: COMPONENT_TIMESTAMP_PATTERN }))
+  },
+  { additionalProperties: false }
+);
+
 export const ComponentJobProgressSchema = Type.Object(
   {
     downloadedBytes: Type.Integer({ minimum: 0 }),
     totalDownloadBytes: Type.Integer({ minimum: 0 }),
     processedFiles: Type.Integer({ minimum: 0 }),
     totalFiles: Type.Integer({ minimum: 0 }),
-    percentage: Type.Integer({ minimum: 0, maximum: 100 })
+    percentage: Type.Integer({ minimum: 0, maximum: 100 }),
+    python: Type.Optional(ComponentPythonBuildProgressSchema)
   },
   { additionalProperties: false }
 );
@@ -157,5 +178,26 @@ export type ComponentJobOperation = Static<typeof ComponentJobOperationSchema>;
 export type ComponentJobState = Static<typeof ComponentJobStateSchema>;
 export type ComponentJobPhase = Static<typeof ComponentJobPhaseSchema>;
 export type ComponentJobProgress = Static<typeof ComponentJobProgressSchema>;
+export type ComponentPythonBuildProgress = Static<typeof ComponentPythonBuildProgressSchema>;
 export type ComponentJob = Static<typeof ComponentJobSchema>;
 export type ComponentJobIdParams = Static<typeof ComponentJobIdParamsSchema>;
+
+/** Steps and parsed dependencies are real counts, never an estimated installation percentage. */
+export function formatComponentPythonProgress(value: ComponentPythonBuildProgress, now = Date.now()) {
+  const labels = {
+    "check-base": "检查共享 Python",
+    "create-venv": "创建隔离环境",
+    "check-venv": "检查隔离解释器",
+    "install-dependencies": "离线安装依赖",
+    "check-dependencies": "检查依赖一致性"
+  };
+  const parts = [`${labels[value.step]}（已完成 ${value.completedSteps}/${value.totalSteps} 步）`];
+  if (value.step === "install-dependencies") {
+    parts.push(`已解析依赖 ${value.preparedDependencies}/${value.totalDependencies}（不代表安装完成）`);
+    if (value.currentDependency) parts.push(`最近解析依赖 ${value.currentDependency}`);
+    if (value.activity === "installing") parts.push("正在写入依赖文件与处理字节码，可能需要数分钟");
+  }
+  if (value.lastOutputAt)
+    parts.push(`最近安装器输出 ${Math.max(0, Math.floor((now - Date.parse(value.lastOutputAt)) / 1000))} 秒前`);
+  return parts.join("；");
+}

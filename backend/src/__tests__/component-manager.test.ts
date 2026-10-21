@@ -1036,8 +1036,15 @@ describe("ComponentManager", () => {
     });
 
     const job = await manager.startInstall("edge-tts");
+    const pythonUpdates: import("@toolbox/shared").ComponentJob[] = [];
+    const unsubscribe = manager.subscribe(job.id, (value) => {
+      if (value.phase === "building-python") pythonUpdates.push(value);
+    });
     await expect(waitForJob(manager, job.id)).resolves.toMatchObject({ state: "completed" });
     expect(calls.length).toBe(5);
+    unsubscribe();
+    expect(pythonUpdates.some((value) => value.progress.python?.completedSteps === 5)).toBe(true);
+    expect(pythonUpdates.every((value) => value.progress.processedFiles === fixture.manifest.files.length)).toBe(true);
     expect(calls.every((call) => call.cwd === path.join(root, "edge-tts", "versions", "1.0.0"))).toBe(true);
     expect(calls[3].args).toContain("--no-index");
     expect(calls[3].args).toContain("--no-cache-dir");

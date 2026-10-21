@@ -1,6 +1,7 @@
 /** 串行安装全功能 CPU 基线；每个已完成的签名 generation 是独立续跑点，不信任额外成功标记。 */
 import type { ComponentManager } from "../modules/components/component-manager";
 import type { ComponentJob } from "@toolbox/shared";
+import { formatComponentPythonProgress } from "@toolbox/shared";
 import { installFailureAdvice } from "../modules/components/install-diagnostics";
 
 export const sourceComponentIds = [
@@ -50,6 +51,11 @@ export async function prepareSourceComponents(
   for (const id of ids) {
     if (!initial.some((entry) => entry.id === id)) throw new Error(`当前平台缺少签名能力：${id}`);
   }
+  report(
+    withCuda
+      ? "本次准备 CPU 基础能力及参考音色克隆 GPU 扩展；安装能力包不代表显卡与驱动已通过实际生成验证。"
+      : "本次只准备 CPU 基础能力，不安装 GPU 扩展；已有 GPU 能力保留。需 GPU 加速时请准备额外 4 个包，使用 start-gpu.bat 或 start.bat -WithCuda。"
+  );
   for (const [index, id] of ids.entries()) {
     signal.throwIfAborted();
     const status = initial.find((entry) => entry.id === id);
@@ -75,9 +81,13 @@ export async function prepareSourceComponents(
           : current.state === "cancelled"
             ? "已取消"
             : (phases[current.phase] ?? current.phase);
-      report(
-        `${prefix}：${label}；耗时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒；归档 ${p.downloadedBytes}/${p.totalDownloadBytes} 字节；文件 ${p.processedFiles}/${p.totalFiles}`
-      );
+      const detail =
+        current.phase === "building-python"
+          ? p.python
+            ? formatComponentPythonProgress(p.python)
+            : "正在准备 Python 安装器（此阶段不使用归档文件计数）"
+          : `归档 ${p.downloadedBytes}/${p.totalDownloadBytes} 字节；文件 ${p.processedFiles}/${p.totalFiles}`;
+      report(`${prefix}：${label}；耗时 ${Math.floor((Date.now() - startedAt) / 1000)} 秒；${detail}`);
       if (current.state === "completed") break;
       if (current.state === "failed" || current.state === "cancelled") {
         // Avoid persisting/raw-printing unknown Worker output, URL credentials or user paths.

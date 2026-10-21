@@ -84,6 +84,8 @@
 - [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz)（980.7 MiB）
 - [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz)（3.9 MiB）
 
+以下 4 个归档是 11 个 CPU 基础归档之外的 GPU 扩展，共需准备 15 个文件。文件放入同一目录后，双击根目录 `start-gpu.bat`，或执行 `start.bat -WithCuda`；仅放入包但双击普通 `start.bat` 不会安装 GPU 扩展。可用 `start-gpu.bat -ListResources` 列出完整清单。已有实例须先通过 `stop.bat` 正常停止，已安装且正常的 CPU 能力及模型会复用。需要兼容的 NVIDIA 显卡和驱动，不自动修改驱动；安装包通过校验不等于 GPU 实际生成已验证。此扩展仅加速参考音色克隆，不改变 CPU 图片能力。
+
 ## 复用旧备份
 
 也支持将按 `能力ID/版本/文件名` 组织的完整离线包直接复制到 `offline-resources/components/` 下。只识别本清单要求的版本，不自动搜索其他磁盘。不要复制旧虚拟环境、原电脑的 node_modules 或带绝对路径的已安装运行目录。新电脑会从包内 wheelhouse 重建环境，不需要迁移旧 Python 3.11。私钥与平台登录态不是启动前提，不要放进离线资源目录。

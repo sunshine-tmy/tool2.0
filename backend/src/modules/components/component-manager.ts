@@ -865,7 +865,10 @@ export class ComponentManager {
       await fsp.rename(staging, target);
       targetCreated = true;
       if (manifest.pythonEnvironment) {
-        this.updateJob(internal, { phase: "building-python" });
+        this.updateJob(internal, {
+          phase: "building-python",
+          progress: progress(downloadBytesTotal, downloadBytesTotal, manifest.files.length, manifest.files.length)
+        });
         const { pythonComponentId, ...pythonEnvironment } = manifest.pythonEnvironment;
         const pythonRuntime = pythonComponentId
           ? await this.resolveInstalledAsset(pythonComponentId, pythonEnvironment.pythonExecutablePath)
@@ -875,7 +878,8 @@ export class ComponentManager {
           ...pythonEnvironment,
           platform: manifest.platform,
           ...(pythonRuntime ? { pythonRuntimeRoot: pythonRuntime.generationRoot } : {}),
-          runProcess: this.runPythonProcess
+          runProcess: this.runPythonProcess,
+          onProgress: (python) => this.updateJob(internal, { progress: { ...internal.value.progress, python } })
         });
       }
       this.updateJob(internal, {

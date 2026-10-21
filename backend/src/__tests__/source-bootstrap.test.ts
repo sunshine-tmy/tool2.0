@@ -54,6 +54,23 @@ describe("source bootstrap", () => {
     await prepareSourceComponents(manager, (value) => messages.push(value));
     expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual(sourceComponentIds);
     expect(messages.some((message) => message.includes("归档 10/10 字节"))).toBe(true);
+    expect(messages[0]).toContain("不安装 GPU 扩展");
+    expect(messages[0]).toContain("start-gpu.bat");
+  });
+
+  it("adds only the GPU extension when CPU packages are already healthy", async () => {
+    const { manager, spies, statuses } = fixture([...sourceComponentIds]);
+    statuses.push({
+      id: "chatterbox-cuda",
+      displayName: "CUDA",
+      installed: false,
+      version: "1"
+    } as ComponentPackageStatus);
+    const messages: string[] = [];
+    await prepareSourceComponents(manager, (value) => messages.push(value), undefined, undefined, true);
+    expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual(["chatterbox-cuda"]);
+    expect(messages[0]).toContain("安装能力包不代表显卡与驱动已通过实际生成验证");
+    expect(spies.resolveInstalledPython).toHaveBeenCalledWith("chatterbox");
   });
 
   it("uses the supplied offline installer exclusively instead of silently downloading packages", async () => {
@@ -63,6 +80,51 @@ describe("source bootstrap", () => {
     expect(offline.mock.calls.map(([id]) => id)).toEqual(sourceComponentIds);
     expect(spies.startInstall).not.toHaveBeenCalled();
   });
+
+  it.each([true, false])(
+    "shows Python substeps instead of misleading archive file counts (details=%s)",
+    async (details) => {
+      const { manager, spies } = fixture();
+      const completed = await spies.getJob("python-312");
+      spies.getJob.mockResolvedValueOnce({
+        ...completed,
+        state: "running",
+        phase: "building-python",
+        progress: {
+          downloadedBytes: 100,
+          totalDownloadBytes: 100,
+          processedFiles: 0,
+          totalFiles: 141,
+          percentage: 100,
+          ...(details
+            ? {
+                python: {
+                  step: "install-dependencies",
+                  completedSteps: 3,
+                  totalSteps: 5,
+                  preparedDependencies: 2,
+                  totalDependencies: 10,
+                  currentDependency: "sample",
+                  activity: "installing"
+                }
+              }
+            : {})
+        }
+      } as ComponentJob);
+      const messages: string[] = [];
+      await prepareSourceComponents(
+        manager,
+        (value) => messages.push(value),
+        undefined,
+        async () => undefined
+      );
+      const installing = messages.find((value) => value.includes("创建隔离 Python 环境"))!;
+      expect(installing).not.toContain("0/141");
+      expect(installing).not.toContain("100%");
+      expect(installing).toContain(details ? "已解析依赖 2/10" : "此阶段不使用归档文件计数");
+      if (details) expect(installing).toContain("已完成 3/5 步");
+    }
+  );
 
   it("resumes by resolving installed packages without downloading them again", async () => {
     const { manager, spies } = fixture(["python-312", "ffmpeg", "edge-tts"]);

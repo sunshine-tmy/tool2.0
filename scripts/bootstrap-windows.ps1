@@ -149,6 +149,12 @@ function Show-SourceResources {
   Write-Host 'Before first startup: download the signed capability archives listed below.' -ForegroundColor Cyan
   Write-Host ("Place them in: " + (Join-Path $OfflineRoot 'components'))
   Write-Host 'Keep original filenames; do not extract. Existing installed capabilities are validated again by the manager.'
+  if ($WithCuda) {
+    Write-Host 'Selected: CPU baseline + NVIDIA voice cloning GPU extension (15 archives for a fresh setup).'
+  } else {
+    Write-Host 'Selected: CPU baseline (11 archives). GPU is NOT installed by this mode.'
+    Write-Host 'For NVIDIA voice cloning, use start-gpu.bat or start.bat -WithCuda; prepare 4 additional archives.'
+  }
   foreach ($component in $plan.components) {
     if (-not $component.required -and -not $WithCuda) { continue }
     Write-Host ("  " + $component.id + ' ' + $component.version)
@@ -182,7 +188,8 @@ function Assert-LocalComponentResources {
     Write-Host 'Missing or wrong-sized local capability archives (all required files are listed):' -ForegroundColor Yellow
     foreach ($archive in $missing) { Write-Host ("  " + $archive.filename + ' (' + $archive.bytes + ' bytes)'); Write-Host ("  " + $archive.url) }
     Write-Host ("Place unchanged files in: " + (Join-Path $OfflineRoot 'components'))
-    throw 'Prepare the listed archives first. No model downloads or capability installs were attempted. See docs\source-resources.md or run start.bat -ListResources.'
+    $listCommand = if ($WithCuda) { 'start-gpu.bat -ListResources' } else { 'start.bat -ListResources' }
+    throw "Prepare the listed archives first. No model downloads or capability installs were attempted. See docs\source-resources.md or run $listCommand."
   }
 }
 
@@ -193,7 +200,11 @@ if ($PlanOnly) {
   Write-Host '1/6 Check Windows x64, local capability archives and preserve .env'
   Write-Host "2/6 Reuse Node 24 or prepare isolated Node $NodeVersion; pinned pnpm $PnpmVersion"
   Write-Host '3/6 Install frozen workspace dependencies and build shared contracts'
-  Write-Host '4/6 Import signed CPU capabilities from offline-resources\components (no model downloads)'
+  if ($WithCuda) {
+    Write-Host '4/6 Import signed CPU capabilities + NVIDIA voice cloning GPU extension (15 archives; no model downloads)'
+  } else {
+    Write-Host '4/6 Import signed CPU capabilities (11 archives; GPU excluded; use start-gpu.bat for NVIDIA voice cloning)'
+  }
   Write-Host '5/6 Reuse managed Python/FFmpeg/models; no developer venv or system changes'
   Write-Host '6/6 Start API, managed Workers and frontend; platform login/online tests remain manual'
   exit 0
@@ -247,7 +258,11 @@ try {
     exit 0
   }
 
-  Write-Host '[4/6] Importing signed local CPU capabilities (no automatic model downloads)' -ForegroundColor Cyan
+  if ($WithCuda) {
+    Write-Host '[4/6] Importing signed local CPU capabilities + NVIDIA voice cloning GPU extension (no automatic model downloads)' -ForegroundColor Cyan
+  } else {
+    Write-Host '[4/6] Importing signed local CPU capabilities; GPU extension excluded. Use start-gpu.bat to add it.' -ForegroundColor Cyan
+  }
   $componentArgs = @((Join-Path $Root 'backend\node_modules\tsx\dist\cli.mjs'), '--tsconfig', (Join-Path $Root 'backend\tsconfig.json'), (Join-Path $Root 'scripts\bootstrap-components.ts'))
   if ($WithCuda) { $componentArgs += '--with-cuda' }
   Invoke-Checked $node $componentArgs
