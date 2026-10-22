@@ -11,7 +11,7 @@
     />
     <p v-if="props.task.error" class="status-error">{{ props.task.error }}</p>
     <p v-for="warning in props.task.warnings.slice(-3)" :key="warning" class="status-hint">{{ warning }}</p>
-    <n-button v-if="isRunning" block size="small" secondary type="error" @click="emit('cancel')">
+    <n-button v-if="isRunning && !props.readOnly" block size="small" secondary type="error" @click="emit('cancel')">
       <template #icon><Trash2 :size="15" /></template>取消任务
     </n-button>
   </div>
@@ -23,7 +23,7 @@ import { NButton, NProgress } from "naive-ui";
 import { Trash2 } from "lucide-vue-next";
 import type { ImageAiTask } from "@toolbox/shared";
 
-const props = defineProps<{ task?: ImageAiTask }>();
+const props = defineProps<{ task?: ImageAiTask; readOnly?: boolean }>();
 const emit = defineEmits<{ cancel: [] }>();
 const isRunning = computed(() => props.task?.status === "pending" || props.task?.status === "running");
 

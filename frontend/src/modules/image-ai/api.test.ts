@@ -2,7 +2,7 @@
  * 中文模块说明：测试 frontend/src/modules/image-ai/api.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ImageAiTaskSchema } from "@toolbox/shared";
+import { ImageAiTaskSchema, ImageAiHistorySchema, ImageAiHistoryDeleteSchema } from "@toolbox/shared";
 import { imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
 
 const httpMock = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }));
@@ -17,6 +17,17 @@ afterEach(() => {
 });
 
 describe("image ai downloads", () => {
+  it("queries retained history with bounded filters and uses a separate deletion endpoint from cancellation", async () => {
+    const query = { page: 2, pageSize: 20, operation: "background_remove" as const, keyword: "商品" };
+    const controller = new AbortController();
+    await imageAiApi.history(query, controller.signal);
+    await imageAiApi.removeHistory("image-task-123");
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/image-ai/history", ImageAiHistorySchema, {
+      params: query,
+      signal: controller.signal
+    });
+    expect(httpMock.delete).toHaveBeenCalledWith("/tools/image-ai/history/image-task-123", ImageAiHistoryDeleteSchema);
+  });
   // API 合约集中验证健康检查、建议图、任务查询和取消，防止单个端点遗漏 Schema 或超时配置。
   it("delegates health, suggestion, task lookup and task cancellation operations", async () => {
     for (const method of Object.values(httpMock)) method.mockResolvedValue({});

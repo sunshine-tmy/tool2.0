@@ -4,7 +4,7 @@
     <section class="main-column image-ai-main">
       <ToolPageHeader
         title="AI 图片处理"
-        description="去水印、变清晰和商品图抠图统一在本机完成，处理结果 24 小时后自动清理。"
+        description="去水印、变清晰和商品图抠图统一在本机完成，成功结果自动留档，支持回看与下载。"
         kicker="LOCAL AI · 图片不出网"
       >
         <template #actions>
@@ -82,6 +82,9 @@
               :cancel-active-task="cancelActiveTask"
             />
           </n-tab-pane>
+          <n-tab-pane name="history" tab="处理记录">
+            <ImageAiHistoryPanel :refresh-version="historyVersion" @deleted="onHistoryDeleted" />
+          </n-tab-pane>
         </n-tabs>
       </section>
     </section>
@@ -98,13 +101,15 @@ import ToolLayout from "../../layouts/ToolLayout.vue";
 import ToolPageHeader from "../../components/tool/ToolPageHeader.vue";
 import ImageAiOperationPanel from "./ImageAiOperationPanel.vue";
 import ImageAiWatermarkPanel from "./ImageAiWatermarkPanel.vue";
+import ImageAiHistoryPanel from "./ImageAiHistoryPanel.vue";
 import { useRequestScope } from "../../composables/useRequestScope";
 import { useTaskEvents } from "../../composables/useTaskEvents";
 import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { absoluteImageAiUrl, imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
 
 const message = useMessage();
-const activeTab = ref<"watermark" | "enhance" | "cutout">("watermark");
+const activeTab = ref<"watermark" | "enhance" | "cutout" | "history">("watermark");
+const historyVersion = ref(0);
 const health = ref<ImageAiHealth>();
 const loadingHealth = ref(false);
 const watermarkFile = ref<File>();
@@ -126,6 +131,19 @@ const streamedTaskId = computed(() =>
 );
 const requestScope = useRequestScope();
 const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
+watch(
+  () => activeTask.value && `${activeTask.value.id}:${activeTask.value.status}`,
+  () => {
+    if (activeTask.value && !["pending", "running"].includes(activeTask.value.status)) historyVersion.value += 1;
+  }
+);
+
+function onHistoryDeleted(taskId: string) {
+  if (activeTask.value?.id !== taskId || isBusy.value) return;
+  activeTask.value = undefined;
+  activeTaskFiles.value = [];
+  watermarkResultUrl.value = "";
+}
 const healthLabel = computed(() => {
   if (!health.value) return "请启动本地 Worker";
   const ready = health.value.models.filter((model) => model.available).length;

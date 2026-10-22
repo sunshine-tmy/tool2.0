@@ -40,7 +40,7 @@ export const cleanupDefinitions = [
   },
   {
     id: "image-ai",
-    label: "AI 图片处理运行数据",
+    label: "AI 图片处理数据（含长期留档的原图和结果）",
     risk: "medium",
     requiresStop: true,
     defaults: false,

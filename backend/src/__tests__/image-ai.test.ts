@@ -16,9 +16,13 @@ let workerServer: http.Server;
 let workerUrl: string;
 let app: FastifyInstance | undefined;
 let beforeProcess: (() => Promise<void>) | undefined;
+let failProcessAt: number | undefined;
+let processCount = 0;
 
 beforeEach(async () => {
   beforeProcess = undefined;
+  failProcessAt = undefined;
+  processCount = 0;
   storageRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-image-ai-"));
   workerServer = createFakeWorker();
   await new Promise<void>((resolve) => workerServer.listen(0, "127.0.0.1", resolve));
@@ -68,6 +72,11 @@ describe("image ai api", () => {
         ids.push(response.json().data.id);
       }
       await vi.waitFor(() => expect(processCall).toHaveBeenCalledTimes(1));
+      for (const id of ids) {
+        const removal = await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${id}` });
+        expect(removal.statusCode).toBe(409);
+        expect(removal.json().error.code).toBe("IMAGE_AI_TASK_BUSY");
+      }
       await app.close();
       release();
       beforeProcess = undefined;
@@ -198,6 +207,151 @@ describe("image ai api", () => {
     expect(response.json().error.code).toBe("MASK_DIMENSIONS_MISMATCH");
   });
 
+  it("lists retained results with safe pagination, filters and original-image previews", async () => {
+    app = await createApp();
+    const enhance = await createHistoryTask(app, "enhance", "product-large.png");
+    const cutout = await createHistoryTask(app, "background_remove", "product-cutout.png");
+    expect(enhance.expiresAt).toBeNull();
+    const first = await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/history?page=1&pageSize=1" });
+    expect(first.statusCode).toBe(200);
+    expect(first.json().data).toMatchObject({ total: 2, page: 1, pageSize: 1 });
+    const second = await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/history?page=2&pageSize=1" });
+    expect(second.json().data.items[0].id).not.toBe(first.json().data.items[0].id);
+    const filtered = await app.inject({
+      method: "GET",
+      url: "/api/v1/tools/image-ai/history?operation=background_remove&status=completed&keyword=PRODUCT-CUTOUT"
+    });
+    expect(filtered.json().data.items.map((item: { id: string }) => item.id)).toEqual([cutout.id]);
+    expect(filtered.body).not.toContain(storageRoot);
+    expect(filtered.body).not.toContain("outputPath");
+    expect(filtered.body).not.toContain("input-0.bin");
+    const original = await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${cutout.id}/inputs/1` });
+    expect(original.statusCode).toBe(200);
+    expect(original.headers["content-type"]).toContain("image/png");
+    expect((await sharp(original.rawPayload).metadata()).width).toBe(20);
+    const thumbnail = await app.inject({ method: "GET", url: `${cutout.results[0].downloadUrl}/thumbnail` });
+    expect(thumbnail.statusCode).toBe(200);
+    expect((await sharp(thumbnail.rawPayload).metadata()).format).toBe("webp");
+    expect((await sharp(thumbnail.rawPayload).metadata()).width).toBeLessThanOrEqual(160);
+    expect(filtered.json().data.items[0].inputs[0]).toMatchObject({
+      originalName: "product-cutout.png",
+      width: 20,
+      height: 20
+    });
+    for (const query of [
+      "page=0",
+      "pageSize=51",
+      "operation=unknown",
+      "status=unknown",
+      `keyword=${"x".repeat(101)}`
+    ]) {
+      expect((await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/history?${query}` })).statusCode).toBe(
+        400
+      );
+    }
+    for (const index of ["0", "11", "bad"])
+      expect(
+        (await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${cutout.id}/inputs/${index}` }))
+          .statusCode
+      ).toBe(400);
+  });
+
+  it("preserves old and partially successful results across restart and cleans only result-less expired tasks", async () => {
+    app = await createApp();
+    failProcessAt = 2;
+    const partial = await createHistoryTask(app, "background_remove", "partial.png", 2);
+    expect(partial.status).toBe("completed");
+    expect(partial.results).toHaveLength(1);
+    expect(partial.expiresAt).toBeNull();
+    await app.close();
+    app = undefined;
+    const database = new ToolboxDatabase(path.join(storageRoot, "toolbox.db"));
+    const entity = database.get("image-ai-task", partial.id)!;
+    const payload = entity.payload as Record<string, unknown>;
+    database.upsert({ ...entity, payload: { ...payload, expiresAt: "2020-01-01T00:00:00Z" } });
+    database.upsert({
+      ...entity,
+      id: "expired-empty",
+      status: "failed",
+      payload: {
+        ...payload,
+        id: "expired-empty",
+        status: "failed",
+        results: [],
+        inputs: [],
+        expiresAt: "2020-01-01T00:00:00Z"
+      }
+    });
+    database.close();
+    app = await createApp();
+    const retained = await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${partial.id}` });
+    expect(retained.json().data.expiresAt).toBeNull();
+    expect((await app.inject({ method: "GET", url: partial.results[0].downloadUrl })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/tasks/expired-empty" })).statusCode).toBe(
+      404
+    );
+    expect((await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/history" })).json().data.total).toBe(1);
+  });
+
+  it("deletes only the selected task's inputs, mask, results and metadata and does not resurrect it", async () => {
+    app = await createApp();
+    const owned = await createHistoryTask(app, "watermark_remove", "owned.png");
+    const sibling = await createHistoryTask(app, "background_remove", "sibling.png");
+    const legacyFile = path.join(storageRoot, "image-ai/tasks", `${owned.id}.json`);
+    await fs.writeFile(legacyFile, JSON.stringify(owned));
+    const response = await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${owned.id}` });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({ id: owned.id, deleted: true });
+    for (const target of [
+      path.join(storageRoot, "image-ai/inputs", owned.id),
+      path.join(storageRoot, "image-ai/outputs", owned.id),
+      legacyFile
+    ])
+      await expect(fs.stat(target)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await app.inject({ method: "GET", url: sibling.results[0].downloadUrl })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: owned.results[0].downloadUrl })).statusCode).toBe(404);
+    expect((await app.inject({ method: "GET", url: `/api/v1/tasks/${owned.id}` })).statusCode).toBe(404);
+    const database = new ToolboxDatabase(path.join(storageRoot, "toolbox.db"));
+    expect(database.get("image-ai-task", owned.id)).toBeUndefined();
+    expect(database.listFiles({ entityId: owned.id })).toHaveLength(0);
+    database.close();
+    await app.close();
+    app = await createApp();
+    expect((await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${owned.id}` })).statusCode).toBe(404);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/tools/image-ai/history" }))
+        .json()
+        .data.items.map((item: { id: string }) => item.id)
+    ).toEqual([sibling.id]);
+    expect((await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${owned.id}` })).statusCode).toBe(
+      404
+    );
+  });
+
+  it("keeps the history identity on file deletion failure and allows an explicit retry", async () => {
+    app = await createApp();
+    const task = await createHistoryTask(app, "background_remove", "retry-delete.png");
+    const target = path.join(storageRoot, "image-ai/outputs", task.id);
+    const originalRemove = fs.rm.bind(fs);
+    const blocked = vi.spyOn(fs, "rm").mockImplementation(async (...args) => {
+      if (args[0] === target) throw Object.assign(new Error("file locked"), { code: "EPERM" });
+      return originalRemove(...args);
+    });
+    try {
+      const response = await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${task.id}` });
+      expect(response.statusCode).toBe(500);
+      expect(response.json().error.code).toBe("IMAGE_AI_DELETE_FAILED");
+      expect((await app.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${task.id}` })).statusCode).toBe(
+        200
+      );
+    } finally {
+      blocked.mockRestore();
+    }
+    expect((await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${task.id}` })).statusCode).toBe(
+      200
+    );
+  });
+
   it("rejects spoofed filenames even when the bytes are a valid image", async () => {
     app = await createApp();
     const image = await testImage(20, 20);
@@ -313,6 +467,14 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
     if (request.url === "/process") {
       await beforeProcess?.();
       if (response.destroyed) return;
+      processCount += 1;
+      if (processCount === failProcessAt) {
+        response.statusCode = 500;
+        response.end(
+          JSON.stringify({ success: false, error: { code: "TEST_FAILURE", message: "simulated partial failure" } })
+        );
+        return;
+      }
       const metadata = await sharp(body.input_path).metadata();
       const scale = body.operation === "enhance" ? Number(body.scale || 2) : 1;
       await sharp(body.input_path)
@@ -346,6 +508,30 @@ async function readBody(request: http.IncomingMessage) {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf8");
+}
+
+async function createHistoryTask(
+  instance: FastifyInstance,
+  operation: "enhance" | "background_remove" | "watermark_remove",
+  filename: string,
+  count = 1
+) {
+  const image = await testImage(20, 20);
+  const files = Array.from({ length: count }, () => ({
+    field: "files",
+    fileName: filename,
+    mimeType: "image/png",
+    content: image
+  }));
+  if (operation === "watermark_remove")
+    files.push({ field: "mask", fileName: "mask.png", mimeType: "image/png", content: image });
+  const response = await instance.inject({
+    method: "POST",
+    url: "/api/v1/tools/image-ai/tasks",
+    ...multipartPayload(files, { operation, scale: "2" })
+  });
+  expect(response.statusCode).toBe(202);
+  return waitForTask(instance, response.json().data.id);
 }
 
 async function waitForTask(instance: FastifyInstance, taskId: string) {

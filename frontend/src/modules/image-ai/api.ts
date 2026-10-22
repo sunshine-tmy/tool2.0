@@ -1,11 +1,32 @@
 /**
  * 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载
  */
-import { ImageAiHealthSchema, ImageAiTaskSchema, WatermarkSuggestionResponseSchema } from "@toolbox/shared";
+import {
+  ImageAiHealthSchema,
+  ImageAiTaskSchema,
+  ImageAiHistorySchema,
+  ImageAiHistoryDeleteSchema,
+  WatermarkSuggestionResponseSchema,
+  type ImageAiHistoryQuery
+} from "@toolbox/shared";
 import { httpClient, withApiError } from "../../services/http";
 import { resolveBackendUrl } from "../../config/runtime";
 
 class ImageAiApi {
+  async history(query: ImageAiHistoryQuery = {}, signal?: AbortSignal) {
+    return withApiError(
+      () => httpClient.get("/tools/image-ai/history", ImageAiHistorySchema, { params: query, signal }),
+      "读取图片处理记录失败"
+    );
+  }
+
+  async removeHistory(taskId: string) {
+    return withApiError(
+      () => httpClient.delete(`/tools/image-ai/history/${encodeURIComponent(taskId)}`, ImageAiHistoryDeleteSchema),
+      "删除图片处理记录失败"
+    );
+  }
+
   async health() {
     return withApiError(() => httpClient.get("/tools/image-ai/health", ImageAiHealthSchema), "无法读取 AI 模型状态");
   }

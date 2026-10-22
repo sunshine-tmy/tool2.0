@@ -51,11 +51,63 @@ export const ImageAiTaskSchema = Type.Object(
     queuePosition: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     scale: Type.Optional(Type.Union([Type.Literal(2), Type.Literal(4)])),
     results: Type.Array(ImageAiResultSchema),
+    inputs: Type.Optional(
+      Type.Array(
+        Type.Object(
+          {
+            originalName: Type.String(),
+            mimetype: Type.String(),
+            size: Type.Integer({ minimum: 0 }),
+            width: Type.Integer({ minimum: 1 }),
+            height: Type.Integer({ minimum: 1 })
+          },
+          { additionalProperties: false }
+        )
+      )
+    ),
     warnings: Type.Array(Type.String()),
     error: Type.Optional(Type.String()),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" }),
-    expiresAt: Type.String({ format: "date-time" })
+    // null means successful/partial results are retained until explicitly deleted.
+    expiresAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()])
+  },
+  { additionalProperties: false }
+);
+
+export const ImageAiHistoryQuerySchema = Type.Object(
+  {
+    page: Type.Optional(Type.Integer({ minimum: 1, default: 1 })),
+    pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, default: 20 })),
+    operation: Type.Optional(ImageAiOperationSchema),
+    status: Type.Optional(ImageAiTaskStatusSchema),
+    keyword: Type.Optional(Type.String({ maxLength: 100 }))
+  },
+  { additionalProperties: false }
+);
+
+export const ImageAiHistorySchema = Type.Object(
+  {
+    items: Type.Array(ImageAiTaskSchema),
+    total: Type.Integer({ minimum: 0 }),
+    page: Type.Integer({ minimum: 1 }),
+    pageSize: Type.Integer({ minimum: 1, maximum: 50 })
+  },
+  { additionalProperties: false }
+);
+
+export const ImageAiHistoryDeleteSchema = Type.Object(
+  {
+    id: Type.String(),
+    deleted: Type.Literal(true)
+  },
+  { additionalProperties: false }
+);
+
+export const ImageAiInputParamsSchema = Type.Object(
+  {
+    taskId: Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
+    inputIndex: Type.Integer({ minimum: 1, maximum: 10 })
   },
   { additionalProperties: false }
 );
@@ -81,6 +133,9 @@ export type ImageAiTaskStatus = Static<typeof ImageAiTaskStatusSchema>;
 export type ImageAiProvider = Static<typeof ImageAiProviderSchema>;
 export type ImageAiResult = Static<typeof ImageAiResultSchema>;
 export type ImageAiTask = Static<typeof ImageAiTaskSchema>;
+export type ImageAiHistoryQuery = Static<typeof ImageAiHistoryQuerySchema>;
+export type ImageAiHistory = Static<typeof ImageAiHistorySchema>;
+export type ImageAiInputParams = Static<typeof ImageAiInputParamsSchema>;
 export type ImageAiResultParams = Static<typeof ImageAiResultParamsSchema>;
 export type ImageAiFileQuery = Static<typeof ImageAiFileQuerySchema>;
 export type WatermarkSuggestion = Static<typeof ImageWorkerSuggestionSchema>["suggestions"][number];

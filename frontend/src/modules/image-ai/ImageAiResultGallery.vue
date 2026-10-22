@@ -4,7 +4,7 @@
     <div class="panel-heading">
       <div>
         <h3>处理结果</h3>
-        <p>{{ props.task.results.length }} 张图片将在 24 小时后自动清理</p>
+        <p>{{ props.task.results.length }} 张结果已留档；可在“处理记录”中回看、下载，手动删除前长期保留。</p>
       </div>
       <n-button v-if="props.task.results.length > 1" type="primary" secondary @click="downloadAll">
         <template #icon><Download :size="15" /></template>下载 ZIP
@@ -44,6 +44,7 @@ const props = defineProps<{
   task: ImageAiTask;
   sourceFiles: File[];
   checkerboard?: boolean;
+  persistedSources?: boolean;
 }>();
 const sourceUrls = ref<string[]>([]);
 
@@ -57,7 +58,10 @@ onBeforeUnmount(() => sourceUrls.value.forEach((url) => URL.revokeObjectURL(url)
 function sourceUrlForResult(resultId: string) {
   const rawIndex = resultId.slice(props.task.id.length + 1);
   const index = Number(rawIndex) - 1;
-  return Number.isInteger(index) && index >= 0 ? sourceUrls.value[index] : undefined;
+  if (!Number.isInteger(index) || index < 0 || index >= 10) return undefined;
+  return props.persistedSources
+    ? absoluteImageAiUrl(`/api/v1/tools/image-ai/tasks/${encodeURIComponent(props.task.id)}/inputs/${index + 1}`)
+    : sourceUrls.value[index];
 }
 
 function downloadAll() {

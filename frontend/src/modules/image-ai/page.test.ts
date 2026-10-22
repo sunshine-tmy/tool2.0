@@ -8,6 +8,7 @@ import Page from "./page.vue";
 import ImageAiOperationPanel from "./ImageAiOperationPanel.vue";
 import ImageAiTaskStatusCard from "./ImageAiTaskStatusCard.vue";
 import ImageAiResultGallery from "./ImageAiResultGallery.vue";
+import ImageAiHistoryPanel from "./ImageAiHistoryPanel.vue";
 
 const mocks = vi.hoisted(() => ({
   health: vi.fn(),
@@ -87,7 +88,8 @@ async function page() {
         DiagnosticErrorLink: true,
         ImageAiBatchPicker: true,
         ImageAiWatermarkPanel: true,
-        ImageAiResultGallery: true
+        ImageAiResultGallery: true,
+        ImageAiHistoryPanel: true
       }
     }
   });
@@ -125,6 +127,19 @@ afterEach(() => {
 });
 
 describe("image AI page", () => {
+  it("refreshes retained history after completion and clears a deleted current result without submitting again", async () => {
+    const wrapper = await page();
+    const enhance = panel(wrapper, "enhance");
+    await choose(enhance);
+    await enhance.props("submitBatch")("enhance");
+    await flushPromises();
+    const history = wrapper.findComponent(ImageAiHistoryPanel);
+    expect(history.props("refreshVersion")).toBeGreaterThan(0);
+    history.vm.$emit("deleted", "image-task-123");
+    await flushPromises();
+    expect(enhance.findComponent(ImageAiTaskStatusCard).props("task")).toBeUndefined();
+    expect(mocks.createTask).toHaveBeenCalledOnce();
+  });
   it("never submits on upload or displays a completed enhancement task as a cutout result", async () => {
     const wrapper = await page();
     const enhance = panel(wrapper, "enhance");

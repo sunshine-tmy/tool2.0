@@ -11,6 +11,10 @@ import {
   ImageAiHealthSchema,
   ImageAiResultParamsSchema,
   ImageAiTaskSchema,
+  ImageAiHistoryQuerySchema,
+  ImageAiHistorySchema,
+  ImageAiHistoryDeleteSchema,
+  ImageAiInputParamsSchema,
   TaskIdParamsSchema,
   WatermarkSuggestionResponseSchema,
   apiSuccessSchema,
@@ -19,9 +23,12 @@ import {
   ok,
   type ImageAiFileQuery,
   type ImageAiResultParams,
+  type ImageAiHistoryQuery,
+  type ImageAiInputParams,
   type TaskIdParams
 } from "@toolbox/shared";
 import { nanoid } from "nanoid";
+import sharp from "sharp";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { FileMetadataRepository } from "../../database/file-metadata";
@@ -57,6 +64,73 @@ export async function registerImageAiRoutes(
   const worker = createImageAiWorkerClient(config);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());
+
+  app.get<{ Querystring: ImageAiHistoryQuery }>(
+    "/api/v1/tools/image-ai/history",
+    {
+      schema: {
+        querystring: ImageAiHistoryQuerySchema,
+        response: { 200: apiSuccessSchema(ImageAiHistorySchema), 400: ApiFailureSchema }
+      }
+    },
+    async (request) => ok(manager.listHistory(request.query))
+  );
+
+  app.delete<{ Params: TaskIdParams }>(
+    "/api/v1/tools/image-ai/history/:taskId",
+    {
+      schema: {
+        params: TaskIdParamsSchema,
+        response: {
+          200: apiSuccessSchema(ImageAiHistoryDeleteSchema),
+          400: ApiFailureSchema,
+          404: ApiFailureSchema,
+          409: ApiFailureSchema,
+          500: ApiFailureSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        const deleted = await manager.remove(request.params.taskId);
+        return deleted
+          ? ok({ id: request.params.taskId, deleted: true as const }, "处理记录及本机保存的输入、结果已删除")
+          : reply.code(404).send(fail("TASK_NOT_FOUND", "处理记录不存在或已被删除"));
+      } catch (error) {
+        const busy = error instanceof Error && "code" in error && error.code === "IMAGE_AI_TASK_BUSY";
+        return reply
+          .code(busy ? 409 : 500)
+          .send(
+            fail(
+              busy ? "IMAGE_AI_TASK_BUSY" : "IMAGE_AI_DELETE_FAILED",
+              busy ? "任务尚在等待或处理中，请先取消并等待结束后再删除" : "未能完整删除本机文件，记录已保留，请稍后重试"
+            )
+          );
+      }
+    }
+  );
+
+  app.get<{ Params: ImageAiInputParams }>(
+    "/api/v1/tools/image-ai/tasks/:taskId/inputs/:inputIndex",
+    { schema: { params: ImageAiInputParamsSchema, response: { 400: ApiFailureSchema, 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      const { taskId, inputIndex } = request.params;
+      const input = manager.getStored(taskId)?.inputs[inputIndex - 1];
+      if (!input || !["image/png", "image/jpeg", "image/webp"].includes(input.mimetype))
+        return reply.code(404).send(fail("INPUT_NOT_FOUND", "原图不存在或已被清理"));
+      try {
+        const root = await fs.realpath(path.join(config.imageAiInputsDir, taskId));
+        const file = await fs.realpath(input.path);
+        const relative = path.relative(root, file);
+        if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
+          throw new Error("Input outside task directory");
+        reply.header("X-Content-Type-Options", "nosniff");
+        return reply.type(input.mimetype).send(await fs.readFile(file));
+      } catch {
+        return reply.code(404).send(fail("INPUT_NOT_FOUND", "原图不存在或已被清理"));
+      }
+    }
+  );
 
   app.get(
     "/api/v1/tools/image-ai/health",
@@ -295,6 +369,25 @@ export async function registerImageAiRoutes(
     }
   );
 
+  app.get<{ Params: ImageAiResultParams }>(
+    "/api/v1/tools/image-ai/tasks/:taskId/files/:resultId/thumbnail",
+    { schema: { params: ImageAiResultParamsSchema, response: { 400: ApiFailureSchema, 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      const { taskId, resultId } = request.params;
+      const result = manager.getStored(taskId)?.results.find((item) => item.id === resultId);
+      if (!result) return reply.code(404).send(fail("RESULT_NOT_FOUND", "处理结果不存在或已过期"));
+      try {
+        const thumbnail = await sharp(result.outputPath, { limitInputPixels: 100_000_000 })
+          .resize({ width: 160, height: 120, fit: "inside", withoutEnlargement: true })
+          .webp({ quality: 70 })
+          .toBuffer();
+        return reply.type("image/webp").send(thumbnail);
+      } catch {
+        return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "处理结果文件已被清理"));
+      }
+    }
+  );
+
   app.get<{ Params: TaskIdParams }>(
     "/api/v1/tools/image-ai/tasks/:taskId/download.zip",
     { schema: { params: TaskIdParamsSchema, response: { 400: ApiFailureSchema, 404: ApiFailureSchema } } },
@@ -303,6 +396,14 @@ export async function registerImageAiRoutes(
       const task = manager.getStored(taskId);
       if (!task || !task.results.length) {
         return reply.code(404).send(fail("RESULT_NOT_FOUND", "当前任务没有可下载结果"));
+      }
+      try {
+        const files = await Promise.all(task.results.map((result) => fs.stat(result.outputPath)));
+        if (files.some((file) => !file.isFile())) throw new Error("Result unavailable");
+      } catch {
+        return reply
+          .code(404)
+          .send(fail("RESULT_FILE_NOT_FOUND", "部分结果文件已被移除，无法完整打包；请尝试单张下载或从备份恢复"));
       }
       const archive = new ZipArchive({ zlib: { level: 6 } });
       for (const result of task.results) archive.file(result.outputPath, { name: result.outputName });

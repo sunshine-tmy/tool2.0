@@ -3,7 +3,13 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ImageAiOperation, ImageAiResult, ImageAiTask } from "@toolbox/shared";
+import type {
+  ImageAiHistory,
+  ImageAiHistoryQuery,
+  ImageAiOperation,
+  ImageAiResult,
+  ImageAiTask
+} from "@toolbox/shared";
 import sharp from "sharp";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
@@ -23,7 +29,7 @@ export type StoredInput = {
 
 type StoredResult = ImageAiResult & { outputPath: string };
 
-type StoredImageAiTask = Omit<ImageAiTask, "results"> & {
+type StoredImageAiTask = Omit<ImageAiTask, "results" | "inputs"> & {
   inputs: StoredInput[];
   maskPath?: string;
   results: StoredResult[];
@@ -39,6 +45,7 @@ export function createImageAiTaskManager(
   const worker = createImageAiWorkerClient(config);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
+  const removals = new Map<string, Promise<boolean>>();
   let processing = false;
   let reservations = 0;
   let cleanupTimer: NodeJS.Timeout | undefined;
@@ -78,6 +85,7 @@ export function createImageAiTaskManager(
       await persist(task);
     }
     await drainPromise;
+    await Promise.allSettled(removals.values());
   }
 
   function activeCount() {
@@ -126,11 +134,11 @@ export function createImageAiTaskManager(
     try {
       await persist(task);
       await Promise.all(
-        task.inputs.map((input, index) =>
+        task.inputs.map((input) =>
           fileMetadata
             ?.registerIfExists({
               entityKind: "image-ai-input",
-              entityId: `${task.id}-${index + 1}`,
+              entityId: task.id,
               filePath: input.path,
               mediaType: input.mimetype,
               owner: "local"
@@ -169,6 +177,68 @@ export function createImageAiTaskManager(
     return tasks.get(taskId);
   }
 
+  function listHistory(query: ImageAiHistoryQuery): ImageAiHistory {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const keyword = query.keyword?.trim().toLocaleLowerCase() ?? "";
+    const matching = Array.from(tasks.values())
+      .filter(
+        (task) =>
+          (!query.operation || task.operation === query.operation) &&
+          (!query.status || task.status === query.status) &&
+          (!keyword ||
+            task.id.toLocaleLowerCase().includes(keyword) ||
+            task.inputs.some((input) => input.originalName.toLocaleLowerCase().includes(keyword)))
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    return {
+      items: matching.slice((page - 1) * pageSize, page * pageSize).map(toPublicTask),
+      total: matching.length,
+      page,
+      pageSize
+    };
+  }
+
+  function remove(taskId: string): Promise<boolean> {
+    const existing = removals.get(taskId);
+    if (existing) return existing;
+    const task = tasks.get(taskId);
+    if (!task) return Promise.resolve(false);
+    if (!/^[A-Za-z0-9_-]{6,64}$/.test(taskId)) return Promise.reject(new Error("记录 ID 无效"));
+    if (task.status === "pending" || task.status === "running") {
+      return Promise.reject(
+        Object.assign(new Error("任务尚在等待或处理中，请先取消并等待结束后再删除"), { code: "IMAGE_AI_TASK_BUSY" })
+      );
+    }
+    const operation = (async () => {
+      // Only fixed, application-owned task directories are removed, never paths from payloads.
+      // Keep the record if any file removal fails so the user can retry without losing its identity.
+      const fileRemovals = await Promise.allSettled([
+        fs.rm(path.join(config.imageAiInputsDir, taskId), { recursive: true, force: true }),
+        fs.rm(path.join(config.imageAiOutputsDir, taskId), { recursive: true, force: true }),
+        fs.rm(path.join(config.imageAiTasksDir, `${taskId}.json`), { force: true })
+      ]);
+      // Wait for every filesystem operation before permitting retry; on Windows
+      // an early rejection must not leave another removal racing the next request.
+      const failedRemoval = fileRemovals.find((result) => result.status === "rejected");
+      if (failedRemoval?.status === "rejected") throw failedRemoval.reason;
+      database.transaction(() => {
+        database.remove("image-ai-task", taskId);
+        for (const kind of ["image-ai-input", "image-ai-mask", "image-ai-result"])
+          fileMetadata?.removeForEntity(kind, taskId);
+        // Older versions registered inputs against per-image entity ids.
+        task.inputs.forEach((_input, index) =>
+          fileMetadata?.removeForEntity("image-ai-input", `${taskId}-${index + 1}`)
+        );
+        taskStore.remove(taskId);
+      });
+      tasks.delete(taskId);
+      return true;
+    })().finally(() => removals.delete(taskId));
+    removals.set(taskId, operation);
+    return operation;
+  }
+
   async function cancel(taskId: string) {
     const task = tasks.get(taskId);
     if (!task) return undefined;
@@ -189,21 +259,18 @@ export function createImageAiTaskManager(
   }
 
   async function cleanupExpired(now = Date.now()) {
-    // 过期任务、关联元数据和结果目录一起回收；运行中的任务永不在定时清理中删除。
+    // Successful/partial results are permanent. Only expired result-less terminal tasks are temporary.
     for (const task of Array.from(tasks.values())) {
-      if (Date.parse(task.expiresAt) > now || task.status === "running") continue;
-      const queueIndex = queue.indexOf(task.id);
-      if (queueIndex >= 0) queue.splice(queueIndex, 1);
-      tasks.delete(task.id);
-      database.remove("image-ai-task", task.id);
-      fileMetadata?.removeForEntity("image-ai-input", task.id);
-      fileMetadata?.removeForEntity("image-ai-mask", task.id);
-      fileMetadata?.removeForEntity("image-ai-result", task.id);
-      taskStore.remove(task.id);
-      await Promise.all([
-        fs.rm(path.join(config.imageAiInputsDir, task.id), { recursive: true, force: true }),
-        fs.rm(path.join(config.imageAiOutputsDir, task.id), { recursive: true, force: true })
-      ]);
+      if (
+        task.results.length ||
+        task.expiresAt === null ||
+        !Number.isFinite(Date.parse(task.expiresAt)) ||
+        Date.parse(task.expiresAt) > now ||
+        task.status === "running" ||
+        task.status === "pending"
+      )
+        continue;
+      await remove(task.id);
     }
     refreshQueuePositions();
   }
@@ -338,7 +405,7 @@ export function createImageAiTaskManager(
           const task = JSON.parse(
             await fs.readFile(path.join(config.imageAiTasksDir, file), "utf8")
           ) as StoredImageAiTask;
-          if (!task.id || !task.operation) continue;
+          if (!isReadableStoredTask(task)) continue;
           database.upsert(toEntity(task));
         } catch {
           // Invalid legacy manifests stay untouched for manual recovery.
@@ -348,7 +415,8 @@ export function createImageAiTaskManager(
     }
     for (const entity of database.list("image-ai-task")) {
       const task = entity.payload as StoredImageAiTask;
-      if (!task.id || !task.operation) continue;
+      if (!isReadableStoredTask(task)) continue;
+      let changed = false;
       if (task.status === "pending" || task.status === "running") {
         patchTask(task, {
           status: "failed",
@@ -356,8 +424,14 @@ export function createImageAiTaskManager(
           queuePosition: null,
           error: "任务因服务重启而中断，请手动重试"
         });
-        database.upsert(toEntity(task));
+        changed = true;
       }
+      // Preserve existing results before the first post-upgrade expiry sweep, even if their old TTL passed.
+      if (task.results.length && task.expiresAt !== null) {
+        task.expiresAt = null;
+        changed = true;
+      }
+      if (changed) database.upsert(toEntity(task));
       tasks.set(task.id, task);
       taskStore.upsert(toUnifiedTask(task));
     }
@@ -372,6 +446,7 @@ export function createImageAiTaskManager(
   }
 
   async function persist(task: StoredImageAiTask) {
+    if (task.results.length && task.status !== "pending" && task.status !== "running") task.expiresAt = null;
     database.upsert(toEntity(task));
     taskStore.upsert(toUnifiedTask(task));
   }
@@ -384,6 +459,8 @@ export function createImageAiTaskManager(
     create,
     get,
     getStored,
+    listHistory,
+    remove,
     cancel,
     cleanupExpired
   };
@@ -400,6 +477,21 @@ function toUnifiedTask(task: StoredImageAiTask): Task {
     createdAt: task.createdAt,
     updatedAt: task.updatedAt
   };
+}
+
+function isReadableStoredTask(task: StoredImageAiTask) {
+  return (
+    task &&
+    /^[A-Za-z0-9_-]{6,64}$/.test(task.id) &&
+    ["watermark_remove", "enhance", "background_remove"].includes(task.operation) &&
+    ["pending", "running", "completed", "failed", "canceled"].includes(task.status) &&
+    Array.isArray(task.inputs) &&
+    task.inputs.every((input) => input && typeof input.originalName === "string" && typeof input.path === "string") &&
+    Array.isArray(task.results) &&
+    task.results.every((result) => result && typeof result.id === "string" && typeof result.outputPath === "string") &&
+    Array.isArray(task.warnings) &&
+    typeof task.createdAt === "string"
+  );
 }
 
 function toEntity(task: StoredImageAiTask) {
@@ -422,6 +514,13 @@ function toPublicTask(task: StoredImageAiTask): ImageAiTask {
     queuePosition: task.queuePosition,
     scale: task.scale,
     results: task.results.map(({ outputPath: _outputPath, ...result }) => result),
+    inputs: task.inputs.map(({ originalName, mimetype, size, width, height }) => ({
+      originalName,
+      mimetype,
+      size,
+      width,
+      height
+    })),
     warnings: [...task.warnings],
     error: task.error,
     createdAt: task.createdAt,
