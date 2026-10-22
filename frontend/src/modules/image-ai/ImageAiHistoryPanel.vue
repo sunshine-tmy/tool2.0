@@ -153,6 +153,17 @@
               <h3>{{ operationName(selectedTask.operation) }}</h3>
               <p>{{ dateLabel(selectedTask.createdAt) }} · 任务 {{ selectedTask.id }}</p>
               <p v-if="selectedTask.scale">处理参数：{{ selectedTask.scale }}× 清晰度增强</p>
+              <p v-if="selectedTask.recipe">
+                商品图规格：{{ selectedTask.recipe.canvas.width }} × {{ selectedTask.recipe.canvas.height }} · 背景：{{
+                  { transparent: "透明", color: selectedTask.recipe.background.color, image: "自定义图片" }[
+                    selectedTask.recipe.background.kind
+                  ]
+                }}
+                · 商品占比 {{ Math.round(selectedTask.recipe.layout.fill * 100) }}%
+              </p>
+              <p v-if="selectedTask.source">
+                来源任务：{{ selectedTask.source.taskId }}（独立快照，删除来源不影响此版本）
+              </p>
               <p v-for="(input, index) in selectedTask.inputs || []" :key="index">
                 原图 {{ index + 1 }}：{{ input.originalName }} · {{ input.width }} × {{ input.height }}
               </p>
@@ -167,6 +178,7 @@
               :source-files="emptyFiles"
               :checkerboard="selectedTask.operation === 'background_remove'"
               persisted-sources
+              @edit="editResult"
             />
             <n-empty v-else description="该任务没有可预览或下载的处理结果。" />
           </template>
@@ -201,7 +213,11 @@ import ImageAiResultGallery from "./ImageAiResultGallery.vue";
 import ImageAiTaskStatusCard from "./ImageAiTaskStatusCard.vue";
 
 const props = defineProps<{ refreshVersion: number }>();
-const emit = defineEmits<{ deleted: [id: string] }>();
+const emit = defineEmits<{ deleted: [id: string]; edit: [taskId: string, resultId: string] }>();
+function editResult(taskId: string, resultId: string) {
+  detailOpen.value = false;
+  emit("edit", taskId, resultId);
+}
 const message = useMessage();
 const confirm = useConfirmDialog();
 const items = ref<ImageAiTask[]>([]);
@@ -238,7 +254,8 @@ let disposed = false;
 const operationOptions = [
   { label: "去水印", value: "watermark_remove" },
   { label: "变清晰", value: "enhance" },
-  { label: "抠图", value: "background_remove" }
+  { label: "抠图", value: "background_remove" },
+  { label: "商品图编辑", value: "product_image" }
 ];
 const statusOptions = [
   { label: "已完成", value: "completed" },

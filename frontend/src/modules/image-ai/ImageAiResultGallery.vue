@@ -26,6 +26,14 @@
           <n-button size="small" secondary @click="downloadResult(result.downloadUrl)">
             <template #icon><Download :size="14" /></template>下载
           </n-button>
+          <n-button
+            v-if="['background_remove', 'product_image'].includes(props.task.operation)"
+            size="small"
+            type="primary"
+            secondary
+            @click="emit('edit', props.task.id, result.id)"
+            >{{ props.task.operation === "product_image" ? "继续编辑" : "编辑商品图" }}</n-button
+          >
         </div>
       </article>
     </div>
@@ -46,6 +54,7 @@ const props = defineProps<{
   checkerboard?: boolean;
   persistedSources?: boolean;
 }>();
+const emit = defineEmits<{ edit: [taskId: string, resultId: string] }>();
 const sourceUrls = ref<string[]>([]);
 
 function refreshSourceUrls(files: File[]) {

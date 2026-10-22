@@ -44,6 +44,8 @@ import {
 } from "./image-validation";
 import { createImageAiTaskManager, type StoredInput } from "./task-manager";
 import { createImageAiWorkerClient, ImageAiWorkerError } from "./worker-client";
+import { registerProductImageRoutes } from "./product-image-routes";
+import { validateProductAsset } from "./product-image-files";
 
 type UploadedPart = {
   path: string;
@@ -64,6 +66,7 @@ export async function registerImageAiRoutes(
   const worker = createImageAiWorkerClient(config);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());
+  registerProductImageRoutes(app, config, manager);
 
   app.get<{ Querystring: ImageAiHistoryQuery }>(
     "/api/v1/tools/image-ai/history",
@@ -257,7 +260,7 @@ export async function registerImageAiRoutes(
         }
 
         const operation = fields.operation;
-        if (!isImageAiOperation(operation)) {
+        if (!isImageAiOperation(operation) || operation === "product_image") {
           throw validationError("INVALID_OPERATION", "不支持的图片处理操作");
         }
         const fileParts = uploaded.filter((part) => part.fieldname !== "mask");
@@ -278,6 +281,22 @@ export async function registerImageAiRoutes(
             size: part.size
           });
           if (operation === "enhance") validateEnhanceOutput(metadata.width, metadata.height, scale);
+          if (operation === "background_remove") {
+            await validateProductAsset(part.path);
+            const canonical = `${part.path}.png`;
+            await sharp(part.path, { limitInputPixels: 40000000 })
+              .autoOrient()
+              .toColourspace("srgb")
+              .png()
+              .toFile(canonical);
+            await fs.rm(part.path);
+            await fs.rename(canonical, part.path);
+            const normalized = await sharp(part.path).metadata();
+            metadata.width = normalized.width!;
+            metadata.height = normalized.height!;
+            part.mimetype = "image/png";
+            part.size = (await fs.stat(part.path)).size;
+          }
           validatedFiles.push({
             path: part.path,
             originalName: part.filename,
@@ -351,18 +370,27 @@ export async function registerImageAiRoutes(
     },
     async (request, reply) => {
       const { taskId, resultId } = request.params;
-      const { download } = request.query;
+      const { download, format = "png", flatten } = request.query;
       const task = manager.getStored(taskId);
       const result = task?.results.find((item) => item.id === resultId);
       if (!result) return reply.code(404).send(fail("RESULT_NOT_FOUND", "处理结果不存在或已过期"));
       try {
-        reply.type("image/png");
+        const file = await fs.readFile(result.outputPath);
+        if (format === "jpeg" && !(await sharp(file).stats()).isOpaque && flatten !== "white")
+          return reply.code(400).send(fail("JPEG_BACKGROUND_CONFIRM_REQUIRED", "JPEG 不支持透明，请确认使用白色背景"));
+        const output =
+          format === "png"
+            ? file
+            : format === "jpeg"
+              ? await sharp(file).flatten({ background: "#ffffff" }).jpeg({ quality: 90 }).toBuffer()
+              : await sharp(file).webp({ quality: 90 }).toBuffer();
+        reply.type(`image/${format}`);
         const disposition = download === "1" ? "attachment" : "inline";
         reply.header(
           "Content-Disposition",
-          `${disposition}; filename*=UTF-8''${encodeURIComponent(result.outputName)}`
+          `${disposition}; filename*=UTF-8''${encodeURIComponent(result.outputName.replace(/\.png$/i, format === "jpeg" ? ".jpg" : `.${format}`))}`
         );
-        return reply.send(await fs.readFile(result.outputPath));
+        return reply.send(output);
       } catch {
         return reply.code(404).send(fail("RESULT_FILE_NOT_FOUND", "处理结果文件已被清理"));
       }

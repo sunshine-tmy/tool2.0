@@ -420,8 +420,10 @@ a {
 }
 
 .image-ai-controls {
-  position: sticky;
-  top: 96px;
+  /* 标签页内随内容自然滚动，避免 sticky 偏移把参数卡片推离上传区顶部。 */
+  position: static;
+  min-width: 0;
+  align-self: start;
   display: grid;
   gap: 12px;
   padding: 16px;

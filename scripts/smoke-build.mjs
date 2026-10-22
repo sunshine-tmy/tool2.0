@@ -6,6 +6,7 @@ import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { prepareProductSmokeFixture, smokeProductImage } from "./smoke-product-image.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const sharedDist = path.join(repoRoot, "packages", "shared", "dist");
@@ -20,10 +21,13 @@ assert.equal(typeof shared.listTools, "function", "shared dist must export listT
 
 const temporaryStorage = await mkdtemp(path.join(os.tmpdir(), "toolbox-build-smoke-"));
 const previousStorageRoot = process.env.STORAGE_ROOT;
+const previousDatabasePath = process.env.DATABASE_PATH;
 process.env.STORAGE_ROOT = temporaryStorage;
+process.env.DATABASE_PATH = path.join(temporaryStorage, "toolbox.db");
 
 let app;
 try {
+  await prepareProductSmokeFixture(temporaryStorage, repoRoot);
   const backend = await importFile(path.join(backendDist, "app.js"));
   assert.equal(typeof backend.createApp, "function", "backend dist must export createApp()");
 
@@ -34,6 +38,7 @@ try {
   const payload = response.json();
   assert.equal(payload.success, true);
   assert.equal(payload.data?.status, "ok");
+  await smokeProductImage(app, shared.defaultProductImageRecipe());
 } finally {
   await app?.close();
   if (previousStorageRoot === undefined) {
@@ -41,6 +46,10 @@ try {
   } else {
     process.env.STORAGE_ROOT = previousStorageRoot;
   }
+  if (previousDatabasePath === undefined) delete process.env.DATABASE_PATH;
+  else process.env.DATABASE_PATH = previousDatabasePath;
+  assert.equal(path.dirname(temporaryStorage), path.resolve(os.tmpdir()));
+  assert.ok(path.basename(temporaryStorage).startsWith("toolbox-build-smoke-"));
   await rm(temporaryStorage, { recursive: true, force: true });
 }
 

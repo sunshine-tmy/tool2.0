@@ -3,13 +3,15 @@
  */
 import { Type, type Static } from "@sinclair/typebox";
 import { ImageWorkerHealthSchema, ImageWorkerSuggestionSchema } from "./worker-protocol";
+import { ProductImageRecipeSchema } from "./product-image";
 
-export const imageAiOperations = ["watermark_remove", "enhance", "background_remove"] as const;
+export const imageAiOperations = ["watermark_remove", "enhance", "background_remove", "product_image"] as const;
 
 export const ImageAiOperationSchema = Type.Union([
   Type.Literal("watermark_remove"),
   Type.Literal("enhance"),
-  Type.Literal("background_remove")
+  Type.Literal("background_remove"),
+  Type.Literal("product_image")
 ]);
 
 export const ImageAiTaskStatusSchema = Type.Union([
@@ -24,7 +26,8 @@ export const ImageAiProviderSchema = Type.Union([
   Type.Literal("lama"),
   Type.Literal("real-esrgan"),
   Type.Literal("bria-rmbg-2.0"),
-  Type.Literal("birefnet-general")
+  Type.Literal("birefnet-general"),
+  Type.Literal("sharp")
 ]);
 
 export const ImageAiResultSchema = Type.Object(
@@ -50,6 +53,11 @@ export const ImageAiTaskSchema = Type.Object(
     progress: Type.Number({ minimum: 0, maximum: 100 }),
     queuePosition: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),
     scale: Type.Optional(Type.Union([Type.Literal(2), Type.Literal(4)])),
+    recipe: Type.Optional(ProductImageRecipeSchema),
+    phase: Type.Optional(Type.String()),
+    source: Type.Optional(
+      Type.Object({ taskId: Type.String(), resultId: Type.String() }, { additionalProperties: false })
+    ),
     results: Type.Array(ImageAiResultSchema),
     inputs: Type.Optional(
       Type.Array(
@@ -121,7 +129,11 @@ export const ImageAiResultParamsSchema = Type.Object(
 );
 
 export const ImageAiFileQuerySchema = Type.Object(
-  { download: Type.Optional(Type.Union([Type.Literal("0"), Type.Literal("1")])) },
+  {
+    download: Type.Optional(Type.Union([Type.Literal("0"), Type.Literal("1")])),
+    format: Type.Optional(Type.Union([Type.Literal("png"), Type.Literal("jpeg"), Type.Literal("webp")])),
+    flatten: Type.Optional(Type.Literal("white"))
+  },
   { additionalProperties: false }
 );
 

@@ -63,6 +63,7 @@
       :task="resultTask"
       :source-files="props.activeTaskFiles"
       :checkerboard="props.operation === 'background_remove'"
+      @edit="(taskId, resultId) => emit('edit', taskId, resultId)"
     />
   </div>
 </template>
@@ -94,7 +95,11 @@ const props = defineProps<{
   cancelActiveTask: () => void | Promise<void>;
 }>();
 
-const emit = defineEmits<{ "update:files": [files: File[]]; "update:scale": [scale: 2 | 4] }>();
+const emit = defineEmits<{
+  "update:files": [files: File[]];
+  "update:scale": [scale: 2 | 4];
+  edit: [taskId: string, resultId: string];
+}>();
 const resultTask = computed(() => (props.activeTask?.operation === props.operation ? props.activeTask : undefined));
 
 function updateScale(value: number | string) {

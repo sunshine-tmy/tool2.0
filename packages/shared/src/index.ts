@@ -7,6 +7,7 @@ export * from "./worker-protocol";
 export * from "./image-options";
 export * from "./system-operations";
 export * from "./image-ai";
+export * from "./product-image";
 export * from "./edge-tts";
 export * from "./edge-tts-batch";
 export * from "./chatterbox";

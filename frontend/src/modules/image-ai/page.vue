@@ -25,7 +25,14 @@
       </n-alert>
 
       <section class="workspace-panel image-ai-workspace">
-        <n-tabs v-model:value="activeTab" type="segment" animated>
+        <ProductImageEditor
+          v-if="editTarget"
+          :task-id="editTarget.taskId"
+          :result-id="editTarget.resultId"
+          @close="editTarget = undefined"
+          @saved="historyVersion++"
+        />
+        <n-tabs v-else v-model:value="activeTab" type="segment" animated>
           <n-tab-pane name="watermark" tab="去水印">
             <ImageAiWatermarkPanel
               :watermark-file="watermarkFile"
@@ -63,6 +70,7 @@
               :submit-batch="submitBatch"
               :cancel-active-task="cancelActiveTask"
               @update:scale="enhanceScale = $event"
+              @edit="openEditor"
             />
           </n-tab-pane>
           <n-tab-pane name="cutout" tab="抠图">
@@ -80,10 +88,11 @@
               :format-bytes="formatBytes"
               :submit-batch="submitBatch"
               :cancel-active-task="cancelActiveTask"
+              @edit="openEditor"
             />
           </n-tab-pane>
           <n-tab-pane name="history" tab="处理记录">
-            <ImageAiHistoryPanel :refresh-version="historyVersion" @deleted="onHistoryDeleted" />
+            <ImageAiHistoryPanel :refresh-version="historyVersion" @deleted="onHistoryDeleted" @edit="openEditor" />
           </n-tab-pane>
         </n-tabs>
       </section>
@@ -93,7 +102,7 @@
 
 <script setup lang="ts">
 import DiagnosticErrorLink from "../../components/DiagnosticErrorLink.vue";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton, NTabPane, NTabs, useMessage } from "naive-ui";
 import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 
@@ -108,6 +117,11 @@ import { formatApiError, isApiErrorCancelled } from "../../services/http";
 import { absoluteImageAiUrl, imageAiApi, resultDownloadUrl, triggerImageAiDownload } from "./api";
 
 const message = useMessage();
+const ProductImageEditor = defineAsyncComponent(() => import("./ProductImageEditor.vue"));
+const editTarget = ref<{ taskId: string; resultId: string }>();
+function openEditor(taskId: string, resultId: string) {
+  editTarget.value = { taskId, resultId };
+}
 const activeTab = ref<"watermark" | "enhance" | "cutout" | "history">("watermark");
 const historyVersion = ref(0);
 const health = ref<ImageAiHealth>();

@@ -6,6 +6,7 @@ import {
   ImageAiTaskSchema,
   ImageAiHistorySchema,
   ImageAiHistoryDeleteSchema,
+  ProductImageSourceSchema,
   WatermarkSuggestionResponseSchema,
   type ImageAiHistoryQuery
 } from "@toolbox/shared";
@@ -13,6 +14,25 @@ import { httpClient, withApiError } from "../../services/http";
 import { resolveBackendUrl } from "../../config/runtime";
 
 class ImageAiApi {
+  async editSource(taskId: string, resultId: string, signal?: AbortSignal) {
+    return withApiError(
+      () =>
+        httpClient.get(
+          `/tools/image-ai/tasks/${encodeURIComponent(taskId)}/files/${encodeURIComponent(resultId)}/edit-source`,
+          ProductImageSourceSchema,
+          { signal }
+        ),
+      "读取商品编辑素材失败"
+    );
+  }
+
+  async compose(form: FormData) {
+    return withApiError(
+      () => httpClient.post("/tools/image-ai/compositions", ImageAiTaskSchema, form, { timeout: 220000 }),
+      "保存商品图失败"
+    );
+  }
+
   async history(query: ImageAiHistoryQuery = {}, signal?: AbortSignal) {
     return withApiError(
       () => httpClient.get("/tools/image-ai/history", ImageAiHistorySchema, { params: query, signal }),
@@ -47,9 +67,12 @@ class ImageAiApi {
     );
   }
 
-  async getTask(taskId: string) {
+  async getTask(taskId: string, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.get(`/tools/image-ai/tasks/${taskId}`, ImageAiTaskSchema),
+      () =>
+        signal
+          ? httpClient.get(`/tools/image-ai/tasks/${taskId}`, ImageAiTaskSchema, { signal })
+          : httpClient.get(`/tools/image-ai/tasks/${taskId}`, ImageAiTaskSchema),
       "读取图片处理任务失败"
     );
   }

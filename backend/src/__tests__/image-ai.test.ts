@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { createApp } from "../app";
 import { ToolboxDatabase } from "../database/toolbox-database";
+import { defaultProductImageRecipe } from "@toolbox/shared";
 
 let storageRoot: string;
 let workerServer: http.Server;
@@ -47,6 +48,274 @@ afterEach(async () => {
 });
 
 describe("image ai api", () => {
+  it("does not publish archive success when the final database write fails", async () => {
+    app = await createApp();
+    const source = await createHistoryTask(app, "background_remove", "database.png");
+    const update = ToolboxDatabase.prototype.upsert;
+    let failOnce = true;
+    const spy = vi.spyOn(ToolboxDatabase.prototype, "upsert").mockImplementation(function (
+      this: ToolboxDatabase,
+      entity
+    ) {
+      if (
+        failOnce &&
+        entity.kind === "image-ai-task" &&
+        entity.status === "completed" &&
+        (entity.payload as { operation?: string }).operation === "product_image"
+      ) {
+        failOnce = false;
+        throw new Error("simulated database write failure");
+      }
+      return update.call(this, entity);
+    });
+    try {
+      const recipe = defaultProductImageRecipe();
+      recipe.canvas = { width: 256, height: 256 };
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/image-ai/compositions",
+        ...multipartPayload([], {
+          taskId: source.id,
+          resultId: source.results[0].id,
+          recipe: JSON.stringify(recipe),
+          submissionKey: "database-failure-1"
+        })
+      });
+      const task = await waitForTask(app, response.json().data.id);
+      expect(task.status).toBe("failed");
+      expect(task.error).toContain("写入留档记录失败");
+      expect(task.results).toEqual([]);
+      expect(task.expiresAt).not.toBeNull();
+      expect(await fs.readdir(path.join(storageRoot, "image-ai/outputs", task.id))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("normalizes EXIF before cutout so originals and masks share coordinates", async () => {
+    app = await createApp();
+    const bytes = await sharp({ create: { width: 20, height: 10, channels: 3, background: "#ff0000" } })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/tasks",
+      ...multipartPayload([{ field: "files", fileName: "rotated.jpg", mimeType: "image/jpeg", content: bytes }], {
+        operation: "background_remove"
+      })
+    });
+    const task = await waitForTask(app, response.json().data.id);
+    expect(task.results[0]).toMatchObject({ width: 10, height: 20 });
+    const source = await app.inject({ method: "GET", url: `${task.results[0].downloadUrl}/edit-source` });
+    expect(source.json().data).toMatchObject({ width: 10, height: 20, canRestore: true });
+  });
+
+  it("protects source reads from concurrent deletion with a lease", async () => {
+    app = await createApp();
+    const source = await createHistoryTask(app, "background_remove", "lease.png");
+    const target = path.join(storageRoot, "image-ai/outputs", source.id, source.results[0].outputName);
+    const realpath = fs.realpath.bind(fs);
+    let release!: () => void,
+      entered!: () => void,
+      armed = true;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+    const spy = vi.spyOn(fs, "realpath").mockImplementation(async (...args) => {
+      if (armed && args[0] === target) {
+        armed = false;
+        entered();
+        await gate;
+      }
+      return realpath(...args);
+    });
+    const request = app
+      .inject({ method: "GET", url: `${source.results[0].downloadUrl}/edit-source` })
+      .then((value) => value);
+    try {
+      await started;
+      const removal = await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${source.id}` });
+      expect(removal.statusCode).toBe(409);
+    } finally {
+      release();
+      await request;
+      spy.mockRestore();
+    }
+    expect(
+      (await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${source.id}` })).statusCode
+    ).toBe(200);
+  });
+
+  it("uses uploaded backgrounds, validates proxy masks and cancels without deleting source images", async () => {
+    app = await createApp();
+    const source = await createHistoryTask(app, "background_remove", "bg.png");
+    const recipe = defaultProductImageRecipe();
+    recipe.canvas = { width: 256, height: 256 };
+    recipe.background.kind = "image";
+    const fields = {
+      taskId: source.id,
+      resultId: source.results[0].id,
+      recipe: JSON.stringify(recipe),
+      submissionKey: "background-test-1"
+    };
+    const background = await sharp({ create: { width: 10, height: 30, channels: 3, background: "#00ff00" } })
+      .png()
+      .toBuffer();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/compositions",
+      ...multipartPayload(
+        [{ field: "background", fileName: "bg.png", mimeType: "image/png", content: background }],
+        fields
+      )
+    });
+    expect(response.statusCode, response.body).toBe(202);
+    const task = await waitForTask(app, response.json().data.id);
+    expect(task.status).toBe("completed");
+    const png = await app.inject({ method: "GET", url: task.results[0].downloadUrl });
+    const raw = await sharp(png.rawPayload).ensureAlpha().raw().toBuffer();
+    expect([...raw.subarray(0, 4)]).toEqual([0, 255, 0, 255]);
+    const wrong = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/compositions",
+      ...multipartPayload(
+        [{ field: "erase", fileName: "mask.png", mimeType: "image/png", content: await testImage(10, 10) }],
+        {
+          ...fields,
+          recipe: JSON.stringify({ ...recipe, background: { kind: "transparent", color: "#FFFFFF" } }),
+          submissionKey: "wrong-size-mask-1"
+        }
+      )
+    });
+    expect(wrong.statusCode).toBe(400);
+    expect(wrong.json().error.code).toBe("MASK_DIMENSIONS_MISMATCH");
+    const pending = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/compositions",
+      ...multipartPayload([], {
+        ...fields,
+        recipe: JSON.stringify(defaultProductImageRecipe()),
+        submissionKey: "cancel-product-1"
+      })
+    });
+    const id = pending.json().data.id;
+    await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/tasks/${id}` });
+    const canceled = await waitForTask(app, id);
+    expect(canceled.status).toBe("canceled");
+    expect(canceled.results).toEqual([]);
+    expect((await app.inject({ method: "GET", url: source.results[0].downloadUrl })).statusCode).toBe(200);
+    const outputs = await fs.readdir(path.join(storageRoot, "image-ai/outputs", id)).catch(() => []);
+    expect(outputs).toEqual([]);
+  });
+
+  it("keeps background editing available when an old original is missing and refuses disk-starved saves", async () => {
+    app = await createApp();
+    const source = await createHistoryTask(app, "background_remove", "missing-original.png");
+    await fs.rm(path.join(storageRoot, "image-ai/inputs", source.id), { recursive: true });
+    const descriptor = await app.inject({ method: "GET", url: `${source.results[0].downloadUrl}/edit-source` });
+    expect(descriptor.statusCode).toBe(200);
+    expect(descriptor.json().data.canRestore).toBe(false);
+    const actualStatfs = await fs.statfs(storageRoot);
+    const spy = vi.spyOn(fs, "statfs").mockResolvedValue({ ...actualStatfs, bavail: 0 });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/image-ai/compositions",
+        ...multipartPayload([], {
+          taskId: source.id,
+          resultId: source.results[0].id,
+          recipe: JSON.stringify(defaultProductImageRecipe()),
+          submissionKey: "disk-shortage-1"
+        })
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("INSUFFICIENT_DISK_SPACE");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it("snapshots independent product edits, works without Python, deduplicates and survives source deletion and restart", async () => {
+    app = await createApp();
+    const source = await createHistoryTask(app, "background_remove", "product.png");
+    const editSource = await app.inject({ method: "GET", url: `${source.results[0].downloadUrl}/edit-source` });
+    expect(editSource.statusCode).toBe(200);
+    expect(editSource.json().data.canRestore).toBe(true);
+    const recipe = defaultProductImageRecipe();
+    recipe.canvas = { width: 256, height: 256 };
+    recipe.background = { kind: "transparent", color: "#FFFFFF" };
+    const fields = {
+      taskId: source.id,
+      resultId: source.results[0].id,
+      recipe: JSON.stringify(recipe),
+      submissionKey: "independent-product-1"
+    };
+    const post = () =>
+      app!.inject({ method: "POST", url: "/api/v1/tools/image-ai/compositions", ...multipartPayload([], fields) });
+    const [response, concurrentDuplicate] = await Promise.all([post(), post()]);
+    expect(response.statusCode, response.body).toBe(202);
+    expect(concurrentDuplicate.statusCode, concurrentDuplicate.body).toBe(202);
+    expect(concurrentDuplicate.json().data.id).toBe(response.json().data.id);
+    const edited = await waitForTask(app, response.json().data.id);
+    expect(edited.status, JSON.stringify(edited)).toBe("completed");
+    expect(edited.results[0].provider).toBe("sharp");
+    expect(processCount).toBe(1);
+    expect(edited.expiresAt).toBeNull();
+    expect(JSON.stringify(edited)).not.toContain(storageRoot);
+    expect((await post()).json().data.id).toBe(edited.id);
+    expect(
+      (await app.inject({ method: "DELETE", url: `/api/v1/tools/image-ai/history/${source.id}` })).statusCode
+    ).toBe(200);
+    await app.close();
+    app = await createApp();
+    const continued = await app.inject({ method: "GET", url: `${edited.results[0].downloadUrl}/edit-source` });
+    expect(continued.statusCode, continued.body).toBe(200);
+    expect(continued.json().data.canRestore).toBe(true);
+    const png = await app.inject({ method: "GET", url: edited.results[0].downloadUrl });
+    expect((await sharp(png.rawPayload).metadata()).width).toBe(256);
+    expect((await app.inject({ method: "GET", url: `${edited.results[0].downloadUrl}?format=jpeg` })).statusCode).toBe(
+      400
+    );
+    const jpg = await app.inject({ method: "GET", url: `${edited.results[0].downloadUrl}?format=jpeg&flatten=white` });
+    expect(jpg.headers["content-type"]).toContain("image/jpeg");
+    expect((await sharp(jpg.rawPayload).metadata()).format).toBe("jpeg");
+  });
+
+  it("rejects invalid recipes, arbitrary attachments and direct product requests through the Python endpoint", async () => {
+    app = await createApp();
+    const source = await createHistoryTask(app, "background_remove", "source.png");
+    const fields = {
+      taskId: source.id,
+      resultId: source.results[0].id,
+      recipe: JSON.stringify({ ...defaultProductImageRecipe(), path: "C:/secret" }),
+      submissionKey: "invalid-product-1"
+    };
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/compositions",
+      ...multipartPayload([], fields)
+    });
+    expect(invalid.statusCode).toBe(400);
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/compositions",
+      ...multipartPayload(
+        [{ field: "command", fileName: "x.png", mimeType: "image/png", content: await testImage(20, 20) }],
+        fields
+      )
+    });
+    expect(unknown.statusCode).toBe(400);
+    const direct = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/tasks",
+      ...multipartPayload([], { operation: "product_image" })
+    });
+    expect(direct.statusCode).toBe(400);
+    expect(processCount).toBe(1);
+    expect(await fs.readdir(path.join(storageRoot, "image-ai/inputs"))).toEqual([source.id]);
+  });
   it("persists queued and running images as interrupted and never auto-runs them on restart", async () => {
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => {
@@ -535,7 +804,7 @@ async function createHistoryTask(
 }
 
 async function waitForTask(instance: FastifyInstance, taskId: string) {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
     const response = await instance.inject({ method: "GET", url: `/api/v1/tools/image-ai/tasks/${taskId}` });
     const task = response.json().data;
     if (!["pending", "running"].includes(task.status)) return task;
