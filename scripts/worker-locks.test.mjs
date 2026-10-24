@@ -2,9 +2,9 @@
  * 中文模块说明：测试脚本维护的 Windows Worker 锁文件保持 CPU 基线且可离线复现。
  */
 import { strict as assert } from "node:assert";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "node:test";
+import { readEntrySource } from "../tooling/testing/read-entry-source.mjs";
 import {
   assertUnifiedPythonCatalog,
   assertWorkerPythonVersion,
@@ -14,7 +14,7 @@ import {
 const scriptsDirectory = path.join(process.cwd(), "scripts");
 
 async function readScript(name) {
-  return readFile(path.join(scriptsDirectory, name), "utf8");
+  return readEntrySource(path.join(scriptsDirectory, name));
 }
 
 describe("Windows AI Worker CPU dependency locks", () => {

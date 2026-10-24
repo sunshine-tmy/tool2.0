@@ -1,4 +1,5 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   createDesktopRuntimeLayout,
@@ -8,6 +9,31 @@ import {
 } from "./runtime-layout";
 
 describe("desktop runtime layout", () => {
+  it("keeps development resource anchors in the application, independent of runtime-core location", () => {
+    const workspace = path.resolve(fileURLToPath(new URL("../../..", import.meta.url)));
+    const data = path.resolve("用户 数据", "工具箱");
+    expect(createDesktopRuntimeLayout({ packaged: false, userDataRoot: data })).toEqual({
+      appRoot: workspace,
+      configRoot: path.join(data, "config"),
+      storageRoot: path.join(data, "data"),
+      runtimeRoot: path.join(data, "components"),
+      modelsRoot: path.join(data, "models"),
+      scriptsRoot: path.join(workspace, "scripts"),
+      frontendDistRoot: path.join(workspace, "apps", "web", "dist")
+    });
+    expect(desktopBackendEntrypoint(false)).toBe(path.join(workspace, "apps", "api", "dist", "desktop-entry.js"));
+  });
+
+  it("keeps packaged resources separate from writable data in Chinese/spaced paths", () => {
+    const resources = path.resolve("安装 目录", "资源");
+    const data = path.resolve("用户 目录", "数据");
+    const layout = createDesktopRuntimeLayout({ packaged: true, resourcesPath: resources, userDataRoot: data });
+    expect(layout.appRoot).toBe(resources);
+    expect(layout.runtimeRoot).toBe(path.join(data, "components"));
+    expect(layout.scriptsRoot).toBe(path.join(resources, "scripts"));
+    expect(layout.frontendDistRoot).toBe(path.join(resources, "frontend"));
+    expect(desktopBackendEntrypoint(true, resources)).toBe(path.join(resources, "backend", "dist", "desktop-entry.js"));
+  });
   it("places packaged mutable data under the selected installation directory", () => {
     const installRoot = desktopInstallRoot(
       true,

@@ -61,6 +61,6 @@ pnpm components:catalog -- --feed .package/component-feed
 
 `--asset-base-url` 与 `--github-release-url` 必须且只能使用一个。Release 模式生成 GitHub 使用的扁平资产 URL（文件名带有模块 ID 和版本），而本地 feed 仍按模块/版本目录存放；SBOM 的下载位置与签名 manifest 使用同一个直链。上传时归档与 SBOM 的文件名必须保持原样。Release manifest 可作为审计附件上传，但运行客户端只使用随应用编译的 catalog；不要在客户端内置 GitHub 上传凭据。
 
-包目录和应用目录组装会验证签名、归档大小/摘要、SBOM 摘要、受信任公钥 ID、重复模块 ID 与缺失依赖。生成的 `backend/src/modules/components/catalog.generated.ts` 只包含 manifest 和公钥；签名私钥永不输出。将能力包资产上传成功后，再将最终生成的 catalog 随桌面应用构建。
+包目录和应用目录组装会验证签名、归档大小/摘要、SBOM 摘要、受信任公钥 ID、重复模块 ID 与缺失依赖。生成的 `apps/api/src/modules/components/catalog.generated.ts` 只包含 manifest 和公钥；签名私钥永不输出。将能力包资产上传成功后，再将最终生成的 catalog 随桌面应用构建。
 
 GitHub Release 下载会从 `github.com` 重定向到资产 CDN。客户端最多跟随 5 次重定向；每一跳都要求 HTTPS、重新解析并验证目标为公网地址，拒绝 HTTPS 降级、本机/内网目标及超出跳转上限。最后仍按签名 manifest 校验字节数、SHA-256 和解包文件清单；重定向不会改变受信任清单或校验标准。

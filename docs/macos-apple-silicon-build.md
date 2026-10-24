@@ -113,7 +113,7 @@ pnpm components:package -- \
 pnpm components:catalog -- --platform darwin-arm64 --feed .package/macos-component-feed
 ```
 
-该命令只接受 `darwin-arm64` manifest、核实清单签名、归档和 SBOM 后，才写入 `backend/src/modules/components/catalog.darwin-arm64.generated.ts`。审核生成 diff，然后重新运行 Mac 内部 DMG 工作流。未完成这一步时 Mac 能力目录为空，界面不会错误显示 Windows 包。
+该命令只接受 `darwin-arm64` manifest、核实清单签名、归档和 SBOM 后，才写入 `apps/api/src/modules/components/catalog.darwin-arm64.generated.ts`。审核生成 diff，然后重新运行 Mac 内部 DMG 工作流。未完成这一步时 Mac 能力目录为空，界面不会错误显示 Windows 包。
 
 在线安装 feed 发布前，先用 Mac 本地签名 feed 完成离线导入闭环：正常导入、重装、卸载、失败回滚、哈希篡改拒绝、签名错误拒绝、跨平台包拒绝、空间不足保护以及 Python venv 安装。确保 Mac 版应用只信任经审核的 Mac 密钥。
 

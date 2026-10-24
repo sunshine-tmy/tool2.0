@@ -1,0 +1,37 @@
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:lan": "vite --host 0.0.0.0",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "preview:lan": "vite preview --host 0.0.0.0 --port 4173",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "typecheck": "vue-tsc -b --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.52",
+    "@toolbox/shared": "workspace:*",
+    "axios": "^1.20.0",
+    "lucide-vue-next": "^0.555.0",
+    "naive-ui": "^2.45.3",
+    "qrcode": "^1.5.4",
+    "vue": "^3.5.42",
+    "vue-router": "^4.6.4",
+    "wavesurfer.js": "^8.0.2"
+  },
+  "devDependencies": {
+    "@toolbox/runtime-core": "workspace:*",
+    "@types/qrcode": "^1.5.6",
+    "@vitejs/plugin-vue": "^6.0.8",
+    "@vue/test-utils": "^2.5.0",
+    "happy-dom": "^20.14.5",
+    "vite": "^7.3.6",
+    "vitest": "^3.2.7",
+    "vue-tsc": "^3.3.11"
+  }
+}

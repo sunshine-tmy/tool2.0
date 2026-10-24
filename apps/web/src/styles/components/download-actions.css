@@ -1,0 +1,16 @@
+.download-button {
+  min-height: 36px;
+  border-color: var(--color-border-strong);
+  border-radius: var(--radius-control);
+  font-weight: 600;
+}
+
+.download-button:hover {
+  color: var(--color-primary-700);
+  border-color: var(--color-primary-200);
+}
+
+.download-button.primary:hover {
+  color: #fff;
+  background: var(--color-primary-700);
+}

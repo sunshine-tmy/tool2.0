@@ -1,0 +1,275 @@
+/**
+ * 中文模块说明：测试 apps/api/src/__tests__/app.test.ts 中的稳定行为、边界条件和回归场景
+ */
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createIsolatedAppFixture } from "./helpers/isolated-app";
+
+describe("api app", () => {
+  let fixture: Awaited<ReturnType<typeof createIsolatedAppFixture>>;
+  beforeEach(async () => {
+    fixture = await createIsolatedAppFixture();
+  });
+  afterEach(async () => {
+    await fixture.dispose();
+  });
+  it("returns health information", async () => {
+    const app = await fixture.start();
+    const [response, live, ready, douyin] = await Promise.all([
+      app.inject({ method: "GET", url: "/api/v1/health" }),
+      app.inject({ method: "GET", url: "/health/live" }),
+      app.inject({ method: "GET", url: "/health/ready" }),
+      app.inject({ method: "GET", url: "/api/v1/tools/media-archive/runtime/douyin" })
+    ]);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      success: true,
+      requestId: expect.any(String),
+      data: {
+        status: "ok"
+      }
+    });
+    expect(live.json()).toMatchObject({ success: true, requestId: expect.any(String), data: { status: "ok" } });
+    expect(ready.json()).toMatchObject({
+      success: true,
+      requestId: expect.any(String),
+      data: { status: "ready", database: "ok", storage: "ok" }
+    });
+    expect(douyin.statusCode).toBe(200);
+    const douyinPlatformSupported =
+      (process.platform === "win32" && process.arch === "x64") ||
+      (process.platform === "darwin" && process.arch === "arm64");
+    expect(douyin.json()).toMatchObject({
+      success: true,
+      requestId: expect.any(String),
+      data: {
+        platform: "douyin",
+        mode: "anonymous",
+        available: false,
+        state: douyinPlatformSupported ? "not-installed" : "unavailable",
+        errorCode: douyinPlatformSupported ? "DOUYIN_COMPONENT_NOT_INSTALLED" : "DOUYIN_PLATFORM_UNSUPPORTED"
+      }
+    });
+  });
+
+  it("returns schema-stable task errors with a request id", async () => {
+    const app = await fixture.start();
+    const response = await app.inject({ method: "GET", url: "/api/v1/tasks/missing-task" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({
+      success: false,
+      requestId: expect.any(String),
+      error: { code: "TASK_NOT_FOUND", message: "Task not found" }
+    });
+  });
+
+  it("blocks new desktop capability jobs before accepting input when signed runtimes are absent", async () => {
+    const app = await fixture.start({ desktopManagedCapabilities: true });
+    const [image, edgeTts, chatterbox] = await Promise.all([
+      app.inject({ method: "POST", url: "/api/v1/tools/image-ai/tasks" }),
+      app.inject({
+        method: "POST",
+        url: "/api/v1/tools/edge-tts/tasks",
+        payload: {
+          text: "hello",
+          language: "en-US",
+          voice: "en-US-JennyNeural",
+          rate: 0,
+          volume: 0,
+          pitch: 0,
+          includeSubtitles: false
+        }
+      }),
+      app.inject({ method: "POST", url: "/api/v1/tools/edge-tts/chatterbox/tasks" })
+    ]);
+
+    for (const response of [image, edgeTts, chatterbox]) {
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({
+        success: false,
+        error: { code: "COMPONENT_NOT_INSTALLED", message: expect.stringContaining("设置 → 能力管理") }
+      });
+    }
+  });
+
+  it("returns the no-login tool registry", async () => {
+    const app = await fixture.start();
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/tools"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data.map((tool: { id: string }) => tool.id)).toEqual([
+      "image-compress",
+      "image-ai",
+      "lan-transfer",
+      "edge-tts",
+      "audio-library",
+      "xhs-archive"
+    ]);
+    // 退役模块的负向回归：旧接口不可继续解析、下载或创建任务。
+    for (const moduleId of ["video-text", "short-video"]) {
+      for (const endpoint of ["tasks", "history", "parse", "preview", "download"]) {
+        for (const method of ["GET", "POST"] as const) {
+          const removed = await app.inject({ method, url: `/api/v1/tools/${moduleId}/${endpoint}` });
+          expect(removed.statusCode).toBe(404);
+        }
+      }
+      expect((await app.inject({ method: "POST", url: `/api/v1/components/${moduleId}/install` })).statusCode).toBe(
+        404
+      );
+    }
+  });
+
+  it("rejects malformed task ids and download file names at the schema boundary", async () => {
+    const app = await fixture.start();
+    const invalidTask = await app.inject({ method: "GET", url: "/api/v1/tasks/not-valid!" });
+    const invalidFile = await app.inject({ method: "GET", url: "/api/v1/files/bad%0D%0Aname.txt" });
+
+    expect(invalidTask.statusCode).toBe(400);
+    expect(invalidTask.json()).toMatchObject({ success: false, error: { code: "REQUEST_INVALID" } });
+    expect(invalidFile.statusCode).toBe(400);
+    expect(invalidFile.json()).toMatchObject({ success: false, error: { code: "REQUEST_INVALID" } });
+  });
+
+  // 清理接口会启动受控子进程，Windows CI 冷启动可能超过 Vitest 默认的 5 秒，因此提高该测试的局部超时。
+  it("exposes only whitelisted cleanup categories and rejects paths", async () => {
+    const app = await fixture.start();
+    const inspected = await app.inject({ method: "GET", url: "/api/v1/maintenance/cleanup" });
+    expect(inspected.statusCode).toBe(200);
+    expect(inspected.json().data.some((item: { id: string }) => item.id === "xhs-archive")).toBe(true);
+    expect(inspected.json().data.some((item: { id: string }) => item.id === "build")).toBe(false);
+    expect(inspected.json().data.some((item: { id: string }) => item.id === "packages")).toBe(false);
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/v1/maintenance/cleanup",
+      payload: { ids: ["../../outside"] }
+    });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json().error.code).toBe("CLEANUP_FAILED");
+  }, 30_000);
+
+  it("allows CORS preflight requests for chunk upload PUT requests", async () => {
+    const app = await fixture.start({ environment: { CORS_ORIGINS: "http://192.168.1.241:5173" } });
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/tools/lan-transfer/uploads/upload-1/chunks/0",
+      headers: {
+        origin: "http://192.168.1.241:5173",
+        "access-control-request-method": "PUT",
+        "access-control-request-headers": "content-type"
+      }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://192.168.1.241:5173");
+    expect(response.headers["access-control-allow-methods"]).toContain("PUT");
+  });
+
+  it("does not reflect untrusted origins", async () => {
+    const app = await fixture.start({ environment: { CORS_ORIGINS: "http://127.0.0.1:5173" } });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/health",
+      headers: { origin: "https://attacker.example" }
+    });
+
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("fails fast when numeric environment configuration is invalid", async () => {
+    await expect(fixture.start({ environment: { API_PORT: "not-a-port" } })).rejects.toThrow(/API_PORT/);
+  });
+
+  it("requires an administrator session, exact origin and CSRF token in LAN mode", async () => {
+    const app = await fixture.start({
+      environment: { DEPLOYMENT_MODE: "lan", ADMIN_PIN: "123456", CORS_ORIGINS: "http://192.168.1.10:5173" }
+    });
+    const denied = await app.inject({ method: "POST", url: "/api/v1/maintenance/cleanup", payload: { ids: [] } });
+    expect(denied.statusCode).toBe(401);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/session",
+      payload: { pin: "123456" }
+    });
+    expect(login.statusCode).toBe(200);
+    const setCookie = login.headers["set-cookie"]!;
+    const cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie).split(";", 1)[0];
+    const csrfToken = login.json().data.csrfToken;
+    const restored = await app.inject({ method: "GET", url: "/api/v1/session", headers: { cookie } });
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json().data.csrfToken).toBe(csrfToken);
+
+    const csrfDenied = await app.inject({
+      method: "POST",
+      url: "/api/v1/maintenance/cleanup",
+      headers: { cookie },
+      payload: { ids: [] }
+    });
+    expect(csrfDenied.statusCode).toBe(403);
+
+    const allowed = await app.inject({
+      method: "POST",
+      url: "/api/v1/maintenance/cleanup",
+      headers: { cookie, origin: "http://192.168.1.10:5173", "x-csrf-token": csrfToken },
+      payload: { ids: [] }
+    });
+    expect(allowed.statusCode).not.toBe(401);
+    expect(allowed.headers["x-request-id"]).toBeTruthy();
+  });
+
+  it("validates administrator login input before authentication", async () => {
+    const app = await fixture.start();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/session",
+      payload: { pin: "123", unexpected: true }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      success: false,
+      error: { code: "REQUEST_INVALID" },
+      requestId: expect.any(String)
+    });
+  });
+
+  it("rejects JSON bodies above the global one MiB limit", async () => {
+    const app = await fixture.start();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/session",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({ pin: "x".repeat(1024 * 1024) })
+    });
+
+    expect(response.statusCode).toBe(413);
+  });
+
+  it("uses the current request id for every error envelope", async () => {
+    const app = await fixture.start();
+    const notFound = await app.inject({ method: "GET", url: "/api/v1/does-not-exist" });
+    const invalid = await app.inject({ method: "POST", url: "/api/v1/session", payload: { pin: "123" } });
+
+    expect(notFound.statusCode).toBe(404);
+    expect(notFound.headers["x-request-id"]).toBeTruthy();
+    expect(notFound.json()).toMatchObject({
+      success: false,
+      message: expect.any(String),
+      error: { code: "ROUTE_NOT_FOUND", message: expect.any(String) },
+      requestId: notFound.headers["x-request-id"]
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.headers["x-request-id"]).toBeTruthy();
+    expect(invalid.json()).toMatchObject({
+      success: false,
+      message: expect.any(String),
+      error: { code: "REQUEST_INVALID", message: expect.any(String) },
+      requestId: invalid.headers["x-request-id"]
+    });
+  });
+});

@@ -41,7 +41,7 @@ jobs:
       - name: Run platform-aware runtime and package tests
         run: |
           pnpm --filter backend exec vitest run src/__tests__/component-manager.test.ts src/__tests__/python-environment.test.ts src/__tests__/desktop-component-self-test.test.ts
-          node --test scripts/build-component-package.test.mjs scripts/image-ai-component-preparation.test.mjs scripts/download-fixed-model-file.test.mjs
+          pnpm test:scripts
 
       - name: Build Apple Silicon application and internal DMG
         run: pnpm desktop:make

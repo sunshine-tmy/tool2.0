@@ -9,7 +9,7 @@ import {
   LiveHealthSchema,
   ReadyHealthSchema,
   apiSuccessSchema
-} from "../api-schema";
+} from "../common/api-schema";
 import { Type } from "@sinclair/typebox";
 
 describe("core api schemas", () => {

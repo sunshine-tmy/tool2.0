@@ -57,6 +57,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@toolbox/runtime-core':
+        specifier: workspace:*
+        version: link:../../packages/runtime-core
       electron-updater:
         specifier: 6.8.9
         version: 6.8.9
@@ -70,6 +73,9 @@ importers:
       '@electron/rebuild':
         specifier: ^4.2.0
         version: 4.2.0
+      '@toolbox/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       electron:
         specifier: ^44.4.3
         version: 44.4.3
@@ -86,7 +92,7 @@ importers:
         specifier: ^3.2.7
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.4)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
 
-  backend:
+  apps/api:
     dependencies:
       '@fastify/cookie':
         specifier: ^11.1.2
@@ -112,9 +118,12 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52
+      '@toolbox/runtime-core':
+        specifier: workspace:*
+        version: link:../../packages/runtime-core
       '@toolbox/shared':
         specifier: workspace:*
-        version: link:../packages/shared
+        version: link:../../packages/shared
       archiver:
         specifier: ^8.0.0
         version: 8.0.0
@@ -162,14 +171,14 @@ importers:
         specifier: ^3.2.7
         version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.4)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
 
-  frontend:
+  apps/web:
     dependencies:
       '@sinclair/typebox':
         specifier: ^0.34.52
         version: 0.34.52
       '@toolbox/shared':
         specifier: workspace:*
-        version: link:../packages/shared
+        version: link:../../packages/shared
       axios:
         specifier: ^1.20.0
         version: 1.20.0
@@ -192,6 +201,9 @@ importers:
         specifier: ^8.0.2
         version: 8.0.2
     devDependencies:
+      '@toolbox/runtime-core':
+        specifier: workspace:*
+        version: link:../../packages/runtime-core
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
@@ -213,6 +225,12 @@ importers:
       vue-tsc:
         specifier: ^3.3.11
         version: 3.3.11(typescript@5.9.3)
+
+  packages/runtime-core:
+    devDependencies:
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@24.13.4)(happy-dom@20.14.5)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.0)
 
   packages/shared:
     dependencies:

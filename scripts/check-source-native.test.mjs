@@ -13,7 +13,7 @@ test("SQLite installation uses shipped prebuilds without disabling other depende
   assert.match(workspace, /better-sqlite3: false/);
   assert.doesNotMatch(workspace, /^\s*- better-sqlite3\s*$/m);
   for (const name of ["electron", "esbuild", "sharp"]) assert.match(workspace, new RegExp(`${name}: true`));
-  const requireBackend = createRequire(new URL("../backend/package.json", import.meta.url));
+  const requireBackend = createRequire(new URL("../apps/api/package.json", import.meta.url));
   const sqlite = requireBackend("better-sqlite3/package.json");
   assert.match(sqlite.version, /^13\./);
   assert.equal(sqlite.gypfile, false);
@@ -45,7 +45,7 @@ test(
       await fs.mkdir(cwd);
       // Repack installed upstream files into local tarballs: exercise a fresh store without
       // relying on registry availability, global Python, or an existing native build cache.
-      const requireBackend = createRequire(new URL("../backend/package.json", import.meta.url));
+      const requireBackend = createRequire(new URL("../apps/api/package.json", import.meta.url));
       const sqliteRoot = path.dirname(requireBackend.resolve("better-sqlite3/package.json"));
       const requireSqlite = createRequire(path.join(sqliteRoot, "package.json"));
       const addonRoot = path.dirname(requireSqlite.resolve("node-addon-api/package.json"));

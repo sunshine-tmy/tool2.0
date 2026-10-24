@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "groups": {
+    "maintenance": [
+      "scripts/clear-generated.mjs",
+      "scripts/cleanup-engine.mjs",
+      "tooling/source/clear-generated.mjs",
+      "tooling/source/cleanup-engine.mjs"
+    ],
+    "workers": [
+      "scripts/edge-tts-generate.py",
+      "scripts/image-ai-worker.py",
+      "scripts/chatterbox-worker.py",
+      "scripts/worker_lifecycle.py",
+      "scripts/xhs-provider-worker.py",
+      "scripts/xhs-translation-worker.py"
+    ]
+  }
+}

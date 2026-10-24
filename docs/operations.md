@@ -2,6 +2,8 @@
 
 本文档描述当前 `/api/v1` 服务的启动、权限、存储迁移、隔离区处理和 standalone 发布流程。接口字段以 [API 参考](./api.md) 和共享 Schema 为准；发生冲突时以运行时 Schema 与本文档的实际命令为准。
 
+源码分别位于 `apps/api`、`apps/web`、`apps/desktop`，工程实现位于 `tooling/`；公开命令、分发中的 `resources/backend` / `resources/frontend` 和用户数据位置保持原约定。首次换电脑开发先按 [README 的离线准备流程](../README.md#新克隆项目首次初始化)准备完整源码与资源，下面的手动开发命令不替代能力准备。目录归属见 [架构指南](architecture.md)。
+
 ## 1. 启动模式与健康检查
 
 项目只支持本机和可信局域网两种部署模式，不应直接暴露到公网。

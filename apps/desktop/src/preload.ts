@@ -1,7 +1,7 @@
+import type { DesktopBridge, StartupSnapshot } from "@toolbox/shared/desktop";
 import { contextBridge, ipcRenderer } from "electron";
-import type { StartupSnapshot } from "./startup-progress";
 
-contextBridge.exposeInMainWorld("toolboxDesktop", {
+const desktopBridge: Required<DesktopBridge> = {
   getStartupDiagnostics: () => ipcRenderer.invoke("diagnostics:startup-state"),
   onStartupDiagnostics: (callback: (state: StartupSnapshot) => void) => {
     const listener = (_event: unknown, state: StartupSnapshot) => callback(state);
@@ -29,4 +29,6 @@ contextBridge.exposeInMainWorld("toolboxDesktop", {
   selectLegacyDataDirectory: () => ipcRenderer.invoke("desktop:select-legacy-data-directory"),
   importLegacyData: (selectionId: string) => ipcRenderer.invoke("desktop:import-legacy-data", selectionId),
   rollbackDataMigration: (migrationId: string) => ipcRenderer.invoke("desktop:rollback-data-migration", migrationId)
-});
+};
+
+contextBridge.exposeInMainWorld("toolboxDesktop", desktopBridge);

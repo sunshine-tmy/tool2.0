@@ -1,6 +1,6 @@
 # Project Plan (Historical Archive)
 
-> This document records the original plan and is not a live status tracker. See the root `README.md` for current features and operations.
+> 文档状态：历史记录。本文保留原始规划及其原有日期和基线，不是当前任务清单。当前功能与操作见 [README](../README.md)，当前重构状态见 [R00–R12 实施记录](refactoring/README.md)。未记录的原始提交不补造。
 
 ## Direction
 
@@ -22,6 +22,6 @@ This project is a lightweight ecommerce toolbox. It intentionally avoids login, 
 ## Add A New Tool
 
 1. Add metadata to `packages/shared/src/tools.ts`.
-2. Add frontend UI behavior under `frontend/src/modules/<tool-id>` or extend the workspace panel.
-3. Add a backend handler under `backend/src/modules/<tool-id>`.
+2. Add frontend UI behavior under `apps/web/src/modules/<tool-id>` or extend the workspace panel.
+3. Add a backend handler under `apps/api/src/modules/<tool-id>`.
 4. Add focused tests for shared validation or backend behavior.

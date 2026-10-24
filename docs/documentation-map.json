@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "current": [
+    "README.md",
+    "docs/README.md",
+    "docs/architecture.md",
+    "docs/api.md",
+    "docs/operations.md",
+    "docs/source-resources.md",
+    "docs/startup-diagnostics.md",
+    "docs/audio-library.md",
+    "docs/edge-tts-batches.md",
+    "docs/desktop-application-help.md",
+    "docs/macos-apple-silicon-build.md",
+    "docs/design/desktop-icon-implementation.md",
+    "docs/refactoring/post-r12-acceptance.md",
+    "docs/refactoring/r12-verification.md"
+  ],
+  "historical": [
+    "docs/project-plan.md",
+    "docs/enterprise-optimization-backlog.md",
+    "docs/ui-ux-redesign-plan.md",
+    "docs/multimedia-archive-plan.md",
+    "docs/multimedia-archive-validation.md",
+    "docs/python-runtime-unification.md",
+    "docs/desktop-release-matrix.md",
+    "docs/superpowers/specs/2026-07-06-lightweight-ecommerce-toolbox-design.md",
+    "docs/superpowers/plans/2026-07-06-lightweight-ecommerce-toolbox.md"
+  ],
+  "startupFiles": [
+    "start.bat",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    ".env.example",
+    "scripts/",
+    "tooling/",
+    "apps/api/",
+    "apps/web/",
+    "apps/desktop/",
+    "packages/"
+  ]
+}

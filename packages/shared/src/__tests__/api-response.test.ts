@@ -2,7 +2,7 @@
  * 中文模块说明：测试 packages/shared/src/__tests__/api-response.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it } from "vitest";
-import { fail, ok } from "../api-response";
+import { fail, ok } from "../common/api-response";
 
 describe("api response helpers", () => {
   it("creates a success envelope with data and message", () => {

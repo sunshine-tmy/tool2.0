@@ -3,8 +3,8 @@
  */
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import "../api-schema";
-import { ChatterboxBatchListSchema, ChatterboxBatchSchema, ChatterboxSavedVoiceSchema } from "../chatterbox";
+import "../common/api-schema";
+import { ChatterboxBatchListSchema, ChatterboxBatchSchema, ChatterboxSavedVoiceSchema } from "../speech/chatterbox";
 
 const now = "2026-09-14T10:00:00.000Z";
 

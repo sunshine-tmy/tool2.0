@@ -8,5 +8,6 @@ export default defineConfig({
   target: "node24",
   sourcemap: true,
   clean: true,
+  noExternal: ["@toolbox/runtime-core"],
   external: ["electron", "electron-updater"]
 });

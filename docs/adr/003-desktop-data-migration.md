@@ -48,11 +48,13 @@ Electron 的 `userData`、`sessionData`、logs、crashDumps 和 temp 在主进�
 
 ## 实现位置与验收
 
-- `apps/desktop/src/desktop-settings.ts`：原子设置读写和严格 JSON 校验。
-- `apps/desktop/src/desktop-data-migration.ts`：清单、哈希、日志、导入、恢复和回滚。
-- `apps/desktop/src/desktop-root-migration.ts`：旧数据根扫描、空间预检、SHA-256 复制、原子切换日志和恢复。
-- `apps/desktop/src/main.ts`：受信任窗口 IPC、一次性目录令牌、停服/重启编排。
-- `frontend/src/pages/DesktopSettingsPage.vue`：设置、导入确认和回滚入口。
+- `apps/desktop/src/data/desktop-settings.ts`：原子设置读写和严格 JSON 校验。
+- `apps/desktop/src/data/desktop-data-migration.ts`：清单、哈希、日志、导入、恢复和回滚。
+- `apps/desktop/src/data/desktop-root-migration.ts`：旧数据根扫描、空间预检、SHA-256 复制、原子切换日志和恢复。
+- `apps/desktop/src/ipc/data-migration.ts`：受信任窗口调用、一次性目录选择 ID；`app/maintenance.ts` 组合原停服/重启协议，`app/startup-migration-flow.ts` 负责首次选择窗口。
+- `apps/web/src/features/desktop-settings/DesktopSettingsPage.vue`：设置、导入确认和回滚入口。
 - `apps/desktop/installer-custom.nsh` 与 `apps/desktop/scripts/package-desktop.mjs`：最终安装路径写入测试、显式双重删除确认、基于打包清单的程序文件白名单卸载。
+
+2026-10-24 R08/R09 只更新上述源码归属，数据协议未变；以下验收描述保留阶段 2 历史时点，不代表本轮执行。当前重构按用户要求将安装包、macOS 和真实模型专项留到 R12 完成后，未自动执行 NSIS 编译、安装器制作或发布。
 
 自动化验收覆盖：桌面数据根布局、无旧数据首次启动、完整迁移、登录 profile 复制、源目录保留、覆盖前目标保护副本、异常路径拒绝、切换中断回滚、已提交迁移收尾、显式空数据选择；并通过真实 NSIS 编译验证写入页及白名单宏。PR/手动 Windows 安装验收流程另在干净 runner 上验证安装、启动、健康检查和静默卸载保留哨兵，不验证签名且不发布 Release。阶段 2 的最终接受还须验收交互卸载双重确认删除、旧版数据迁移和完整发布签名链；完成前不得进入阶段 3。

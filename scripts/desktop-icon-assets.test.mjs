@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
-import { createIco, findVisibleAlphaBounds } from "../backend/scripts/generate-desktop-icon-assets.mjs";
+import { createIco, findVisibleAlphaBounds } from "../apps/api/scripts/generate-desktop-icon-assets.mjs";
 
-const requireBackendDependency = createRequire(new URL("../backend/package.json", import.meta.url));
+const requireBackendDependency = createRequire(new URL("../apps/api/package.json", import.meta.url));
 const sharp = requireBackendDependency("sharp");
 
 test("findVisibleAlphaBounds ignores fully transparent padding and alpha dust", async () => {

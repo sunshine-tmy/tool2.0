@@ -1,6 +1,6 @@
 /** 平台识别不依赖网络；重点防止伪装域名、多个链接与分享令牌丢失。 */
 import { describe, expect, it } from "vitest";
-import { identifyArchiveLink } from "../media-archive-link";
+import { identifyArchiveLink } from "../archive/media-archive-link";
 
 describe("归档作品链接识别", () => {
   it.each([

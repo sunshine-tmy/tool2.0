@@ -8,7 +8,7 @@ import {
   isImageWorkerHealth,
   isImageWorkerProcess,
   isImageWorkerSuggestion
-} from "../worker-protocol";
+} from "../common/worker-protocol";
 
 describe("Worker protocol schemas", () => {
   it("accepts a CPU Chatterbox health payload with a null GPU name", () => {

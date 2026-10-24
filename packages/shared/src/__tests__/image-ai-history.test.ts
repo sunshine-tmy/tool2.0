@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { ImageAiHistoryQuerySchema, ImageAiHistorySchema, ImageAiInputParamsSchema } from "../image-ai";
+import { ImageAiHistoryQuerySchema, ImageAiHistorySchema, ImageAiInputParamsSchema } from "../image/image-ai";
 
 describe("image AI history contract", () => {
   it("bounds pagination and permits only fixed filters and input indexes", () => {

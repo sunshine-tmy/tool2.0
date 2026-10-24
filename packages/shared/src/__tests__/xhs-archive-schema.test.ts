@@ -3,7 +3,7 @@
  */
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import "../api-schema";
+import "../common/api-schema";
 import {
   XhsArchiveItemSchema,
   XhsArchiveListResponseSchema,
@@ -11,7 +11,7 @@ import {
   XhsRuntimeStatusSchema,
   XhsTranslationRuntimeStatusSchema,
   XhsTranslationTaskSchema
-} from "../xhs-archive";
+} from "../archive/xhs-archive";
 
 const now = "2026-09-15T10:00:00.000Z";
 const checksum = "a".repeat(64);

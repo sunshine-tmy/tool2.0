@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { ProductImageRecipeSchema, defaultProductImageRecipe, productImageLayout } from "../product-image";
-import { isImageWorkerProcess } from "../worker-protocol";
+import { ProductImageRecipeSchema, defaultProductImageRecipe, productImageLayout } from "../image/product-image";
+import { isImageWorkerProcess } from "../common/worker-protocol";
 
 describe("商品图配方与布局", () => {
   it("本地合成提供者不进入 Python Worker 协议", () => {

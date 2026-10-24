@@ -6,7 +6,7 @@ import {
   ComponentJobSchema,
   ComponentPackageStatusSchema,
   formatComponentPythonProgress
-} from "../component-packages";
+} from "../system/component-packages";
 
 const packageStatus = {
   id: "edge-tts",

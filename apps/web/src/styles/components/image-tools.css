@@ -1,0 +1,27 @@
+/* Module-specific hierarchy */
+.image-compress-panel {
+  min-height: 560px;
+}
+
+.image-compress-dropzone {
+  min-height: 190px;
+  margin-bottom: var(--space-4);
+}
+
+.image-compress-settings,
+.image-ai-controls {
+  border-radius: var(--radius-card);
+}
+
+.image-compress-summary div {
+  padding: var(--space-4);
+  background: var(--color-surface-subtle);
+  border-color: #e8edf4;
+  border-radius: 10px;
+}
+
+.preset-tabs {
+  padding: 4px;
+  background: #eef2f7;
+  border-radius: 10px;
+}

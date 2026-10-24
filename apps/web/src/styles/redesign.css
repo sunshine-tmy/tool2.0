@@ -1,0 +1,13 @@
+/* Ordered compatibility entry. Keep every fragment in this sequence and layer. */
+@import "./components/document.css";
+@import "./components/shell.css";
+@import "./components/controls.css";
+@import "./features/home-components.css";
+@import "./components/services.css";
+@import "./components/image-tools.css";
+@import "../features/lan-transfer/styles/components.css";
+@import "../features/image-ai/styles/components.css";
+@import "../features/speech/shared/styles/components.css";
+@import "./components/download-actions.css";
+@import "./components/route-states.css";
+@import "./components/responsive.css";

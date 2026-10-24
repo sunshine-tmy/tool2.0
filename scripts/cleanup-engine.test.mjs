@@ -120,7 +120,8 @@ describe("executeCleanup", () => {
   it("removes every registered runtime category from an isolated full-cleanup root", async () => {
     const tmpRoot = await makeTempDir();
     const cleanableFixtures = [
-      "backend/dist/app.js",
+      "apps/api/dist/app.js",
+      "apps/web/dist/index.html",
       ".tmp/cache.bin",
       ".logs/backend.log",
       ".package/standalone/archive.zip",

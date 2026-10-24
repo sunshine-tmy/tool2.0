@@ -1,0 +1,18 @@
+/**
+ * 中文模块说明：测试 apps/web/src/features/image-compress/image-id.test.ts 中的稳定行为、边界条件和回归场景
+ */
+import { describe, expect, it, vi } from "vitest";
+import { createImageItemId } from "./image-id";
+
+describe("image item id", () => {
+  // LAN 页面可能运行在非安全上下文，此时浏览器没有 randomUUID，必须仍能生成稳定格式的本地 ID。
+  it("falls back when crypto.randomUUID is unavailable", () => {
+    const originalCrypto = globalThis.crypto;
+    vi.stubGlobal("crypto", {});
+
+    const id = createImageItemId();
+
+    expect(id).toMatch(/^image-\d+-[a-z0-9]+$/);
+    vi.stubGlobal("crypto", originalCrypto);
+  });
+});

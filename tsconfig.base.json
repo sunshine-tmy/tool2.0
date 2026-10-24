@@ -13,7 +13,16 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@toolbox/shared": ["packages/shared/src/index.ts"]
+      "@toolbox/runtime-core": ["packages/runtime-core/src/index.ts"],
+      "@toolbox/shared": ["packages/shared/src/index.ts"],
+      "@toolbox/shared/image": ["packages/shared/src/image/index.ts"],
+      "@toolbox/shared/lan": ["packages/shared/src/lan/index.ts"],
+      "@toolbox/shared/archive": ["packages/shared/src/archive/index.ts"],
+      "@toolbox/shared/speech": ["packages/shared/src/speech/index.ts"],
+      "@toolbox/shared/system": ["packages/shared/src/system/index.ts"],
+      "@toolbox/shared/common": ["packages/shared/src/common/index.ts"],
+      "@toolbox/shared/audio-library": ["packages/shared/src/audio-library/index.ts"],
+      "@toolbox/shared/desktop": ["packages/shared/src/desktop/types.ts"]
     }
   }
 }

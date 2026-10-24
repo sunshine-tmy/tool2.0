@@ -1,0 +1,83 @@
+<!-- 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载 -->
+<template>
+  <section v-if="props.task.results.length" class="result-panel image-ai-results">
+    <div class="panel-heading">
+      <div>
+        <h3>处理结果</h3>
+        <p>{{ props.task.results.length }} 张结果已留档；可在“处理记录”中回看、下载，手动删除前长期保留。</p>
+      </div>
+      <n-button v-if="props.task.results.length > 1" type="primary" secondary @click="downloadAll">
+        <template #icon><Download :size="15" /></template>下载 ZIP
+      </n-button>
+    </div>
+    <div class="result-gallery-grid">
+      <article v-for="result in props.task.results" :key="result.id" class="result-gallery-card">
+        <BeforeAfterCompare
+          v-if="sourceUrlForResult(result.id)"
+          :before-url="sourceUrlForResult(result.id) || ''"
+          :after-url="absoluteImageAiUrl(result.downloadUrl)"
+          :checkerboard="props.checkerboard"
+          compact
+        />
+        <img v-else :src="absoluteImageAiUrl(result.downloadUrl)" :alt="result.outputName" />
+        <div class="result-gallery-meta">
+          <strong>{{ result.outputName }}</strong>
+          <span>{{ result.width }} × {{ result.height }} · {{ result.model }}</span>
+          <n-button size="small" secondary @click="downloadResult(result.downloadUrl)">
+            <template #icon><Download :size="14" /></template>下载
+          </n-button>
+          <n-button
+            v-if="['background_remove', 'product_image'].includes(props.task.operation)"
+            size="small"
+            type="primary"
+            secondary
+            @click="emit('edit', props.task.id, result.id)"
+            >{{ props.task.operation === "product_image" ? "继续编辑" : "编辑商品图" }}</n-button
+          >
+        </div>
+      </article>
+    </div>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { onBeforeUnmount, ref, watch } from "vue";
+import { NButton } from "naive-ui";
+import { Download } from "lucide-vue-next";
+import type { ImageAiTask } from "@toolbox/shared";
+import BeforeAfterCompare from "./BeforeAfterCompare.vue";
+import { absoluteImageAiUrl, resultDownloadUrl, triggerImageAiDownload } from "../media-links";
+
+const props = defineProps<{
+  task: ImageAiTask;
+  sourceFiles: File[];
+  checkerboard?: boolean;
+  persistedSources?: boolean;
+}>();
+const emit = defineEmits<{ edit: [taskId: string, resultId: string] }>();
+const sourceUrls = ref<string[]>([]);
+
+function refreshSourceUrls(files: File[]) {
+  sourceUrls.value.forEach((url) => URL.revokeObjectURL(url));
+  sourceUrls.value = files.map((file) => URL.createObjectURL(file));
+}
+watch(() => props.sourceFiles, refreshSourceUrls, { immediate: true });
+onBeforeUnmount(() => sourceUrls.value.forEach((url) => URL.revokeObjectURL(url)));
+
+function sourceUrlForResult(resultId: string) {
+  const rawIndex = resultId.slice(props.task.id.length + 1);
+  const index = Number(rawIndex) - 1;
+  if (!Number.isInteger(index) || index < 0 || index >= 10) return undefined;
+  return props.persistedSources
+    ? absoluteImageAiUrl(`/api/v1/tools/image-ai/tasks/${encodeURIComponent(props.task.id)}/inputs/${index + 1}`)
+    : sourceUrls.value[index];
+}
+
+function downloadAll() {
+  triggerImageAiDownload(`/api/v1/tools/image-ai/tasks/${props.task.id}/download.zip`);
+}
+
+function downloadResult(downloadUrl: string) {
+  triggerImageAiDownload(resultDownloadUrl(downloadUrl));
+}
+</script>

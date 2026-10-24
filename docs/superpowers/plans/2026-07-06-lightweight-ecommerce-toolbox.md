@@ -1,5 +1,7 @@
 # Lightweight Ecommerce Toolbox Implementation Plan
 
+> 文档状态：历史记录。保留 2026-07-06 的原始步骤和当时路径，不作为当前待办；原文未指定提交，不补造基线。当前状态见 [重构进度](../../refactoring/README.md)，新电脑操作见 [README](../../../README.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Scaffold a lightweight no-login ecommerce toolbox with a Vue 3 frontend, Fastify backend, shared contracts, and first image tool boundaries.

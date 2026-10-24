@@ -8,7 +8,18 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const script = path.join(root, "scripts/bootstrap-windows.ps1");
+const entryScript = path.join(root, "scripts/bootstrap-windows.ps1");
+const script = path.join(root, "tooling/source/bootstrap-windows.ps1");
+async function copyLauncher(project) {
+  for (const relative of [
+    "scripts/bootstrap-windows.ps1",
+    "scripts/source-resources.generated.json",
+    "tooling/source/bootstrap-windows.ps1"
+  ]) {
+    await fs.mkdir(path.dirname(path.join(project, relative)), { recursive: true });
+    await fs.copyFile(path.join(root, relative), path.join(project, relative));
+  }
+}
 const windows = process.platform === "win32";
 const quote = (value) => `'${value.replaceAll("'", "''")}'`;
 const run = (code) =>
@@ -23,7 +34,7 @@ test(
   { skip: !windows },
   () => {
     const output = run(
-      `$e=$null; $t=$null; [System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$t,[ref]$e) | Out-Null; if($e.Count){throw ($e|Out-String)}; & ${quote(script)} -PlanOnly`
+      `$e=$null; $t=$null; [System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$t,[ref]$e) | Out-Null; if($e.Count){throw ($e|Out-String)}; & ${quote(entryScript)} -PlanOnly`
     );
     assert.match(output, /no downloads, writes/);
     assert.match(output, /6\/6/);
@@ -53,11 +64,68 @@ test("entry and safeguards preserve legacy development without global installs",
   assert.match(shell, /launcher\.lock/);
   assert.match(shell, /TOOLBOX_BOOTSTRAP_NODE%/);
   assert.match(shell, /-NoInstall -ManagedCapabilities/);
+  assert.ok(shell.includes("Join-Path $Root 'apps\\api\\node_modules\\tsx\\dist\\cli.mjs'"));
+  assert.ok(shell.includes("Join-Path $Root 'apps\\api\\tsconfig.json'"));
   assert.doesNotMatch(
     shell,
     /npm install.*(?:global| -g)|SetEnvironmentVariable|RunAs|Set-ExecutionPolicy|Stop-Process|taskkill/i
   );
 });
+
+test("all public PowerShell entries and implementations parse in Windows 5.1", { skip: !windows }, () => {
+  const output = run(
+    `$ErrorActionPreference='Stop';$files=@(Get-ChildItem -LiteralPath ${quote(path.join(root, "scripts"))} -Filter '*.ps1') + @(Get-ChildItem -LiteralPath ${quote(path.join(root, "tooling"))} -Recurse -Filter '*.ps1');foreach($file in $files){$errors=$null;$tokens=$null;[System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)|Out-Null;if($errors.Count){throw ($errors|Out-String)}};'all PowerShell sources parse'`
+  );
+  assert.match(output, /all PowerShell sources parse/);
+});
+
+test(
+  "ZIP Plan and resource listing do not need Node or pnpm on PATH and leave source files untouched",
+  { skip: !windows },
+  async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-no-node-"));
+    try {
+      await copyLauncher(scratch);
+      const output = run(
+        `$env:PATH='';Set-Location ${quote(os.tmpdir())};& ${quote(path.join(scratch, "scripts/bootstrap-windows.ps1"))} -PlanOnly;& ${quote(path.join(scratch, "scripts/bootstrap-windows.ps1"))} -ListResources -WithCuda`
+      );
+      assert.match(output, /no downloads, writes/);
+      assert.match(output, /15 archives/);
+      assert.deepEqual(await fs.readdir(scratch), ["scripts", "tooling"]);
+      assert.deepEqual(await fs.readdir(path.join(scratch, "scripts")), [
+        "bootstrap-windows.ps1",
+        "source-resources.generated.json"
+      ]);
+    } finally {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+);
+
+test(
+  "ZIP layout preflight works from another cwd without Git or an installed runtime",
+  { skip: !windows },
+  async () => {
+    const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-zip-layout-"));
+    const project = path.join(scratch, "源码 ZIP 空间");
+    const cwd = path.join(scratch, "其他目录");
+    try {
+      await fs.mkdir(cwd);
+      await copyLauncher(project);
+      const output = run(
+        `Set-Location ${quote(cwd)}; & ${quote(path.join(project, "scripts/bootstrap-windows.ps1"))} -PlanOnly`
+      );
+      assert.match(output, /no downloads, writes/);
+      assert.match(output, /6\/6/);
+      assert.deepEqual(await fs.readdir(project), ["scripts", "tooling"]);
+      assert.deepEqual(await fs.readdir(cwd), []);
+    } finally {
+      assert.equal(path.dirname(scratch), path.resolve(os.tmpdir()));
+      assert.ok(path.basename(scratch).startsWith("toolbox-zip-layout-"));
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+);
 
 test("the generated resource list matches the signed catalog", () => {
   assert.match(
@@ -85,7 +153,7 @@ test("the optional bootstrap download list matches the launcher's pinned tool ve
 });
 
 test("resource-list mode works before Node and does not create an install", { skip: !windows }, () => {
-  const output = run(`& ${quote(script)} -ListResources`);
+  const output = run(`& ${quote(entryScript)} -ListResources`);
   assert.match(output, /python-312-3\.12\.14-20260901\.tar\.gz/);
   assert.match(output, /offline-resources/);
   assert.doesNotMatch(output, /chatterbox-cuda-1/);
@@ -98,10 +166,10 @@ test("CUDA resource-list and plan modes explicitly include all four GPU archives
   const cuda = plan.components.find((item) => item.id === "chatterbox-cuda");
   assert.equal(cpu.flatMap((item) => item.archives).length, 11);
   assert.equal(cuda.archives.length, 4);
-  const output = run(`& ${quote(script)} -ListResources -WithCuda`);
+  const output = run(`& ${quote(entryScript)} -ListResources -WithCuda`);
   for (const item of [...cpu, cuda]) for (const archive of item.archives) assert.ok(output.includes(archive.filename));
   assert.match(output, /15 archives/);
-  assert.match(run(`& ${quote(script)} -PlanOnly -WithCuda`), /NVIDIA voice cloning GPU extension/);
+  assert.match(run(`& ${quote(entryScript)} -PlanOnly -WithCuda`), /NVIDIA voice cloning GPU extension/);
 });
 
 test(
@@ -139,9 +207,7 @@ test(
   async () => {
     const scratch = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-source-cold-"));
     try {
-      await fs.mkdir(path.join(scratch, "scripts"));
-      for (const file of ["bootstrap-windows.ps1", "source-resources.generated.json"])
-        await fs.copyFile(path.join(root, "scripts", file), path.join(scratch, "scripts", file));
+      await copyLauncher(scratch);
       // Dynamic free ports avoid relying on the development server being stopped during tests.
       const output = run(
         `$ErrorActionPreference='Stop';$p1=New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,0);$p2=New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback,0);$p1.Start();$p2.Start();$one=$p1.LocalEndpoint.Port;$two=$p2.LocalEndpoint.Port;$p1.Stop();$p2.Stop();[IO.File]::WriteAllText(${quote(path.join(scratch, ".env.example"))},("API_PORT="+$one+"\nVITE_DEV_PORT="+$two+"\n"));$env:API_PORT=$null;$env:VITE_DEV_PORT=$null;& ${quote(path.join(scratch, "scripts/bootstrap-windows.ps1"))};if($LASTEXITCODE -ne 1){throw 'Missing resources were not rejected'};'missing archives stopped startup'`

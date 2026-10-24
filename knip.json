@@ -1,11 +1,18 @@
 {
   "ignoreBinaries": ["python", "pwsh"],
   "ignoreDependencies": ["electron-builder", "tslib"],
+  "playwright": { "config": ["playwright.config.ts", "playwright.styles.config.ts"] },
   "workspaces": {
     ".": {
-      "entry": ["scripts/smoke-audio-library.mjs", "scripts/bootstrap-components.ts", "scripts/check-source-native.mjs"]
+      "entry": [
+        "scripts/smoke-audio-library.mjs",
+        "scripts/bootstrap-components.ts",
+        "scripts/check-source-native.mjs",
+        "tooling/build/package-desktop.mjs",
+        "tooling/testing/smoke-installed-desktop.mjs"
+      ]
     },
-    "backend": {
+    "apps/api": {
       "entry": [
         "src/database/cli.ts",
         "src/database/benchmark.ts",
@@ -14,7 +21,7 @@
       ]
     },
     "apps/desktop": {
-      "entry": ["src/preload.ts"]
+      "entry": ["src/preload.ts", "scripts/*.mjs"]
     }
   }
 }

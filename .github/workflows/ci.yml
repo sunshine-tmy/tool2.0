@@ -21,6 +21,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm format:check
       - run: pnpm lint
+      - run: pnpm lint:architecture
       - run: pnpm deadcode
       - run: pnpm typecheck
 
@@ -40,15 +41,21 @@ jobs:
           sudo apt-get install --no-install-recommends -y ffmpeg
           ffmpeg -version
       - run: pnpm coverage
+      - run: pnpm test:contracts
+      - run: pnpm test:architecture
+      - run: pnpm test:diff-coverage
+      - run: pnpm test:python:runner
+      - run: pnpm test:scripts
       - run: pnpm db:benchmark
       - name: Upload LCOV reports
         uses: actions/upload-artifact@v4
         with:
           name: node-coverage
           path: |
-            backend/coverage/lcov.info
-            frontend/coverage/lcov.info
+            apps/api/coverage/lcov.info
+            apps/web/coverage/lcov.info
             packages/shared/coverage/lcov.info
+            packages/runtime-core/coverage/lcov.info
           if-no-files-found: error
 
   diff-coverage:
@@ -75,9 +82,10 @@ jobs:
           pnpm coverage:diff \
             --base "$DIFF_COVERAGE_BASE" \
             --threshold 90 \
-            --lcov .coverage/backend/coverage/lcov.info \
-            --lcov .coverage/frontend/coverage/lcov.info \
-            --lcov .coverage/packages/shared/coverage/lcov.info
+            --lcov .coverage/apps/api/coverage/lcov.info \
+            --lcov .coverage/apps/web/coverage/lcov.info \
+            --lcov .coverage/packages/shared/coverage/lcov.info \
+            --lcov .coverage/packages/runtime-core/coverage/lcov.info
 
   e2e:
     runs-on: ubuntu-latest
@@ -97,6 +105,18 @@ jobs:
           name: playwright-report
           path: playwright-report/
           if-no-files-found: ignore
+
+  windows-source-tests:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: "11.7.0" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "24", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:scripts
 
   python:
     runs-on: ubuntu-latest
@@ -180,7 +200,7 @@ jobs:
 
   enterprise-acceptance:
     if: ${{ always() }}
-    needs: [static, node-tests, e2e, python, build-and-audit, distribution-smoke, diff-coverage]
+    needs: [static, node-tests, windows-source-tests, e2e, python, build-and-audit, distribution-smoke, diff-coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -198,6 +218,7 @@ jobs:
           set -euo pipefail
           test "${{ needs.static.result }}" = success
           test "${{ needs.node-tests.result }}" = success
+          test "${{ needs.windows-source-tests.result }}" = success
           test "${{ needs.e2e.result }}" = success
           test "${{ needs.python.result }}" = success
           test "${{ needs.build-and-audit.result }}" = success

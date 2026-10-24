@@ -15,7 +15,7 @@
 - `ecommerce-toolbox.ico`（上述五种 PNG 编码尺寸）
 - `ecommerce-toolbox-icon-master-1024.png`（保留母稿构图的 1024 px 透明主稿导出）
 
-用 `pnpm desktop:icons` 可从母稿确定性地重新生成桌面 PNG、ICO，以及 `frontend/public` 中网页使用的 favicon 和品牌图。Windows ICO 写入脚本会检查 PNG 尺寸、ICO 目录、位深、偏移及 256 px 特殊尺寸编码。
+用 `pnpm desktop:icons` 可从母稿确定性地重新生成桌面 PNG、ICO，以及 `apps/web/public` 中网页使用的 favicon 和品牌图。Windows ICO 写入脚本会检查 PNG 尺寸、ICO 目录、位深、偏移及 256 px 特殊尺寸编码。
 
 ## 接入点
 

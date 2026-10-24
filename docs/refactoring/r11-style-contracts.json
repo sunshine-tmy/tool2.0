@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "55526abc4f67d04e99ba677b335c38b43b4584bb",
+  "layers": ["tokens", "foundation", "components"],
+  "entries": [
+    {
+      "file": "apps/web/src/styles/tokens.css",
+      "sourceSha256": "7cea85e705dfe3d5fb646ac86424ca010253edafaa79e448c2f084e731ae0b86",
+      "expanded": {
+        "sha256": "895b257c38f66a645da96712d559b892aa0f64231533447b0a7fa3be1f863e28",
+        "semanticSha256": "628bbcbe2590289e5bf040c442095f2ad4c83f7f3ac1382d310036de51b33eaa",
+        "rules": 2,
+        "declarations": 47,
+        "atRules": 1
+      }
+    },
+    {
+      "file": "apps/web/src/styles/global.css",
+      "sourceSha256": "1848f2934229153942575f847820bc52a99b757c3d4e5234ddb365e90a734916",
+      "expanded": {
+        "sha256": "0e09e0ec7e0288f428161c076d2c73ba21bb06cfd15d35ab3519f454e59d5082",
+        "semanticSha256": "c43630ec4cb177016e387e0546a505ef96315e785d9a90b8a45e0c56b0383b5d",
+        "rules": 366,
+        "declarations": 1309,
+        "atRules": 6
+      }
+    },
+    {
+      "file": "apps/web/src/styles/redesign.css",
+      "sourceSha256": "412768ad4179ba759eb4937732fe2a08100fd68916b3c6d073e8855c5a31ae85",
+      "expanded": {
+        "sha256": "b305554a9ac770ffec733f5bdc90971c9a9557f6f7e4d273686f8f4a8b0a4b5e",
+        "semanticSha256": "9af339838a11aa14798bfb44cf768e1c68b61a378fbce350a0d30af1c10ed675",
+        "rules": 192,
+        "declarations": 580,
+        "atRules": 6
+      }
+    },
+    {
+      "file": "apps/web/src/styles/index.css",
+      "sourceSha256": "574a30dca7d193ff4733557731dfd6502847bbd74b0b53fd2f26462cfdcb2a7f",
+      "expanded": {
+        "sha256": "f201472b03ff01fb3efd339b331c801ef5aa134a370e0981da53c57307dc3483",
+        "semanticSha256": "848f8f2fd54ce7761907bd136f9ee499d42e592275458ec08f099905fad06266",
+        "rules": 560,
+        "declarations": 1936,
+        "atRules": 17
+      }
+    }
+  ],
+  "builtCss": [
+    {
+      "file": "DesktopLanAccess-D-1vmBC1.css",
+      "bytes": 863,
+      "sha256": "4fac6aae1f82927b3728d8044b0dcd0acdb9b2fb8b3b3b0ffcd9e49b5b967a42"
+    },
+    {
+      "file": "DesktopSettingsPage-DPRFG4hx.css",
+      "bytes": 2510,
+      "sha256": "a140ae8cfdc437da804a0b6165a5cf578a581a2a1dec657dc1e390ec1aebdf06"
+    },
+    {
+      "file": "DiagnosticsPage-BwFSN1fR.css",
+      "bytes": 937,
+      "sha256": "ffc6fc61c87a63bf4bc415b8bbdcd0e8dae7872f94be17c9c9af1ac46d746556"
+    },
+    {
+      "file": "index-C7tD5WOJ.css",
+      "bytes": 54757,
+      "sha256": "6775db675db0c46c79312a6044334e2b1f590910974925a24d3149b6b0e83a96"
+    },
+    {
+      "file": "page-BkyKCcoV.css",
+      "bytes": 2133,
+      "sha256": "522742f028d397afda40080b5be02290d84685bb53e9485463a99f61a22d43ec"
+    },
+    {
+      "file": "page-D-5HaLuy.css",
+      "bytes": 9306,
+      "sha256": "b0ded10edf5ddb3aaf3fa83f366067f0c27bd6c86b076400bd5e0eedaa3b68b2"
+    },
+    {
+      "file": "page-D0d-gszI.css",
+      "bytes": 15698,
+      "sha256": "ebcf8de219c3f68db10ebe0edc3097b3b3dd97219bcd2da496699cc338d8936a"
+    },
+    {
+      "file": "page-DaSHY_ja.css",
+      "bytes": 16030,
+      "sha256": "c774c7fb574b65f3c9ff237ddfba436677ab21d37c86c70d5005a228cc1a753b"
+    },
+    {
+      "file": "ProductImageEditor-CzzI90q-.css",
+      "bytes": 5358,
+      "sha256": "d36faae8f1e72711cc5fb2c2029aead1b255eeecb6fd59a37eaa464fc3560d14"
+    }
+  ]
+}

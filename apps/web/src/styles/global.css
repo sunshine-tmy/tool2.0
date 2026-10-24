@@ -1,0 +1,11 @@
+/* Ordered compatibility entry. Keep every fragment in this sequence and layer. */
+@import "./foundation/document.css";
+@import "./foundation/shell.css";
+@import "../features/image-ai/styles/foundation.css";
+@import "./features/home-foundation.css";
+@import "./foundation/controls.css";
+@import "../features/image-compress/styles/foundation.css";
+@import "../features/lan-transfer/styles/foundation.css";
+@import "./foundation/shared-actions.css";
+@import "../features/speech/shared/styles/foundation.css";
+@import "./foundation/responsive.css";

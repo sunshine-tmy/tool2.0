@@ -2,6 +2,8 @@
  * 中文模块说明：端到端验收场景，验证真实浏览器中的关键用户流程
  */
 import { expect, test } from "@playwright/test";
+import type { EdgeTtsBatchCreate } from "../packages/shared/src/speech/edge-tts-batch";
+import { assertOnlineSpeechInput, onlineSpeechBatch } from "./fixtures/online-speech";
 
 const apiPort = process.env.PLAYWRIGHT_API_PORT || "33100";
 const apiBase = `http://127.0.0.1:${apiPort}/api/v1`;
@@ -13,7 +15,13 @@ test.describe("toolbox critical workflows", () => {
 
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "今天要处理什么？" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "查看本地服务状态" })).toContainText("本地服务可用");
+    const healthResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/v1/health" && response.request().method() === "GET"
+    );
+    await page.getByRole("button", { name: "本地服务与管理员会话", exact: true }).click();
+    expect((await healthResponse).ok()).toBe(true);
+    await expect(page.locator(".service-summary")).toContainText("主服务运行正常");
+    await expect(page.locator(".service-row .service-state")).toHaveCount(6);
   });
 
   test("uploads a file, resumes a missing chunk, and batch deletes it", async ({ page, request }) => {
@@ -54,132 +62,104 @@ test.describe("toolbox critical workflows", () => {
     expect(deleted.status()).toBe(404);
   });
 
-  test("creates and completes an Edge-TTS task in the page", async ({ page }) => {
-    await page.route("**/api/v1/tools/edge-tts/health", async (route) =>
-      route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          data: {
-            available: true,
-            version: "e2e",
-            message: "E2E voice service",
-            queue: { active: 0, queued: 0, concurrency: 1, limit: 20 },
-            retentionDays: 3,
-            maxTextLength: 20_000,
-            onlineService: true
-          },
-          requestId: "e2e-health"
-        })
-      })
-    );
-    await page.route("**/api/v1/tools/edge-tts/voices**", async (route) =>
-      route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          data: {
-            voices: [
-              {
-                name: "Yasmin Neural",
-                shortName: "ms-MY-YasminNeural",
-                locale: "ms-MY",
-                gender: "Female",
-                suggested: true
-              }
-            ],
-            source: "fallback"
-          },
-          requestId: "e2e-voices"
-        })
-      })
-    );
-    await page.route("**/api/v1/tools/edge-tts/tasks", async (route) => {
-      if (route.request().method() === "GET") {
-        await route.fulfill({
-          contentType: "application/json",
-          body: JSON.stringify({
-            success: true,
-            data: { tasks: [], pagination: { page: 1, pageSize: 10, total: 0, totalPages: 1 } },
-            requestId: "e2e-history"
-          })
-        });
+  test("creates an ordered bilingual Edge-TTS batch and renders completed artifacts", async ({ page }) => {
+    let submitted: EdgeTtsBatchCreate | undefined;
+    let detailReads = 0;
+    const unexpected: string[] = [];
+    const pagination = { page: 1, pageSize: 10, total: 0, totalPages: 1 };
+    await page.route(/\/api\/v1\/tools\/edge-tts\/(health|voices|tasks|batches)(\/|\?|$)/, async (route) => {
+      const request = route.request();
+      const pathname = new URL(request.url()).pathname;
+      let data: unknown;
+      let status = 200;
+      if (pathname.endsWith("/health")) {
+        data = {
+          available: true,
+          version: "e2e",
+          message: "E2E voice service",
+          queue: { active: 0, queued: 0, concurrency: 1, limit: 20 },
+          retentionDays: 3,
+          maxTextLength: 20_000,
+          onlineService: true
+        };
+      } else if (pathname.endsWith("/voices")) {
+        data = {
+          voices: [
+            {
+              name: "Yasmin Neural",
+              shortName: "ms-MY-YasminNeural",
+              locale: "ms-MY",
+              gender: "Female",
+              suggested: true
+            }
+          ],
+          source: "fallback"
+        };
+      } else if (pathname.endsWith("/tasks") && request.method() === "GET") {
+        data = { tasks: [], pagination };
+      } else if (pathname.endsWith("/batches") && request.method() === "GET") {
+        data = {
+          batches: submitted ? [onlineSpeechBatch(submitted, detailReads > 0)] : [],
+          pagination: { ...pagination, total: submitted ? 1 : 0 }
+        };
+      } else if (pathname.endsWith("/batches") && request.method() === "POST") {
+        const input: unknown = request.postDataJSON();
+        assertOnlineSpeechInput(input);
+        submitted = input;
+        data = onlineSpeechBatch(input, false);
+        status = 202;
+      } else if (pathname.endsWith("/batches/e2e-online-batch") && submitted && request.method() === "GET") {
+        detailReads += 1;
+        data = onlineSpeechBatch(submitted, true);
+      } else {
+        unexpected.push(`${request.method()} ${pathname}`);
+        await route.fulfill({ status: 501, json: { success: false, message: "Unexpected test request" } });
         return;
       }
-      await route.fulfill({
-        status: 202,
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          data: {
-            id: "e2e-edge-task",
-            status: "queued",
-            progress: 0,
-            text: "Selamat datang",
-            language: "ms-MY",
-            voice: "ms-MY-YasminNeural",
-            rate: 0,
-            volume: 0,
-            pitch: 0,
-            includeSubtitles: false,
-            characterCount: 15,
-            expiresAt: "2026-09-18T00:00:00.000Z",
-            createdAt: "2026-09-15T00:00:00.000Z",
-            updatedAt: "2026-09-15T00:00:00.000Z"
-          },
-          requestId: "e2e-create"
-        })
-      });
+      await route.fulfill({ status, json: { success: true, data, requestId: "e2e-online" } });
     });
-    await page.route("**/api/v1/tasks/e2e-edge-task/events", async (route) => {
-      await route.fulfill({
-        contentType: "text/event-stream",
-        body: `event: task\ndata: ${JSON.stringify({
-          id: "e2e-edge-task",
-          toolId: "edge-tts",
-          status: "completed",
-          progress: 100,
-          createdAt: "2026-09-15T00:00:00.000Z",
-          updatedAt: "2026-09-15T00:00:01.000Z"
-        })}\n\n`
-      });
-    });
-    await page.route("**/api/v1/tools/edge-tts/tasks/e2e-edge-task", async (route) =>
-      route.fulfill({
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          data: {
-            id: "e2e-edge-task",
-            status: "completed",
-            progress: 100,
-            text: "Selamat datang",
-            language: "ms-MY",
-            voice: "ms-MY-YasminNeural",
-            rate: 0,
-            volume: 0,
-            pitch: 0,
-            includeSubtitles: false,
-            characterCount: 15,
-            expiresAt: "2026-09-18T00:00:00.000Z",
-            audioUrl: "/api/v1/tools/edge-tts/tasks/e2e-edge-task/audio",
-            downloadUrl: "/api/v1/tools/edge-tts/tasks/e2e-edge-task/download",
-            createdAt: "2026-09-15T00:00:00.000Z",
-            updatedAt: "2026-09-15T00:00:01.000Z"
-          },
-          requestId: "e2e-task"
-        })
-      })
-    );
 
     await page.goto("/tools/edge-tts");
     await expect(page.getByRole("heading", { name: "多国语言配音" })).toBeVisible();
-    await page.getByPlaceholder(/例如：Selamat datang/).fill("Selamat datang");
-    await page.getByRole("button", { name: "生成语音" }).click();
-    const result = page.locator(".edge-tts-result");
-    await expect(result).toBeVisible();
+    await expect(page.getByRole("tab", { name: /参考音色克隆/ })).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("tab", { name: /在线自然音色/ }).click();
+    const panel = page.locator(".online-tts-panel");
+    await panel.getByPlaceholder("批次名称（可选）").fill("双语有序测试");
+    await panel.getByPlaceholder(/^第 1 段/).fill("Selamat datang.");
+    await panel.getByPlaceholder("中文翻译（选填，不参与配音）").fill("欢迎。");
+    await panel.getByRole("button", { name: "添加一段", exact: true }).click();
+    await panel.getByPlaceholder(/^第 2 段/).fill("Terima kasih.");
+    await panel.getByPlaceholder("中文翻译（选填，不参与配音）").nth(1).fill("谢谢。");
+    await panel.getByRole("button", { name: "添加 2 个音频到生成队列", exact: true }).click();
+    const result = panel.locator(".edge-tts-result");
     await expect(result).toContainText("已完成");
-    await expect(result).toContainText("ms-MY-YasminNeural");
+    await expect(result).toContainText("2/2");
+    expect(submitted).toEqual({
+      name: "双语有序测试",
+      segments: [
+        { text: "Selamat datang.", referenceTranslation: "欢迎。" },
+        { text: "Terima kasih.", referenceTranslation: "谢谢。" }
+      ],
+      language: "ms-MY",
+      voice: "ms-MY-YasminNeural",
+      rate: 0,
+      volume: 0,
+      pitch: 0,
+      includeSubtitles: true,
+      subtitleMode: "sentences"
+    });
+    expect(detailReads).toBeGreaterThan(0);
+    const root = "/api/v1/tools/edge-tts/batches/e2e-online-batch";
+    for (const [label, suffix] of [
+      ["下载全部 ZIP", "/download.zip"],
+      ["下载总音频", "/combined-audio"],
+      ["下载原文 SRT", "/subtitle"],
+      ["下载中文 SRT", "/subtitle.zh-CN"],
+      ["下载双语 SRT", "/subtitle.bilingual"]
+    ]) {
+      await expect(result.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", `${root}${suffix}`);
+    }
+    expect(unexpected).toEqual([]);
   });
 
   test("lists XHS archives and retries a failed task", async ({ page }) => {

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRuntimeLayout, type RuntimeLayout } from "../../../backend/src/runtime/runtime-layout";
+import { createRuntimeLayout, type RuntimeLayout } from "@toolbox/runtime-core";
 
 type DesktopRuntimeLayoutOptions = {
   packaged: boolean;
@@ -21,7 +21,9 @@ export function createDesktopRuntimeLayout(options: DesktopRuntimeLayoutOptions)
     runtimeRoot: path.join(dataRoot, "components"),
     modelsRoot: path.join(dataRoot, "models"),
     scriptsRoot: path.join(resourceRoot, "scripts"),
-    frontendDistRoot: path.join(resourceRoot, "frontend")
+    frontendDistRoot: options.packaged
+      ? path.join(resourceRoot, "frontend")
+      : path.join(resourceRoot, "apps", "web", "dist")
   });
 }
 
@@ -65,5 +67,5 @@ export function desktopBackendEntrypoint(packaged: boolean, resourcesPath?: stri
   const workspaceRoot = fileURLToPath(new URL("../../..", import.meta.url));
   return packaged
     ? path.join(resourcesPath ?? process.resourcesPath, "backend", "dist", "desktop-entry.js")
-    : path.join(workspaceRoot, "backend", "dist", "desktop-entry.js");
+    : path.join(workspaceRoot, "apps", "api", "dist", "desktop-entry.js");
 }

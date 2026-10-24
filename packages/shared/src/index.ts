@@ -1,26 +1,44 @@
 /**
  * 中文模块说明：共享契约层，负责跨前后端复用的类型、Schema、响应和领域常量
  */
-export * from "./api-response";
-export * from "./api-schema";
-export * from "./worker-protocol";
-export * from "./image-options";
-export * from "./system-operations";
-export * from "./image-ai";
-export * from "./product-image";
-export * from "./edge-tts";
-export * from "./edge-tts-batch";
-export * from "./chatterbox";
-export * from "./lan-file";
-export * from "./lan-note";
-export * from "./lan-transfer-api";
-export * from "./tools";
-export * from "./xhs-archive";
-export * from "./xhs-text";
-export * from "./media-archive-link";
-export * from "./content-archive";
-export * from "./douyin-runtime";
-export * from "./component-packages";
-export * from "./audio-library";
-export * from "./diagnostics";
-export * from "./lan-access";
+export * from "./common/api-response";
+export * from "./common/api-schema";
+export * from "./common/worker-protocol";
+export * from "./image/image-options";
+export * from "./image/compress-result";
+export * from "./system/cleanup";
+export * from "./image/image-ai";
+export * from "./image/product-image";
+export * from "./speech/edge-tts";
+export * from "./speech/edge-tts-batch";
+export * from "./speech/chatterbox";
+export * from "./lan/lan-file";
+export * from "./lan/lan-note";
+export * from "./lan/lan-transfer-api";
+export * from "./common/tools";
+export * from "./archive/xhs-archive";
+export * from "./archive/xhs-text";
+export * from "./archive/media-archive-link";
+export * from "./archive/content-archive";
+export * from "./archive/douyin-runtime";
+export * from "./system/component-packages";
+export * from "./audio-library/contracts";
+export * from "./system/diagnostics";
+export * from "./lan/lan-access";
+export type {
+  DesktopBridge,
+  DesktopMigrationSummary,
+  DesktopSettings,
+  DesktopSettingsUpdate,
+  DesktopSettingsState,
+  StartupDataMigrationState,
+  DesktopRootMigrationResult,
+  DesktopDataMigrationResult,
+  DesktopDataRollbackResult,
+  DesktopLegacyDirectorySelection,
+  DesktopUpdateCheck,
+  StartupStepId,
+  StartupSnapshot,
+  ShutdownInspection,
+  ShutdownPreparation
+} from "./desktop/types";

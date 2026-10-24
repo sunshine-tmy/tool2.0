@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "baseCommit": "55526abc4f67d04e99ba677b335c38b43b4584bb",
+  "packageManager": "pnpm@11.7.0",
+  "commands": [
+    "audit:python",
+    "build",
+    "build:backend",
+    "build:shared",
+    "build:web",
+    "check",
+    "clean",
+    "clear:generated",
+    "components:catalog",
+    "components:catalog-python312",
+    "components:lock-macos-dependencies",
+    "components:lock-xhs-dependencies",
+    "components:package",
+    "components:prepare-chatterbox",
+    "components:prepare-chatterbox-cuda",
+    "components:prepare-edge-tts",
+    "components:prepare-ffmpeg",
+    "components:prepare-image-ai",
+    "components:prepare-python-311",
+    "components:prepare-python-312",
+    "components:prepare-xhs-archive",
+    "components:prepare-xhs-browser",
+    "components:prepare-xhs-translation",
+    "components:test-xhs-lifecycle",
+    "components:test-xhs-translation-smoke",
+    "coverage",
+    "coverage:diff",
+    "db:benchmark",
+    "db:migrate",
+    "db:rollback",
+    "db:verify",
+    "deadcode",
+    "desktop:build",
+    "desktop:icons",
+    "desktop:make",
+    "desktop:package",
+    "desktop:rebuild-native",
+    "desktop:stage",
+    "desktop:start",
+    "dev",
+    "dev:ai",
+    "dev:api",
+    "dev:web",
+    "doctor",
+    "format",
+    "format:check",
+    "lint",
+    "lint:python",
+    "lock:python",
+    "prepare:xhs-model",
+    "preview:web",
+    "smoke",
+    "smoke:audio-library",
+    "smoke:standalone",
+    "source:resources",
+    "standalone:start",
+    "start",
+    "test",
+    "test:all",
+    "test:diff-coverage",
+    "test:e2e",
+    "test:python",
+    "test:scripts",
+    "typecheck"
+  ],
+  "workspaces": [
+    {
+      "name": "backend",
+      "locations": ["backend", "apps/api"]
+    },
+    {
+      "name": "frontend",
+      "locations": ["frontend", "apps/web"]
+    },
+    {
+      "name": "desktop",
+      "locations": ["apps/desktop"]
+    },
+    {
+      "name": "@toolbox/shared",
+      "locations": ["packages/shared"]
+    }
+  ],
+  "protectedFiles": [
+    {
+      "file": "backend/src/modules/components/catalog.darwin-arm64.generated.ts",
+      "sha256": "9274d97f51e96af4b057a2ecdf6ffbc1f44e80553271818d0fed7d76dd70dc12"
+    },
+    {
+      "file": "backend/src/modules/components/catalog.generated.ts",
+      "sha256": "01eba55b022809baf7e11a522699c5c409f0f431878a9634e42811bceb2ae209"
+    },
+    {
+      "file": "packaging/components/douyin-archive/adapter/manifest.json",
+      "sha256": "99c16bc3197e2f3911995f5a02c226ed961e39d74e0e4a501b6af95e33b33ff7"
+    },
+    {
+      "file": "scripts/chatterbox-cuda-requirements.txt",
+      "sha256": "51c463fe3bbe4e08bd837a338397c85beae81e01089252f88de48133acd8e955"
+    },
+    {
+      "file": "scripts/chatterbox-cuda.lock.txt",
+      "sha256": "88ff95c2eca8f062d202d3b554e3d2a338d4012957ab0bf4d9207c1bc870b4e9"
+    },
+    {
+      "file": "scripts/chatterbox-requirements.txt",
+      "sha256": "a35fb4c8677e8484136fb79aaf875e700155f8583d1907e6c1d76a3bb98d6ee6"
+    },
+    {
+      "file": "scripts/chatterbox-worker.py",
+      "sha256": "5bf37caa877026fe9dbc951dc3365533ca40501ec750c3b92c04e96cfc559eba"
+    },
+    {
+      "file": "scripts/chatterbox.lock.txt",
+      "sha256": "44744875994b000e549435a90a98f83f8f5f0e04bf8416dec84f0adfdcaa989d"
+    },
+    {
+      "file": "scripts/component-definitions/chatterbox-cuda.json",
+      "sha256": "384ad4a65792f00c73a3c069ee592fce127b9877c4f31bfb96f0808df0abe6f0"
+    },
+    {
+      "file": "scripts/component-definitions/chatterbox.json",
+      "sha256": "f843f9f732cb3f3feb8d4de8943b761bb46394b2e67b9186f8860806044edf36"
+    },
+    {
+      "file": "scripts/component-definitions/douyin-archive.json",
+      "sha256": "315150d68606888cfc0d906a39ab88aa52f560d604599fe5831f054f03deb1ec"
+    },
+    {
+      "file": "scripts/component-definitions/edge-tts.json",
+      "sha256": "6b5c4b1381a502fc0e243b3cff5ed3fc67764ec06ec15fd2b549a5622106a2bf"
+    },
+    {
+      "file": "scripts/component-definitions/ffmpeg.json",
+      "sha256": "ddb2256d6f6919ddb8dbc1c734a518cabc368787cee4234628b4d194d8588535"
+    },
+    {
+      "file": "scripts/component-definitions/image-ai.json",
+      "sha256": "e03af108534067bfb0e75f495763c9a33298380840592a6273ddb75201bb84bc"
+    },
+    {
+      "file": "scripts/component-definitions/python-311.json",
+      "sha256": "091f7f1069b798460508466e506b61dee78b422aa02b7effbb71086e62d53b3a"
+    },
+    {
+      "file": "scripts/component-definitions/python-312.json",
+      "sha256": "92223000aa3b5ba25a5bb3073a22593896b348444841bf7ded3a4f98961c8e2c"
+    },
+    {
+      "file": "scripts/component-definitions/xhs-archive.json",
+      "sha256": "c770d84e487036b59f25bd4f778aa7d467f63f74bfd1f069073d297f13d32413"
+    },
+    {
+      "file": "scripts/component-definitions/xhs-browser.json",
+      "sha256": "7e003c02700b1476195b1c95a01c66f336283ad394789380bca0b5b2bd45c1fc"
+    },
+    {
+      "file": "scripts/component-definitions/xhs-translation.json",
+      "sha256": "5b657d401bc4e7fc530adf64fbeee399c00dcf0c2d1a362cedf6b0cd12e0ab2d"
+    },
+    {
+      "file": "scripts/edge-tts-generate.py",
+      "sha256": "51c5d0adaaffd96affd120aeb0cba176e9584cfcca8bf9c0d1de3efd8ec61dc7"
+    },
+    {
+      "file": "scripts/edge-tts-requirements.txt",
+      "sha256": "30ee848e114728d56d3f13d743c9f6156c7876af2d1d0a1a5b4f487721f9e5c8"
+    },
+    {
+      "file": "scripts/edge-tts.lock.txt",
+      "sha256": "4b2b332a73289d0f618b83042474d68a2313c6b6c0fe49202b508f8c386e8fcb"
+    },
+    {
+      "file": "scripts/image-ai-requirements.txt",
+      "sha256": "15ac2d3c2a1725800affab76f6437a779779e7282b8d042a8a046b9bda19640e"
+    },
+    {
+      "file": "scripts/image-ai-worker.py",
+      "sha256": "02689d58815181361c727a9697faa6ccb4c5142c925f2646f0361a6d970757bd"
+    },
+    {
+      "file": "scripts/image-ai.lock.txt",
+      "sha256": "080bff46e678bf9e9f41ce2adceb18ad87b951ed5c8610b4ab7efb2e796dab18"
+    },
+    {
+      "file": "scripts/pytorch-audit-requirements.txt",
+      "sha256": "eade30b145b3f38dad02c154c281b5342e677417e5cd564c15dabc30655c463e"
+    },
+    {
+      "file": "scripts/source-resources.generated.json",
+      "sha256": "85fa01d54f95e5b6b80c33b725ad755cca9c34a2efa2cf8f7b2708e99a476899"
+    },
+    {
+      "file": "scripts/worker_lifecycle.py",
+      "sha256": "bbde9d83156f78b6cf669e98ba3641b7786241e696df8598725133cf9c48a645"
+    },
+    {
+      "file": "scripts/xhs-archive.lock.txt",
+      "sha256": "ff7c554d06717f3f4cb1ccde88b50f4f3076c7bf4aaa9d371db6613fb8db26c6"
+    },
+    {
+      "file": "scripts/xhs-provider-worker.py",
+      "sha256": "d3b7c2734b0f9a6f0dacc497c8b37c789d029a8b5c04346212219f9ee38ddcbb"
+    },
+    {
+      "file": "scripts/xhs-translation-requirements.txt",
+      "sha256": "a9b18cb219c0ee5b7b7acfef811859596e8846a1b6ac7b3c5e49365b1619a2e3"
+    },
+    {
+      "file": "scripts/xhs-translation-worker.py",
+      "sha256": "97a498051ac6b7e1cb1f4b83cd97620e285ce27c24b08484b12ecc8137201793"
+    },
+    {
+      "file": "scripts/xhs-translation.lock.txt",
+      "sha256": "8ae7a0cf46f5c9a2401cdd5a84d66bad6dc17eb1b085cbc23a68760c2991a997"
+    }
+  ]
+}

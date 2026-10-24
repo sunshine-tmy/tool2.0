@@ -6,8 +6,16 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
-    "edge-tts": "src/edge-tts.ts",
-    chatterbox: "src/chatterbox.ts"
+    image: "src/image/index.ts",
+    "audio-library": "src/audio-library/index.ts",
+    lan: "src/lan/index.ts",
+    archive: "src/archive/index.ts",
+    speech: "src/speech/index.ts",
+    system: "src/system/index.ts",
+    common: "src/common/index.ts",
+    desktop: "src/desktop/types.ts",
+    "edge-tts": "src/speech/edge-tts.ts",
+    chatterbox: "src/speech/chatterbox.ts"
   },
   outDir: "dist",
   format: ["esm"],

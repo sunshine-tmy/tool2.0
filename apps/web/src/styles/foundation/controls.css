@@ -1,0 +1,77 @@
+.workspace-panel {
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #e4e9f2;
+  border-radius: 8px;
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.045);
+}
+
+.workspace-panel + .workspace-panel {
+  margin-top: 16px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.panel-heading h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.dropzone {
+  display: grid;
+  min-height: 132px;
+  place-items: center;
+  padding: 18px;
+  color: #475467;
+  text-align: center;
+  border: 1px dashed #adc0d6;
+  border-radius: 8px;
+  background: #fbfcfe;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease;
+}
+
+.dropzone:hover,
+.dropzone.is-dragging {
+  background: #f0f9ff;
+  border-color: #2563eb;
+  box-shadow: 0 14px 34px rgba(37, 99, 235, 0.08);
+}
+
+.dropzone.is-dragging {
+  transform: translateY(-1px);
+}
+
+.form-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.task-row {
+  padding: 12px;
+  background: #fbfcfe;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+}
+
+.task-row strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+}

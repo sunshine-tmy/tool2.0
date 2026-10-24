@@ -1,0 +1,38 @@
+/**
+ * 中文模块说明：测试 apps/web/src/features/image-compress/api.test.ts 中的稳定行为、边界条件和回归场景
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ImageCompressResultSchema } from "@toolbox/shared";
+import { imageCompressApi } from "./api";
+
+const httpMock = vi.hoisted(() => ({ post: vi.fn(), postBlob: vi.fn(), getBlob: vi.fn() }));
+
+vi.mock("../../shared/http/http", () => ({
+  withApiError: (operation: () => Promise<unknown>) => operation(),
+  httpClient: httpMock
+}));
+
+describe("image compression api", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // 同时校验单图上传的进度回调和批量下载的文件清单，避免 HTTP 层悄然丢失业务参数。
+  it("uploads one image and downloads selected results", async () => {
+    httpMock.post.mockResolvedValue({});
+    httpMock.postBlob.mockResolvedValue({ blob: new Blob() });
+    httpMock.getBlob.mockResolvedValue({ blob: new Blob() });
+    const form = new FormData();
+    const progress = vi.fn();
+
+    await imageCompressApi.upload(form, progress);
+    await imageCompressApi.downloadAll([{ taskId: "task-1", fileName: "result.webp" }]);
+    await imageCompressApi.downloadOne("task-1.webp");
+
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/image-compress", ImageCompressResultSchema, form, {
+      onUploadProgress: progress
+    });
+    expect(httpMock.postBlob).toHaveBeenCalledWith("/tools/image-compress/download.zip", {
+      files: [{ taskId: "task-1", fileName: "result.webp" }]
+    });
+    expect(httpMock.getBlob).toHaveBeenCalledWith("/files/task-1.webp");
+  });
+});

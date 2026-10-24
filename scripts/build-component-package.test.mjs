@@ -13,7 +13,7 @@ import { assembleComponentCatalog, writeGeneratedCatalog } from "./assemble-comp
 import { preparePython311Runtime } from "./prepare-python-311-runtime.mjs";
 
 const repositoryRoot = process.cwd();
-const require = createRequire(path.join(repositoryRoot, "backend", "package.json"));
+const require = createRequire(path.join(repositoryRoot, "apps", "api", "package.json"));
 const tar = require("tar");
 const temporaryRoots = [];
 

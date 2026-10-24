@@ -1,5 +1,7 @@
 # Lightweight Ecommerce Toolbox Design
 
+> 文档状态：历史记录。保留 2026-07-06 原始设计中的功能和目录，不代表当前实现；原文未指定提交，不补造基线。当前功能见 [README](../../../README.md)，目录及依赖见 [架构指南](../../architecture.md)。
+
 ## Goal
 
 Build a lightweight, no-login ecommerce utility toolbox. Users land on the home page and can immediately use tools for files, images, and video text extraction.

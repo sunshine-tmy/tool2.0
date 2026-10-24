@@ -1,7 +1,5 @@
 packages:
   - apps/*
-  - frontend
-  - backend
   - packages/*
 
 injectWorkspacePackages: true

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
+import { readEntrySource } from "../../../tooling/testing/read-entry-source.mjs";
 
 const desktopRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -19,10 +20,16 @@ test("NSIS installer is assisted and allows a user-selected install directory", 
 test("Windows executable, NSIS, Electron windows and web branding share the original icon", async () => {
   const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
   const repositoryRoot = path.resolve(desktopRoot, "../..");
-  const mainProcess = await readFile(path.join(desktopRoot, "src", "main.ts"), "utf8");
-  const packager = await readFile(path.join(desktopRoot, "scripts", "package-desktop.mjs"), "utf8");
-  const page = await readFile(path.join(repositoryRoot, "frontend", "index.html"), "utf8");
-  const topbar = await readFile(path.join(repositoryRoot, "frontend", "src", "layouts", "ToolLayout.vue"), "utf8");
+  const mainProcess = (
+    await Promise.all(
+      ["windows/business-window.ts", "app/startup-migration-flow.ts"].map((file) =>
+        readFile(path.join(desktopRoot, "src", file), "utf8")
+      )
+    )
+  ).join("\n");
+  const packager = await readEntrySource(path.join(desktopRoot, "scripts", "package-desktop.mjs"));
+  const page = await readFile(path.join(repositoryRoot, "apps", "web", "index.html"), "utf8");
+  const topbar = await readFile(path.join(repositoryRoot, "apps", "web", "src", "shell", "ToolLayout.vue"), "utf8");
 
   expect(config.appId).toBe("com.ecommercetoolbox.desktop");
   expect(config.win.icon).toBe("assets/ecommerce-toolbox.ico");
@@ -38,9 +45,9 @@ test("Windows executable, NSIS, Electron windows and web branding share the orig
 
 test("NSIS shortcuts target the actual packaged executable", async () => {
   const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
-  const packager = await readFile(path.join(desktopRoot, "scripts", "package-desktop.mjs"), "utf8");
+  const packager = await readEntrySource(path.join(desktopRoot, "scripts", "package-desktop.mjs"));
   const repositoryRoot = path.resolve(desktopRoot, "../..");
-  const acceptance = await readFile(path.join(repositoryRoot, "scripts", "accept-windows-desktop-install.ps1"), "utf8");
+  const acceptance = await readEntrySource(path.join(repositoryRoot, "scripts", "accept-windows-desktop-install.ps1"));
 
   expect(config.executableName).toBe("EcommerceToolbox");
   expect(packager).toContain(`const appName = "${config.executableName}";`);
@@ -62,7 +69,7 @@ test("NSIS preserves install-root data unless an interactive user confirms delet
 
 test("Windows installation acceptance has explicit signed and unsigned-test modes", async () => {
   const repositoryRoot = path.resolve(desktopRoot, "../..");
-  const acceptance = await readFile(path.join(repositoryRoot, "scripts", "accept-windows-desktop-install.ps1"), "utf8");
+  const acceptance = await readEntrySource(path.join(repositoryRoot, "scripts", "accept-windows-desktop-install.ps1"));
   const workflow = await readFile(
     path.join(repositoryRoot, ".github", "workflows", "desktop-install-acceptance.yml"),
     "utf8"

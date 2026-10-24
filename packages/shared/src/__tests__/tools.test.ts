@@ -3,8 +3,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { ToolListSchema } from "../api-schema";
-import { getToolById, listTools } from "../tools";
+import { ToolListSchema } from "../common/api-schema";
+import { getToolById, listTools } from "../common/tools";
 
 describe("tool registry", () => {
   it("lists the initial no-login toolbox modules", () => {

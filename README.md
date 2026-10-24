@@ -71,17 +71,27 @@ Browser
 ```
 
 ```text
-frontend/                 Vue 前端
-backend/                  Fastify API、任务与存储逻辑
+apps/web/                 Vue 前端
+apps/api/                  Fastify API、任务与存储逻辑
+apps/desktop/             Electron 桌面应用
 packages/shared/          前后端共享类型、响应结构和领域工具
-scripts/                  启动、安装、Python Worker、测试和构建冒烟脚本
+packages/runtime-core/    Node 专用路径、配置原语及诊断日志
+scripts/                  公开命令入口、Python Worker、锁文件与能力定义
+tooling/                  启动、构建、能力准备、质量与测试的工程实现
 storage/                  SQLite、媒体、临时文件和迁移备份（不提交 Git）
 packaging/standalone/     由发布流水线使用的启动器与分发模板
 models/                   本地模型权重（不提交 Git）
 docs/api.md               API 说明
 docs/operations.md        启动、权限、迁移、隔离区与发布运维手册
-docs/enterprise-optimization-backlog.md  企业级优化实时任务与验收清单
+docs/architecture.md      当前目录、依赖边界与新功能落点
+docs/refactoring/README.md R00–R12 重构进度与各阶段验收
+docs/enterprise-optimization-backlog.md  历史优化验收记录（非当前任务清单）
 ```
+
+前后端源码已迁至 `apps/api/` 和 `apps/web/`，workspace 包名仍为 `backend`、`frontend`，既有 `pnpm --filter ...`、启动和打包命令不变。
+配置、`storage/`、`.runtime/`、模型及 `offline-resources/` 不随源码迁移；旧 `backend/`、`frontend/` 中被忽略的数据或缓存不会自动搬动、删除。
+桌面分发资源仍使用 `resources/backend`、`resources/frontend`。分阶段改造记录见 [重构进度](docs/refactoring/README.md)。
+当前代码归属、保留入口及三类路径的映射见 [架构与开发指南](docs/architecture.md)；文档状态及历史记录的阅读方式见 [文档导航](docs/README.md)。
 
 ## 开发环境要求
 
@@ -117,7 +127,7 @@ Set-Location .\tool2.0
 
 ### 双击 start.bat 前要准备什么
 
-1. **完整源码目录**：根目录应有 `start.bat`、`package.json`、`pnpm-lock.yaml`、`.env.example`、`scripts/`、`backend/`、`frontend/` 和 `packages/`。不要只复制启动文件。
+1. **完整源码目录**：根目录应有 `start.bat`、`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`.env.example`、`scripts/`、`tooling/`、`apps/api/`、`apps/web/`、`apps/desktop/` 和 `packages/`。保留 Git clone 或 GitHub ZIP 中的全部源码及配置，不要只复制启动文件；公开脚本会调用 `tooling/` 中的实现。
 2. **当前版本的 CPU 能力包**：按[逐文件下载清单](docs/source-resources.md)用浏览器或可信下载工具下载 9 项能力的 **11 个 `.tar.gz` 文件**，全部放进项目根目录的 `offline-resources/components/`。保持文件名，**不解压**。Python、FFmpeg、Chromium、图片/配音/翻译模型和 Python 离线依赖都在这些包内，不需要另找模型文件。
 3. **Node/pnpm 可选离线包**：已有 Node 24 x64 会复用；没有时启动器可自动准备。若自动下载也不稳定，将清单中的 `node-v24.22.1-win-x64.zip` 和 `pnpm-11.7.0.tgz` 放进 `offline-resources/bootstrap/`，同样不解压。
 
@@ -138,7 +148,10 @@ tool2.0/
 │     ├─ chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz
 │     ├─ chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz
 │     └─ ...其余文件见逐文件下载清单
-└─ scripts/
+├─ scripts/
+├─ tooling/                       # 启动器及其他工程实现，不能省略
+├─ apps/                          # api、web、desktop
+└─ packages/                      # shared、runtime-core
 ```
 
 也支持将已有离线备份按 `offline-resources/components/能力ID/版本/文件名` 原样复制进来；无须改为平铺。只认当前源码内置的签名版本，不会扫描其他磁盘或猜测旧包是否可用。新电脑不需要旧项目的 `.env`、Python 3.11、`.venv-*`、`node_modules`、私钥或登录态。不要直接迁移带原电脑绝对路径的已安装环境。
@@ -636,7 +649,7 @@ pnpm desktop:make
 
 `desktop:make` 会依次构建 shared、API、前端、桌面资源并重建桌面原生依赖，无需先运行 `start.bat` 或启动模型。首次执行会按需下载 Electron、NSIS 等构建资源，`apps/desktop/.electron-cache` 等缓存由构建流程生成，不需要从别人电脑拷贝。若原生依赖无法使用预编译文件、回退本机编译，应按具体构建错误补齐工具链，不把系统 Python 或全部 AI 环境当作所有打包场景的固定前置条件。
 
-普通打包使用仓库已提交的签名能力清单 `backend/src/modules/components/catalog.generated.ts`，**不需要**先执行 `components:prepare-*`、制作离线能力包或重新生成清单，也不需要原作者的签名私钥。大型能力在安装后由能力管理下载，或从卡片指向的发布页获取后离线导入，不需要塞进安装器。只有发布新能力版本时，才涉及能力包构建、签名和清单更新。
+普通打包使用仓库已提交的签名能力清单 `apps/api/src/modules/components/catalog.generated.ts`，**不需要**先执行 `components:prepare-*`、制作离线能力包或重新生成清单，也不需要原作者的签名私钥。大型能力在安装后由能力管理下载，或从卡片指向的发布页获取后离线导入，不需要塞进安装器。只有发布新能力版本时，才涉及能力包构建、签名和清单更新。
 
 仓库提供独立的 Windows 安装验收工作流 [desktop-install-acceptance.yml](./.github/workflows/desktop-install-acceptance.yml)：在干净 Windows Runner 上构建测试安装器，执行安装、启动、健康检查、旧数据迁移、卸载和数据保留检查；该工作流不签名、不创建 Release。正式发布走 tag 触发的桌面发行流程，并额外执行签名与干净环境验收。
 
@@ -655,10 +668,11 @@ pnpm start
 `pnpm build` 会清理旧产物、生成：
 
 - `packages/shared/dist`：可直接导入的 ESM 与声明文件
-- `backend/dist/server.js`：可运行 API 入口
-- `frontend/dist`：静态站点
+- `packages/runtime-core/dist`：Node 专用公共运行时基础包
+- `apps/api/dist/server.js`：可运行 API 入口
+- `apps/web/dist`：静态站点
 
-构建末尾会从真实产物导入 shared、创建 Fastify 应用并调用 `/api/v1/health`，防止“编译成功但产物无法运行”。`pnpm start` 只启动 API；生产环境还需要静态服务器托管 `frontend/dist`，并把 `/api` 反向代理到 `127.0.0.1:3100`。本地验证可在另一个终端运行 `pnpm preview:web`。
+构建末尾会从真实产物导入 shared、创建 Fastify 应用并调用 `/api/v1/health`，防止“编译成功但产物无法运行”。`pnpm start` 只启动 API；生产环境还需要静态服务器托管 `apps/web/dist`，并把 `/api` 反向代理到 `127.0.0.1:3100`。本地验证可在另一个终端运行 `pnpm preview:web`。
 
 Standalone 不是第二套源码。运行 `pwsh ./scripts/package-standalone.ps1 -Platform windows` 或 `-Platform macos` 会从当前提交生成平台包、SHA-256、构建清单和第三方许可证清单；Release CI 另行生成 SBOM，并从 Python 官方固定地址下载安装器后校验摘要。
 
@@ -719,12 +733,14 @@ GET /api/v1/health
 
 ## 新工具接入规范
 
-1. 在 `packages/shared/src/tools.ts` 注册工具元数据和稳定 ID。
+1. 在 `packages/shared/src/common/tools.ts` 注册工具元数据和稳定 ID。
 2. 在 `packages/shared` 定义可复用 DTO、校验与响应契约，避免前后端复制类型。
-3. 后端模块只在 `/api/v1/tools/<tool-id>` 下注册路由，并为上传大小、像素、超时、并发和磁盘占用设置独立上限。
-4. 前端在 `frontend/src/modules/<tool-id>` 内维护页面、API 与纯函数，路由使用动态 import。
+3. 后端业务放入 `apps/api/src/domains/<domain>/`，由 `app/business-routes.ts` 装配；新增工具只在 `/api/v1/tools/<tool-id>` 下注册路由，并为上传大小、像素、超时、并发和磁盘占用设置独立上限。系统能力沿用现有归属，不借新增工具改写既有接口。
+4. 前端业务归入 `apps/web/src/features/`（配音位于 `speech/edge-tts` 与 `speech/chatterbox`），路由继续使用动态 import。页面负责组合，复杂状态与生命周期放入各 feature 的 composable；公共 UI、HTTP 与工具归 `shared/`，导航归 `shell/`，桌面桥接归 `integrations/desktop/`。跨 feature 使用明确的 integration 出口，不读取另一功能的页面内部状态。
 5. 对路径、远程 URL、文件签名、失败清理和并发竞态补测试。
 6. 运行 `pnpm check`，确认 dead-code、生产构建和冒烟全部通过。
+
+工程实现归 `tooling/`，保留现有 `scripts/` 公开入口；需要随桌面分发的脚本逐项登记到 `tooling/build/runtime-scripts.json`。详细边界及测试选择见 [架构与开发指南](docs/architecture.md#新增或修改功能的步骤)。
 
 ## 常见问题
 
@@ -767,6 +783,22 @@ Web/开发版查看 `.logs/image-ai-worker.error.log`，确认 `.venv-image-ai`�
 ### 构建成功但部署页面调用不到 API
 
 生产静态服务器必须把 `/api` 代理到 API；若前后端不同域，则在构建前设置 `VITE_API_BASE`，并把前端 Origin 加入 `CORS_ORIGINS`。
+
+### 编译态启动提示 LEGACY_RUNTIME_ROOT_DETECTED
+
+源码与编译产物现在都从项目根定位只读脚本、前端资源及默认配置。旧版编译态曾错误地使用项目父目录；若该旧位置存在 `.env`、`storage`、`.runtime` 或 `models`，程序会停止启动，避免静默切换数据库或漏读旧数据，不会自动搬迁或删除文件。
+
+先核实旧位置究竟属于本项目还是其他应用，再显式选择要使用的数据根目录。例如：
+
+```powershell
+$env:TOOLBOX_LEGACY_DATA_ROOT = 'D:\已核实的旧数据根目录'
+pnpm start
+```
+
+该目录应是包含 `.env`、`storage`、`.runtime`、`models` 的根目录，而非 `storage` 文件夹本身；必须是已存在的绝对目录。设置仅作用于当前终端，不修改系统环境变量。此选项只从进程环境读取，不能写入 `.env`，因为程序必须先确定去哪读取 `.env`。
+
+选定后，配置及默认数据/能力/模型位置继续使用该根目录，但只读脚本和前端资源使用当前项目。已有 `STORAGE_ROOT`、`DATABASE_PATH` 等覆盖项及环境变量优先级不变。若已确认要使用当前项目的数据，可以将选项设为当前项目绝对路径；不要在尚未确认旧数据位置时直接这样做。
+桌面显式布局不受此选项影响；无需为正常桌面启动设置它。未遇到该提示的新用户也无需设置。
 
 ### 桌面端导入旧版数据
 

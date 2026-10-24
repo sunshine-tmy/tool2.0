@@ -1,0 +1,105 @@
+/**
+ * 中文模块说明：测试 apps/web/src/features/speech/edge-tts/api.test.ts 中的稳定行为、边界条件和回归场景
+ */
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  EdgeTtsTaskListSchema,
+  EdgeTtsTaskSchema,
+  EdgeTtsVoicesSchema,
+  EdgeTtsBatchSchema,
+  EdgeTtsBatchListSchema
+} from "@toolbox/shared";
+import { edgeTtsApi } from "./api";
+
+const httpMock = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  delete: vi.fn(),
+  patch: vi.fn()
+}));
+
+vi.mock("../../../shared/http/http", () => ({
+  withApiError: (operation: () => Promise<unknown>) => operation(),
+  httpClient: httpMock
+}));
+
+describe("edge tts api", () => {
+  it("uses batch contracts for ordered generation, paging and per-segment regeneration", async () => {
+    const input = {
+      language: "en-US" as const,
+      voice: "en-US-JennyNeural",
+      rate: 0,
+      volume: 0,
+      pitch: 0,
+      includeSubtitles: true,
+      subtitleMode: "sentences" as const,
+      segments: [{ text: "Hello", referenceTranslation: "你好" }]
+    };
+    await edgeTtsApi.createBatch(input);
+    await edgeTtsApi.batches(2, 10);
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/batches", EdgeTtsBatchSchema, input, {
+      timeout: 30000
+    });
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/batches", EdgeTtsBatchListSchema, {
+      params: { page: 2, pageSize: 10 }
+    });
+    await edgeTtsApi.reorder("batch-1", ["item-2", "item-1"]);
+    expect(httpMock.patch).toHaveBeenCalledWith("/tools/edge-tts/batches/batch-1/order", EdgeTtsBatchSchema, {
+      itemIds: ["item-2", "item-1"]
+    });
+  });
+  beforeEach(() => vi.clearAllMocks());
+
+  // 配音任务可能运行较久，测试固定超时配置，避免后续重构意外恢复默认短超时。
+  it("creates a task with bounded request timeout", async () => {
+    httpMock.post.mockResolvedValue({ id: "tts-1" });
+    const input = {
+      text: "Selamat datang",
+      language: "ms-MY" as const,
+      voice: "ms-MY-YasminNeural",
+      rate: 0,
+      volume: 0,
+      pitch: 0,
+      includeSubtitles: true
+    };
+
+    await edgeTtsApi.create(input);
+
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/tasks", EdgeTtsTaskSchema, input, {
+      timeout: 30_000
+    });
+  });
+
+  it("loads locale voices and paginated history", async () => {
+    httpMock.get.mockResolvedValue({});
+    await edgeTtsApi.voices("en-GB");
+    await edgeTtsApi.list(2, 10);
+
+    expect(httpMock.get).toHaveBeenNthCalledWith(1, "/tools/edge-tts/voices", EdgeTtsVoicesSchema, {
+      params: { language: "en-GB" }
+    });
+    expect(httpMock.get).toHaveBeenNthCalledWith(2, "/tools/edge-tts/tasks", EdgeTtsTaskListSchema, {
+      params: { page: 2, pageSize: 10 }
+    });
+  });
+
+  it("requests Brazilian Portuguese voices and preserves accented text", async () => {
+    const input = {
+      text: "Olá! Confira nossas promoções.",
+      language: "pt-BR" as const,
+      voice: "pt-BR-FranciscaNeural",
+      rate: 0,
+      volume: 0,
+      pitch: 0,
+      includeSubtitles: true
+    };
+    await edgeTtsApi.voices("pt-BR");
+    await edgeTtsApi.create(input);
+    expect(httpMock.get).toHaveBeenCalledWith("/tools/edge-tts/voices", EdgeTtsVoicesSchema, {
+      params: { language: "pt-BR" }
+    });
+    expect(httpMock.post).toHaveBeenCalledWith("/tools/edge-tts/tasks", EdgeTtsTaskSchema, input, {
+      timeout: 30_000
+    });
+  });
+});

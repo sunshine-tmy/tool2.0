@@ -1,7 +1,7 @@
 /** 中性归档契约与兼容边界：旧客户端不接收抖音，媒体/译文/截帧不因更名丢失。 */
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import "../api-schema";
+import "../common/api-schema";
 import {
   ArchivePlatformSchema,
   ContentArchiveItemSchema,
@@ -31,8 +31,8 @@ import {
   type ContentArchiveListQuery,
   type ContentArchiveCreateInput,
   type ContentArchiveTask
-} from "../content-archive";
-import type { XhsArchiveItem } from "../xhs-archive";
+} from "../archive/content-archive";
+import type { XhsArchiveItem } from "../archive/xhs-archive";
 
 const now = "2026-10-01T00:00:00.000Z";
 const media: ContentArchiveMedia = {

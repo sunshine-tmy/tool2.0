@@ -1,0 +1,18 @@
+.image-ai-health {
+  border-radius: 10px;
+}
+
+.rights-alert {
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+}
+
+.image-ai-workspace {
+  min-height: 640px;
+}
+
+.image-ai-controls {
+  padding: var(--space-4);
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border);
+}

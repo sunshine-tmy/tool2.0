@@ -2,7 +2,7 @@
  * 中文模块说明：测试 packages/shared/src/__tests__/xhs-text.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it } from "vitest";
-import { normalizeXhsText } from "../xhs-text";
+import { normalizeXhsText } from "../archive/xhs-text";
 
 describe("Xiaohongshu text helpers", () => {
   it("converts known custom emoji placeholders to Unicode emoji", () => {

@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import { Value } from "@sinclair/typebox/value";
 import { describe, expect, it } from "vitest";
-import { DouyinRuntimeStatusSchema, isDouyinAdapterManifest } from "../douyin-runtime";
+import { DouyinRuntimeStatusSchema, isDouyinAdapterManifest } from "../archive/douyin-runtime";
 
 const descriptor: Record<string, unknown> = JSON.parse(
   fs.readFileSync(

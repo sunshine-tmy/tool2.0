@@ -2,7 +2,7 @@
  * 中文模块说明：测试 packages/shared/src/__tests__/image-options.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it } from "vitest";
-import { normalizeImageOptions } from "../image-options";
+import { normalizeImageOptions } from "../image/image-options";
 
 describe("image option normalization", () => {
   it("uses practical defaults when options are missing", () => {
