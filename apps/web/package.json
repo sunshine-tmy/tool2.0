@@ -27,11 +27,11 @@
   "devDependencies": {
     "@toolbox/runtime-core": "workspace:*",
     "@types/qrcode": "^1.5.6",
-    "@vitejs/plugin-vue": "^6.0.8",
-    "@vue/test-utils": "^2.5.0",
-    "happy-dom": "^20.14.5",
-    "vite": "^7.3.6",
-    "vitest": "^3.2.7",
-    "vue-tsc": "^3.3.11"
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/test-utils": "^2.5.1",
+    "happy-dom": "^21.0.4",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5",
+    "vue-tsc": "^3.3.13"
   }
 }
