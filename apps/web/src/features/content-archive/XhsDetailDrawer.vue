@@ -18,7 +18,7 @@
         <MediaGallery :item="props.detail" compact @frame-saved="emit('frameSaved', $event)" />
         <div class="drawer-meta">
           <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
-          <BilingualContent :item="props.detail" compact />
+          <BilingualContent :item="props.detail" compact @copy="(text, label) => emit('copy', text, label)" />
         </div>
       </template>
       <template #footer>
@@ -77,6 +77,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [value: boolean];
   frameSaved: [item: ContentArchiveItem];
+  copy: [text: string, label: string];
 }>();
 </script>
 

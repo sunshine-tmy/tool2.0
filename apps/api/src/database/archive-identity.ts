@@ -1,7 +1,7 @@
 /** 归档身份校验独立于业务 DTO：旧载荷保留原样，数据库真实列负责跨平台去重。 */
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 type ArchiveRow = { id: string; payload_json: string };
 
 export function archiveIdentity(payload: unknown) {
@@ -9,7 +9,7 @@ export function archiveIdentity(payload: unknown) {
   const platform = value.platform ?? "xiaohongshu";
   const contentId = value.contentId ?? (platform === "xiaohongshu" ? value.noteId : undefined);
   if (
-    (platform !== "xiaohongshu" && platform !== "douyin") ||
+    (platform !== "xiaohongshu" && platform !== "douyin" && platform !== "tiktok") ||
     typeof contentId !== "string" ||
     !contentId ||
     contentId.length > 256 ||
@@ -43,7 +43,7 @@ export function migrateArchiveIdentity(connection: Database.Database) {
     columns.some((column) => column.name === "platform") && columns.some((column) => column.name === "content_id");
   if (!columns.some((column) => column.name === "platform")) {
     connection.exec(
-      "ALTER TABLE xhs_archives ADD COLUMN platform TEXT NOT NULL DEFAULT 'xiaohongshu' CHECK(platform IN ('xiaohongshu','douyin'))"
+      "ALTER TABLE xhs_archives ADD COLUMN platform TEXT NOT NULL DEFAULT 'xiaohongshu' CHECK(platform IN ('xiaohongshu','douyin','tiktok'))"
     );
   }
   if (!columns.some((column) => column.name === "content_id")) {
@@ -72,4 +72,35 @@ export function migrateArchiveIdentity(connection: Database.Database) {
       WHEN NEW.content_id = '' OR trim(NEW.content_id) != NEW.content_id
       BEGIN SELECT RAISE(ABORT, 'ARCHIVE_IDENTITY_INVALID'); END;
   `);
+}
+
+/** SQLite cannot widen a CHECK in place. Rebuild only this table inside the startup transaction,
+ * with foreign keys temporarily disabled by the caller; preserve all columns, indexes and triggers.
+ * Child rows and serialized payloads are never rewritten or deleted. */
+export function migrateArchivePlatforms(connection: Database.Database) {
+  const row = connection
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'xhs_archives'")
+    .get() as { sql: string };
+  const oldCheck = /CHECK\s*\(\s*platform\s+IN\s*\(\s*'xiaohongshu'\s*,\s*'douyin'\s*\)\s*\)/i;
+  if (!oldCheck.test(row.sql)) return;
+  if (connection.pragma("foreign_keys", { simple: true }) !== 0)
+    throw new Error("ARCHIVE_PLATFORM_MIGRATION_REQUIRES_FOREIGN_KEYS_DISABLED");
+  const dependents = connection
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE tbl_name = 'xhs_archives' AND type IN ('index','trigger') AND sql IS NOT NULL"
+    )
+    .all() as Array<{ sql: string }>;
+  const columns = (connection.pragma("table_info(xhs_archives)") as Array<{ name: string }>)
+    .map(({ name }) => `"${name.replaceAll('"', '""')}"`)
+    .join(",");
+  const expanded = row.sql.replace(oldCheck, "CHECK(platform IN ('xiaohongshu','douyin','tiktok'))");
+  const create = expanded.replace(
+    /^CREATE TABLE\s+(?:"xhs_archives"|xhs_archives)\s*/i,
+    'CREATE TABLE "xhs_archives_platform_v7" '
+  );
+  if (create === expanded) throw new Error("ARCHIVE_PLATFORM_SCHEMA_UNSUPPORTED");
+  connection.exec(create);
+  connection.exec(`INSERT INTO xhs_archives_platform_v7 (${columns}) SELECT ${columns} FROM xhs_archives`);
+  connection.exec("DROP TABLE xhs_archives; ALTER TABLE xhs_archives_platform_v7 RENAME TO xhs_archives;");
+  for (const dependent of dependents) connection.exec(dependent.sql);
 }

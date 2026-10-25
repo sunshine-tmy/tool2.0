@@ -13,7 +13,11 @@ import {
   type XhsArchiveItem
 } from "./xhs-archive";
 
-export const ArchivePlatformSchema = Type.Union([Type.Literal("xiaohongshu"), Type.Literal("douyin")]);
+export const ArchivePlatformSchema = Type.Union([
+  Type.Literal("xiaohongshu"),
+  Type.Literal("douyin"),
+  Type.Literal("tiktok")
+]);
 const ContentIdSchema = Type.String({
   minLength: 1,
   maxLength: 256,

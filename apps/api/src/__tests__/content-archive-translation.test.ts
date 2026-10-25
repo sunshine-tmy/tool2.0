@@ -422,7 +422,7 @@ describe("双平台共用翻译契约", () => {
   it.each([
     { mode: "selected", itemIds: [] },
     { mode: "selected", itemIds: ["same_123456", "same_123456"] },
-    { mode: "missing-or-stale", filter: { platform: "tiktok" } },
+    { mode: "missing-or-stale", filter: { platform: "instagram" } },
     { mode: "missing-or-stale", filter: { page: 2 } },
     { mode: "missing-or-stale", cookie: "secret" },
     { mode: "missing-or-stale", filter: { cookie: "secret" } }

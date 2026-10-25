@@ -2,7 +2,18 @@
 <template>
   <div class="bilingual-content" :class="{ compact }">
     <section class="bilingual-title-block">
-      <span class="bilingual-label">标题</span>
+      <div class="bilingual-section-head">
+        <span class="bilingual-label">标题</span>
+        <n-button
+          size="tiny"
+          quaternary
+          type="primary"
+          :disabled="!archiveDisplayTitle(item).trim()"
+          @click="emit('copy', archiveDisplayTitle(item), '标题')"
+        >
+          <template #icon><Copy :size="12" /></template>复制标题
+        </n-button>
+      </div>
       <h3>{{ archiveDisplayTitle(item) }}</h3>
       <template v-if="item.translation">
         <span class="bilingual-label english-label">English</span>
@@ -10,7 +21,12 @@
       </template>
     </section>
     <section v-if="body" class="bilingual-body-block">
-      <span class="bilingual-label">正文</span>
+      <div class="bilingual-section-head">
+        <span class="bilingual-label">正文</span>
+        <n-button size="tiny" quaternary type="primary" :disabled="!body.trim()" @click="emit('copy', body, '正文')">
+          <template #icon><Copy :size="12" /></template>复制正文
+        </n-button>
+      </div>
       <p class="source-body">{{ body }}</p>
       <div v-if="item.translation?.description" class="english-body">
         <span class="bilingual-label english-label">English</span>
@@ -18,7 +34,12 @@
       </div>
     </section>
     <section v-if="topics.length" class="bilingual-topics">
-      <span class="bilingual-label">话题</span>
+      <div class="bilingual-section-head">
+        <span class="bilingual-label">话题</span>
+        <n-button size="tiny" quaternary type="primary" @click="emit('copy', topicText, '话题')">
+          <template #icon><Copy :size="12" /></template>复制话题
+        </n-button>
+      </div>
       <div v-for="topic in topics" :key="topic.id" class="topic-row">
         <span class="topic-source">#{{ topic.source }}</span>
         <span v-if="translationTopic(topic.id)" class="topic-english">{{
@@ -41,6 +62,8 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { NButton } from "naive-ui";
+import { Copy } from "lucide-vue-next";
 import {
   resolveXhsTranslationField,
   type ContentArchiveItem,
@@ -50,9 +73,11 @@ import {
 import { archiveDisplayText, archiveDisplayTitle } from "./presentation";
 
 const props = defineProps<{ item: ContentArchiveItem; compact?: boolean }>();
+const emit = defineEmits<{ copy: [text: string, label: string] }>();
 const parsed = computed(() => archiveDisplayText(props.item));
 const body = computed(() => parsed.value.body);
 const topics = computed(() => parsed.value.topics);
+const topicText = computed(() => topics.value.map((topic) => `#${topic.source}`).join(" "));
 function translationTopic(id: string): XhsTranslationField | undefined {
   return props.item.translation?.topics.find((topic) => topic.topicId === id);
 }
@@ -89,6 +114,13 @@ function translationLabel(status: XhsArchiveTranslation["status"]) {
   color: #2563eb;
   font-size: 12px;
   font-weight: 700;
+}
+.bilingual-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .english-label {
   color: #71809a;

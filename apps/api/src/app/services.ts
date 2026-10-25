@@ -14,6 +14,7 @@ import { FileMetadataRepository } from "../database/file-metadata";
 import { configureDesktopCapabilityRuntime } from "../runtime/desktop-capability-runtime";
 import { createDesktopComponentSelfTest } from "../modules/components/desktop-component-self-test";
 import { DouyinRuntimeManager } from "../domains/content-archive/providers/douyin/douyin-runtime";
+import { TikTokRuntime } from "../domains/content-archive/providers/tiktok/runtime";
 import { DiagnosticsService } from "../modules/diagnostics/service";
 
 export async function createAppServices(config: AppConfig, remoteAddressResolver?: AddressResolver) {
@@ -21,6 +22,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
   const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: remoteAddressResolver });
+  const tiktokRuntime = new TikTokRuntime({ proxy: config.tiktokHttpsProxy, resolver: remoteAddressResolver });
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
   let stopCapabilityBeforeUninstall: (componentId: string) => Promise<void> = async () => undefined;
   let refreshDesktopCapabilities: NonNullable<ComponentManagerOptions["onAfterMutation"]> = async () => undefined;
@@ -81,6 +83,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
     xhsStore,
     componentManager,
     douyinRuntime,
+    tiktokRuntime,
     desktopCapabilityRuntime,
     xhsRuntime,
     xhsAuth,

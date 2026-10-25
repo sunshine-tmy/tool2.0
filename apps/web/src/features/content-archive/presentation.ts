@@ -7,7 +7,7 @@ import {
 } from "@toolbox/shared";
 
 export function archivePlatformLabel(platform: ContentArchiveItem["platform"]) {
-  return platform === "douyin" ? "抖音" : "小红书";
+  return platform === "tiktok" ? "TikTok" : platform === "douyin" ? "抖音" : "小红书";
 }
 
 export function canEditTranslation(item: ContentArchiveItem) {

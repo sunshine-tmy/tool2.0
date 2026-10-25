@@ -138,7 +138,8 @@ const typeOptions = [
 const platformOptions = [
   { label: "全部平台", value: "all" },
   { label: "小红书", value: "xiaohongshu" },
-  { label: "抖音", value: "douyin" }
+  { label: "抖音", value: "douyin" },
+  { label: "TikTok", value: "tiktok" }
 ];
 
 const allCurrentArchivesSelected = computed(

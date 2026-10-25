@@ -1,5 +1,5 @@
 /** 多平台归档的输入识别边界。这里只识别作品链接，不请求网络，也不表示解析能力已就绪。 */
-export type ArchivePlatform = "xiaohongshu" | "douyin";
+export type ArchivePlatform = "xiaohongshu" | "douyin" | "tiktok";
 export type ArchivePlatformSelection = "auto" | ArchivePlatform;
 
 export type ArchiveLinkResult = { ok: true; platform: ArchivePlatform; url: string } | { ok: false; message: string };
@@ -13,7 +13,7 @@ export function identifyArchiveLink(input: string, selection: ArchivePlatformSel
       )
     )
   ];
-  if (!candidates.length) return { ok: false, message: "请粘贴小红书或抖音的作品链接或分享文案" };
+  if (!candidates.length) return { ok: false, message: "请粘贴小红书、抖音或 TikTok 的作品链接或分享文案" };
   if (candidates.length > 1) return { ok: false, message: "检测到多个链接，请仅保留本次需要归档的一条作品链接" };
   let url: URL;
   try {
@@ -36,7 +36,16 @@ export function identifyArchiveLink(input: string, selection: ArchivePlatformSel
     (url.hostname === "www.iesdouyin.com" && /^\/share\/(?:video|slides)\/\d+\/?$/.test(url.pathname))
   )
     platform = "douyin";
-  if (!platform) return { ok: false, message: "仅支持小红书或抖音的作品分享链接，不支持主页、直播或其他网站" };
+  if (
+    url.protocol === "https:" &&
+    ((["tiktok.com", "www.tiktok.com", "m.tiktok.com"].includes(url.hostname) &&
+      (/^\/@[A-Za-z0-9_.-]+\/(?:video|photo)\/\d{5,24}\/?$/.test(url.pathname) ||
+        /^\/t\/[A-Za-z0-9_-]+\/?$/.test(url.pathname))) ||
+      (["vt.tiktok.com", "vm.tiktok.com"].includes(url.hostname) && /^\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)))
+  )
+    platform = "tiktok";
+  if (!platform)
+    return { ok: false, message: "仅支持小红书、抖音或 TikTok 的作品分享链接，不支持主页、直播或其他网站" };
   if (selection !== "auto" && selection !== platform)
     return { ok: false, message: "所选平台与作品链接不一致，请切换平台或使用自动识别" };
   return { ok: true, platform, url: url.toString() };

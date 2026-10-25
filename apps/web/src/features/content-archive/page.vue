@@ -4,7 +4,7 @@
     <section class="main-column xhs-main">
       <ToolPageHeader
         title="多媒体内容归档"
-        description="浏览小红书与抖音本地存档，支持预览、翻译与视频截帧。网页端首次归档自动准备签名能力，桌面端由能力管理提供。"
+        description="浏览小红书、抖音与 TikTok 本地存档，支持预览、翻译与视频截帧。TikTok 公开作品无需额外能力包。"
         kicker="LOCAL MEDIA ARCHIVE"
       />
 
@@ -14,6 +14,7 @@
       <div class="platform-runtime" aria-label="分平台解析环境">
         <span>小红书：{{ xhsRuntime?.message || "正在读取环境状态" }}</span>
         <span>抖音（匿名）：{{ douyinRuntime?.message || "正在读取环境状态" }}</span>
+        <span>TikTok（匿名）：公开作品 HTTPS 获取，网络可用性以实际任务为准</span>
         <n-button size="tiny" quaternary :disabled="douyinRuntimeLoading || submitting" @click="refreshDouyinRuntime">
           刷新抖音状态
         </n-button>
@@ -63,6 +64,7 @@
         :has-edited="hasEdited"
         :format-date="formatDate"
         @frame-saved="onFrameSaved"
+        @copy="copyContent"
       />
       <ArchiveListPanel
         v-model:keyword="keyword"
@@ -94,6 +96,7 @@
         :has-edited="hasEdited"
         :zip-url="zipUrl"
         @frame-saved="onFrameSaved"
+        @copy="copyContent"
       />
       <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
     </section>
@@ -556,6 +559,14 @@ async function copyDescription() {
   if (!current.value) return;
   await copyTextToClipboard(archiveDisplayText(current.value).body);
   message.success("正文已复制");
+}
+async function copyContent(text: string, label: string) {
+  try {
+    await copyTextToClipboard(text);
+    message.success(`${label}已复制`);
+  } catch {
+    message.error(`复制${label}失败，请检查浏览器剪贴板权限后重试`);
+  }
 }
 async function copyCurrent(language: "zh" | "en" | "both") {
   if (!current.value) return;

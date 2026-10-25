@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
 import { archiveIdentity } from "./archive-identity";
-import { backupBeforeSchemaMigration } from "./schema-backup";
+import { backupBeforeSchemaMigration, databaseSchemaVersion } from "./schema-backup";
 import type { StoredEntity, EntityRow, FileMetadata } from "./types";
 export type { FileMetadata } from "./types";
 import { DATABASE_SCHEMA_VERSION, DOMAIN_TABLES, tableForKind } from "./schema";
@@ -29,13 +29,21 @@ export class ToolboxDatabase {
     });
     try {
       this.schemaBackupId = existing ? backupBeforeSchemaMigration(this.connection, databasePath) : undefined;
+      const upgrading = databaseSchemaVersion(this.connection) < DATABASE_SCHEMA_VERSION;
       // WAL 提升读写并发；外键和 trusted_schema 关闭不可信扩展路径，busy_timeout
       // 为本机短暂并发写入留出等待窗口，所有迁移完成后才允许应用继续启动。
       this.connection.pragma("journal_mode = WAL");
-      this.connection.pragma("foreign_keys = ON");
+      // A v6 archive CHECK expansion requires a table rebuild without cascading child deletes.
+      // The migration transaction validates every FK before commit; normal operation keeps FKs on.
+      this.connection.pragma(`foreign_keys = ${upgrading ? "OFF" : "ON"}`);
       this.connection.pragma("busy_timeout = 5000");
       this.connection.pragma("trusted_schema = OFF");
-      this.transaction(() => this.migrate());
+      this.transaction(() => {
+        this.migrate();
+        if (upgrading && (this.connection.pragma("foreign_key_check") as unknown[]).length)
+          throw new Error("DATABASE_MIGRATION_FOREIGN_KEY_INVALID");
+      });
+      this.connection.pragma("foreign_keys = ON");
       this.recoverInterruptedTasks();
     } catch (error) {
       this.connection.close();

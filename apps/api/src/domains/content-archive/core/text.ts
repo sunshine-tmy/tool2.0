@@ -25,7 +25,7 @@ export function archiveTranslationSourceHash(item: TranslationSourceItem) {
         body: source.body,
         topics: source.topics.map((topic) => topic.source.trim()),
         // 抖音原始正文与展示正文都参与版本判定，任一刷新变化都不能被迟到译文覆盖。
-        ...(item.platform === "douyin" ? { description: item.description ?? "" } : {})
+        ...(item.platform === "douyin" || item.platform === "tiktok" ? { description: item.description ?? "" } : {})
       })
     )
     .digest("hex");

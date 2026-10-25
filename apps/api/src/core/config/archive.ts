@@ -14,6 +14,7 @@ export function readArchiveConfig(context: ConfigContext) {
       pathEnv("XHS_RUNTIME_DIR")?.trim() || path.join(runtime.runtimeRoot, "xhs-downloader")
     ),
     xhsProviderUrl: getEnv("XHS_PROVIDER_URL", fileEnv, environment)?.trim() || undefined,
+    tiktokHttpsProxy: getEnv("TIKTOK_HTTPS_PROXY", fileEnv, environment)?.trim() || undefined,
     xhsProviderToken: getEnv("XHS_PROVIDER_TOKEN", fileEnv, environment)?.trim() || undefined,
     xhsProviderPort: readInteger(
       "XHS_PROVIDER_PORT",

@@ -10,6 +10,7 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import type { ArchivePlatformSelection, ContentArchiveTask } from "@toolbox/shared";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
+import { NSelect } from "naive-ui";
 
 const ButtonStub = defineComponent({
   inheritAttrs: false,
@@ -78,6 +79,18 @@ function mountPanel(
 }
 
 describe("XHS archive task panel", () => {
+  it("identifies TikTok and submits without the Douyin capability, but rejects a platform mismatch", async () => {
+    const wrapper = mountPanel({ inputUrl: "https://vt.tiktok.com/ZSgQrEYNG/", douyinAvailable: false });
+    expect(wrapper.text()).toContain("TikTok");
+    expect(wrapper.findComponent(NSelect).props("options")).toContainEqual({ label: "TikTok", value: "tiktok" });
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+    await wrapper.setProps({ platform: "douyin" });
+    expect(wrapper.text()).toContain("不一致");
+    await wrapper.find("input").trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+    wrapper.unmount();
+  });
   it("显示识别平台，阻止未就绪的抖音、错误链接及平台不符提交", async () => {
     const wrapper = mountPanel({ inputUrl: "https://v.douyin.com/PrWnsoVIg78/", douyinMessage: "抖音组件未安装" });
     expect(wrapper.text()).toContain("已识别：抖音");

@@ -40,6 +40,13 @@ export async function smokeWebLayout(repoRoot) {
       import { createServer } from ${JSON.stringify(pathToFileURL(vite).href)};
       const project = ${JSON.stringify(project)};
       const application = ${JSON.stringify(application)};
+      async function freePort() {
+        const probe = http.createServer();
+        await new Promise(resolve=>probe.listen(0,'127.0.0.1',resolve));
+        const port = probe.address().port;
+        await new Promise(resolve=>probe.close(resolve));
+        return port;
+      }
       const api = http.createServer((request,response) => {
         response.setHeader('content-type','application/json');
         response.end(JSON.stringify({url:request.url, forwarded:request.headers['x-forwarded-for']}));
@@ -63,7 +70,8 @@ export async function smokeWebLayout(repoRoot) {
             assert.equal(web.config.server.proxy['/api'].target,'http://127.0.0.1:'+port);
             assert.equal(web.config.server.proxy['/api'].xfwd,true);
             assert.equal(web.config.env.VITE_LAYOUT_SENTINEL,'mode-local');
-            await web.listen();
+            // Vite treats config port=0 as its default; reserve an explicit ephemeral port instead.
+            await web.listen(await freePort());
             const origin = 'http://127.0.0.1:'+web.httpServer.address().port;
             const page = await fetch(origin+'/tools/image-ai');
             assert.equal(page.status,200);

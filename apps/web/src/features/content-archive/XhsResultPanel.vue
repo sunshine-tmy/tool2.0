@@ -41,7 +41,7 @@
       <MediaGallery :item="props.current" @frame-saved="emit('frameSaved', $event)" />
       <div class="drawer-meta result-meta">
         <ArchiveFacts :item="props.current" :format-date="props.formatDate" />
-        <BilingualContent :item="props.current" />
+        <BilingualContent :item="props.current" @copy="(text, label) => emit('copy', text, label)" />
       </div>
     </div>
     <n-alert v-for="warning in props.current.warnings" :key="warning" type="warning" :bordered="false">{{
@@ -73,7 +73,7 @@ const props = defineProps<{
   formatDate: (value: string) => string;
 }>();
 
-const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem] }>();
+const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem]; copy: [text: string, label: string] }>();
 </script>
 
 <style scoped>

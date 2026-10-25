@@ -76,7 +76,7 @@ const tools: ToolDefinition[] = [
   {
     id: "xhs-archive",
     title: "多媒体内容归档",
-    description: "将作品正文、图片和视频保存到本机，支持预览、翻译与截帧；当前支持小红书，抖音接入中。",
+    description: "将小红书、抖音与 TikTok 作品的正文、图片和视频保存到本机，支持预览、翻译与截帧。",
     category: "video",
     status: "ready",
     requiresAuth: false,

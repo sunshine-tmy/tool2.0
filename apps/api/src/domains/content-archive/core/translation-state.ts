@@ -89,7 +89,7 @@ export function itemPlatform(item: TranslationItem): ArchivePlatform {
   return "platform" in item ? item.platform : "xiaohongshu";
 }
 export function itemErrorCode(code: string, item: TranslationItem) {
-  return itemPlatform(item) === "douyin"
+  return itemPlatform(item) !== "xiaohongshu"
     ? code.replace(/^XHS_ARCHIVE_NOT_FOUND$/, "ARCHIVE_NOT_FOUND").replace(/^XHS_/, "ARCHIVE_")
     : code;
 }

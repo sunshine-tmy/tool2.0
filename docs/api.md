@@ -150,11 +150,12 @@
 
 每个 `segments` 项可包含最多 2,000 字符的 `referenceTranslation?`。该字段作为中文参考元数据保存，不发送给 Worker，也不参与音频生成或列表摘要；它会用于生成独立中文 SRT 和双语 SRT。单段重新生成接口也可传入该字段并同步重建字幕。
 
-## 多媒体内容归档（中性接口，开发验收中）
+## 多媒体内容归档（中性接口）
 
-基础路径 `/api/v1/tools/media-archive`。当前开发分支的归档页面已消费下列中性接口，支持两平台本地浏览、翻译、截帧与导出；抖音在线获取入口仍受正式能力发布、macOS 及最终安装包验收门禁保护，不能据此宣称安装版抖音已可用。抖音仅处理可公开访问的作品。小红书原有运行时仍使用独立兼容接口。
+基础路径 `/api/v1/tools/media-archive`，支持小红书、抖音、TikTok 本地浏览、翻译、截帧与导出。抖音及 TikTok 仅处理匿名公开作品；TikTok 支持单条视频、图集和作品短链，无需额外能力包。TikTok 网络及代理设置见 README；就绪状态不代表公网连通性。小红书原有兼容接口继续保留，安装包和 macOS 的实际联网验证需在相应环境完成。
 
-- `POST /items`：JSON `{ url, platform?: "auto" | "xiaohongshu" | "douyin" }` 创建获取任务，返回 202。
+- `POST /items`：JSON `{ url, platform?: "auto" | "xiaohongshu" | "douyin" | "tiktok" }` 创建获取任务，返回 202。
+- `GET /runtime/tiktok`：读取 `{ platform: "tiktok", mode: "anonymous", available, state: "ready" | "busy" | "stopped", message }`；不探测公网、不安装资源。
 - `GET /tasks/:taskId`、`DELETE /tasks/:taskId`：查询/取消获取任务；进度复用 `/api/v1/tasks/:id/events`，中断不会自动重跑。
 - `GET /items?platform=&keyword=&type=&page=&pageSize=`、`GET /items/:id`：列表/详情使用共享 `ContentArchiveItem` 身份 `platform`/`contentId`。
 - `POST /items/:id/refresh`、`DELETE /items/:id`：刷新或删除；共享配额与存储，不另建第二套媒体目录。
@@ -167,7 +168,7 @@
 - `PATCH /items/:id/translation`：JSON `{ sourceHash, title: { edited }, description?: { edited }, topics: [{ topicId, edited }] }`。事务内核对当前原文及 ready 状态，原文变化或译文未就绪返回 409，未知/重复话题返回 400；机器译文保持独立。
 - `POST /items/:id/translation/reset`：移除人工编辑、保留机器译文，不把过期/进行中的译文强制标为 ready。
 
-成功/失败统一使用标准响应封装及 requestId；Schema 拒绝 Cookie、认证信息及未声明输入。LAN 写操作要求管理员会话、精确 Origin/CSRF，不对访客开放。抖音翻译保留完整原文，不套用小红书清洗；刷新/删除/新任务会阻止旧任务迟到覆盖。旧小红书接口共用实现但只暴露小红书 ID，纯抖音任务/记录通过旧入口查询为 404。
+成功/失败统一使用标准响应封装及 requestId；Schema 拒绝 Cookie、认证信息及未声明输入。LAN 写操作要求管理员会话、精确 Origin/CSRF，不对访客开放。抖音与 TikTok 翻译保留完整原文，不套用小红书清洗；刷新/删除/新任务会阻止旧任务迟到覆盖。旧小红书接口共用实现但只暴露小红书 ID，其他平台任务/记录通过旧入口查询为 404。TikTok 获取失败使用 `TIKTOK_*` 错误码；媒体、存储和取消仍使用既有 `ARCHIVE_*` 错误码，不返回 CDN 签名地址或代理凭据。
 
 ## 小红书内容归档（兼容接口）
 

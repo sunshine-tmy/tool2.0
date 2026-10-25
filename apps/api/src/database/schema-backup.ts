@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { CURRENT_SCHEMA_VERSION, inspectArchiveIdentity } from "./archive-identity";
 
 const MANIFEST = "schema-backup.json";
-const BACKUP_ID = /^schema-v6-\d{8}T\d{6}Z-[a-f0-9]{12}$/;
+const BACKUP_ID = /^schema-v[67]-\d{8}T\d{6}Z-[a-f0-9]{12}$/;
 
 export function databaseSchemaVersion(connection: Database.Database) {
   const exists = connection
@@ -77,7 +77,7 @@ export function backupBeforeSchemaMigration(connection: Database.Database, datab
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z");
-  const backupId = `schema-v6-${timestamp}-${randomBytes(6).toString("hex")}`;
+  const backupId = `schema-v${CURRENT_SCHEMA_VERSION}-${timestamp}-${randomBytes(6).toString("hex")}`;
   const directory = backupDirectory(databasePath, backupId, true);
   fs.mkdirSync(directory, { mode: 0o700 });
   // serialize 消费连接的一致性快照，包含已提交 WAL；不能只复制主文件丢失最近写入。
@@ -133,10 +133,11 @@ export function restoreSchemaBackup(databasePath: string, backupId: string) {
   if (
     manifest.formatVersion !== 1 ||
     manifest.backupId !== backupId ||
-    manifest.toVersion !== CURRENT_SCHEMA_VERSION ||
+    !Number.isInteger(manifest.toVersion) ||
+    ![6, CURRENT_SCHEMA_VERSION].includes(Number(manifest.toVersion)) ||
     !Number.isInteger(manifest.fromVersion) ||
     Number(manifest.fromVersion) < 0 ||
-    Number(manifest.fromVersion) >= CURRENT_SCHEMA_VERSION ||
+    Number(manifest.fromVersion) >= Number(manifest.toVersion) ||
     manifest.bytes !== snapshot.length ||
     manifest.sha256 !== digest(snapshot)
   ) {

@@ -9,6 +9,7 @@ import type { XhsArchiveStore } from "./store";
 import type { XhsRuntimeManager } from "../../providers/xiaohongshu/runtime";
 import type { ContentArchiveTranslationService } from "../../core/translation-service";
 import type { DouyinRuntimeManager } from "../../providers/douyin/douyin-runtime";
+import type { TikTokRuntime } from "../../providers/tiktok/runtime";
 import { ContentArchiveTaskService } from "../../core/task-service";
 import { ArchiveTaskRepository } from "../../core/task-repository";
 import { ArchiveDownloadGateway } from "../../core/download-gateway";
@@ -27,14 +28,19 @@ export class XhsArchiveTaskService {
     private readonly translation: Pick<ContentArchiveTranslationService, "enqueue" | "recoverInterrupted" | "shutdown">,
     taskStore: TaskStore,
     database: ToolboxDatabase,
-    douyin?: DouyinRuntimeManager
+    douyin?: DouyinRuntimeManager,
+    tiktok?: TikTokRuntime
   ) {
     this.content = new ContentArchiveTaskService({
       config,
       store: store.content,
       tasks: new ArchiveTaskRepository(database, taskStore),
-      download: new ArchiveDownloadGateway(config, remoteFetch),
-      providers: [xhsProvider(config, remoteFetch, runtime, auth), ...(douyin ? [douyinProvider(douyin)] : [])],
+      download: new ArchiveDownloadGateway(config, remoteFetch, tiktok ? { tiktok: tiktok.remoteFetch } : undefined),
+      providers: [
+        xhsProvider(config, remoteFetch, runtime, auth),
+        ...(douyin ? [douyinProvider(douyin)] : []),
+        ...(tiktok ? [tiktok] : [])
+      ],
       afterCommit: (item) => {
         // Web 两平台共用可选自动翻译；桌面仍由用户安装内容翻译能力，不阻断媒体归档成功。
         if (!config.desktopManagedCapabilities) void translation.enqueue([item.id], false).catch(() => undefined);

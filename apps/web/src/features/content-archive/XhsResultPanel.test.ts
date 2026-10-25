@@ -10,6 +10,7 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import XhsResultPanel from "./XhsResultPanel.vue";
+import BilingualContent from "./BilingualContent.vue";
 
 const item = {
   id: "archive-1",
@@ -60,6 +61,8 @@ describe("XHS result panel", () => {
     });
 
     expect(wrapper.text()).toContain("获取结果");
+    wrapper.findComponent(BilingualContent).vm.$emit("copy", "结果正文", "正文");
+    expect(wrapper.emitted("copy")).toEqual([["结果正文", "正文"]]);
     const heading = wrapper.get(".result-head");
     expect(heading.element.children).toHaveLength(2);
     expect(heading.get(".result-summary .result-title").text()).toContain("已存档");

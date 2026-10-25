@@ -114,6 +114,25 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("抽屉分项复制使用事件中的内容，结果区共用剪贴板处理并提示失败", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const result = await showResult(wrapper);
+    wrapper.findComponent(XhsDetailDrawer).vm.$emit("copy", "抽屉中另一条作品的正文", "正文");
+    await flushPromises();
+    expect(mocks.copy).toHaveBeenLastCalledWith("抽屉中另一条作品的正文");
+    expect(mocks.message.success).toHaveBeenLastCalledWith("正文已复制");
+    result.vm.$emit("copy", "#Tea #Herb", "话题");
+    await flushPromises();
+    expect(mocks.copy).toHaveBeenLastCalledWith("#Tea #Herb");
+    expect(mocks.message.success).toHaveBeenLastCalledWith("话题已复制");
+    mocks.message.success.mockClear();
+    mocks.copy.mockRejectedValueOnce(new Error("Permission denied"));
+    result.vm.$emit("copy", "标题", "标题");
+    await flushPromises();
+    expect(mocks.message.error).toHaveBeenLastCalledWith("复制标题失败，请检查浏览器剪贴板权限后重试");
+    expect(mocks.message.success).not.toHaveBeenCalled();
+  });
   it("详情抽屉用 CSS 同时限制桌面宽度和移动视口，不依赖一次性窗口尺寸", () => {
     const wrapper = mountPage();
     expect(wrapper.findComponent(XhsDetailDrawer).props("width")).toBe("min(720px, 100vw)");

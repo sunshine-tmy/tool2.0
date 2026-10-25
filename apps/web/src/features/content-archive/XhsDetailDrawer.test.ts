@@ -8,6 +8,7 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import XhsDetailDrawer from "./XhsDetailDrawer.vue";
+import BilingualContent from "./BilingualContent.vue";
 
 const item = {
   id: "archive-1",
@@ -55,6 +56,8 @@ describe("XHS detail drawer", () => {
     });
 
     expect(document.body.textContent).toContain("测试作者");
+    wrapper.findComponent(BilingualContent).vm.$emit("copy", "抽屉标题", "标题");
+    expect(wrapper.emitted("copy")).toEqual([["抽屉标题", "标题"]]);
     const deleteButton = Array.from(document.body.querySelectorAll("button")).find((button) =>
       button.textContent?.includes("删除存档")
     );

@@ -11,6 +11,63 @@ import { archiveFixture, translationFixture } from "./__tests__/fixtures";
 import { formatArchiveDate } from "./format-date";
 
 describe("双平台内容展示与编辑", () => {
+  it.each(["xiaohongshu", "douyin", "tiktok"] as const)(
+    "%s 分别复制当前展示的标题、正文和带 # 的全部话题",
+    async (platform) => {
+      const item =
+        platform === "xiaohongshu"
+          ? archiveFixture()
+          : archiveFixture({
+              platform,
+              rawText: "完整原文\n第二行 #Tea [微笑R]",
+              topics: [
+                { id: "tea", source: "Tea" },
+                { id: "herb", source: "Herb" }
+              ],
+              translation: translationFixture()
+            });
+      const wrapper = mount(BilingualContent, { props: { item, compact: true } });
+      for (const label of ["复制标题", "复制正文", "复制话题"]) {
+        const button = wrapper.findAll("button").find((button) => button.text() === label)!;
+        expect(button.element.closest(".bilingual-section-head")).not.toBeNull();
+        await button.trigger("click");
+      }
+      expect(wrapper.emitted("copy")).toEqual(
+        platform === "xiaohongshu"
+          ? [
+              ["日落🙂", "标题"],
+              ["晚霞", "正文"],
+              ["#风景", "话题"]
+            ]
+          : [
+              ["日落[微笑R]", "标题"],
+              ["完整原文\n第二行 #Tea [微笑R]", "正文"],
+              ["#Tea #Herb", "话题"]
+            ]
+      );
+      await wrapper.setProps({
+        item: archiveFixture({ platform: "tiktok", title: "新作品", rawText: "新正文", topics: [] })
+      });
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "复制正文")!
+        .trigger("click");
+      expect(wrapper.emitted("copy")?.at(-1)).toEqual(["新正文", "正文"]);
+      expect(wrapper.findAll("button").some((button) => button.text() === "复制话题")).toBe(false);
+      wrapper.unmount();
+    }
+  );
+  it("空标题不可复制，缺少正文与话题时不展示对应按钮", async () => {
+    const wrapper = mount(BilingualContent, {
+      props: { item: archiveFixture({ title: "", description: undefined, topics: [] }) }
+    });
+    const buttons = wrapper.findAll("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]!.attributes("disabled")).toBeDefined();
+    await buttons[0]!.trigger("click");
+    expect(wrapper.emitted("copy")).toBeUndefined();
+    wrapper.unmount();
+  });
   it.each(["xiaohongshu", "douyin"] as const)("%s 显示真实作品身份，未知作者和缺失时间不编造", (platform) => {
     const item = archiveFixture({ platform });
     const wrapper = mount(ArchiveFacts, { props: { item, formatDate: () => "存档时间夹具" } });
@@ -44,9 +101,9 @@ describe("双平台内容展示与编辑", () => {
     expect(wrapper.text()).toContain("未知");
     wrapper.unmount();
   });
-  it("抖音保留原始正文与字面标记，小红书使用其独有的文本规则", () => {
+  it.each(["douyin", "tiktok"] as const)("%s 保留原始正文与字面标记，小红书使用其独有的文本规则", (platform) => {
     const dy = mount(BilingualContent, {
-      props: { item: archiveFixture({ platform: "douyin", rawText: "完整[彩虹R] #风景[话题]#" }) }
+      props: { item: archiveFixture({ platform, rawText: "完整[彩虹R] #风景[话题]#" }) }
     });
     expect(dy.get(".source-body").text()).toBe("完整[彩虹R] #风景[话题]#");
     expect(dy.get("h3").text()).toBe("日落[微笑R]");

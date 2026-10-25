@@ -21,6 +21,7 @@ export * from "./archive/xhs-text";
 export * from "./archive/media-archive-link";
 export * from "./archive/content-archive";
 export * from "./archive/douyin-runtime";
+export * from "./archive/tiktok-runtime";
 export * from "./system/component-packages";
 export * from "./audio-library/contracts";
 export * from "./system/diagnostics";

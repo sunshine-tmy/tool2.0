@@ -15,7 +15,8 @@ import { abortable, ArchiveTaskError, normalizeArchiveStorageError, type Archive
 export class ArchiveDownloadGateway {
   constructor(
     private readonly config: AppConfig,
-    private readonly remoteFetch: RemoteFetch
+    private readonly remoteFetch: RemoteFetch,
+    private readonly platformFetch?: Partial<Record<ArchivePlatform, RemoteFetch>>
   ) {
     // libvips 的 WebP 文件缓存会在 metadata() 完成后持有句柄，阻止 Windows 原子移动目录。
     // 仅禁用文件句柄缓存，保留内存/运算缓存；不能在单个请求结束时恢复，以免并发任务重新加锁。
@@ -43,9 +44,14 @@ export class ArchiveDownloadGateway {
         );
         try {
           response = await abortable(
-            this.remoteFetch(url, {
+            (this.platformFetch?.[platform] ?? this.remoteFetch)(url, {
               headers: {
-                referer: platform === "douyin" ? "https://www.douyin.com/" : "https://www.xiaohongshu.com/",
+                referer:
+                  platform === "tiktok"
+                    ? "https://www.tiktok.com/"
+                    : platform === "douyin"
+                      ? "https://www.douyin.com/"
+                      : "https://www.xiaohongshu.com/",
                 "user-agent": "Mozilla/5.0"
               },
               signal: requestSignal
@@ -88,7 +94,7 @@ export class ArchiveDownloadGateway {
         if (mimeType === "application/octet-stream") mimeType = defaultMime(source.kind);
         let width = source.width,
           height = source.height;
-        if (platform === "douyin") {
+        if (platform === "douyin" || platform === "tiktok") {
           if (source.kind === "image" || source.kind === "cover") {
             const image = await sharp(temporary, { limitInputPixels: 40_000_000 }).metadata();
             const formats: Record<string, string> = {

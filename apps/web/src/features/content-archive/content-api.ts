@@ -5,6 +5,7 @@ import {
   ContentArchiveTaskSchema,
   ContentTranslationTaskSchema,
   DouyinRuntimeStatusSchema,
+  TikTokRuntimeStatusSchema,
   XhsArchiveRemovalSchema,
   XhsArchiveTranslationResultSchema,
   XhsAuthSessionSchema,
@@ -62,6 +63,11 @@ export const contentArchiveApi = {
     withApiError(
       () => httpClient.get(`${base}/runtime/douyin`, DouyinRuntimeStatusSchema, { signal }),
       "读取抖音环境失败"
+    ),
+  tiktokRuntime: (signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.get(`${base}/runtime/tiktok`, TikTokRuntimeStatusSchema, { signal }),
+      "读取 TikTok 获取服务失败"
     ),
   xhsRuntime: (signal?: AbortSignal) =>
     withApiError(

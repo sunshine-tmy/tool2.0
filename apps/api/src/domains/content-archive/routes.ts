@@ -15,6 +15,7 @@ import { ContentArchiveTranslationService } from "./core/translation-service";
 import { registerArchiveTranslationRoutes } from "./core/translation-routes";
 import type { ComponentManager } from "../../modules/components/component-manager";
 import type { DouyinRuntimeManager } from "./providers/douyin/douyin-runtime";
+import type { TikTokRuntime } from "./providers/tiktok/runtime";
 import { registerContentArchiveRoutes } from "./core/routes";
 
 export async function registerXhsArchiveRoutes(options: {
@@ -30,6 +31,7 @@ export async function registerXhsArchiveRoutes(options: {
   translationRuntime?: XhsTranslationRuntime;
   store?: XhsArchiveStore;
   douyinRuntime?: DouyinRuntimeManager;
+  tiktokRuntime?: TikTokRuntime;
 }) {
   const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
   const store = options.store ?? new XhsArchiveStore(config, database, fileMetadata);
@@ -46,7 +48,8 @@ export async function registerXhsArchiveRoutes(options: {
     translation,
     taskStore,
     database,
-    options.douyinRuntime
+    options.douyinRuntime,
+    options.tiktokRuntime
   );
   await service.initialize();
   registerContentArchiveRoutes(app, store.content, service.content);

@@ -7,6 +7,7 @@ import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
+import { NSelect } from "naive-ui";
 
 const archives = {
   items: [
@@ -95,5 +96,14 @@ describe("XHS archive list panel", () => {
     await secondPage?.trigger("click");
     expect(wrapper.emitted("update:page")).toEqual([[2]]);
     expect(wrapper.emitted("pageChange")).toHaveLength(1);
+    const platformSelect = wrapper
+      .findAllComponents(NSelect)
+      .find((select) => select.props("options")?.some((option) => option.value === "tiktok"));
+    expect(platformSelect).toBeDefined();
+    platformSelect!.vm.$emit("update:value", "tiktok");
+    expect(wrapper.emitted("update:platformFilter")).toEqual([["tiktok"]]);
+    await wrapper.setProps({ archives: { ...archives, items: [{ ...archives.items[0], platform: "tiktok" }] } });
+    expect(wrapper.text()).toContain("TikTok");
+    wrapper.unmount();
   });
 });

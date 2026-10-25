@@ -22,7 +22,7 @@ export function archiveExportDocuments(item: ArchiveExportItem) {
   const title = platform === "xiaohongshu" ? normalizeXhsText(item.title) : item.title;
   const body = parsed?.body ?? item.rawText ?? item.description ?? "";
   const topics = item.topics.length ? item.topics : (parsed?.topics ?? []);
-  const label = platform === "douyin" ? "抖音" : "小红书";
+  const label = platform === "tiktok" ? "TikTok" : platform === "douyin" ? "抖音" : "小红书";
   const sourceTopics = topics.map((topic) => `#${topic.source}`).join(" ");
   const documents = [
     {
@@ -113,7 +113,7 @@ export function archiveZipName(item: ArchiveExportItem) {
       .join("")
       .trim()
       .slice(0, 60) || "内容";
-  return `${platform === "douyin" ? "抖音" : "小红书"}-${safe}-${item.id.slice(-6)}.zip`;
+  return `${platform === "tiktok" ? "TikTok" : platform === "douyin" ? "抖音" : "小红书"}-${safe}-${item.id.slice(-6)}.zip`;
 }
 
 /** 只使用领域标签/序号和受控扩展名；碰撞追加媒体 ID，避免不同封面或实况静态图覆盖同名条目。 */

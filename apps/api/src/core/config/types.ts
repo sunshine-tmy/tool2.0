@@ -38,6 +38,7 @@ export type AppConfig = {
   xhsArchiveIndexPath: string;
   xhsRuntimeDir: string;
   xhsProviderUrl?: string;
+  tiktokHttpsProxy?: string;
   xhsProviderToken?: string;
   xhsProviderPort: number;
   xhsInstallTimeoutMs: number;

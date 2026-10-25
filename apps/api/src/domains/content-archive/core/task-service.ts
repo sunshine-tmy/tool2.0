@@ -53,7 +53,7 @@ export class ContentArchiveTaskService {
     if (this.stopped) throw new ArchiveTaskError("ARCHIVE_SERVICE_STOPPED", "获取服务已关闭，请重启后重试", 503);
     const link = identifyArchiveLink(input, selection);
     if (!link.ok) throw new ArchiveTaskError("ARCHIVE_URL_INVALID", link.message);
-    if (link.platform === "douyin" && new URL(link.url).protocol !== "https:")
+    if ((link.platform === "douyin" || link.platform === "tiktok") && new URL(link.url).protocol !== "https:")
       throw new ArchiveTaskError("ARCHIVE_URL_INVALID", "抖音作品链接必须使用 HTTPS");
     const duplicate = [this.active?.job, ...this.queue].find((job) => {
       if (!job || job.platform !== link.platform || job.url !== link.url) return false;
@@ -273,7 +273,7 @@ export class ContentArchiveTaskService {
             : normalized instanceof Error &&
                 "code" in normalized &&
                 typeof normalized.code === "string" &&
-                /^(?:XHS|DOUYIN|ARCHIVE)_[A-Z_]+$/.test(normalized.code)
+                /^(?:XHS|DOUYIN|TIKTOK|ARCHIVE)_[A-Z_]+$/.test(normalized.code)
               ? normalized.code.replace(/^(XHS|DOUYIN)_/, "ARCHIVE_")
               : "ARCHIVE_TASK_FAILED";
       const message = this.stopped

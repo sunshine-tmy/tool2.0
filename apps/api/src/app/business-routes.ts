@@ -21,6 +21,7 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
     remoteFetch,
     xhsStore,
     douyinRuntime,
+    tiktokRuntime,
     xhsRuntime,
     xhsAuth,
     xhsTranslationRuntime,
@@ -44,10 +45,11 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
     components: componentManager,
     translationRuntime: xhsTranslationRuntime,
     store: xhsStore,
-    douyinRuntime
+    douyinRuntime,
+    tiktokRuntime
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
   registerComponentRoutes(app, componentManager, { allowOfflineImport: config.desktopManagedCapabilities });
-  registerMediaArchiveRuntimeRoutes(app, douyinRuntime);
+  registerMediaArchiveRuntimeRoutes(app, douyinRuntime, tiktokRuntime);
   await registerFrontendAssets(app, { root: config.runtime.frontendDistRoot });
 }

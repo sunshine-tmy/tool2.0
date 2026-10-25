@@ -6,7 +6,7 @@
         v-model:value="inputUrl"
         size="large"
         clearable
-        placeholder="直接按 Ctrl+V / Command+V 粘贴小红书或抖音作品分享文案"
+        placeholder="直接按 Ctrl+V / Command+V 粘贴小红书、抖音或 TikTok 作品分享文案"
         @keyup.enter="submit"
       />
       <n-button
@@ -134,7 +134,8 @@ const platform = defineModel<ArchivePlatformSelection>("platform", { default: "a
 const platformOptions = [
   { label: "自动识别", value: "auto" },
   { label: "小红书", value: "xiaohongshu" },
-  { label: "抖音", value: "douyin" }
+  { label: "抖音", value: "douyin" },
+  { label: "TikTok", value: "tiktok" }
 ];
 const link = computed(() => identifyArchiveLink(inputUrl.value, platform.value));
 const linkHint = computed(() =>
@@ -146,12 +147,14 @@ const linkHint = computed(() =>
         : props.douyinCanAutoInstall
           ? "已识别：抖音。首次获取时将自动安装并校验匿名归档能力，仅处理公开可访问作品。"
           : `已识别：抖音。${props.douyinMessage || "抖音归档能力尚未就绪，请刷新环境状态。"}`
-      : "已识别：小红书"
+      : link.value.platform === "tiktok"
+        ? "已识别：TikTok。无需额外能力包，仅归档公开作品；访问 TikTok 需网络或代理可用。"
+        : "已识别：小红书"
 );
 const canSubmit = computed(
   () =>
     link.value.ok &&
-    (link.value.platform === "xiaohongshu" || props.douyinAvailable === true || props.douyinCanAutoInstall === true) &&
+    (link.value.platform !== "douyin" || props.douyinAvailable === true || props.douyinCanAutoInstall === true) &&
     !props.submitting &&
     !props.authWaiting &&
     !["running", "pending"].includes(props.task?.status || "")

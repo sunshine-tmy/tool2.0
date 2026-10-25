@@ -54,7 +54,14 @@ it("keeps every API and health method/path while allowing internal source reloca
     );
     expect(snapshot).toHaveLength(273);
     app = await createApp({ config });
-    expect(routeInventory(app.printRoutes({ commonPrefix: false }))).toEqual(snapshot);
+    // TikTok is an explicitly requested additive feature; the 273 historical routes remain frozen.
+    expect(routeInventory(app.printRoutes({ commonPrefix: false }))).toEqual(
+      [
+        ...snapshot,
+        "GET /api/v1/tools/media-archive/runtime/tiktok",
+        "HEAD /api/v1/tools/media-archive/runtime/tiktok"
+      ].sort()
+    );
     expect((await app.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);
     expect((await app.inject({ method: "GET", url: "/health/ready" })).statusCode).toBe(200);
   } finally {

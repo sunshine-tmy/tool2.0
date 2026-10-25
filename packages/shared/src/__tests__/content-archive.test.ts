@@ -90,7 +90,7 @@ describe("content archive contract", () => {
       false
     );
     for (const filter of [
-      { platform: "tiktok" },
+      { platform: "instagram" },
       { page: 2 },
       { pageSize: 50 },
       { cookie: "secret" },
@@ -138,7 +138,7 @@ describe("content archive contract", () => {
     expect(Value.Check(ContentArchiveItemSchema, item)).toBe(true);
     expect(() => toXhsArchive(item)).toThrow("ARCHIVE_PLATFORM_MISMATCH");
     for (const changes of [
-      { platform: "tiktok" },
+      { platform: "instagram" },
       { contentId: "" },
       { contentId: " id " },
       { noteId: "legacy" },
@@ -180,7 +180,7 @@ describe("content archive contract", () => {
     expect(Value.Check(ContentArchiveCreateInputSchema, input)).toBe(true);
     for (const invalid of [
       { platform: "auto" },
-      { platform: "tiktok" },
+      { platform: "instagram" },
       { page: 0 },
       { pageSize: 51 },
       { cookie: "private" }

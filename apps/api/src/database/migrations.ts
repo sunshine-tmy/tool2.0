@@ -1,6 +1,6 @@
 /** Database implementation detail; public callers continue through ToolboxDatabase. */
 import type Database from "better-sqlite3";
-import { migrateArchiveIdentity } from "./archive-identity";
+import { migrateArchiveIdentity, migrateArchivePlatforms } from "./archive-identity";
 import { DATABASE_SCHEMA_VERSION, DOMAIN_TABLES } from "./schema";
 import type { EntityTableColumn, LegacyEntityRow } from "./types";
 export function migrateSchema(connection: Database.Database) {
@@ -71,6 +71,7 @@ export function migrateSchema(connection: Database.Database) {
   }
   migrateDomainRelations(connection);
   migrateArchiveIdentity(connection);
+  migrateArchivePlatforms(connection);
   connection
     .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
     .run(DATABASE_SCHEMA_VERSION, new Date().toISOString());

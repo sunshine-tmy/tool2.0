@@ -6,6 +6,7 @@ import {
   ContentArchiveTaskSchema,
   ContentTranslationTaskSchema,
   DouyinRuntimeStatusSchema,
+  TikTokRuntimeStatusSchema,
   XhsArchiveRemovalSchema,
   XhsArchiveTranslationResultSchema,
   XhsAuthSessionSchema,
@@ -25,6 +26,18 @@ beforeEach(() => {
 });
 
 describe("多媒体归档客户端", () => {
+  it("reads the TikTok anonymous runtime through its schema and forwards cancellation", async () => {
+    const signal = new AbortController().signal;
+    await api.tiktokRuntime(signal);
+    expect(http.get).toHaveBeenCalledWith("/tools/media-archive/runtime/tiktok", TikTokRuntimeStatusSchema, { signal });
+    await api.create({ url: "https://vt.tiktok.com/ZSgQrEYNG/", platform: "tiktok" }, signal);
+    expect(http.post).toHaveBeenCalledWith(
+      "/tools/media-archive/items",
+      ContentArchiveTaskSchema,
+      { url: "https://vt.tiktok.com/ZSgQrEYNG/", platform: "tiktok" },
+      { signal }
+    );
+  });
   it("所有 JSON 操作传入共享响应 Schema 和同一 AbortSignal", async () => {
     const signal = new AbortController().signal;
     const params = { platform: "douyin" as const, keyword: "晚霞", type: "video" as const, page: 2, pageSize: 12 };
