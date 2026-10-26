@@ -7,6 +7,12 @@ import {
   ContentTranslationTaskSchema,
   DouyinRuntimeStatusSchema,
   TikTokRuntimeStatusSchema,
+  ArchiveImportBatchSchema,
+  ArchiveImportPreviewSchema,
+  ArchiveImportListSchema,
+  ArchiveGroupSchema,
+  ArchiveGroupListSchema,
+  ArchiveGroupAssignmentResultSchema,
   XhsArchiveRemovalSchema,
   XhsArchiveTranslationResultSchema,
   XhsAuthSessionSchema,
@@ -14,7 +20,14 @@ import {
   XhsTranslationRuntimeStatusSchema,
   XhsTranslationSubmissionSchema
 } from "@toolbox/shared";
-import { contentArchiveApi as api, contentArchiveZipUrl } from "./content-api";
+import {
+  contentArchiveApi as api,
+  contentArchiveZipUrl,
+  archiveImportApi,
+  archiveImportTemplateUrl,
+  archiveImportResultUrl,
+  archiveGroupApi
+} from "./content-api";
 const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
 vi.mock("../../shared/http/http", () => ({
   withApiError: (operation: () => Promise<unknown>) => operation(),
@@ -26,6 +39,91 @@ beforeEach(() => {
 });
 
 describe("多媒体归档客户端", () => {
+  it("uses explicit group contracts, encoded identifiers and abort signals", async () => {
+    const signal = new AbortController().signal;
+    await archiveGroupApi.list(signal);
+    expect(http.get).toHaveBeenLastCalledWith("/tools/media-archive/groups", ArchiveGroupListSchema, { signal });
+    await archiveGroupApi.save("名称", undefined, signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/groups",
+      ArchiveGroupSchema,
+      { name: "名称" },
+      { signal }
+    );
+    await archiveGroupApi.save("改名", "id/123", signal);
+    expect(http.patch).toHaveBeenLastCalledWith(
+      "/tools/media-archive/groups/id%2F123",
+      ArchiveGroupSchema,
+      { name: "改名" },
+      { signal }
+    );
+    const input = { groupId: null, itemIds: ["archive_123"] };
+    await archiveGroupApi.assign(input, signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/groups/assign",
+      ArchiveGroupAssignmentResultSchema,
+      input,
+      { signal }
+    );
+    await archiveGroupApi.remove("id/123", signal);
+    expect(http.delete).toHaveBeenLastCalledWith("/tools/media-archive/groups/id%2F123", XhsArchiveRemovalSchema, {
+      signal
+    });
+  });
+  it("uses bounded spreadsheet contracts and propagates cancellation through every batch action", async () => {
+    const signal = new AbortController().signal,
+      file = new File(["url"], "batch.csv");
+    await archiveImportApi.preview(file, signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/import/preview",
+      ArchiveImportPreviewSchema,
+      expect.any(FormData),
+      { signal }
+    );
+    const form = http.post.mock.calls.at(-1)?.[2] as FormData;
+    expect(form.get("file")).toBe(file);
+    const input = {
+      sourceName: "batch.csv",
+      existing: "skip" as const,
+      rows: [{ rowNumber: 2, inputUrl: "https://vt.tiktok.com/AAAAA/", inputPlatform: "" }]
+    };
+    await archiveImportApi.create(input, signal);
+    expect(http.post).toHaveBeenLastCalledWith("/tools/media-archive/import/batches", ArchiveImportBatchSchema, input, {
+      signal
+    });
+    await archiveImportApi.list(signal);
+    expect(http.get).toHaveBeenLastCalledWith("/tools/media-archive/import/batches", ArchiveImportListSchema, {
+      signal
+    });
+    await archiveImportApi.get("id/123", signal);
+    expect(http.get).toHaveBeenLastCalledWith(
+      "/tools/media-archive/import/batches/id%2F123",
+      ArchiveImportBatchSchema,
+      { signal }
+    );
+    await archiveImportApi.cancel("id/123", signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/import/batches/id%2F123/cancel",
+      ArchiveImportBatchSchema,
+      undefined,
+      { signal }
+    );
+    await archiveImportApi.retry("id/123", signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/import/batches/id%2F123/retry",
+      ArchiveImportBatchSchema,
+      undefined,
+      { signal }
+    );
+    await archiveImportApi.remove("id/123", signal);
+    expect(http.delete).toHaveBeenLastCalledWith(
+      "/tools/media-archive/import/batches/id%2F123",
+      XhsArchiveRemovalSchema,
+      { signal }
+    );
+    expect(archiveImportTemplateUrl()).toContain("/api/v1/tools/media-archive/import/template.csv");
+    expect(archiveImportResultUrl("id/123")).toContain("id%2F123/results.csv");
+  });
   it("reads the TikTok anonymous runtime through its schema and forwards cancellation", async () => {
     const signal = new AbortController().signal;
     await api.tiktokRuntime(signal);

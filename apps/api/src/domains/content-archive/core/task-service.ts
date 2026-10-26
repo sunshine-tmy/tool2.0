@@ -26,6 +26,7 @@ type Job = {
   platform: ContentArchiveTask["platform"];
   archiveId?: string;
   controller: AbortController;
+  skipExisting?: boolean;
 };
 export class ContentArchiveTaskService {
   private readonly queue: Job[] = [];
@@ -50,6 +51,23 @@ export class ContentArchiveTaskService {
     return this.options.tasks.get(id);
   }
   create(input: string, selection: ArchivePlatformSelection = "auto", archiveId?: string) {
+    return this.enqueue(input, selection, archiveId);
+  }
+  createImport(
+    input: string,
+    selection: ArchivePlatformSelection,
+    skipExisting: boolean,
+    beforeEnqueue: (task: ContentArchiveTask) => void,
+    archiveId?: string
+  ) {
+    return this.enqueue(input, selection, archiveId, { skipExisting, beforeEnqueue });
+  }
+  private enqueue(
+    input: string,
+    selection: ArchivePlatformSelection,
+    archiveId?: string,
+    imported?: { skipExisting: boolean; beforeEnqueue: (task: ContentArchiveTask) => void }
+  ) {
     if (this.stopped) throw new ArchiveTaskError("ARCHIVE_SERVICE_STOPPED", "获取服务已关闭，请重启后重试", 503);
     const link = identifyArchiveLink(input, selection);
     if (!link.ok) throw new ArchiveTaskError("ARCHIVE_URL_INVALID", link.message);
@@ -61,7 +79,10 @@ export class ContentArchiveTaskService {
       // 失败已通知前端但 staging 清理尚未结束时，立即重试应排队，而不是返回旧失败任务。
       return status === "pending" || status === "running";
     });
-    if (duplicate) return this.get(duplicate.id)!;
+    if (duplicate) {
+      if (imported) throw new ArchiveTaskError("ARCHIVE_TASK_BUSY", "相同链接正在处理，请等待后再提交", 409);
+      return this.get(duplicate.id)!;
+    }
     if (this.queue.length >= 16)
       throw new ArchiveTaskError("ARCHIVE_QUEUE_FULL", "获取队列已满，请等待已有任务完成", 429);
     const now = new Date().toISOString();
@@ -75,11 +96,22 @@ export class ContentArchiveTaskService {
       createdAt: now,
       updatedAt: now
     });
+    try {
+      imported?.beforeEnqueue(task);
+    } catch (error) {
+      try {
+        this.fail(task.id, "ARCHIVE_IMPORT_ENQUEUE_FAILED", "批次记录保存失败，未开始获取");
+      } catch {
+        /* Database failure remains visible to the caller. */
+      }
+      throw error;
+    }
     this.queue.push({
       id: task.id,
       platform: link.platform,
       url: link.url,
       archiveId,
+      skipExisting: imported?.skipExisting,
       controller: new AbortController()
     });
     this.pump();
@@ -180,6 +212,17 @@ export class ContentArchiveTaskService {
       if (source.platform !== job.platform)
         throw new ArchiveTaskError("ARCHIVE_PLATFORM_MISMATCH", "平台返回的作品身份不一致");
       const previous = await this.options.store.findBySource(job.platform, source.contentId);
+      if (previous && job.skipExisting) {
+        this.update(job.id, {
+          status: "completed",
+          stage: "completed",
+          progress: 100,
+          archiveId: previous.id,
+          skipped: true,
+          message: "作品已归档，已跳过"
+        });
+        return;
+      }
       if (job.archiveId && previous?.id !== job.archiveId)
         throw new ArchiveTaskError("ARCHIVE_IDENTITY_MISMATCH", "刷新结果与原归档作品不一致");
       job.archiveId = previous?.id;

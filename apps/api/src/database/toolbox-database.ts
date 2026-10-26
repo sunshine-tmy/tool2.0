@@ -111,6 +111,17 @@ export class ToolboxDatabase {
     ) as EntityRow | undefined;
     return row ? deserializeEntity(row) : undefined;
   }
+  /** Activity guards must not deserialize potentially large stored payloads. */
+  hasStatus(kind: string, statuses: readonly string[]) {
+    if (!statuses.length) return false;
+    const table = tableForKind(kind);
+    const kindFilter = table === "entities" ? "kind = ? AND " : "";
+    return Boolean(
+      this.connection
+        .prepare(`SELECT 1 FROM ${table} WHERE ${kindFilter}status IN (${statuses.map(() => "?").join(",")}) LIMIT 1`)
+        .get(...(table === "entities" ? [kind] : []), ...statuses)
+    );
+  }
 
   upsertFile(file: FileMetadata) {
     return upsertFile(this.connection, file);

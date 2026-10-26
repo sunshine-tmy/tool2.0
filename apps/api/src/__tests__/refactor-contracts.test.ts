@@ -59,7 +59,31 @@ it("keeps every API and health method/path while allowing internal source reloca
       [
         ...snapshot,
         "GET /api/v1/tools/media-archive/runtime/tiktok",
-        "HEAD /api/v1/tools/media-archive/runtime/tiktok"
+        "HEAD /api/v1/tools/media-archive/runtime/tiktok",
+        ...[
+          "GET import/template.csv",
+          "HEAD import/template.csv",
+          "POST import/preview",
+          "GET import/batches",
+          "HEAD import/batches",
+          "POST import/batches",
+          "GET import/batches/:id",
+          "HEAD import/batches/:id",
+          "DELETE import/batches/:id",
+          "POST import/batches/:id/cancel",
+          "POST import/batches/:id/retry",
+          "GET import/batches/:id/results.csv",
+          "HEAD import/batches/:id/results.csv",
+          "GET groups",
+          "HEAD groups",
+          "POST groups",
+          "PATCH groups/:id",
+          "DELETE groups/:id",
+          "POST groups/assign"
+        ].map((entry) => {
+          const [method, path] = entry.split(" ");
+          return `${method} /api/v1/tools/media-archive/${path}`;
+        })
       ].sort()
     );
     expect((await app.inject({ method: "GET", url: "/health/live" })).statusCode).toBe(200);

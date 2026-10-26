@@ -172,6 +172,8 @@
 
 ## 小红书内容归档（兼容接口）
 
+多媒体归档的表格导入、预览、批次管理及 CSV 导出使用 `/api/v1/tools/media-archive/import/*`，自定义作品分组使用 `/api/v1/tools/media-archive/groups/*`。完整契约、分组规则和取消/恢复规则见[表格批量归档与分组 API](./archive-spreadsheet-import.md#api)。原小红书接口不承担批量调度，返回字段保持兼容。
+
 - `POST /api/v1/tools/xhs-archive/items`：JSON `{ url }` 创建获取任务；`url` 可为链接或包含链接的分享文案。
 - `GET /api/v1/tools/xhs-archive/tasks/:taskId`：读取环境安装、链接解析、媒体下载和写入存档进度。
 - `GET /api/v1/tools/xhs-archive/items?keyword=&type=&page=&pageSize=`：搜索、筛选和分页读取存档。

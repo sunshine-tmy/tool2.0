@@ -32,6 +32,27 @@ afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
 });
 describe("双平台归档集合", () => {
+  it("resets selection and pagination for group filters and keeps translation scope within the selected group", async () => {
+    const { collection: c } = setup();
+    await c.loadArchives();
+    c.page.value = 3;
+    c.toggleSelectAllArchives(true);
+    c.groupFilter.value = "group_123";
+    expect(c.page.value).toBe(1);
+    expect(c.selectedArchiveIds.value).toEqual([]);
+    await nextTick();
+    expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ groupId: "group_123", page: 1 }),
+      expect.any(AbortSignal)
+    );
+    expect(c.filter()).toMatchObject({ groupId: "group_123" });
+    c.groupFilter.value = "ungrouped";
+    await nextTick();
+    expect(c.filter()).toMatchObject({ groupId: "ungrouped" });
+    c.groupFilter.value = "all";
+    await nextTick();
+    expect(c.filter()).not.toHaveProperty("groupId");
+  });
   it("读取混合列表，选择只接受当前页 ID，重复选择不扩大范围", async () => {
     const { collection: c } = setup();
     await c.loadArchives();

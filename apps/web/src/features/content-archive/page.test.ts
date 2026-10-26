@@ -67,6 +67,8 @@ function mountPage() {
         NButton: true,
         ArchiveListPanel: true,
         ArchiveTaskPanel: true,
+        ArchiveBatchImport: true,
+        ArchiveGroups: true,
         XhsDetailDrawer: true,
         XhsResultPanel: true,
         TranslationEditModal: true

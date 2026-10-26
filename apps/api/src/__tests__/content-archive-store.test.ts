@@ -9,6 +9,7 @@ import { getConfig, type AppConfig } from "../config";
 import { ToolboxDatabase } from "../database/toolbox-database";
 import { FileMetadataRepository } from "../database/file-metadata";
 import { ContentArchiveStore } from "../domains/content-archive/core/store";
+import { ContentArchiveRepository } from "../domains/content-archive/core/repository";
 import { XhsArchiveStore } from "../domains/content-archive/compat/xhs/store";
 import { archiveTranslationSourceHash } from "../domains/content-archive/core/text";
 import { translationSourceHash } from "../domains/content-archive/compat/xhs/translation-service";
@@ -86,6 +87,62 @@ async function staging(value: ContentArchiveItem, contents = bytes) {
 const target = (id = "archive_123456") => path.join(config.xhsArchiveItemsDir, id);
 
 describe("多媒体共享存储与小红书过滤视图", () => {
+  it("keeps custom groups separate from manifests and preserves membership across refresh, rename and group deletion", async () => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    const before = await fs.readFile(path.join(target(), "manifest.json"), "utf8");
+    const group = store.groups.save("商品素材");
+    expect(store.groups.assign({ groupId: group.id, itemIds: [value.id] })).toEqual({ updated: 1 });
+    expect((await store.list({ groupId: group.id, platform: "douyin", keyword: "测试" })).items[0]?.groupId).toBe(
+      group.id
+    );
+    expect((await store.list({ groupId: "ungrouped" })).total).toBe(0);
+    expect((await store.list({ groupId: "missing_group" })).total).toBe(0);
+    expect(new ContentArchiveRepository(database).list({ groupId: group.id }).items[0]?.groupId).toBe(group.id);
+    expect(new ContentArchiveRepository(database).list({ groupId: "ungrouped" }).total).toBe(0);
+    expect(await fs.readFile(path.join(target(), "manifest.json"), "utf8")).toBe(before);
+    expect(await store.get(value.id)).not.toHaveProperty("groupId");
+    store.groups.save("新名称", group.id);
+    expect(store.groups.list()[0]?.name).toBe("新名称");
+    await store.commit({ ...value, title: "刷新后" }, await staging(value));
+    expect((await store.list()).items[0]?.groupId).toBe(group.id);
+    store.groups.remove(group.id);
+    expect((await store.list({ groupId: "ungrouped" })).total).toBe(1);
+    expect(await fs.readFile(path.join(target(), "original.mp4"))).toEqual(bytes);
+    expect(database.list("archive-group-member")).toEqual([]);
+    const other = store.groups.save("其他分组");
+    store.groups.assign({ groupId: other.id, itemIds: [value.id] });
+    await store.remove(value.id);
+    expect(database.list("archive-group-member")).toEqual([]);
+    expect(store.groups.list()).toHaveLength(1);
+  });
+  it("rejects invalid or duplicate group names and moves selections atomically", async () => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    const first = store.groups.save(" Group "),
+      second = store.groups.save("另一个分组");
+    for (const name of [" ", "x".repeat(81), "bad\nname", "bad\u007fname"])
+      expect(() => store.groups.save(name)).toThrow("名称");
+    expect(() => store.groups.save("group")).toThrow("同名");
+    expect(() => store.groups.save("GROUP", second.id)).toThrow("同名");
+    expect(() => store.groups.save("名称", "missing_group")).toThrow("不存在");
+    expect(() => store.groups.remove("missing_group")).toThrow("不存在");
+    expect(() => store.groups.assign({ groupId: "missing_group", itemIds: [value.id] })).toThrow("不存在");
+    store.groups.assign({ groupId: first.id, itemIds: [value.id] });
+    expect(() => store.groups.assign({ groupId: second.id, itemIds: [value.id, "missing_archive"] })).toThrow("已删除");
+    expect(store.groups.memberships().get(value.id)).toBe(first.id);
+    store.groups.assign({ groupId: null, itemIds: [value.id] });
+    expect(store.groups.memberships().has(value.id)).toBe(false);
+    store.groups.assignImported("missing_group", [value.id]);
+    store.groups.assignImported(second.id, ["missing_archive"]);
+    expect(store.groups.memberships().size).toBe(0);
+    const write = vi.spyOn(database, "remove").mockImplementationOnce(() => {
+      throw new Error("database-write-failure");
+    });
+    expect(() => store.groups.remove(first.id)).toThrow("database-write-failure");
+    write.mockRestore();
+    expect(store.groups.list()).toHaveLength(2);
+  });
   it("跨平台同作品 ID 独立保存，旧视图拒绝读取、删除、截帧和翻译抖音", async () => {
     const xhs = item("xhs_123456", "xiaohongshu");
     xhs.media[0].id = "xhs_media123";

@@ -35,6 +35,7 @@
         </div>
       </n-alert>
 
+      <ArchiveBatchImport :groups="archiveGroups" @changed="loadArchives" @open-archive="openDetail" />
       <ArchiveTaskPanel
         v-model:input-url="inputUrl"
         v-model:platform="platform"
@@ -66,6 +67,12 @@
         @frame-saved="onFrameSaved"
         @copy="copyContent"
       />
+      <ArchiveGroups
+        v-model:group-id="groupFilter"
+        :selected-ids="selectedArchiveIds"
+        @changed="loadArchives"
+        @loaded="archiveGroups = $event"
+      />
       <ArchiveListPanel
         v-model:keyword="keyword"
         v-model:type-filter="typeFilter"
@@ -74,6 +81,7 @@
         :archives="archives"
         :list-loading="listLoading"
         :selected-ids="selectedArchiveIds"
+        :groups="archiveGroups"
         @search="loadArchives"
         @refresh="loadArchives"
         @remove-selected="removeSelected"
@@ -112,6 +120,7 @@ import {
   identifyArchiveLink,
   type ArchivePlatformSelection,
   type ContentArchiveItem,
+  type ArchiveGroup,
   type ContentArchiveTask,
   type ContentTranslationEditInput,
   type DouyinRuntimeStatus,
@@ -122,6 +131,8 @@ import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
+import ArchiveBatchImport from "./ArchiveBatchImport.vue";
+import ArchiveGroups from "./ArchiveGroups.vue";
 import XhsDetailDrawer from "./XhsDetailDrawer.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
@@ -162,11 +173,13 @@ const translationEvents = useTaskEvents(
   }
 );
 const collection = useArchiveCollection((error) => message.error(formatApiError(error, "读取存档失败")));
+const archiveGroups = ref<ArchiveGroup[]>([]);
 const {
   current,
   keyword,
   typeFilter,
   platformFilter,
+  groupFilter,
   page,
   listLoading,
   archives,

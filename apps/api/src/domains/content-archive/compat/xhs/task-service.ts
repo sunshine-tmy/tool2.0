@@ -76,6 +76,6 @@ export class XhsArchiveTaskService {
 }
 
 function legacyTask(task: ContentArchiveTask): XhsArchiveTask {
-  const { platform: _platform, ...rest } = task;
+  const { platform: _platform, skipped: _skipped, ...rest } = task;
   return { ...rest, errorCode: rest.errorCode?.replace(/^ARCHIVE_/, "XHS_") };
 }

@@ -34,7 +34,7 @@ export class ArchiveTaskError extends Error {
   constructor(
     readonly code: string,
     message: string,
-    readonly statusCode: 400 | 409 | 429 | 503 | 507 = 400
+    readonly statusCode: 400 | 404 | 409 | 413 | 429 | 503 | 507 = 400
   ) {
     super(message);
   }

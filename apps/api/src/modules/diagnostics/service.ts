@@ -38,6 +38,7 @@ export class DiagnosticsService {
     // 活跃播放心跳丢失时保守拒绝，而不是假设已经停止。
     if ([...this.playback.values()].some((value) => value.active)) return true;
     if ((!ignoreComponentJobs && this.components.hasActiveJobs()) || this.extraBusy()) return true;
+    if (this.database.hasStatus("archive-import-batch", ["running", "stopping"])) return true;
     return [
       "task",
       "edge-tts-task",

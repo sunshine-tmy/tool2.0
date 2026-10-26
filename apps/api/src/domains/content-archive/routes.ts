@@ -17,6 +17,9 @@ import type { ComponentManager } from "../../modules/components/component-manage
 import type { DouyinRuntimeManager } from "./providers/douyin/douyin-runtime";
 import type { TikTokRuntime } from "./providers/tiktok/runtime";
 import { registerContentArchiveRoutes } from "./core/routes";
+import { ArchiveImportService } from "./batch/service";
+import { registerArchiveImportRoutes } from "./batch/routes";
+import { registerArchiveGroupRoutes } from "./core/group-routes";
 
 export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
@@ -52,11 +55,24 @@ export async function registerXhsArchiveRoutes(options: {
     options.tiktokRuntime
   );
   await service.initialize();
+  const imports = new ArchiveImportService(database, store.content, service.content, {
+    onError: () => app.log.error("ARCHIVE_IMPORT_STORAGE_FAILED")
+  });
+  imports.initialize();
+  registerArchiveImportRoutes(app, imports);
+  registerArchiveGroupRoutes(app, store.content.groups);
   registerContentArchiveRoutes(app, store.content, service.content);
   registerArchiveTranslationRoutes(app, store.content, translation, "media-archive");
 
   registerLegacyXhsArchiveRoutes({ app, store, service, auth, translation });
 
-  app.addHook("onClose", async () => service.close());
+  app.addHook("onClose", async () => {
+    await imports.stop();
+    try {
+      await service.close();
+    } finally {
+      imports.recoverInterrupted();
+    }
+  });
   app.addHook("onClose", async () => auth.stop());
 }

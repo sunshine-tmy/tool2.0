@@ -10,6 +10,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
   const keyword = ref("");
   const typeFilter = ref<NonNullable<ContentArchiveListQuery["type"]>>("all");
   const platformFilter = ref<NonNullable<ContentArchiveListQuery["platform"]>>("all");
+  const groupFilter = ref("all");
   const page = ref(1);
   const listLoading = ref(false);
   const archives = ref<ContentArchiveListResponse>({ items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 });
@@ -23,7 +24,12 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
   let detailController: AbortController | undefined;
 
   function filter() {
-    return { keyword: keyword.value, type: typeFilter.value, platform: platformFilter.value };
+    return {
+      keyword: keyword.value,
+      type: typeFilter.value,
+      platform: platformFilter.value,
+      ...(groupFilter.value !== "all" ? { groupId: groupFilter.value } : {})
+    };
   }
   function invalidateList() {
     listGeneration++;
@@ -33,14 +39,14 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
   }
   // 搜索文字变化只重置分页，不逐字发送请求；类型/平台切换自动读取新范围。
   watch(
-    [keyword, typeFilter, platformFilter],
+    [keyword, typeFilter, platformFilter, groupFilter],
     () => {
       invalidateList();
       page.value = 1;
     },
     { flush: "sync" }
   );
-  watch([typeFilter, platformFilter], () => void loadArchives());
+  watch([typeFilter, platformFilter, groupFilter], () => void loadArchives());
   watch(page, invalidateList, { flush: "sync" });
   watch(
     drawerOpen,
@@ -120,6 +126,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
     keyword,
     typeFilter,
     platformFilter,
+    groupFilter,
     page,
     listLoading,
     archives,

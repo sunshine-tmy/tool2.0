@@ -1,6 +1,7 @@
 /** 多平台归档契约：复用既有媒体/翻译结构，身份与旧 noteId 解耦，不重写旧接口 DTO。 */
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { ArchiveGroupIdSchema } from "./archive-groups";
 import {
   XhsArchiveItemSchema,
   XhsArchiveListQuerySchema,
@@ -41,7 +42,8 @@ export const ContentArchiveListItemSchema = Type.Composite(
     Type.Object({
       mediaCount: Type.Integer({ minimum: 0 }),
       coverUrl: Type.Optional(Type.String()),
-      coverKind: Type.Optional(XhsArchiveMediaSchema.properties.kind)
+      coverKind: Type.Optional(XhsArchiveMediaSchema.properties.kind),
+      groupId: Type.Optional(ArchiveGroupIdSchema)
     })
   ],
   { additionalProperties: false }
@@ -59,7 +61,10 @@ export const ContentArchiveListResponseSchema = Type.Object(
 export const ContentArchiveListQuerySchema = Type.Composite(
   [
     XhsArchiveListQuerySchema,
-    Type.Object({ platform: Type.Optional(Type.Union([Type.Literal("all"), ArchivePlatformSchema])) })
+    Type.Object({
+      platform: Type.Optional(Type.Union([Type.Literal("all"), ArchivePlatformSchema])),
+      groupId: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("ungrouped"), ArchiveGroupIdSchema]))
+    })
   ],
   { additionalProperties: false }
 );
@@ -71,7 +76,7 @@ export const ContentArchiveCreateInputSchema = Type.Object(
   { additionalProperties: false }
 );
 export const ContentArchiveTaskSchema = Type.Composite(
-  [XhsArchiveTaskSchema, Type.Object({ platform: ArchivePlatformSchema })],
+  [XhsArchiveTaskSchema, Type.Object({ platform: ArchivePlatformSchema, skipped: Type.Optional(Type.Boolean()) })],
   { additionalProperties: false }
 );
 export type ContentArchiveItem = Static<typeof ContentArchiveItemSchema>;

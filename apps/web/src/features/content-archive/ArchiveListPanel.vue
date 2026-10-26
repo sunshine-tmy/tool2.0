@@ -83,6 +83,9 @@
             }}</span>
             <h3>{{ archiveDisplayTitle(archive) }}</h3>
             <p>{{ archive.author?.name || "未知作者" }}</p>
+            <p v-if="archive.groupId">
+              分组：{{ groups?.find((group) => group.id === archive.groupId)?.name || "已分组" }}
+            </p>
             <div>
               <span>{{ archive.mediaCount }} 个媒体</span><span>{{ formatBytes(archive.totalBytes) }}</span>
               <span>{{ formatDate(archive.updatedAt) }}</span>
@@ -100,7 +103,7 @@ import { formatBytesThroughGb as formatBytes } from "../../shared/utils/format-b
 import { computed } from "vue";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NSelect, NSpin } from "naive-ui";
 import { FileImage, Languages, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
-import type { ContentArchiveListResponse, ContentArchiveListQuery } from "@toolbox/shared";
+import type { ContentArchiveListResponse, ContentArchiveListQuery, ArchiveGroup } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { archiveDisplayTitle, archivePlatformLabel } from "./presentation";
 import { formatArchiveDate } from "./format-date";
@@ -109,6 +112,7 @@ const props = defineProps<{
   archives: ContentArchiveListResponse;
   listLoading: boolean;
   selectedIds: string[];
+  groups?: ArchiveGroup[];
 }>();
 
 const emit = defineEmits<{

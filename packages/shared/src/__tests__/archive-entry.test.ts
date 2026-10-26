@@ -8,10 +8,12 @@ import * as legacy from "../archive/xhs-archive";
 import * as text from "../archive/xhs-text";
 import * as douyin from "../archive/douyin-runtime";
 import * as tiktok from "../archive/tiktok-runtime";
+import * as imports from "../archive/archive-import";
+import * as groups from "../archive/archive-groups";
 
 describe("archive domain entry", () => {
   it("retains exact existing export names and identities, including legacy contracts", () => {
-    const existing = { ...core, ...links, ...legacy, ...text, ...douyin, ...tiktok };
+    const existing = { ...core, ...links, ...legacy, ...text, ...douyin, ...tiktok, ...imports, ...groups };
     expect(Object.keys(archive).sort()).toEqual(Object.keys(existing).sort());
     for (const [key, value] of Object.entries(existing)) {
       expect(Reflect.get(archive, key)).toBe(value);

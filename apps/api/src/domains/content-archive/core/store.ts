@@ -23,6 +23,7 @@ import {
   replaceArchiveManifest
 } from "./file-gateway";
 import { archiveTranslationSourceHash } from "./text";
+import { ArchiveGroupStore } from "./groups";
 
 type ArchiveIndex = {
   version: 2;
@@ -30,6 +31,7 @@ type ArchiveIndex = {
 };
 
 export class ContentArchiveStore {
+  readonly groups: ArchiveGroupStore;
   private items = new Map<string, ContentArchiveItem>();
   private initialization?: Promise<void>;
   private writeQueue = Promise.resolve();
@@ -43,6 +45,7 @@ export class ContentArchiveStore {
     fileMetadata?: FileMetadataRepository
   ) {
     this.fileMetadata = fileMetadata ?? new FileMetadataRepository(database, config.storageRoot);
+    this.groups = new ArchiveGroupStore(database);
   }
 
   async initialize() {
@@ -79,6 +82,7 @@ export class ContentArchiveStore {
       page?: number;
       pageSize?: number;
       platform?: ArchivePlatform | "all";
+      groupId?: string;
     } = {}
   ): Promise<ContentArchiveListResponse> {
     await this.initialize();
@@ -86,8 +90,15 @@ export class ContentArchiveStore {
     const type = options.type?.trim() || "all";
     const page = positiveInteger(options.page, 1);
     const pageSize = Math.min(positiveInteger(options.pageSize, 12), 50);
+    const memberships = this.groups.memberships();
     const matched = [...this.items.values()]
       .filter((item) => !options.platform || options.platform === "all" || item.platform === options.platform)
+      .filter(
+        (item) =>
+          !options.groupId ||
+          options.groupId === "all" ||
+          (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
+      )
       .filter((item) => type === "all" || item.type === type)
       .filter((item) => {
         if (!keyword) return true;
@@ -110,7 +121,10 @@ export class ContentArchiveStore {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     const start = (page - 1) * pageSize;
     return {
-      items: matched.slice(start, start + pageSize).map(toContentArchiveListItem),
+      items: matched.slice(start, start + pageSize).map((item) => ({
+        ...toContentArchiveListItem(item),
+        ...(memberships.has(item.id) ? { groupId: memberships.get(item.id) } : {})
+      })),
       total: matched.length,
       page,
       pageSize,
@@ -128,6 +142,14 @@ export class ContentArchiveStore {
     await this.initialize();
     return cloneItem(
       [...this.items.values()].find((item) => item.platform === platform && item.contentId === contentId)
+    );
+  }
+  async findByUrl(platform: ArchivePlatform, url: string) {
+    await this.initialize();
+    return cloneItem(
+      [...this.items.values()].find(
+        (item) => item.platform === platform && (item.sourceUrl === url || item.canonicalUrl === url)
+      )
     );
   }
 
@@ -311,6 +333,7 @@ export class ContentArchiveStore {
         try {
           await this.persistIndex(() => {
             this.database.remove("xhs-archive", id);
+            this.database.remove("archive-group-member", id);
             this.fileMetadata.removeForEntity("xhs-archive", id);
             for (const media of item.media) this.fileMetadata.removeForEntity("xhs-media", media.id);
           });

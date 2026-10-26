@@ -32,7 +32,7 @@ async function fixture(desktop = false) {
   config.tempDir = root;
   config.outputDir = root;
   const components = { list: vi.fn(async () => []), hasActiveJobs: vi.fn(() => false), verifyCurrent: vi.fn() };
-  const database = { ready: vi.fn(), list: vi.fn((): Array<{ status: string }> => []) };
+  const database = { ready: vi.fn(), list: vi.fn((): Array<{ status: string }> => []), hasStatus: vi.fn(() => false) };
   const restart = vi.fn(async () => undefined);
   const service = new DiagnosticsService(
     config,
@@ -51,6 +51,15 @@ async function fixture(desktop = false) {
 }
 
 describe("diagnostics safety and state", () => {
+  it("keeps import batches busy between child tasks without reading their large payloads", async () => {
+    const { service, database } = await fixture();
+    database.hasStatus.mockReturnValue(true);
+    expect(service.isBusy()).toBe(true);
+    expect(database.hasStatus).toHaveBeenCalledWith("archive-import-batch", ["running", "stopping"]);
+    expect(database.list).not.toHaveBeenCalled();
+    database.hasStatus.mockReturnValue(false);
+    expect(service.isBusy()).toBe(false);
+  });
   it("classifies causes without exposing untrusted messages", () => {
     for (const [error, code] of [
       [{ code: "EACCES", message: "secret-token 用户文案 C:\\Users\\private" }, "ACCESS_DENIED"],

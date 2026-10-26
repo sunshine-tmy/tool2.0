@@ -6,6 +6,14 @@ import {
   ContentTranslationTaskSchema,
   DouyinRuntimeStatusSchema,
   TikTokRuntimeStatusSchema,
+  ArchiveImportPreviewSchema,
+  ArchiveImportBatchSchema,
+  ArchiveImportListSchema,
+  ArchiveGroupListSchema,
+  ArchiveGroupSchema,
+  ArchiveGroupAssignmentResultSchema,
+  type ArchiveGroupAssignment,
+  type ArchiveImportCreate,
   XhsArchiveRemovalSchema,
   XhsArchiveTranslationResultSchema,
   XhsAuthSessionSchema,
@@ -22,6 +30,78 @@ import { resolveBackendUrl } from "../../shared/config/runtime";
 
 const base = "/tools/media-archive";
 const itemPath = (id: string) => `${base}/items/${encodeURIComponent(id)}`;
+const importBase = `${base}/import`;
+export const archiveGroupApi = {
+  list: (signal?: AbortSignal) =>
+    withApiError(() => httpClient.get(`${base}/groups`, ArchiveGroupListSchema, { signal }), "读取分组失败"),
+  save: (name: string, id?: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        id
+          ? httpClient.patch(`${base}/groups/${encodeURIComponent(id)}`, ArchiveGroupSchema, { name }, { signal })
+          : httpClient.post(`${base}/groups`, ArchiveGroupSchema, { name }, { signal }),
+      "保存分组失败"
+    ),
+  assign: (input: ArchiveGroupAssignment, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.post(`${base}/groups/assign`, ArchiveGroupAssignmentResultSchema, input, { signal }),
+      "移动分组失败"
+    ),
+  remove: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.delete(`${base}/groups/${encodeURIComponent(id)}`, XhsArchiveRemovalSchema, { signal }),
+      "删除分组失败"
+    )
+};
+export const archiveImportApi = {
+  preview: (file: File, signal?: AbortSignal) => {
+    const form = new FormData();
+    form.append("file", file);
+    return withApiError(
+      () => httpClient.post(`${importBase}/preview`, ArchiveImportPreviewSchema, form, { signal }),
+      "解析表格失败"
+    );
+  },
+  create: (input: ArchiveImportCreate, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.post(`${importBase}/batches`, ArchiveImportBatchSchema, input, { signal }),
+      "创建批量归档失败"
+    ),
+  list: (signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.get(`${importBase}/batches`, ArchiveImportListSchema, { signal }),
+      "读取批次列表失败"
+    ),
+  get: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.get(`${importBase}/batches/${encodeURIComponent(id)}`, ArchiveImportBatchSchema, { signal }),
+      "读取批次进度失败"
+    ),
+  cancel: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(`${importBase}/batches/${encodeURIComponent(id)}/cancel`, ArchiveImportBatchSchema, undefined, {
+          signal
+        }),
+      "停止批量归档失败"
+    ),
+  retry: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(`${importBase}/batches/${encodeURIComponent(id)}/retry`, ArchiveImportBatchSchema, undefined, {
+          signal
+        }),
+      "重试失败项失败"
+    ),
+  remove: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.delete(`${importBase}/batches/${encodeURIComponent(id)}`, XhsArchiveRemovalSchema, { signal }),
+      "删除批次记录失败"
+    )
+};
+export const archiveImportTemplateUrl = () => resolveBackendUrl("/api/v1/tools/media-archive/import/template.csv");
+export const archiveImportResultUrl = (id: string) =>
+  resolveBackendUrl(`/api/v1/tools/media-archive/import/batches/${encodeURIComponent(id)}/results.csv`);
 
 // 每个请求显式传递 signal，让页面/弹窗卸载能中止真实传输，而不只是忽略返回值。
 export const contentArchiveApi = {

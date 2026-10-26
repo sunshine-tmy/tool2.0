@@ -8,3 +8,5 @@ export * from "./xhs-archive";
 export * from "./xhs-text";
 export * from "./douyin-runtime";
 export * from "./tiktok-runtime";
+export * from "./archive-import";
+export * from "./archive-groups";
