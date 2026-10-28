@@ -11,9 +11,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, ref } from "vue";
+import { computed, defineComponent, h, onMounted, ref, watch } from "vue";
 import { NButton, NInput, NPopover, NSelect, useMessage } from "naive-ui";
 import { Copy, Network, RefreshCw } from "lucide-vue-next";
+import QRCode from "qrcode";
 import type { LanApplicationAccess } from "@toolbox/shared";
 import { lanAccessApi } from "./lan-access";
 import { copyTextToClipboard } from "../../shared/utils/clipboard";
@@ -24,7 +25,28 @@ const access = ref<LanApplicationAccess>();
 const selected = ref("");
 const loading = ref(false);
 const error = ref("");
+const qrCode = ref("");
+const qrError = ref(false);
 const options = computed(() => access.value?.urls.map((url) => ({ label: url, value: url })) ?? []);
+watch(
+  selected,
+  async (url, _, onCleanup) => {
+    let current = true;
+    onCleanup(() => {
+      current = false;
+    });
+    qrCode.value = "";
+    qrError.value = false;
+    if (!url) return;
+    try {
+      const image = await QRCode.toDataURL(url, { width: 180, margin: 4, errorCorrectionLevel: "M" });
+      if (current) qrCode.value = image;
+    } catch {
+      if (current) qrError.value = true;
+    }
+  },
+  { flush: "sync" }
+);
 async function refresh() {
   if (loading.value) return;
   loading.value = true;
@@ -91,6 +113,23 @@ const AccessContent = defineComponent({
             )
           ])
         : null,
+      selected.value
+        ? h("div", { class: "lan-qr-row" }, [
+            h("div", { class: "lan-qr-image" }, [
+              qrCode.value
+                ? h("img", { src: qrCode.value, alt: "局域网访问二维码", width: 180, height: 180 })
+                : h(
+                    "span",
+                    { class: "lan-copy", role: "status" },
+                    qrError.value ? "二维码生成失败，请复制地址访问。" : "正在生成二维码…"
+                  )
+            ]),
+            h("div", { class: "lan-qr-caption" }, [
+              h("strong", "手机扫码访问"),
+              h("p", { class: "lan-copy" }, "手机与电脑连接同一 Wi-Fi，扫码即可打开工具箱。")
+            ])
+          ])
+        : null,
       h(
         "p",
         { class: "lan-copy" },
@@ -113,6 +152,8 @@ const AccessContent = defineComponent({
 }
 .lan-popover {
   width: min(460px, calc(100vw - 56px));
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
 }
 .lan-access {
   display: flex;
@@ -146,10 +187,41 @@ const AccessContent = defineComponent({
   flex: 1;
   min-width: 0;
 }
+.lan-access :deep(.lan-qr-row) {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.lan-access :deep(.lan-qr-image) {
+  display: flex;
+  flex: 0 0 180px;
+  align-items: center;
+  justify-content: center;
+  width: 180px;
+  height: 180px;
+  background: #fff;
+  border-radius: 8px;
+}
+.lan-access :deep(.lan-qr-image img) {
+  display: block;
+  width: 180px;
+  height: 180px;
+}
+.lan-access :deep(.lan-qr-caption) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 @media (max-width: 480px) {
   .lan-access :deep(.lan-address-row) {
     flex-direction: column;
     align-items: stretch;
+  }
+  .lan-access :deep(.lan-qr-row) {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
   }
 }
 </style>
