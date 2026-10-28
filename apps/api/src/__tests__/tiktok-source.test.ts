@@ -23,6 +23,107 @@ const html = (item: unknown) =>
   `<script nonce="fixture" id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify({ __DEFAULT_SCOPE__: { "webapp.video-detail": { statusCode: 0, itemInfo: { itemStruct: item } } } })}</script>`;
 
 describe("TikTok public page normalization", () => {
+  it("reads public structured playback addresses when the legacy address fields are empty", () => {
+    const item = {
+      ...video(),
+      video: {
+        ...video().video,
+        playAddr: "",
+        downloadAddr: "",
+        PlayAddrStruct: { UrlList: ["https://v16.tiktok.com/structured.mp4"] }
+      }
+    };
+    expect(normalizeTikTokItem(item, id).media[0].urls).toEqual(["https://v16.tiktok.com/structured.mp4"]);
+    expect(() => normalizeTikTokItem({ ...item, privateItem: true }, id)).toThrow("匿名公开访问");
+  });
+  it("preserves existing candidate priority, deduplicates structured URLs and caps the combined list", () => {
+    const item = {
+      ...video(),
+      video: {
+        ...video().video,
+        downloadAddr: "https://v16.tiktok.com/download.mp4",
+        bitrateInfo: [{ PlayAddr: { UrlList: ["https://v16.tiktok.com/bitrate.mp4"] } }],
+        PlayAddrStruct: {
+          UrlList: [video().video.playAddr, ...Array.from({ length: 8 }, (_, n) => `https://v16.tiktok.com/${n}.mp4`)]
+        }
+      }
+    };
+    expect(normalizeTikTokItem(item, id).media[0].urls).toEqual([
+      video().video.playAddr,
+      "https://v16.tiktok.com/download.mp4",
+      "https://v16.tiktok.com/bitrate.mp4",
+      ...Array.from({ length: 5 }, (_, n) => `https://v16.tiktok.com/${n}.mp4`)
+    ]);
+  });
+  it("accepts explicit playback src entries without accepting arbitrary nested media", () => {
+    const item = {
+      ...video(),
+      video: {
+        ...video().video,
+        playAddr: [
+          { src: "https://v16.tiktok.com/one.mp4" },
+          "https://v16.tiktok.com/two.mp4",
+          { url: "https://v16.tiktok.com/not-a-src.mp4" },
+          null,
+          { src: "https://evil.test/fake.mp4" },
+          { src: "http://v16.tiktok.com/insecure.mp4" },
+          { src: "https://user:password@v16.tiktok.com/private.mp4" }
+        ]
+      }
+    };
+    expect(normalizeTikTokItem(item, id).media[0].urls).toEqual([
+      "https://v16.tiktok.com/one.mp4",
+      "https://v16.tiktok.com/two.mp4"
+    ]);
+  });
+  it("reads the mobile public-page layout with the same identity and access checks", () => {
+    const mobile = (detail: unknown) =>
+      `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify({ __DEFAULT_SCOPE__: { "webapp.reflow.video.detail": detail } })}</script>`;
+    expect(readTikTokPage(mobile({ itemInfo: { itemStruct: video() } }), id)?.media[0].urls).toEqual([
+      video().video.playAddr
+    ]);
+    expect(() =>
+      readTikTokPage(mobile({ itemInfo: { itemStruct: { ...video(), id: "7700458638191627540" } } }), id)
+    ).toThrow("不一致");
+    expect(() => readTikTokPage(mobile({ statusCode: 10216, itemInfo: { itemStruct: video() } }), id)).toThrow(
+      "匿名访问"
+    );
+    expect(() =>
+      readTikTokPage(
+        `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify({ __DEFAULT_SCOPE__: { "webapp.video-detail": { statusCode: 10216 }, "webapp.reflow.video.detail": { itemInfo: { itemStruct: video() } } } })}</script>`,
+        id
+      )
+    ).toThrow("匿名访问");
+  });
+  it("keeps missing video addresses as a failure and explains what to check without fabricating a URL", () => {
+    const item = {
+      ...video(),
+      isECVideo: 1,
+      video: {
+        ...video().video,
+        playAddr: "",
+        downloadAddr: "",
+        videoID: "public-video-identifier",
+        subtitleInfos: [{ Url: "https://v16.tiktok.com/captions.mp4" }],
+        bitrateAudioInfo: [{ PlayAddr: { UrlList: ["https://v16.tiktok.com/audio.mp4"] } }]
+      },
+      music: { playUrl: "https://v16.tiktok.com/music.mp4" }
+    };
+    expect(() => readTikTokPage(html(item), id)).toThrow("普通浏览器");
+    expect(() => normalizeTikTokItem(item, id)).toThrow("出口地区");
+    expect(() => normalizeTikTokItem({ ...item, isECVideo: 0 }, id)).toThrow("出口地区");
+  });
+  it.each([
+    "https://127.0.0.1/video",
+    "http://v16.tiktok.com/video",
+    "https://tiktok.com.evil.test/video",
+    "https://user:password@v16.tiktok.com/video",
+    "https://v16.tiktok.com:444/video"
+  ])("rejects hostile structured playback URLs: %s", (url) => {
+    expect(() =>
+      normalizeTikTokItem({ ...video(), video: { playAddr: "", PlayAddrStruct: { UrlList: [url] } } }, id)
+    ).toThrow("视频地址");
+  });
   it("uses only page-supplied bitrate alternatives in order, including the official public play endpoint", () => {
     const result = normalizeTikTokItem(
       {

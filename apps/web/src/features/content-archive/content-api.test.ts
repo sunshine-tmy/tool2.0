@@ -13,6 +13,9 @@ import {
   ArchiveGroupSchema,
   ArchiveGroupListSchema,
   ArchiveGroupAssignmentResultSchema,
+  TikTokProfileJobSchema,
+  TikTokProfileListSchema,
+  TikTokProfilePageSchema,
   XhsArchiveRemovalSchema,
   XhsArchiveTranslationResultSchema,
   XhsAuthSessionSchema,
@@ -26,7 +29,9 @@ import {
   archiveImportApi,
   archiveImportTemplateUrl,
   archiveImportResultUrl,
-  archiveGroupApi
+  archiveGroupApi,
+  tiktokProfileApi,
+  tiktokProfileResultsUrl
 } from "./content-api";
 const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }));
 vi.mock("../../shared/http/http", () => ({
@@ -39,6 +44,54 @@ beforeEach(() => {
 });
 
 describe("多媒体归档客户端", () => {
+  it("encodes profile IDs and preserves cancellation and schema validation across discovery and archive actions", async () => {
+    const signal = new AbortController().signal;
+    await tiktokProfileApi.list(signal);
+    expect(http.get).toHaveBeenLastCalledWith("/tools/media-archive/tiktok-profiles", TikTokProfileListSchema, {
+      signal
+    });
+    await tiktokProfileApi.create("https://www.tiktok.com/@shop", signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/tiktok-profiles",
+      TikTokProfileJobSchema,
+      { url: "https://www.tiktok.com/@shop" },
+      { signal }
+    );
+    await tiktokProfileApi.get("id/123", signal);
+    expect(http.get).toHaveBeenLastCalledWith("/tools/media-archive/tiktok-profiles/id%2F123", TikTokProfileJobSchema, {
+      signal
+    });
+    await tiktokProfileApi.works("id/123", 2, signal);
+    expect(http.get).toHaveBeenLastCalledWith(
+      "/tools/media-archive/tiktok-profiles/id%2F123/works?page=2",
+      TikTokProfilePageSchema,
+      { signal }
+    );
+    const input = { selection: "all" as const, existing: "skip" as const, allowPartial: false };
+    await tiktokProfileApi.archive("id/123", input, signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/tiktok-profiles/id%2F123/archive",
+      TikTokProfileJobSchema,
+      input,
+      { signal }
+    );
+    for (const action of ["discover", "cancel", "retry"] as const) {
+      await tiktokProfileApi[action]("id/123", signal);
+      expect(http.post).toHaveBeenLastCalledWith(
+        `/tools/media-archive/tiktok-profiles/id%2F123/${action}`,
+        TikTokProfileJobSchema,
+        undefined,
+        { signal }
+      );
+    }
+    await tiktokProfileApi.remove("id/123", signal);
+    expect(http.delete).toHaveBeenLastCalledWith(
+      "/tools/media-archive/tiktok-profiles/id%2F123",
+      XhsArchiveRemovalSchema,
+      { signal }
+    );
+    expect(tiktokProfileResultsUrl("id/123")).toContain("id%2F123/results.csv");
+  });
   it("uses explicit group contracts, encoded identifiers and abort signals", async () => {
     const signal = new AbortController().signal;
     await archiveGroupApi.list(signal);

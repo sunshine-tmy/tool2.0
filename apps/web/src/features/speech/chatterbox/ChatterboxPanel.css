@@ -267,7 +267,7 @@
 }
 :is(.chatterbox-panel, .online-tts-panel) .batch-history-list article {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 12px 20px;
 }
@@ -355,9 +355,12 @@
 :is(.chatterbox-panel, .online-tts-panel) .batch-history-list .history-actions {
   flex: 0 0 auto;
   flex-wrap: nowrap;
-  justify-self: end;
+  max-width: 100%;
+  overflow-x: auto;
+  justify-self: start;
   align-self: center;
   align-items: center;
+  padding-bottom: 3px;
 }
 .legacy-clone-history {
   margin-top: 18px;
@@ -482,15 +485,6 @@
 @media (max-width: 760px) {
   .detail-action-group--manage {
     margin-left: 0;
-  }
-  :is(.chatterbox-panel, .online-tts-panel) .batch-history-list article {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  :is(.chatterbox-panel, .online-tts-panel) .batch-history-list .history-actions {
-    max-width: 100%;
-    overflow-x: auto;
-    justify-self: end;
-    padding-bottom: 3px;
   }
   .batch-toolbar {
     align-items: center;

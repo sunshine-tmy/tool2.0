@@ -16,6 +16,14 @@ export function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+/** 未命名批次使用固定的创建时间，避免刷新或切页时默认标题随当前时间变化。 */
+export function formatBatchTitle(batch: { name?: string; id: string; createdAt?: string }, prefix: string) {
+  if (batch.name?.trim()) return batch.name;
+  const createdAt =
+    batch.createdAt && Number.isFinite(Date.parse(batch.createdAt)) ? ` · ${formatDate(batch.createdAt)}` : "";
+  return `${prefix} ${batch.id.slice(0, 6)}${createdAt}`;
+}
+
 export function taskTagType(status: string): "success" | "warning" | "error" | "default" {
   return status === "completed" ? "success" : status === "failed" || status === "cancelled" ? "error" : "warning";
 }

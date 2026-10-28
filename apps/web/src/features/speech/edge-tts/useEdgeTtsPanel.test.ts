@@ -210,6 +210,9 @@ describe("online ordered speech panel", () => {
   });
   it("allows more batches during generation but prevents duplicate in-flight submissions", async () => {
     const p = await panel();
+    const createdAt = new Date(2026, 9, 27, 14, 5).toISOString();
+    expect(p.title({ id: "abcdefghi", createdAt })).toBe("在线配音 abcdef · 10/27 14:05");
+    expect(p.title({ id: "abcdefghi", createdAt, name: "手动名称" })).toBe("手动名称");
     p.editor.segments.value[0].text = "First";
     p.editor.segments.value[0].referenceTranslation = "第一";
     p.current.value = batch("processing");

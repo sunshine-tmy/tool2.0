@@ -620,6 +620,11 @@ describe("useChatterboxPanel", () => {
     panel.resetParameters();
     expect(panel.languageLabel("pt-BR")).toBe("巴西葡萄牙语");
     expect(panel.batchTitle({ id: "abcdefghi" })).toContain("abcdef");
+    const createdAt = new Date(2026, 9, 27, 14, 5).toISOString();
+    expect(panel.batchTitle({ id: "abcdefghi", createdAt })).toBe("声音批次 abcdef · 10/27 14:05");
+    expect(panel.batchTitle({ id: "abcdefghi", createdAt, name: "手动名称" })).toBe("手动名称");
+    expect(panel.batchTitle({ id: "abcdefghi", createdAt, name: "  " })).toBe("声音批次 abcdef · 10/27 14:05");
+    expect(panel.batchTitle({ id: "abcdefghi", createdAt: "invalid" })).toBe("声音批次 abcdef");
     expect(panel.batchStatusLabel("partial_failed")).toBe("部分失败");
     expect(panel.batchTagType("completed")).toBe("success");
     expect(panel.taskStatusLabel("failed")).toBe("失败");

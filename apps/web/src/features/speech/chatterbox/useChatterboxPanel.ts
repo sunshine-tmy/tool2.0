@@ -11,7 +11,13 @@ import { resolveBackendUrl } from "../../../shared/config/runtime";
 import { useChatterboxBatches } from "./useChatterboxBatches";
 import { useChatterboxEditor } from "./useChatterboxEditor";
 import { useChatterboxVoices } from "./useChatterboxVoices";
-import { batchTagType, formatDate, formatDuration, taskTagType } from "../shared/speech-batch-display";
+import {
+  batchTagType,
+  formatBatchTitle,
+  formatDate,
+  formatDuration,
+  taskTagType
+} from "../shared/speech-batch-display";
 
 export function useChatterboxPanel() {
   // 面板 composable 负责组装编辑器、音色、批次和任务事件，页面组件只绑定统一状态对象。
@@ -72,8 +78,8 @@ function languageLabel(value: ChatterboxLanguage) {
   return { ms: "Bahasa Melayu", en: "English", "pt-BR": "巴西葡萄牙语" }[value];
 }
 
-function batchTitle(batch: { name?: string; id: string }) {
-  return batch.name || `声音批次 ${batch.id.slice(0, 6)}`;
+function batchTitle(batch: { name?: string; id: string; createdAt?: string }) {
+  return formatBatchTitle(batch, "声音批次");
 }
 
 function batchStatusLabel(status: ChatterboxBatchStatus) {

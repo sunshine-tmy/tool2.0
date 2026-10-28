@@ -33,16 +33,16 @@
       <span :style="{ width: `${progressPercent}%` }" />
     </div>
     <div class="edge-tts-result-actions">
+      <n-button size="small" @click="panel.openBatch(panel.currentBatch.id)"
+        ><template #icon><ListTree :size="15" /></template>查看详情</n-button
+      >
+      <SpeechBatchDownloads toolbar :batch="panel.currentBatch" />
       <SaveToAudioLibrary
         toolbar
         :batch-id="panel.currentBatch.id"
         :items="panel.currentBatch.items"
         label="全部加入音频库"
       />
-      <n-button size="small" @click="panel.openBatch(panel.currentBatch.id)"
-        ><template #icon><ListTree :size="15" /></template>查看详情</n-button
-      >
-      <SpeechBatchDownloads toolbar :batch="panel.currentBatch" />
       <n-button v-if="panel.isCurrentRunning" size="small" @click="panel.cancelBatch(panel.currentBatch.id)"
         >取消剩余</n-button
       >

@@ -51,6 +51,33 @@ describe("TikTok anonymous runtime", () => {
     expect(remote).toHaveBeenCalledTimes(1);
     await runtime.close();
   });
+  it("fails once when a public item has metadata but no video, without probing synthesized playback URLs", async () => {
+    const remote = vi.fn().mockResolvedValue(
+      response(
+        page({
+          id,
+          author: { uniqueId: "shop" },
+          video: {
+            playAddr: "",
+            downloadAddr: "",
+            videoID: "not-a-download-address",
+            cover: "https://p16.tiktokcdn-us.com/cover.jpg"
+          }
+        }),
+        canonical.replace("/photo/", "/video/")
+      )
+    );
+    const runtime = new TikTokRuntime({ remoteFetch: remote });
+    await expect(
+      runtime.extract(canonical.replace("/photo/", "/video/"), new AbortController().signal)
+    ).rejects.toMatchObject({
+      code: "TIKTOK_MEDIA_INVALID",
+      message: expect.stringContaining("普通浏览器")
+    });
+    expect(remote).toHaveBeenCalledTimes(1);
+    expect(runtime.isActive()).toBe(false);
+    await runtime.close();
+  });
   it("rejects redirected identities and login destinations before accepting any data", async () => {
     for (const url of ["https://www.tiktok.com/login", canonical.replace(id, "7700596613189963029")]) {
       const runtime = new TikTokRuntime({ remoteFetch: vi.fn().mockResolvedValue(response(page(payload), url)) });

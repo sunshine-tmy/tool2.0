@@ -120,6 +120,10 @@
         <span :style="{ width: `${Math.max(4, panel.current.progress)}%` }" />
       </div>
       <div class="edge-tts-result-actions">
+        <n-button size="small" @click="panel.openBatch(panel.current.id)"
+          ><template #icon><ListTree :size="15" /></template>查看详情</n-button
+        >
+        <SpeechBatchDownloads toolbar :batch="panel.current" />
         <SaveToAudioLibrary
           toolbar
           engine="edge-tts"
@@ -127,10 +131,6 @@
           :items="panel.current.items"
           label="全部加入音频库"
         />
-        <n-button size="small" @click="panel.openBatch(panel.current.id)"
-          ><template #icon><ListTree :size="15" /></template>查看详情</n-button
-        >
-        <SpeechBatchDownloads toolbar :batch="panel.current" />
         <n-button
           v-if="batchRunning(panel.current)"
           size="small"
@@ -203,6 +203,8 @@
             </div>
           </div>
           <div class="history-actions">
+            <n-button size="small" title="查看详情" @click="panel.openBatch(batch.id)">查看详情</n-button>
+            <SpeechBatchDownloads toolbar :batch="batch" archive-only />
             <SaveToAudioLibrary
               toolbar
               engine="edge-tts"
@@ -210,10 +212,6 @@
               :items="batch.items"
               label="加入音频库"
             />
-            <n-button circle quaternary size="small" title="查看详情" @click="panel.openBatch(batch.id)"
-              ><ListTree :size="17"
-            /></n-button>
-            <SpeechBatchDownloads :batch="batch" compact archive-only />
             <n-button
               size="small"
               :loading="panel.reusingBatchId === batch.id"

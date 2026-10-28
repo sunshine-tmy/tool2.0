@@ -94,14 +94,27 @@ export function normalizeTikTokItem(value: unknown, expectedId: string): Archive
     }
   } else {
     const video = object(item.video);
+    // Public pages can expose structured addresses or explicit source entries instead of a string.
+    // Only read playback fields; music, covers and caption URLs cannot stand in for the video.
+    const playAddr = Array.isArray(video.playAddr)
+      ? video.playAddr.map((entry) => (typeof entry === "string" ? entry : object(entry).src))
+      : video.playAddr;
     const alternatives = Array.isArray(video.bitrateInfo)
       ? video.bitrateInfo.flatMap((entry) => mediaUrls(object(entry).PlayAddr))
       : [];
-    const urls = [...new Set([...mediaUrls(video.playAddr), ...mediaUrls(video.downloadAddr), ...alternatives])].slice(
-      0,
-      8
-    );
-    if (!urls.length) throw new ArchiveTaskError("TIKTOK_MEDIA_INVALID", "TikTok 作品未返回可下载的视频地址");
+    const urls = [
+      ...new Set([
+        ...mediaUrls(playAddr),
+        ...mediaUrls(video.downloadAddr),
+        ...alternatives,
+        ...mediaUrls(video.PlayAddrStruct)
+      ])
+    ].slice(0, 8);
+    if (!urls.length)
+      throw new ArchiveTaskError(
+        "TIKTOK_MEDIA_INVALID",
+        "TikTok 已返回作品信息，但未提供可下载的视频地址；请在普通浏览器确认这条作品能否实际播放，并检查 TikTok 代理的出口地区后重试"
+      );
     media.push({
       kind: "video",
       index: 0,
@@ -155,7 +168,8 @@ export function readTikTokPage(html: string, expectedId: string): ArchiveSource 
     } catch {
       continue;
     }
-    const detail = object(object(data.__DEFAULT_SCOPE__)["webapp.video-detail"]);
+    const scope = object(data.__DEFAULT_SCOPE__);
+    const detail = object(scope["webapp.video-detail"] ?? scope["webapp.reflow.video.detail"]);
     const status = detail.statusCode;
     if (typeof status === "number" && status !== 0)
       throw new ArchiveTaskError(

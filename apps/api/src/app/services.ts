@@ -16,6 +16,7 @@ import { createDesktopComponentSelfTest } from "../modules/components/desktop-co
 import { DouyinRuntimeManager } from "../domains/content-archive/providers/douyin/douyin-runtime";
 import { TikTokRuntime } from "../domains/content-archive/providers/tiktok/runtime";
 import { DiagnosticsService } from "../modules/diagnostics/service";
+import { TikTokProfileReader } from "../domains/content-archive/providers/tiktok/profile-reader";
 
 export async function createAppServices(config: AppConfig, remoteAddressResolver?: AddressResolver) {
   const { database } = await openToolboxDatabase(config);
@@ -32,7 +33,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
     translationRuntime?: XhsTranslationRuntime;
   } = {};
   const diagnosticsState: { service?: DiagnosticsService } = {};
-  const componentManager = new ComponentManager({
+  const componentManager: ComponentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
     catalog: bundledComponentCatalogForRuntime(),
     selfTest: config.desktopManagedCapabilities ? createDesktopComponentSelfTest() : undefined,
@@ -41,6 +42,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
       if (componentId === "xhs-archive") await xhsRuntimeServices.runtime?.stop();
       if (componentId === "xhs-translation") await xhsRuntimeServices.translationRuntime?.stop();
       if (componentId === "xhs-browser") await xhsRuntimeServices.auth?.stop();
+      if (componentId === "xhs-browser") await profileReader?.stop();
       if (componentId === "xhs-browser" || componentId === "douyin-archive") await douyinRuntime?.stop();
     },
     onAfterMutation: (componentId, operation) => refreshDesktopCapabilities(componentId, operation),
@@ -52,11 +54,15 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
           (task) => taskToolIds.includes(task.toolId) && (task.status === "pending" || task.status === "running")
         ) ||
       (componentId === "xhs-browser" && Boolean(xhsRuntimeServices.auth?.isActive())) ||
-      (["xhs-browser", "douyin-archive"].includes(componentId) && Boolean(douyinRuntime?.isActive()))
+      (["xhs-browser", "douyin-archive"].includes(componentId) && Boolean(douyinRuntime?.isActive())) ||
+      (componentId === "xhs-browser" && Boolean(profileReader?.isActive()))
   });
   const douyinRuntime: DouyinRuntimeManager = new DouyinRuntimeManager(componentManager, {
     installationMode: config.desktopManagedCapabilities ? "managed" : "automatic",
     installTimeoutMs: config.xhsInstallTimeoutMs
+  });
+  const profileReader: TikTokProfileReader = new TikTokProfileReader(componentManager, {
+    proxy: config.tiktokHttpsProxy
   });
   const desktopCapabilityRuntime = await configureDesktopCapabilityRuntime(config, componentManager);
   stopCapabilityBeforeUninstall = desktopCapabilityRuntime.beforeUninstall;
@@ -72,7 +78,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
     database,
     componentManager,
     (id) => desktopCapabilityRuntime.afterMutation(id, "install"),
-    () => Boolean(xhsAuth.isActive() || douyinRuntime.isActive())
+    () => Boolean(xhsAuth.isActive() || douyinRuntime.isActive() || profileReader?.isActive())
   );
   diagnosticsState.service = diagnosticService;
   return {
@@ -84,6 +90,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
     componentManager,
     douyinRuntime,
     tiktokRuntime,
+    profileReader,
     desktopCapabilityRuntime,
     xhsRuntime,
     xhsAuth,

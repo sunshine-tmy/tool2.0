@@ -172,6 +172,8 @@
 
 ## 小红书内容归档（兼容接口）
 
+TikTok 用户主页发现及分批归档使用独立的 `/api/v1/tools/media-archive/tiktok-profiles/*` 接口；详见 [TikTok 主页批量归档 API](./tiktok-profile-archive.md#api)。现有单条作品链接校验不接受主页地址。
+
 多媒体归档的表格导入、预览、批次管理及 CSV 导出使用 `/api/v1/tools/media-archive/import/*`，自定义作品分组使用 `/api/v1/tools/media-archive/groups/*`。完整契约、分组规则和取消/恢复规则见[表格批量归档与分组 API](./archive-spreadsheet-import.md#api)。原小红书接口不承担批量调度，返回字段保持兼容。
 
 - `POST /api/v1/tools/xhs-archive/items`：JSON `{ url }` 创建获取任务；`url` 可为链接或包含链接的分享文案。

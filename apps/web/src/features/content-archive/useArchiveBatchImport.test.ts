@@ -2,8 +2,9 @@
 import { effectScope, nextTick } from "vue";
 import { flushPromises } from "@vue/test-utils";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ArchiveImportBatch, ArchiveImportPreview } from "@toolbox/shared";
+import type { ArchiveImportBatch, ArchiveImportPreview, TikTokProfileJob } from "@toolbox/shared";
 import { useArchiveBatchImport } from "./useArchiveBatchImport";
+import { ApiRequestError } from "../../shared/http/http";
 const api = vi.hoisted(() => ({
   preview: vi.fn(),
   create: vi.fn(),
@@ -13,7 +14,24 @@ const api = vi.hoisted(() => ({
   retry: vi.fn(),
   remove: vi.fn()
 }));
-vi.mock("./content-api", () => ({ archiveImportApi: api }));
+const profiles = vi.hoisted(() => ({ get: vi.fn(), cancel: vi.fn(), remove: vi.fn() }));
+vi.mock("./content-api", () => ({ archiveImportApi: api, tiktokProfileApi: profiles }));
+const owner: TikTokProfileJob = {
+  id: "profile_123",
+  username: "shop",
+  url: "https://www.tiktok.com/@shop",
+  phase: "completed",
+  complete: true,
+  discoveredCount: 2,
+  archivedCount: 1,
+  failedCount: 1,
+  skippedCount: 0,
+  pendingCount: 0,
+  batchCount: 2,
+  message: "本次所选作品已处理完毕",
+  createdAt: "2026-10-26T00:00:00Z",
+  updatedAt: "2026-10-26T00:00:00Z"
+};
 const row = {
   rowNumber: 2,
   inputUrl: "https://vt.tiktok.com/AAAAA/",
@@ -51,6 +69,8 @@ beforeEach(() => {
   api.preview.mockResolvedValue(preview);
   api.create.mockResolvedValue(batch());
   api.get.mockResolvedValue(batch());
+  profiles.get.mockResolvedValue(owner);
+  profiles.remove.mockResolvedValue({ removed: true });
 });
 afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
@@ -139,4 +159,99 @@ it("reports validation/network failures and handles cancel, retry and metadata-o
   api.remove.mockResolvedValue({ removed: true });
   await model.remove();
   expect(model.batch.value).toBeUndefined();
+});
+it("cleans a selected owner's records in one request and retains unrelated batches, including on failure", async () => {
+  const owned = { ...batch("completed"), ownerProfileId: owner.id };
+  const sibling = { ...owned, id: "sibling_123" };
+  const unrelated = { ...batch("completed"), id: "manual_123" };
+  api.list.mockResolvedValue([owned, sibling, unrelated]);
+  api.get.mockResolvedValue(owned);
+  const { model, error } = setup();
+  await model.show();
+  expect(model.owner.value?.id).toBe(owner.id);
+  profiles.remove.mockRejectedValueOnce(new Error("cleanup failed"));
+  await model.remove();
+  expect(error).toHaveBeenCalled();
+  expect(model.history.value).toHaveLength(3);
+  expect(model.batch.value?.id).toBe(owned.id);
+  await model.remove();
+  expect(profiles.remove).toHaveBeenLastCalledWith(owner.id, expect.any(AbortSignal));
+  expect(api.remove).not.toHaveBeenCalled();
+  expect(model.history.value.map((entry) => entry.id)).toEqual([unrelated.id]);
+  expect(model.batch.value).toBeUndefined();
+  expect(model.owner.value).toBeUndefined();
+});
+it("can stop the owning profile from a terminal batch and tracks the parent until it is safe to clean", async () => {
+  const owned = { ...batch("completed"), ownerProfileId: owner.id };
+  api.list.mockResolvedValue([owned]);
+  api.get.mockResolvedValue(owned);
+  profiles.get.mockResolvedValue({ ...owner, phase: "archiving" });
+  const { model } = setup();
+  await model.show();
+  expect(model.ownerActive.value).toBe(true);
+  await vi.advanceTimersByTimeAsync(1600);
+  expect(profiles.get).toHaveBeenCalledTimes(2);
+  profiles.cancel.mockResolvedValue({ ...owner, phase: "stopping" });
+  profiles.get.mockResolvedValue({ ...owner, phase: "cancelled" });
+  await model.cancelOwner();
+  expect(profiles.cancel).toHaveBeenCalledWith(owner.id, expect.any(AbortSignal));
+  expect(api.cancel).not.toHaveBeenCalled();
+  expect(model.ownerActive.value).toBe(false);
+  expect(model.busy.value).toBe(false);
+  const calls = profiles.get.mock.calls.length;
+  await vi.advanceTimersByTimeAsync(1600);
+  expect(profiles.get).toHaveBeenCalledTimes(calls);
+});
+it("keeps older orphan batches independently manageable but does not interpret network failure as a missing owner", async () => {
+  const owned = { ...batch("completed"), ownerProfileId: owner.id };
+  api.list.mockResolvedValue([owned]);
+  api.get.mockResolvedValue(owned);
+  profiles.get.mockRejectedValueOnce(new Error("owner network unavailable"));
+  const { model, error } = setup();
+  await model.show();
+  expect(error).toHaveBeenCalled();
+  expect(model.batch.value).toBeUndefined();
+  profiles.get.mockRejectedValueOnce(
+    new ApiRequestError("missing owner", { code: "TIKTOK_PROFILE_NOT_FOUND", status: 404 })
+  );
+  await model.select(owned.id);
+  expect(model.batch.value?.id).toBe(owned.id);
+  expect(model.owner.value).toBeUndefined();
+  api.remove.mockResolvedValue({ removed: true });
+  await model.remove();
+  expect(api.remove).toHaveBeenCalledWith(owned.id, expect.any(AbortSignal));
+  expect(profiles.remove).not.toHaveBeenCalled();
+});
+it("ignores an owner's late response after the selected batch changes", async () => {
+  const owned = { ...batch("completed"), ownerProfileId: owner.id };
+  let finish!: (value: TikTokProfileJob) => void;
+  profiles.get.mockImplementationOnce(
+    () =>
+      new Promise<TikTokProfileJob>((resolve) => {
+        finish = resolve;
+      })
+  );
+  api.get.mockResolvedValueOnce(owned).mockResolvedValueOnce({ ...batch("completed"), id: "manual_123" });
+  const { model } = setup();
+  model.open.value = true;
+  const pending = model.select(owned.id);
+  await flushPromises();
+  await model.select("manual_123");
+  finish(owner);
+  await pending;
+  expect(model.batch.value?.id).toBe("manual_123");
+  expect(model.owner.value).toBeUndefined();
+});
+it("refuses an owner identity mismatch before exposing any cleanup action", async () => {
+  const owned = { ...batch("completed"), ownerProfileId: owner.id };
+  api.list.mockResolvedValue([owned]);
+  api.get.mockResolvedValue(owned);
+  profiles.get.mockResolvedValue({ ...owner, id: "other_123" });
+  const { model, error } = setup();
+  await model.show();
+  expect(model.batch.value).toBeUndefined();
+  expect(error).toHaveBeenCalledWith(expect.objectContaining({ code: "ARCHIVE_IMPORT_OWNER_MISMATCH" }));
+  await model.remove();
+  expect(profiles.remove).not.toHaveBeenCalled();
+  expect(api.remove).not.toHaveBeenCalled();
 });

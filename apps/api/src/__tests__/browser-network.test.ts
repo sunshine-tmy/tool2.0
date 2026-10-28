@@ -59,6 +59,24 @@ async function echoServer() {
 }
 
 describe("受管浏览器 DNS 固定 HTTPS 网关", () => {
+  it("uses an already-connected upstream tunnel only after public-address validation", async () => {
+    const port = await echoServer();
+    const connectTunnel = vi.fn(async () => {
+      const socket = connect(port, "127.0.0.1");
+      await once(socket, "connect");
+      return socket;
+    });
+    const network = await gateway({ connectTunnel });
+    const accepted = await request(network, "www.tiktok.com:443");
+    expect(accepted.status).toBe(200);
+    expect(connectTunnel).toHaveBeenCalledWith(publicAddress, expect.any(AbortSignal));
+    const data = once(accepted.client, "data");
+    accepted.client.write("test-through-upstream");
+    expect((await data)[0].toString()).toBe("test-through-upstream");
+    const denied = await gateway({ resolver: async () => [{ address: "127.0.0.1", family: 4 }], connectTunnel });
+    expect((await request(denied, "www.tiktok.com:443")).status).toBe(403);
+    expect(connectTunnel).toHaveBeenCalledTimes(1);
+  });
   it("独立网关使用不同凭据，关闭其中一个不会改变另一个的存活和鉴权", async () => {
     const first = await gateway();
     const second = await gateway();

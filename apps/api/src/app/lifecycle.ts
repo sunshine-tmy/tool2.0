@@ -6,9 +6,9 @@ export function registerAppLifecycle(
   app: FastifyInstance,
   options: Pick<AppOptions, "onShutdownStage">,
   services: Pick<AppServices, "database" | "desktopCapabilityRuntime" | "douyinRuntime"> &
-    Partial<Pick<AppServices, "tiktokRuntime">>
+    Partial<Pick<AppServices, "tiktokRuntime" | "profileReader">>
 ) {
-  const { database, desktopCapabilityRuntime, douyinRuntime, tiktokRuntime } = services;
+  const { database, desktopCapabilityRuntime, douyinRuntime, tiktokRuntime, profileReader } = services;
   const taskEventStreams = new Set<import("node:http").ServerResponse>();
 
   // Fastify 的 onClose 按后注册先执行：领域队列先退出，随后关闭共享运行时和数据库。
@@ -23,6 +23,7 @@ export function registerAppLifecycle(
   });
   app.addHook("onClose", async () => douyinRuntime?.close());
   app.addHook("onClose", async () => tiktokRuntime?.close());
+  app.addHook("onClose", async () => profileReader?.close());
   app.addHook("preClose", async () => {
     options.onShutdownStage?.("tasks");
     for (const stream of taskEventStreams) stream.end();

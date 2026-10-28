@@ -20,6 +20,10 @@ import { registerContentArchiveRoutes } from "./core/routes";
 import { ArchiveImportService } from "./batch/service";
 import { registerArchiveImportRoutes } from "./batch/routes";
 import { registerArchiveGroupRoutes } from "./core/group-routes";
+import type { TikTokProfileReader } from "./providers/tiktok/profile-reader";
+import { TikTokProfileService } from "./profile/service";
+import { registerTikTokProfileRoutes } from "./profile/routes";
+import { ArchiveTaskError } from "./core/provider";
 
 export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
@@ -35,6 +39,7 @@ export async function registerXhsArchiveRoutes(options: {
   store?: XhsArchiveStore;
   douyinRuntime?: DouyinRuntimeManager;
   tiktokRuntime?: TikTokRuntime;
+  profileReader?: TikTokProfileReader;
 }) {
   const { app, config, remoteFetch, database, taskStore, fileMetadata } = options;
   const store = options.store ?? new XhsArchiveStore(config, database, fileMetadata);
@@ -60,6 +65,16 @@ export async function registerXhsArchiveRoutes(options: {
   });
   imports.initialize();
   registerArchiveImportRoutes(app, imports);
+  const profiles = new TikTokProfileService(
+    database,
+    imports,
+    options.profileReader ?? {
+      read: () => Promise.reject(new ArchiveTaskError("TIKTOK_PROFILE_BROWSER_UNAVAILABLE", "归档浏览器尚未就绪", 409))
+    },
+    { onError: () => app.log.error("TIKTOK_PROFILE_STORAGE_FAILED") }
+  );
+  profiles.initialize();
+  registerTikTokProfileRoutes(app, profiles);
   registerArchiveGroupRoutes(app, store.content.groups);
   registerContentArchiveRoutes(app, store.content, service.content);
   registerArchiveTranslationRoutes(app, store.content, translation, "media-archive");
@@ -67,6 +82,7 @@ export async function registerXhsArchiveRoutes(options: {
   registerLegacyXhsArchiveRoutes({ app, store, service, auth, translation });
 
   app.addHook("onClose", async () => {
+    await profiles.close();
     await imports.stop();
     try {
       await service.close();

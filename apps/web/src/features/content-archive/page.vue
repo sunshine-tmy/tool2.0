@@ -35,7 +35,18 @@
         </div>
       </n-alert>
 
-      <ArchiveBatchImport :groups="archiveGroups" @changed="loadArchives" @open-archive="openDetail" />
+      <ArchiveBatchImport
+        :groups="archiveGroups"
+        @changed="loadArchives"
+        @open-archive="openDetail"
+        @open-profile="profileImport?.show($event)"
+      />
+      <TikTokProfileImport
+        ref="profileImport"
+        :groups="archiveGroups"
+        @changed="loadArchives"
+        @open-archive="openDetail"
+      />
       <ArchiveTaskPanel
         v-model:input-url="inputUrl"
         v-model:platform="platform"
@@ -132,6 +143,7 @@ import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
 import ArchiveBatchImport from "./ArchiveBatchImport.vue";
+import TikTokProfileImport from "./TikTokProfileImport.vue";
 import ArchiveGroups from "./ArchiveGroups.vue";
 import XhsDetailDrawer from "./XhsDetailDrawer.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
@@ -147,6 +159,7 @@ import { useArchiveCollection } from "./useArchiveCollection";
 import { formatArchiveDate } from "./format-date";
 
 const message = useMessage();
+const profileImport = ref<InstanceType<typeof TikTokProfileImport>>();
 const router = useRouter();
 const confirm = useConfirmDialog();
 const desktopMode = computed(() => Boolean(window.toolboxDesktop));

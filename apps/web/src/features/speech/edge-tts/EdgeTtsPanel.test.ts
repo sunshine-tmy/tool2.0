@@ -74,14 +74,14 @@ describe("Online speech batch presentation", () => {
     expect(globalCss).toMatch(/\.chatterbox-panel,\s*\.online-tts-panel\s*\{[^}]*gap: 20px;/);
     expect(globalCss).toMatch(/\.edge-tts-result-actions\s*\{[^}]*align-items: center;/);
     expect(batchCss.match(/:is\(\.chatterbox-panel, \.online-tts-panel\) \.batch-history-list article/g)).toHaveLength(
-      2
+      1
     );
     expect(
       batchCss.match(/:is\(\.chatterbox-panel, \.online-tts-panel\) \.batch-history-list \.history-actions/g)
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
-  it("matches clone status badges, action sizes, compact history buttons and delegates clicks", () => {
+  it("matches clone status badges, prioritizes labeled detail/download buttons and delegates clicks", () => {
     const panel = createPanel();
     mocks.usePanel.mockReturnValue(panel);
     const wrapper = shallowMount(EdgeTtsPanel, mountOptions);
@@ -99,9 +99,10 @@ describe("Online speech batch presentation", () => {
       expect(saves[1].props("toolbar")).toBe(true);
       expect(wrapper.findAllComponents(SpeechBatchDownloads).map((downloads) => downloads.props("compact"))).toEqual([
         false,
-        true
+        false
       ]);
       expect(wrapper.findAllComponents(SpeechBatchDownloads)[0].props("toolbar")).toBe(true);
+      expect(wrapper.findAllComponents(SpeechBatchDownloads)[1].props("toolbar")).toBe(true);
       expect(wrapper.findAllComponents(SpeechBatchDownloads)[1].props("archiveOnly")).toBe(true);
       const buttons = wrapper.findAllComponents(NButton);
       buttons.find((button) => button.text() === "重新填入批次")!.vm.$emit("click");
@@ -120,7 +121,16 @@ describe("Online speech batch presentation", () => {
       expect(panel.openBatch).toHaveBeenCalledWith("batch-1");
       const details = buttons.filter((button) => button.attributes("title") === "查看详情");
       expect(details).toHaveLength(1);
-      expect(details[0].props()).toMatchObject({ circle: true, quaternary: true, size: "small" });
+      expect(details[0].text()).toBe("查看详情");
+      expect(details[0].props()).toMatchObject({ circle: false, quaternary: false, size: "small" });
+      for (const selector of [".edge-tts-result-actions", ".history-actions"]) {
+        const actions = wrapper.get(selector);
+        expect(Array.from(actions.element.children).slice(0, 3)).toEqual([
+          actions.getComponent(NButton).element,
+          actions.getComponent(SpeechBatchDownloads).element,
+          actions.getComponent(SaveToAudioLibrary).element
+        ]);
+      }
       details[0].vm.$emit("click");
       expect(panel.openBatch).toHaveBeenCalledWith("batch-1");
       const remove = buttons.find((button) => button.attributes("title") === "删除批次")!;

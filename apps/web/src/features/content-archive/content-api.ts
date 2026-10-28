@@ -23,7 +23,11 @@ import {
   type ContentArchiveCreateInput,
   type ContentArchiveListQuery,
   type ContentTranslationBatchInput,
-  type ContentTranslationEditInput
+  type ContentTranslationEditInput,
+  TikTokProfileJobSchema,
+  TikTokProfileListSchema,
+  TikTokProfilePageSchema,
+  type TikTokProfileStart
 } from "@toolbox/shared/archive";
 import { httpClient, withApiError } from "../../shared/http/http";
 import { resolveBackendUrl } from "../../shared/config/runtime";
@@ -31,6 +35,66 @@ import { resolveBackendUrl } from "../../shared/config/runtime";
 const base = "/tools/media-archive";
 const itemPath = (id: string) => `${base}/items/${encodeURIComponent(id)}`;
 const importBase = `${base}/import`;
+const profileBase = `${base}/tiktok-profiles`;
+export const tiktokProfileApi = {
+  list: (signal?: AbortSignal) =>
+    withApiError(() => httpClient.get(profileBase, TikTokProfileListSchema, { signal }), "读取主页任务失败"),
+  get: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.get(`${profileBase}/${encodeURIComponent(id)}`, TikTokProfileJobSchema, { signal }),
+      "读取主页进度失败"
+    ),
+  works: (id: string, page: number, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.get(`${profileBase}/${encodeURIComponent(id)}/works?page=${page}`, TikTokProfilePageSchema, {
+          signal
+        }),
+      "读取作品列表失败"
+    ),
+  create: (url: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.post(profileBase, TikTokProfileJobSchema, { url }, { signal }),
+      "读取 TikTok 主页失败"
+    ),
+  archive: (id: string, input: TikTokProfileStart, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(`${profileBase}/${encodeURIComponent(id)}/archive`, TikTokProfileJobSchema, input, { signal }),
+      "启动主页归档失败"
+    ),
+  discover: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(`${profileBase}/${encodeURIComponent(id)}/discover`, TikTokProfileJobSchema, undefined, {
+          signal
+        }),
+      "继续读取主页失败"
+    ),
+  cancel: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(`${profileBase}/${encodeURIComponent(id)}/cancel`, TikTokProfileJobSchema, undefined, {
+          signal
+        }),
+      "停止主页任务失败"
+    ),
+  retry: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(`${profileBase}/${encodeURIComponent(id)}/retry`, TikTokProfileJobSchema, undefined, {
+          signal
+        }),
+      "重试主页归档失败"
+    ),
+  remove: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.delete(`${profileBase}/${encodeURIComponent(id)}`, XhsArchiveRemovalSchema, { signal }),
+      "删除主页任务记录失败"
+    )
+};
+export const tiktokProfileResultsUrl = (id: string) =>
+  resolveBackendUrl(`/api/v1${profileBase}/${encodeURIComponent(id)}/results.csv`);
 export const archiveGroupApi = {
   list: (signal?: AbortSignal) =>
     withApiError(() => httpClient.get(`${base}/groups`, ArchiveGroupListSchema, { signal }), "读取分组失败"),

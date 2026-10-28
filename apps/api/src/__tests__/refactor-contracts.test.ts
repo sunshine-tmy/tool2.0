@@ -79,7 +79,21 @@ it("keeps every API and health method/path while allowing internal source reloca
           "POST groups",
           "PATCH groups/:id",
           "DELETE groups/:id",
-          "POST groups/assign"
+          "POST groups/assign",
+          "GET tiktok-profiles",
+          "HEAD tiktok-profiles",
+          "POST tiktok-profiles",
+          "GET tiktok-profiles/:id",
+          "HEAD tiktok-profiles/:id",
+          "DELETE tiktok-profiles/:id",
+          "GET tiktok-profiles/:id/works",
+          "HEAD tiktok-profiles/:id/works",
+          "POST tiktok-profiles/:id/archive",
+          "POST tiktok-profiles/:id/discover",
+          "POST tiktok-profiles/:id/cancel",
+          "POST tiktok-profiles/:id/retry",
+          "GET tiktok-profiles/:id/results.csv",
+          "HEAD tiktok-profiles/:id/results.csv"
         ].map((entry) => {
           const [method, path] = entry.split(" ");
           return `${method} /api/v1/tools/media-archive/${path}`;

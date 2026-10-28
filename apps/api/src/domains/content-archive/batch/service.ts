@@ -55,9 +55,21 @@ export class ArchiveImportService {
     const value = this.batches.get(id);
     return value ? structuredClone(value) : undefined;
   }
-  create(input: ArchiveImportCreate) {
+  create(
+    input: ArchiveImportCreate,
+    ownership?: { profileId: string; part: number; persist: (batch: ArchiveImportBatch) => void }
+  ) {
     return this.serial(async () => {
       this.assertAvailable();
+      if (ownership) {
+        const previous = [...this.batches.values()].find(
+          (batch) => batch.ownerProfileId === ownership.profileId && batch.ownerPart === ownership.part
+        );
+        if (previous) {
+          this.database.transaction(() => ownership.persist(previous));
+          return structuredClone(previous);
+        }
+      }
       if ([...this.batches.values()].some(active))
         throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "已有批次正在执行，请等待完成或停止后续任务", 409);
       if (this.batches.size >= 100)
@@ -74,6 +86,7 @@ export class ArchiveImportService {
         ...preview,
         id: nanoid(12),
         existing: input.existing,
+        ...(ownership ? { ownerProfileId: ownership.profileId, ownerPart: ownership.part } : {}),
         ...(input.groupId ? { groupId: input.groupId } : {}),
         status: "running",
         createdAt: now,
@@ -95,7 +108,7 @@ export class ArchiveImportService {
         }))
       };
       if (!batch.rows.some((row) => row.status === "waiting")) batch.status = "completed";
-      this.save(batch);
+      this.save(batch, ownership?.persist);
       return this.get(batch.id)!;
     });
   }
@@ -123,6 +136,8 @@ export class ArchiveImportService {
   async retry(id: string) {
     const batch = this.get(id);
     if (!batch) return undefined;
+    if (batch.ownerProfileId && this.database.get("tiktok-profile-job", batch.ownerProfileId))
+      throw new ArchiveTaskError("ARCHIVE_IMPORT_OWNED", "请在 TikTok 主页任务中重试失败项，避免重复执行", 409);
     if (active(batch)) throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "批次尚未结束", 409);
     const rows = batch.rows
       .filter((row) => row.status === "failed")
@@ -140,10 +155,29 @@ export class ArchiveImportService {
     return this.serial(() => {
       const batch = this.get(id);
       if (!batch) return false;
+      if (batch.ownerProfileId && this.database.get("tiktok-profile-job", batch.ownerProfileId))
+        throw new ArchiveTaskError(
+          "ARCHIVE_IMPORT_OWNED",
+          "该批次属于主页任务，请使用“清理所属主页任务记录”一次清理关联记录；作品和媒体均保留",
+          409
+        );
       if (active(batch)) throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "请先停止并等待当前任务结束", 409);
       this.database.remove(kind, id);
       this.batches.delete(id);
       return true;
+    });
+  }
+  /** Parent and owned batch metadata commit together; archives and running tasks are never removed here. */
+  removeOwned(profileId: string, removeParent: () => void) {
+    return this.serial(() => {
+      const owned = [...this.batches.values()].filter((batch) => batch.ownerProfileId === profileId);
+      if (owned.some(active))
+        throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "所属批次仍在执行，请先停止主页任务并等待当前作品结束", 409);
+      this.database.transaction(() => {
+        for (const batch of owned) this.database.remove(kind, batch.id);
+        removeParent();
+      });
+      for (const batch of owned) this.batches.delete(batch.id);
     });
   }
   async stop() {
@@ -265,10 +299,11 @@ export class ArchiveImportService {
     if (active(batch) && !batch.rows.some((row) => ["waiting", "running"].includes(row.status)))
       batch.status = batch.status === "stopping" ? "cancelled" : "completed";
   }
-  private save(batch: ArchiveImportBatch) {
+  private save(batch: ArchiveImportBatch, persistOwner?: (batch: ArchiveImportBatch) => void) {
     batch.updatedAt = this.timestamp();
     if (!Value.Check(ArchiveImportBatchSchema, batch)) throw new Error("ARCHIVE_IMPORT_RECORD_INVALID");
     this.database.transaction(() => {
+      persistOwner?.(batch);
       const previous = this.batches.get(batch.id);
       if (batch.groupId) {
         const completed = batch.rows

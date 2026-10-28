@@ -9,6 +9,7 @@ import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
 import XhsDetailDrawer from "./XhsDetailDrawer.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
+import ArchiveBatchImport from "./ArchiveBatchImport.vue";
 import { archiveFixture, listFixture, taskFixture, translationFixture } from "./__tests__/fixtures";
 import { ApiRequestError } from "../../shared/http/http";
 
@@ -38,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   message: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), info: vi.fn() },
   confirm: vi.fn(),
   push: vi.fn(),
+  profileShow: vi.fn(),
   copy: vi.fn(),
   streams: [] as Array<{ task: ReturnType<typeof ref>; error: ReturnType<typeof ref> }>
 }));
@@ -68,6 +70,13 @@ function mountPage() {
         ArchiveListPanel: true,
         ArchiveTaskPanel: true,
         ArchiveBatchImport: true,
+        TikTokProfileImport: defineComponent({
+          name: "TikTokProfileImport",
+          setup(_props, { expose }) {
+            expose({ show: mocks.profileShow });
+            return () => null;
+          }
+        }),
         ArchiveGroups: true,
         XhsDetailDrawer: true,
         XhsResultPanel: true,
@@ -116,6 +125,12 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("opens the exact owning profile directly from its batch record", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    wrapper.getComponent(ArchiveBatchImport).vm.$emit("openProfile", "profile_123");
+    expect(mocks.profileShow).toHaveBeenCalledExactlyOnceWith("profile_123");
+  });
   it("抽屉分项复制使用事件中的内容，结果区共用剪贴板处理并提示失败", async () => {
     const wrapper = mountPage();
     await flushPromises();

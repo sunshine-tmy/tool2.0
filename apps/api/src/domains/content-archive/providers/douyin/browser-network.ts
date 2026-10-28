@@ -10,6 +10,7 @@ export async function createBrowserNetwork(
   options: {
     resolver?: AddressResolver;
     dial?: (address: ResolvedAddress) => Socket;
+    connectTunnel?: (address: ResolvedAddress, signal: AbortSignal) => Promise<Socket>;
     maxConnections?: number;
     timeoutMs?: number;
   } = {}
@@ -85,6 +86,8 @@ export async function createBrowserNetwork(
       }
     };
     client.once("close", release);
+    const connection = new AbortController();
+    client.once("close", () => connection.abort());
     let upstream: Socket | undefined;
     const timeout = setTimeout(() => {
       upstream?.destroy();
@@ -98,7 +101,14 @@ export async function createBrowserNetwork(
       await assertPublicRemoteUrl(target, async () => addresses, true);
       if (stopped || client.destroyed) return;
       // 全部地址仍需通过校验；优先 IPv4，避免仅有 DNS 的 IPv6 在部分本机环境无法建连。
-      upstream = dial(addresses.find((address) => address.family === 4) ?? addresses[0]);
+      const selected = addresses.find((address) => address.family === 4) ?? addresses[0];
+      upstream = options.connectTunnel ? await options.connectTunnel(selected, connection.signal) : dial(selected);
+      if (stopped || client.destroyed) {
+        upstream.destroy();
+        clearTimeout(timeout);
+        release();
+        return;
+      }
       sockets.add(upstream);
       const remote = upstream;
       remote.setTimeout(timeoutMs, () => remote.destroy());
@@ -113,7 +123,7 @@ export async function createBrowserNetwork(
         client.destroy();
       });
       client.once("close", () => remote.destroy());
-      remote.once("connect", () => {
+      const established = () => {
         if (stopped || client.destroyed) return remote.destroy();
         metrics.established++;
         client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
@@ -121,7 +131,9 @@ export async function createBrowserNetwork(
         // 隧道不解密 TLS、不记录请求路径或 Cookie，原主机证书校验由 Chromium 完成。
         client.pipe(remote);
         remote.pipe(client);
-      });
+      };
+      if (options.connectTunnel) established();
+      else remote.once("connect", established);
     } catch {
       reject(client, 403);
     } finally {

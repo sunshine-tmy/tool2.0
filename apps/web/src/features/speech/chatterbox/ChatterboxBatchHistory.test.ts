@@ -39,6 +39,7 @@ describe("Chatterbox batch history pagination", () => {
       formatDate: () => "10/19",
       batchTagType: () => "success",
       batchStatusLabel: () => "已完成",
+      openBatch: vi.fn(),
       reuseBatch: vi.fn()
     };
     const wrapper = shallowMount(ChatterboxBatchHistory, {
@@ -57,6 +58,18 @@ describe("Chatterbox batch history pagination", () => {
         items: itemPreviews
       });
       expect(wrapper.getComponent(SpeechBatchDownloads).props("archiveOnly")).toBe(true);
+      expect(wrapper.getComponent(SpeechBatchDownloads).props()).toMatchObject({ toolbar: true, compact: false });
+      const actions = wrapper.get(".history-actions");
+      expect(Array.from(actions.element.children).slice(0, 3)).toEqual([
+        actions.getComponent(NButton).element,
+        actions.getComponent(SpeechBatchDownloads).element,
+        actions.getComponent(SaveToAudioLibrary).element
+      ]);
+      const details = actions.getComponent(NButton);
+      expect(details.text()).toBe("查看详情");
+      expect(details.props()).toMatchObject({ circle: false, quaternary: false, size: "small" });
+      details.vm.$emit("click");
+      expect(panel.openBatch).toHaveBeenCalledWith("batch-1");
       wrapper
         .findAllComponents(NButton)
         .find((button) => button.text() === "重新填入批次")!

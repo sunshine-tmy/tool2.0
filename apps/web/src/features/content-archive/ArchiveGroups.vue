@@ -45,7 +45,7 @@ const props = defineProps<{ selectedIds: string[] }>();
 const emit = defineEmits<{ changed: []; loaded: [groups: ArchiveGroup[]] }>();
 const groupId = defineModel<string>("groupId", { default: "all" });
 const groups = ref<ArchiveGroup[]>([]),
-  target = ref<string>(),
+  target = ref<string | null>(null),
   busy = ref(false),
   editing = ref(false),
   name = ref("");
@@ -63,16 +63,21 @@ const filterOptions = computed(() => [{ label: "全部分组", value: "all" }, .
 function report(error: unknown) {
   if (!scope.aborted && !isApiErrorCancelled(error)) message.error(formatApiError(error, "分组操作失败"));
 }
+function applyGroups(result: ArchiveGroup[]) {
+  groups.value = result;
+  if (groupId.value !== "all" && groupId.value !== "ungrouped" && !result.some((group) => group.id === groupId.value))
+    groupId.value = "all";
+  // undefined switches NSelect to uncontrolled state and can resurrect the deleted option's ID.
+  if (target.value && target.value !== "ungrouped" && !result.some((group) => group.id === target.value))
+    target.value = null;
+  emit("loaded", result);
+}
 async function load() {
   const revision = ++generation;
   try {
     const result = await archiveGroupApi.list(scope.signal);
     if (scope.aborted || revision !== generation) return;
-    groups.value = result;
-    if (groupId.value !== "all" && groupId.value !== "ungrouped" && !result.some((group) => group.id === groupId.value))
-      groupId.value = "all";
-    if (target.value !== "ungrouped" && !result.some((group) => group.id === target.value)) target.value = undefined;
-    emit("loaded", result);
+    applyGroups(result);
   } catch (error) {
     report(error);
   }
@@ -136,6 +141,8 @@ async function remove() {
   try {
     await archiveGroupApi.remove(group.id, scope.signal);
     if (scope.aborted) return;
+    // Apply the successful deletion immediately, even if refreshing the remaining groups fails.
+    applyGroups(groups.value.filter((entry) => entry.id !== group.id));
     await load();
     if (!scope.aborted) emit("changed");
   } catch (error) {

@@ -10,3 +10,4 @@ export * from "./douyin-runtime";
 export * from "./tiktok-runtime";
 export * from "./archive-import";
 export * from "./archive-groups";
+export * from "./tiktok-profile";

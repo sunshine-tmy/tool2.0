@@ -46,7 +46,8 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
     translationRuntime: xhsTranslationRuntime,
     store: xhsStore,
     douyinRuntime,
-    tiktokRuntime
+    tiktokRuntime,
+    profileReader: services.profileReader
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
   registerComponentRoutes(app, componentManager, { allowOfflineImport: config.desktopManagedCapabilities });

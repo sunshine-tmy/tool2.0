@@ -70,6 +70,8 @@ export const ArchiveImportBatchSchema = Type.Composite(
       id,
       existing: ArchiveImportCreateSchema.properties.existing,
       groupId: Type.Optional(ArchiveGroupIdSchema),
+      ownerProfileId: Type.Optional(ArchiveGroupIdSchema),
+      ownerPart: Type.Optional(Type.Integer({ minimum: 0, maximum: 999 })),
       status: Type.Union([
         Type.Literal("running"),
         Type.Literal("stopping"),

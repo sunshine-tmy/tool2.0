@@ -64,11 +64,9 @@
           </div>
         </div>
         <div class="history-actions">
+          <n-button size="small" title="查看详情" @click="panel.openBatch(batch.id)">查看详情</n-button>
+          <SpeechBatchDownloads toolbar :batch="batch" archive-only />
           <SaveToAudioLibrary toolbar :batch-id="batch.id" :items="batch.itemPreviews" label="加入音频库" />
-          <n-button circle quaternary size="small" title="查看详情" @click="panel.openBatch(batch.id)"
-            ><ListTree :size="17"
-          /></n-button>
-          <SpeechBatchDownloads :batch="batch" compact archive-only />
           <n-button
             size="small"
             :loading="panel.reusingBatchId === batch.id"
@@ -139,7 +137,7 @@
 
 <script setup lang="ts">
 import { NButton, NCheckbox, NEmpty, NPagination } from "naive-ui";
-import { Captions, Download, Layers3, ListTree, Mic2, RefreshCw, RotateCcw, Trash2 } from "lucide-vue-next";
+import { Captions, Download, Layers3, Mic2, RefreshCw, RotateCcw, Trash2 } from "lucide-vue-next";
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
 import { SaveToAudioLibrary } from "../../audio-library/integrations/speech";
 import SpeechBatchDownloads from "../shared/SpeechBatchDownloads.vue";

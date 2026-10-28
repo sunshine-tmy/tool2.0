@@ -4,9 +4,10 @@ import {
   ARCHIVE_IMPORT_MAX_BYTES,
   type ArchiveImportBatch,
   type ArchiveImportPreview,
-  type ArchiveImportSummary
+  type ArchiveImportSummary,
+  type TikTokProfileJob
 } from "@toolbox/shared/archive";
-import { archiveImportApi } from "./content-api";
+import { archiveImportApi, tiktokProfileApi } from "./content-api";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
 import { ApiRequestError, isApiErrorCancelled } from "../../shared/http/http";
 
@@ -29,7 +30,11 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
     history = ref<ArchiveImportSummary[]>([]);
   const selectedId = ref<string>(),
     existing = ref<"skip" | "refresh">("skip");
-  const groupId = ref<string>();
+  const groupId = ref<string | null>(null);
+  const owner = ref<TikTokProfileJob>();
+  const ownerActive = computed(() =>
+    Boolean(owner.value && ["discovering", "waiting-user", "archiving", "stopping"].includes(owner.value.phase))
+  );
   let timer: ReturnType<typeof setTimeout> | undefined, readController: AbortController | undefined;
   let generation = 0,
     historyGeneration = 0,
@@ -55,6 +60,7 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
   }
   function apply(value: ArchiveImportBatch) {
     historyGeneration++;
+    if (owner.value?.id !== value.ownerProfileId) owner.value = undefined;
     batch.value = value;
     const { rows: _rows, ...summary } = value;
     history.value = [summary, ...history.value.filter((entry) => entry.id !== value.id)];
@@ -65,12 +71,18 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
   }
   function schedule() {
     clearTimeout(timer);
-    if (open.value && batch.value && importBatchActive(batch.value) && !scope.aborted)
+    if (
+      open.value &&
+      batch.value &&
+      (importBatchActive(batch.value) || ownerActive.value) &&
+      !busy.value &&
+      !scope.aborted
+    )
       timer = setTimeout(() => void loadSelected(true), 1500);
   }
   async function loadSelected(poll = false) {
     const id = selectedId.value;
-    if (!id) return;
+    if (!id || !open.value || scope.aborted) return;
     stopRead();
     const requestGeneration = generation;
     readController = new AbortController();
@@ -78,6 +90,25 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
     try {
       const value = await archiveImportApi.get(id, AbortSignal.any([scope.signal, readController.signal]));
       if (scope.aborted || !open.value || requestGeneration !== generation) return;
+      let profile: TikTokProfileJob | undefined;
+      if (value.ownerProfileId) {
+        try {
+          profile = await tiktokProfileApi.get(
+            value.ownerProfileId,
+            AbortSignal.any([scope.signal, readController.signal])
+          );
+          if (profile.id !== value.ownerProfileId)
+            throw new ApiRequestError("所属主页任务与当前批次不一致，请刷新批次列表后重试", {
+              code: "ARCHIVE_IMPORT_OWNER_MISMATCH",
+              status: 409
+            });
+        } catch (error) {
+          // Older versions could delete the parent alone; the remaining batch is independently manageable.
+          if (!(error instanceof ApiRequestError && error.code === "TIKTOK_PROFILE_NOT_FOUND")) throw error;
+        }
+      }
+      if (scope.aborted || !open.value || requestGeneration !== generation) return;
+      owner.value = profile;
       apply(value);
       pollError = false;
     } catch (error) {
@@ -113,6 +144,7 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
   async function select(id: string) {
     preview.value = undefined;
     batch.value = undefined;
+    owner.value = undefined;
     selectedId.value = id;
     await loadSelected();
   }
@@ -136,6 +168,7 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
       if (scope.aborted || requestGeneration !== generation) return;
       preview.value = value;
       batch.value = undefined;
+      owner.value = undefined;
       selectedId.value = undefined;
       existing.value = "skip";
     } catch (error) {
@@ -181,17 +214,41 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
     batch.value ? action(() => archiveImportApi.cancel(batch.value!.id, scope.signal)) : Promise.resolve();
   const retry = () =>
     batch.value ? action(() => archiveImportApi.retry(batch.value!.id, scope.signal)) : Promise.resolve();
+  async function cancelOwner() {
+    if (!owner.value || busy.value) return;
+    busy.value = true;
+    const id = owner.value.id;
+    stopRead();
+    try {
+      const value = await tiktokProfileApi.cancel(id, scope.signal);
+      if (scope.aborted || batch.value?.ownerProfileId !== id) return;
+      owner.value = value;
+      await loadSelected(true);
+    } catch (error) {
+      if (!scope.aborted && !isApiErrorCancelled(error)) reportError(error);
+    } finally {
+      if (!scope.aborted) {
+        busy.value = false;
+        schedule();
+      }
+    }
+  }
   async function remove() {
     if (!batch.value || busy.value) return;
     busy.value = true;
     historyGeneration++;
     const id = batch.value.id;
+    const profileId = owner.value?.id;
     stopRead();
     try {
-      await archiveImportApi.remove(id, scope.signal);
+      if (profileId) await tiktokProfileApi.remove(profileId, scope.signal);
+      else await archiveImportApi.remove(id, scope.signal);
       if (scope.aborted) return;
-      history.value = history.value.filter((value) => value.id !== id);
+      history.value = history.value.filter(
+        (value) => value.id !== id && (!profileId || value.ownerProfileId !== profileId)
+      );
       batch.value = undefined;
+      owner.value = undefined;
       selectedId.value = undefined;
     } catch (error) {
       if (!scope.aborted && !isApiErrorCancelled(error)) reportError(error);
@@ -221,6 +278,8 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
     selectedId,
     existing,
     groupId,
+    owner,
+    ownerActive,
     rows,
     counts,
     show,
@@ -228,6 +287,7 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
     upload,
     start,
     cancel,
+    cancelOwner,
     retry,
     remove,
     refreshHistory,

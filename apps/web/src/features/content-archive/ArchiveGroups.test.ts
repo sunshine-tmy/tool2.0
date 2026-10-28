@@ -92,9 +92,13 @@ it("creates and renames groups, moves only the explicit selection, and ungroups 
   await click(wrapper, "移动所选 1");
   expect(mocks.assign).toHaveBeenLastCalledWith({ groupId: null, itemIds: ["archive_123"] }, expect.any(AbortSignal));
   expect(wrapper.emitted("changed")).toHaveLength(2);
+  const destination = wrapper.findAllComponents(NSelect)[1]!;
+  destination.vm.$emit("update:value", "group_new");
+  await flushPromises();
   mocks.confirm.mockResolvedValueOnce(false);
   await click(wrapper, "删除分组");
   expect(mocks.remove).not.toHaveBeenCalled();
+  expect(destination.props("value")).toBe("group_new");
   await click(wrapper, "删除分组");
   expect(mocks.confirm).toHaveBeenCalledWith(
     expect.stringContaining("作品、媒体、翻译和截帧均保留"),
@@ -102,6 +106,15 @@ it("creates and renames groups, moves only the explicit selection, and ungroups 
   );
   expect(mocks.remove).toHaveBeenCalledWith("group_new", expect.any(AbortSignal));
   expect(wrapper.emitted("update:groupId")?.at(-1)).toEqual(["all"]);
+  expect(destination.text()).toContain("选择目标分组");
+  expect(destination.text()).not.toContain("group_new");
+  expect(destination.props("value")).toBeNull();
+  expect(
+    wrapper
+      .findAll("button")
+      .find((button) => button.text() === "移动所选 1")!
+      .attributes("disabled")
+  ).toBeDefined();
 });
 it("reports request errors and refuses late results or UI updates after unmount", async () => {
   const wrapper = setup("group_123");
@@ -138,3 +151,32 @@ it("reports request errors and refuses late results or UI updates after unmount"
   await flushPromises();
   expect(loaded).not.toHaveBeenCalled();
 });
+it("clears a deleted selection immediately even when refreshing the group list fails", async () => {
+  const wrapper = setup("group_123");
+  await flushPromises();
+  const destination = wrapper.findAllComponents(NSelect)[1]!;
+  destination.vm.$emit("update:value", "group_123");
+  await flushPromises();
+  mocks.list.mockRejectedValueOnce(new Error("refresh failed"));
+  await click(wrapper, "删除分组");
+  expect(mocks.remove).toHaveBeenCalledWith("group_123", expect.any(AbortSignal));
+  expect(destination.props("value")).toBeNull();
+  expect(destination.text()).toContain("选择目标分组");
+  expect(wrapper.emitted("loaded")?.at(-1)).toEqual([[]]);
+  expect(wrapper.emitted("update:groupId")?.at(-1)).toEqual(["all"]);
+  expect(mocks.error).toHaveBeenCalledOnce();
+});
+it.each(["group_456", "ungrouped"])(
+  "preserves the valid move target %s when a different group is deleted",
+  async (target) => {
+    records.push(group("另一组", "group_456"));
+    const wrapper = setup("group_123");
+    await flushPromises();
+    const destination = wrapper.findAllComponents(NSelect)[1]!;
+    destination.vm.$emit("update:value", target);
+    await flushPromises();
+    await click(wrapper, "删除分组");
+    expect(destination.props("value")).toBe(target);
+    expect(destination.text()).toContain(target === "ungrouped" ? "未分组" : "另一组");
+  }
+);

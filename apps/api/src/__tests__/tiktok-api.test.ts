@@ -19,6 +19,7 @@ let png: Buffer;
 let app: Awaited<ReturnType<typeof createApp>> | undefined;
 let gallery: boolean;
 let failMedia: boolean;
+let videoShape: "standard" | "structured" | "mobile" | "empty";
 let gate: (() => void) | undefined;
 const video = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypisom"), Buffer.alloc(40)]);
 beforeEach(async () => {
@@ -28,6 +29,7 @@ beforeEach(async () => {
     .toBuffer();
   gallery = false;
   failMedia = false;
+  videoShape = "standard";
   const config = getConfig({
     layout: createDevelopmentRuntimeLayout({ storageRoot: root, runtimeRoot: path.join(root, "runtime") }),
     dotenvPath: false,
@@ -67,13 +69,17 @@ beforeEach(async () => {
               }
             : {
                 video: {
-                  playAddr: "https://v16.tiktok.com/video.mp4",
+                  playAddr:
+                    videoShape === "structured" || videoShape === "empty" ? "" : "https://v16.tiktok.com/video.mp4",
+                  ...(videoShape === "structured"
+                    ? { PlayAddrStruct: { UrlList: ["https://v16.tiktok.com/video.mp4"] } }
+                    : {}),
                   cover: "https://p16.tiktokcdn-us.com/cover.png",
                   duration: 5
                 }
               })
         };
-        const html = `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify({ __DEFAULT_SCOPE__: { "webapp.video-detail": { statusCode: 0, itemInfo: { itemStruct: item } } } })}</script>`;
+        const html = `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">${JSON.stringify({ __DEFAULT_SCOPE__: { [videoShape === "mobile" ? "webapp.reflow.video.detail" : "webapp.video-detail"]: { statusCode: 0, itemInfo: { itemStruct: item } } } })}</script>`;
         return Object.defineProperty(new Response(html), "url", { value: target });
       }
       if (target.startsWith("https://p16.tiktokcdn-us.com/"))
@@ -201,6 +207,30 @@ it("preserves all gallery images and the old archive when a refresh cannot downl
     errorCode: "ARCHIVE_MEDIA_DOWNLOAD_FAILED"
   });
   expect((await app!.inject(endpoint)).json().data.media).toEqual(previous.media);
+});
+it.each(["structured", "mobile"] as const)(
+  "archives the actual video bytes from a %s public page through the existing file gateway",
+  async (shape) => {
+    videoShape = shape;
+    const state = await create();
+    expect(state.status).toBe("completed");
+    const item = (await app!.inject(`${base}/items/${state.archiveId}`)).json().data;
+    expect(item).toMatchObject({ contentId, type: "video", media: [{ kind: "video" }, { kind: "cover" }] });
+    const media = await app!.inject(item.media[0].previewUrl);
+    expect(media.statusCode).toBe(200);
+    expect(media.rawPayload).toEqual(video);
+  }
+);
+it("leaves a video archive and its downloadable files unchanged when public playback addresses disappear", async () => {
+  const state = await create();
+  const endpoint = `${base}/items/${state.archiveId}`;
+  const previous = (await app!.inject(endpoint)).json().data;
+  videoShape = "empty";
+  const refresh = await app!.inject({ method: "POST", url: `${endpoint}/refresh` });
+  expect(await terminal(refresh.json().data.id)).toMatchObject({ status: "failed", errorCode: "TIKTOK_MEDIA_INVALID" });
+  expect((await app!.inject(endpoint)).json().data).toEqual(previous);
+  expect((await app!.inject(previous.media[0].previewUrl)).rawPayload).toEqual(video);
+  expect((await app!.inject(`${base}/items?platform=tiktok`)).json().data.total).toBe(1);
 });
 it("cancels without an archive and reports a separate anonymous runtime without installed packages", async () => {
   expect((await app!.inject(`${base}/runtime/tiktok`)).json().data).toMatchObject({

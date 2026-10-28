@@ -15,6 +15,7 @@ import { resolveBackendUrl } from "../../../shared/config/runtime";
 import { useOrderedSpeechEditor } from "../shared/useOrderedSpeechEditor";
 import { edgeTtsApi as api } from "./api";
 import { useSpeechBatchSelection } from "../shared/useSpeechBatchSelection";
+import { formatBatchTitle } from "../shared/speech-batch-display";
 
 export const onlineLanguages: Array<{ value: EdgeTtsLanguage; title: string; description: string }> = [
   { value: "ms-MY", title: "Bahasa Melayu", description: "马来西亚马来语" },
@@ -372,7 +373,7 @@ export function useEdgeTtsPanel() {
     })[status] || status;
   const languageLabel = (value: EdgeTtsLanguage) =>
     onlineLanguages.find((item) => item.value === value)?.description || value;
-  const title = (batch: { name?: string; id: string }) => batch.name || `在线配音 ${batch.id.slice(0, 6)}`;
+  const title = (batch: { name?: string; id: string; createdAt?: string }) => formatBatchTitle(batch, "在线配音");
   const mediaUrl = (value?: string) => (value ? resolveBackendUrl(value) : undefined);
   return {
     ...batchSelection,
