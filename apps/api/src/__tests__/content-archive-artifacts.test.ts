@@ -310,6 +310,22 @@ describe("双平台截帧与导出 API", () => {
     config.corsOrigins = ["http://127.0.0.1:5173"];
     const app = await appWith();
     expect((await capture(app, item)).statusCode).toBe(401);
+    const editUrl = `${base}/${item.id}/media/${item.media[0].id}/audio-edits`;
+    const editInput = {
+      mode: "save",
+      revision: 0,
+      checksum: item.media[0].checksum,
+      useSavedMusic: false,
+      settings: {
+        originalVolume: 100,
+        musicVolume: 20,
+        musicStartSeconds: 0,
+        loop: true,
+        fadeInSeconds: 0.5,
+        fadeOutSeconds: 1
+      }
+    };
+    expect((await app.inject({ method: "POST", url: editUrl, payload: editInput })).statusCode).toBe(401);
     const login = await app.inject({
       method: "POST",
       url: "/api/v1/session",
@@ -319,6 +335,26 @@ describe("双平台截帧与导出 API", () => {
     expect(login.statusCode).toBe(200);
     const cookie = String(login.headers["set-cookie"]).split(";")[0],
       token = login.json().data.csrfToken;
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: editUrl,
+          payload: editInput,
+          headers: { cookie, origin: "http://127.0.0.1:5173" }
+        })
+      ).statusCode
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: editUrl,
+          payload: editInput,
+          headers: { cookie, origin: "http://evil.example", "x-csrf-token": token }
+        })
+      ).statusCode
+    ).toBe(403);
     const upload = multipart(item.media[0].id, 1234);
     expect(
       (

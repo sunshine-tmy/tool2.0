@@ -1,8 +1,9 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
-  <section class="workspace-panel fetch-panel">
+  <section ref="panel" class="workspace-panel fetch-panel">
     <div class="input-row">
       <n-input
+        ref="urlInput"
         v-model:value="inputUrl"
         size="large"
         clearable
@@ -103,7 +104,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NButton, NInput, NProgress, NSelect } from "naive-ui";
 import { Archive, Box, Check, Download, FileSearch, HardDriveDownload } from "lucide-vue-next";
 import {
@@ -130,6 +131,14 @@ const emit = defineEmits<{
 }>();
 
 const inputUrl = defineModel<string>("inputUrl", { required: true });
+const panel = ref<HTMLElement>();
+const urlInput = ref<InstanceType<typeof NInput>>();
+defineExpose({
+  focusInput: () => {
+    panel.value?.scrollIntoView({ block: "center", behavior: "smooth" });
+    urlInput.value?.focus();
+  }
+});
 const platform = defineModel<ArchivePlatformSelection>("platform", { default: "auto" });
 const platformOptions = [
   { label: "自动识别", value: "auto" },

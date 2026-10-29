@@ -29,6 +29,7 @@ type ArtifactStore<T extends ArchiveExportItem> = {
     input: { sourceMediaId: string; timestampMs: number; png: Buffer; width: number; height: number }
   ) => Promise<T>;
   mediaPath: (id: string, mediaId: string) => Promise<{ filePath: string; media: ContentArchiveMedia } | undefined>;
+  pinMedia?: (file: string) => () => void;
 };
 
 export function registerArchiveArtifactRoutes<T extends ArchiveExportItem>(
@@ -138,14 +139,24 @@ export function registerArchiveArtifactRoutes<T extends ArchiveExportItem>(
           .code(404)
           .send(fail(namespace === "xhs-archive" ? "XHS_ARCHIVE_NOT_FOUND" : "ARCHIVE_NOT_FOUND", "存档不存在"));
       const files: string[] = [];
+      const releases: Array<() => void> = [];
+      const releaseAll = () => {
+        for (const release of releases.splice(0)) release();
+      };
+      reply.raw.once("close", releaseAll);
       for (const media of item.media) {
         const value = await store.mediaPath(item.id, media.id);
+        if (value && store.pinMedia) releases.push(store.pinMedia(value.filePath));
         const stat = value ? await fs.stat(value.filePath).catch(() => undefined) : undefined;
-        if (!value || !stat?.isFile() || stat.size !== media.size)
+        if (!value || !stat?.isFile() || stat.size !== media.size) {
+          releaseAll();
           return reply.code(409).send(fail(code("EXPORT_MEDIA_MISSING"), "媒体文件缺失或大小不符，无法导出完整存档"));
+        }
         files.push(value.filePath);
       }
       const archive = new ZipArchive({ zlib: { level: 6 } });
+      archive.once("close", releaseAll);
+      archive.once("error", releaseAll);
       // 流式文件可能在预检后消失；不能忽略 warning 后把缺媒体的 ZIP 宣称为完整成功。
       archive.on("warning", () => archive.destroy(new Error("ARCHIVE_EXPORT_READ_FAILED")));
       reply.raw.once("close", () => archive.destroy());

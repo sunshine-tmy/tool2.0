@@ -9,6 +9,7 @@ import { Type } from "@sinclair/typebox";
 import { nanoid } from "nanoid";
 import {
   AUDIO_LIBRARY_MAX_FILE_BYTES,
+  audioLibraryPurpose,
   AudioLibraryEditSchema,
   AudioLibraryImportSchema,
   AudioLibraryPresetInputSchema,
@@ -220,6 +221,7 @@ export async function registerAudioLibraryRoutes(
               foreignText: source.foreignText,
               chineseText: source.chineseText,
               note: source.note,
+              purpose: audioLibraryPurpose(source),
               groupId: source.groupId,
               source: {
                 kind: "clip",
@@ -254,10 +256,13 @@ export async function registerAudioLibraryRoutes(
         const audio = await inspectAudio(received.file);
         await fsp.rename(received.file, path.join(directory, audio.fileName));
         const fields = received.fields;
+        if (fields.purpose && !["general", "speech", "music"].includes(fields.purpose))
+          reject("AUDIO_LIBRARY_PURPOSE_INVALID", "音频用途无效");
         const result = await store.add(
           {
             ...audio,
             title: (fields.title?.trim() || path.parse(received.name).name || "未命名音频").slice(0, 120),
+            purpose: (fields.purpose || "general") as "general" | "speech" | "music",
             language: (fields.language?.trim() || "und").slice(0, 50),
             foreignText: fields.foreignText || "",
             chineseText: fields.chineseText || "",

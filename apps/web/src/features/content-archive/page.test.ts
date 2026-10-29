@@ -10,6 +10,7 @@ import XhsDetailDrawer from "./XhsDetailDrawer.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import ArchiveBatchImport from "./ArchiveBatchImport.vue";
+import TikTokProfileImport from "./TikTokProfileImport.vue";
 import { archiveFixture, listFixture, taskFixture, translationFixture } from "./__tests__/fixtures";
 import { ApiRequestError } from "../../shared/http/http";
 
@@ -125,6 +126,50 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("wires date sorting into the server request and keeps it on explicit refresh", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.getComponent(ArchiveListPanel);
+    expect(panel.props("sort")).toBe("archived-desc");
+    panel.vm.$emit("update:page", 2);
+    panel.vm.$emit("update:sort", "published-asc");
+    await flushPromises();
+    expect(panel.props()).toMatchObject({ page: 1, sort: "published-asc" });
+    expect(mocks.api.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, sort: "published-asc" }),
+      expect.any(AbortSignal)
+    );
+    panel.vm.$emit("refresh");
+    await flushPromises();
+    expect(mocks.api.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, sort: "published-asc" }),
+      expect.any(AbortSignal)
+    );
+  });
+  it("prefills a profile work for explicit single archiving without replacing or cancelling an active task", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const form = wrapper.getComponent(ArchiveTaskPanel);
+    wrapper.getComponent(TikTokProfileImport).vm.$emit("retrySingle", "https://www.tiktok.com/@shop/video/12345");
+    await flushPromises();
+    expect(form.props()).toMatchObject({ inputUrl: "https://www.tiktok.com/@shop/video/12345", platform: "tiktok" });
+    expect(mocks.api.create).not.toHaveBeenCalled();
+    form.vm.$emit("submit");
+    await flushPromises();
+    expect(mocks.api.create).toHaveBeenCalledExactlyOnceWith(
+      { url: "https://www.tiktok.com/@shop/video/12345", platform: "tiktok" },
+      expect.any(AbortSignal)
+    );
+    const previous = form.props("task");
+    wrapper.getComponent(TikTokProfileImport).vm.$emit("retrySingle", "https://www.tiktok.com/@shop/photo/12346");
+    await flushPromises();
+    expect(form.props("inputUrl")).toContain("/photo/12346");
+    expect(form.props("task")).toEqual(previous);
+    form.vm.$emit("submit");
+    await flushPromises();
+    expect(mocks.api.create).toHaveBeenCalledTimes(1);
+    expect(mocks.api.cancel).not.toHaveBeenCalled();
+  });
   it("opens the exact owning profile directly from its batch record", async () => {
     const wrapper = mountPage();
     await flushPromises();

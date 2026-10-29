@@ -39,6 +39,7 @@ export class DiagnosticsService {
     if ([...this.playback.values()].some((value) => value.active)) return true;
     if ((!ignoreComponentJobs && this.components.hasActiveJobs()) || this.extraBusy()) return true;
     if (this.database.hasStatus("archive-import-batch", ["running", "stopping"])) return true;
+    if (this.database.hasStatus("archive-video-edit-job", ["pending", "running"])) return true;
     if (this.database.hasStatus("tiktok-profile-job", ["discovering", "waiting-user", "archiving", "stopping"]))
       return true;
     return [

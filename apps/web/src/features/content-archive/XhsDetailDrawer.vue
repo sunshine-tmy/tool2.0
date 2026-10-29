@@ -15,7 +15,12 @@
       footer-class="xhs-detail-drawer-footer"
     >
       <template v-if="props.detail">
-        <MediaGallery :item="props.detail" compact @frame-saved="emit('frameSaved', $event)" />
+        <MediaGallery
+          :item="props.detail"
+          compact
+          @frame-saved="emit('frameSaved', $event)"
+          @media-updated="emit('mediaUpdated', $event)"
+        />
         <div class="drawer-meta">
           <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
           <BilingualContent :item="props.detail" compact @copy="(text, label) => emit('copy', text, label)" />
@@ -77,6 +82,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:open": [value: boolean];
   frameSaved: [item: ContentArchiveItem];
+  mediaUpdated: [item: ContentArchiveItem];
   copy: [text: string, label: string];
 }>();
 </script>

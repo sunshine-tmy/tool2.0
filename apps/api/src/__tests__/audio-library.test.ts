@@ -91,6 +91,41 @@ afterEach(async () => {
   await fs.rm(root, { recursive: true, force: true });
 });
 describe("永久音频库", () => {
+  it("背景音乐分类兼容旧素材，支持改用途、重启及回收站，不改变分组和预设", async () => {
+    const old = await add({ title: "原素材" }, wav(0.1));
+    await store.mutate((catalog) => {
+      delete catalog.items.find((entry) => entry.id === old.id)!.purpose;
+    });
+    const music = await add({ title: "配乐", purpose: "music" }, wav(0.2));
+    expect((await store.list({ view: "all" })).items).toHaveLength(2);
+    expect((await store.list({ view: "music" })).items.map((entry) => entry.id)).toEqual([music.id]);
+    expect((await store.list({ view: "speech" })).items).toEqual([]);
+    expect((await store.list({ view: "incomplete" })).items.map((entry) => entry.id)).toEqual([old.id]);
+    const changed = await app.inject({
+      method: "PATCH",
+      url: `${prefix}/items/${old.id}`,
+      payload: { purpose: "speech", revision: 1 }
+    });
+    expect(changed.statusCode).toBe(200);
+    expect((await store.list({ view: "speech" })).items.map((entry) => entry.id)).toEqual([old.id]);
+    const restarted = new AudioLibraryStore(root, database, 1024 * 1024);
+    expect((await restarted.list({ view: "music" })).items[0]?.purpose).toBe("music");
+    await store.trash([music.id]);
+    expect((await store.list({ view: "music" })).items).toEqual([]);
+    expect((await store.list({ view: "trash" })).items[0]?.purpose).toBe("music");
+    expect((await store.snapshot()).groups).toEqual([]);
+    expect((await store.snapshot()).presets).toEqual([]);
+  });
+  it("拒绝无效音频用途并释放上传预留", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: `${prefix}/uploads`,
+      ...upload(wav(), { purpose: "unknown" })
+    });
+    expect(response.statusCode).toBe(400);
+    expect((await store.snapshot()).items).toEqual([]);
+    expect(store.reservedBytes).toBe(0);
+  });
   it("裁剪另存同分组 WAV，保留双语和来源范围，原文件与预设不变，重启可读取", async () => {
     const group = await store.group({ name: "直播", parentId: null });
     const item = await add({ title: "原音频", groupId: group.id, chineseText: "中文", foreignText: "Text" }, wav(1));

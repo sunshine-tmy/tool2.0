@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { ContentArchiveTask, TikTokProfileWork } from "@toolbox/shared";
+import type { ContentArchiveItem, ContentArchiveTask, TikTokProfileWork } from "@toolbox/shared";
+import { ContentArchiveRepository } from "../domains/content-archive/core/repository";
 import { ToolboxDatabase } from "../database/toolbox-database";
 import { ArchiveImportService } from "../domains/content-archive/batch/service";
 import { TikTokProfileService } from "../domains/content-archive/profile/service";
@@ -44,6 +45,75 @@ const taskApi = {
   })
 };
 const reader = { read: vi.fn() };
+function persistTask(task: ContentArchiveTask) {
+  database.upsert({
+    id: task.id,
+    kind: "archive-fetch-task",
+    status: task.status,
+    payload: task,
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt
+  });
+}
+function saveArchive(platform: ContentArchiveItem["platform"] = "tiktok", contentId = "12345", id = "manual_archive") {
+  const now = new Date().toISOString();
+  new ContentArchiveRepository(database).save({
+    id,
+    platform,
+    contentId,
+    sourceUrl: works(1)[0]!.url,
+    canonicalUrl: works(1)[0]!.url,
+    type: "video",
+    title: "同名作品",
+    topics: [],
+    media: [],
+    fetchedAt: now,
+    updatedAt: now,
+    status: "ready",
+    warnings: [],
+    totalBytes: 0
+  });
+  return id;
+}
+async function failWorks(count = 2, finish = true) {
+  const id = await ready(count);
+  await profiles.start(id, { selection: "all", existing: "refresh", allowPartial: false });
+  await profiles.tick();
+  await imports.tick();
+  for (let index = 0; index < count; index++) {
+    const task = [...tasks.values()].find((task) => task.status === "pending")!;
+    const failed: ContentArchiveTask = {
+      ...task,
+      status: "failed",
+      stage: "failed",
+      message: "网络失败",
+      errorCode: "ARCHIVE_DOWNLOAD_FAILED",
+      updatedAt: new Date().toISOString()
+    };
+    tasks.set(task.id, failed);
+    persistTask(failed);
+    await imports.tick();
+  }
+  if (finish) await profiles.tick();
+  return id;
+}
+function completeManual(
+  archiveId = "manual_archive",
+  updatedAt = new Date(Date.now() + 1000).toISOString(),
+  platform: ContentArchiveItem["platform"] = "tiktok"
+) {
+  persistTask({
+    id: "manual_task",
+    platform,
+    status: "completed",
+    stage: "completed",
+    progress: 100,
+    message: "完成",
+    archiveId,
+    createdAt: updatedAt,
+    updatedAt
+  });
+}
 const works = (count: number): TikTokProfileWork[] =>
   Array.from({ length: count }, (_, i) => ({
     id: String(12345 + i),
@@ -266,4 +336,141 @@ it("caps retained histories without deleting older records and rejects corrupt s
   database.upsert({ ...stored, payload });
   expect(() => new TikTokProfileService(database, imports, reader)).toThrow("RECORD_INVALID");
   expect(database.get("tiktok-profile-job", id)?.payload).toEqual(payload);
+});
+it("retries one failed work, preserving refresh policy and leaving other failures untouched", async () => {
+  const id = await failWorks();
+  await expect(profiles.retry(id, "99999")).rejects.toMatchObject({ code: "TIKTOK_PROFILE_NO_RETRY" });
+  await profiles.retry(id, "12345");
+  expect(profiles.get(id)).toMatchObject({ failedCount: 1, pendingCount: 1 });
+  await profiles.tick();
+  const batch = imports.list().find((batch) => batch.ownerPart === 1)!;
+  expect(imports.get(batch.id)).toMatchObject({ existing: "refresh", rows: [{ inputUrl: works(1)[0]!.url }] });
+  await expect(profiles.retry(id, "12345")).rejects.toMatchObject({ code: "TIKTOK_PROFILE_NO_RETRY" });
+});
+it("queues a row retry behind the current batch without restarting it or duplicating other works", async () => {
+  const id = await failWorks(2, false);
+  const original = imports.list()[0]!;
+  const before = database.get("tiktok-profile-job", id)!.payload as { currentBatchId: string };
+  await profiles.retry(id, "12345");
+  expect(database.get("tiktok-profile-job", id)!.payload).toMatchObject({
+    currentBatchId: before.currentBatchId,
+    nextIndex: 1,
+    selectedIds: ["12346", "12345"]
+  });
+  expect(profiles.page(id)?.items[0]?.outcome?.status).toBe("waiting");
+  await expect(profiles.retry(id, "12345")).rejects.toMatchObject({ code: "TIKTOK_PROFILE_NO_RETRY" });
+  expect(imports.get(original.id)?.rows).toHaveLength(2);
+  await profiles.tick();
+  const retry = imports.list().find((batch) => batch.ownerPart === 1)!;
+  expect(imports.get(retry.id)?.rows.map((row) => row.inputUrl)).toEqual([works(1)[0]!.url]);
+  await profiles.cancel(id);
+  expect(profiles.get(id)?.phase).toBe("cancelled");
+});
+it("accepts a failed row retry while another work is still running, without replacing that work", async () => {
+  const id = await ready(3);
+  await profiles.start(id, { selection: "all", existing: "skip", allowPartial: false });
+  await profiles.tick();
+  await imports.tick();
+  const first = [...tasks.values()][0]!;
+  tasks.set(first.id, { ...first, status: "failed", stage: "failed" });
+  await imports.tick();
+  const running = [...tasks.values()].find((task) => task.status === "pending")!;
+  const batchId = imports.list()[0]!.id;
+  expect(imports.get(batchId)?.status).toBe("running");
+  await profiles.retry(id, "12345");
+  expect(taskApi.createImport).toHaveBeenCalledTimes(2);
+  expect(taskApi.cancel).not.toHaveBeenCalled();
+  expect(tasks.get(running.id)?.status).toBe("pending");
+  await profiles.tick();
+  expect(imports.list()).toHaveLength(1);
+  expect(profiles.page(id)?.items[0]?.outcome?.status).toBe("waiting");
+});
+it("matches committed single-work successes by platform and ID, preserving batch rows and surviving task eviction/restart", async () => {
+  const id = await failWorks();
+  const batch = imports.get(imports.list()[0]!.id)!;
+  saveArchive();
+  completeManual();
+  const upsert = vi.spyOn(database, "upsert");
+  expect(profiles.page(id)?.items[0]?.outcome).toMatchObject({
+    status: "completed",
+    progress: 100,
+    archiveId: "manual_archive"
+  });
+  expect(profiles.get(id)).toMatchObject({ archivedCount: 1, failedCount: 1 });
+  expect(profiles.results(id)[0]?.outcome?.errorCode).toBeUndefined();
+  expect(profiles.list()[0]?.archivedCount).toBe(1);
+  expect(upsert).not.toHaveBeenCalled();
+  await profiles.tick();
+  expect(imports.get(batch.id)?.rows).toEqual(batch.rows);
+  upsert.mockClear();
+  await profiles.tick();
+  expect(upsert).not.toHaveBeenCalled();
+  expect(database.get("tiktok-profile-job", id)?.payload).toMatchObject({
+    successMatches: [{ workId: "12345", archiveId: "manual_archive" }]
+  });
+  database.remove("archive-fetch-task", "manual_task");
+  await profiles.close();
+  profiles = new TikTokProfileService(database, imports, reader, { pollMs: 3600000 });
+  profiles.initialize();
+  expect(profiles.get(id)).toMatchObject({ archivedCount: 1, failedCount: 1 });
+  database.remove("xhs-archive", "manual_archive");
+  expect(profiles.get(id)).toMatchObject({ archivedCount: 0, failedCount: 2 });
+});
+it("does not confuse old successes, other platforms/IDs, running retries or an explicit later refresh", async () => {
+  const id = await failWorks();
+  saveArchive("douyin");
+  completeManual("manual_archive", undefined, "douyin");
+  expect(profiles.get(id)?.archivedCount).toBe(0);
+  saveArchive("tiktok", "99999", "unrelated_archive");
+  completeManual("unrelated_archive");
+  expect(profiles.get(id)?.archivedCount).toBe(0);
+  saveArchive("tiktok", "12345", "tiktok_archive");
+  completeManual("tiktok_archive", "2020-01-01T00:00:00.000Z");
+  expect(profiles.get(id)?.archivedCount).toBe(0);
+  completeManual("tiktok_archive");
+  await profiles.tick();
+  expect(profiles.get(id)?.archivedCount).toBe(1);
+  await profiles.start(id, { selection: "selected", itemIds: ["12345"], existing: "refresh", allowPartial: true });
+  expect(profiles.page(id)?.items[0]?.outcome?.status).toBe("waiting");
+  await profiles.tick();
+  await imports.tick();
+  expect(profiles.get(id)?.archivedCount).toBe(0);
+  const running = [...tasks.values()].find((task) => task.status === "pending")!;
+  const failed: ContentArchiveTask = {
+    ...running,
+    status: "failed",
+    stage: "failed",
+    updatedAt: new Date(Date.now() + 2000).toISOString()
+  };
+  tasks.set(failed.id, failed);
+  persistTask(failed);
+  await imports.tick();
+  expect(profiles.get(id)?.archivedCount).toBe(0);
+});
+it("persists matching after the import row catches up with an already failed task and a later single success", async () => {
+  const id = await ready(1);
+  await profiles.start(id, { selection: "all", existing: "skip", allowPartial: false });
+  await profiles.tick();
+  await imports.tick();
+  const first = [...tasks.values()][0]!;
+  const failed: ContentArchiveTask = {
+    ...first,
+    status: "failed",
+    stage: "failed",
+    updatedAt: new Date().toISOString()
+  };
+  tasks.set(first.id, failed);
+  persistTask(failed);
+  saveArchive();
+  completeManual();
+  await profiles.tick();
+  // The child batch still reports waiting/running until its own coordinator polls the task.
+  expect(profiles.get(id)?.archivedCount).toBe(0);
+  await imports.tick();
+  await profiles.tick();
+  expect(database.get("tiktok-profile-job", id)?.payload).toMatchObject({
+    successMatches: [{ workId: "12345", archiveId: "manual_archive" }]
+  });
+  database.remove("archive-fetch-task", "manual_task");
+  expect(profiles.get(id)?.archivedCount).toBe(1);
 });

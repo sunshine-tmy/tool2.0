@@ -4,8 +4,19 @@ import {
   normalizeTikTokProfileLink,
   identifyArchiveLink,
   TikTokProfileInputSchema,
-  TikTokProfileStartSchema
+  TikTokProfileStartSchema,
+  TikTokProfileRetrySchema
 } from "../index";
+it("accepts an optional single-work retry without widening the credential or URL boundary", () => {
+  for (const payload of [{}, { itemId: "12345" }]) expect(Value.Check(TikTokProfileRetrySchema, payload)).toBe(true);
+  for (const payload of [
+    { itemId: "bad" },
+    { itemId: "12345", cookie: "secret" },
+    { url: "https://www.tiktok.com/@shop/video/12345" },
+    { itemId: ["12345"] }
+  ])
+    expect(Value.Check(TikTokProfileRetrySchema, payload)).toBe(false);
+});
 it("recognizes canonical HTTPS profiles without widening single-work inputs or preserving tracking credentials", () => {
   expect(normalizeTikTokProfileLink("https://www.tiktok.com/@SuperNutriSilite?_r=1&_t=example")).toEqual({
     username: "supernutrisilite",

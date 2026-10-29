@@ -15,6 +15,7 @@ import { REQUEST_QUOTAS } from "../../../security/request-quotas";
 
 type PreviewStore = {
   mediaPath: (id: string, mediaId: string) => Promise<{ filePath: string; media: ContentArchiveMedia } | undefined>;
+  pinMedia?: (file: string) => () => void;
 };
 export function registerArchivePreviewRoutes(
   app: FastifyInstance,
@@ -33,29 +34,52 @@ export function registerArchivePreviewRoutes(
     },
     async (request, reply) => {
       const value = await store.mediaPath(request.params.id, request.params.mediaId);
+      const release = value ? store.pinMedia?.(value.filePath) : undefined;
+      if (release) reply.raw.once("close", release);
       const stat = value ? await fsp.stat(value.filePath).catch(() => undefined) : undefined;
-      if (!value || !stat?.isFile())
+      if (!value || !stat?.isFile()) {
+        release?.();
         return reply
           .code(404)
           .send(
             fail(namespace === "xhs-archive" ? "XHS_MEDIA_NOT_FOUND" : "ARCHIVE_MEDIA_NOT_FOUND", "媒体文件不存在")
           );
+      }
       reply
         .header("accept-ranges", "bytes")
         .header("content-type", value.media.mimeType)
         .header("x-content-type-options", "nosniff");
+      if (value.media.audioEdit) reply.header("cache-control", "no-store");
       if (request.query.download === "1")
         reply.header(
           "content-disposition",
           `attachment; filename="download"; filename*=UTF-8''${encodeURIComponent(value.media.fileName)}`
         );
-      return sendRange(reply, value.filePath, stat.size, request.headers.range);
+      return sendArchiveRange(reply, value.filePath, stat.size, request.headers.range, release);
     }
   );
 }
-function sendRange(reply: FastifyReply, file: string, size: number, header?: string) {
-  if (!header) return reply.header("content-length", size).send(fs.createReadStream(file));
-  const invalid = () => reply.code(416).header("content-range", `bytes */${size}`).send();
+export function sendArchiveRange(
+  reply: FastifyReply,
+  file: string,
+  size: number,
+  header?: string,
+  release?: () => void
+) {
+  const stream = (range?: { start: number; end: number }) => {
+    const input = fs.createReadStream(file, range);
+    if (release) {
+      input.once("close", release);
+      input.once("error", release);
+      reply.raw.once("close", release);
+    }
+    return input;
+  };
+  if (!header) return reply.header("content-length", size).send(stream());
+  const invalid = () => {
+    release?.();
+    return reply.code(416).header("content-range", `bytes */${size}`).send();
+  };
   const match = /^bytes=(\d*)-(\d*)$/.exec(header);
   if (!match || (!match[1] && !match[2])) return invalid();
   const suffix = !match[1];
@@ -68,5 +92,5 @@ function sendRange(reply: FastifyReply, file: string, size: number, header?: str
   return reply
     .code(206)
     .headers({ "content-range": `bytes ${start}-${end}/${size}`, "content-length": end - start + 1 })
-    .send(fs.createReadStream(file, { start, end }));
+    .send(stream({ start, end }));
 }

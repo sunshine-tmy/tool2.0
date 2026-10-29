@@ -11,6 +11,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
   const typeFilter = ref<NonNullable<ContentArchiveListQuery["type"]>>("all");
   const platformFilter = ref<NonNullable<ContentArchiveListQuery["platform"]>>("all");
   const groupFilter = ref("all");
+  const sort = ref<NonNullable<ContentArchiveListQuery["sort"]>>("archived-desc");
   const page = ref(1);
   const listLoading = ref(false);
   const archives = ref<ContentArchiveListResponse>({ items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 });
@@ -39,14 +40,14 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
   }
   // 搜索文字变化只重置分页，不逐字发送请求；类型/平台切换自动读取新范围。
   watch(
-    [keyword, typeFilter, platformFilter, groupFilter],
+    [keyword, typeFilter, platformFilter, groupFilter, sort],
     () => {
       invalidateList();
       page.value = 1;
     },
     { flush: "sync" }
   );
-  watch([typeFilter, platformFilter, groupFilter], () => void loadArchives());
+  watch([typeFilter, platformFilter, groupFilter, sort], () => void loadArchives());
   watch(page, invalidateList, { flush: "sync" });
   watch(
     drawerOpen,
@@ -67,7 +68,10 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
     const signal = AbortSignal.any([scope.signal, listController.signal]);
     listLoading.value = true;
     try {
-      const result = await contentArchiveApi.list({ ...filter(), page: page.value, pageSize: 12 }, signal);
+      const result = await contentArchiveApi.list(
+        { ...filter(), sort: sort.value, page: page.value, pageSize: 12 },
+        signal
+      );
       if (signal.aborted || generation !== listGeneration) return;
       archives.value = result;
       selectedArchiveIds.value = selectedArchiveIds.value.filter((id) => result.items.some((item) => item.id === id));
@@ -127,6 +131,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
     typeFilter,
     platformFilter,
     groupFilter,
+    sort,
     page,
     listLoading,
     archives,

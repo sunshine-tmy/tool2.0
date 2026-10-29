@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
+import { audioLibraryPurpose } from "@toolbox/shared";
 import type {
   AudioLibraryCatalog,
   AudioLibraryItem,
@@ -105,7 +106,7 @@ export class AudioLibraryStore {
     );
   }
   async list(query: Record<string, string | undefined>) {
-    if (query.view && !["all", "ungrouped", "incomplete", "trash"].includes(query.view))
+    if (query.view && !["all", "speech", "music", "ungrouped", "incomplete", "trash"].includes(query.view))
       reject("AUDIO_LIBRARY_VIEW_INVALID", "不支持的音频筛选类型");
     const c = await this.snapshot();
     const descendants = new Set<string>(query.groupId ? [query.groupId] : []);
@@ -114,8 +115,13 @@ export class AudioLibraryStore {
     const keyword = normalized(query.keyword ?? "");
     const items = c.items.filter((item) => {
       if ((query.view === "trash") !== Boolean(item.deletedAt)) return false;
+      if (["speech", "music"].includes(query.view ?? "") && audioLibraryPurpose(item) !== query.view) return false;
       if (query.view === "ungrouped" && item.groupId !== null) return false;
-      if (query.view === "incomplete" && item.foreignText.trim() && item.chineseText.trim()) return false;
+      if (
+        query.view === "incomplete" &&
+        (audioLibraryPurpose(item) === "music" || (item.foreignText.trim() && item.chineseText.trim()))
+      )
+        return false;
       if (query.groupId && (!item.groupId || !descendants.has(item.groupId))) return false;
       return (
         (!query.language || item.language === query.language) &&

@@ -84,6 +84,26 @@ describe("XHS archive list panel", () => {
     expect(wrapper.text()).toContain("测试存档");
     expect(wrapper.text()).toContain("2 个媒体");
     expect(wrapper.text()).toContain("2.0 KB");
+    expect(wrapper.text()).toContain("发布：未知");
+    expect(wrapper.text()).toContain("归档：2026");
+    const sorting = wrapper
+      .findAllComponents(NSelect)
+      .find((select) => select.attributes("aria-label") === "归档列表排序")!;
+    expect(sorting.props("value")).toBe("archived-desc");
+    expect(sorting.props("options")?.map((option) => option.value)).toEqual([
+      "archived-desc",
+      "archived-asc",
+      "published-desc",
+      "published-asc"
+    ]);
+    for (const sort of ["published-asc", "published-desc", "archived-asc", "archived-desc"])
+      sorting.vm.$emit("update:value", sort);
+    expect(wrapper.emitted("update:sort")).toEqual([
+      ["published-asc"],
+      ["published-desc"],
+      ["archived-asc"],
+      ["archived-desc"]
+    ]);
 
     await wrapper.get("article").trigger("click");
     expect(wrapper.emitted("openDetail")).toEqual([["archive_123"]]);

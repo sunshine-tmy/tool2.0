@@ -25,6 +25,7 @@ export * from "./archive/tiktok-runtime";
 export * from "./archive/archive-import";
 export * from "./archive/archive-groups";
 export * from "./archive/tiktok-profile";
+export * from "./archive/video-edit";
 export * from "./system/component-packages";
 export * from "./audio-library/contracts";
 export * from "./system/diagnostics";

@@ -29,7 +29,19 @@ export async function smokeAudioLibraryContract(repoRoot) {
       assert.equal(Value.Check(library.AudioLibraryGroupSchema, {id:'g', name:'分组', parentId:null}), true);
       assert.equal(Value.Check(library.AudioLibraryGroupSchema, {id:'g', name:'分组'}), false);
       const root = await import('@toolbox/shared');
-      for (const [name,value] of Object.entries(library)) assert.deepEqual(value, root[name], name);
+      for (const [name,value] of Object.entries(library)) {
+        // Independent dist entries have distinct function objects; schemas still compare in full.
+        if (name === 'audioLibraryPurpose') assert.equal(typeof value, typeof root[name], name);
+        else assert.deepEqual(value, root[name], name);
+      }
+      for (const sample of [
+        {source:{kind:'upload'}}, {source:{kind:'chatterbox'}}, {source:{kind:'edge-tts'}},
+        {source:{kind:'clip'}}, {source:{kind:'upload'},purpose:'music'},
+        {source:{kind:'chatterbox'},purpose:'general'}
+      ]) assert.equal(library.audioLibraryPurpose(sample), root.audioLibraryPurpose(sample));
+      assert.equal(library.audioLibraryPurpose({source:{kind:'upload'},purpose:'music'}),'music');
+      assert.equal(library.audioLibraryPurpose({source:{kind:'chatterbox'}}),'speech');
+      assert.equal(library.audioLibraryPurpose({source:{kind:'upload'}}),'general');
       assert.equal('ImageAiTaskSchema' in library, false);
       assert.equal(library.AUDIO_LIBRARY_MAX_FILE_BYTES, 100 * 1024 * 1024);
       assert.equal(library.AUDIO_LIBRARY_DEFAULT_STORAGE_BYTES, 10 * 1024 ** 3);

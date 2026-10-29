@@ -54,7 +54,7 @@ it("keeps every API and health method/path while allowing internal source reloca
     );
     expect(snapshot).toHaveLength(273);
     app = await createApp({ config });
-    // TikTok is an explicitly requested additive feature; the 273 historical routes remain frozen.
+    // Requested TikTok and audio-edit routes are additive; the 273 historical routes remain frozen.
     expect(routeInventory(app.printRoutes({ commonPrefix: false }))).toEqual(
       [
         ...snapshot,
@@ -93,7 +93,21 @@ it("keeps every API and health method/path while allowing internal source reloca
           "POST tiktok-profiles/:id/cancel",
           "POST tiktok-profiles/:id/retry",
           "GET tiktok-profiles/:id/results.csv",
-          "HEAD tiktok-profiles/:id/results.csv"
+          "HEAD tiktok-profiles/:id/results.csv",
+          "GET video-edit-runtime",
+          "HEAD video-edit-runtime",
+          "GET items/:id/media/:mediaId/audio-edits",
+          "HEAD items/:id/media/:mediaId/audio-edits",
+          "POST items/:id/media/:mediaId/audio-edits",
+          "GET video-edits/:taskId",
+          "HEAD video-edits/:taskId",
+          "DELETE video-edits/:taskId",
+          "GET video-edits/:taskId/preview",
+          "HEAD video-edits/:taskId/preview",
+          "GET items/:id/media/:mediaId/original",
+          "HEAD items/:id/media/:mediaId/original",
+          "GET items/:id/media/:mediaId/saved-music",
+          "HEAD items/:id/media/:mediaId/saved-music"
         ].map((entry) => {
           const [method, path] = entry.split(" ");
           return `${method} /api/v1/tools/media-archive/${path}`;

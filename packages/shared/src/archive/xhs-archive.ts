@@ -2,6 +2,7 @@
  * 中文模块说明：共享契约层，负责跨前后端复用的类型、Schema、响应和领域常量
  */
 import { Type, type Static } from "@sinclair/typebox";
+import { ArchiveVideoEditSchema } from "./video-edit";
 
 const XhsEntityIdSchema = Type.String({ minLength: 6, maxLength: 128, pattern: "^[A-Za-z0-9_-]+$" });
 
@@ -41,7 +42,10 @@ export const XhsArchiveListQuerySchema = Type.Object(
 );
 
 export const XhsMediaQuerySchema = Type.Object(
-  { download: Type.Optional(Type.Union([Type.Literal("0"), Type.Literal("1")])) },
+  {
+    download: Type.Optional(Type.Union([Type.Literal("0"), Type.Literal("1")])),
+    v: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" }))
+  },
   { additionalProperties: false }
 );
 
@@ -225,6 +229,16 @@ export const XhsArchiveMediaSchema = Type.Object(
     durationMs: Type.Optional(Type.Number({ minimum: 0 })),
     frameSourceMediaId: Type.Optional(XhsEntityIdSchema),
     frameTimestampMs: Type.Optional(Type.Integer({ minimum: 0 })),
+    audioEdit: Type.Optional(ArchiveVideoEditSchema),
+    derivedFromImages: Type.Optional(
+      Type.Array(
+        Type.Object(
+          { id: XhsEntityIdSchema, checksum: Type.String({ pattern: "^[a-f0-9]{64}$" }) },
+          { additionalProperties: false }
+        ),
+        { minItems: 1, maxItems: 100 }
+      )
+    ),
     checksum: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     previewUrl: Type.String(),
     downloadUrl: Type.String()

@@ -84,6 +84,13 @@ describe("多媒体归档客户端", () => {
         { signal }
       );
     }
+    await tiktokProfileApi.retryWork("id/123", "12345", signal);
+    expect(http.post).toHaveBeenLastCalledWith(
+      "/tools/media-archive/tiktok-profiles/id%2F123/retry",
+      TikTokProfileJobSchema,
+      { itemId: "12345" },
+      { signal }
+    );
     await tiktokProfileApi.remove("id/123", signal);
     expect(http.delete).toHaveBeenLastCalledWith(
       "/tools/media-archive/tiktok-profiles/id%2F123",
@@ -191,7 +198,14 @@ describe("多媒体归档客户端", () => {
   });
   it("所有 JSON 操作传入共享响应 Schema 和同一 AbortSignal", async () => {
     const signal = new AbortController().signal;
-    const params = { platform: "douyin" as const, keyword: "晚霞", type: "video" as const, page: 2, pageSize: 12 };
+    const params = {
+      platform: "douyin" as const,
+      keyword: "晚霞",
+      type: "video" as const,
+      sort: "published-asc" as const,
+      page: 2,
+      pageSize: 12
+    };
     const create = { url: "https://v.douyin.com/example/", platform: "douyin" as const };
     const form = new FormData();
     form.append("sourceMediaId", "video-123");

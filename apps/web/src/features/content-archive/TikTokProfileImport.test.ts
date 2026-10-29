@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   discover: vi.fn(),
   cancel: vi.fn(),
   retry: vi.fn(),
+  retryWork: vi.fn(),
   remove: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
@@ -91,6 +92,81 @@ function setup() {
   wrappers.push(wrapper);
   return wrapper;
 }
+it("retries just the failed row while archiving, then exposes the queued status without a second request", async () => {
+  current = { ...base, phase: "archiving", failedCount: 1 };
+  mocks.list.mockResolvedValue([current]);
+  let status: "failed" | "waiting" = "failed";
+  mocks.works.mockImplementation(async () => ({
+    items: [{ ...work("12345"), outcome: { status, progress: 0, message: "失败" } }],
+    page: 1,
+    pageCount: 1,
+    total: 1
+  }));
+  mocks.retryWork.mockImplementation(async () => {
+    status = "waiting";
+    return { ...current, failedCount: 0, pendingCount: 1 };
+  });
+  const wrapper = setup();
+  await wrapper.vm.show(current.id);
+  const button = wrapper.findAll("button").find((button) => button.text() === "重试")!;
+  expect(button.attributes("disabled")).toBeUndefined();
+  await click(wrapper, "重试");
+  expect(mocks.retryWork).toHaveBeenCalledExactlyOnceWith(current.id, "12345", expect.any(AbortSignal));
+  expect(mocks.retry).not.toHaveBeenCalled();
+  expect(wrapper.findAll("button").some((button) => button.text() === "重试")).toBe(false);
+});
+it("keeps failed rows retryable after a request error and renders matching successes after reopening", async () => {
+  current = { ...base, phase: "completed", failedCount: 1 };
+  mocks.list.mockResolvedValue([current]);
+  mocks.works.mockResolvedValue({
+    items: [{ ...work("12345"), outcome: { status: "failed", progress: 0, message: "网络失败" } }],
+    page: 1,
+    pageCount: 1,
+    total: 1
+  });
+  mocks.retryWork.mockRejectedValueOnce(new Error("offline"));
+  const wrapper = setup();
+  await wrapper.vm.show(current.id);
+  await click(wrapper, "重试");
+  expect(mocks.error).toHaveBeenCalled();
+  expect(
+    wrapper
+      .findAll("button")
+      .find((button) => button.text() === "重试")!
+      .attributes("disabled")
+  ).toBeUndefined();
+  await wrapper.get("a.profile-work-link").trigger("click");
+  current = { ...current, failedCount: 0, archivedCount: 1 };
+  mocks.works.mockResolvedValue({
+    items: [
+      {
+        ...work("12345"),
+        outcome: { status: "completed", progress: 100, archiveId: "archive_123", message: "已匹配单条成功归档" }
+      }
+    ],
+    page: 1,
+    pageCount: 1,
+    total: 1
+  });
+  await wrapper.vm.show(current.id);
+  expect(wrapper.text()).toContain("100%");
+  await click(wrapper, "查看存档");
+  expect(wrapper.emitted("openArchive")?.[0]).toEqual(["archive_123"]);
+});
+it("hands work links to the ordinary form without auto-archiving, while modified clicks keep the external link", async () => {
+  mocks.list.mockResolvedValue([current]);
+  const wrapper = setup();
+  await wrapper.vm.show(current.id);
+  const link = wrapper.get("a.profile-work-link");
+  expect(link.attributes("href")).toBe(work("12345").url);
+  await link.trigger("click", { ctrlKey: true });
+  expect(wrapper.emitted("retrySingle")).toBeUndefined();
+  await link.trigger("click");
+  expect(wrapper.emitted("retrySingle")?.[0]).toEqual([work("12345").url]);
+  expect(mocks.archive).not.toHaveBeenCalled();
+  expect(mocks.retryWork).not.toHaveBeenCalled();
+  expect(wrapper.find("a.profile-work-link").exists()).toBe(false);
+});
 async function click(wrapper: ReturnType<typeof setup>, label: string) {
   await wrapper
     .findAll("button")
@@ -98,6 +174,76 @@ async function click(wrapper: ReturnType<typeof setup>, label: string) {
     .trigger("click");
   await flushPromises();
 }
+it.each([false, true])(
+  "clears the actual history select after deleting a chosen task (other history: %s)",
+  async (keepOther) => {
+    const selected = { ...base, id: "profile_delete", username: "other", url: "https://www.tiktok.com/@other" };
+    mocks.list.mockResolvedValue([base, selected]);
+    mocks.get.mockImplementation(async (id: string) => (id === selected.id ? selected : base));
+    const wrapper = setup();
+    await wrapper.vm.show(base.id);
+    const history = wrapper
+      .findAllComponents(NSelect)
+      .find((select) => select.attributes("aria-label") === "TikTok 主页任务历史")!;
+    await history.get(".n-base-selection").trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(100);
+    await history.get(".n-base-selection").trigger("keydown", { key: "ArrowDown" });
+    await history.get(".n-base-selection").trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    expect(history.props("value")).toBe(selected.id);
+    mocks.list.mockResolvedValue(keepOther ? [base, selected] : [selected]);
+    await click(wrapper, "刷新历史");
+    await click(wrapper, "删除主页任务记录");
+    expect(mocks.remove).toHaveBeenCalledWith(selected.id, expect.any(AbortSignal));
+    expect(history.text()).toContain("查看主页任务历史");
+    expect(history.text()).not.toContain(selected.id);
+    expect(history.props("value")).toBeNull();
+    expect(history.props("options")).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ value: selected.id })])
+    );
+    expect(history.props("options")).toHaveLength(keepOther ? 1 : 0);
+    expect(wrapper.find(".profile-table").exists()).toBe(false);
+    expect(wrapper.text()).toContain("先读取主页作品并核对列表，再确认归档");
+    expect(wrapper.findAll("button").some((button) => button.text() === "删除主页任务记录")).toBe(false);
+    const calls = mocks.get.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(mocks.get).toHaveBeenCalledTimes(calls);
+    if (keepOther) {
+      history.vm.$emit("update:value", base.id);
+      await flushPromises();
+      expect(mocks.get).toHaveBeenLastCalledWith(base.id, expect.any(AbortSignal));
+    }
+  }
+);
+it("keeps a failed deletion selected and ignores a late history response after a successful deletion", async () => {
+  mocks.list.mockResolvedValue([base]);
+  const wrapper = setup();
+  await wrapper.vm.show(base.id);
+  const history = wrapper
+    .findAllComponents(NSelect)
+    .find((select) => select.attributes("aria-label") === "TikTok 主页任务历史")!;
+  mocks.remove.mockRejectedValueOnce(new Error("delete failed"));
+  await click(wrapper, "删除主页任务记录");
+  expect(mocks.error).toHaveBeenCalledOnce();
+  expect(history.props("value")).toBe(base.id);
+  expect(history.text()).toContain("@shop");
+  expect(wrapper.find(".profile-table").exists()).toBe(true);
+  let finishHistory!: (value: TikTokProfileJob[]) => void;
+  mocks.list.mockReturnValueOnce(
+    new Promise<TikTokProfileJob[]>((resolve) => {
+      finishHistory = resolve;
+    })
+  );
+  await click(wrapper, "刷新历史");
+  await click(wrapper, "删除主页任务记录");
+  finishHistory([base]);
+  await flushPromises();
+  expect(history.props("value")).toBeNull();
+  expect(history.props("options")).toEqual([]);
+  expect(history.text()).toContain("查看主页任务历史");
+  expect(wrapper.find(".profile-table").exists()).toBe(false);
+});
 it("opens the requested owner and replaces deleted history selections without requesting stale IDs", async () => {
   const second = { ...base, id: "profile_456" };
   mocks.list.mockResolvedValue([base, second]);

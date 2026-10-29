@@ -64,8 +64,8 @@ const tools: ToolDefinition[] = [
   },
   {
     id: "audio-library",
-    title: "直播音频库",
-    description: "永久保存双语直播音频，按分组整理并组织循环播放。",
+    title: "音频素材库",
+    description: "永久保存配音与背景音乐，按分组整理、试听并组织循环播放。",
     category: "audio",
     status: "ready",
     requiresAuth: false,

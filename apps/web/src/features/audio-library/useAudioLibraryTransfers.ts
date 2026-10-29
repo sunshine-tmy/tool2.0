@@ -28,6 +28,8 @@ export function useAudioLibraryTransfers(
       uploads.value.push(
         createUploadDraft(file, {
           language: language.value,
+          purpose:
+            collection.view.value === "music" ? "music" : collection.view.value === "speech" ? "speech" : "general",
           groupId: groups.value.some((group) => group.value === target) ? target : null
         })
       );

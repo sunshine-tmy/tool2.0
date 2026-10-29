@@ -113,6 +113,10 @@ export const TikTokProfileStartSchema = Type.Object(
   { additionalProperties: false }
 );
 export type TikTokProfileWork = Static<typeof TikTokProfileWorkSchema>;
+export const TikTokProfileRetrySchema = Type.Object(
+  { itemId: Type.Optional(TikTokProfileWorkSchema.properties.id) },
+  { additionalProperties: false }
+);
 export type TikTokProfileJob = Static<typeof TikTokProfileJobSchema>;
 export type TikTokProfilePage = Static<typeof TikTokProfilePageSchema>;
 export type TikTokProfileStart = Static<typeof TikTokProfileStartSchema>;

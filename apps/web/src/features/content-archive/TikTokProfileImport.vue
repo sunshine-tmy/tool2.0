@@ -115,6 +115,7 @@
           >确认并开始主页归档</n-button
         >
       </div>
+      <p>失败作品可逐条重试；点击作品标题可填入主页面“获取并存档”，成功后自动同步结果。</p>
       <n-spin :show="loading"
         ><div v-if="works.items.length" class="profile-table">
           <table>
@@ -157,9 +158,10 @@
                   <a
                     class="profile-work-link"
                     :href="work.url"
-                    :title="work.title || work.id"
+                    :title="`${work.title || work.id}；点击填入获取并存档入口`"
                     target="_blank"
                     rel="noopener noreferrer"
+                    @click="retrySingle($event, work.url)"
                     >{{ work.title || work.id }}</a
                   >
                 </td>
@@ -170,6 +172,14 @@
                 <td class="profile-nowrap">{{ work.outcome ? `${work.outcome.progress}%` : "—" }}</td>
                 <td>
                   <div class="profile-result">
+                    <n-button
+                      v-if="work.outcome?.status === 'failed'"
+                      size="small"
+                      type="primary"
+                      :disabled="busy || (isActive && job.phase !== 'archiving')"
+                      @click="run(() => tiktokProfileApi.retryWork(job!.id, work.id, scope.signal))"
+                      >重试</n-button
+                    >
                     <span>{{ work.outcome?.message || "—" }}</span
                     ><n-button
                       v-if="work.outcome?.archiveId"
@@ -209,7 +219,7 @@ import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { copyTextToClipboard } from "../../shared/utils/clipboard";
 import { createTikTokCollectorBookmarklet, createTikTokCollectorHelpHtml } from "./tiktok-browser-collector";
 const props = defineProps<{ groups?: ArchiveGroup[] }>();
-const emit = defineEmits<{ changed: []; openArchive: [id: string] }>();
+const emit = defineEmits<{ changed: []; openArchive: [id: string]; retrySingle: [url: string] }>();
 const message = useMessage(),
   confirm = useConfirmDialog(),
   scope = useRequestScope();
@@ -217,7 +227,7 @@ const open = ref(false),
   busy = ref(false),
   loading = ref(false),
   url = ref("");
-const selectedId = ref<string>(),
+const selectedId = ref<string | null>(null),
   job = ref<TikTokProfileJob>(),
   history = ref<TikTokProfileJob[]>([]),
   page = ref(1);
@@ -303,6 +313,12 @@ function invalidate() {
 function report(error: unknown) {
   if (!scope.aborted && !isApiErrorCancelled(error)) message.error(formatApiError(error, "主页任务操作失败"));
 }
+function retrySingle(event: MouseEvent, workUrl: string) {
+  if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  open.value = false;
+  emit("retrySingle", workUrl);
+}
 function apply(value: TikTokProfileJob) {
   if (
     job.value?.id === value.id &&
@@ -367,7 +383,7 @@ async function show(id?: string) {
       else await refresh();
     } else {
       invalidate();
-      selectedId.value = undefined;
+      selectedId.value = null;
       job.value = undefined;
       selectedIds.value = [];
       page.value = 1;
@@ -453,10 +469,13 @@ async function remove() {
     if (!scope.aborted) {
       historyGeneration++;
       history.value = history.value.filter((entry) => entry.id !== id);
-      selectedId.value = undefined;
+      selectedId.value = null;
       job.value = undefined;
       works.value = { items: [], page: 1, pageCount: 1, total: 0 };
       selectedIds.value = [];
+      page.value = 1;
+      allowPartial.value = false;
+      loading.value = false;
     }
   } catch (error) {
     report(error);

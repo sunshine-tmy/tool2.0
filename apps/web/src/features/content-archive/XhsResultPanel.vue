@@ -38,7 +38,11 @@
       </div>
     </div>
     <div class="result-detail-layout">
-      <MediaGallery :item="props.current" @frame-saved="emit('frameSaved', $event)" />
+      <MediaGallery
+        :item="props.current"
+        @frame-saved="emit('frameSaved', $event)"
+        @media-updated="emit('mediaUpdated', $event)"
+      />
       <div class="drawer-meta result-meta">
         <ArchiveFacts :item="props.current" :format-date="props.formatDate" />
         <BilingualContent :item="props.current" @copy="(text, label) => emit('copy', text, label)" />
@@ -73,7 +77,11 @@ const props = defineProps<{
   formatDate: (value: string) => string;
 }>();
 
-const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem]; copy: [text: string, label: string] }>();
+const emit = defineEmits<{
+  frameSaved: [item: ContentArchiveItem];
+  mediaUpdated: [item: ContentArchiveItem];
+  copy: [text: string, label: string];
+}>();
 </script>
 
 <style scoped>

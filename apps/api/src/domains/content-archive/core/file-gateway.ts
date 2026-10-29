@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import type { FileMetadataRepository } from "../../../database/file-metadata";
 import type { FileMetadata } from "../../../database/toolbox-database";
+import { archiveMediaAssets } from "./media-assets";
 
 /** 提交只接收本模块创建的 staging 子目录，不把任意磁盘路径当作可移动、可回滚的目标。 */
 export async function assertArchiveStaging(staging: string, stagingRoot: string) {
@@ -40,34 +41,39 @@ export async function inspectArchiveFiles(
     )
   ];
   for (const media of item.media) {
-    if (
-      path.posix.basename(media.fileName) !== media.fileName ||
-      path.win32.basename(media.fileName) !== media.fileName ||
-      media.fileName.includes(":") ||
-      media.fileName === "." ||
-      media.fileName === ".."
-    )
-      throw new Error("ARCHIVE_MEDIA_PATH_INVALID");
-    const source = path.join(staging, media.fileName);
-    const handle = await fs.open(source, "r+");
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
+    const activeNames = new Set(archiveMediaAssets(media, false).map((file) => file.fileName));
+    for (const asset of archiveMediaAssets(media)) {
+      if (
+        path.posix.basename(asset.fileName) !== asset.fileName ||
+        path.win32.basename(asset.fileName) !== asset.fileName ||
+        asset.fileName.includes(":") ||
+        asset.fileName === "." ||
+        asset.fileName === ".."
+      )
+        throw new Error("ARCHIVE_MEDIA_PATH_INVALID");
+      const source = path.join(staging, asset.fileName);
+      // 已退休成品可能已删除，但其清理清单尚待重试提交；活跃资产绝不能缺失。
+      if (!activeNames.has(asset.fileName) && !(await exists(source))) continue;
+      const handle = await fs.open(source, "r+");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      const file = await repository.inspect(
+        {
+          entityKind: "xhs-media",
+          entityId: media.id,
+          filePath: path.join(target, asset.fileName),
+          mediaType: asset.mimeType,
+          owner: "local"
+        },
+        source
+      );
+      if (file.byteSize !== asset.size || file.sha256 !== asset.checksum)
+        throw new Error("ARCHIVE_MEDIA_INTEGRITY_FAILED");
+      files.push(file);
     }
-    const file = await repository.inspect(
-      {
-        entityKind: "xhs-media",
-        entityId: media.id,
-        filePath: path.join(target, media.fileName),
-        mediaType: media.mimeType,
-        owner: "local"
-      },
-      source
-    );
-    if (file.byteSize !== media.size || file.sha256 !== media.checksum)
-      throw new Error("ARCHIVE_MEDIA_INTEGRITY_FAILED");
-    files.push(file);
   }
   return files;
 }

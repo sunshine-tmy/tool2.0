@@ -30,6 +30,7 @@ import { extractXhsUrl, type XhsArchiveTaskService } from "./task-service";
 import { registerXhsTranslationRoutes } from "./translation-routes";
 import type { ContentArchiveTranslationService } from "../../core/translation-service";
 import { ArchiveTaskError } from "../../core/provider";
+import { ContentArchiveStoreError } from "../../core/store";
 
 export function registerLegacyXhsArchiveRoutes({
   app,
@@ -75,7 +76,7 @@ export function registerLegacyXhsArchiveRoutes({
       try {
         return reply.code(202).send(ok(service.create(source)));
       } catch (error) {
-        if (error instanceof ArchiveTaskError)
+        if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code.replace(/^ARCHIVE_/, "XHS_"), error.message));
         throw error;
       }
@@ -144,7 +145,7 @@ export function registerLegacyXhsArchiveRoutes({
           ? reply.code(202).send(ok(task))
           : reply.code(404).send(fail("XHS_ARCHIVE_NOT_FOUND", "存档不存在"));
       } catch (error) {
-        if (error instanceof ArchiveTaskError)
+        if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code.replace(/^ARCHIVE_/, "XHS_"), error.message));
         throw error;
       }
@@ -165,7 +166,7 @@ export function registerLegacyXhsArchiveRoutes({
       try {
         await service.content.remove(request.params.id);
       } catch (error) {
-        if (error instanceof ArchiveTaskError)
+        if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code.replace(/^ARCHIVE_/, "XHS_"), error.message));
         throw error;
       }

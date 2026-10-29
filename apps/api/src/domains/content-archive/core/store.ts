@@ -10,6 +10,8 @@ import {
   toContentArchiveListItem,
   type ArchivePlatform,
   type ContentArchiveItem,
+  type ContentArchiveMedia,
+  type ContentArchiveListQuery,
   type ContentArchiveListResponse
 } from "@toolbox/shared";
 import type { AppConfig } from "../../../config";
@@ -24,6 +26,8 @@ import {
 } from "./file-gateway";
 import { archiveTranslationSourceHash } from "./text";
 import { ArchiveGroupStore } from "./groups";
+import { archiveMediaAssets, archiveMediaBytes } from "./media-assets";
+import { compareArchiveListItems } from "./list-order";
 
 type ArchiveIndex = {
   version: 2;
@@ -38,6 +42,8 @@ export class ContentArchiveStore {
   private storageMutationQueue = Promise.resolve();
   private readonly itemMutationQueues = new Map<string, Promise<void>>();
   private readonly fileMetadata: FileMetadataRepository;
+  private readonly videoEditLeases = new Map<string, string>();
+  private readonly mediaReadPins = new Map<string, number>();
 
   constructor(
     private readonly config: AppConfig,
@@ -73,6 +79,9 @@ export class ContentArchiveStore {
       }
       await this.persistIndex();
     }
+    for (const item of this.items.values()) {
+      if (item.media.some((media) => media.audioEdit?.pendingFiles?.length)) await this.pruneLoadedVideoEdits(item.id);
+    }
   }
 
   async list(
@@ -83,6 +92,7 @@ export class ContentArchiveStore {
       pageSize?: number;
       platform?: ArchivePlatform | "all";
       groupId?: string;
+      sort?: ContentArchiveListQuery["sort"];
     } = {}
   ): Promise<ContentArchiveListResponse> {
     await this.initialize();
@@ -91,6 +101,7 @@ export class ContentArchiveStore {
     const page = positiveInteger(options.page, 1);
     const pageSize = Math.min(positiveInteger(options.pageSize, 12), 50);
     const memberships = this.groups.memberships();
+    const sort = options.sort;
     const matched = [...this.items.values()]
       .filter((item) => !options.platform || options.platform === "all" || item.platform === options.platform)
       .filter(
@@ -118,7 +129,11 @@ export class ContentArchiveStore {
           .filter(Boolean)
           .some((value) => String(value).toLowerCase().includes(keyword));
       })
-      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      .sort(
+        sort
+          ? (left, right) => compareArchiveListItems(left, right, sort)
+          : (left, right) => right.updatedAt.localeCompare(left.updatedAt)
+      );
     const start = (page - 1) * pageSize;
     return {
       items: matched.slice(start, start + pageSize).map((item) => ({
@@ -166,6 +181,7 @@ export class ContentArchiveStore {
     if (!isContentArchiveItem(item)) throw new Error("ARCHIVE_PAYLOAD_INVALID");
     return this.withStorageMutation(() =>
       this.withItemMutation(item.id, async () => {
+        this.assertVideoEditIdle(item.id);
         const target = path.join(this.config.xhsArchiveItemsDir, safeId(item.id));
         await assertArchiveStaging(stagingDirectory, this.config.xhsArchiveStagingDir);
         const previousItem = cloneItem(this.items.get(item.id));
@@ -176,6 +192,43 @@ export class ContentArchiveStore {
         );
         if (duplicate) throw new Error("ARCHIVE_IDENTITY_CONFLICT");
         const nextItem = cloneItem(item)!;
+        // 用户由图集生成的视频是附加资产，重新获取不得把它当作平台缺失媒体丢弃。
+        for (const derived of previousItem?.media.filter((media) => media.derivedFromImages) ?? []) {
+          if (
+            derived.derivedFromImages!.some(
+              (image) => !nextItem.media.some((media) => media.id === image.id && media.checksum === image.checksum)
+            )
+          )
+            throw new ContentArchiveStoreError(
+              "ARCHIVE_EDIT_SOURCE_CHANGED",
+              409,
+              "来源图集已变化，已保留原图和生成视频，请先处理来源变更"
+            );
+          if (!nextItem.media.some((media) => media.id === derived.id)) nextItem.media.push(structuredClone(derived));
+          for (const asset of archiveMediaAssets(derived)) {
+            const source = path.join(target, path.basename(asset.fileName));
+            if (await exists(source))
+              await fsp.copyFile(source, path.join(stagingDirectory, path.basename(asset.fileName)));
+          }
+        }
+        // 重新获取只能更新同一原片；不得覆盖已经保存的配乐、原片和选曲快照。
+        for (const edited of previousItem?.media.filter(
+          (media) => media.audioEdit && media.checksum !== media.audioEdit.original.checksum
+        ) ?? []) {
+          const incoming = nextItem.media.find((media) => media.id === edited.id);
+          if (!incoming || (!edited.derivedFromImages && incoming.checksum !== edited.audioEdit!.original.checksum))
+            throw new ContentArchiveStoreError(
+              "ARCHIVE_EDIT_SOURCE_CHANGED",
+              409,
+              "源视频已变化，已保留当前成品；请先恢复原始视频后再重新获取"
+            );
+          nextItem.media[nextItem.media.indexOf(incoming)] = structuredClone(edited);
+          for (const asset of archiveMediaAssets(edited)) {
+            const source = path.join(target, path.basename(asset.fileName));
+            if (await exists(source))
+              await fsp.copyFile(source, path.join(stagingDirectory, path.basename(asset.fileName)));
+          }
+        }
         // 下载期间可能已经编辑译文；以锁内最新版本为准，正文变化仅标记过期，不丢失用户编辑。
         if (previousItem?.translation) {
           const sourceHash = archiveTranslationSourceHash(nextItem);
@@ -191,16 +244,19 @@ export class ContentArchiveStore {
         nextItem.media.push(...retainedFrames);
         // 媒体 ID 被关系表及截帧来源引用；不能覆盖另一归档的同名 ID，也不能让两个条目共用一个文件。
         const ids = new Set(nextItem.media.map((media) => media.id));
-        const names = new Set(nextItem.media.map((media) => media.fileName.toLowerCase()));
+        const assetNames = nextItem.media.flatMap((media) =>
+          archiveMediaAssets(media).map((asset) => asset.fileName.toLowerCase())
+        );
+        const names = new Set(assetNames);
         if (
           ids.size !== nextItem.media.length ||
-          names.size !== nextItem.media.length ||
+          names.size !== assetNames.length ||
           [...this.items.values()].some(
             (entry) => entry.id !== item.id && entry.media.some((media) => ids.has(media.id))
           )
         )
           throw new Error("ARCHIVE_MEDIA_IDENTITY_CONFLICT");
-        nextItem.totalBytes = nextItem.media.reduce((sum, media) => sum + media.size, 0);
+        nextItem.totalBytes = archiveMediaBytes(nextItem.media);
         const usedBytes = [...this.items.values()].reduce((sum, entry) => sum + entry.totalBytes, 0);
         if (usedBytes - (previousItem?.totalBytes ?? 0) + nextItem.totalBytes > this.config.xhsArchiveMaxStorageBytes) {
           throw new ContentArchiveStoreError("XHS_STORAGE_QUOTA_EXCEEDED", 413, "存档空间不足，请先释放空间");
@@ -323,6 +379,7 @@ export class ContentArchiveStore {
     await this.initialize();
     return this.withStorageMutation(() =>
       this.withItemMutation(id, async () => {
+        this.assertVideoEditIdle(id);
         const item = this.items.get(id);
         if (!item) return false;
         const directory = path.join(this.config.xhsArchiveItemsDir, safeId(id));
@@ -388,6 +445,192 @@ export class ContentArchiveStore {
   async totalBytes() {
     await this.initialize();
     return [...this.items.values()].reduce((sum, item) => sum + item.totalBytes, 0);
+  }
+
+  assertVideoEditIdle(itemId: string) {
+    if (this.videoEditLeases.has(itemId))
+      throw new ContentArchiveStoreError(
+        "ARCHIVE_EDIT_BUSY",
+        409,
+        "配乐任务正在使用该作品，请先停止任务或等待保存完成"
+      );
+  }
+
+  async beginVideoEdit(itemId: string, mediaId: string, checksum: string, revision: number, allowImages = false) {
+    await this.initialize();
+    return this.withItemMutation(itemId, async () => {
+      this.assertVideoEditIdle(itemId);
+      const item = this.items.get(itemId);
+      const media = item?.media.find((entry) => entry.id === mediaId);
+      if (!item || !media) throw new ContentArchiveStoreError("ARCHIVE_MEDIA_NOT_FOUND", 404, "归档媒体不存在");
+      if (
+        !["video", "live-photo"].includes(media.kind) &&
+        !(allowImages && media.kind === "image" && !media.frameSourceMediaId)
+      )
+        throw new ContentArchiveStoreError("ARCHIVE_EDIT_VIDEO_REQUIRED", 400, "请选择视频媒体编辑配乐");
+      if (media.checksum !== checksum || (media.audioEdit?.revision ?? 0) !== revision)
+        throw new ContentArchiveStoreError("ARCHIVE_EDIT_CONFLICT", 409, "视频已被其他操作更新，请重新打开编辑器");
+      const token = nanoid();
+      this.videoEditLeases.set(itemId, token);
+      return {
+        item: structuredClone(item),
+        media: structuredClone(media),
+        token,
+        directory: path.join(this.config.xhsArchiveItemsDir, safeId(itemId)),
+        release: () => {
+          if (this.videoEditLeases.get(itemId) === token) this.videoEditLeases.delete(itemId);
+        }
+      };
+    });
+  }
+
+  async saveVideoEdit(
+    itemId: string,
+    token: string,
+    checksum: string,
+    revision: number,
+    media: ContentArchiveMedia,
+    staging: string,
+    addedFiles: string[],
+    persistCompletion?: () => void,
+    sourceImageId?: string
+  ) {
+    await assertArchiveStaging(staging, this.config.xhsArchiveStagingDir);
+    return this.withStorageMutation(() =>
+      this.withItemMutation(itemId, async () => {
+        const current = this.items.get(itemId);
+        const previous = current?.media.find((entry) => entry.id === (sourceImageId ?? media.id));
+        if (
+          !current ||
+          !previous ||
+          this.videoEditLeases.get(itemId) !== token ||
+          previous.checksum !== checksum ||
+          (previous.audioEdit?.revision ?? 0) !== revision
+        )
+          throw new ContentArchiveStoreError("ARCHIVE_EDIT_CONFLICT", 409, "视频已更新或编辑已失效，原有成品已保留");
+        if (!media.audioEdit || media.audioEdit.revision !== revision + 1)
+          throw new Error("ARCHIVE_EDIT_REVISION_INVALID");
+        const activeNames = new Set(archiveMediaAssets(media, false).map((asset) => asset.fileName));
+        media.audioEdit.pendingFiles = sourceImageId
+          ? []
+          : archiveMediaAssets(previous).filter((asset) => !activeNames.has(asset.fileName));
+        const next = structuredClone(current);
+        if (sourceImageId) {
+          if (next.media.some((entry) => entry.id === media.id)) throw new Error("ARCHIVE_MEDIA_IDENTITY_CONFLICT");
+          next.media.push(structuredClone(media));
+        } else next.media[next.media.findIndex((entry) => entry.id === media.id)] = structuredClone(media);
+        next.totalBytes = archiveMediaBytes(next.media);
+        next.updatedAt = new Date().toISOString();
+        if (!isContentArchiveItem(next)) throw new Error("ARCHIVE_PAYLOAD_INVALID");
+        const names = next.media.flatMap((entry) =>
+          archiveMediaAssets(entry).map((asset) => asset.fileName.toLowerCase())
+        );
+        if (new Set(names).size !== names.length) throw new Error("ARCHIVE_MEDIA_IDENTITY_CONFLICT");
+        const used = [...this.items.values()].reduce((sum, item) => sum + item.totalBytes, 0);
+        if (used - current.totalBytes + next.totalBytes > this.config.xhsArchiveMaxStorageBytes)
+          throw new ContentArchiveStoreError("ARCHIVE_STORAGE_QUOTA_EXCEEDED", 413, "归档空间不足，原成品已保留");
+        const directory = path.join(this.config.xhsArchiveItemsDir, safeId(itemId));
+        const moved: string[] = [];
+        try {
+          for (const file of addedFiles) {
+            if (!activeNames.has(file) || path.basename(file) !== file || file.includes(":") || file.includes("\\"))
+              throw new Error("ARCHIVE_MEDIA_PATH_INVALID");
+            const target = path.join(directory, file);
+            if (await exists(target)) throw new Error("ARCHIVE_EDIT_FILE_CONFLICT");
+            await fsp.rename(path.join(staging, file), target);
+            moved.push(target);
+          }
+          await replaceArchiveManifest(directory, next, async () => {
+            const files = await inspectArchiveFiles(this.fileMetadata, next, directory, directory);
+            await this.persistItem(next, () => {
+              persistCompletion?.();
+              this.fileMetadata.removeForEntity("xhs-media", media.id);
+              for (const file of files) this.database.upsertFile(file);
+            });
+          });
+        } catch (error) {
+          for (const file of moved) await fsp.rm(file, { force: true }).catch(() => undefined);
+          throw error;
+        }
+        this.items.set(itemId, next);
+        return structuredClone(next);
+      })
+    );
+  }
+
+  /** 播放和 ZIP 持有旧文件直到流结束；新成品使用新文件名，不覆盖正在读取的文件。 */
+  pinMedia(file: string) {
+    this.mediaReadPins.set(file, (this.mediaReadPins.get(file) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const count = (this.mediaReadPins.get(file) ?? 1) - 1;
+      if (count) this.mediaReadPins.set(file, count);
+      else this.mediaReadPins.delete(file);
+      void this.pruneVideoEdits(path.basename(path.dirname(file))).catch(() => undefined);
+    };
+  }
+
+  async pruneVideoEdits(itemId: string) {
+    await this.initialize();
+    return this.pruneLoadedVideoEdits(itemId);
+  }
+  async flushVideoEdits() {
+    await this.storageMutationQueue;
+    await Promise.all(this.itemMutationQueues.values());
+  }
+  private async pruneLoadedVideoEdits(itemId: string) {
+    return this.withStorageMutation(() =>
+      this.withItemMutation(itemId, async () => {
+        const current = this.items.get(itemId);
+        if (
+          !current ||
+          this.videoEditLeases.has(itemId) ||
+          !current.media.some((media) => media.audioEdit?.pendingFiles?.length)
+        )
+          return;
+        const next = structuredClone(current);
+        const directory = path.join(this.config.xhsArchiveItemsDir, safeId(itemId));
+        let changed = false;
+        const active = new Set(
+          next.media.flatMap((entry) => archiveMediaAssets(entry, false).map((file) => file.fileName))
+        );
+        for (const media of next.media) {
+          if (!media.audioEdit?.pendingFiles?.length) continue;
+          const retained = [];
+          for (const file of media.audioEdit.pendingFiles) {
+            const target = path.join(directory, path.basename(file.fileName));
+            if (
+              !/^(edited|music)-[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(file.fileName) ||
+              active.has(file.fileName) ||
+              this.mediaReadPins.has(target)
+            ) {
+              retained.push(file);
+              continue;
+            }
+            try {
+              await fsp.rm(target, { force: true });
+              changed = true;
+            } catch {
+              retained.push(file);
+            }
+          }
+          media.audioEdit.pendingFiles = retained;
+        }
+        if (!changed) return;
+        next.totalBytes = archiveMediaBytes(next.media);
+        // 仅退休成品可先删除后重试清单；原片、当前成品与配乐始终不进入该队列。
+        await replaceArchiveManifest(directory, next, async () => {
+          const files = await inspectArchiveFiles(this.fileMetadata, next, directory, directory);
+          await this.persistItem(next, () => {
+            for (const media of next.media) this.fileMetadata.removeForEntity("xhs-media", media.id);
+            for (const file of files) this.database.upsertFile(file);
+          });
+        });
+        this.items.set(itemId, next);
+      })
+    );
   }
 
   private async withStorageMutation<T>(operation: () => Promise<T>) {
@@ -502,7 +745,7 @@ export class ContentArchiveStore {
 export class ContentArchiveStoreError extends Error {
   constructor(
     readonly code: string,
-    readonly statusCode: 400 | 404 | 413,
+    readonly statusCode: 400 | 404 | 409 | 413,
     message: string
   ) {
     super(message);

@@ -87,6 +87,17 @@ export const tiktokProfileApi = {
         }),
       "重试主页归档失败"
     ),
+  retryWork: (id: string, itemId: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(
+          `${profileBase}/${encodeURIComponent(id)}/retry`,
+          TikTokProfileJobSchema,
+          { itemId },
+          { signal }
+        ),
+      "重试该作品归档失败"
+    ),
   remove: (id: string, signal?: AbortSignal) =>
     withApiError(
       () => httpClient.delete(`${profileBase}/${encodeURIComponent(id)}`, XhsArchiveRemovalSchema, { signal }),

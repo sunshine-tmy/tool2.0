@@ -6,6 +6,11 @@ export const AUDIO_LIBRARY_DEFAULT_STORAGE_BYTES = 10 * 1024 ** 3;
 const options = { additionalProperties: false } as const;
 const Id = Type.String({ pattern: "^[A-Za-z0-9_-]{1,80}$" });
 const Text = Type.String({ maxLength: 20000 });
+export const AudioLibraryPurposeSchema = Type.Union([
+  Type.Literal("general"),
+  Type.Literal("speech"),
+  Type.Literal("music")
+]);
 export const AudioLibraryPresetInputSchema = Type.Object(
   {
     name: Type.String({ minLength: 1, maxLength: 80 }),
@@ -54,6 +59,7 @@ export const AudioLibraryItemSchema = Type.Object(
     id: Id,
     revision: Type.Integer({ minimum: 1 }),
     title: Type.String({ minLength: 1, maxLength: 120 }),
+    purpose: Type.Optional(AudioLibraryPurposeSchema),
     language: Type.String({ minLength: 1, maxLength: 50 }),
     foreignText: Text,
     chineseText: Text,
@@ -108,7 +114,16 @@ export const AudioLibraryListSchema = Type.Object(
   options
 );
 export const AudioLibraryEditSchema = Type.Partial(
-  Type.Pick(AudioLibraryItemSchema, ["title", "language", "foreignText", "chineseText", "note", "groupId", "revision"])
+  Type.Pick(AudioLibraryItemSchema, [
+    "title",
+    "purpose",
+    "language",
+    "foreignText",
+    "chineseText",
+    "note",
+    "groupId",
+    "revision"
+  ])
 );
 export const AudioLibraryImportSchema = Type.Object(
   {
@@ -148,6 +163,9 @@ export const AudioLibraryMutationSchema = Type.Object(
   options
 );
 export type AudioLibraryItem = Static<typeof AudioLibraryItemSchema>;
+export function audioLibraryPurpose(item: Pick<AudioLibraryItem, "purpose" | "source">) {
+  return item.purpose ?? (["chatterbox", "edge-tts"].includes(item.source.kind) ? "speech" : "general");
+}
 export type AudioLibraryItemView = Static<typeof AudioLibraryItemViewSchema>;
 export type AudioLibraryGroup = Static<typeof AudioLibraryGroupSchema>;
 export type AudioLibraryCatalog = Static<typeof AudioLibraryCatalogSchema>;

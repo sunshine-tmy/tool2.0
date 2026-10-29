@@ -23,6 +23,7 @@ import { REQUEST_QUOTAS } from "../../../security/request-quotas";
 import type { ContentArchiveStore } from "./store";
 import type { ContentArchiveTaskService } from "./task-service";
 import { ArchiveTaskError } from "./provider";
+import { ContentArchiveStoreError } from "./store";
 import { registerArchivePreviewRoutes } from "./media-preview-routes";
 import { registerArchiveArtifactRoutes } from "./artifact-routes";
 
@@ -58,7 +59,7 @@ export function registerContentArchiveRoutes(
       try {
         return reply.code(202).send(ok(service.create(request.body.url, request.body.platform)));
       } catch (error) {
-        if (error instanceof ArchiveTaskError)
+        if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code, error.message));
         throw error;
       }
@@ -101,7 +102,7 @@ export function registerContentArchiveRoutes(
         const task = await service.refresh(request.params.id);
         return task ? reply.code(202).send(ok(task)) : reply.code(404).send(fail("ARCHIVE_NOT_FOUND", "存档不存在"));
       } catch (error) {
-        if (error instanceof ArchiveTaskError)
+        if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code, error.message));
         throw error;
       }
@@ -121,7 +122,7 @@ export function registerContentArchiveRoutes(
       try {
         await service.remove(item.id);
       } catch (error) {
-        if (error instanceof ArchiveTaskError)
+        if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code, error.message));
         throw error;
       }

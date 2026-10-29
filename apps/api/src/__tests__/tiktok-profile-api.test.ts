@@ -7,6 +7,7 @@ import { createApp } from "../app";
 import { getConfig } from "../config";
 import { createDevelopmentRuntimeLayout } from "../runtime/runtime-layout";
 import { TikTokRuntime } from "../domains/content-archive/providers/tiktok/runtime";
+import { ArchiveTaskError } from "../domains/content-archive/core/provider";
 import { TikTokProfileReader, type ProfileDiscovery } from "../domains/content-archive/providers/tiktok/profile-reader";
 const base = "/api/v1/tools/media-archive/tiktok-profiles";
 let app: Awaited<ReturnType<typeof createApp>> | undefined, root: string;
@@ -152,6 +153,17 @@ it("rejects credentials and invalid selections before AJV stripping, and require
   ])
     expect((await server.inject({ method: "POST", url: `${base}/${id}/archive`, payload })).statusCode).toBe(400);
   expect((await server.inject(`${base}/${id}/works?page=201`)).statusCode).toBe(400);
+  for (const payload of [
+    { itemId: "bad" },
+    { itemId: "12345", cookie: "forbidden" },
+    { url: discovery.works[0]!.url },
+    { itemId: ["12345"] }
+  ])
+    expect((await server.inject({ method: "POST", url: `${base}/${id}/retry`, payload })).statusCode).toBe(400);
+  expect(
+    (await server.inject({ method: "POST", url: `${base}/${id}/retry`, payload: { itemId: "99999" } })).json().error
+      .code
+  ).toBe("TIKTOK_PROFILE_NO_RETRY");
   expect((await server.inject({ method: "POST", url: `${base}/missing_id/retry` })).statusCode).toBe(404);
 });
 it("holds maintenance protection during discovery, preserves stopped progress and rejects LAN guest writes", async () => {
@@ -183,6 +195,7 @@ it("keeps every new write behind existing LAN administrator authentication", asy
   for (const [method, url, payload] of [
     ["POST", base, { url: "https://www.tiktok.com/@shop" }],
     ["POST", `${base}/profile_123/cancel`, undefined],
+    ["POST", `${base}/profile_123/retry`, { itemId: "12345" }],
     ["POST", `${base}/profile_123/archive`, { selection: "all", existing: "skip", allowPartial: true }],
     ["DELETE", `${base}/profile_123`, undefined]
   ] as const)
@@ -191,3 +204,57 @@ it("keeps every new write behind existing LAN administrator authentication", asy
     );
   expect(TikTokProfileReader.prototype.read).not.toHaveBeenCalled();
 });
+it("retries a failed row and matches an ordinary single-work success back into profile summary, page and CSV", async () => {
+  const server = await setup(),
+    id = await create(server);
+  const extract = vi.mocked(TikTokRuntime.prototype.extract);
+  extract.mockRejectedValueOnce(new ArchiveTaskError("TIKTOK_MEDIA_UNAVAILABLE", "模拟媒体不可用"));
+  extract.mockRejectedValueOnce(new ArchiveTaskError("TIKTOK_MEDIA_UNAVAILABLE", "模拟再次失败"));
+  await server.inject({
+    method: "POST",
+    url: `${base}/${id}/archive`,
+    payload: { selection: "all", existing: "skip", allowPartial: false }
+  });
+  const finished = async () =>
+    vi.waitFor(
+      async () => {
+        expect((await server.inject(`${base}/${id}`)).json().data).toMatchObject({
+          phase: "completed",
+          failedCount: 1
+        });
+      },
+      { timeout: 9000, interval: 80 }
+    );
+  await finished();
+  const retry = await server.inject({ method: "POST", url: `${base}/${id}/retry`, payload: { itemId: "12345" } });
+  expect(retry.statusCode).toBe(200);
+  expect(retry.json().data).toMatchObject({ phase: "archiving", pendingCount: 1 });
+  await finished();
+  const single = await server.inject({
+    method: "POST",
+    url: "/api/v1/tools/media-archive/items",
+    payload: { platform: "tiktok", url: discovery.works[0]!.url }
+  });
+  expect(single.statusCode).toBe(202);
+  const taskId = single.json().data.id;
+  let archiveId = "";
+  await vi.waitFor(
+    async () => {
+      const task = (await server.inject(`/api/v1/tools/media-archive/tasks/${taskId}`)).json().data;
+      expect(task.status).toBe("completed");
+      archiveId = task.archiveId;
+    },
+    { timeout: 5000, interval: 80 }
+  );
+  expect((await server.inject(`${base}/${id}`)).json().data).toMatchObject({ archivedCount: 1, failedCount: 0 });
+  expect((await server.inject(`${base}/${id}/works`)).json().data.items[0].outcome).toEqual({
+    status: "completed",
+    progress: 100,
+    message: "已匹配单条成功归档",
+    archiveId
+  });
+  const csv = await server.inject(`${base}/${id}/results.csv`);
+  expect(csv.body).toContain(archiveId);
+  expect(csv.body).not.toContain("TIKTOK_MEDIA_UNAVAILABLE");
+  expect(extract).toHaveBeenCalledTimes(3);
+}, 25000);

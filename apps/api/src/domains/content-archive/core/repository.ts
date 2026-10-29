@@ -12,6 +12,7 @@ import {
 import { archiveIdentity } from "../../../database/archive-identity";
 import type { ToolboxDatabase } from "../../../database/toolbox-database";
 import { ArchiveGroupStore } from "./groups";
+import { compareArchiveListItems } from "./list-order";
 
 type Row = { payload_json: string; platform: ArchivePlatform; content_id: string };
 
@@ -34,6 +35,12 @@ export class ContentArchiveRepository {
       .prepare("SELECT payload_json, platform, content_id FROM xhs_archives WHERE platform = ? AND content_id = ?")
       .get(platform, contentId) as Row | undefined;
     return row ? decode(row) : undefined;
+  }
+
+  listIdentities(platform: ArchivePlatform) {
+    return this.database.connection
+      .prepare("SELECT id, content_id AS contentId FROM xhs_archives WHERE platform = ? ORDER BY id")
+      .all(platform) as { id: string; contentId: string }[];
   }
 
   list(options: ContentArchiveListQuery = {}): ContentArchiveListResponse {
@@ -72,6 +79,8 @@ export class ContentArchiveRepository {
             ...(item.translation?.topics.flatMap((topic) => [topic.machine, topic.edited]) ?? [])
           ].some((text) => text?.toLowerCase().includes(keyword))
       );
+    const sort = options.sort;
+    if (sort) items.sort((left, right) => compareArchiveListItems(left, right, sort));
     const page = options.page ?? 1;
     const pageSize = options.pageSize ?? 12;
     return {

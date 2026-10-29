@@ -112,13 +112,24 @@
           </small>
         </div>
         <a :href="mediaUrl(media.downloadUrl)">下载当前媒体</a>
+        <n-button v-if="isVideoMedia(media)" size="small" @click="openAudioEditor">编辑配乐</n-button>
+        <n-button v-if="media.kind === 'image' && !media.frameSourceMediaId" size="small" @click="openSlideshow"
+          >图集生成视频</n-button
+        >
       </div>
     </template>
+    <ArchiveAudioEditor
+      v-if="editorOpen && media"
+      v-model:show="editorOpen"
+      :item="item"
+      :media-id="media.id"
+      @saved="onAudioSaved"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { NButton, NImage } from "naive-ui";
 import { Camera, ChevronLeft, ChevronRight, Play } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
@@ -135,6 +146,26 @@ const props = withDefaults(
   { compact: false }
 );
 
+const ArchiveAudioEditor = defineAsyncComponent(() => import("./ArchiveAudioEditor.vue"));
+const editorOpen = ref(false);
+function openSlideshow() {
+  const index = props.item.media.findIndex((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
+  if (index >= 0) {
+    selected.value = index;
+    openAudioEditor();
+  }
+}
+function onAudioSaved(updated: ContentArchiveItem) {
+  const generated = updated.media.findIndex(
+    (entry) => entry.derivedFromImages && !props.item.media.some((existing) => existing.id === entry.id)
+  );
+  if (generated >= 0) selected.value = generated;
+  emit("mediaUpdated", updated);
+}
+function openAudioEditor() {
+  videoElement.value?.pause();
+  editorOpen.value = true;
+}
 const selected = ref(0);
 const requestScope = useRequestScope();
 const media = computed(() => props.item.media[selected.value] ?? props.item.media[0]);
@@ -157,7 +188,7 @@ const frameHint = computed(() => {
   if (!videoPaused.value) return "请先暂停视频，再保存当前画面";
   return videoFrameReady.value ? "暂停到目标画面后保存 PNG" : "等待视频画面加载后即可保存";
 });
-const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem] }>();
+const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem]; mediaUpdated: [item: ContentArchiveItem] }>();
 
 watch(
   () => props.item.id,

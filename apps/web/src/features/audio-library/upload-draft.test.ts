@@ -7,6 +7,7 @@ describe("音频上传可选信息", () => {
     expect(draft.file).toBe(file);
     expect(uploadFields(draft)).toEqual({
       title: "",
+      purpose: "general",
       language: "",
       foreignText: "",
       chineseText: "",
@@ -16,7 +17,11 @@ describe("音频上传可选信息", () => {
     });
   });
   it("发送所有可编辑信息，批量文件的分组与备注相互独立，另存重试不丢信息", () => {
-    const one = createUploadDraft(new File(["one"], "one.wav"), { language: "ms", groupId: "opening" });
+    const one = createUploadDraft(new File(["one"], "one.wav"), {
+      language: "ms",
+      groupId: "opening",
+      purpose: "music"
+    });
     const two = createUploadDraft(new File(["two"], "two.wav"));
     Object.assign(one, {
       title: "开场",
@@ -27,6 +32,7 @@ describe("音频上传可选信息", () => {
     expect(uploadFields(one, true)).toEqual({
       title: "开场",
       language: "ms",
+      purpose: "music",
       foreignText: "Selamat datang",
       chineseText: "欢迎",
       note: "轻声播放\n夜场使用",

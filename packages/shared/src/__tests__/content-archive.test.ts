@@ -32,7 +32,7 @@ import {
   type ContentArchiveCreateInput,
   type ContentArchiveTask
 } from "../archive/content-archive";
-import type { XhsArchiveItem } from "../archive/xhs-archive";
+import { XhsArchiveListQuerySchema, type XhsArchiveItem } from "../archive/xhs-archive";
 
 const now = "2026-10-01T00:00:00.000Z";
 const media: ContentArchiveMedia = {
@@ -177,13 +177,21 @@ describe("content archive contract", () => {
     const input: ContentArchiveCreateInput = { url: "https://v.douyin.com/sample/", platform: "auto" };
     expect(Value.Check(ContentArchiveListQuerySchema, query)).toBe(true);
     expect(isContentArchiveListQuery(query)).toBe(true);
+    for (const sort of ["published-desc", "published-asc", "archived-desc", "archived-asc"]) {
+      expect(Value.Check(ContentArchiveListQuerySchema, { ...query, sort })).toBe(true);
+      expect(Value.Check(XhsArchiveListQuerySchema, { sort })).toBe(false);
+      expect(isContentTranslationBatchInput({ mode: "missing-or-stale", filter: { sort } })).toBe(false);
+    }
     expect(Value.Check(ContentArchiveCreateInputSchema, input)).toBe(true);
     for (const invalid of [
       { platform: "auto" },
       { platform: "instagram" },
       { page: 0 },
       { pageSize: 51 },
-      { cookie: "private" }
+      { cookie: "private" },
+      { sort: "updated-desc" },
+      { sort: "published-desc;DROP TABLE xhs_archives" },
+      { sort: ["published-asc"] }
     ]) {
       expect(Value.Check(ContentArchiveListQuerySchema, invalid)).toBe(false);
       expect(isContentArchiveListQuery(invalid)).toBe(false);

@@ -11,6 +11,7 @@ import * as tiktok from "../archive/tiktok-runtime";
 import * as imports from "../archive/archive-import";
 import * as groups from "../archive/archive-groups";
 import * as profiles from "../archive/tiktok-profile";
+import * as videoEdits from "../archive/video-edit";
 
 describe("archive domain entry", () => {
   it("retains exact existing export names and identities, including legacy contracts", () => {
@@ -23,7 +24,8 @@ describe("archive domain entry", () => {
       ...tiktok,
       ...imports,
       ...groups,
-      ...profiles
+      ...profiles,
+      ...videoEdits
     };
     expect(Object.keys(archive).sort()).toEqual(Object.keys(existing).sort());
     for (const [key, value] of Object.entries(existing)) {

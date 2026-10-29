@@ -46,8 +46,10 @@
         :groups="archiveGroups"
         @changed="loadArchives"
         @open-archive="openDetail"
+        @retry-single="retryProfileWork"
       />
       <ArchiveTaskPanel
+        ref="fetchPanel"
         v-model:input-url="inputUrl"
         v-model:platform="platform"
         :task="task"
@@ -76,6 +78,7 @@
         :has-edited="hasEdited"
         :format-date="formatDate"
         @frame-saved="onFrameSaved"
+        @media-updated="onMediaUpdated"
         @copy="copyContent"
       />
       <ArchiveGroups
@@ -88,6 +91,7 @@
         v-model:keyword="keyword"
         v-model:type-filter="typeFilter"
         v-model:platform-filter="platformFilter"
+        v-model:sort="sort"
         v-model:page="page"
         :archives="archives"
         :list-loading="listLoading"
@@ -115,6 +119,7 @@
         :has-edited="hasEdited"
         :zip-url="zipUrl"
         @frame-saved="onFrameSaved"
+        @media-updated="onMediaUpdated"
         @copy="copyContent"
       />
       <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
@@ -124,7 +129,7 @@
 
 <script setup lang="ts">
 import { formatBytesThroughGb as formatBytes } from "../../shared/utils/format-bytes";
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton, useMessage } from "naive-ui";
 import { useRouter } from "vue-router";
 import {
@@ -160,6 +165,7 @@ import { formatArchiveDate } from "./format-date";
 
 const message = useMessage();
 const profileImport = ref<InstanceType<typeof TikTokProfileImport>>();
+const fetchPanel = ref<InstanceType<typeof ArchiveTaskPanel>>();
 const router = useRouter();
 const confirm = useConfirmDialog();
 const desktopMode = computed(() => Boolean(window.toolboxDesktop));
@@ -192,6 +198,7 @@ const {
   keyword,
   typeFilter,
   platformFilter,
+  sort,
   groupFilter,
   page,
   listLoading,
@@ -244,6 +251,15 @@ function handlePagePaste(event: ClipboardEvent) {
   event.preventDefault();
   inputUrl.value = text;
   message.success("已粘贴到链接输入框");
+}
+async function retryProfileWork(url: string) {
+  const link = identifyArchiveLink(url, "tiktok");
+  if (!link.ok) return;
+  inputUrl.value = link.url;
+  platform.value = "tiktok";
+  message.info("已填入作品链接，请点击获取并存档重试；成功后会同步主页任务");
+  await nextTick();
+  if (!requestScope.aborted) fetchPanel.value?.focusInput?.();
 }
 async function startFetch() {
   if (!inputUrl.value.trim()) return;
@@ -397,6 +413,11 @@ async function onFrameSaved(updated: ContentArchiveItem) {
   collection.updateItem(updated);
   await loadArchives();
   message.success("视频截帧已保存到当前归档");
+}
+async function onMediaUpdated(updated: ContentArchiveItem) {
+  collection.updateItem(updated);
+  await loadArchives();
+  message.success("归档视频已更新");
 }
 async function translateCurrent() {
   if (!(await requireTranslationCapability())) return;

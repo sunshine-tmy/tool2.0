@@ -43,6 +43,7 @@ export function useAudioLibraryItems(collection: AudioLibraryCollection) {
     detail.value = item;
     Object.assign(draft, {
       title: item.title,
+      purpose: item.purpose ?? (["chatterbox", "edge-tts"].includes(item.source.kind) ? "speech" : "general"),
       language: item.language,
       foreignText: item.foreignText,
       chineseText: item.chineseText,

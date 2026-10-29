@@ -78,6 +78,9 @@ export class XhsArchiveStore {
   totalBytes() {
     return this.content.totalBytes();
   }
+  pinMedia(file: string) {
+    return this.content.pinMedia(file);
+  }
 }
 
 function legacyItem(item: ContentArchiveItem): XhsArchiveItem {
@@ -86,8 +89,8 @@ function legacyItem(item: ContentArchiveItem): XhsArchiveItem {
     ...value,
     media: value.media.map((media) => ({
       ...media,
-      previewUrl: `/api/v1/tools/xhs-archive/items/${item.id}/media/${media.id}`,
-      downloadUrl: `/api/v1/tools/xhs-archive/items/${item.id}/media/${media.id}?download=1`
+      previewUrl: `/api/v1/tools/xhs-archive/items/${item.id}/media/${media.id}${media.audioEdit ? `?v=${media.checksum}` : ""}`,
+      downloadUrl: `/api/v1/tools/xhs-archive/items/${item.id}/media/${media.id}?download=1${media.audioEdit ? `&v=${media.checksum}` : ""}`
     }))
   };
 }

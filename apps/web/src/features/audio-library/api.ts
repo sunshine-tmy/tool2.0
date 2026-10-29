@@ -34,8 +34,10 @@ export const audioLibraryApi = {
   loadPreset(id: string) {
     return withApiError(() => httpClient.get(`${root}/presets/${id}/load`, AudioLibraryPresetLoadSchema));
   },
-  list(params: Record<string, unknown> = {}) {
-    return withApiError(() => httpClient.get(`${root}/items`, AudioLibraryListSchema, { params }));
+  list(params: Record<string, unknown> = {}, signal?: AbortSignal) {
+    return withApiError(() =>
+      httpClient.get(`${root}/items`, AudioLibraryListSchema, { params, ...(signal ? { signal } : {}) })
+    );
   },
   item(id: string) {
     return withApiError(() => httpClient.get(`${root}/items/${id}`, AudioLibraryItemViewSchema));
@@ -95,7 +97,7 @@ export const audioLibraryApi = {
       )
     );
   },
-  upload(file: File, fields: Record<string, string>, onProgress?: (percent: number) => void) {
+  upload(file: File, fields: Record<string, string>, onProgress?: (percent: number) => void, signal?: AbortSignal) {
     const form = new FormData();
     for (const [key, value] of Object.entries(fields)) form.append(key, value);
     form.append("file", file, file.name);
@@ -106,6 +108,7 @@ export const audioLibraryApi = {
         form,
         {
           timeout: 0,
+          ...(signal ? { signal } : {}),
           onUploadProgress: (event) =>
             onProgress?.(Math.min(100, Math.round((event.loaded / (event.total || file.size)) * 100)))
         }

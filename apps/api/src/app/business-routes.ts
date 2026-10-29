@@ -31,7 +31,13 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
   await registerImageAiRoutes(app, config, database, taskStore, fileMetadata);
   const edgeTtsBatches = await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
   const chatterboxArchive = await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
-  await registerAudioLibraryRoutes(app, config, database, chatterboxArchive.batches, edgeTtsBatches);
+  const audioLibrary = await registerAudioLibraryRoutes(
+    app,
+    config,
+    database,
+    chatterboxArchive.batches,
+    edgeTtsBatches
+  );
   await registerLanTransferRoutes({ app, config, database, fileMetadata });
   await registerXhsArchiveRoutes({
     app,
@@ -47,7 +53,8 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
     store: xhsStore,
     douyinRuntime,
     tiktokRuntime,
-    profileReader: services.profileReader
+    profileReader: services.profileReader,
+    audioLibrary
   });
   registerMaintenanceRoutes(app, { config, database, xhsStore });
   registerComponentRoutes(app, componentManager, { allowOfflineImport: config.desktopManagedCapabilities });

@@ -11,6 +11,8 @@ export function useAudioLibraryCollection() {
     selected = ref<string[]>([]);
   const views = [
     { label: "全部音频", value: "all" },
+    { label: "配音素材", value: "speech" },
+    { label: "背景音乐", value: "music" },
     { label: "未分组", value: "ungrouped" },
     { label: "待补全文案", value: "incomplete" },
     { label: "回收站", value: "trash" }

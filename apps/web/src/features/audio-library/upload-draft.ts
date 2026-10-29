@@ -2,6 +2,7 @@
 export type AudioUploadDraft = {
   file: File;
   title: string;
+  purpose: "general" | "speech" | "music";
   language: string | null;
   groupId: string | null;
   foreignText: string;
@@ -14,11 +15,12 @@ export type AudioUploadDraft = {
 };
 export function createUploadDraft(
   file: File,
-  defaults: { language?: string | null; groupId?: string | null } = {}
+  defaults: { language?: string | null; groupId?: string | null; purpose?: "general" | "speech" | "music" } = {}
 ): AudioUploadDraft {
   return {
     file,
     title: "",
+    purpose: defaults.purpose ?? "general",
     language: defaults.language || null,
     groupId: defaults.groupId || null,
     foreignText: "",
@@ -33,6 +35,7 @@ export function createUploadDraft(
 export function uploadFields(entry: AudioUploadDraft, keepDuplicate = false): Record<string, string> {
   return {
     title: entry.title,
+    purpose: entry.purpose,
     language: entry.language || "",
     foreignText: entry.foreignText,
     chineseText: entry.chineseText,

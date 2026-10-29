@@ -16,6 +16,12 @@ import type { ArchiveImportService } from "../batch/service";
 import { ArchiveGroupStore } from "../core/groups";
 import { ArchiveTaskError } from "../core/provider";
 import type { TikTokProfileReader, ProfileDiscovery } from "../providers/tiktok/profile-reader";
+import {
+  profileSuccessContext,
+  SuccessMatchSchema,
+  type ProfileSuccessContext,
+  type SuccessMatch
+} from "./success-matches";
 
 const kind = "tiktok-profile-job";
 const id = Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" });
@@ -33,7 +39,8 @@ const RecordSchema = Type.Object(
       })
     ),
     nextIndex: Type.Integer({ minimum: 0, maximum: TIKTOK_PROFILE_MAX_WORKS }),
-    currentBatchId: Type.Optional(id)
+    currentBatchId: Type.Optional(id),
+    successMatches: Type.Optional(Type.Array(SuccessMatchSchema, { maxItems: TIKTOK_PROFILE_MAX_WORKS }))
   },
   { additionalProperties: false }
 );
@@ -47,6 +54,7 @@ export class TikTokProfileService {
   private queue: Promise<unknown> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
   private stopped = false;
+  private successRevisions = new Map<string, string>();
   private discovery?: { id: string; controller: AbortController; done: Promise<void> };
   constructor(
     private readonly database: ToolboxDatabase,
@@ -86,9 +94,10 @@ export class TikTokProfileService {
     this.schedule();
   }
   list() {
+    const context = profileSuccessContext(this.database);
     return [...this.records.values()]
       .sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt))
-      .map((record) => this.project(record).meta);
+      .map((record) => this.project(record, context).meta);
   }
   get(id: string) {
     const record = this.records.get(id);
@@ -191,6 +200,7 @@ export class TikTokProfileService {
         throw new ArchiveTaskError("TIKTOK_PROFILE_SELECTION_INVALID", "请选择本次主页列表中的作品");
       if (input.groupId) new ArchiveGroupStore(this.database).assertExists(input.groupId);
       record.selectedIds = [...ids];
+      record.successMatches = record.successMatches?.filter((match) => !ids.includes(match.workId));
       record.nextIndex = 0;
       record.currentBatchId = undefined;
       record.meta.phase = "archiving";
@@ -202,12 +212,37 @@ export class TikTokProfileService {
       return this.get(id)!;
     });
   }
-  async retry(id: string) {
+  async retry(id: string, itemId?: string) {
+    if (itemId) {
+      const queued = await this.serial(() => {
+        const record = this.required(id);
+        if (
+          !record.works.some((work) => work.id === itemId) ||
+          this.project(record).outcomes.get(itemId)?.status !== "failed"
+        )
+          throw new ArchiveTaskError("TIKTOK_PROFILE_NO_RETRY", "请选择当前列表中归档失败的作品", 409);
+        if (record.meta.phase !== "archiving") return undefined;
+        if (this.stopped) throw new ArchiveTaskError("TIKTOK_PROFILE_BUSY", "服务正在退出", 409);
+        const index = record.selectedIds?.indexOf(itemId) ?? -1;
+        record.selectedIds = (record.selectedIds ?? []).filter((id) => id !== itemId);
+        if (index >= 0 && index < record.nextIndex) record.nextIndex--;
+        record.selectedIds.push(itemId);
+        record.successMatches = record.successMatches?.filter((match) => match.workId !== itemId);
+        record.meta.message = "失败作品已加入后续重试队列；当前批次继续执行";
+        this.save(record);
+        return this.get(id)!;
+      });
+      if (queued) return queued;
+    }
     const record = this.required(id);
     if (active(record.meta.phase)) throw new ArchiveTaskError("TIKTOK_PROFILE_BUSY", "请先停止并等待当前任务结束", 409);
     const outcomes = this.project(record).outcomes;
     const itemIds = record.works
-      .filter((work) => ["failed", "waiting", "running"].includes(outcomes.get(work.id)?.status ?? ""))
+      .filter(
+        (work) =>
+          (!itemId || work.id === itemId) &&
+          ["failed", "waiting", "running"].includes(outcomes.get(work.id)?.status ?? "")
+      )
       .map((work) => work.id);
     if (!itemIds.length) throw new ArchiveTaskError("TIKTOK_PROFILE_NO_RETRY", "没有失败或中断后未完成的作品", 409);
     return this.start(id, {
@@ -243,10 +278,27 @@ export class TikTokProfileService {
         throw new ArchiveTaskError("TIKTOK_PROFILE_BUSY", "请先停止并等待当前任务结束", 409);
       await this.imports.removeOwned(id, () => this.database.remove(kind, id));
       this.records.delete(id);
+      this.successRevisions.delete(id);
     });
   }
   tick() {
-    return this.serial(() => this.advance());
+    return this.serial(async () => {
+      const context = profileSuccessContext(this.database);
+      const revisionFor = (record: ProfileRecord) =>
+        JSON.stringify([
+          context.revision,
+          record.meta.updatedAt,
+          record.currentBatchId ? this.imports.get(record.currentBatchId)?.updatedAt : undefined
+        ]);
+      for (const record of this.records.values()) {
+        if (revisionFor(record) === this.successRevisions.get(record.meta.id)) continue;
+        const { matches } = this.project(record, context);
+        if (JSON.stringify(record.successMatches ?? []) !== JSON.stringify(matches))
+          this.save({ ...structuredClone(record), successMatches: matches });
+        this.successRevisions.set(record.meta.id, revisionFor(this.records.get(record.meta.id)!));
+      }
+      await this.advance();
+    });
   }
   async close() {
     this.stopped = true;
@@ -268,6 +320,7 @@ export class TikTokProfileService {
       this.serial(() => {
         const record = this.required(id);
         record.works = structuredClone(snapshot.works);
+        this.successRevisions.delete(id);
         record.meta.discoveredCount = record.works.length;
         record.meta.declaredCount = snapshot.declaredCount;
         record.meta.complete = snapshot.complete;
@@ -411,14 +464,19 @@ export class TikTokProfileService {
       } else throw error;
     }
   }
-  private project(record: ProfileRecord) {
+  private project(record: ProfileRecord, context: ProfileSuccessContext = profileSuccessContext(this.database)) {
     const outcomes = new Map<string, Outcome>();
+    const attempts = new Map<string, { key: string; time: string }>();
     for (const id of record.batchIds) {
       const batch = this.imports.get(id);
       if (!batch || batch.ownerProfileId !== record.meta.id) continue;
       for (const row of batch.rows) {
         const work = /\/(?:video|photo)\/(\d{5,24})\/?$/.exec(new URL(row.inputUrl).pathname)?.[1];
         if (work) {
+          attempts.set(work, {
+            key: row.taskId ?? `${batch.id}:${row.rowNumber}`,
+            time: (row.taskId && context.taskTimes.get(row.taskId)) || batch.updatedAt
+          });
           const { status, progress, message, errorCode, archiveId } = row;
           outcomes.set(work, {
             status,
@@ -436,6 +494,29 @@ export class TikTokProfileService {
         progress: 0,
         message: record.meta.phase === "cancelled" ? "已停止后续归档" : "等待主页批次调度（重启后需手动继续）"
       });
+    const matches: SuccessMatch[] = [];
+    const savedMatches = new Map(record.successMatches?.map((match) => [match.workId, match]));
+    for (const work of record.works) {
+      const status = outcomes.get(work.id)?.status;
+      if (status && status !== "failed" && status !== "cancelled") continue;
+      const attempt = attempts.get(work.id) ?? { key: "unselected", time: record.meta.createdAt };
+      const saved = savedMatches.get(work.id);
+      const success = context.successes.get(work.id);
+      const match =
+        saved?.attemptKey === attempt.key && context.identities.get(saved.archiveId) === work.id
+          ? saved
+          : success && Date.parse(success.completedAt) > Date.parse(attempt.time)
+            ? { workId: work.id, ...success, attemptKey: attempt.key }
+            : undefined;
+      if (!match) continue;
+      matches.push(match);
+      outcomes.set(work.id, {
+        status: "completed",
+        progress: 100,
+        message: "已匹配单条成功归档",
+        archiveId: match.archiveId
+      });
+    }
     const rows = [...outcomes.values()],
       meta = structuredClone(record.meta);
     meta.archivedCount = rows.filter((row) => row.status === "completed").length;
@@ -445,7 +526,7 @@ export class TikTokProfileService {
     ).length;
     meta.pendingCount = rows.filter((row) => ["waiting", "running"].includes(row.status)).length;
     meta.batchCount = record.batchIds.length;
-    return { meta, outcomes };
+    return { meta, outcomes, matches };
   }
   private required(id: string) {
     const record = this.records.get(id);

@@ -32,6 +32,47 @@ afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
 });
 describe("双平台归档集合", () => {
+  it("applies each date ordering across filters/pages, resetting selection without adding sorting to translation scope", async () => {
+    const { collection: c } = setup();
+    c.groupFilter.value = "group_123";
+    c.platformFilter.value = "tiktok";
+    c.keyword.value = "商品";
+    await nextTick();
+    for (const sort of ["published-desc", "published-asc", "archived-asc", "archived-desc"] as const) {
+      c.page.value = 3;
+      c.toggleSelectAllArchives(true);
+      c.sort.value = sort;
+      expect(c.page.value).toBe(1);
+      expect(c.selectedArchiveIds.value).toEqual([]);
+      await nextTick();
+      expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ groupId: "group_123", platform: "tiktok", keyword: "商品", sort, page: 1 }),
+        expect.any(AbortSignal)
+      );
+      expect(c.filter()).not.toHaveProperty("sort");
+      c.page.value = 2;
+      await c.loadArchives();
+      expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2, sort }),
+        expect.any(AbortSignal)
+      );
+    }
+  });
+  it("aborts the old order immediately and ignores its late response after a new sorting request", async () => {
+    const old = deferred<ReturnType<typeof listFixture>>();
+    const fresh = deferred<ReturnType<typeof listFixture>>();
+    vi.mocked(contentArchiveApi.list).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+    const { collection: c } = setup();
+    const first = c.loadArchives();
+    c.sort.value = "published-asc";
+    expect(vi.mocked(contentArchiveApi.list).mock.calls[0]![1]!.aborted).toBe(true);
+    await nextTick();
+    fresh.resolve(listFixture([archiveFixture({ id: "new_order" })]));
+    await nextTick();
+    old.resolve(listFixture([archiveFixture({ id: "old_order" })]));
+    await first;
+    expect(c.archives.value.items[0]?.id).toBe("new_order");
+  });
   it("resets selection and pagination for group filters and keeps translation scope within the selected group", async () => {
     const { collection: c } = setup();
     await c.loadArchives();
@@ -57,7 +98,7 @@ describe("双平台归档集合", () => {
     const { collection: c } = setup();
     await c.loadArchives();
     expect(contentArchiveApi.list).toHaveBeenCalledWith(
-      { platform: "all", type: "all", keyword: "", page: 1, pageSize: 12 },
+      { platform: "all", type: "all", keyword: "", sort: "archived-desc", page: 1, pageSize: 12 },
       expect.any(AbortSignal)
     );
     c.toggleArchiveSelection("unknown", true);
@@ -85,7 +126,7 @@ describe("双平台归档集合", () => {
     await nextTick();
     await nextTick();
     expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
-      { platform: "douyin", type: "video", keyword: "晚霞", page: 1, pageSize: 12 },
+      { platform: "douyin", type: "video", keyword: "晚霞", sort: "archived-desc", page: 1, pageSize: 12 },
       expect.any(AbortSignal)
     );
     const count = vi.mocked(contentArchiveApi.list).mock.calls.length;

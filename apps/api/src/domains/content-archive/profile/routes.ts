@@ -7,6 +7,7 @@ import {
   XhsArchiveRemovalSchema,
   TikTokProfileInputSchema,
   TikTokProfileStartSchema,
+  TikTokProfileRetrySchema,
   TikTokProfileJobSchema,
   TikTokProfileListSchema,
   TikTokProfilePageSchema,
@@ -92,16 +93,25 @@ export function registerTikTokProfileRoutes(app: FastifyInstance, service: TikTo
     (request, reply) => handle(reply, () => service.start(request.params.id, request.body))
   );
   for (const action of ["discover", "cancel", "retry"] as const)
-    app.post<{ Params: { id: string } }>(
+    app.post<{ Params: { id: string }; Body: { itemId?: string } | undefined }>(
       `${base}/:id/${action}`,
       {
         config: action === "discover" ? REQUEST_QUOTAS.remoteFetch : REQUEST_QUOTAS.lanUpload,
+        preValidation: async (request, reply) => {
+          if (action === "retry" && request.body !== undefined && !Value.Check(TikTokProfileRetrySchema, request.body))
+            return reply.code(400).send(fail("TIKTOK_PROFILE_INPUT_INVALID", "仅接受本主页列表中的作品 ID"));
+        },
         schema: {
           params: XhsArchiveIdParamsSchema,
           response: { 200: apiSuccessSchema(TikTokProfileJobSchema), ...errors }
         }
       },
-      (request, reply) => handle(reply, () => service[action](request.params.id))
+      (request, reply) =>
+        handle(reply, () =>
+          action === "retry"
+            ? service.retry(request.params.id, request.body?.itemId)
+            : service[action](request.params.id)
+        )
     );
   app.delete<{ Params: { id: string } }>(
     `${base}/:id`,

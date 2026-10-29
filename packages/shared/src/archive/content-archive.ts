@@ -63,6 +63,14 @@ export const ContentArchiveListQuerySchema = Type.Composite(
     XhsArchiveListQuerySchema,
     Type.Object({
       platform: Type.Optional(Type.Union([Type.Literal("all"), ArchivePlatformSchema])),
+      sort: Type.Optional(
+        Type.Union([
+          Type.Literal("published-desc"),
+          Type.Literal("published-asc"),
+          Type.Literal("archived-desc"),
+          Type.Literal("archived-asc")
+        ])
+      ),
       groupId: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("ungrouped"), ArchiveGroupIdSchema]))
     })
   ],
@@ -95,7 +103,7 @@ export const ContentTranslationBatchInputSchema = Type.Union([
   Type.Object(
     {
       mode: Type.Literal("missing-or-stale"),
-      filter: Type.Optional(Type.Omit(ContentArchiveListQuerySchema, ["page", "pageSize"]))
+      filter: Type.Optional(Type.Omit(ContentArchiveListQuerySchema, ["page", "pageSize", "sort"]))
     },
     { additionalProperties: false }
   )

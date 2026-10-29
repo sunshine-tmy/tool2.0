@@ -10,7 +10,7 @@
     </n-button>
   </div>
   <n-modal v-model:show="show"
-    ><n-card title="加入直播音频库" class="library-save-dialog" closable @close="show = false"
+    ><n-card title="加入音频素材库" class="library-save-dialog" closable @close="show = false"
       ><p>将 {{ completed.length }} 段成功音频及对应双语文案永久保存。不会包含未提交的编辑草稿。</p>
       <n-select v-model:value="target" clearable filterable placeholder="未分组" :options="options" /><template #footer
         ><n-button type="primary" :loading="saving" @click="save(target)">确认添加</n-button></template

@@ -2,9 +2,9 @@
   <ToolLayout>
     <section class="main-column library-page">
       <ToolPageHeader
-        title="直播音频库"
-        description="永久保存直播音频与双语文案，按分组查找，随时加入播放队列。"
-        kicker="LIVE AUDIO LIBRARY"
+        title="音频素材库"
+        description="永久保存配音、背景音乐与双语文案，按分组查找，用于播放队列或归档视频配乐。"
+        kicker="AUDIO LIBRARY"
         ><template #actions
           ><n-button @click="uploadVisible = true">上传音频</n-button
           ><n-button tag="a" :href="api.exportUrl()">完整备份</n-button
@@ -140,7 +140,13 @@
                     <strong>{{ item.title }}</strong
                     ><n-tag size="small">{{ languageLabel(item.language) }}</n-tag
                     ><n-tag v-if="!item.available" size="small" type="error">音频不可用</n-tag
-                    ><n-tag v-if="!item.foreignText.trim() || !item.chineseText.trim()" size="small" type="warning"
+                    ><n-tag v-if="audioLibraryPurpose(item) === 'music'" size="small">背景音乐</n-tag
+                    ><n-tag
+                      v-if="
+                        audioLibraryPurpose(item) !== 'music' && (!item.foreignText.trim() || !item.chineseText.trim())
+                      "
+                      size="small"
+                      type="warning"
                       >待补全</n-tag
                     >
                   </header>
@@ -178,6 +184,8 @@
           ><template v-if="detail"
             ><n-form label-placement="top"
               ><n-form-item label="标题"><n-input v-model:value="draft.title" maxlength="120" /></n-form-item
+              ><n-form-item label="用途"
+                ><n-select v-model:value="draft.purpose" :options="purposeOptions" /></n-form-item
               ><n-form-item label="语言"
                 ><n-select v-model:value="draft.language" filterable tag :options="languageOptions" /></n-form-item
               ><n-form-item label="外语文案"
@@ -301,6 +309,9 @@
                     placeholder="未指定"
                   />
                 </n-form-item>
+                <n-form-item label="用途"
+                  ><n-select v-model:value="entry.purpose" :options="purposeOptions"
+                /></n-form-item>
                 <n-form-item label="分组（选填）">
                   <n-select v-model:value="entry.groupId" clearable filterable :options="groups" placeholder="未分组" />
                 </n-form-item>
@@ -349,6 +360,7 @@
   </ToolLayout>
 </template>
 <script setup lang="ts">
+import { audioLibraryPurpose } from "@toolbox/shared";
 import { useMessage } from "naive-ui";
 import { ref } from "vue";
 import {
@@ -384,6 +396,11 @@ import { useAudioLibraryGroups } from "./useAudioLibraryGroups";
 import { useAudioLibraryTransfers } from "./useAudioLibraryTransfers";
 const queuePanel = ref<InstanceType<typeof AudioQueuePanel>>();
 const collection = useAudioLibraryCollection();
+const purposeOptions = [
+  { label: "通用音频", value: "general" },
+  { label: "配音素材", value: "speech" },
+  { label: "背景音乐", value: "music" }
+];
 const {
   data,
   loading,

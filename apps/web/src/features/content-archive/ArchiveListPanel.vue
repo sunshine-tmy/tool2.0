@@ -12,6 +12,7 @@
         aria-label="归档平台筛选"
         style="width: 150px"
       />
+      <n-select v-model:value="sort" :options="sortOptions" aria-label="归档列表排序" style="width: 210px" />
       <n-checkbox
         class="archive-select-all"
         :checked="allCurrentArchivesSelected"
@@ -88,7 +89,8 @@
             </p>
             <div>
               <span>{{ archive.mediaCount }} 个媒体</span><span>{{ formatBytes(archive.totalBytes) }}</span>
-              <span>{{ formatDate(archive.updatedAt) }}</span>
+              <span>发布：{{ formatDate(archive.publishedAt) }}</span>
+              <span>归档：{{ formatDate(archive.fetchedAt) }}</span>
             </div>
           </div>
         </article>
@@ -132,6 +134,13 @@ const platformFilter = defineModel<NonNullable<ContentArchiveListQuery["platform
   default: "all"
 });
 const page = defineModel<number>("page", { required: true });
+const sort = defineModel<NonNullable<ContentArchiveListQuery["sort"]>>("sort", { default: "archived-desc" });
+const sortOptions = [
+  { label: "归档时间：从新到旧", value: "archived-desc" },
+  { label: "归档时间：从旧到新", value: "archived-asc" },
+  { label: "发布时间：从新到旧", value: "published-desc" },
+  { label: "发布时间：从旧到新", value: "published-asc" }
+];
 
 const typeOptions = [
   { label: "全部类型", value: "all" },
@@ -177,7 +186,7 @@ function typeName(type: string) {
   return type === "video" ? "视频" : type === "live-photo" ? "Live Photo" : "图文";
 }
 
-function formatDate(value: string) {
+function formatDate(value: string | undefined) {
   return formatArchiveDate(value);
 }
 </script>

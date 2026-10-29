@@ -118,6 +118,7 @@ export class ContentArchiveTaskService {
     return task;
   }
   async refresh(id: string) {
+    this.options.store.assertVideoEditIdle(id);
     const item = await this.options.store.get(id);
     return item ? this.create(item.sourceUrl, item.platform, item.id) : undefined;
   }
