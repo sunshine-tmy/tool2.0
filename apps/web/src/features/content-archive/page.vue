@@ -97,7 +97,9 @@
         :list-loading="listLoading"
         :selected-ids="selectedArchiveIds"
         :groups="archiveGroups"
+        :publication-busy-ids="publicationBusyIds"
         @search="loadArchives"
+        @set-publication="setPublication"
         @refresh="loadArchives"
         @remove-selected="removeSelected"
         @translate-selected="translateSelected"
@@ -204,6 +206,7 @@ const {
   listLoading,
   archives,
   selectedArchiveIds,
+  publicationBusyIds,
   drawerOpen,
   detail,
   loadArchives,
@@ -601,6 +604,10 @@ async function removeSelected() {
     message.error(formatApiError(failed.reason, "部分存档删除失败"));
   if (removed) message.success(`已删除 ${removed} 条存档`);
   await loadArchives();
+}
+async function setPublication(id: string, publishedElsewhere: boolean) {
+  if (await collection.setPublication(id, publishedElsewhere))
+    message.success(publishedElsewhere ? "已标记为在其他平台发布" : "已取消发布标记");
 }
 async function copyDescription() {
   if (!current.value) return;

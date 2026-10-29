@@ -28,6 +28,7 @@ import { archiveTranslationSourceHash } from "./text";
 import { ArchiveGroupStore } from "./groups";
 import { archiveMediaAssets, archiveMediaBytes } from "./media-assets";
 import { compareArchiveListItems } from "./list-order";
+import { ArchivePublicationStore } from "./publication";
 
 type ArchiveIndex = {
   version: 2;
@@ -36,6 +37,7 @@ type ArchiveIndex = {
 
 export class ContentArchiveStore {
   readonly groups: ArchiveGroupStore;
+  readonly publications: ArchivePublicationStore;
   private items = new Map<string, ContentArchiveItem>();
   private initialization?: Promise<void>;
   private writeQueue = Promise.resolve();
@@ -52,6 +54,7 @@ export class ContentArchiveStore {
   ) {
     this.fileMetadata = fileMetadata ?? new FileMetadataRepository(database, config.storageRoot);
     this.groups = new ArchiveGroupStore(database);
+    this.publications = new ArchivePublicationStore(database);
   }
 
   async initialize() {
@@ -101,6 +104,7 @@ export class ContentArchiveStore {
     const page = positiveInteger(options.page, 1);
     const pageSize = Math.min(positiveInteger(options.pageSize, 12), 50);
     const memberships = this.groups.memberships();
+    const published = this.publications.marked();
     const sort = options.sort;
     const matched = [...this.items.values()]
       .filter((item) => !options.platform || options.platform === "all" || item.platform === options.platform)
@@ -138,6 +142,7 @@ export class ContentArchiveStore {
     return {
       items: matched.slice(start, start + pageSize).map((item) => ({
         ...toContentArchiveListItem(item),
+        ...(published.has(item.id) ? { publishedElsewhere: true } : {}),
         ...(memberships.has(item.id) ? { groupId: memberships.get(item.id) } : {})
       })),
       total: matched.length,
@@ -391,6 +396,7 @@ export class ContentArchiveStore {
           await this.persistIndex(() => {
             this.database.remove("xhs-archive", id);
             this.database.remove("archive-group-member", id);
+            this.database.remove("archive-publication", id);
             this.fileMetadata.removeForEntity("xhs-archive", id);
             for (const media of item.media) this.fileMetadata.removeForEntity("xhs-media", media.id);
           });

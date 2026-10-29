@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
       "addFrame",
       "refresh",
       "remove",
+      "setPublication",
       "xhsRuntime",
       "douyinRuntime",
       "startXhsAuth",
@@ -126,6 +127,25 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("persists the card publication action and only reports success after confirmation from the API", async () => {
+    mocks.api.setPublication!.mockImplementation(async (archiveId, publishedElsewhere) => ({
+      archiveId,
+      publishedElsewhere
+    }));
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.getComponent(ArchiveListPanel);
+    panel.vm.$emit("setPublication", "archive-123", true);
+    await flushPromises();
+    expect(mocks.api.setPublication).toHaveBeenCalledWith("archive-123", true, expect.any(AbortSignal));
+    expect(mocks.message.success).toHaveBeenCalledWith("已标记为在其他平台发布");
+    mocks.message.success.mockClear();
+    mocks.api.setPublication!.mockRejectedValueOnce(new Error("write failed"));
+    panel.vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(mocks.message.success).not.toHaveBeenCalled();
+    expect(mocks.message.error).toHaveBeenCalled();
+  });
   it("wires date sorting into the server request and keeps it on explicit refresh", async () => {
     const wrapper = mountPage();
     await flushPromises();

@@ -1,5 +1,6 @@
 /** 中性归档 JSON 契约复用同一存储与任务服务；LAN 管理权限、CSRF、限流由全局安全层统一执行。 */
 import type { FastifyInstance } from "fastify";
+import { Value } from "@sinclair/typebox/value";
 import {
   ApiFailureSchema,
   ContentArchiveCreateInputSchema,
@@ -7,6 +8,8 @@ import {
   ContentArchiveListQuerySchema,
   ContentArchiveListResponseSchema,
   ContentArchiveTaskSchema,
+  ContentArchivePublicationSchema,
+  ContentArchivePublicationInputSchema,
   TaskIdParamsSchema,
   XhsArchiveIdParamsSchema,
   XhsArchiveRemovalSchema,
@@ -86,6 +89,31 @@ export function registerContentArchiveRoutes(
     async (request, reply) => {
       const item = await store.get(request.params.id);
       return item ? ok(item) : reply.code(404).send(fail("ARCHIVE_NOT_FOUND", "存档不存在"));
+    }
+  );
+  app.patch<{ Params: XhsArchiveIdParams; Body: { publishedElsewhere: boolean } }>(
+    "/api/v1/tools/media-archive/items/:id/publication",
+    {
+      config: REQUEST_QUOTAS.lanUpload,
+      preValidation: async (request, reply) => {
+        if (!Value.Check(ContentArchivePublicationInputSchema, request.body))
+          return reply.code(400).send(fail("ARCHIVE_PUBLICATION_INPUT_INVALID", "请提供有效的已发布标记"));
+      },
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        body: ContentArchivePublicationInputSchema,
+        response: { 200: apiSuccessSchema(ContentArchivePublicationSchema), ...failureResponses }
+      }
+    },
+    async (request, reply) => {
+      try {
+        await store.initialize();
+        return ok(store.publications.set(request.params.id, request.body.publishedElsewhere));
+      } catch (error) {
+        if (error instanceof ArchiveTaskError)
+          return reply.code(error.statusCode).send(fail(error.code, error.message));
+        throw error;
+      }
     }
   );
   app.post<{ Params: XhsArchiveIdParams }>(

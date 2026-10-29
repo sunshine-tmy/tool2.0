@@ -120,6 +120,50 @@ async function create(app: FastifyInstance) {
 }
 
 describe("多媒体归档 API 与兼容性", () => {
+  it("persists publication marks through the real list/restart API and accepts explicit cancellation only", async () => {
+    const app = await appWith();
+    const task = await create(app);
+    const id = task.archiveId!;
+    const detail = (await app.inject(`${prefix}/items/${id}`)).json().data;
+    const mediaBefore = await app.inject(detail.media[0].downloadUrl);
+    for (const payload of [{}, { publishedElsewhere: "true" }, { publishedElsewhere: true, cookie: "forbidden" }])
+      expect(
+        (await app.inject({ method: "PATCH", url: `${prefix}/items/${id}/publication`, payload })).statusCode
+      ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: `${prefix}/items/missing_archive/publication`,
+          payload: { publishedElsewhere: true }
+        })
+      ).statusCode
+    ).toBe(404);
+    const mark = await app.inject({
+      method: "PATCH",
+      url: `${prefix}/items/${id}/publication`,
+      payload: { publishedElsewhere: true }
+    });
+    expect(mark.statusCode).toBe(200);
+    expect(mark.json().data).toMatchObject({ archiveId: id, publishedElsewhere: true, markedAt: expect.any(String) });
+    expect((await app.inject(`${prefix}/items`)).json().data.items[0]).toMatchObject({
+      id,
+      publishedElsewhere: true,
+      fetchedAt: detail.fetchedAt,
+      updatedAt: detail.updatedAt
+    });
+    await app.close();
+    const restarted = await appWith();
+    expect((await restarted.inject(`${prefix}/items`)).json().data.items[0].publishedElsewhere).toBe(true);
+    const cleared = await restarted.inject({
+      method: "PATCH",
+      url: `${prefix}/items/${id}/publication`,
+      payload: { publishedElsewhere: false }
+    });
+    expect(cleared.json().data).toEqual({ archiveId: id, publishedElsewhere: false });
+    expect((await restarted.inject(`${prefix}/items`)).json().data.items[0].publishedElsewhere).toBeUndefined();
+    expect((await restarted.inject(detail.media[0].downloadUrl)).rawPayload).toEqual(mediaBefore.rawPayload);
+  });
   it("新旧入口同作品 ID 共存，旧任务/列表/详情不能读抖音", async () => {
     const app = await appWith();
     const douyin = await create(app);
@@ -304,6 +348,11 @@ describe("多媒体归档 API 与兼容性", () => {
       { method: "POST" as const, url: `${prefix}/items`, payload: { url } },
       { method: "POST" as const, url: `${prefix}/items/missing_123456/refresh` },
       { method: "DELETE" as const, url: `${prefix}/items/missing_123456` },
+      {
+        method: "PATCH" as const,
+        url: `${prefix}/items/missing_123456/publication`,
+        payload: { publishedElsewhere: true }
+      },
       { method: "DELETE" as const, url: `${prefix}/tasks/missing_task123` },
       { method: "POST" as const, url: `${prefix}/items/missing_123456/frames`, ...frameUpload },
       { method: "POST" as const, url: `${prefix}/items/missing_123456/translation`, payload: { force: false } },

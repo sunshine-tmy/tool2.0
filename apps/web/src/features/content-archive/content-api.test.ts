@@ -4,6 +4,7 @@ import {
   ContentArchiveItemSchema,
   ContentArchiveListResponseSchema,
   ContentArchiveTaskSchema,
+  ContentArchivePublicationSchema,
   ContentTranslationTaskSchema,
   DouyinRuntimeStatusSchema,
   TikTokRuntimeStatusSchema,
@@ -44,6 +45,18 @@ beforeEach(() => {
 });
 
 describe("多媒体归档客户端", () => {
+  it("encodes the publication target and preserves strict response validation and cancellation", async () => {
+    const signal = new AbortController().signal;
+    for (const publishedElsewhere of [true, false]) {
+      await api.setPublication("id/123", publishedElsewhere, signal);
+      expect(http.patch).toHaveBeenLastCalledWith(
+        "/tools/media-archive/items/id%2F123/publication",
+        ContentArchivePublicationSchema,
+        { publishedElsewhere },
+        { signal }
+      );
+    }
+  });
   it("encodes profile IDs and preserves cancellation and schema validation across discovery and archive actions", async () => {
     const signal = new AbortController().signal;
     await tiktokProfileApi.list(signal);

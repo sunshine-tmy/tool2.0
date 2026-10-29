@@ -3,6 +3,7 @@ import {
   ContentArchiveItemSchema,
   ContentArchiveListResponseSchema,
   ContentArchiveTaskSchema,
+  ContentArchivePublicationSchema,
   ContentTranslationTaskSchema,
   DouyinRuntimeStatusSchema,
   TikTokRuntimeStatusSchema,
@@ -214,6 +215,17 @@ export const contentArchiveApi = {
     ),
   remove: (id: string, signal?: AbortSignal) =>
     withApiError(() => httpClient.delete(itemPath(id), XhsArchiveRemovalSchema, { signal }), "删除存档失败"),
+  setPublication: (id: string, publishedElsewhere: boolean, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.patch(
+          `${itemPath(id)}/publication`,
+          ContentArchivePublicationSchema,
+          { publishedElsewhere },
+          { signal }
+        ),
+      "更新已发布标记失败"
+    ),
   douyinRuntime: (signal?: AbortSignal) =>
     withApiError(
       () => httpClient.get(`${base}/runtime/douyin`, DouyinRuntimeStatusSchema, { signal }),

@@ -77,6 +77,9 @@
               <FileImage v-else :size="13" />
               {{ typeName(archive.type) }}
             </span>
+            <span v-if="archive.publishedElsewhere" class="card-publication-badge">
+              <BadgeCheck :size="20" aria-hidden="true" />已在其他平台发布
+            </span>
           </div>
           <div class="card-copy">
             <span class="card-platform-badge" :class="`platform-${archive.platform}`">{{
@@ -92,6 +95,19 @@
               <span>发布：{{ formatDate(archive.publishedAt) }}</span>
               <span>归档：{{ formatDate(archive.fetchedAt) }}</span>
             </div>
+            <div class="card-actions">
+              <n-button
+                size="small"
+                :type="archive.publishedElsewhere ? 'default' : 'primary'"
+                secondary
+                :loading="publicationBusyIds?.includes(archive.id)"
+                :disabled="publicationBusyIds?.includes(archive.id)"
+                :aria-pressed="Boolean(archive.publishedElsewhere)"
+                @click.stop="$emit('setPublication', archive.id, !archive.publishedElsewhere)"
+                @keyup.enter.stop
+                >{{ archive.publishedElsewhere ? "取消已发布标记" : "标记为已发布" }}</n-button
+              >
+            </div>
           </div>
         </article>
       </div>
@@ -104,7 +120,7 @@
 import { formatBytesThroughGb as formatBytes } from "../../shared/utils/format-bytes";
 import { computed } from "vue";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NSelect, NSpin } from "naive-ui";
-import { FileImage, Languages, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
+import { BadgeCheck, FileImage, Languages, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
 import type { ContentArchiveListResponse, ContentArchiveListQuery, ArchiveGroup } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { archiveDisplayTitle, archivePlatformLabel } from "./presentation";
@@ -115,6 +131,7 @@ const props = defineProps<{
   listLoading: boolean;
   selectedIds: string[];
   groups?: ArchiveGroup[];
+  publicationBusyIds?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -126,6 +143,7 @@ const emit = defineEmits<{
   toggleSelection: [id: string, checked: boolean];
   toggleSelectAll: [checked: boolean];
   pageChange: [];
+  setPublication: [id: string, publishedElsewhere: boolean];
 }>();
 
 const keyword = defineModel<string>("keyword", { required: true });
@@ -216,6 +234,29 @@ function formatDate(value: string | undefined) {
   background: #fff1f2;
   font-size: 11px;
   font-weight: 600;
+}
+.card-publication-badge {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 8px;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  background: #047857;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 3px 12px #0004;
+  pointer-events: none;
+}
+.card-copy .card-actions {
+  margin-top: 12px;
 }
 .card-platform-badge.platform-douyin {
   color: #7e22ce;

@@ -107,6 +107,21 @@ describe("XHS archive list panel", () => {
 
     await wrapper.get("article").trigger("click");
     expect(wrapper.emitted("openDetail")).toEqual([["archive_123"]]);
+    expect(wrapper.find(".card-publication-badge").exists()).toBe(false);
+    const mark = wrapper.findAll("button").find((button) => button.text() === "标记为已发布")!;
+    await mark.trigger("click");
+    await mark.trigger("keyup", { key: "Enter" });
+    expect(wrapper.emitted("setPublication")).toEqual([["archive_123", true]]);
+    expect(wrapper.emitted("openDetail")).toHaveLength(1);
+    await wrapper.setProps({ archives: { ...archives, items: [{ ...archives.items[0], publishedElsewhere: true }] } });
+    expect(wrapper.get(".card-cover .card-publication-badge").text()).toContain("已在其他平台发布");
+    const cancel = wrapper.findAll("button").find((button) => button.text() === "取消已发布标记")!;
+    await cancel.trigger("click");
+    expect(wrapper.emitted("setPublication")?.at(-1)).toEqual(["archive_123", false]);
+    expect(wrapper.emitted("openDetail")).toHaveLength(1);
+    await wrapper.setProps({ publicationBusyIds: ["archive_123"] });
+    expect(cancel.attributes("disabled")).toBeDefined();
+    await wrapper.setProps({ publicationBusyIds: [] });
 
     await wrapper.get(".card-selector").trigger("click");
     expect(wrapper.emitted("toggleSelection")).toEqual([["archive_123", true]]);

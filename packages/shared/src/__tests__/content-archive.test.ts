@@ -11,6 +11,8 @@ import {
   ContentArchiveListQuerySchema,
   ContentArchiveCreateInputSchema,
   ContentArchiveTaskSchema,
+  ContentArchivePublicationSchema,
+  ContentArchivePublicationInputSchema,
   fromXhsArchive,
   toXhsArchive,
   toContentArchiveListItem,
@@ -196,6 +198,24 @@ describe("content archive contract", () => {
       expect(Value.Check(ContentArchiveListQuerySchema, invalid)).toBe(false);
       expect(isContentArchiveListQuery(invalid)).toBe(false);
     }
+  });
+  it("accepts explicit publication booleans only, while keeping publication marks outside archive manifests", () => {
+    for (const publishedElsewhere of [true, false])
+      expect(Value.Check(ContentArchivePublicationInputSchema, { publishedElsewhere })).toBe(true);
+    for (const payload of [{}, { publishedElsewhere: "true" }, { publishedElsewhere: true, cookie: "private" }])
+      expect(Value.Check(ContentArchivePublicationInputSchema, payload)).toBe(false);
+    expect(
+      Value.Check(ContentArchivePublicationSchema, {
+        archiveId: "archive_123",
+        publishedElsewhere: true,
+        markedAt: "2026-10-29T00:00:00Z"
+      })
+    ).toBe(true);
+    const item = fromXhsArchive(legacy);
+    expect(
+      Value.Check(ContentArchiveListItemSchema, { ...toContentArchiveListItem(item), publishedElsewhere: true })
+    ).toBe(true);
+    expect(Value.Check(ContentArchiveItemSchema, { ...item, publishedElsewhere: true })).toBe(false);
   });
 
   it("rejects malformed legacy payload instead of inventing an identity", () => {

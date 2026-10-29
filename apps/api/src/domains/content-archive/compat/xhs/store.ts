@@ -20,11 +20,20 @@ export class XhsArchiveStore {
     const result = await this.content.list({ ...options, platform: "xiaohongshu" });
     return {
       ...result,
-      items: result.items.map(({ platform: _platform, contentId, rawText: _rawText, groupId: _groupId, ...rest }) => ({
-        ...rest,
-        noteId: contentId,
-        coverUrl: rest.coverUrl?.replace("/tools/media-archive/", "/tools/xhs-archive/")
-      }))
+      items: result.items.map(
+        ({
+          platform: _platform,
+          contentId,
+          rawText: _rawText,
+          groupId: _groupId,
+          publishedElsewhere: _publishedElsewhere,
+          ...rest
+        }) => ({
+          ...rest,
+          noteId: contentId,
+          coverUrl: rest.coverUrl?.replace("/tools/media-archive/", "/tools/xhs-archive/")
+        })
+      )
     };
   }
 

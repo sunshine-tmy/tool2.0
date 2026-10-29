@@ -13,6 +13,7 @@ import { archiveIdentity } from "../../../database/archive-identity";
 import type { ToolboxDatabase } from "../../../database/toolbox-database";
 import { ArchiveGroupStore } from "./groups";
 import { compareArchiveListItems } from "./list-order";
+import { ArchivePublicationStore } from "./publication";
 
 type Row = { payload_json: string; platform: ArchivePlatform; content_id: string };
 
@@ -53,6 +54,7 @@ export class ContentArchiveRepository {
       .all(...(platform === "all" ? [] : [platform])) as Row[];
     const keyword = options.keyword?.trim().toLowerCase();
     const memberships = new ArchiveGroupStore(this.database).memberships();
+    const published = new ArchivePublicationStore(this.database).marked();
     const items = rows
       .map(decode)
       .filter((item) => !options.type || options.type === "all" || item.type === options.type)
@@ -86,6 +88,7 @@ export class ContentArchiveRepository {
     return {
       items: items.slice((page - 1) * pageSize, page * pageSize).map((item) => ({
         ...toContentArchiveListItem(item),
+        ...(published.has(item.id) ? { publishedElsewhere: true } : {}),
         ...(memberships.has(item.id) ? { groupId: memberships.get(item.id) } : {})
       })),
       total: items.length,

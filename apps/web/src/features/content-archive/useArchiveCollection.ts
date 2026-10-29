@@ -16,6 +16,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
   const listLoading = ref(false);
   const archives = ref<ContentArchiveListResponse>({ items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 });
   const selectedArchiveIds = ref<string[]>([]);
+  const publicationBusyIds = ref<string[]>([]);
   const current = ref<ContentArchiveItem>();
   const detail = ref<ContentArchiveItem>();
   const drawerOpen = ref(false);
@@ -103,6 +104,29 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
     if (current.value?.id === item.id) current.value = item;
     if (detail.value?.id === item.id) detail.value = item;
   }
+  async function setPublication(id: string, publishedElsewhere: boolean) {
+    if (scope.aborted || publicationBusyIds.value.includes(id) || !archives.value.items.some((item) => item.id === id))
+      return false;
+    publicationBusyIds.value = [...publicationBusyIds.value, id];
+    try {
+      const state = await contentArchiveApi.setPublication(id, publishedElsewhere, scope.signal);
+      if (scope.aborted) return false;
+      if (state.archiveId !== id || state.publishedElsewhere !== publishedElsewhere)
+        throw new Error("更新已发布标记返回了不匹配的作品或状态");
+      archives.value = {
+        ...archives.value,
+        items: archives.value.items.map((item) => (item.id === id ? { ...item, publishedElsewhere } : item))
+      };
+      // Reuse current filters/page and invalidate any pre-mutation list response; selection stays intact.
+      await loadArchives();
+      return !scope.aborted;
+    } catch (error) {
+      if (!scope.aborted && !isApiErrorCancelled(error)) reportError(error);
+      return false;
+    } finally {
+      if (!scope.aborted) publicationBusyIds.value = publicationBusyIds.value.filter((value) => value !== id);
+    }
+  }
   function forgetItem(id: string) {
     if (current.value?.id === id) current.value = undefined;
     if (detail.value?.id === id) {
@@ -136,6 +160,8 @@ export function useArchiveCollection(reportError: (error: unknown) => void) {
     listLoading,
     archives,
     selectedArchiveIds,
+    publicationBusyIds,
+    setPublication,
     current,
     detail,
     drawerOpen,

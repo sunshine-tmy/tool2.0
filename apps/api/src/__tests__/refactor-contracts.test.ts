@@ -95,6 +95,7 @@ it("keeps every API and health method/path while allowing internal source reloca
           "GET tiktok-profiles/:id/results.csv",
           "HEAD tiktok-profiles/:id/results.csv",
           "GET video-edit-runtime",
+          "PATCH items/:id/publication",
           "HEAD video-edit-runtime",
           "GET items/:id/media/:mediaId/audio-edits",
           "HEAD items/:id/media/:mediaId/audio-edits",

@@ -87,6 +87,63 @@ async function staging(value: ContentArchiveItem, contents = bytes) {
 const target = (id = "archive_123456") => path.join(config.xhsArchiveItemsDir, id);
 
 describe("多媒体共享存储与小红书过滤视图", () => {
+  it.each(["xiaohongshu", "douyin", "tiktok"] as const)(
+    "keeps %s publication marks across restart and refresh without changing source metadata, manifests or media",
+    async (platform) => {
+      const value = item("archive_123456", platform);
+      await store.commit(value, await staging(value));
+      const manifest = await fs.readFile(path.join(target(), "manifest.json"), "utf8");
+      const saved = store.publications.set(value.id, true);
+      expect(saved).toMatchObject({ archiveId: value.id, publishedElsewhere: true, markedAt: expect.any(String) });
+      expect(store.publications.set(value.id, true)).toEqual(saved);
+      expect((await store.list()).items[0]?.publishedElsewhere).toBe(true);
+      expect(new ContentArchiveRepository(database).list().items[0]?.publishedElsewhere).toBe(true);
+      expect(await store.get(value.id)).toEqual(value);
+      expect(await fs.readFile(path.join(target(), "manifest.json"), "utf8")).toBe(manifest);
+      expect(await fs.readFile(path.join(target(), "original.mp4"))).toEqual(bytes);
+      expect((await legacy.list()).items.every((entry) => !("publishedElsewhere" in entry))).toBe(true);
+      store = new ContentArchiveStore(config, database);
+      await store.initialize();
+      expect((await store.list()).items[0]?.publishedElsewhere).toBe(true);
+      const refreshed = { ...value, title: "刷新后", updatedAt: "2026-10-02T00:00:00.000Z" };
+      await store.commit(refreshed, await staging(refreshed));
+      expect((await store.list()).items[0]?.publishedElsewhere).toBe(true);
+      expect(store.publications.set(value.id, false)).toEqual({ archiveId: value.id, publishedElsewhere: false });
+      expect((await store.list()).items[0]?.publishedElsewhere).toBeUndefined();
+      expect(database.list("archive-publication")).toEqual([]);
+    }
+  );
+  it("rolls back publication metadata with archive deletion and only clears it after a successful removal", async () => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    store.publications.set(value.id, true);
+    const remove = database.remove.bind(database);
+    const failure = vi.spyOn(database, "remove").mockImplementation((kind, id) => {
+      if (kind === "archive-publication") throw new Error("publication delete failure");
+      return remove(kind, id);
+    });
+    await expect(store.remove(value.id)).rejects.toThrow("publication delete failure");
+    expect(await store.get(value.id)).toEqual(value);
+    expect((await store.list()).items[0]?.publishedElsewhere).toBe(true);
+    expect(await fs.readFile(path.join(target(), "original.mp4"))).toEqual(bytes);
+    failure.mockRestore();
+    await store.remove(value.id);
+    expect(database.list("archive-publication")).toEqual([]);
+    expect(() => store.publications.set(value.id, true)).toThrow("存档不存在");
+  });
+  it("leaves a failed publication update unmarked and rejects missing archives", async () => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    const upsert = database.upsert.bind(database);
+    vi.spyOn(database, "upsert").mockImplementation((entity) => {
+      if (entity.kind === "archive-publication") throw new Error("publication write failure");
+      return upsert(entity);
+    });
+    expect(() => store.publications.set(value.id, true)).toThrow("publication write failure");
+    expect((await store.list()).items[0]?.publishedElsewhere).toBeUndefined();
+    expect(await store.get(value.id)).toEqual(value);
+    expect(() => store.publications.set("missing_archive", false)).toThrow("存档不存在");
+  });
   it("keeps custom groups separate from manifests and preserves membership across refresh, rename and group deletion", async () => {
     const value = item();
     await store.commit(value, await staging(value));

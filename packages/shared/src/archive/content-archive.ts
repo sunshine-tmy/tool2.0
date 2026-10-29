@@ -43,7 +43,8 @@ export const ContentArchiveListItemSchema = Type.Composite(
       mediaCount: Type.Integer({ minimum: 0 }),
       coverUrl: Type.Optional(Type.String()),
       coverKind: Type.Optional(XhsArchiveMediaSchema.properties.kind),
-      groupId: Type.Optional(ArchiveGroupIdSchema)
+      groupId: Type.Optional(ArchiveGroupIdSchema),
+      publishedElsewhere: Type.Optional(Type.Boolean())
     })
   ],
   { additionalProperties: false }
@@ -83,6 +84,19 @@ export const ContentArchiveCreateInputSchema = Type.Object(
   },
   { additionalProperties: false }
 );
+export const ContentArchivePublicationInputSchema = Type.Object(
+  { publishedElsewhere: Type.Boolean() },
+  { additionalProperties: false }
+);
+export const ContentArchivePublicationSchema = Type.Object(
+  {
+    archiveId: ArchiveGroupIdSchema,
+    publishedElsewhere: Type.Boolean(),
+    markedAt: Type.Optional(Type.String({ format: "date-time" }))
+  },
+  { additionalProperties: false }
+);
+export type ContentArchivePublication = Static<typeof ContentArchivePublicationSchema>;
 export const ContentArchiveTaskSchema = Type.Composite(
   [XhsArchiveTaskSchema, Type.Object({ platform: ArchivePlatformSchema, skipped: Type.Optional(Type.Boolean()) })],
   { additionalProperties: false }

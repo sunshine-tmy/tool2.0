@@ -5,7 +5,7 @@ import { useArchiveCollection } from "./useArchiveCollection";
 import { contentArchiveApi } from "./content-api";
 import { ApiRequestError } from "../../shared/http/http";
 import { archiveFixture, listFixture } from "./__tests__/fixtures";
-vi.mock("./content-api", () => ({ contentArchiveApi: { list: vi.fn(), detail: vi.fn() } }));
+vi.mock("./content-api", () => ({ contentArchiveApi: { list: vi.fn(), detail: vi.fn(), setPublication: vi.fn() } }));
 const scopes: EffectScope[] = [];
 function setup() {
   const scope = effectScope();
@@ -27,11 +27,74 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(contentArchiveApi.list).mockResolvedValue(listFixture());
   vi.mocked(contentArchiveApi.detail).mockResolvedValue(archiveFixture());
+  vi.mocked(contentArchiveApi.setPublication).mockImplementation(async (archiveId, publishedElsewhere) => ({
+    archiveId,
+    publishedElsewhere
+  }));
 });
 afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
 });
 describe("双平台归档集合", () => {
+  it("marks and unmarks only the chosen archive without resetting page, order or selection", async () => {
+    const { collection: c } = setup();
+    await c.loadArchives();
+    c.page.value = 2;
+    c.toggleSelectAllArchives(true);
+    const marked = listFixture();
+    marked.items[0]!.publishedElsewhere = true;
+    vi.mocked(contentArchiveApi.list).mockResolvedValueOnce(marked);
+    expect(await c.setPublication("archive-123", true)).toBe(true);
+    expect(contentArchiveApi.setPublication).toHaveBeenCalledWith("archive-123", true, expect.any(AbortSignal));
+    expect(c.archives.value.items[0]?.publishedElsewhere).toBe(true);
+    expect(c.page.value).toBe(2);
+    expect(c.sort.value).toBe("archived-desc");
+    expect(c.selectedArchiveIds.value).toEqual(["archive-123"]);
+    expect(c.publicationBusyIds.value).toEqual([]);
+    expect(await c.setPublication("archive-123", false)).toBe(true);
+    expect(c.archives.value.items[0]?.publishedElsewhere).not.toBe(true);
+    expect(await c.setPublication("missing_archive", true)).toBe(false);
+    expect(contentArchiveApi.setPublication).toHaveBeenCalledTimes(2);
+  });
+  it("blocks duplicate publication writes, reports failures without a false badge and aborts writes on disposal", async () => {
+    const { collection: c, report, scope } = setup();
+    await c.loadArchives();
+    const pending = deferred<{ archiveId: string; publishedElsewhere: boolean }>();
+    vi.mocked(contentArchiveApi.setPublication).mockReturnValueOnce(pending.promise);
+    const first = c.setPublication("archive-123", true);
+    expect(c.publicationBusyIds.value).toEqual(["archive-123"]);
+    expect(await c.setPublication("archive-123", true)).toBe(false);
+    expect(contentArchiveApi.setPublication).toHaveBeenCalledTimes(1);
+    pending.reject(new Error("write failed"));
+    expect(await first).toBe(false);
+    expect(report).toHaveBeenCalledOnce();
+    expect(c.archives.value.items[0]?.publishedElsewhere).not.toBe(true);
+    expect(c.publicationBusyIds.value).toEqual([]);
+    const late = deferred<{ archiveId: string; publishedElsewhere: boolean }>();
+    vi.mocked(contentArchiveApi.setPublication).mockReturnValueOnce(late.promise);
+    const writing = c.setPublication("archive-123", true);
+    const signal = vi.mocked(contentArchiveApi.setPublication).mock.calls.at(-1)![2]!;
+    scope.stop();
+    expect(signal.aborted).toBe(true);
+    late.resolve({ archiveId: "archive-123", publishedElsewhere: true });
+    expect(await writing).toBe(false);
+    expect(c.archives.value.items[0]?.publishedElsewhere).not.toBe(true);
+    expect(await c.setPublication("archive-123", true)).toBe(false);
+  });
+  it("rejects pre-publication list responses that arrive after the confirmed mark", async () => {
+    const { collection: c } = setup();
+    await c.loadArchives();
+    const old = deferred<ReturnType<typeof listFixture>>();
+    vi.mocked(contentArchiveApi.list).mockReturnValueOnce(old.promise);
+    const reading = c.loadArchives();
+    const marked = listFixture();
+    marked.items[0]!.publishedElsewhere = true;
+    vi.mocked(contentArchiveApi.list).mockResolvedValueOnce(marked);
+    await c.setPublication("archive-123", true);
+    old.resolve(listFixture());
+    await reading;
+    expect(c.archives.value.items[0]?.publishedElsewhere).toBe(true);
+  });
   it("applies each date ordering across filters/pages, resetting selection without adding sorting to translation scope", async () => {
     const { collection: c } = setup();
     c.groupFilter.value = "group_123";
