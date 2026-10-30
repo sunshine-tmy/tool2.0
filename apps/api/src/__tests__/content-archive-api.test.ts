@@ -5,7 +5,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { isContentArchiveItem, isContentArchiveTask } from "@toolbox/shared";
+import { isContentArchiveItem, isContentArchiveTask, defaultArchiveAudioSettings } from "@toolbox/shared";
 import { createApp } from "../app";
 import { getConfig } from "../config";
 import { createDevelopmentRuntimeLayout } from "../runtime/runtime-layout";
@@ -346,6 +346,7 @@ describe("多媒体归档 API 与兼容性", () => {
     // 覆盖中性接口全部 JSON/multipart 写入口；LAN 访客只能使用被显式放行的文件传输接口。
     const mutations = [
       { method: "POST" as const, url: `${prefix}/items`, payload: { url } },
+      { method: "POST" as const, url: `${prefix}/local-videos`, ...frameUpload },
       { method: "POST" as const, url: `${prefix}/items/missing_123456/refresh` },
       { method: "DELETE" as const, url: `${prefix}/items/missing_123456` },
       {
@@ -355,6 +356,39 @@ describe("多媒体归档 API 与兼容性", () => {
       },
       { method: "DELETE" as const, url: `${prefix}/tasks/missing_task123` },
       { method: "POST" as const, url: `${prefix}/items/missing_123456/frames`, ...frameUpload },
+      { method: "DELETE" as const, url: `${prefix}/items/missing_123456/frames/missing_frame123` },
+      { method: "POST" as const, url: `${prefix}/items/missing_123456/media/media_123456/watermarks`, ...frameUpload },
+      {
+        method: "POST" as const,
+        url: `${prefix}/watermark-presets`,
+        payload: {
+          name: "test",
+          points: [
+            { progress: 0, x: 0, y: 0 },
+            { progress: 1, x: 1, y: 1 }
+          ]
+        }
+      },
+      { method: "DELETE" as const, url: `${prefix}/watermark-presets/abcdefghijkl?revision=1` },
+      { method: "POST" as const, url: `${prefix}/watermark-library`, ...frameUpload },
+      { method: "DELETE" as const, url: `${prefix}/watermark-library/abcdefghijkl?revision=1` },
+      {
+        method: "POST" as const,
+        url: `${prefix}/items/missing_123456/media/media_123456/watermarks/from-library`,
+        payload: { libraryId: "abcdefghijkl" }
+      },
+      {
+        method: "POST" as const,
+        url: `${prefix}/items/missing_123456/media/media_123456/audio-edits`,
+        payload: {
+          mode: "save",
+          revision: 0,
+          checksum: "a".repeat(64),
+          useSavedMusic: false,
+          settings: defaultArchiveAudioSettings()
+        }
+      },
+      { method: "DELETE" as const, url: `${prefix}/video-edits/missing_task123` },
       { method: "POST" as const, url: `${prefix}/items/missing_123456/translation`, payload: { force: false } },
       {
         method: "POST" as const,

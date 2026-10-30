@@ -6,6 +6,8 @@ import { nanoid } from "nanoid";
 import { Value } from "@sinclair/typebox/value";
 import {
   ArchiveVideoEditJobSchema,
+  ArchiveVideoEditInputSchema,
+  watermarkTimingError,
   defaultArchiveAudioSettings,
   type ArchiveEditFile,
   type ArchiveVideoEditInput,
@@ -19,14 +21,26 @@ import { ContentArchiveStore, ContentArchiveStoreError } from "../core/store";
 import { mediaFile } from "../core/media-assets";
 import { renderSlideshow } from "./slideshow";
 import { renderArchiveVideo, VideoEditError, type MediaTools, type RenderVideoOptions } from "./renderer";
+import { ArchiveWatermarkDrafts } from "./watermark-drafts";
+import { ArchiveWatermarkPresets } from "./watermark-presets";
+import { ArchiveWatermarkLibrary } from "./watermark-library";
 
 interface ArchiveMusicSource {
   acquire(id: string, revision?: number): Promise<{ item: AudioLibraryItem; file: string; release: () => void }>;
 }
 const kind = "archive-video-edit-job";
 const active = (job: ArchiveVideoEditJob) => ["pending", "running"].includes(job.status);
-type Work = { job: ArchiveVideoEditJob; input: ArchiveVideoEditInput; controller: AbortController };
+type WatermarkLease = Awaited<ReturnType<ArchiveWatermarkDrafts["acquire"]>>;
+type Work = {
+  job: ArchiveVideoEditJob;
+  input: ArchiveVideoEditInput;
+  controller: AbortController;
+  watermark?: WatermarkLease;
+};
 export class ArchiveVideoEditService {
+  readonly watermarks: ArchiveWatermarkDrafts;
+  readonly watermarkPresets: ArchiveWatermarkPresets;
+  readonly watermarkLibrary: ArchiveWatermarkLibrary;
   private jobs = new Map<string, ArchiveVideoEditJob>();
   private queue: Work[] = [];
   private running?: { work: Work; done: Promise<void> };
@@ -46,7 +60,30 @@ export class ArchiveVideoEditService {
       slideshow?: typeof renderSlideshow;
       onError?: (error: unknown) => void;
     }
-  ) {}
+  ) {
+    this.watermarks = new ArchiveWatermarkDrafts(options.config.xhsArchiveStagingDir);
+    this.watermarkPresets = new ArchiveWatermarkPresets(options.database);
+    this.watermarkLibrary = new ArchiveWatermarkLibrary(
+      path.join(options.config.xhsArchiveDir, "watermark-library"),
+      options.database,
+      options.config.storageRoot,
+      options.onError
+    );
+  }
+  async selectLibraryWatermark(itemId: string, mediaId: string, id: string) {
+    const { bytes } = await this.watermarkLibrary.read(id);
+    return this.uploadWatermark(itemId, mediaId, bytes, "library-watermark.png", "image/png");
+  }
+  mediaTools() {
+    return this.options.tools();
+  }
+  async uploadWatermark(itemId: string, mediaId: string, bytes: Buffer, name: string, mime: string) {
+    if (this.stopped) throw new VideoEditError("ARCHIVE_EDIT_STOPPED", "服务正在退出", 503);
+    const media = await this.options.store.mediaPath(itemId, mediaId);
+    if (!media || !["video", "live-photo"].includes(media.media.kind))
+      throw new VideoEditError("ARCHIVE_EDIT_VIDEO_REQUIRED", "请选择归档视频", 404);
+    return this.watermarks.upload(itemId, mediaId, bytes, name, mime);
+  }
   initialize() {
     if (this.initialized) return;
     this.initialized = true;
@@ -87,10 +124,13 @@ export class ArchiveVideoEditService {
     }
   }
   async create(itemId: string, mediaId: string, input: ArchiveVideoEditInput) {
+    if (!Value.Check(ArchiveVideoEditInputSchema, input))
+      throw new VideoEditError("ARCHIVE_EDIT_INPUT_INVALID", "视频编辑参数无效");
     if (this.stopped) throw new VideoEditError("ARCHIVE_EDIT_STOPPED", "服务正在退出", 503);
-    if (this.queue.length >= 8) throw new VideoEditError("ARCHIVE_EDIT_QUEUE_FULL", "配乐任务较多，请稍后重试", 429);
+    if (this.queue.length >= 8)
+      throw new VideoEditError("ARCHIVE_EDIT_QUEUE_FULL", "视频编辑任务较多，请稍后重试", 429);
     if ([...this.jobs.values()].some((job) => job.itemId === itemId && active(job)))
-      throw new VideoEditError("ARCHIVE_EDIT_BUSY", "该作品已有配乐任务，请等待完成或先停止任务", 409);
+      throw new VideoEditError("ARCHIVE_EDIT_BUSY", "该作品已有视频编辑任务，请等待完成或先停止任务", 409);
     if ((input.musicId && input.useSavedMusic) || (!input.musicId && input.musicRevision))
       throw new VideoEditError("ARCHIVE_EDIT_MUSIC_INVALID", "请选择一种有效的音乐来源");
     const current = await this.options.store.mediaPath(itemId, mediaId);
@@ -111,6 +151,22 @@ export class ArchiveVideoEditService {
     if ((current.media.audioEdit?.revision ?? 0) !== input.revision || current.media.checksum !== input.checksum)
       throw new VideoEditError("ARCHIVE_EDIT_CONFLICT", "视频已更新，请重新打开编辑器", 409);
     if (input.mode !== "restore") await this.options.tools();
+    if (input.mode !== "restore" && input.watermark && current.media.durationMs) {
+      const error = watermarkTimingError(input.watermark.settings, current.media.durationMs / 1000);
+      if (error) throw new VideoEditError("ARCHIVE_WATERMARK_TIME_INVALID", error);
+    }
+    const watermark =
+      input.mode !== "restore" && input.watermark?.draftId
+        ? await this.watermarks.acquire(itemId, mediaId, input.watermark.draftId)
+        : undefined;
+    if (this.queue.length >= 8) {
+      watermark?.release();
+      throw new VideoEditError("ARCHIVE_EDIT_QUEUE_FULL", "视频编辑任务较多，请稍后重试", 429);
+    }
+    if (this.stopped || [...this.jobs.values()].some((entry) => entry.itemId === itemId && active(entry))) {
+      watermark?.release();
+      throw new VideoEditError("ARCHIVE_EDIT_BUSY", "该作品已有编辑任务或服务正在退出", 409);
+    }
     const now = new Date().toISOString();
     const job: ArchiveVideoEditJob = {
       id: nanoid(12),
@@ -120,12 +176,17 @@ export class ArchiveVideoEditService {
       status: "pending",
       stage: "queued",
       progress: 0,
-      message: "等待配乐处理",
+      message: "等待视频编辑处理",
       createdAt: now,
       updatedAt: now
     };
-    this.save(job);
-    this.queue.push({ job, input: structuredClone(input), controller: new AbortController() });
+    try {
+      this.save(job);
+    } catch (error) {
+      watermark?.release();
+      throw error;
+    }
+    this.queue.push({ job, input: structuredClone(input), controller: new AbortController(), watermark });
     this.pump();
     return this.get(job.id)!;
   }
@@ -135,7 +196,7 @@ export class ArchiveVideoEditService {
     if (job.stage === "saving") throw new VideoEditError("ARCHIVE_EDIT_COMMITTING", "成品正在提交，请等待完成", 409);
     const queued = this.queue.findIndex((entry) => entry.job.id === id);
     if (queued >= 0) {
-      this.queue.splice(queued, 1);
+      this.queue.splice(queued, 1)[0].watermark?.release();
       this.save({ ...job, status: "cancelled", stage: "cancelled", message: "配乐任务已停止，原成品保留" });
     } else if (this.running?.work.job.id === id) {
       this.running.work.controller.abort();
@@ -146,7 +207,8 @@ export class ArchiveVideoEditService {
   async close() {
     this.stopped = true;
     clearInterval(this.cleanupTimer);
-    for (const work of this.queue.splice(0))
+    for (const work of this.queue.splice(0)) {
+      work.watermark?.release();
       this.save({
         ...work.job,
         status: "failed",
@@ -154,13 +216,17 @@ export class ArchiveVideoEditService {
         message: "程序退出，未开始处理",
         errorCode: "ARCHIVE_EDIT_INTERRUPTED"
       });
+    }
     this.running?.work.controller.abort();
     await this.running?.done;
     await this.cleanupTail;
+    await this.watermarks.idle();
+    await this.watermarkLibrary.idle();
   }
   private cleanupHistory() {
     this.cleanupTail = this.cleanupTail
       .then(async () => {
+        await this.watermarks.cleanup();
         const completed = [...this.jobs.values()]
           .filter((job) => !active(job))
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -236,7 +302,7 @@ export class ArchiveVideoEditService {
     let keepPreview = false;
     try {
       controller.signal.throwIfAborted();
-      this.save({ ...job, status: "running", stage: "preparing", progress: 1, message: "准备原片和配乐" });
+      this.save({ ...job, status: "running", stage: "preparing", progress: 1, message: "准备原片、配乐和水印" });
       await store.pruneVideoEdits(job.itemId);
       lease = await store.beginVideoEdit(
         job.itemId,
@@ -251,6 +317,33 @@ export class ArchiveVideoEditService {
       let sourceImageId: string | undefined;
       let music: NonNullable<NonNullable<typeof lease.media.audioEdit>["music"]> | undefined;
       const addedFiles: string[] = [];
+      let watermark =
+        input.mode === "restore" || input.watermark === null
+          ? undefined
+          : structuredClone(lease.media.audioEdit?.watermark);
+      if (input.mode !== "restore" && input.watermark) {
+        if (work.watermark) {
+          watermark = {
+            file: work.watermark.file,
+            width: work.watermark.width,
+            height: work.watermark.height,
+            settings: structuredClone(input.watermark.settings)
+          };
+        } else {
+          if (!watermark) throw new VideoEditError("ARCHIVE_WATERMARK_MISSING", "请先上传水印图片", 404);
+          watermark.settings = structuredClone(input.watermark.settings);
+        }
+      }
+      if (watermark) {
+        const source = work.watermark?.path ?? localFile(lease.directory, watermark.file.fileName);
+        const target = localFile(directory, watermark.file.fileName);
+        await fs.copyFile(source, target);
+        const actual = await inspectEditFile(target, "image/png");
+        if (actual.checksum !== watermark.file.checksum || actual.size !== watermark.file.size)
+          throw new VideoEditError("ARCHIVE_WATERMARK_CHANGED", "水印文件已变化，请重新上传", 409);
+        if (watermark.file.fileName !== lease.media.audioEdit?.watermark?.file.fileName)
+          addedFiles.push(watermark.file.fileName);
+      }
       if (input.mode !== "restore" && input.useSavedMusic) {
         if (!lease.media.audioEdit?.music)
           throw new VideoEditError("ARCHIVE_EDIT_MUSIC_MISSING", "当前视频没有可复用的配乐，请重新选曲", 404);
@@ -281,7 +374,7 @@ export class ArchiveVideoEditService {
         const tools = await this.options.tools();
         const free = await fs.statfs(directory);
         const available = Number(free.bavail) * Number(free.bsize) - 64 * 1024 * 1024;
-        if (available < original.size + (music?.size ?? 0))
+        if (available < original.size + (music?.size ?? 0) + (watermark?.file.size ?? 0))
           throw new VideoEditError("ARCHIVE_EDIT_DISK_FULL", "磁盘剩余空间不足，原成品保留", 507);
         if (input.slideshow) {
           const images = input.slideshow.images.map((image) => {
@@ -326,6 +419,14 @@ export class ArchiveVideoEditService {
           music: music ? localFile(directory, music.fileName) : undefined,
           output: localFile(directory, fileName),
           settings: input.settings,
+          watermark: watermark
+            ? {
+                file: localFile(directory, watermark.file.fileName),
+                width: watermark.width,
+                height: watermark.height,
+                settings: watermark.settings
+              }
+            : undefined,
           signal: controller.signal,
           preview: input.mode === "preview",
           previewStartSeconds: input.previewStartSeconds,
@@ -338,7 +439,7 @@ export class ArchiveVideoEditService {
                 status: "running",
                 stage: "rendering",
                 progress: value,
-                message: "正在生成配乐视频"
+                message: "正在生成视频成品"
               });
             }
           }
@@ -370,6 +471,7 @@ export class ArchiveVideoEditService {
         revision: input.revision + 1,
         original: structuredClone(original),
         ...(music ? { music } : {}),
+        ...(watermark ? { watermark } : {}),
         settings: input.mode === "restore" ? defaultArchiveAudioSettings() : structuredClone(input.settings),
         updatedAt: new Date().toISOString()
       };
@@ -432,6 +534,9 @@ export class ArchiveVideoEditService {
         if (!known && !controller.signal.aborted) this.options.onError?.(error);
       }
     } finally {
+      work.watermark?.release();
+      if (work.watermark && input.mode === "save" && this.jobs.get(job.id)?.status === "completed")
+        await this.watermarks.discard(input.watermark!.draftId!).catch((error) => this.options.onError?.(error));
       lease?.release();
       if (directory && !keepPreview)
         await fs.rm(directory, { recursive: true, force: true }).catch((error) => this.options.onError?.(error));

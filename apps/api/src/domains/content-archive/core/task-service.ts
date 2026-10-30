@@ -120,6 +120,12 @@ export class ContentArchiveTaskService {
   async refresh(id: string) {
     this.options.store.assertVideoEditIdle(id);
     const item = await this.options.store.get(id);
+    if (item?.platform === "local")
+      throw new ArchiveTaskError(
+        "ARCHIVE_LOCAL_REFRESH_UNAVAILABLE",
+        "本地上传视频没有线上来源，可直接编辑或重新上传",
+        409
+      );
     return item ? this.create(item.sourceUrl, item.platform, item.id) : undefined;
   }
   async remove(id: string) {

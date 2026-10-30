@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import XhsResultPanel from "./XhsResultPanel.vue";
 import BilingualContent from "./BilingualContent.vue";
+import MediaGallery from "./MediaGallery.vue";
 
 const item = {
   id: "archive-1",
@@ -61,6 +62,10 @@ describe("XHS result panel", () => {
     });
 
     expect(wrapper.text()).toContain("获取结果");
+    wrapper.findComponent(MediaGallery).vm.$emit("editWatermark", "video-123");
+    expect(wrapper.emitted("editWatermark")).toEqual([["video-123"]]);
+    wrapper.findComponent(MediaGallery).vm.$emit("editAudio", "video-456");
+    expect(wrapper.emitted("editAudio")).toEqual([["video-456"]]);
     wrapper.findComponent(BilingualContent).vm.$emit("copy", "结果正文", "正文");
     expect(wrapper.emitted("copy")).toEqual([["结果正文", "正文"]]);
     const heading = wrapper.get(".result-head");
@@ -80,6 +85,10 @@ describe("XHS result panel", () => {
     await wrapper.setProps({ hasEdited: () => true });
     expect(wrapper.get(".result-actions").findAll("button, a")).toHaveLength(10);
     expect(wrapper.get(".result-summary p").text()).toBe("内容和媒体已保存到本机，可随时预览或下载。");
+    await wrapper.setProps({ current: { ...item, platform: "local" } });
+    expect(wrapper.text()).not.toContain("原链接");
+    expect(wrapper.text()).not.toContain("重新获取");
+    expect(wrapper.text()).toContain("下载全部 ZIP");
     wrapper.unmount();
   });
   it("keeps the heading above a wrapping toolbar at every viewport size without fixed minimum media columns", () => {

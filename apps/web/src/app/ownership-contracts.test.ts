@@ -36,6 +36,7 @@ describe("R08 application ownership contracts", () => {
         ["/tools/image-compress", "image-compress"],
         ["/tools/lan-transfer", "lan-transfer"],
         ["/tools/media-archive", "xhs-archive"],
+        ["/tools/media-archive/video-editor/:itemId/:mediaId", "archive-video-editor"],
         ["/tools/xhs-archive", undefined]
       ].sort()
     );

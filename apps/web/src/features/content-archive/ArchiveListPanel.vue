@@ -33,19 +33,41 @@
         {{ selectedIds.length ? `翻译所选 ${selectedIds.length} 条` : "补全未翻译内容" }}
       </n-button>
     </div>
-    <p class="filter-scope">
-      当前筛选范围 {{ archives.total }} 条；未选择时仅补全此范围内未翻译或已过期内容（每批最多 100 条）。
-    </p>
+    <div class="archive-list-heading">
+      <p class="filter-scope">
+        当前筛选范围 {{ archives.total }} 条；未选择时仅补全此范围内未翻译或已过期内容（每批最多 100 条）。
+      </p>
+      <div class="archive-view-switch" role="group" aria-label="归档展示方式">
+        <n-button
+          size="small"
+          :type="viewMode === 'card' ? 'primary' : 'default'"
+          secondary
+          :aria-pressed="viewMode === 'card'"
+          @click="setViewMode('card')"
+        >
+          <template #icon><LayoutGrid :size="15" /></template>卡片
+        </n-button>
+        <n-button
+          size="small"
+          :type="viewMode === 'list' ? 'primary' : 'default'"
+          secondary
+          :aria-pressed="viewMode === 'list'"
+          @click="setViewMode('list')"
+        >
+          <template #icon><List :size="15" /></template>列表
+        </n-button>
+      </div>
+    </div>
     <n-spin :show="listLoading">
-      <n-empty v-if="!archives.items.length" description="还没有内容存档，请在上方输入链接获取内容" />
-      <div v-else class="archive-grid">
+      <n-empty v-if="!archives.items.length" description="还没有内容存档，可在上方获取链接内容或批量上传视频" />
+      <div v-else class="archive-grid" :class="{ 'is-list': viewMode === 'list' }">
         <article
           v-for="archive in archives.items"
           :key="archive.id"
           class="archive-card"
           tabindex="0"
           @click="$emit('openDetail', archive.id)"
-          @keyup.enter="$emit('openDetail', archive.id)"
+          @keyup.enter.self="$emit('openDetail', archive.id)"
         >
           <n-checkbox
             class="card-selector"
@@ -77,8 +99,8 @@
               <FileImage v-else :size="13" />
               {{ typeName(archive.type) }}
             </span>
-            <span v-if="archive.publishedElsewhere" class="card-publication-badge">
-              <BadgeCheck :size="20" aria-hidden="true" />已在其他平台发布
+            <span v-if="archive.publishedElsewhere" class="card-publication-badge" title="已在其他平台发布">
+              <BadgeCheck :size="20" aria-hidden="true" />{{ viewMode === "list" ? "已发布" : "已在其他平台发布" }}
             </span>
           </div>
           <div class="card-copy">
@@ -112,15 +134,23 @@
         </article>
       </div>
     </n-spin>
-    <n-pagination v-if="archives.total" :page="page" :page-count="archives.pageCount" @update:page="updatePage" />
+    <n-pagination
+      v-if="archives.total"
+      class="pagination-with-total"
+      :page="page"
+      :page-count="archives.pageCount"
+      @update:page="updatePage"
+    >
+      <template #prefix>共 {{ archives.total }} 条</template>
+    </n-pagination>
   </section>
 </template>
 
 <script setup lang="ts">
 import { formatBytesThroughGb as formatBytes } from "../../shared/utils/format-bytes";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NSelect, NSpin } from "naive-ui";
-import { BadgeCheck, FileImage, Languages, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
+import { BadgeCheck, FileImage, Languages, LayoutGrid, List, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
 import type { ContentArchiveListResponse, ContentArchiveListQuery, ArchiveGroup } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { archiveDisplayTitle, archivePlatformLabel } from "./presentation";
@@ -153,6 +183,23 @@ const platformFilter = defineModel<NonNullable<ContentArchiveListQuery["platform
 });
 const page = defineModel<number>("page", { required: true });
 const sort = defineModel<NonNullable<ContentArchiveListQuery["sort"]>>("sort", { default: "archived-desc" });
+const viewModeStorageKey = "toolbox:media-archive:view-mode";
+const viewMode = ref(readViewMode());
+function readViewMode(): "card" | "list" {
+  try {
+    return localStorage.getItem(viewModeStorageKey) === "list" ? "list" : "card";
+  } catch {
+    return "card";
+  }
+}
+function setViewMode(mode: "card" | "list") {
+  viewMode.value = mode;
+  try {
+    localStorage.setItem(viewModeStorageKey, mode);
+  } catch {
+    // 浏览器禁用本地存储时，仍允许在当前页面切换展示方式。
+  }
+}
 const sortOptions = [
   { label: "归档时间：从新到旧", value: "archived-desc" },
   { label: "归档时间：从旧到新", value: "archived-asc" },
@@ -170,7 +217,8 @@ const platformOptions = [
   { label: "全部平台", value: "all" },
   { label: "小红书", value: "xiaohongshu" },
   { label: "抖音", value: "douyin" },
-  { label: "TikTok", value: "tiktok" }
+  { label: "TikTok", value: "tiktok" },
+  { label: "本地上传", value: "local" }
 ];
 
 const allCurrentArchivesSelected = computed(
@@ -223,7 +271,20 @@ function formatDate(value: string | undefined) {
 .filter-scope {
   color: #687386;
   font-size: 12px;
+  margin: 0;
+}
+.archive-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   margin: -8px 0 16px;
+}
+.archive-view-switch {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .card-platform-badge {
   display: inline-block;
@@ -377,6 +438,80 @@ function formatDate(value: string | undefined) {
   justify-content: center;
   margin-top: 20px;
 }
+.archive-grid.is-list {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.is-list .archive-card {
+  display: grid;
+  grid-template-columns: 28px 112px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+}
+.is-list .archive-card:hover {
+  transform: none;
+}
+.is-list .card-selector {
+  position: static;
+  justify-self: center;
+  padding: 0;
+  background: transparent;
+}
+.is-list .card-cover {
+  width: 112px;
+  height: 132px;
+  aspect-ratio: auto;
+  border-radius: 8px;
+}
+.is-list .card-type-badge {
+  top: 5px;
+  right: 5px;
+  height: 23px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+.is-list .card-publication-badge {
+  bottom: 5px;
+  left: 5px;
+  right: 5px;
+  padding: 5px;
+  gap: 4px;
+  font-size: 12px;
+}
+.is-list .card-copy {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 20px;
+  row-gap: 6px;
+  padding: 0;
+  min-width: 0;
+}
+.is-list .card-copy > :not(.card-actions) {
+  grid-column: 1;
+}
+.is-list .card-platform-badge {
+  justify-self: start;
+  margin-bottom: 0;
+}
+.is-list .card-copy h3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.is-list .card-copy p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.is-list .card-copy .card-actions {
+  grid-column: 2;
+  grid-row: 1 / span 5;
+  align-self: center;
+  margin-top: 0;
+}
 @media (max-width: 900px) {
   .archive-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -394,6 +529,23 @@ function formatDate(value: string | undefined) {
   }
   .archive-panel {
     padding: 16px;
+  }
+  .is-list .archive-card {
+    grid-template-columns: 22px 80px minmax(0, 1fr);
+    gap: 8px;
+    padding: 10px;
+  }
+  .is-list .card-cover {
+    width: 80px;
+    height: 104px;
+  }
+  .is-list .card-copy {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .is-list .card-copy .card-actions {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 4px;
   }
 }
 </style>

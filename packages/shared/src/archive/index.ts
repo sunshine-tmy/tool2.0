@@ -12,3 +12,4 @@ export * from "./archive-import";
 export * from "./archive-groups";
 export * from "./tiktok-profile";
 export * from "./video-edit";
+export * from "./video-watermark";

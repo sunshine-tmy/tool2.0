@@ -87,6 +87,15 @@ describe("Chatterbox editor actions", () => {
         inputs[index].vm.$emit("update:value", value)
       );
       expect(panel).toMatchObject({ voiceName: "Saved voice", batchName: "Clone batch", autoSegmentText: "1. Auto" });
+      const textarea = document.createElement("textarea");
+      const paste = new Event("paste", { cancelable: true });
+      Object.defineProperty(paste, "target", { value: textarea });
+      Object.defineProperty(paste, "clipboardData", {
+        value: { getData: (type: string) => (type === "text/plain" ? "**1. Hello.**\r\n你好。" : "") }
+      });
+      inputs.at(-1)!.vm.$emit("paste", paste);
+      expect(paste.defaultPrevented).toBe(true);
+      expect(panel.autoSegmentText).toBe("1. Hello.\n你好。");
       expect(panel.segments[0]).toMatchObject({
         text: "Changed text",
         referenceTranslation: "修改译文",

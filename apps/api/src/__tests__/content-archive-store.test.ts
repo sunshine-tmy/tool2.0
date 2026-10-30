@@ -87,6 +87,90 @@ async function staging(value: ContentArchiveItem, contents = bytes) {
 const target = (id = "archive_123456") => path.join(config.xhsArchiveItemsDir, id);
 
 describe("多媒体共享存储与小红书过滤视图", () => {
+  it("截帧下载占用和视频编辑租约期间保留文件，释放后可单独删除", async () => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    const captured = await store.addVideoFrame(value.id, {
+      sourceMediaId: value.media[0].id,
+      timestampMs: 10,
+      png: bytes,
+      width: 1,
+      height: 1
+    });
+    const frame = captured.media[1],
+      file = path.join(target(), frame.fileName);
+    const release = store.pinMedia(file);
+    await expect(store.removeVideoFrame(value.id, frame.id)).rejects.toMatchObject({
+      code: "XHS_FRAME_BUSY",
+      statusCode: 409
+    });
+    expect(await fs.readFile(file)).toEqual(bytes);
+    release();
+    const lease = await store.beginVideoEdit(value.id, value.media[0].id, value.media[0].checksum, 0);
+    await expect(store.removeVideoFrame(value.id, frame.id)).rejects.toMatchObject({
+      code: "ARCHIVE_EDIT_BUSY",
+      statusCode: 409
+    });
+    lease.release();
+    expect((await store.removeVideoFrame(value.id, frame.id)).media).toEqual(value.media);
+    expect(await store.totalBytes()).toBe(value.totalBytes);
+    await store.flushVideoEdits();
+  });
+  it.each(["move", "manifest"] as const)("删除截帧 %s 失败不丢文件或元数据，重试成功", async (mode) => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    const captured = await store.addVideoFrame(value.id, {
+      sourceMediaId: value.media[0].id,
+      timestampMs: 10,
+      png: bytes,
+      width: 1,
+      height: 1
+    });
+    const frame = captured.media[1],
+      manifest = await fs.readFile(path.join(target(), "manifest.json")),
+      files = database.listFiles();
+    const mock =
+      mode === "move"
+        ? vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("file locked"))
+        : vi.spyOn(fs, "copyFile").mockRejectedValueOnce(new Error("manifest locked"));
+    await expect(store.removeVideoFrame(value.id, frame.id)).rejects.toThrow("locked");
+    mock.mockRestore();
+    expect(await store.get(value.id)).toEqual(captured);
+    expect(database.get("xhs-archive", value.id)!.payload).toEqual(captured);
+    expect(database.listFiles()).toEqual(files);
+    expect(await fs.readFile(path.join(target(), "manifest.json"))).toEqual(manifest);
+    expect(await fs.readFile(path.join(target(), frame.fileName))).toEqual(bytes);
+    expect((await fs.readdir(target())).sort()).toEqual(["manifest.json", "original.mp4", frame.fileName].sort());
+    await store.removeVideoFrame(value.id, frame.id);
+    expect((await store.get(value.id))?.media).toEqual(value.media);
+  });
+  it("并发删除和保存截帧不丢失其他更新，缺失文件的截帧仍可清理其记录", async () => {
+    const value = item();
+    await store.commit(value, await staging(value));
+    const captured = await store.addVideoFrame(value.id, {
+      sourceMediaId: value.media[0].id,
+      timestampMs: 10,
+      png: bytes,
+      width: 1,
+      height: 1
+    });
+    await Promise.all([
+      store.removeVideoFrame(value.id, captured.media[1].id),
+      store.addVideoFrame(value.id, {
+        sourceMediaId: value.media[0].id,
+        timestampMs: 20,
+        png: bytes,
+        width: 1,
+        height: 1
+      })
+    ]);
+    const latest = (await store.get(value.id))!;
+    expect(latest.media).toHaveLength(2);
+    expect(latest.media[1].frameTimestampMs).toBe(20);
+    await fs.unlink(path.join(target(), latest.media[1].fileName));
+    expect((await store.removeVideoFrame(value.id, latest.media[1].id)).media).toEqual(value.media);
+    expect(database.listFiles({ entityKind: "xhs-media" })).toHaveLength(1);
+  });
   it.each(["xiaohongshu", "douyin", "tiktok"] as const)(
     "keeps %s publication marks across restart and refresh without changing source metadata, manifests or media",
     async (platform) => {

@@ -8,15 +8,21 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { generateMacOSIcon } from "./generate-macos-icon.mjs";
+import { withDesktopVersion } from "./desktop-version.mjs";
 
-export async function run({ packager }) {
-  const desktopRoot = fileURLToPath(new URL("..", publicEntryUrl));
+export async function run({
+  packager,
+  desktopRoot = fileURLToPath(new URL("..", publicEntryUrl)),
+  args = process.argv.slice(2),
+  env = process.env,
+  targetPlatform = process.platform,
+  targetArch = process.arch,
+  installerBuilder
+}) {
   const outputRoot = path.join(desktopRoot, "out");
   const stageRoot = path.join(desktopRoot, ".stage");
   const appName = "EcommerceToolbox";
-  const makeInstaller = process.argv.includes("--make");
-  const targetPlatform = process.platform;
-  const targetArch = process.arch;
+  const makeInstaller = args.includes("--make");
   if (!(
     (targetPlatform === "win32" && targetArch === "x64") ||
     (targetPlatform === "darwin" && targetArch === "arm64")
@@ -27,121 +33,116 @@ export async function run({ packager }) {
   }
   const isMacOS = targetPlatform === "darwin";
   const packageOutput = isMacOS ? path.join(outputRoot, "mac-arm64") : outputRoot;
-  // Keep binary downloads inside the workspace so a broken user-level cache
-  // cannot make an otherwise reproducible package build fail.
-  const electronCache = process.env.ELECTRON_DOWNLOAD_CACHE ?? path.join(desktopRoot, ".electron-cache");
-  const electronMirror = process.env.ELECTRON_MIRROR;
-  const electronPackage = JSON.parse(
-    await readFile(path.join(desktopRoot, "node_modules", "electron", "package.json"), "utf8")
-  );
-  const electronZipName = `electron-v${electronPackage.version}-${targetPlatform}-${targetArch}.zip`;
-  const cachedElectronZipDirectory = await findCachedElectronZipDirectory(electronCache, electronZipName);
-  if (cachedElectronZipDirectory) {
-    console.log(`Using cached Electron runtime archive: ${path.join(cachedElectronZipDirectory, electronZipName)}`);
-  } else {
-    console.log(`Electron runtime archive is not cached; downloading ${electronZipName}`);
-  }
+  return withDesktopVersion({ desktopRoot, args, env }, (version) => packageApplication(readReleaseOptions(version)));
 
-  await Promise.all(["backend", "frontend", "scripts", "tooling"].map((name) => access(path.join(stageRoot, name))));
-  const desktopIcon = isMacOS
-    ? await generateMacOSIcon(stageRoot)
-    : path.join(desktopRoot, "assets", "ecommerce-toolbox.ico");
-  await access(desktopIcon);
-  const packageJson = JSON.parse(await readFile(path.join(desktopRoot, "package.json"), "utf8"));
-  const release = readReleaseOptions(packageJson);
-  await rm(outputRoot, { recursive: true, force: true });
-
-  const [packagedApp] = await packager({
-    dir: desktopRoot,
-    out: outputRoot,
-    name: appName,
-    platform: targetPlatform,
-    arch: targetArch,
-    icon: desktopIcon,
-    ...(isMacOS ? { osxSign: false, osxNotarize: false } : {}),
-    appVersion: release.version,
-    buildVersion: release.version,
-    asar: true,
-    // Pnpm represents direct dependencies as junctions. Electron Packager's
-    // pruning walker cannot follow electron-updater's nested junctions, so the
-    // small runtime dependency tree is copied explicitly in afterCopy below.
-    prune: false,
-    // outputRoot was cleared above. Avoid a second recursive deletion inside
-    // Electron Packager, which can race with Windows antivirus file scanning.
-    overwrite: false,
-    extraResource: ["backend", "frontend", "scripts", "tooling"].map((name) => path.join(stageRoot, name)),
-    afterCopy: [embedReleaseMetadata(release), copyDesktopRuntimeDependencies()],
-    ...(cachedElectronZipDirectory
-      ? { electronZipDir: cachedElectronZipDirectory }
-      : {
-          download: {
-            cacheRoot: electronCache,
-            mirrorOptions: electronMirror ? { mirror: electronMirror } : undefined
-          }
-        }),
-    ignore: [/(^|[\\/])(\.stage|node_modules|out|src|test-results)([\\/]|$)/]
-  });
-
-  assert.ok(packagedApp, "Electron Packager did not produce an application bundle");
-  if (isMacOS) {
-    await access(path.join(packagedApp, "Contents", "MacOS", appName));
-    await access(path.join(packagedApp, "Contents", "Resources", "backend", "dist", "desktop-entry.js"));
-    await access(path.join(packagedApp, "Contents", "Resources", "frontend", "index.html"));
-    await access(path.join(packagedApp, "Contents", "Resources", "app.asar"));
-  } else {
-    await access(path.join(packagedApp, `${appName}.exe`));
-    await access(path.join(packagedApp, "resources", "backend", "dist", "desktop-entry.js"));
-    await access(path.join(packagedApp, "resources", "frontend", "index.html"));
-    await access(path.join(packagedApp, "resources", "app.asar"));
-  }
-
-  if (makeInstaller) {
-    const installerOutput = isMacOS ? packageOutput : path.join(outputRoot, "make", "nsis");
-    await writeUpdateConfiguration(packagedApp, release);
-    await rm(installerOutput, { recursive: true, force: true });
-    const customIncludePath = path.join(stageRoot, "installer-custom.nsh");
-    if (!isMacOS) await writeInstallerInclude(packagedApp, customIncludePath);
-    const builderConfig = await writeElectronBuilderConfig(release);
-    try {
-      await runElectronBuilder(packagedApp, release, builderConfig.path, isMacOS);
-    } finally {
-      await builderConfig.dispose();
-      if (!isMacOS) await rm(customIncludePath, { force: true });
-    }
-    if (isMacOS) {
-      await access(path.join(installerOutput, "EcommerceToolbox-mac-arm64.dmg"));
-      console.log(`Apple Silicon internal-test DMG created: ${installerOutput}`);
+  async function packageApplication(release) {
+    // Keep binary downloads inside the workspace so a broken user-level cache
+    // cannot make an otherwise reproducible package build fail.
+    const electronCache = env.ELECTRON_DOWNLOAD_CACHE ?? path.join(desktopRoot, ".electron-cache");
+    const electronMirror = env.ELECTRON_MIRROR;
+    const electronPackage = JSON.parse(
+      await readFile(path.join(desktopRoot, "node_modules", "electron", "package.json"), "utf8")
+    );
+    const electronZipName = `electron-v${electronPackage.version}-${targetPlatform}-${targetArch}.zip`;
+    const cachedElectronZipDirectory = await findCachedElectronZipDirectory(electronCache, electronZipName);
+    if (cachedElectronZipDirectory) {
+      console.log(`Using cached Electron runtime archive: ${path.join(cachedElectronZipDirectory, electronZipName)}`);
     } else {
-      await access(path.join(installerOutput, `${appName}Setup.exe`));
-      await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
-      if (release.updateFeed) await access(path.join(installerOutput, "latest.yml"));
-      console.log(`Windows installer created: ${installerOutput}`);
+      console.log(`Electron runtime archive is not cached; downloading ${electronZipName}`);
     }
-  } else {
-    console.log(`${isMacOS ? "Apple Silicon macOS" : "Windows"} application packaged: ${packagedApp}`);
+
+    await Promise.all(["backend", "frontend", "scripts", "tooling"].map((name) => access(path.join(stageRoot, name))));
+    const desktopIcon = isMacOS
+      ? await generateMacOSIcon(stageRoot)
+      : path.join(desktopRoot, "assets", "ecommerce-toolbox.ico");
+    await access(desktopIcon);
+    await rm(outputRoot, { recursive: true, force: true });
+
+    const [packagedApp] = await packager({
+      dir: desktopRoot,
+      out: outputRoot,
+      name: appName,
+      platform: targetPlatform,
+      arch: targetArch,
+      icon: desktopIcon,
+      ...(isMacOS ? { osxSign: false, osxNotarize: false } : {}),
+      appVersion: release.version,
+      buildVersion: release.version,
+      asar: true,
+      // Pnpm represents direct dependencies as junctions. Electron Packager's
+      // pruning walker cannot follow electron-updater's nested junctions, so the
+      // small runtime dependency tree is copied explicitly in afterCopy below.
+      prune: false,
+      // outputRoot was cleared above. Avoid a second recursive deletion inside
+      // Electron Packager, which can race with Windows antivirus file scanning.
+      overwrite: false,
+      extraResource: ["backend", "frontend", "scripts", "tooling"].map((name) => path.join(stageRoot, name)),
+      afterCopy: [embedReleaseMetadata(release), copyDesktopRuntimeDependencies()],
+      ...(cachedElectronZipDirectory
+        ? { electronZipDir: cachedElectronZipDirectory }
+        : {
+            download: {
+              cacheRoot: electronCache,
+              mirrorOptions: electronMirror ? { mirror: electronMirror } : undefined
+            }
+          }),
+      ignore: [
+        /(^|[\\/])(\.stage|node_modules|out|src|test-results)([\\/]|$)/,
+        /(^|[\\/])\.desktop-(package\.lock|version-.*\.tmp)$/
+      ]
+    });
+
+    assert.ok(packagedApp, "Electron Packager did not produce an application bundle");
+    if (isMacOS) {
+      await access(path.join(packagedApp, "Contents", "MacOS", appName));
+      await access(path.join(packagedApp, "Contents", "Resources", "backend", "dist", "desktop-entry.js"));
+      await access(path.join(packagedApp, "Contents", "Resources", "frontend", "index.html"));
+      await access(path.join(packagedApp, "Contents", "Resources", "app.asar"));
+    } else {
+      await access(path.join(packagedApp, `${appName}.exe`));
+      await access(path.join(packagedApp, "resources", "backend", "dist", "desktop-entry.js"));
+      await access(path.join(packagedApp, "resources", "frontend", "index.html"));
+      await access(path.join(packagedApp, "resources", "app.asar"));
+    }
+
+    if (makeInstaller) {
+      const installerOutput = isMacOS ? packageOutput : path.join(outputRoot, "make", "nsis");
+      await writeUpdateConfiguration(packagedApp, release);
+      await rm(installerOutput, { recursive: true, force: true });
+      const customIncludePath = path.join(stageRoot, "installer-custom.nsh");
+      if (!isMacOS) await writeInstallerInclude(packagedApp, customIncludePath);
+      const builderConfig = await writeElectronBuilderConfig(release);
+      try {
+        await (installerBuilder ?? runElectronBuilder)(packagedApp, release, builderConfig.path, isMacOS);
+      } finally {
+        await builderConfig.dispose();
+        if (!isMacOS) await rm(customIncludePath, { force: true });
+      }
+      if (isMacOS) {
+        await access(path.join(installerOutput, "EcommerceToolbox-mac-arm64.dmg"));
+        console.log(`Apple Silicon internal-test DMG created: ${installerOutput}`);
+      } else {
+        await access(path.join(installerOutput, `${appName}Setup.exe`));
+        await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
+        if (release.updateFeed) await access(path.join(installerOutput, "latest.yml"));
+        console.log(`Windows installer created: ${installerOutput}`);
+      }
+    } else {
+      console.log(`${isMacOS ? "Apple Silicon macOS" : "Windows"} application packaged: ${packagedApp}`);
+    }
   }
 
-  function readReleaseOptions(packageJson) {
-    const isRelease = process.env.DESKTOP_RELEASE === "1";
-    const version = isRelease ? requiredStableVersion(process.env.DESKTOP_VERSION) : packageJson.version;
-    assert.equal(typeof version, "string", "desktop package version is required");
+  function readReleaseOptions(version) {
+    const isRelease = env.DESKTOP_RELEASE === "1";
     if (!isRelease) return { version, updateFeed: undefined, signing: undefined };
 
-    const updateFeed = requiredUpdateFeed(process.env.DESKTOP_UPDATE_FEED_URL);
-    const certificateFile = process.env.WINDOWS_CERTIFICATE_FILE?.trim();
-    const certificatePassword = process.env.WINDOWS_CERTIFICATE_PASSWORD;
+    const updateFeed = requiredUpdateFeed(env.DESKTOP_UPDATE_FEED_URL);
+    const certificateFile = env.WINDOWS_CERTIFICATE_FILE?.trim();
+    const certificatePassword = env.WINDOWS_CERTIFICATE_PASSWORD;
     if (!certificateFile || !certificatePassword) {
       throw new Error("Release builds require WINDOWS_CERTIFICATE_FILE and WINDOWS_CERTIFICATE_PASSWORD");
     }
     return { version, updateFeed, signing: { certificateFile, certificatePassword } };
-  }
-
-  function requiredStableVersion(value) {
-    const version = value?.trim();
-    if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
-      throw new Error("DESKTOP_VERSION must be a stable major.minor.patch version");
-    }
-    return version;
   }
 
   function requiredUpdateFeed(value) {
@@ -271,6 +272,10 @@ export async function run({ packager }) {
     const configPath = path.join(outputRoot, "electron-builder.release.json");
     const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
     config.directories = { ...config.directories, buildResources: ".stage" };
+    // --prepackaged still reads the source manifest for installer/update metadata.
+    // The source version is committed only after success, so pin the builder explicitly.
+    config.extraMetadata = { ...config.extraMetadata, version: release.version };
+    config.buildVersion = release.version;
     if (isMacOS) {
       config.directories.output = path.relative(desktopRoot, packageOutput);
       config.mac = { icon: ".stage/ecommerce-toolbox.icns", target: ["dmg"], identity: "-" };
@@ -329,7 +334,7 @@ export async function run({ packager }) {
   async function runElectronBuilder(packagedApp, release, configPath, macOS = false) {
     const builderContext = await createBuilderContext(packagedApp, configPath);
     const environment = {
-      ...process.env,
+      ...env,
       CSC_IDENTITY_AUTO_DISCOVERY: "false",
       ...(release.signing
         ? {

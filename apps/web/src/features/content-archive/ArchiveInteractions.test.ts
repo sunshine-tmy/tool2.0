@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /** 展示组件的真实按钮/输入事件：验证管理动作、媒体导航、平台筛选与双语状态。 */
 import { mount } from "@vue/test-utils";
-import { NSelect, NInput, NCheckbox, NDrawer } from "naive-ui";
+import { NSelect, NInput, NCheckbox, NModal } from "naive-ui";
 import { describe, expect, it, vi } from "vitest";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
@@ -96,7 +96,7 @@ describe("归档组件交互", () => {
     expect(wrapper.text()).toContain("验收提示");
     wrapper.unmount();
   });
-  it("详情抽屉编辑/恢复/关闭事件与媒体更新不丢失", async () => {
+  it("居中详情弹窗编辑/恢复/关闭事件与媒体更新不丢失", async () => {
     const item = archiveFixture({ translation: translationFixture() });
     const edit = vi.fn(),
       reset = vi.fn();
@@ -124,7 +124,7 @@ describe("归档组件交互", () => {
     expect(reset).toHaveBeenCalledWith(item);
     wrapper.findComponent(MediaGallery).vm.$emit("frameSaved", item);
     expect(wrapper.emitted("frameSaved")?.[0]).toEqual([item]);
-    wrapper.findComponent(NDrawer).vm.$emit("update:show", false);
+    wrapper.findComponent(NModal).vm.$emit("update:show", false);
     expect(wrapper.emitted("update:open")).toEqual([[false]]);
     wrapper.unmount();
   });

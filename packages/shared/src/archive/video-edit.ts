@@ -1,5 +1,6 @@
 /** 归档配乐只描述受控素材 ID 和混音参数，不接受客户端路径或 FFmpeg 表达式。 */
 import { Type, type Static } from "@sinclair/typebox";
+import { ArchiveWatermarkInputSchema, ArchiveWatermarkSettingsSchema } from "./video-watermark";
 const strict = { additionalProperties: false } as const;
 const Id = Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" });
 export const ArchiveEditFileSchema = Type.Object(
@@ -40,6 +41,17 @@ export const ArchiveVideoEditSchema = Type.Object(
       )
     ),
     settings: ArchiveAudioSettingsSchema,
+    watermark: Type.Optional(
+      Type.Object(
+        {
+          file: ArchiveEditFileSchema,
+          width: Type.Integer({ minimum: 1 }),
+          height: Type.Integer({ minimum: 1 }),
+          settings: ArchiveWatermarkSettingsSchema
+        },
+        strict
+      )
+    ),
     updatedAt: Type.String(),
     // 仅用于旧成品在播放/下载结束前的延后清理，仍计入归档配额。
     pendingFiles: Type.Optional(Type.Array(ArchiveEditFileSchema))
@@ -55,6 +67,8 @@ export const ArchiveVideoEditInputSchema = Type.Object(
     musicRevision: Type.Optional(Type.Integer({ minimum: 1 })),
     useSavedMusic: Type.Boolean(),
     settings: ArchiveAudioSettingsSchema,
+    // 省略保留当前水印；null 明确移除；对象配置当前水印或上传的草稿。
+    watermark: Type.Optional(Type.Union([ArchiveWatermarkInputSchema, Type.Null()])),
     previewStartSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 86400 })),
     slideshow: Type.Optional(
       Type.Object(

@@ -1,6 +1,6 @@
 /** 共用翻译队列：平台文本独立、旧任务可见性隔离，迟到结果不能覆盖刷新或新任务。 */
 import {
-  type ArchivePlatform,
+  type ContentArchivePlatform,
   type ContentArchiveItem,
   type ContentArchiveListQuery,
   type XhsArchiveTranslation,
@@ -38,7 +38,11 @@ type TranslationStore<T extends TranslationItem> = {
   list(options: ContentArchiveListQuery): Promise<{ items: Array<Pick<T, "id" | "translation">>; pageCount: number }>;
   updateTranslation(id: string, updater: (item: T) => T): Promise<T | undefined>;
 };
-type TaskOwnership = { platforms: Map<string, ArchivePlatform>; hashes: Map<string, string>; completed: Set<string> };
+type TaskOwnership = {
+  platforms: Map<string, ContentArchivePlatform>;
+  hashes: Map<string, string>;
+  completed: Set<string>;
+};
 
 export class ContentArchiveTranslationService<T extends TranslationItem = ContentArchiveItem> {
   private readonly tasks = new Map<string, XhsTranslationTask>();
@@ -83,7 +87,7 @@ export class ContentArchiveTranslationService<T extends TranslationItem = Conten
   }
 
   getRuntimeStatus = () => this.runtime.refreshCapabilityStatus();
-  getTask(id: string, platform?: ArchivePlatform) {
+  getTask(id: string, platform?: ContentArchivePlatform) {
     const task = this.tasks.get(id),
       owner = this.ownership.get(id);
     if (!task || !owner) return undefined;

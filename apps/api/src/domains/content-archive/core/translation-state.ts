@@ -1,7 +1,7 @@
 /** 翻译领域状态与版本判定：纯数据转换不创建 Worker，不修改归档文件。 */
 import { nanoid } from "nanoid";
 import type {
-  ArchivePlatform,
+  ContentArchivePlatform,
   ContentArchiveItem,
   XhsArchiveItem,
   XhsArchiveTranslation,
@@ -85,7 +85,7 @@ export function errorCode(error: unknown) {
     : "XHS_TRANSLATION_FAILED";
 }
 
-export function itemPlatform(item: TranslationItem): ArchivePlatform {
+export function itemPlatform(item: TranslationItem): ContentArchivePlatform {
   return "platform" in item ? item.platform : "xiaohongshu";
 }
 export function itemErrorCode(code: string, item: TranslationItem) {

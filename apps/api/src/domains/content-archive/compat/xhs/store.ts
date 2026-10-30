@@ -64,6 +64,11 @@ export class XhsArchiveStore {
     return (await this.get(id)) ? this.content.remove(id) : false;
   }
 
+  async removeVideoFrame(id: string, mediaId: string) {
+    if (!(await this.get(id))) throw new ContentArchiveStoreError("XHS_ARCHIVE_NOT_FOUND", 404, "存档不存在");
+    return legacyItem(await this.content.removeVideoFrame(id, mediaId));
+  }
+
   // 维护分类覆盖共享物理目录，永久数据清理仍由现有高风险确认控制，不另造一套目录。
   purgeAll() {
     return this.content.purgeAll();

@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
 import { mount, flushPromises, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NButton, NSelect, NSlider } from "naive-ui";
-import { defaultArchiveAudioSettings, type ArchiveVideoEditJob, type ContentArchiveItem } from "@toolbox/shared";
+import { NButton, NSelect, NSlider, NPagination } from "naive-ui";
+import {
+  defaultArchiveAudioSettings,
+  defaultArchiveWatermarkSettings,
+  type ArchiveVideoEditJob,
+  type ContentArchiveItem
+} from "@toolbox/shared";
+import ArchiveWatermarkControls from "./ArchiveWatermarkControls.vue";
 import ArchiveAudioEditor from "./ArchiveAudioEditor.vue";
 const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
@@ -10,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   get: vi.fn(),
   cancel: vi.fn(),
+  uploadWatermark: vi.fn(),
+  selectLibraryWatermark: vi.fn(),
   music: vi.fn(),
   upload: vi.fn(),
   detail: vi.fn(),
@@ -81,6 +89,14 @@ beforeEach(() => {
   mocks.detail.mockReset().mockResolvedValue(original);
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.cancel.mockReset().mockResolvedValue({ ...pending, status: "cancelled" });
+  mocks.uploadWatermark.mockReset().mockResolvedValue({
+    id: "watermark1234",
+    width: 100,
+    height: 50,
+    previewUrl: "/draft.png",
+    expiresAt: "2030-01-01"
+  });
+  mocks.selectLibraryWatermark.mockReset().mockImplementation(mocks.uploadWatermark);
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
 });
 afterEach(() => {
@@ -104,6 +120,148 @@ function button(wrapper: VueWrapper, text: string) {
   return wrapper.findAllComponents(NButton).find((entry) => entry.text() === text)!;
 }
 describe("归档视频配乐编辑交互", () => {
+  it("配乐选择分页展示服务端总数，并在搜索后更新总数及页码", async () => {
+    mocks.music.mockResolvedValue({ items: [selectedMusic], total: 43 });
+    const wrapper = await setup();
+    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
+    wrapper.getComponent(NPagination).vm.$emit("update:page", 2);
+    await flushPromises();
+    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
+    expect(mocks.music).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }), expect.any(AbortSignal));
+    mocks.music.mockResolvedValue({ items: [selectedMusic], total: 21 });
+    await wrapper.get('input[placeholder="搜索音乐标题、备注"]').setValue("Tea");
+    await button(wrapper, "搜索").trigger("click");
+    await flushPromises();
+    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 21 条");
+    expect(mocks.music).toHaveBeenLastCalledWith(
+      expect.objectContaining({ keyword: "Tea", page: 1 }),
+      expect.any(AbortSignal)
+    );
+  });
+  it("库素材选择失败保留当前水印，选择响应迟到不覆盖后来打开的作品", async () => {
+    const wrapper = await setup();
+    await button(wrapper, "水印设置").trigger("click");
+    const controls = wrapper.getComponent(ArchiveWatermarkControls);
+    controls.vm.$emit("upload", new File(["png"], "brand.png"));
+    await flushPromises();
+    mocks.selectLibraryWatermark.mockRejectedValueOnce(new Error("素材不可用"));
+    controls.vm.$emit("selectLibrary", "abcdefghijkl");
+    await flushPromises();
+    expect(controls.props("asset")).toMatchObject({ draftId: "watermark1234" });
+    let finish!: (value: unknown) => void;
+    mocks.selectLibraryWatermark.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    controls.vm.$emit("selectLibrary", "abcdefghijkl");
+    await flushPromises();
+    await wrapper.setProps({ item: { ...structuredClone(original), id: "other_archive123" } });
+    await flushPromises();
+    finish({ id: "late_draft12", width: 20, height: 10, previewUrl: "/late.png" });
+    await flushPromises();
+    expect(wrapper.getComponent(ArchiveWatermarkControls).props("asset")).toBeUndefined();
+  });
+  it("从水印库选择只更换图片，保留透明度及轨迹并将独立草稿提交给保存任务", async () => {
+    const wrapper = await setup();
+    await button(wrapper, "水印设置").trigger("click");
+    const controls = wrapper.getComponent(ArchiveWatermarkControls);
+    const settings = defaultArchiveWatermarkSettings();
+    settings.opacity = 35;
+    settings.motion.type = "bounce";
+    settings.motion.bounceStyle = "z";
+    controls.vm.$emit("update:settings", settings);
+    controls.vm.$emit("selectLibrary", "abcdefghijkl");
+    await flushPromises();
+    expect(mocks.selectLibraryWatermark).toHaveBeenCalledWith(
+      original.id,
+      original.media[0].id,
+      "abcdefghijkl",
+      expect.any(AbortSignal)
+    );
+    expect(controls.props("asset")).toMatchObject({ draftId: "watermark1234" });
+    expect(controls.props("settings")).toMatchObject({ opacity: 35, motion: { type: "bounce", bounceStyle: "z" } });
+    await button(wrapper, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
+      watermark: { draftId: "watermark1234", settings: { opacity: 35 } }
+    });
+  });
+  it("上传水印并调透明度和轨迹，保存提交完整配方，移除水印保留已选音乐", async () => {
+    const wrapper = await setup();
+    await button(wrapper, "水印设置").trigger("click");
+    const controls = wrapper.findComponent(ArchiveWatermarkControls);
+    controls.vm.$emit("upload", new File(["png"], "logo.png", { type: "image/png" }));
+    await flushPromises();
+    expect(mocks.uploadWatermark).toHaveBeenCalledWith(
+      original.id,
+      original.media[0].id,
+      expect.any(File),
+      expect.any(AbortSignal)
+    );
+    const config = defaultArchiveWatermarkSettings();
+    config.opacity = 35;
+    config.motion.type = "ping-pong";
+    controls.vm.$emit("update:settings", config);
+    await flushPromises();
+    await button(wrapper, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
+      watermark: { draftId: "watermark1234", settings: { opacity: 35, motion: { type: "ping-pong" } } }
+    });
+    await button(wrapper, "停止当前任务").trigger("click");
+    await flushPromises();
+    controls.vm.$emit("remove");
+    await flushPromises();
+    await button(wrapper, "配乐设置").trigger("click");
+    wrapper
+      .findAllComponents(NSelect)
+      .find((entry) => entry.attributes("aria-label") === "选择背景音乐")!
+      .vm.$emit("update:value", selectedMusic.id);
+    await flushPromises();
+    await button(wrapper, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ musicId: selectedMusic.id, watermark: null });
+  });
+  it("重新打开水印快照，拒绝非法时间与未确认离开，上传迟到不污染新作品", async () => {
+    const edited = structuredClone(original);
+    edited.media[0].audioEdit = {
+      revision: 1,
+      original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
+      settings: defaultArchiveAudioSettings(),
+      updatedAt: "2026-10-29",
+      watermark: {
+        file: { fileName: "watermark-a.png", mimeType: "image/png", size: 20, checksum: "b".repeat(64) },
+        width: 100,
+        height: 50,
+        settings: defaultArchiveWatermarkSettings()
+      }
+    };
+    const wrapper = await setup(edited);
+    await button(wrapper, "水印设置").trigger("click");
+    const controls = wrapper.findComponent(ArchiveWatermarkControls);
+    expect(controls.props("asset")?.url).toContain("/saved-watermark");
+    controls.vm.$emit("update:settings", { ...defaultArchiveWatermarkSettings(), endSeconds: 0.5, startSeconds: 1 });
+    await flushPromises();
+    expect(button(wrapper, "保存为最新版本").props("disabled")).toBe(true);
+    mocks.confirm.mockResolvedValueOnce(false);
+    await button(wrapper, "关闭窗口").trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("update:show")).toBeUndefined();
+    let resolve!: (value: unknown) => void;
+    mocks.uploadWatermark.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    controls.vm.$emit("upload", new File(["png"], "logo.png"));
+    await flushPromises();
+    await wrapper.setProps({ item: { ...structuredClone(original), id: "other_archive123" } });
+    await flushPromises();
+    resolve({ id: "watermark1234", width: 20, height: 10, previewUrl: "/late.png" });
+    await flushPromises();
+    expect(wrapper.findComponent(ArchiveWatermarkControls).props("asset")).toBeUndefined();
+  });
   it("图集按原图顺序提交生成参数，结果新增视频后可直接继续换配乐", async () => {
     const photos = structuredClone(original);
     photos.type = "image";

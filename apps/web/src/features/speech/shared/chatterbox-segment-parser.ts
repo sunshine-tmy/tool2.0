@@ -6,11 +6,11 @@ type ParsedChatterboxSegment = {
   referenceTranslation: string;
 };
 
-const numberedLinePattern = /^\s*(?:\d{1,3}[.、)]|[（(]\d{1,3}[）)])\s*/gm;
+const numberedLinePattern = /^\s*(?:[\d０-９]{1,3}[.．、)）]|[（(][\d０-９]{1,3}[）)])\s*/gm;
 const hanPattern = /\p{Script=Han}/u;
 
 export function parseChatterboxSegments(input: string): ParsedChatterboxSegment[] {
-  const normalized = normalizeInput(input);
+  const normalized = normalizeSpeechSegmentText(input).trim();
   if (!normalized) return [];
 
   const numberedBlocks = splitNumberedBlocks(normalized);
@@ -29,14 +29,32 @@ function parseBlocks(blocks: string[]) {
   return blocks.map(parseBlock).filter((segment): segment is ParsedChatterboxSegment => Boolean(segment?.text));
 }
 
-function normalizeInput(input: string) {
+/** Strip presentation markers before detecting numbering; keep text, paragraph boundaries and meaningful symbols. */
+export function normalizeSpeechSegmentText(input: string) {
   return decodeHtmlEntities(input)
-    .replace(/\r\n?/g, "\n")
+    .replace(/\r\n?|[\u2028\u2029]/g, "\n")
     .replace(/\\[ \t]*\n/g, "\n")
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/?(?:p|div)>/gi, "\n")
-    .replace(/[\u200b-\u200d\ufeff]/g, "")
-    .trim();
+    .replace(/<!--[^]*?-->/g, "")
+    .replace(/<(script|style)\b[^>]*>[^]*?<\/\1\s*>/gi, "")
+    .replace(/<br\b[^>]*>/gi, "\n")
+    .replace(/<\/(?:p|div|li|h[1-6]|tr|blockquote)\s*>/gi, "\n")
+    .replace(/<(?:p|div|ol|ul|li|h[1-6]|tr|blockquote)\b[^>]*>/gi, "")
+    .replace(/<\/?(?:span|strong|b|em|i|u|s|strike|font|a|code|ol|ul|table|tbody|td|th)\b[^>]*>/gi, "")
+    .replace(/[\u00a0\u202f]/g, " ")
+    .replace(/[\u200b\u2060\ufeff]/g, "")
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/^[ \t]*(?:`{3,}|~{3,})[^`~]*$/, "")
+        .replace(/^[ \t]*(?:>[ \t]*)+/, "")
+        .replace(/^[ \t]*#{1,6}[ \t]+/, "")
+        .replace(/^[ \t]*[-+*][ \t]+/, "")
+        .replace(/\*\*(\S(?:.*?\S)?)\*\*/g, "$1")
+        .replace(/~~(\S(?:.*?\S)?)~~/g, "$1")
+        .replace(/(?<![\p{L}\p{N}_])(__|_|\*)(\S(?:.*?\S)?)\1(?![\p{L}\p{N}_])/gu, "$2")
+        .replace(/`([^`]+)`/g, "$1")
+    )
+    .join("\n");
 }
 
 function splitNumberedBlocks(input: string) {
@@ -104,17 +122,10 @@ function parseAlternatingBilingualLines(block: string): ParsedChatterboxSegment[
 }
 
 function cleanLines(block: string) {
-  return block.split("\n").map(cleanLine).filter(Boolean);
-}
-
-function cleanLine(line: string) {
-  return line
-    .trim()
-    .replace(/^>\s*/, "")
-    .replace(/^[-+*]\s+/, "")
-    .replace(/^(?:\*\*|__)([\s\S]*)(?:\*\*|__)$/, "$1")
-    .replace(/^`([\s\S]*)`$/, "$1")
-    .trim();
+  return block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function decodeHtmlEntities(input: string) {

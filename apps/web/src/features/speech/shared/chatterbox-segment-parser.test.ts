@@ -2,9 +2,48 @@
  * 中文模块说明：测试 apps/web/src/features/speech/shared/chatterbox-segment-parser.test.ts 中的稳定行为、边界条件和回归场景
  */
 import { describe, expect, it } from "vitest";
-import { parseChatterboxSegments } from "./chatterbox-segment-parser";
+import { normalizeSpeechSegmentText, parseChatterboxSegments } from "./chatterbox-segment-parser";
 
 describe("parseChatterboxSegments", () => {
+  it("cleans copied Markdown before detecting formatted numbers, keeping bilingual paragraphs", () => {
+    expect(
+      parseChatterboxSegments(
+        "```markdown\r\n> ### **1.** **Hello**, _Tang Tea_!\\\r\n> **你好，Tang Tea！**\r\n\r\n> **2. Thank you.**\r\n> __谢谢。__\r\n```"
+      )
+    ).toEqual([
+      { text: "Hello, Tang Tea!", referenceTranslation: "你好，Tang Tea！" },
+      { text: "Thank you.", referenceTranslation: "谢谢。" }
+    ]);
+  });
+
+  it("normalizes word-processor spaces, invisible separators, Unicode line breaks and full-width numbering", () => {
+    expect(
+      parseChatterboxSegments("\ufeff１．\u200bHello\u00a0there.\u2028你好。\u2029（２） Thank\u202fyou.\r谢谢。\u2060")
+    ).toEqual([
+      { text: "Hello there.", referenceTranslation: "你好。" },
+      { text: "Thank you.", referenceTranslation: "谢谢。" }
+    ]);
+  });
+
+  it("cleans literal inline HTML and entities without retaining styles or treating them as source speech", () => {
+    expect(
+      parseChatterboxSegments(
+        '<p class="copy"><strong>1. Hello &amp; thank you.</strong><br><span style="color:red">你好，谢谢。</span></p><p><b>2. Goodbye.</b><br/>再见。</p>'
+      )
+    ).toEqual([
+      { text: "Hello & thank you.", referenceTranslation: "你好，谢谢。" },
+      { text: "Goodbye.", referenceTranslation: "再见。" }
+    ]);
+  });
+
+  it("preserves meaningful punctuation, URLs, intraword underscores, joined emoji and paste-boundary whitespace", () => {
+    const source = "  **Tang_Tea** #TangTea https://example.com/a_b 2*3*4 RM10.50 👩‍👩‍👧‍👦\n\n";
+    const clean = "  Tang_Tea #TangTea https://example.com/a_b 2*3*4 RM10.50 👩‍👩‍👧‍👦\n\n";
+    expect(normalizeSpeechSegmentText(source)).toBe(clean);
+    expect(normalizeSpeechSegmentText(clean)).toBe(clean);
+    expect(parseChatterboxSegments("  \r\n\u200b")).toEqual([]);
+  });
+
   it("parses the full numbered Markdown source and Chinese translation example", () => {
     // 真实复制文本包含 Markdown 加粗、HTML 空格实体和反斜杠换行，覆盖最常见的粘贴格式。
     const input = `1. **Nak minum teh herba, kena sediakan semua ni ke?**\\

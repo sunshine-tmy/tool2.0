@@ -113,10 +113,25 @@
         </div>
         <a :href="mediaUrl(media.downloadUrl)">下载当前媒体</a>
         <n-button v-if="isVideoMedia(media)" size="small" @click="openAudioEditor">编辑配乐</n-button>
+        <n-button v-if="isVideoMedia(media)" size="small" @click="openWatermarkEditor">{{
+          media.audioEdit?.watermark ? "编辑水印" : "添加水印"
+        }}</n-button>
         <n-button v-if="media.kind === 'image' && !media.frameSourceMediaId" size="small" @click="openSlideshow"
           >图集生成视频</n-button
         >
+        <n-button
+          v-if="isCapturedVideoFrame(media)"
+          size="small"
+          type="error"
+          secondary
+          :loading="deletingFrame"
+          :disabled="deletingFrame || savingFrame"
+          @click="removeCurrentFrame"
+        >
+          <template #icon><Trash2 :size="15" /></template>删除截帧
+        </n-button>
       </div>
+      <small v-if="frameMessage && !isVideoMedia(media)" class="frame-feedback" role="status">{{ frameMessage }}</small>
     </template>
     <ArchiveAudioEditor
       v-if="editorOpen && media"
@@ -131,11 +146,12 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, watch } from "vue";
 import { NButton, NImage } from "naive-ui";
-import { Camera, ChevronLeft, ChevronRight, Play } from "lucide-vue-next";
+import { Camera, ChevronLeft, ChevronRight, Play, Trash2 } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
+import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import { contentArchiveApi } from "./content-api";
 
 const props = withDefaults(
@@ -148,11 +164,17 @@ const props = withDefaults(
 
 const ArchiveAudioEditor = defineAsyncComponent(() => import("./ArchiveAudioEditor.vue"));
 const editorOpen = ref(false);
+function openWatermarkEditor() {
+  if (!media.value) return;
+  videoElement.value?.pause();
+  emit("editWatermark", media.value.id);
+}
 function openSlideshow() {
   const index = props.item.media.findIndex((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
   if (index >= 0) {
+    videoElement.value?.pause();
     selected.value = index;
-    openAudioEditor();
+    editorOpen.value = true;
   }
 }
 function onAudioSaved(updated: ContentArchiveItem) {
@@ -163,16 +185,20 @@ function onAudioSaved(updated: ContentArchiveItem) {
   emit("mediaUpdated", updated);
 }
 function openAudioEditor() {
+  if (!media.value) return;
   videoElement.value?.pause();
-  editorOpen.value = true;
+  emit("editAudio", media.value.id);
 }
 const selected = ref(0);
 const requestScope = useRequestScope();
+const confirm = useConfirmDialog();
+let itemGeneration = 0;
 const media = computed(() => props.item.media[selected.value] ?? props.item.media[0]);
 const videoElement = ref<HTMLVideoElement>();
 const videoPaused = ref(true);
 const videoFrameReady = ref(false);
 const savingFrame = ref(false);
+const deletingFrame = ref(false);
 const frameMessage = ref("");
 // 只缓存已经解码的微缩画面；切换为 preload=none 后也能显示，不预加载整组视频。
 const videoThumbnails = ref(new Map<string, string | undefined>());
@@ -182,19 +208,28 @@ const canCaptureFrame = computed(
     videoPaused.value &&
     videoFrameReady.value &&
     !savingFrame.value &&
+    !deletingFrame.value &&
     Boolean(videoElement.value?.videoWidth && videoElement.value.videoHeight)
 );
 const frameHint = computed(() => {
   if (!videoPaused.value) return "请先暂停视频，再保存当前画面";
   return videoFrameReady.value ? "暂停到目标画面后保存 PNG" : "等待视频画面加载后即可保存";
 });
-const emit = defineEmits<{ frameSaved: [item: ContentArchiveItem]; mediaUpdated: [item: ContentArchiveItem] }>();
+const emit = defineEmits<{
+  frameSaved: [item: ContentArchiveItem];
+  mediaUpdated: [item: ContentArchiveItem];
+  editWatermark: [mediaId: string];
+  editAudio: [mediaId: string];
+}>();
 
 watch(
   () => props.item.id,
   () => {
+    itemGeneration++;
     selected.value = 0;
-  }
+    frameMessage.value = "";
+  },
+  { flush: "sync" }
 );
 
 watch(
@@ -291,6 +326,39 @@ function onVideoPause() {
 function onVideoFrameReady() {
   const video = videoElement.value;
   videoFrameReady.value = Boolean(video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0);
+}
+
+async function removeCurrentFrame() {
+  const frame = media.value;
+  if (!frame || !isCapturedVideoFrame(frame) || deletingFrame.value || savingFrame.value) return;
+  const itemId = props.item.id;
+  const generation = itemGeneration;
+  const current = () => !requestScope.aborted && itemGeneration === generation && props.item.id === itemId;
+  deletingFrame.value = true;
+  frameMessage.value = "";
+  try {
+    const accepted = await confirm("将永久删除当前截帧图片，原视频、其他媒体和截帧均保留。此操作无法撤销。", {
+      title: "删除截帧",
+      positiveText: "确认删除"
+    });
+    if (!accepted || !current() || media.value?.id !== frame.id || media.value.checksum !== frame.checksum) return;
+    const updated = await contentArchiveApi.removeFrame(itemId, frame.id, requestScope.signal);
+    if (!current()) return;
+    const retained = updated.media.findIndex((entry) => entry.id === media.value?.id);
+    selected.value =
+      retained >= 0
+        ? retained
+        : Math.max(
+            0,
+            updated.media.findIndex((entry) => entry.id === frame.frameSourceMediaId)
+          );
+    emit("mediaUpdated", updated);
+    frameMessage.value = "截帧已删除";
+  } catch (error) {
+    if (current() && !isApiErrorCancelled(error)) frameMessage.value = formatApiError(error, "删除视频截帧失败");
+  } finally {
+    deletingFrame.value = false;
+  }
 }
 
 async function saveCurrentFrame() {
@@ -540,6 +608,14 @@ function changeMedia(direction: -1 | 1) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
+}
+.frame-feedback {
+  width: min(100%, 520px);
+  color: #758096;
+}
+.is-compact .frame-feedback {
+  width: min(100%, 480px);
 }
 .frame-capture-actions {
   display: grid;

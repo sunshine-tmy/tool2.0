@@ -1,64 +1,68 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
-  <n-drawer
+  <n-modal
     :show="props.open"
-    class="xhs-detail-drawer"
-    :width="props.width"
-    placement="right"
+    preset="card"
+    title="存档详情"
+    class="archive-detail-modal"
+    :style="{
+      width: typeof props.width === 'number' ? `${props.width}px` : props.width,
+      maxWidth: 'calc(100vw - 32px)',
+      maxHeight: 'calc(100dvh - 48px)'
+    }"
+    :bordered="false"
+    :segmented="{ content: true, footer: true }"
+    :content-style="{ minHeight: '0', overflowY: 'auto', overflowX: 'hidden' }"
+    transform-origin="center"
+    aria-label="存档详情"
     @update:show="emit('update:open', $event)"
   >
-    <n-drawer-content
-      title="存档详情"
-      closable
-      body-class="xhs-detail-drawer-body"
-      body-content-class="xhs-detail-drawer-body-content"
-      footer-class="xhs-detail-drawer-footer"
-    >
-      <template v-if="props.detail">
-        <MediaGallery
-          :item="props.detail"
-          compact
-          @frame-saved="emit('frameSaved', $event)"
-          @media-updated="emit('mediaUpdated', $event)"
-        />
-        <div class="drawer-meta">
-          <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
-          <BilingualContent :item="props.detail" compact @copy="(text, label) => emit('copy', text, label)" />
-        </div>
-      </template>
-      <template #footer>
-        <div class="drawer-actions">
-          <n-button type="error" secondary @click="props.removeItem">
-            <template #icon><Trash2 :size="15" /></template>删除存档
-          </n-button>
-          <n-button v-if="props.detail" secondary @click="props.translateDetail">
-            <template #icon><Languages :size="15" /></template>生成英文
-          </n-button>
-          <n-button
-            v-if="props.detail"
-            :disabled="!canEditTranslation(props.detail)"
-            secondary
-            @click="props.editTranslation(props.detail)"
-            >编辑英文</n-button
-          >
-          <n-button
-            v-if="props.detail && props.hasEdited(props.detail)"
-            secondary
-            @click="props.resetTranslation(props.detail)"
-          >
-            恢复机器翻译
-          </n-button>
-          <n-button v-if="props.detail" tag="a" :href="props.zipUrl(props.detail.id)" type="primary"
-            >下载全部 ZIP</n-button
-          >
-        </div>
-      </template>
-    </n-drawer-content>
-  </n-drawer>
+    <template v-if="props.detail">
+      <MediaGallery
+        :item="props.detail"
+        compact
+        @frame-saved="emit('frameSaved', $event)"
+        @media-updated="emit('mediaUpdated', $event)"
+        @edit-watermark="emit('editWatermark', $event)"
+        @edit-audio="emit('editAudio', $event)"
+      />
+      <div class="detail-meta">
+        <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
+        <BilingualContent :item="props.detail" compact @copy="(text, label) => emit('copy', text, label)" />
+      </div>
+    </template>
+    <template #footer>
+      <div class="detail-actions">
+        <n-button type="error" secondary @click="props.removeItem">
+          <template #icon><Trash2 :size="15" /></template>删除存档
+        </n-button>
+        <n-button v-if="props.detail" secondary @click="props.translateDetail">
+          <template #icon><Languages :size="15" /></template>生成英文
+        </n-button>
+        <n-button
+          v-if="props.detail"
+          :disabled="!canEditTranslation(props.detail)"
+          secondary
+          @click="props.editTranslation(props.detail)"
+          >编辑英文</n-button
+        >
+        <n-button
+          v-if="props.detail && props.hasEdited(props.detail)"
+          secondary
+          @click="props.resetTranslation(props.detail)"
+        >
+          恢复机器翻译
+        </n-button>
+        <n-button v-if="props.detail" tag="a" :href="props.zipUrl(props.detail.id)" type="primary"
+          >下载全部 ZIP</n-button
+        >
+      </div>
+    </template>
+  </n-modal>
 </template>
 
 <script setup lang="ts">
-import { NButton, NDrawer, NDrawerContent } from "naive-ui";
+import { NButton, NModal } from "naive-ui";
 import { Languages, Trash2 } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import ArchiveFacts from "./ArchiveFacts.vue";
@@ -83,43 +87,19 @@ const emit = defineEmits<{
   "update:open": [value: boolean];
   frameSaved: [item: ContentArchiveItem];
   mediaUpdated: [item: ContentArchiveItem];
+  editWatermark: [mediaId: string];
+  editAudio: [mediaId: string];
   copy: [text: string, label: string];
 }>();
 </script>
 
 <style scoped>
-.drawer-meta {
+.detail-meta {
   display: grid;
   gap: 18px;
   margin-top: 20px;
 }
-.drawer-facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding: 13px 14px;
-  border: 1px solid #e7ebf1;
-  border-radius: 10px;
-  background: #f8fafc;
-}
-.drawer-facts p {
-  display: grid;
-  gap: 3px;
-  margin: 0;
-}
-.drawer-facts span {
-  color: #8a94a6;
-  font-size: 11px;
-}
-.drawer-facts strong {
-  overflow: hidden;
-  color: #3f495a;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.drawer-actions {
+.detail-actions {
   display: flex;
   gap: 10px;
   align-items: center;
@@ -128,26 +108,19 @@ const emit = defineEmits<{
   flex-wrap: wrap;
   justify-content: flex-start;
 }
-.drawer-actions > :last-child {
+.detail-actions > :last-child {
   margin-left: auto;
 }
-:global(.xhs-detail-drawer),
-:global(.xhs-detail-drawer .n-drawer-content),
-:global(.xhs-detail-drawer-body),
-:global(.xhs-detail-drawer-body-content),
-:global(.xhs-detail-drawer-footer) {
+.archive-detail-modal {
   min-width: 0;
-  max-width: 100%;
   box-sizing: border-box;
 }
-:global(.xhs-detail-drawer-body) {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  scrollbar-width: none;
-}
-:global(.xhs-detail-drawer-body::-webkit-scrollbar) {
-  display: none;
-  width: 0;
-  height: 0;
+@media (max-width: 640px) {
+  .detail-actions {
+    gap: 8px;
+  }
+  .detail-actions > :last-child {
+    margin-left: 0;
+  }
 }
 </style>

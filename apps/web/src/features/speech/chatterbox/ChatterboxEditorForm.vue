@@ -339,13 +339,14 @@
   <n-modal v-model:show="panel.autoSegmentVisible">
     <n-card class="auto-segment-card" title="智能识别分段" closable @close="panel.autoSegmentVisible = false">
       <p class="auto-segment-help">
-        粘贴带编号的双语文案，系统会将每个编号识别为一段，并自动区分目标语言原文和中文翻译。
+        粘贴时自动清理格式标记，保留编号和段落换行。系统会将每个编号识别为一段，并自动区分目标语言原文和中文翻译。
       </p>
       <n-input
         v-model:value="panel.autoSegmentText"
         type="textarea"
         :autosize="{ minRows: 12, maxRows: 20 }"
-        placeholder="例如：&#10;1. **Malay / English / Português 原文**\&#10;   中文翻译\&#10;2. **下一段原文**\&#10;   下一段中文翻译"
+        placeholder="例如：&#10;1. Malay / English / Português 原文&#10;   中文翻译&#10;2. 下一段原文&#10;   下一段中文翻译"
+        @paste="pasteSpeechText($event, (value) => (panel.autoSegmentText = value))"
       />
       <div v-if="panel.autoSegmentText.trim()" class="auto-segment-summary">
         <strong v-if="panel.parsedAutoSegments.length"
@@ -395,6 +396,7 @@ import {
   WandSparkles
 } from "lucide-vue-next";
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
+import { pasteSpeechText } from "../shared/paste-speech-text";
 
 const panel = useChatterboxPanelContext();
 const isMacOSDesktop = Boolean(window.toolboxDesktop) && navigator.platform.toLowerCase().includes("mac");

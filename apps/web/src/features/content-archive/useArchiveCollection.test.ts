@@ -36,6 +36,46 @@ afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
 });
 describe("双平台归档集合", () => {
+  it("本地上传筛选可从视频编辑返回地址恢复", async () => {
+    const scope = effectScope();
+    scopes.push(scope);
+    const c = scope.run(() => useArchiveCollection(vi.fn(), { editorReturn: "1", platform: "local", page: "2" }))!;
+    await c.loadArchives();
+    expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({ platform: "local", page: 2 }),
+      expect.any(AbortSignal)
+    );
+  });
+  it("从视频编辑返回时恢复筛选、排序和页码，无标记或非法参数仍用默认值", async () => {
+    const scope = effectScope();
+    scopes.push(scope);
+    const c = scope.run(() =>
+      useArchiveCollection(vi.fn(), {
+        editorReturn: "1",
+        keyword: "水印素材",
+        type: "video",
+        platform: "tiktok",
+        group: "ungrouped",
+        sort: "published-asc",
+        page: "3"
+      })
+    )!;
+    await c.loadArchives();
+    expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        keyword: "水印素材",
+        type: "video",
+        platform: "tiktok",
+        groupId: "ungrouped",
+        sort: "published-asc",
+        page: 3
+      }),
+      expect.any(AbortSignal)
+    );
+    const defaults = scope.run(() => useArchiveCollection(vi.fn(), { keyword: "ignored", page: "999" }))!;
+    expect(defaults.keyword.value).toBe("");
+    expect(defaults.page.value).toBe(1);
+  });
   it("marks and unmarks only the chosen archive without resetting page, order or selection", async () => {
     const { collection: c } = setup();
     await c.loadArchives();

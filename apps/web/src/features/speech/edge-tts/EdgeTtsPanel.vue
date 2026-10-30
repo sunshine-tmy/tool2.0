@@ -275,10 +275,12 @@
       </div>
       <n-pagination
         v-if="panel.legacy.pagination.totalPages > 1"
+        class="pagination-with-total"
         :page="panel.legacy.pagination.page"
         :page-count="panel.legacy.pagination.totalPages"
         @update:page="panel.loadLegacy"
-      />
+        ><template #prefix>共 {{ panel.legacy.pagination.total }} 条</template></n-pagination
+      >
     </details>
     <EdgeTtsBatchDetail />
   </div>

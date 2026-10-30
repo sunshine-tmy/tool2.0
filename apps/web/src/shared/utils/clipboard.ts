@@ -12,11 +12,12 @@ type TextAreaLike = Node & {
     left: string;
     top: string;
   };
-  focus: () => void;
+  focus: (options?: FocusOptions) => void;
   select: () => void;
 };
 
 type DocumentLike = {
+  activeElement?: Element | null;
   body: {
     appendChild: (element: TextAreaLike) => void;
     removeChild: (element: TextAreaLike) => void;
@@ -48,20 +49,31 @@ export async function copyTextToClipboard(value: string, options: CopyOptions = 
   }
 
   const textarea = documentRef.createElement("textarea") as TextAreaLike;
+  const previousFocus = documentRef.activeElement;
+  // Drawers and modals trap focus. A body-level textarea would lose its selection to that trap.
+  const container =
+    previousFocus?.closest('[role="dialog"], [aria-modal="true"]') ??
+    (previousFocus === documentRef.body ? undefined : previousFocus?.parentElement) ??
+    documentRef.body;
   textarea.value = value;
   textarea.style.position = "fixed";
   textarea.style.left = "-9999px";
   textarea.style.top = "0";
-  documentRef.body.appendChild(textarea);
+  container.appendChild(textarea);
 
   try {
-    textarea.focus();
+    textarea.focus({ preventScroll: true });
     textarea.select();
+    if (documentRef.activeElement && !documentRef.activeElement.isSameNode(textarea)) {
+      throw new Error("The copy selection could not receive focus");
+    }
     const copied = documentRef.execCommand("copy");
     if (!copied) {
       throw new Error("Copy command was rejected");
     }
   } finally {
-    documentRef.body.removeChild(textarea);
+    container.removeChild(textarea);
+    if (typeof HTMLElement !== "undefined" && previousFocus instanceof HTMLElement && previousFocus.isConnected)
+      previousFocus.focus({ preventScroll: true });
   }
 }

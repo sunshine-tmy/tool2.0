@@ -605,10 +605,11 @@ describe("useChatterboxPanel", () => {
       panel.segments.value.at(-1)!.id
     );
 
-    panel.autoSegmentText.value = "Hello there.\n你好。\n\nThank you.\n谢谢。";
+    panel.autoSegmentText.value = "**1. Hello there.**\n__你好。__\n\n> **2. Thank you.**\n> **谢谢。**";
     panel.openAutoSegment();
     await panel.applyAutoSegments();
     expect(panel.segments.value).toHaveLength(2);
+    expect(panel.segments.value.map((item) => item.text)).toEqual(["Hello there.", "Thank you."]);
     expect(panel.translatedAutoSegmentCount.value).toBe(2);
 
     const reference = new File([new Uint8Array([1, 2, 3])], "voice.wav", { type: "audio/wav" });

@@ -94,12 +94,13 @@
     </div>
     <n-modal v-model:show="editor.autoVisible"
       ><n-card class="auto-segment-card" title="智能识别分段" closable @close="editor.autoVisible = false">
-        <p>粘贴带编号或空行分段的双语文案，自动区分外语与中文。</p>
+        <p>粘贴带编号或空行分段的双语文案，自动清理格式标记并区分外语与中文，保留编号和段落换行。</p>
         <n-input
           v-model:value="editor.autoText"
           type="textarea"
           :autosize="{ minRows: 10, maxRows: 20 }"
           placeholder="1. Hello there.&#10;你好。&#10;&#10;2. Thank you.&#10;谢谢。"
+          @paste="pasteSpeechText($event, (value) => (editor.autoText = value))"
         />
         <p>已识别 {{ editor.parsed.length }} 段</p>
         <ol class="auto-segment-preview">
@@ -140,6 +141,7 @@ import {
   EDGE_TTS_MAX_TRANSLATION_LENGTH as maxTranslation
 } from "@toolbox/shared";
 import { orderedSpeechEditorKey } from "./useOrderedSpeechEditor";
+import { pasteSpeechText } from "./paste-speech-text";
 defineProps<{ submitting: boolean; languageLabel: string }>();
 const editor = inject(orderedSpeechEditorKey);
 if (!editor) throw new Error("Ordered speech editor context is missing");

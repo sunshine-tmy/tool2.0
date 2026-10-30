@@ -1,10 +1,7 @@
 <template>
-  <div class="archive-import-entry">
-    <span>通过 Excel / CSV 批量获取作品，每批最多 100 条</span>
-    <n-button secondary @click="model.show"
-      ><template #icon><FileSpreadsheet :size="16" /></template>表格批量归档</n-button
-    >
-  </div>
+  <n-button size="small" secondary title="通过 Excel / CSV 批量获取作品，每批最多 100 条" @click="model.show"
+    ><template #icon><FileSpreadsheet :size="16" /></template>表格批量归档</n-button
+  >
   <n-modal
     v-model:show="open"
     preset="card"
@@ -288,18 +285,12 @@ function viewArchive(id: string) {
 }
 </script>
 <style scoped>
-.archive-import-entry,
 .archive-import-toolbar,
 .archive-import-options {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-}
-.archive-import-entry {
-  justify-content: space-between;
-  color: #60708a;
-  font-size: 13px;
 }
 .archive-import-toolbar,
 .archive-import-options {

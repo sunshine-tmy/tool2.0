@@ -4,7 +4,7 @@
     <section class="main-column xhs-main">
       <ToolPageHeader
         title="多媒体内容归档"
-        description="浏览小红书、抖音与 TikTok 本地存档，支持预览、翻译与视频截帧。TikTok 公开作品无需额外能力包。"
+        description="归档小红书、抖音、TikTok 内容或批量上传本地视频，支持预览、下载、配乐、水印与视频截帧。"
         kicker="LOCAL MEDIA ARCHIVE"
       />
 
@@ -35,19 +35,22 @@
         </div>
       </n-alert>
 
-      <ArchiveBatchImport
-        :groups="archiveGroups"
-        @changed="loadArchives"
-        @open-archive="openDetail"
-        @open-profile="profileImport?.show($event)"
-      />
-      <TikTokProfileImport
-        ref="profileImport"
-        :groups="archiveGroups"
-        @changed="loadArchives"
-        @open-archive="openDetail"
-        @retry-single="retryProfileWork"
-      />
+      <div class="archive-entry-toolbar" role="group" aria-label="批量归档入口">
+        <ArchiveLocalVideoUpload :groups="archiveGroups" @finished="localVideosFinished" @open-archive="openDetail" />
+        <ArchiveBatchImport
+          :groups="archiveGroups"
+          @changed="loadArchives"
+          @open-archive="openDetail"
+          @open-profile="profileImport?.show($event)"
+        />
+        <TikTokProfileImport
+          ref="profileImport"
+          :groups="archiveGroups"
+          @changed="loadArchives"
+          @open-archive="openDetail"
+          @retry-single="retryProfileWork"
+        />
+      </div>
       <ArchiveTaskPanel
         ref="fetchPanel"
         v-model:input-url="inputUrl"
@@ -79,6 +82,8 @@
         :format-date="formatDate"
         @frame-saved="onFrameSaved"
         @media-updated="onMediaUpdated"
+        @edit-watermark="openVideoEditor(current, $event)"
+        @edit-audio="openVideoEditor(current, $event, 'audio')"
         @copy="copyContent"
       />
       <ArchiveGroups
@@ -111,7 +116,7 @@
 
       <XhsDetailDrawer
         v-model:open="drawerOpen"
-        :width="drawerWidth"
+        :width="detailWidth"
         :detail="detail"
         :format-date="formatDate"
         :remove-item="removeItem"
@@ -122,6 +127,8 @@
         :zip-url="zipUrl"
         @frame-saved="onFrameSaved"
         @media-updated="onMediaUpdated"
+        @edit-watermark="detail && openVideoEditor(detail, $event)"
+        @edit-audio="detail && openVideoEditor(detail, $event, 'audio')"
         @copy="copyContent"
       />
       <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
@@ -133,7 +140,7 @@
 import { formatBytesThroughGb as formatBytes } from "../../shared/utils/format-bytes";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton, useMessage } from "naive-ui";
-import { useRouter } from "vue-router";
+import { isNavigationFailure, NavigationFailureType, useRouter } from "vue-router";
 import {
   identifyArchiveLink,
   type ArchivePlatformSelection,
@@ -150,6 +157,7 @@ import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
 import ArchiveBatchImport from "./ArchiveBatchImport.vue";
+import ArchiveLocalVideoUpload from "./ArchiveLocalVideoUpload.vue";
 import TikTokProfileImport from "./TikTokProfileImport.vue";
 import ArchiveGroups from "./ArchiveGroups.vue";
 import XhsDetailDrawer from "./XhsDetailDrawer.vue";
@@ -193,7 +201,10 @@ const translationEvents = useTaskEvents(
     signal: requestScope.signal
   }
 );
-const collection = useArchiveCollection((error) => message.error(formatApiError(error, "读取存档失败")));
+const collection = useArchiveCollection(
+  (error) => message.error(formatApiError(error, "读取存档失败")),
+  router.currentRoute?.value.query
+);
 const archiveGroups = ref<ArchiveGroup[]>([]);
 const {
   current,
@@ -213,12 +224,46 @@ const {
   toggleArchiveSelection,
   toggleSelectAllArchives
 } = collection;
+async function localVideosFinished(item: ContentArchiveItem | undefined) {
+  if (item) current.value = item;
+  await loadArchives();
+}
+let videoEditorOpening = false;
+async function openVideoEditor(item: ContentArchiveItem, mediaId: string, panel: "audio" | "watermark" = "watermark") {
+  if (videoEditorOpening) return;
+  videoEditorOpening = true;
+  const query = new URLSearchParams({
+    editorReturn: "1",
+    keyword: keyword.value,
+    type: typeFilter.value,
+    platform: platformFilter.value,
+    group: groupFilter.value,
+    sort: sort.value,
+    page: String(page.value)
+  });
+  const returnTo = `/tools/media-archive?${query}`;
+  try {
+    // 将列表状态写入当前历史条目，浏览器“后退”与编辑器返回按钮都能恢复同一范围。
+    const failure = await router.replace(returnTo);
+    // 返回后同地址 replace 属于重复导航，仍应继续进入编辑页；中止或被取代的导航则停止。
+    if (failure && !isNavigationFailure(failure, NavigationFailureType.duplicated)) return;
+    await router.push({
+      name: "archive-video-editor",
+      params: { itemId: item.id, mediaId },
+      query: { returnTo, panel }
+    });
+  } catch (error) {
+    message.error(formatApiError(error, "打开视频编辑页失败，请重试"));
+  } finally {
+    videoEditorOpening = false;
+  }
+}
 const refreshing = ref(false);
 const authWaiting = ref(false);
 const editOpen = ref(false);
 const editTarget = ref<ContentArchiveItem>();
 // CSS 自行响应窗口变化，避免非响应式 innerWidth 把移动端的 100% 宽度永久保留到桌面窗口。
-const drawerWidth = "min(720px, 100vw)";
+const detailWidth = "min(1040px, calc(100vw - 32px))";
 let disposed = false;
 let taskSyncRevision = 0;
 let douyinRuntimeRequest: Promise<DouyinRuntimeStatus | undefined> | undefined;
@@ -420,7 +465,7 @@ async function onFrameSaved(updated: ContentArchiveItem) {
 async function onMediaUpdated(updated: ContentArchiveItem) {
   collection.updateItem(updated);
   await loadArchives();
-  message.success("归档视频已更新");
+  message.success("归档媒体已更新");
 }
 async function translateCurrent() {
   if (!(await requireTranslationCapability())) return;
@@ -699,6 +744,17 @@ onBeforeUnmount(() => {
   gap: 8px 24px;
   color: #687386;
   font-size: 12px;
+}
+.archive-entry-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow-x: auto;
+}
+.archive-entry-toolbar :deep(.n-button) {
+  flex-shrink: 0;
 }
 .capability-note {
   margin-top: 0;

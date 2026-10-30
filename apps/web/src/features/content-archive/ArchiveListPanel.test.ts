@@ -5,9 +5,9 @@
 
 import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
-import { NSelect } from "naive-ui";
+import { NCheckbox, NSelect } from "naive-ui";
 
 const archives = {
   items: [
@@ -52,6 +52,102 @@ const PaginationStub = defineComponent({
 });
 
 describe("XHS archive list panel", () => {
+  const viewModeStorageKey = "toolbox:media-archive:view-mode";
+  beforeEach(() => localStorage.removeItem(viewModeStorageKey));
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.removeItem(viewModeStorageKey);
+  });
+  function mountPanel() {
+    return mount(ArchiveListPanel, {
+      props: {
+        archives,
+        listLoading: false,
+        selectedIds: ["archive_123"],
+        keyword: "测试",
+        typeFilter: "all",
+        sort: "published-asc",
+        page: 2
+      }
+    });
+  }
+  it("切换为逐行列表保留筛选、排序、页码及选择，详情和发布标记仍指向同一归档", async () => {
+    const wrapper = mountPanel();
+    try {
+      expect(wrapper.get(".archive-grid").classes()).not.toContain("is-list");
+      const buttons = wrapper.findAll(".archive-view-switch button");
+      await buttons[1]!.trigger("click");
+      expect(wrapper.get(".archive-grid").classes()).toContain("is-list");
+      expect(buttons[1]!.attributes("aria-pressed")).toBe("true");
+      expect(wrapper.findAll("article")).toHaveLength(1);
+      expect(wrapper.get("article").text()).toContain("测试存档");
+      expect(wrapper.props()).toMatchObject({ keyword: "测试", sort: "published-asc", page: 2 });
+      expect(wrapper.getComponent(NCheckbox).props("checked")).toBe(true);
+      for (const event of ["pageChange", "update:sort", "toggleSelection", "openDetail"])
+        expect(wrapper.emitted(event)).toBeUndefined();
+      const selector = wrapper.get(".card-selector");
+      await selector.trigger("click");
+      expect(wrapper.emitted("toggleSelection")).toEqual([["archive_123", false]]);
+      await wrapper.setProps({ selectedIds: [] });
+      await selector.trigger("keyup", { key: "Enter" });
+      expect(wrapper.emitted("toggleSelection")).toEqual([
+        ["archive_123", false],
+        ["archive_123", true]
+      ]);
+      expect(wrapper.emitted("openDetail")).toBeUndefined();
+      const mark = wrapper.findAll("button").find((button) => button.text() === "标记为已发布")!;
+      await mark.trigger("click");
+      expect(wrapper.emitted("setPublication")).toEqual([["archive_123", true]]);
+      expect(wrapper.emitted("openDetail")).toBeUndefined();
+      await wrapper.setProps({
+        archives: { ...archives, items: [{ ...archives.items[0], publishedElsewhere: true }] }
+      });
+      expect(wrapper.get(".card-publication-badge").text()).toBe("已发布");
+      expect(wrapper.get(".card-publication-badge").attributes("title")).toBe("已在其他平台发布");
+      await wrapper.get("article").trigger("click");
+      await wrapper.get("article").trigger("keyup", { key: "Enter" });
+      expect(wrapper.emitted("openDetail")).toEqual([["archive_123"], ["archive_123"]]);
+      await buttons[0]!.trigger("click");
+      expect(wrapper.get(".archive-grid").classes()).not.toContain("is-list");
+      expect(wrapper.get(".card-publication-badge").text()).toContain("已在其他平台发布");
+      expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 1 条");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("重新进入页面恢复展示方式，非法存储值回退卡片", async () => {
+    let wrapper = mountPanel();
+    try {
+      await wrapper.get(".archive-view-switch button:last-child").trigger("click");
+      wrapper.unmount();
+      wrapper = mountPanel();
+      expect(wrapper.get(".archive-grid").classes()).toContain("is-list");
+      await wrapper.get(".archive-view-switch button:first-child").trigger("click");
+      expect(localStorage.getItem(viewModeStorageKey)).toBe("card");
+      wrapper.unmount();
+      localStorage.setItem(viewModeStorageKey, "invalid");
+      wrapper = mountPanel();
+      expect(wrapper.get(".archive-grid").classes()).not.toContain("is-list");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("浏览器禁止读写偏好时仍可以切换展示方式", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("storage disabled");
+    });
+    const wrapper = mountPanel();
+    try {
+      expect(wrapper.get(".archive-grid").classes()).not.toContain("is-list");
+      await wrapper.get(".archive-view-switch button:last-child").trigger("click");
+      expect(wrapper.get(".archive-grid").classes()).toContain("is-list");
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("renders archive metadata and emits selection, detail and pagination actions", async () => {
     const wrapper = mount(ArchiveListPanel, {
       props: {
@@ -139,6 +235,10 @@ describe("XHS archive list panel", () => {
     expect(wrapper.emitted("update:platformFilter")).toEqual([["tiktok"]]);
     await wrapper.setProps({ archives: { ...archives, items: [{ ...archives.items[0], platform: "tiktok" }] } });
     expect(wrapper.text()).toContain("TikTok");
+    await wrapper.setProps({ archives: { ...archives, total: 117, pageCount: 10 } });
+    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 117 条");
+    await wrapper.setProps({ archives: { ...archives, total: 13, pageCount: 2 } });
+    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 13 条");
     wrapper.unmount();
   });
 });

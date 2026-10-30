@@ -100,7 +100,7 @@ async function failWorks(count = 2, finish = true) {
 function completeManual(
   archiveId = "manual_archive",
   updatedAt = new Date(Date.now() + 1000).toISOString(),
-  platform: ContentArchiveItem["platform"] = "tiktok"
+  platform: Exclude<ContentArchiveItem["platform"], "local"> = "tiktok"
 ) {
   persistTask({
     id: "manual_task",

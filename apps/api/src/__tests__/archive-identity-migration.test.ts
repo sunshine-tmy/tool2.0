@@ -5,7 +5,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToolboxDatabase } from "../database/toolbox-database";
-import { archiveIdentity } from "../database/archive-identity";
+import { archiveIdentity, CURRENT_SCHEMA_VERSION } from "../database/archive-identity";
 import {
   databaseSchemaVersion,
   inspectSchemaMigration,
@@ -86,15 +86,19 @@ describe("archive identity migration", () => {
     const before = fs.readFileSync(databasePath);
     expect(inspectSchemaMigration(databasePath)).toEqual({
       fromVersion: 5,
-      toVersion: 7,
+      toVersion: CURRENT_SCHEMA_VERSION,
       archiveCount: 1,
       required: true
     });
     expect(fs.readFileSync(databasePath).equals(before)).toBe(true);
     expect(fs.existsSync(path.join(root, "migration-backups"))).toBe(false);
     const database = open();
-    expect(database.schemaBackupId).toMatch(/^schema-v7-/);
-    expect(database.verify()).toMatchObject({ integrity: "ok", foreignKeys: [], schemaVersion: 7 });
+    expect(database.schemaBackupId).toMatch(/^schema-v8-/);
+    expect(database.verify()).toMatchObject({
+      integrity: "ok",
+      foreignKeys: [],
+      schemaVersion: CURRENT_SCHEMA_VERSION
+    });
     expect(database.get("xhs-archive", payload.id)?.payload).toEqual(payload);
     expect(database.connection.prepare("SELECT platform, content_id FROM xhs_archives").get()).toEqual({
       platform: "xiaohongshu",
@@ -237,7 +241,7 @@ describe("archive identity migration", () => {
     expect(raw().prepare("SELECT COUNT(*) AS count FROM translations").get()).toEqual({ count: 1 });
     const retained = new Database(result.retainedCurrentDatabase!, { readonly: true });
     connections.push(retained);
-    expect(databaseSchemaVersion(retained)).toBe(7);
+    expect(databaseSchemaVersion(retained)).toBe(CURRENT_SCHEMA_VERSION);
     expect(retained.prepare("SELECT COUNT(*) AS count FROM xhs_archives").get()).toEqual({ count: 2 });
     expect(fs.existsSync(path.join(root, "migration-backups", backupId, "toolbox.db"))).toBe(true);
   });
@@ -251,7 +255,7 @@ describe("archive identity migration", () => {
     fs.appendFileSync(backupFile, "tampered");
     expect(() => restoreSchemaBackup(databasePath, backupId)).toThrow("SCHEMA_BACKUP_INVALID");
     expect(() => restoreSchemaBackup(databasePath, "../toolbox.db")).toThrow("SCHEMA_BACKUP_ID_INVALID");
-    expect(databaseSchemaVersion(raw())).toBe(7);
+    expect(databaseSchemaVersion(raw())).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   it("compensates a failed file switch without leaving a partial restored database", () => {
@@ -266,7 +270,7 @@ describe("archive identity migration", () => {
       original(source, target);
     });
     expect(() => restoreSchemaBackup(databasePath, backupId)).toThrow("switch failed");
-    expect(databaseSchemaVersion(raw())).toBe(7);
+    expect(databaseSchemaVersion(raw())).toBe(CURRENT_SCHEMA_VERSION);
     expect(fs.readdirSync(root).some((name) => name.includes(".schema-restore-"))).toBe(false);
   });
 
@@ -282,7 +286,7 @@ describe("archive identity migration", () => {
   it("dry-runs a fresh database without creating a file and validates in-memory identities", () => {
     expect(inspectSchemaMigration(databasePath)).toMatchObject({
       fromVersion: 0,
-      toVersion: 7,
+      toVersion: CURRENT_SCHEMA_VERSION,
       archiveCount: 0,
       required: true
     });
@@ -336,7 +340,7 @@ describe("archive identity migration", () => {
     writer.exec("BEGIN IMMEDIATE");
     try {
       expect(() => restoreSchemaBackup(databasePath, backupId)).toThrow("locked");
-      expect(databaseSchemaVersion(writer)).toBe(7);
+      expect(databaseSchemaVersion(writer)).toBe(CURRENT_SCHEMA_VERSION);
     } finally {
       writer.exec("ROLLBACK");
     }
@@ -356,6 +360,6 @@ describe("archive identity migration", () => {
     fs.renameSync(original, directory);
     fs.writeFileSync(path.join(directory, "schema-backup.json"), " ".repeat(4097));
     expect(() => restoreSchemaBackup(databasePath, backupId)).toThrow("SCHEMA_BACKUP_INVALID");
-    expect(databaseSchemaVersion(raw())).toBe(7);
+    expect(databaseSchemaVersion(raw())).toBe(CURRENT_SCHEMA_VERSION);
   });
 });

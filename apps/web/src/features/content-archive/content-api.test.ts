@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ContentArchiveItemSchema,
+  LocalArchiveUploadResultSchema,
   ContentArchiveListResponseSchema,
   ContentArchiveTaskSchema,
   ContentArchivePublicationSchema,
@@ -26,6 +27,7 @@ import {
 } from "@toolbox/shared";
 import {
   contentArchiveApi as api,
+  uploadLocalArchiveVideo,
   contentArchiveZipUrl,
   archiveImportApi,
   archiveImportTemplateUrl,
@@ -45,6 +47,36 @@ beforeEach(() => {
 });
 
 describe("多媒体归档客户端", () => {
+  it("删除截帧编码归档和媒体 ID，校验更新后的归档并传递取消信号", async () => {
+    const signal = new AbortController().signal;
+    await api.removeFrame("id/123", "frame/456", signal);
+    expect(http.delete).toHaveBeenLastCalledWith(
+      "/tools/media-archive/items/id%2F123/frames/frame%2F456",
+      ContentArchiveItemSchema,
+      { signal }
+    );
+  });
+  it("本地批量队列按单文件提交，保留统一传输、取消、进度和严格返回契约", async () => {
+    const file = new File(["video"], "我的视频.mp4", { type: "video/mp4" }),
+      controller = new AbortController(),
+      progress = vi.fn();
+    await uploadLocalArchiveVideo(file, "归档标题", controller.signal, progress);
+    const [url, schema, form, options] = http.post.mock.calls[0];
+    expect(url).toBe("/tools/media-archive/local-videos");
+    expect(schema).toBe(LocalArchiveUploadResultSchema);
+    expect(form.get("title")).toBe("归档标题");
+    expect(form.get("file").name).toBe(file.name);
+    expect(options.signal).toBe(controller.signal);
+    expect(options.timeout).toBe(30 * 60 * 1000);
+    options.onUploadProgress({ loaded: 5, total: 10 });
+    expect(progress).toHaveBeenCalledWith(50);
+    expect([...form.keys()]).toEqual(["title", "file"]);
+    await uploadLocalArchiveVideo(file, "归档标题", controller.signal, progress, "group-123");
+    const groupedForm = http.post.mock.calls[1][2];
+    expect([...groupedForm.keys()]).toEqual(["title", "groupId", "file"]);
+    expect(groupedForm.get("groupId")).toBe("group-123");
+    expect(groupedForm.getAll("file")).toHaveLength(1);
+  });
   it("encodes the publication target and preserves strict response validation and cancellation", async () => {
     const signal = new AbortController().signal;
     for (const publishedElsewhere of [true, false]) {

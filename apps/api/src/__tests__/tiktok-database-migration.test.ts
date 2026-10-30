@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ToolboxDatabase } from "../database/toolbox-database";
-import { migrateArchivePlatforms } from "../database/archive-identity";
+import { migrateArchivePlatforms, CURRENT_SCHEMA_VERSION } from "../database/archive-identity";
 import { restoreSchemaBackup, inspectDatabaseIntegrity } from "../database/schema-backup";
 
 let root: string;
@@ -54,12 +54,57 @@ function open() {
   handles.push(db);
   return db;
 }
-describe("TikTok schema v7 upgrade", () => {
+describe("Remote and local archive platform upgrades", () => {
+  it("upgrades an existing three-platform v7 database and preserves byte-identical payloads, children and rollback", () => {
+    const old = v6();
+    old.pragma("foreign_keys=OFF");
+    old.transaction(() => {
+      migrateArchivePlatforms(old);
+    })();
+    // Recreate the actual historical CHECK rather than testing only a newly-created v8 database.
+    const ddl = (old.prepare("SELECT sql FROM sqlite_master WHERE name='xhs_archives'").get() as { sql: string }).sql;
+    const columns = (old.pragma("table_info(xhs_archives)") as Array<{ name: string }>)
+      .map((row) => `"${row.name}"`)
+      .join(",");
+    const dependents = old
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE tbl_name='xhs_archives' AND type IN ('index','trigger') AND sql IS NOT NULL"
+      )
+      .all() as Array<{ sql: string }>;
+    old.exec(ddl.replace(/CREATE TABLE\s+"?xhs_archives"?/i, 'CREATE TABLE "v7_seed"').replace(",'local'", ""));
+    old.exec(
+      `INSERT INTO v7_seed (${columns}) SELECT ${columns} FROM xhs_archives; DROP TABLE xhs_archives; ALTER TABLE v7_seed RENAME TO xhs_archives;`
+    );
+    for (const dependent of dependents) old.exec(dependent.sql);
+    old.exec("UPDATE schema_migrations SET version=7");
+    old.close();
+    const db = open(),
+      backup = db.schemaBackupId!;
+    expect(db.verify()).toMatchObject({ schemaVersion: 8, integrity: "ok", foreignKeys: [] });
+    expect(db.connection.prepare("SELECT payload_json FROM xhs_archives WHERE id='old-record'").get()).toEqual({
+      payload_json: originalPayload
+    });
+    db.upsert({
+      id: "local_record",
+      kind: "xhs-archive",
+      status: "ready",
+      payload: { platform: "local", contentId: "local-content" },
+      createdAt: "now",
+      updatedAt: "now"
+    });
+    expect(db.connection.prepare("SELECT platform FROM xhs_archives WHERE id='local_record'").get()).toEqual({
+      platform: "local"
+    });
+    expect(db.connection.prepare("SELECT COUNT(*) AS n FROM xhs_media").get()).toEqual({ n: 1 });
+    db.close();
+    restoreSchemaBackup(filename, backup);
+    expect(inspectDatabaseIntegrity(filename)).toMatchObject({ schemaVersion: 7, integrity: "ok", foreignKeys: [] });
+  });
   it("preserves exact old payload, child rows, extra columns, custom indexes/triggers and FK enforcement", () => {
     v6().close();
     const db = open();
     const c = db.connection;
-    expect(db.verify()).toMatchObject({ schemaVersion: 7, integrity: "ok", foreignKeys: [] });
+    expect(db.verify()).toMatchObject({ schemaVersion: CURRENT_SCHEMA_VERSION, integrity: "ok", foreignKeys: [] });
     expect(c.pragma("foreign_keys", { simple: true })).toBe(1);
     expect(c.prepare("SELECT payload_json,extra FROM xhs_archives WHERE id='old-record'").get()).toEqual({
       payload_json: originalPayload,
@@ -84,11 +129,11 @@ describe("TikTok schema v7 upgrade", () => {
         .run()
     ).toThrow("CHECK");
   });
-  it("creates a recoverable v6 snapshot and restores original child records after v7 migration", () => {
+  it("creates a recoverable v6 snapshot and restores original child records after migration", () => {
     v6().close();
     const db = open();
     const backup = db.schemaBackupId!;
-    expect(backup).toMatch(/^schema-v7-/);
+    expect(backup).toMatch(/^schema-v8-/);
     db.close();
     restoreSchemaBackup(filename, backup);
     expect(inspectDatabaseIntegrity(filename)).toMatchObject({ schemaVersion: 6, foreignKeys: [], integrity: "ok" });
@@ -108,7 +153,7 @@ describe("TikTok schema v7 upgrade", () => {
     ).toThrow("injected failure");
     expect(db.prepare("SELECT payload_json FROM xhs_archives").get()).toEqual({ payload_json: originalPayload });
     expect(db.prepare("SELECT COUNT(*) AS n FROM xhs_media").get()).toEqual({ n: 1 });
-    expect(db.prepare("SELECT name FROM sqlite_master WHERE name='xhs_archives_platform_v7'").get()).toBeUndefined();
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name='xhs_archives_platform_v8'").get()).toBeUndefined();
     expect(() =>
       db
         .prepare(
@@ -117,14 +162,14 @@ describe("TikTok schema v7 upgrade", () => {
         .run()
     ).toThrow("CHECK");
   });
-  it("continues to accept backups created by the historical v6 migration", () => {
+  it.each([6, 7])("continues to accept backups created by the historical v%i migration", (version) => {
     const original = v6();
     original.exec("UPDATE schema_migrations SET version=5");
     const bytes = original.serialize();
     original.close();
     const db = open();
     db.close();
-    const id = "schema-v6-20261025T000000Z-aaaaaaaaaaaa";
+    const id = `schema-v${version}-20261025T000000Z-aaaaaaaaaaaa`;
     const backup = path.join(root, "migration-backups", id);
     fs.mkdirSync(backup, { recursive: true });
     fs.writeFileSync(path.join(backup, "toolbox.db"), bytes);
@@ -134,16 +179,16 @@ describe("TikTok schema v7 upgrade", () => {
         formatVersion: 1,
         backupId: id,
         fromVersion: 5,
-        toVersion: 6,
+        toVersion: version,
         bytes: bytes.length,
         sha256: createHash("sha256").update(bytes).digest("hex")
       })
     );
     const manifestPath = path.join(backup, "schema-backup.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, toVersion: "6" }));
+    fs.writeFileSync(manifestPath, JSON.stringify({ ...manifest, toVersion: String(version) }));
     expect(() => restoreSchemaBackup(filename, id)).toThrow("SCHEMA_BACKUP_INVALID");
-    expect(inspectDatabaseIntegrity(filename).schemaVersion).toBe(7);
+    expect(inspectDatabaseIntegrity(filename).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     fs.writeFileSync(manifestPath, JSON.stringify(manifest));
     restoreSchemaBackup(filename, id);
     expect(inspectDatabaseIntegrity(filename).schemaVersion).toBe(5);

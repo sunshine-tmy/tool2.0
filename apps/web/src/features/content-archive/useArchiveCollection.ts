@@ -5,14 +5,30 @@ import { contentArchiveApi } from "./content-api";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
 import { isApiErrorCancelled } from "../../shared/http/http";
 
-export function useArchiveCollection(reportError: (error: unknown) => void) {
+export function useArchiveCollection(reportError: (error: unknown) => void, initial: Record<string, unknown> = {}) {
   const scope = useRequestScope();
-  const keyword = ref("");
-  const typeFilter = ref<NonNullable<ContentArchiveListQuery["type"]>>("all");
-  const platformFilter = ref<NonNullable<ContentArchiveListQuery["platform"]>>("all");
-  const groupFilter = ref("all");
-  const sort = ref<NonNullable<ContentArchiveListQuery["sort"]>>("archived-desc");
-  const page = ref(1);
+  const restored = initial.editorReturn === "1" ? initial : {};
+  const keyword = ref(typeof restored.keyword === "string" ? restored.keyword.slice(0, 500) : "");
+  const typeFilter = ref<NonNullable<ContentArchiveListQuery["type"]>>(
+    ["video", "image", "live-photo"].includes(String(restored.type))
+      ? (restored.type as NonNullable<ContentArchiveListQuery["type"]>)
+      : "all"
+  );
+  const platformFilter = ref<NonNullable<ContentArchiveListQuery["platform"]>>(
+    ["tiktok", "douyin", "xiaohongshu", "local"].includes(String(restored.platform))
+      ? (restored.platform as NonNullable<ContentArchiveListQuery["platform"]>)
+      : "all"
+  );
+  const groupFilter = ref(
+    typeof restored.group === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(restored.group) ? restored.group : "all"
+  );
+  const sort = ref<NonNullable<ContentArchiveListQuery["sort"]>>(
+    ["archived-desc", "archived-asc", "published-desc", "published-asc"].includes(String(restored.sort))
+      ? (restored.sort as NonNullable<ContentArchiveListQuery["sort"]>)
+      : "archived-desc"
+  );
+  const restoredPage = Number(restored.page);
+  const page = ref(Number.isSafeInteger(restoredPage) && restoredPage > 0 && restoredPage <= 100000 ? restoredPage : 1);
   const listLoading = ref(false);
   const archives = ref<ContentArchiveListResponse>({ items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 });
   const selectedArchiveIds = ref<string[]>([]);

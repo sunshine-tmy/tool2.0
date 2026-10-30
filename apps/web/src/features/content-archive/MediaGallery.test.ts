@@ -9,8 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import MediaGallery from "./MediaGallery.vue";
 import { contentArchiveApi } from "./content-api";
+import { ApiRequestError } from "../../shared/http/http";
 
-vi.mock("./content-api", () => ({ contentArchiveApi: { addFrame: vi.fn() } }));
+const confirm = vi.hoisted(() => vi.fn());
+vi.mock("../../shared/composables/useConfirmDialog", () => ({ useConfirmDialog: () => confirm }));
+vi.mock("./content-api", () => ({ contentArchiveApi: { addFrame: vi.fn(), removeFrame: vi.fn() } }));
 
 const archive = {
   id: "archive-123",
@@ -77,7 +80,8 @@ function mountGallery(item = archive) {
         NImage: defineComponent({ template: "<img />" }),
         Camera: true,
         ChevronLeft: true,
-        ChevronRight: true
+        ChevronRight: true,
+        ArchiveAudioEditor: true
       }
     }
   });
@@ -105,10 +109,171 @@ function setVideoState(
   for (const [key, value] of Object.entries(values)) Object.defineProperty(video, key, { configurable: true, value });
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  confirm.mockReset().mockResolvedValue(true);
+  vi.mocked(contentArchiveApi.removeFrame).mockReset().mockResolvedValue(archive);
+});
 afterEach(() => vi.restoreAllMocks());
 
+describe("归档媒体编辑入口", () => {
+  it.each(["video", "live-photo"] as const)("%s 配乐和水印均派发页面跳转事件，不打开弹窗", async (kind) => {
+    const { wrapper, video } = mountGallery({ ...archive, media: [{ ...archive.media[0]!, kind }] });
+    const pause = vi.spyOn(video!, "pause").mockImplementation(() => {});
+    const button = (label: string) => wrapper.findAll("button").find((entry) => entry.text() === label)!;
+    await button("编辑配乐").trigger("click");
+    expect(wrapper.emitted("editAudio")).toEqual([["video-123"]]);
+    await button("添加水印").trigger("click");
+    await button("添加水印").trigger("click");
+    expect(wrapper.emitted("editWatermark")).toEqual([["video-123"], ["video-123"]]);
+    expect(pause).toHaveBeenCalledTimes(3);
+    expect(wrapper.findComponent({ name: "ArchiveAudioEditor" }).exists()).toBe(false);
+    wrapper.unmount();
+  });
+  it("原始图集仍打开生成视频弹窗，截帧不提供生成入口", async () => {
+    const image = { ...archiveWithFrame.media[1]!, frameSourceMediaId: undefined, frameTimestampMs: undefined };
+    const { wrapper } = mountGallery({ ...archive, type: "image", media: [image] });
+    const generate = wrapper.findAll("button").find((entry) => entry.text() === "图集生成视频")!;
+    await generate.trigger("click");
+    await flushPromises();
+    expect(wrapper.findComponent({ name: "ArchiveAudioEditor" }).exists()).toBe(true);
+    expect(wrapper.emitted("editAudio")).toBeUndefined();
+    expect(wrapper.emitted("editWatermark")).toBeUndefined();
+    wrapper.unmount();
+    const frame = mountGallery({ ...archive, media: [archiveWithFrame.media[1]!] });
+    expect(frame.wrapper.text()).not.toContain("图集生成视频");
+    frame.wrapper.unmount();
+  });
+});
+
 describe("XHS video frame capture", () => {
+  it("选中截帧后确认删除并回到源视频，原始视频和图片不提供删除入口", async () => {
+    const { wrapper } = mountGallery(archiveWithFrame);
+    try {
+      expect(wrapper.text()).not.toContain("删除截帧");
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      const remove = wrapper.findAll("button").find((button) => button.text() === "删除截帧")!;
+      await remove.trigger("click");
+      await flushPromises();
+      expect(confirm).toHaveBeenCalledWith(
+        expect.stringContaining("原视频、其他媒体和截帧均保留"),
+        expect.objectContaining({ title: "删除截帧" })
+      );
+      expect(contentArchiveApi.removeFrame).toHaveBeenCalledWith("archive-123", "frame-123", expect.any(AbortSignal));
+      expect(wrapper.emitted("mediaUpdated")).toEqual([[archive]]);
+      await wrapper.setProps({ item: archive });
+      expect(wrapper.find(".media-stage video").exists()).toBe(true);
+      expect(wrapper.findAll(".media-thumbs button")).toHaveLength(1);
+      expect(wrapper.text()).not.toContain("删除截帧");
+      const image = { ...archiveWithFrame.media[1]!, frameSourceMediaId: undefined, frameTimestampMs: undefined };
+      await wrapper.setProps({ item: { ...archive, media: [image] } });
+      expect(wrapper.text()).not.toContain("删除截帧");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("取消删除不请求接口，删除失败保留当前截帧并可重试", async () => {
+    const { wrapper } = mountGallery(archiveWithFrame);
+    try {
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      const remove = () => wrapper.findAll("button").find((button) => button.text() === "删除截帧")!;
+      confirm.mockResolvedValueOnce(false);
+      await remove().trigger("click");
+      await flushPromises();
+      expect(contentArchiveApi.removeFrame).not.toHaveBeenCalled();
+      vi.mocked(contentArchiveApi.removeFrame).mockRejectedValueOnce(
+        new ApiRequestError("文件正在使用", { code: "ARCHIVE_FRAME_BUSY", status: 409 })
+      );
+      await remove().trigger("click");
+      await flushPromises();
+      expect(wrapper.get('[role="status"]').text()).toContain("文件正在使用");
+      expect(wrapper.find(".captured-frame-badge").exists()).toBe(true);
+      expect(wrapper.emitted("mediaUpdated")).toBeUndefined();
+      await remove().trigger("click");
+      await flushPromises();
+      expect(wrapper.emitted("mediaUpdated")).toEqual([[archive]]);
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("等待确认时切换媒体后不删除旧截帧", async () => {
+    let finish!: (value: boolean) => void;
+    confirm.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        finish = resolve;
+      })
+    );
+    const { wrapper } = mountGallery(archiveWithFrame);
+    try {
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "删除截帧")!
+        .trigger("click");
+      await wrapper.get('[aria-label="预览媒体 1"]').trigger("click");
+      finish(true);
+      await flushPromises();
+      expect(contentArchiveApi.removeFrame).not.toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it.each(["switch", "return", "unmount"])(
+    "删除请求 %s 后迟到的结果不污染当前归档，且重复点击只提交一次",
+    async (mode) => {
+      let finish!: (value: ContentArchiveItem) => void;
+      vi.mocked(contentArchiveApi.removeFrame).mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      const { wrapper } = mountGallery(archiveWithFrame);
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      const remove = wrapper.findAll("button").find((button) => button.text() === "删除截帧")!;
+      await remove.trigger("click");
+      await flushPromises();
+      await remove.trigger("click");
+      expect(contentArchiveApi.removeFrame).toHaveBeenCalledOnce();
+      const signal = vi.mocked(contentArchiveApi.removeFrame).mock.calls[0]![2]!;
+      if (mode === "unmount") wrapper.unmount();
+      else {
+        await wrapper.setProps({ item: { ...archive, id: "other-123" } });
+        if (mode === "return") await wrapper.setProps({ item: archiveWithFrame });
+      }
+      finish(archive);
+      await flushPromises();
+      expect(wrapper.emitted("mediaUpdated")).toBeUndefined();
+      if (mode === "unmount") expect(signal.aborted).toBe(true);
+      else wrapper.unmount();
+    }
+  );
+  it("删除期间选中其他保留媒体时，响应后仍显示该媒体", async () => {
+    let finish!: (value: ContentArchiveItem) => void;
+    const other = { ...archiveWithFrame.media[1]!, id: "frame-456", fileName: "other.png" };
+    const updated = { ...archiveWithFrame, media: [archive.media[0]!, other] };
+    vi.mocked(contentArchiveApi.removeFrame).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const { wrapper } = mountGallery({ ...archiveWithFrame, media: [...archiveWithFrame.media, other] });
+    try {
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "删除截帧")!
+        .trigger("click");
+      await flushPromises();
+      await wrapper.get('[aria-label="预览媒体 3"]').trigger("click");
+      finish(updated);
+      await flushPromises();
+      await wrapper.setProps({ item: updated });
+      expect(wrapper.get('[aria-label="预览媒体 2"]').classes()).toContain("active");
+      expect(wrapper.find(".captured-frame-badge").exists()).toBe(true);
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("实况图集仅预加载所选视频，图片缩略图延迟加载", async () => {
     const item = {
       ...archiveWithFrame,

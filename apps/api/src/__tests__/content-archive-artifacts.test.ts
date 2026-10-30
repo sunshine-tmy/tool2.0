@@ -134,6 +134,95 @@ const detail = async (app: FastifyInstance, id: string) =>
   (await app.inject({ method: "GET", url: `${base}/${id}` })).json().data as ContentArchiveItem;
 
 describe("双平台截帧与导出 API", () => {
+  it.each(["xiaohongshu", "douyin", "tiktok", "local"] as const)(
+    "%s 单独删除截帧后保留原片和其他截帧，ZIP、配额、索引及重启一致",
+    async (platform) => {
+      const item = await seed(platform),
+        app = await appWith();
+      await capture(app, item, 1234);
+      const saved = (await capture(app, item, 2345)).json().data as ContentArchiveItem;
+      const first = saved.media[1],
+        retained = saved.media[2];
+      const framePath = path.join(config.xhsArchiveItemsDir, item.id, first.fileName);
+      const response = await app.inject({ method: "DELETE", url: `${base}/${item.id}/frames/${first.id}` });
+      expect(response.statusCode).toBe(200);
+      const updated = response.json().data as ContentArchiveItem;
+      expect(isContentArchiveItem(updated)).toBe(true);
+      expect(updated.media).toEqual([item.media[0], retained]);
+      expect(updated.totalBytes).toBe(saved.totalBytes - first.size);
+      expect(updated.fetchedAt).toBe(item.fetchedAt);
+      expect((await app.inject(first.downloadUrl)).statusCode).toBe(404);
+      expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, item.id, item.media[0].fileName))).toEqual(video);
+      await expect(fs.stat(framePath)).rejects.toMatchObject({ code: "ENOENT" });
+      expect((await fs.readdir(path.dirname(framePath))).some((name) => name.includes(".deleting"))).toBe(false);
+      const entries = readArchiveZip((await app.inject(`${base}/${item.id}/download.zip`)).rawPayload);
+      expect(entries.has("视频截帧-001-00-00-01-234.png")).toBe(false);
+      expect(entries.get("视频截帧-002-00-00-02-345.png")).toEqual(png);
+      // 删除中间序号后再次保存，不能复用仍在使用的截帧序号。
+      const added = (await capture(app, item, 3456)).json().data as ContentArchiveItem;
+      expect(added.media.filter((entry) => entry.frameSourceMediaId).map((entry) => entry.index)).toEqual([1, 2]);
+      await app.close();
+      const database = new ToolboxDatabase(config.databasePath);
+      try {
+        expect(database.get("xhs-media", first.id)).toBeUndefined();
+        expect(database.listFiles({ entityKind: "xhs-media", entityId: first.id })).toEqual([]);
+        expect(database.listFiles({ entityKind: "xhs-media" })).toHaveLength(3);
+        expect(database.verify().foreignKeys).toEqual([]);
+      } finally {
+        database.close();
+      }
+      expect(await detail(await appWith(), item.id)).toEqual(added);
+    }
+  );
+  it("删除截帧的数据库提交失败时还原文件、清单和记录，之后可重试", async () => {
+    const item = await seed(),
+      app = await appWith();
+    const saved = (await capture(app, item)).json().data as ContentArchiveItem;
+    const frame = saved.media[1],
+      directory = path.join(config.xhsArchiveItemsDir, item.id);
+    const manifest = await fs.readFile(path.join(directory, "manifest.json"));
+    const record = vi.spyOn(ToolboxDatabase.prototype, "upsertFile").mockImplementationOnce(() => {
+      throw new Error("index failed");
+    });
+    const remove = () => app.inject({ method: "DELETE", url: `${base}/${item.id}/frames/${frame.id}` });
+    expect((await remove()).statusCode).toBe(500);
+    record.mockRestore();
+    expect(await detail(app, item.id)).toEqual(saved);
+    expect(await fs.readFile(path.join(directory, "manifest.json"))).toEqual(manifest);
+    expect(await fs.readFile(path.join(directory, frame.fileName))).toEqual(png);
+    expect((await fs.readdir(directory)).sort()).toEqual(["manifest.json", "original.mp4", frame.fileName].sort());
+    expect((await remove()).statusCode).toBe(200);
+  });
+  it("拒绝删除原始媒体或跨归档截帧，旧入口只允许操作小红书截帧", async () => {
+    const dy = await seed(),
+      xhs = await seed("xiaohongshu", "image"),
+      app = await appWith();
+    const dyFrame = (await capture(app, dy)).json().data.media[1];
+    const remove = (id: string, mediaId: string, legacy = false) =>
+      app.inject({
+        method: "DELETE",
+        url: `${legacy ? "/api/v1/tools/xhs-archive/items" : base}/${id}/frames/${mediaId}`
+      });
+    expect((await remove(dy.id, dy.media[0].id)).json().error.code).toBe("ARCHIVE_FRAME_REQUIRED");
+    expect((await remove(xhs.id, xhs.media[0].id)).statusCode).toBe(400);
+    expect((await remove(xhs.id, dyFrame.id)).json().error.code).toBe("ARCHIVE_FRAME_NOT_FOUND");
+    expect((await remove("missing_archive", dyFrame.id)).statusCode).toBe(404);
+    expect((await remove(dy.id, dyFrame.id, true)).statusCode).toBe(404);
+    expect((await detail(app, dy.id)).media).toHaveLength(2);
+    expect((await detail(app, xhs.id)).media).toEqual(xhs.media);
+    const xhsVideo = await seed("xiaohongshu");
+    // 新应用重新读取隔离夹具，避免测试绕过应用自己的内存索引。
+    await app.close();
+    const next = await appWith();
+    const frame = (await capture(next, xhsVideo)).json().data.media[1];
+    const deleted = await next.inject({
+      method: "DELETE",
+      url: `/api/v1/tools/xhs-archive/items/${xhsVideo.id}/frames/${frame.id}`
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json().data.media[0].previewUrl).toContain("/tools/xhs-archive/");
+    expect((await detail(next, xhsVideo.id)).media).toHaveLength(1);
+  });
   it.each(["xiaohongshu", "douyin"] as const)("%s 保存实际 PNG、下载、ZIP、重启和删除保持一致", async (platform) => {
     const item = await seed(platform),
       app = await appWith(),
@@ -373,5 +462,30 @@ describe("双平台截帧与导出 API", () => {
       headers: { ...upload.headers, cookie, origin: "http://127.0.0.1:5173", "x-csrf-token": token }
     });
     expect(response.statusCode).toBe(200);
+    const frame = response.json().data.media[1];
+    const deleteUrl = `${base}/${item.id}/frames/${frame.id}`;
+    expect((await app.inject({ method: "DELETE", url: deleteUrl })).statusCode).toBe(401);
+    expect(
+      (await app.inject({ method: "DELETE", url: deleteUrl, headers: { cookie, origin: "http://127.0.0.1:5173" } }))
+        .statusCode
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: deleteUrl,
+          headers: { cookie, origin: "http://evil.example", "x-csrf-token": token }
+        })
+      ).statusCode
+    ).toBe(403);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: deleteUrl,
+          headers: { cookie, origin: "http://127.0.0.1:5173", "x-csrf-token": token }
+        })
+      ).statusCode
+    ).toBe(200);
   });
 });

@@ -70,6 +70,20 @@ const legacy: XhsArchiveItem = {
 };
 
 describe("content archive contract", () => {
+  it("本地来源只用于归档与列表，不扩张链接获取和远程任务的平台范围", () => {
+    const local = {
+      ...fromXhsArchive(legacy),
+      platform: "local",
+      contentId: "a".repeat(64),
+      sourceUrl: "toolbox://local-video/local",
+      canonicalUrl: "toolbox://local-video/local"
+    };
+    expect(Value.Check(ContentArchiveItemSchema, local)).toBe(true);
+    expect(isContentArchiveListQuery({ platform: "local" })).toBe(true);
+    expect(Value.Check(ArchivePlatformSchema, "local")).toBe(false);
+    expect(isContentArchiveCreateInput({ platform: "local", url: "https://example.test" })).toBe(false);
+    expect(() => toXhsArchive(local as ContentArchiveItem)).toThrow("ARCHIVE_PLATFORM_MISMATCH");
+  });
   it("中性翻译请求/编辑复用旧字段，禁止夹带 Cookie 和伪造字段", () => {
     expect(isContentTranslationRequest({ force: true })).toBe(true);
     expect(isContentTranslationRequest({ force: "true" })).toBe(false);

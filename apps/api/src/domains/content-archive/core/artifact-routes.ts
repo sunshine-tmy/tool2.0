@@ -8,11 +8,13 @@ import {
   ApiFailureSchema,
   ContentArchiveItemSchema,
   XhsArchiveIdParamsSchema,
+  XhsArchiveMediaParamsSchema,
   XhsArchiveItemSchema,
   apiSuccessSchema,
   fail,
   ok,
   type ContentArchiveMedia,
+  type XhsArchiveMediaParams,
   type XhsArchiveIdParams
 } from "@toolbox/shared";
 import { REQUEST_QUOTAS } from "../../../security/request-quotas";
@@ -28,6 +30,7 @@ type ArtifactStore<T extends ArchiveExportItem> = {
     id: string,
     input: { sourceMediaId: string; timestampMs: number; png: Buffer; width: number; height: number }
   ) => Promise<T>;
+  removeVideoFrame: (id: string, mediaId: string) => Promise<T>;
   mediaPath: (id: string, mediaId: string) => Promise<{ filePath: string; media: ContentArchiveMedia } | undefined>;
   pinMedia?: (file: string) => () => void;
 };
@@ -111,6 +114,35 @@ export function registerArchiveArtifactRoutes<T extends ArchiveExportItem>(
             height: metadata.height
           })
         );
+      } catch (error) {
+        if (error instanceof ContentArchiveStoreError)
+          return reply
+            .code(error.statusCode)
+            .send(
+              fail(namespace === "xhs-archive" ? error.code : error.code.replace(/^XHS_/, "ARCHIVE_"), error.message)
+            );
+        throw error;
+      }
+    }
+  );
+
+  app.delete<{ Params: XhsArchiveMediaParams }>(
+    `${prefix}/frames/:mediaId`,
+    {
+      schema: {
+        params: XhsArchiveMediaParamsSchema,
+        response: {
+          200: apiSuccessSchema(namespace === "xhs-archive" ? XhsArchiveItemSchema : ContentArchiveItemSchema),
+          400: ApiFailureSchema,
+          404: ApiFailureSchema,
+          409: ApiFailureSchema,
+          429: ApiFailureSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      try {
+        return ok(await store.removeVideoFrame(request.params.id, request.params.mediaId));
       } catch (error) {
         if (error instanceof ContentArchiveStoreError)
           return reply

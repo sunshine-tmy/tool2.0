@@ -8,7 +8,7 @@ import { nanoid } from "nanoid";
 import {
   isContentArchiveItem,
   toContentArchiveListItem,
-  type ArchivePlatform,
+  type ContentArchivePlatform,
   type ContentArchiveItem,
   type ContentArchiveMedia,
   type ContentArchiveListQuery,
@@ -93,7 +93,7 @@ export class ContentArchiveStore {
       type?: string;
       page?: number;
       pageSize?: number;
-      platform?: ArchivePlatform | "all";
+      platform?: ContentArchivePlatform | "all";
       groupId?: string;
       sort?: ContentArchiveListQuery["sort"];
     } = {}
@@ -158,13 +158,13 @@ export class ContentArchiveStore {
     return cloneItem(this.items.get(id));
   }
 
-  async findBySource(platform: ArchivePlatform, contentId: string) {
+  async findBySource(platform: ContentArchivePlatform, contentId: string) {
     await this.initialize();
     return cloneItem(
       [...this.items.values()].find((item) => item.platform === platform && item.contentId === contentId)
     );
   }
-  async findByUrl(platform: ArchivePlatform, url: string) {
+  async findByUrl(platform: ContentArchivePlatform, url: string) {
     await this.initialize();
     return cloneItem(
       [...this.items.values()].find(
@@ -181,11 +181,13 @@ export class ContentArchiveStore {
     return directory;
   }
 
-  async commit(item: ContentArchiveItem, stagingDirectory: string) {
+  async commit(item: ContentArchiveItem, stagingDirectory: string, options: { groupId?: string } = {}) {
+    const groupId = options.groupId;
     await this.initialize();
     if (!isContentArchiveItem(item)) throw new Error("ARCHIVE_PAYLOAD_INVALID");
     return this.withStorageMutation(() =>
       this.withItemMutation(item.id, async () => {
+        if (groupId) this.groups.assertExists(groupId);
         this.assertVideoEditIdle(item.id);
         const target = path.join(this.config.xhsArchiveItemsDir, safeId(item.id));
         await assertArchiveStaging(stagingDirectory, this.config.xhsArchiveStagingDir);
@@ -287,6 +289,8 @@ export class ContentArchiveStore {
             this.fileMetadata.removeForEntity("xhs-archive", item.id);
             for (const media of previousItem?.media ?? []) this.fileMetadata.removeForEntity("xhs-media", media.id);
             for (const file of preparedFiles) this.database.upsertFile(file);
+            // Membership must commit with the archive and file index, or the directory is rolled back.
+            if (groupId) this.groups.assign({ groupId, itemIds: [item.id] });
           });
         });
         this.items.set(item.id, cloneItem(nextItem)!);
@@ -315,7 +319,9 @@ export class ContentArchiveStore {
         }
 
         const id = nanoid(12);
-        const sequence = current.media.filter(isCapturedVideoFrame).length;
+        const sequence = current.media
+          .filter(isCapturedVideoFrame)
+          .reduce((next, frame) => Math.max(next, frame.index + 1), 0);
         const fileName = `frame-${String(sequence + 1).padStart(3, "0")}-${String(input.timestampMs).padStart(10, "0")}-${id}.png`;
         const media = {
           id,
@@ -376,6 +382,57 @@ export class ContentArchiveStore {
           if (movedFrame) await fsp.rm(target, { force: true }).catch(() => undefined);
           throw error;
         }
+      })
+    );
+  }
+
+  async removeVideoFrame(itemId: string, mediaId: string) {
+    await this.initialize();
+    return this.withStorageMutation(() =>
+      this.withItemMutation(itemId, async () => {
+        const current = this.items.get(itemId);
+        if (!current) throw new ContentArchiveStoreError("XHS_ARCHIVE_NOT_FOUND", 404, "存档不存在");
+        const frame = current.media.find((entry) => entry.id === mediaId);
+        if (!frame) throw new ContentArchiveStoreError("XHS_FRAME_NOT_FOUND", 404, "截帧不存在或已删除");
+        if (frame.kind !== "image" || !isCapturedVideoFrame(frame) || frame.audioEdit || frame.derivedFromImages)
+          throw new ContentArchiveStoreError("XHS_FRAME_REQUIRED", 400, "只能删除视频截帧，原始媒体不受影响");
+        this.assertVideoEditIdle(itemId);
+        if (
+          path.posix.basename(frame.fileName) !== frame.fileName ||
+          path.win32.basename(frame.fileName) !== frame.fileName ||
+          frame.fileName.includes(":") ||
+          frame.fileName === "." ||
+          frame.fileName === ".."
+        )
+          throw new Error("ARCHIVE_MEDIA_PATH_INVALID");
+        const directory = path.join(this.config.xhsArchiveItemsDir, safeId(itemId));
+        const target = path.join(directory, frame.fileName);
+        const moved = await exists(target);
+        if (this.mediaReadPins.has(target))
+          throw new ContentArchiveStoreError("XHS_FRAME_BUSY", 409, "截帧正在下载或导出，请完成后重试删除");
+        const pendingDeletion = path.join(directory, `.${nanoid(12)}.frame.deleting`);
+        const next = structuredClone(current);
+        next.media = next.media.filter((entry) => entry.id !== mediaId);
+        next.totalBytes = archiveMediaBytes(next.media);
+        next.updatedAt = new Date().toISOString();
+        // 和整条归档删除保持同样的提交顺序：先保留可恢复文件，再原子更新清单与索引。
+        if (moved) await fsp.rename(target, pendingDeletion);
+        try {
+          await replaceArchiveManifest(directory, next, async (manifest) => {
+            const metadata = await this.inspectManifest(itemId, manifest);
+            await this.persistItem(next, () => {
+              this.database.remove("xhs-media", mediaId);
+              this.fileMetadata.removeForEntity("xhs-media", mediaId);
+              this.database.upsertFile(metadata);
+            });
+          });
+        } catch (error) {
+          if (moved) await fsp.rename(pendingDeletion, target);
+          throw error;
+        }
+        this.items.set(itemId, next);
+        if (moved) await fsp.rm(pendingDeletion, { force: true }).catch(() => undefined);
+        return structuredClone(next);
       })
     );
   }
@@ -608,7 +665,7 @@ export class ContentArchiveStore {
           for (const file of media.audioEdit.pendingFiles) {
             const target = path.join(directory, path.basename(file.fileName));
             if (
-              !/^(edited|music)-[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(file.fileName) ||
+              !/^(edited|music|watermark)-[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(file.fileName) ||
               active.has(file.fileName) ||
               this.mediaReadPins.has(target)
             ) {

@@ -18,6 +18,7 @@ describe("多媒体归档路由兼容", () => {
       "/tools/image-compress",
       "/tools/lan-transfer",
       "/tools/media-archive",
+      "/tools/media-archive/video-editor/:itemId/:mediaId",
       "/tools/xhs-archive"
     ]);
   });

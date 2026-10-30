@@ -92,6 +92,23 @@ function setup() {
   wrappers.push(wrapper);
   return wrapper;
 }
+it("主页作品分页使用已发现作品总数，翻页不把总数替换为本页条数或主页预计数", async () => {
+  mocks.list.mockResolvedValue([current]);
+  mocks.works.mockImplementation(async (_id: string, page: number) => ({
+    items: [work(`1234${page}`)],
+    page,
+    pageCount: 3,
+    total: 142
+  }));
+  const wrapper = setup();
+  await wrapper.vm.show(current.id);
+  expect(wrapper.findAll("tbody tr")).toHaveLength(1);
+  expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 142 条");
+  wrapper.getComponent(NPagination).vm.$emit("update:page", 2);
+  await flushPromises();
+  expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 142 条");
+  expect(mocks.works).toHaveBeenLastCalledWith(current.id, 2, expect.any(AbortSignal));
+});
 it("retries just the failed row while archiving, then exposes the queued status without a second request", async () => {
   current = { ...base, phase: "archiving", failedCount: 1 };
   mocks.list.mockResolvedValue([current]);

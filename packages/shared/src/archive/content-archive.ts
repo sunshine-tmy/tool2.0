@@ -19,6 +19,9 @@ export const ArchivePlatformSchema = Type.Union([
   Type.Literal("douyin"),
   Type.Literal("tiktok")
 ]);
+// Link fetching stays limited to remote platforms; local uploads are a distinct archive source.
+export const ContentArchivePlatformSchema = Type.Union([ArchivePlatformSchema, Type.Literal("local")]);
+export type ContentArchivePlatform = Static<typeof ContentArchivePlatformSchema>;
 const ContentIdSchema = Type.String({
   minLength: 1,
   maxLength: 256,
@@ -29,7 +32,7 @@ export const ContentArchiveItemSchema = Type.Composite(
   [
     Type.Omit(XhsArchiveItemSchema, ["noteId"]),
     Type.Object({
-      platform: ArchivePlatformSchema,
+      platform: ContentArchivePlatformSchema,
       contentId: ContentIdSchema,
       rawText: Type.Optional(Type.String({ maxLength: 100_000 }))
     })
@@ -63,7 +66,7 @@ export const ContentArchiveListQuerySchema = Type.Composite(
   [
     XhsArchiveListQuerySchema,
     Type.Object({
-      platform: Type.Optional(Type.Union([Type.Literal("all"), ArchivePlatformSchema])),
+      platform: Type.Optional(Type.Union([Type.Literal("all"), ContentArchivePlatformSchema])),
       sort: Type.Optional(
         Type.Union([
           Type.Literal("published-desc"),
@@ -147,6 +150,15 @@ export type ContentArchiveListResponse = Static<typeof ContentArchiveListRespons
 export type ContentArchiveListQuery = Static<typeof ContentArchiveListQuerySchema>;
 export type ContentArchiveCreateInput = Static<typeof ContentArchiveCreateInputSchema>;
 export type ContentArchiveTask = Static<typeof ContentArchiveTaskSchema>;
+export const LOCAL_ARCHIVE_UPLOAD_MAX_BYTES = 500 * 1024 * 1024;
+export const LOCAL_ARCHIVE_UPLOAD_MAX_FILES = 1000;
+export const LocalArchiveUploadResultSchema = Type.Object(
+  {
+    item: ContentArchiveItemSchema,
+    duplicate: Type.Boolean()
+  },
+  { additionalProperties: false }
+);
 
 export function isContentArchiveItem(value: unknown): value is ContentArchiveItem {
   return Value.Check(ContentArchiveItemSchema, value);

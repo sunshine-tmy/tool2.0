@@ -32,14 +32,14 @@
 
 ## 功能矩阵
 
-| 模块           | 前端路由                | API 命名空间                    | 能力                                                                                                      |
-| -------------- | ----------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress`  | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                                                    |
-| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`      | 去水印、清晰度增强、商品图抠图，本地模型推理                                                              |
-| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*`  | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理                               |
-| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                                                            |
-| 直播音频库     | `/tools/audio-library`  | `/api/v1/tools/audio-library/*` | 克隆结果一键永久归档、本地上传、双语检索、分类分组、队列播放与备份恢复；[使用说明](docs/audio-library.md) |
-| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书、抖音与 TikTok 内容获取、本地存档、翻译、截帧及导出；抖音与 TikTok 仅支持匿名可访问的公开作品      |
+| 模块           | 前端路由                | API 命名空间                    | 能力                                                                                                                                                          |
+| -------------- | ----------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 图片压缩       | `/tools/image-compress` | `/api/v1/tools/image-compress`  | JPEG/PNG/WebP 批量压缩、缩放和格式转换                                                                                                                        |
+| AI 图片处理    | `/tools/image-ai`       | `/api/v1/tools/image-ai/*`      | 去水印、清晰度增强、商品图抠图，本地模型推理                                                                                                                  |
+| 局域网文件传输 | `/tools/lan-transfer`   | `/api/v1/tools/lan-transfer/*`  | 文件断点续传、剪贴板粘贴上传、图文快传、图片/视频/PDF/Office 预览和过期清理                                                                                   |
+| 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                                                                                                                |
+| 直播音频库     | `/tools/audio-library`  | `/api/v1/tools/audio-library/*` | 克隆结果一键永久归档、本地上传、双语检索、分类分组、队列播放与备份恢复；[使用说明](docs/audio-library.md)                                                     |
+| 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书、抖音与 TikTok 内容获取、本地存档、翻译、截帧及导出；支持[批量上传本地视频](docs/local-video-archive.md)，继续配乐和水印编辑；线上获取仅接受可访问作品 |
 
 ## 选择使用方式
 
@@ -662,6 +662,30 @@ pnpm desktop:make
 ```
 
 默认产物为 `apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe`。没有设置 Release 签名配置时，此产物是**未签名测试安装包**，不会自动发布到 GitHub Release。安装前仍须确认目标目录可由当前用户写入。
+
+### 桌面版本号
+
+桌面产品版本以 `apps/desktop/package.json` 的 `version` 为唯一基准，独立于根目录、前后端和能力包的版本。采用[语义化版本](https://semver.org/lang/zh-CN/)的三段格式 `主版本.次版本.修订号`：问题修复递增修订号，兼容的新功能递增次版本并将修订号归零，不兼容的大改动递增主版本并将后两段归零。不会逢 10 自动进位，例如 `0.1.9 → 0.1.10`。
+
+日常执行 `pnpm desktop:make` 或 `pnpm desktop:package`，默认递增修订号；**只有完整打包成功后才写回版本**。下载、编译或安装器生成失败均不递增，直接重试原命令即可。`start.bat -BuildDesktop` 调用同一打包流程。普通 `pnpm build`、`pnpm desktop:build`、启动和测试不会变更版本。
+
+以下命令以当前 `0.1.0` 为例，互为独立选项，每次选用一种：
+
+| 命令                                | 版本结果 | 使用情形               |
+| ----------------------------------- | -------- | ---------------------- |
+| `pnpm desktop:make`                 | `0.1.1`  | 日常修复与打包         |
+| `pnpm desktop:make --bump minor`    | `0.2.0`  | 增加兼容功能           |
+| `pnpm desktop:make --bump major`    | `1.0.0`  | 不兼容的大版本变更     |
+| `pnpm desktop:make --version 1.2.0` | `1.2.0`  | 明确指定高于当前的版本 |
+| `pnpm desktop:make --keep-version`  | `0.1.0`  | 对同一版本重建产物     |
+
+`desktop:package` 同样支持以上参数。若先执行 `desktop:package`，再制作同一版本安装器，第二步使用 `desktop:make --keep-version`；已修改产品内容时应使用新版本。版本同时写入应用内部元数据、可执行文件版本和安装器，安装器文件名仍保持现有名称。
+
+成功打包产生的 `apps/desktop/package.json` 版本改动应随源码一起提交，换电脑时从这个版本继续递增；流程不会自动提交或推送，也不联网查询 GitHub 的最新版本。正式 Release 配置 `DESKTOP_RELEASE=1` 时，严格使用 tag 流程提供的 `DESKTOP_VERSION`，不额外递增、不写回源码，保持现有签名、更新源和验收流程。
+
+打包过程使用 `apps/desktop/.desktop-package.lock` 防止并行打包相互覆盖。正常成功或失败均释放该锁；如果进程被强制结束，先确认相关打包进程已退出，再手动移除残留锁重试。锁与版本写入临时文件均不进入 Git 或应用产物。
+
+### 打包资源与验收
 
 `desktop:make` 会依次构建 shared、API、前端、桌面资源并重建桌面原生依赖，无需先运行 `start.bat` 或启动模型。首次执行会按需下载 Electron、NSIS 等构建资源，`apps/desktop/.electron-cache` 等缓存由构建流程生成，不需要从别人电脑拷贝。若原生依赖无法使用预编译文件、回退本机编译，应按具体构建错误补齐工具链，不把系统 Python 或全部 AI 环境当作所有打包场景的固定前置条件。
 

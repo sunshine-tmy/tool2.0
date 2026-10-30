@@ -1,3 +1,9 @@
+.pagination-with-total {
+  /* Naive UI injects unlayered nowrap; totals must wrap with controls in narrow panels. */
+  flex-wrap: wrap !important;
+  row-gap: 8px;
+}
+
 .tool-page-header,
 .section-title,
 .page-heading {

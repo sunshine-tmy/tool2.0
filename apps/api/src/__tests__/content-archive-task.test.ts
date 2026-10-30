@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import sharp from "sharp";
 import nodeFs from "node:fs";
 import { Readable, Writable } from "node:stream";
@@ -103,6 +104,46 @@ async function terminal(id: string) {
 }
 
 describe("多平台获取生命周期", () => {
+  it("本地上传记录不能通过刷新进入远程提供者，也不会生成额外任务", async () => {
+    const staging = await store.createStaging("local_seed_123456");
+    await fs.writeFile(path.join(staging, "cover.png"), png);
+    const checksum = createHash("sha256").update(png).digest("hex");
+    const item = {
+      id: "local_archive123",
+      platform: "local" as const,
+      contentId: checksum,
+      sourceUrl: `toolbox://local-video/${checksum}`,
+      canonicalUrl: `toolbox://local-video/${checksum}`,
+      type: "video" as const,
+      title: "本机视频",
+      topics: [],
+      status: "ready" as const,
+      warnings: [],
+      fetchedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      totalBytes: png.length,
+      media: [
+        {
+          id: "local_media123",
+          index: 0,
+          kind: "cover" as const,
+          fileName: "cover.png",
+          mimeType: "image/png",
+          size: png.length,
+          checksum,
+          previewUrl: "/cover.png",
+          downloadUrl: "/cover.png"
+        }
+      ]
+    };
+    await store.commit(item, staging);
+    await expect(service.refresh(item.id)).rejects.toMatchObject({
+      code: "ARCHIVE_LOCAL_REFRESH_UNAVAILABLE",
+      statusCode: 409
+    });
+    expect(events.list()).toEqual([]);
+    providers.forEach((provider) => expect(provider.extract).not.toHaveBeenCalled());
+  });
   it("抖音权限过滤原因贯穿解析、适配器和任务响应，失败不误报安装故障也不写归档", async () => {
     const extract = vi.fn(async (_url: string, options: { onReadStart?: () => void }) => {
       options.onReadStart?.();

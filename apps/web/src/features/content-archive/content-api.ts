@@ -1,6 +1,7 @@
 /** 中性归档客户端：双平台消费同一共享契约；旧命名仅保留在小红书登录入口。 */
 import {
   ContentArchiveItemSchema,
+  LocalArchiveUploadResultSchema,
   ContentArchiveListResponseSchema,
   ContentArchiveTaskSchema,
   ContentArchivePublicationSchema,
@@ -34,6 +35,29 @@ import { httpClient, withApiError } from "../../shared/http/http";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 
 const base = "/tools/media-archive";
+export const uploadLocalArchiveVideo = (
+  file: File,
+  title: string,
+  signal: AbortSignal,
+  progress: (percent: number) => void,
+  groupId?: string
+) => {
+  const form = new FormData();
+  form.append("title", title);
+  if (groupId) form.append("groupId", groupId);
+  form.append("file", file);
+  return withApiError(
+    () =>
+      httpClient.post(`${base}/local-videos`, LocalArchiveUploadResultSchema, form, {
+        signal,
+        timeout: 30 * 60 * 1000,
+        onUploadProgress: (event) => {
+          if (event.total) progress(Math.min(100, Math.round((event.loaded * 100) / event.total)));
+        }
+      }),
+    "上传视频归档失败"
+  );
+};
 const itemPath = (id: string) => `${base}/items/${encodeURIComponent(id)}`;
 const importBase = `${base}/import`;
 const profileBase = `${base}/tiktok-profiles`;
@@ -207,6 +231,14 @@ export const contentArchiveApi = {
     withApiError(
       () => httpClient.post(`${itemPath(id)}/frames`, ContentArchiveItemSchema, form, { signal }),
       "保存视频截帧失败"
+    ),
+  removeFrame: (id: string, mediaId: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.delete(`${itemPath(id)}/frames/${encodeURIComponent(mediaId)}`, ContentArchiveItemSchema, {
+          signal
+        }),
+      "删除视频截帧失败"
     ),
   refresh: (id: string, signal?: AbortSignal) =>
     withApiError(

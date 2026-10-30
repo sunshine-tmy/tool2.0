@@ -33,7 +33,7 @@ export class ToolboxDatabase {
       // WAL 提升读写并发；外键和 trusted_schema 关闭不可信扩展路径，busy_timeout
       // 为本机短暂并发写入留出等待窗口，所有迁移完成后才允许应用继续启动。
       this.connection.pragma("journal_mode = WAL");
-      // A v6 archive CHECK expansion requires a table rebuild without cascading child deletes.
+      // Widening an old platform CHECK requires a table rebuild without cascading child deletes.
       // The migration transaction validates every FK before commit; normal operation keeps FKs on.
       this.connection.pragma(`foreign_keys = ${upgrading ? "OFF" : "ON"}`);
       this.connection.pragma("busy_timeout = 5000");

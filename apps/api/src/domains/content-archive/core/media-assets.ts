@@ -11,6 +11,7 @@ export function archiveMediaAssets(media: ContentArchiveMedia, includePending = 
       ? [
           media.audioEdit.original,
           ...(media.audioEdit.music ? [media.audioEdit.music] : []),
+          ...(media.audioEdit.watermark ? [media.audioEdit.watermark.file] : []),
           ...(includePending ? (media.audioEdit.pendingFiles ?? []) : [])
         ]
       : [])

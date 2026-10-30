@@ -3,8 +3,8 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineComponent, reactive } from "vue";
-import { shallowMount } from "@vue/test-utils";
-import { NButton, NCheckbox } from "naive-ui";
+import { mount, shallowMount } from "@vue/test-utils";
+import { NButton, NCheckbox, NPagination } from "naive-ui";
 import SpeechBatchSelectionToolbar from "../shared/SpeechBatchSelectionToolbar.vue";
 import { describe, expect, it, vi } from "vitest";
 import EdgeTtsPanel from "./EdgeTtsPanel.vue";
@@ -68,6 +68,41 @@ function createPanel(status = "completed") {
 }
 
 describe("Online speech batch presentation", () => {
+  it("旧版生成记录分页展示服务端总条数，更新总数及切页不影响批次分页", async () => {
+    const panel = reactive({
+      ...createPanel(),
+      legacy: {
+        tasks: [{ id: "legacy-1", textPreview: "Hello", status: "completed" }],
+        pagination: { total: 31, page: 2, totalPages: 4 }
+      },
+      loadLegacy: vi.fn()
+    });
+    mocks.usePanel.mockReturnValue(panel);
+    const wrapper = mount(EdgeTtsPanel, {
+      global: {
+        stubs: {
+          OrderedSpeechEditor: true,
+          EdgeTtsBatchDetail: true,
+          SpeechBatchSelectionToolbar: true,
+          SpeechBatchDownloads: true,
+          SaveToAudioLibrary: true,
+          DiagnosticErrorLink: true
+        }
+      }
+    });
+    try {
+      expect(wrapper.get(".legacy-clone-history .n-pagination-prefix").text()).toBe("共 31 条");
+      expect(wrapper.get(".chatterbox-batch-pagination").text()).toContain("共 1 个批次");
+      panel.legacy.pagination.total = 44;
+      panel.legacy.pagination.totalPages = 5;
+      await wrapper.vm.$nextTick();
+      expect(wrapper.get(".legacy-clone-history .n-pagination-prefix").text()).toBe("共 44 条");
+      wrapper.findAllComponents(NPagination).at(-1)!.vm.$emit("update:page", 3);
+      expect(panel.loadLegacy).toHaveBeenCalledWith(3);
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("shares panel gaps, history alignment and responsive rules with voice cloning", () => {
     const globalCss = readFileSync(resolve("src/features/speech/shared/styles/foundation.css"), "utf8");
     const batchCss = readFileSync(resolve("src/features/speech/chatterbox/ChatterboxPanel.css"), "utf8");

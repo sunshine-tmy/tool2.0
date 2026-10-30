@@ -1,9 +1,19 @@
 <template>
-  <n-modal :show="show" :mask-closable="false" @update:show="close">
-    <n-card :title="isImage ? '图集生成配乐视频' : '编辑视频配乐'" class="audio-editor" closable @close="close">
+  <component
+    :is="embedded ? 'section' : NModal"
+    v-bind="embedded ? {} : { show, maskClosable: false }"
+    @update:show="close"
+  >
+    <n-card
+      :title="isImage ? '图集生成配乐视频' : '编辑视频：配乐与水印'"
+      class="audio-editor"
+      :class="{ 'is-embedded': embedded }"
+      closable
+      @close="close"
+    >
       <p class="editor-hint">始终从原片生成，可反复换音乐。保存后详情与下载使用最新成品，原片保留。</p>
-      <n-alert v-if="error" type="error"
-        >{{ error
+      <n-alert v-if="error || watermarkError" type="error"
+        >{{ error || watermarkError
         }}<n-button v-if="activeJob" size="small" @click="schedulePoll(generation)">重试状态</n-button></n-alert
       >
       <n-alert v-if="!ready && initialized" type="warning"
@@ -11,16 +21,27 @@
       >
       <div class="editor-layout">
         <section class="editor-preview">
-          <video
-            v-if="!isImage || previewIsDraft"
-            ref="video"
-            :key="previewUrl"
-            :src="previewUrl"
-            controls
-            playsinline
-            preload="metadata"
-          />
-          <img v-else class="slideshow-image" :src="previewUrl" alt="图集原图预览" />
+          <ArchiveWatermarkPreview
+            :video="video"
+            :active="panel === 'watermark' && !previewIsDraft && previewUrl === originalUrl"
+            :asset="watermarkAsset"
+            :settings="watermarkSettings"
+            :disabled="busy"
+            @move="moveWatermark"
+            @time="playhead = $event"
+            @duration="videoDuration = $event"
+          >
+            <video
+              v-if="!isImage || previewIsDraft"
+              ref="video"
+              :key="previewUrl"
+              :src="previewUrl"
+              controls
+              playsinline
+              preload="metadata"
+            />
+            <img v-else class="slideshow-image" :src="previewUrl" alt="图集原图预览" />
+          </ArchiveWatermarkPreview>
           <div v-if="isImage" class="editor-fades">
             <label
               >每张停留（秒）<n-input-number
@@ -40,7 +61,19 @@
             /></label>
           </div>
           <p v-if="isImage" class="editor-hint">按原图顺序生成附加视频，原图不会被替换；生成后可在视频中继续换配乐。</p>
-          <p>{{ previewIsDraft ? "试听片段（尚未保存）" : isImage ? "原图预览" : "当前已保存视频" }}</p>
+          <p>
+            {{
+              previewIsDraft
+                ? panel === "watermark"
+                  ? "效果预览片段（尚未保存）"
+                  : "试听片段（尚未保存）"
+                : isImage
+                  ? "原图预览"
+                  : previewUrl === originalUrl
+                    ? "原始视频 · 水印实时预览"
+                    : "当前已保存视频"
+            }}
+          </p>
           <div class="editor-actions">
             <n-button @click="viewOriginal">{{ isImage ? "查看原图" : "查看原始视频" }}</n-button>
             <n-input-number
@@ -50,7 +83,9 @@
               :disabled="busy"
               aria-label="试听起点秒数"
             />
-            <n-button :disabled="busy || !ready" @click="submit('preview')">试听 15 秒效果</n-button>
+            <n-button :disabled="busy || !ready || Boolean(watermarkValidation)" @click="submit('preview')">{{
+              panel === "watermark" ? "生成 15 秒水印效果" : "试听 15 秒效果"
+            }}</n-button>
           </div>
           <template v-if="job">
             <n-progress
@@ -63,101 +98,127 @@
           </template>
         </section>
         <section class="editor-controls">
-          <label v-if="!isImage"
-            >视频原声音量 {{ settings.originalVolume }}%<n-slider
-              v-model:value="settings.originalVolume"
-              :min="0"
-              :max="100"
-              :disabled="busy"
-              aria-label="视频原声音量"
-          /></label>
-          <n-button
-            v-if="!isImage"
-            size="small"
-            :disabled="busy"
-            @click="settings.originalVolume = settings.originalVolume ? 0 : 100"
-            >{{ settings.originalVolume ? "原声静音" : "恢复原声 100%" }}</n-button
-          >
-          <label
-            >背景音乐音量 {{ settings.musicVolume }}%<n-slider
-              v-model:value="settings.musicVolume"
-              :min="0"
-              :max="100"
-              :disabled="busy"
-              aria-label="背景音乐音量"
-          /></label>
-          <n-button
-            size="small"
-            :disabled="busy || !musicId"
-            @click="settings.musicVolume = settings.musicVolume ? 0 : 20"
-            >{{ settings.musicVolume ? "配乐静音" : "恢复配乐 20%" }}</n-button
-          >
-          <p v-if="!isImage" class="editor-hint">原声音量调到 0 即静音，原声中的讲话与已有音乐会一起调节。</p>
-          <div class="editor-actions">
-            <n-select
-              v-model:value="musicView"
-              :options="[
-                { label: '背景音乐', value: 'music' },
-                { label: '全部音频', value: 'all' }
-              ]"
-              :disabled="busy"
-              aria-label="音乐库范围"
-              @update:value="searchMusic"
-            />
-            <n-button :disabled="busy" @click="fileInput?.click()">上传音乐</n-button>
-            <input ref="fileInput" hidden type="file" accept=".mp3,.wav,.m4a,.flac" @change="uploadMusic" />
+          <div v-if="!isImage" class="editor-actions">
+            <n-button :type="panel === 'audio' ? 'primary' : 'default'" @click="panel = 'audio'">配乐设置</n-button>
+            <n-button :type="panel === 'watermark' ? 'primary' : 'default'" @click="panel = 'watermark'"
+              >水印设置</n-button
+            >
           </div>
-          <div class="editor-actions">
-            <n-input
-              v-model:value="keyword"
-              placeholder="搜索音乐标题、备注"
+          <ArchiveWatermarkControls
+            v-if="panel === 'watermark' && !isImage"
+            v-model:settings="watermarkSettings"
+            v-model:selected-point="selectedPoint"
+            v-model:selected-frame="selectedFrame"
+            :asset="watermarkAsset"
+            :disabled="busy"
+            :duration="videoDuration"
+            :time="playhead"
+            @upload="uploadWatermark"
+            @select-library="selectLibraryWatermark"
+            @remove="removeWatermark"
+            @move="moveWatermark"
+            @seek="seekWatermark"
+          />
+          <template v-else>
+            <label v-if="!isImage"
+              >视频原声音量 {{ settings.originalVolume }}%<n-slider
+                v-model:value="settings.originalVolume"
+                :min="0"
+                :max="100"
+                :disabled="busy"
+                aria-label="视频原声音量"
+            /></label>
+            <n-button
+              v-if="!isImage"
+              size="small"
               :disabled="busy"
-              @keyup.enter="searchMusic"
-            /><n-button :disabled="busy" @click="searchMusic">搜索</n-button>
-          </div>
-          <n-select
-            :value="musicId"
-            :options="musicOptions"
-            clearable
-            :disabled="busy"
-            placeholder="不添加背景音乐"
-            aria-label="选择背景音乐"
-            @update:value="chooseMusic"
-          />
-          <n-pagination
-            v-if="musicTotal > 20"
-            v-model:page="musicPage"
-            :page-size="20"
-            :item-count="musicTotal"
-            :disabled="busy"
-            @update:page="loadMusic"
-          />
-          <audio v-if="musicUrl" ref="audio" :key="musicUrl" :src="musicUrl" controls preload="metadata" />
-          <label
-            >音乐起点（秒）<n-input-number
-              v-model:value="settings.musicStartSeconds"
-              :min="0"
-              :disabled="busy || !musicId"
-          /></label>
-          <n-checkbox v-model:checked="settings.loop" :disabled="busy || !musicId"
-            >音乐不足时循环；超出视频部分自动截断</n-checkbox
-          >
-          <div class="editor-fades">
+              @click="settings.originalVolume = settings.originalVolume ? 0 : 100"
+              >{{ settings.originalVolume ? "原声静音" : "恢复原声 100%" }}</n-button
+            >
             <label
-              >淡入（秒）<n-input-number
-                v-model:value="settings.fadeInSeconds"
+              >背景音乐音量 {{ settings.musicVolume }}%<n-slider
+                v-model:value="settings.musicVolume"
                 :min="0"
-                :max="5"
-                :disabled="busy || !musicId" /></label
-            ><label
-              >淡出（秒）<n-input-number
-                v-model:value="settings.fadeOutSeconds"
+                :max="100"
+                :disabled="busy"
+                aria-label="背景音乐音量"
+            /></label>
+            <n-button
+              size="small"
+              :disabled="busy || !musicId"
+              @click="settings.musicVolume = settings.musicVolume ? 0 : 20"
+              >{{ settings.musicVolume ? "配乐静音" : "恢复配乐 20%" }}</n-button
+            >
+            <p v-if="!isImage" class="editor-hint">原声音量调到 0 即静音，原声中的讲话与已有音乐会一起调节。</p>
+            <div class="editor-actions">
+              <n-select
+                v-model:value="musicView"
+                :options="[
+                  { label: '背景音乐', value: 'music' },
+                  { label: '全部音频', value: 'all' }
+                ]"
+                :disabled="busy"
+                aria-label="音乐库范围"
+                @update:value="searchMusic"
+              />
+              <n-button :disabled="busy" @click="fileInput?.click()">上传音乐</n-button>
+              <input ref="fileInput" hidden type="file" accept=".mp3,.wav,.m4a,.flac" @change="uploadMusic" />
+            </div>
+            <div class="editor-actions">
+              <n-input
+                v-model:value="keyword"
+                placeholder="搜索音乐标题、备注"
+                :disabled="busy"
+                @keyup.enter="searchMusic"
+              /><n-button :disabled="busy" @click="searchMusic">搜索</n-button>
+            </div>
+            <n-select
+              :value="musicId"
+              :options="musicOptions"
+              clearable
+              :disabled="busy"
+              placeholder="不添加背景音乐"
+              aria-label="选择背景音乐"
+              @update:value="chooseMusic"
+            />
+            <n-pagination
+              v-if="musicTotal > 20"
+              v-model:page="musicPage"
+              class="pagination-with-total"
+              :page-size="20"
+              :item-count="musicTotal"
+              :disabled="busy"
+              @update:page="loadMusic"
+              ><template #prefix>共 {{ musicTotal }} 条</template></n-pagination
+            >
+            <audio v-if="musicUrl" ref="audio" :key="musicUrl" :src="musicUrl" controls preload="metadata" />
+            <label
+              >音乐起点（秒）<n-input-number
+                v-model:value="settings.musicStartSeconds"
                 :min="0"
-                :max="5"
                 :disabled="busy || !musicId"
             /></label>
-          </div>
-          <p v-if="uploading" role="status">正在上传音乐…</p>
+            <n-checkbox v-model:checked="settings.loop" :disabled="busy || !musicId"
+              >音乐不足时循环；超出视频部分自动截断</n-checkbox
+            >
+            <div class="editor-fades">
+              <label
+                >淡入（秒）<n-input-number
+                  v-model:value="settings.fadeInSeconds"
+                  :min="0"
+                  :max="5"
+                  :disabled="busy || !musicId" /></label
+              ><label
+                >淡出（秒）<n-input-number
+                  v-model:value="settings.fadeOutSeconds"
+                  :min="0"
+                  :max="5"
+                  :disabled="busy || !musicId"
+              /></label>
+            </div>
+            <p v-if="uploading" role="status">正在上传音乐…</p>
+          </template>
+          <p v-if="watermarkUploading" role="status">正在上传水印…</p>
         </section>
       </div>
       <template #footer
@@ -167,17 +228,17 @@
           <n-button
             type="primary"
             :loading="submitting"
-            :disabled="busy || !ready || !initialized"
+            :disabled="busy || !ready || !initialized || Boolean(watermarkValidation)"
             @click="submit('save')"
             >{{ isImage ? "生成视频并归档" : "保存为最新版本" }}</n-button
           >
         </div>
         <small
-          >长期保留原片、最新成品及当前配乐；旧成品在成功保存且播放或下载结束后清理，不保留无限版本。</small
+          >长期保留原片、最新成品及当前配乐和水印；旧成品在成功保存且播放或下载结束后清理，不保留无限版本。添加水印需要重新编码，耗时及文件大小可能增加。</small
         ></template
       >
     </n-card>
-  </n-modal>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -197,6 +258,7 @@ import {
 } from "naive-ui";
 import {
   defaultArchiveAudioSettings,
+  watermarkTimingError,
   type ArchiveVideoEditInput,
   type ArchiveVideoEditJob,
   type AudioLibraryItemView,
@@ -209,10 +271,43 @@ import { archiveMusicLibraryApi as audioLibraryApi } from "../audio-library/inte
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
-const props = defineProps<{ show: boolean; item: ContentArchiveItem; mediaId: string }>();
+import ArchiveWatermarkControls from "./ArchiveWatermarkControls.vue";
+import ArchiveWatermarkPreview from "./ArchiveWatermarkPreview.vue";
+import { useArchiveWatermark } from "./useArchiveWatermark";
+const props = defineProps<{
+  show: boolean;
+  item: ContentArchiveItem;
+  mediaId: string;
+  embedded?: boolean;
+  initialPanel?: "audio" | "watermark";
+}>();
 const emit = defineEmits<{ "update:show": [value: boolean]; saved: [item: ContentArchiveItem] }>();
 const confirm = useConfirmDialog();
 const current = ref<ContentArchiveMedia>();
+const panel = ref(props.initialPanel ?? "audio"),
+  playhead = ref(0),
+  videoDuration = ref(0);
+const {
+  settings: watermarkSettings,
+  asset: watermarkAsset,
+  input: watermarkInput,
+  uploading: watermarkUploading,
+  error: watermarkError,
+  selectedPoint,
+  selectedFrame,
+  load: loadWatermark,
+  upload: uploadWatermark,
+  selectLibrary: selectLibraryWatermark,
+  move: moveWatermark,
+  remove: removeWatermark
+} = useArchiveWatermark(
+  () => props.item.id,
+  current,
+  () => scope.signal
+);
+const watermarkValidation = computed(() =>
+  watermarkInput.value ? watermarkTimingError(watermarkSettings.value, videoDuration.value) : undefined
+);
 const isImage = computed(() => current.value?.kind === "image");
 const secondsPerImage = ref(3),
   aspect = ref<"portrait" | "landscape" | "square">("portrait");
@@ -239,9 +334,16 @@ const previewUrl = ref(""),
 const activeJob = computed(() => Boolean(job.value && ["pending", "running"].includes(job.value.status)));
 const initialRecipe = ref("");
 const recipe = computed(() =>
-  JSON.stringify([settings, musicId.value, isImage.value ? [secondsPerImage.value, aspect.value] : null])
+  JSON.stringify([
+    settings,
+    musicId.value,
+    isImage.value ? [secondsPerImage.value, aspect.value] : null,
+    watermarkInput.value
+  ])
 );
-const busy = computed(() => submitting.value || uploading.value || activeJob.value || !initialized.value);
+const busy = computed(
+  () => submitting.value || uploading.value || watermarkUploading.value || activeJob.value || !initialized.value
+);
 const originalUrl = computed(() =>
   resolveBackendUrl(
     `/api/v1/tools/media-archive/items/${props.item.id}/media/${current.value?.id ?? props.mediaId}/original`
@@ -279,6 +381,14 @@ function dispose() {
   audio.value?.pause();
 }
 onScopeDispose(dispose);
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (props.show && initialized.value && !activeJob.value && recipe.value !== initialRecipe.value) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+}
+window.addEventListener("beforeunload", beforeUnload);
+onScopeDispose(() => window.removeEventListener("beforeunload", beforeUnload));
 watch(
   () => [props.show, props.item.id, props.mediaId] as const,
   async ([show]) => {
@@ -313,10 +423,16 @@ watch(
 );
 function applyMedia(media?: ContentArchiveMedia) {
   current.value = media ? structuredClone(toRaw(media)) : undefined;
+  loadWatermark(current.value);
+  videoDuration.value = (media?.durationMs ?? 0) / 1000;
   Object.assign(settings, media?.audioEdit?.settings ?? defaultArchiveAudioSettings());
   musicId.value = media?.audioEdit?.music ? "__saved__" : null;
   chosenMusic.value = undefined;
-  previewUrl.value = media ? resolveBackendUrl(media.previewUrl) : "";
+  previewUrl.value = media
+    ? panel.value === "watermark"
+      ? originalUrl.value
+      : resolveBackendUrl(media.previewUrl)
+    : "";
   previewIsDraft.value = false;
   initialRecipe.value = recipe.value;
 }
@@ -374,8 +490,26 @@ function viewOriginal() {
   previewUrl.value = originalUrl.value;
   previewIsDraft.value = false;
 }
+function seekWatermark(time: number) {
+  viewOriginal();
+  if (video.value) video.value.currentTime = Math.min(videoDuration.value, Math.max(0, time));
+}
+watch(panel, (value) => {
+  if (value === "watermark") viewOriginal();
+});
+watch(
+  watermarkInput,
+  () => {
+    if (panel.value === "watermark" && previewUrl.value !== originalUrl.value) viewOriginal();
+  },
+  { deep: true }
+);
 async function submit(mode: ArchiveVideoEditInput["mode"]) {
   if (!current.value || busy.value) return;
+  if (mode !== "restore" && watermarkValidation.value) {
+    error.value = watermarkValidation.value;
+    return;
+  }
   video.value?.pause();
   audio.value?.pause();
   error.value = "";
@@ -393,6 +527,14 @@ async function submit(mode: ArchiveVideoEditInput["mode"]) {
     checksum: current.value.checksum,
     useSavedMusic: musicId.value === "__saved__",
     settings: { ...settings },
+    ...(isImage.value
+      ? {}
+      : {
+          watermark:
+            mode !== "restore" && watermarkInput.value
+              ? { ...watermarkInput.value, settings: JSON.parse(JSON.stringify(watermarkSettings.value)) }
+              : null
+        }),
     previewStartSeconds: previewStart.value,
     ...(isImage.value
       ? {
@@ -459,28 +601,32 @@ async function cancel() {
 async function restore() {
   const version = generation;
   if (
-    await confirm("将原片设为最新版本，移除当前成品的配乐与音量修改。音乐库素材、原片和截帧均保留。", {
+    await confirm("将原片设为最新版本，移除当前成品的配乐、音量修改和水印。音乐库素材、原片和截帧均保留。", {
       title: "恢复原始视频",
       positiveText: "恢复原片"
     })
   )
     if (version === generation && !scope.signal.aborted) await submit("restore");
 }
-async function close() {
+async function canLeave() {
   const version = generation;
   if (
     !activeJob.value &&
     initialized.value &&
     recipe.value !== initialRecipe.value &&
-    !(await confirm("未保存的参数不会写入归档，已上传到音乐库的素材保留。", {
+    !(await confirm("未保存的参数不会写入归档，已上传到音乐库的素材保留；未保存的水印草稿 24 小时后清理。", {
       title: "关闭配乐编辑",
       positiveText: "关闭窗口",
       danger: false
     }))
   )
-    return;
-  if (version === generation && !scope.signal.aborted) emit("update:show", false);
+    return false;
+  return version === generation && !scope.signal.aborted;
 }
+async function close() {
+  if (await canLeave()) emit("update:show", false);
+}
+defineExpose({ canLeave, close });
 </script>
 
 <style scoped>
@@ -488,6 +634,10 @@ async function close() {
   width: min(1120px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
+}
+.audio-editor.is-embedded {
+  width: 100%;
+  max-height: none;
 }
 .editor-layout {
   display: grid;
@@ -499,11 +649,13 @@ async function close() {
 .editor-controls {
   min-width: 0;
 }
-.editor-preview video {
+.editor-preview :deep(video) {
   width: 100%;
   max-height: 56vh;
   background: #101418;
   border-radius: 10px;
+  display: block;
+  object-fit: contain;
 }
 .slideshow-image {
   width: 100%;

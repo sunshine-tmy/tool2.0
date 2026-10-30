@@ -192,7 +192,7 @@ describe("online ordered speech panel", () => {
 
   it("parses bilingual ordered drafts, reorders, duplicates and clears without modifying submitted batches or controls", async () => {
     const p = await panel();
-    p.editor.autoText.value = "1. Hello there.\n你好。\n\n2. Thank you.\n谢谢。";
+    p.editor.autoText.value = "**1. Hello there.**\n__你好。__\n\n> **2. Thank you.**\n> **谢谢。**";
     await p.editor.apply();
     expect(p.editor.segments.value.map((item) => item.referenceTranslation)).toEqual(["你好。", "谢谢。"]);
     p.editor.duplicate(0);

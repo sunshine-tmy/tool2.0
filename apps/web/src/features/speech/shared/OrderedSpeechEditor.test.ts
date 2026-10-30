@@ -89,6 +89,16 @@ describe("Ordered speech smart segmentation", () => {
         .find((input) => String(input.props("placeholder")).startsWith("1. Hello"))!;
       auto.vm.$emit("update:value", "Hello.\n你好。");
       expect(editor.autoText).toBe("Hello.\n你好。");
+      const textarea = document.createElement("textarea");
+      const paste = new Event("paste", { cancelable: true });
+      Object.defineProperty(paste, "target", { value: textarea });
+      Object.defineProperty(paste, "clipboardData", {
+        value: { getData: (type: string) => (type === "text/plain" ? "**1. Hello.**\r\n你好。" : "") }
+      });
+      auto.vm.$emit("paste", paste);
+      expect(paste.defaultPrevented).toBe(true);
+      expect(editor.autoText).toBe("1. Hello.\n你好。");
+      expect(editor.parsed).toEqual([{ text: "Hello.", referenceTranslation: "你好。" }]);
       editor.autoVisible = true;
       await click("取消");
       expect(editor.autoVisible).toBe(false);

@@ -28,6 +28,7 @@ import type { AudioLibraryStore } from "../audio-library/store";
 import { ArchiveVideoEditService } from "./video-edit/service";
 import { registerVideoEditRoutes } from "./video-edit/routes";
 import { VideoEditError, runMediaProcess } from "./video-edit/renderer";
+import { LocalVideoArchiveUploads, registerLocalVideoUploadRoutes } from "./core/local-upload";
 
 export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
@@ -119,6 +120,13 @@ export async function registerXhsArchiveRoutes(options: {
   });
   videoEdits.initialize();
   registerVideoEditRoutes(app, videoEdits, store.content);
+  const localUploads = new LocalVideoArchiveUploads({
+    config,
+    store: store.content,
+    tasks: taskStore,
+    tools: () => videoEdits.mediaTools()
+  });
+  registerLocalVideoUploadRoutes(app, localUploads);
   const imports = new ArchiveImportService(database, store.content, service.content, {
     onError: () => app.log.error("ARCHIVE_IMPORT_STORAGE_FAILED")
   });
@@ -141,6 +149,7 @@ export async function registerXhsArchiveRoutes(options: {
   registerLegacyXhsArchiveRoutes({ app, store, service, auth, translation });
 
   app.addHook("onClose", async () => {
+    await localUploads.close();
     await videoEdits.close();
     await profiles.close();
     await imports.stop();

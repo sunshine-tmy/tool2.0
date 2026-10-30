@@ -1,7 +1,9 @@
 /** 有界 FFmpeg 子进程：仅处理本地受控文件，音量/混音只由数值参数生成。 */
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
-import type { ArchiveAudioSettings } from "@toolbox/shared";
+import type { ArchiveAudioSettings, ArchiveWatermarkSettings } from "@toolbox/shared";
+import { archiveWatermarkSize, watermarkTimingError } from "@toolbox/shared";
+import { watermarkFilter } from "./watermark-filter";
 import { terminateChildProcess } from "../../../lifecycle/child-process";
 
 export class VideoEditError extends Error {
@@ -104,7 +106,13 @@ export async function runMediaProcess(
   });
 }
 
-async function probeMedia(tools: MediaTools, file: string, signal: AbortSignal, requireVideo = true): Promise<Probe> {
+export async function probeMedia(
+  tools: MediaTools,
+  file: string,
+  signal: AbortSignal,
+  requireVideo = true,
+  displayDimensions = false
+): Promise<Probe> {
   const text = await runMediaProcess(
     tools.ffprobe,
     [
@@ -112,7 +120,7 @@ async function probeMedia(tools: MediaTools, file: string, signal: AbortSignal, 
       "error",
       ...inputOptions,
       "-show_entries",
-      "stream=codec_type,codec_name,width,height,duration:format=duration",
+      "stream=codec_type,codec_name,width,height,duration,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration",
       "-of",
       "json",
       file
@@ -121,7 +129,16 @@ async function probeMedia(tools: MediaTools, file: string, signal: AbortSignal, 
     { timeoutMs: 30_000 }
   );
   let data: {
-    streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number; duration?: string }>;
+    streams?: Array<{
+      codec_type?: string;
+      codec_name?: string;
+      width?: number;
+      height?: number;
+      duration?: string;
+      sample_aspect_ratio?: string;
+      tags?: { rotate?: string };
+      side_data_list?: Array<{ rotation?: number }>;
+    }>;
     format?: { duration?: string };
   };
   try {
@@ -135,12 +152,19 @@ async function probeMedia(tools: MediaTools, file: string, signal: AbortSignal, 
     Number.NaN;
   if (!Number.isFinite(duration) || duration <= 0 || duration > 7200 || (requireVideo && !video))
     throw new VideoEditError("ARCHIVE_EDIT_MEDIA_INVALID", "媒体须具有有效时长，视频最长支持 2 小时", 415);
+  const rotation = Number(
+    video?.side_data_list?.find((entry) => entry.rotation !== undefined)?.rotation ?? video?.tags?.rotate ?? 0
+  );
+  const [num, den] = (video?.sample_aspect_ratio ?? "1:1").split(":").map(Number);
+  const sar = num > 0 && den > 0 ? num / den : 1;
+  const rotated = Math.abs(rotation % 180) === 90;
+  const displayWidth = (video?.width ?? 0) * sar;
   return {
     duration,
     codec: video?.codec_name ?? "",
     hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === "audio")),
-    width: video?.width ?? 0,
-    height: video?.height ?? 0
+    width: displayDimensions ? Math.round(rotated ? (video?.height ?? 0) : displayWidth) : (video?.width ?? 0),
+    height: displayDimensions ? Math.round(rotated ? displayWidth : (video?.height ?? 0)) : (video?.height ?? 0)
   };
 }
 
@@ -159,6 +183,7 @@ export type RenderVideoOptions = {
   tools: MediaTools;
   source: string;
   music?: string;
+  watermark?: { file: string; width: number; height: number; settings: ArchiveWatermarkSettings };
   output: string;
   settings: ArchiveAudioSettings;
   signal: AbortSignal;
@@ -168,7 +193,7 @@ export type RenderVideoOptions = {
   onProgress: (value: number) => void;
 };
 export async function renderArchiveVideo(options: RenderVideoOptions) {
-  const source = await probeMedia(options.tools, options.source, options.signal);
+  const source = await probeMedia(options.tools, options.source, options.signal, true, Boolean(options.watermark));
   const args = ["-hide_banner", "-v", "error", "-nostdin", "-y", ...inputOptions, "-i", options.source];
   if (options.music) {
     const music = await probeMedia(options.tools, options.music, options.signal, false);
@@ -177,20 +202,51 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
     if (options.settings.loop) args.push("-stream_loop", "-1");
     args.push("-ss", String(options.settings.musicStartSeconds), ...inputOptions, "-i", options.music);
   }
+  const filters = [audioMixFilter(options.settings, source.duration, source.hasAudio, Boolean(options.music))];
+  if (options.watermark) {
+    const error = watermarkTimingError(options.watermark.settings, source.duration);
+    if (error) throw new VideoEditError("ARCHIVE_WATERMARK_TIME_INVALID", error);
+    if (source.width < 2 || source.height < 2)
+      throw new VideoEditError("ARCHIVE_EDIT_MEDIA_INVALID", "无法确定视频画面尺寸", 415);
+    const width = Math.max(2, Math.floor(source.width / 2) * 2),
+      height = Math.max(2, Math.floor(source.height / 2) * 2);
+    const size = archiveWatermarkSize(options.watermark.settings, options.watermark, { width, height });
+    args.push(
+      "-protocol_whitelist",
+      "file,pipe",
+      "-format_whitelist",
+      "image2",
+      "-f",
+      "image2",
+      "-pattern_type",
+      "none",
+      "-loop",
+      "1",
+      "-framerate",
+      "25",
+      "-i",
+      options.watermark.file
+    );
+    filters.push(
+      `[0:v:0]scale=${width}:${height},setsar=1,setpts=PTS-STARTPTS[base]`,
+      watermarkFilter(options.watermark.settings, options.music ? 2 : 1, size.width, size.height)
+    );
+  }
   const start = options.preview ? Math.min(options.previewStartSeconds ?? 0, Math.max(0, source.duration - 0.1)) : 0;
   const duration = options.preview ? Math.min(15, source.duration - start) : source.duration;
   args.push(
     "-filter_complex",
-    audioMixFilter(options.settings, source.duration, source.hasAudio, Boolean(options.music)),
+    filters.join(";"),
     "-map",
-    "0:v:0",
+    options.watermark ? "[watermarked]" : "0:v:0",
     "-map",
     "[mix]",
     "-map_metadata",
     "0"
   );
-  if (!options.preview && ["h264", "hevc"].includes(source.codec)) args.push("-c:v", "copy");
+  if (!options.watermark && !options.preview && ["h264", "hevc"].includes(source.codec)) args.push("-c:v", "copy");
   else args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p");
+  if (options.watermark) args.push("-metadata:s:v:0", "rotate=0");
   if (start) args.push("-ss", String(start));
   args.push(
     "-t",

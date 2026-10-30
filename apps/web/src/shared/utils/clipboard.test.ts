@@ -81,4 +81,27 @@ describe("copyTextToClipboard", () => {
     expect(textarea.select).toHaveBeenCalledOnce();
     expect(execCommand).toHaveBeenCalledWith("copy");
   });
+
+  it.each([false, "throws"] as const)(
+    "cleans up when the copy command fails (%s) without reporting success",
+    async (failure) => {
+      const textarea = {
+        value: "",
+        style: {},
+        focus: vi.fn(),
+        select: vi.fn()
+      } as unknown as HTMLTextAreaElement;
+      const removeChild = vi.fn();
+      const execCommand = vi.fn(() => {
+        if (failure === "throws") throw new Error("Copy permission denied");
+        return false;
+      });
+      await expect(
+        copyTextToClipboard("当前字段", {
+          documentRef: { body: { appendChild: vi.fn(), removeChild }, createElement: () => textarea, execCommand }
+        })
+      ).rejects.toThrow(failure === "throws" ? "Copy permission denied" : "Copy command was rejected");
+      expect(removeChild).toHaveBeenCalledExactlyOnceWith(textarea);
+    }
+  );
 });

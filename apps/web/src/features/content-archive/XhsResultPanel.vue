@@ -16,13 +16,25 @@
         <n-button secondary @click="props.copyCurrent('zh')">复制中文</n-button>
         <n-button secondary :disabled="!props.current.translation" @click="props.copyCurrent('en')">复制英文</n-button>
         <n-button secondary @click="props.copyCurrent('both')">复制中英双语</n-button>
-        <n-button secondary tag="a" :href="props.current.canonicalUrl" target="_blank" rel="noopener noreferrer">
+        <n-button
+          v-if="props.current.platform !== 'local'"
+          secondary
+          tag="a"
+          :href="props.current.canonicalUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           <template #icon><ExternalLink :size="15" /></template>原链接
         </n-button>
         <n-button secondary tag="a" :href="props.zipUrl(props.current.id)">
           <template #icon><PackageOpen :size="15" /></template>下载全部 ZIP
         </n-button>
-        <n-button secondary :loading="props.refreshing" @click="props.refreshItem(props.current.id)">
+        <n-button
+          v-if="props.current.platform !== 'local'"
+          secondary
+          :loading="props.refreshing"
+          @click="props.refreshItem(props.current.id)"
+        >
           <template #icon><RefreshCw :size="15" /></template>重新获取
         </n-button>
         <n-button secondary @click="props.translateCurrent">
@@ -42,6 +54,8 @@
         :item="props.current"
         @frame-saved="emit('frameSaved', $event)"
         @media-updated="emit('mediaUpdated', $event)"
+        @edit-watermark="emit('editWatermark', $event)"
+        @edit-audio="emit('editAudio', $event)"
       />
       <div class="drawer-meta result-meta">
         <ArchiveFacts :item="props.current" :format-date="props.formatDate" />
@@ -80,6 +94,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   frameSaved: [item: ContentArchiveItem];
   mediaUpdated: [item: ContentArchiveItem];
+  editWatermark: [mediaId: string];
+  editAudio: [mediaId: string];
   copy: [text: string, label: string];
 }>();
 </script>

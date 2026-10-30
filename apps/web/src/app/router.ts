@@ -49,6 +49,11 @@ export const router = createRouter({
       component: () => import("../features/audio-library/page.vue")
     },
     {
+      path: "/tools/media-archive/video-editor/:itemId/:mediaId",
+      name: "archive-video-editor",
+      component: () => import("../features/content-archive/ArchiveVideoEditorPage.vue")
+    },
+    {
       path: "/tools/media-archive",
       name: "xhs-archive",
       component: () => import("../features/content-archive/page.vue")

@@ -4,7 +4,7 @@ import {
   isContentArchiveListQuery,
   parseXhsContentText,
   toContentArchiveListItem,
-  type ArchivePlatform,
+  type ContentArchivePlatform,
   type ContentArchiveItem,
   type ContentArchiveListQuery,
   type ContentArchiveListResponse
@@ -15,7 +15,7 @@ import { ArchiveGroupStore } from "./groups";
 import { compareArchiveListItems } from "./list-order";
 import { ArchivePublicationStore } from "./publication";
 
-type Row = { payload_json: string; platform: ArchivePlatform; content_id: string };
+type Row = { payload_json: string; platform: ContentArchivePlatform; content_id: string };
 
 export class ContentArchiveRepository {
   constructor(private readonly database: ToolboxDatabase) {}
@@ -30,7 +30,7 @@ export class ContentArchiveRepository {
     return item;
   }
 
-  findBySource(platform: ArchivePlatform, contentId: string) {
+  findBySource(platform: ContentArchivePlatform, contentId: string) {
     archiveIdentity({ platform, contentId });
     const row = this.database.connection
       .prepare("SELECT payload_json, platform, content_id FROM xhs_archives WHERE platform = ? AND content_id = ?")
@@ -38,7 +38,7 @@ export class ContentArchiveRepository {
     return row ? decode(row) : undefined;
   }
 
-  listIdentities(platform: ArchivePlatform) {
+  listIdentities(platform: ContentArchivePlatform) {
     return this.database.connection
       .prepare("SELECT id, content_id AS contentId FROM xhs_archives WHERE platform = ? ORDER BY id")
       .all(platform) as { id: string; contentId: string }[];

@@ -2,6 +2,7 @@
 /** 页面容器验证真实组件事件与中性 API 编排，SSE 仅模拟传输，不替代浏览器验收。 */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, ref } from "vue";
+import { createMemoryHistory, createRouter, isNavigationFailure, NavigationFailureType, type Router } from "vue-router";
 import { flushPromises, mount } from "@vue/test-utils";
 import Page from "./page.vue";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
@@ -10,6 +11,8 @@ import XhsDetailDrawer from "./XhsDetailDrawer.vue";
 import XhsResultPanel from "./XhsResultPanel.vue";
 import TranslationEditModal from "./TranslationEditModal.vue";
 import ArchiveBatchImport from "./ArchiveBatchImport.vue";
+import ArchiveLocalVideoUpload from "./ArchiveLocalVideoUpload.vue";
+import ArchiveGroups from "./ArchiveGroups.vue";
 import TikTokProfileImport from "./TikTokProfileImport.vue";
 import { archiveFixture, listFixture, taskFixture, translationFixture } from "./__tests__/fixtures";
 import { ApiRequestError } from "../../shared/http/http";
@@ -41,6 +44,8 @@ const mocks = vi.hoisted(() => ({
   message: { error: vi.fn(), warning: vi.fn(), success: vi.fn(), info: vi.fn() },
   confirm: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
+  router: undefined as Router | undefined,
   profileShow: vi.fn(),
   copy: vi.fn(),
   streams: [] as Array<{ task: ReturnType<typeof ref>; error: ReturnType<typeof ref> }>
@@ -50,7 +55,10 @@ vi.mock("./content-api", () => ({
   contentArchiveZipUrl: (id: string) => `/api/v1/tools/media-archive/items/${id}/download.zip`
 }));
 vi.mock("naive-ui", async (original) => ({ ...(await original<object>()), useMessage: () => mocks.message }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("vue-router", async (original) => ({
+  ...(await original<object>()),
+  useRouter: () => mocks.router ?? { push: mocks.push, replace: mocks.replace }
+}));
 vi.mock("../../shared/composables/useConfirmDialog", () => ({ useConfirmDialog: () => mocks.confirm }));
 vi.mock("../../shared/utils/clipboard", () => ({ copyTextToClipboard: mocks.copy }));
 vi.mock("../../shared/composables/useTaskEvents", () => ({
@@ -72,6 +80,7 @@ function mountPage() {
         ArchiveListPanel: true,
         ArchiveTaskPanel: true,
         ArchiveBatchImport: true,
+        ArchiveLocalVideoUpload: true,
         TikTokProfileImport: defineComponent({
           name: "TikTokProfileImport",
           setup(_props, { expose }) {
@@ -91,6 +100,9 @@ function mountPage() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.router = undefined;
+  mocks.push.mockReset().mockResolvedValue(undefined);
+  mocks.replace.mockReset().mockResolvedValue(undefined);
   mocks.streams.length = 0;
   Object.values(mocks.api).forEach((fn) => fn.mockResolvedValue({}));
   mocks.api.list!.mockResolvedValue(listFixture());
@@ -127,6 +139,128 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("本地视频整轮队列结束后只刷新一次列表并显示最后结果，结果行可直接打开详情", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const item = archiveFixture({ platform: "local", id: "local-123" });
+    const uploader = wrapper.getComponent(ArchiveLocalVideoUpload);
+    const groups = [
+      {
+        id: "group-123",
+        name: "上传素材",
+        createdAt: "2026-10-29T00:00:00.000Z",
+        updatedAt: "2026-10-29T00:00:00.000Z"
+      }
+    ];
+    wrapper.getComponent(ArchiveGroups).vm.$emit("loaded", groups);
+    await flushPromises();
+    expect(uploader.props("groups")).toEqual(groups);
+    mocks.api.list!.mockClear();
+    uploader.vm.$emit("archived", item);
+    await flushPromises();
+    expect(mocks.api.list).not.toHaveBeenCalled();
+    uploader.vm.$emit("finished", item);
+    await flushPromises();
+    expect(mocks.api.list).toHaveBeenCalledOnce();
+    expect(wrapper.getComponent(XhsResultPanel).props("current")).toMatchObject({ id: item.id, platform: "local" });
+    uploader.vm.$emit("finished", undefined);
+    await flushPromises();
+    expect(mocks.api.list).toHaveBeenCalledTimes(2);
+    expect(wrapper.getComponent(XhsResultPanel).props("current")).toMatchObject({ id: item.id });
+    mocks.api.detail!.mockResolvedValue(item);
+    uploader.vm.$emit("openArchive", item.id);
+    await flushPromises();
+    expect(wrapper.getComponent(XhsDetailDrawer).props("detail")).toMatchObject({ id: item.id });
+  });
+  it.each([
+    ["editWatermark", "watermark"],
+    ["editAudio", "audio"]
+  ] as const)("%s 从当前结果或详情进入对应视频面板，并携带原筛选和分页", async (event, panel) => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const result = await showResult(wrapper, archiveFixture({ id: "fresh_archive123" }));
+    result.vm.$emit(event, "fresh_video123");
+    await flushPromises();
+    expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("/tools/media-archive?editorReturn=1"));
+    expect(mocks.push).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        name: "archive-video-editor",
+        params: { itemId: "fresh_archive123", mediaId: "fresh_video123" },
+        query: { panel, returnTo: expect.stringContaining("editorReturn=1") }
+      })
+    );
+    const list = wrapper.findComponent(ArchiveListPanel);
+    mocks.api.detail!.mockResolvedValue(archiveFixture());
+    list.vm.$emit("openDetail", "archive-123");
+    await flushPromises();
+    wrapper.findComponent(XhsDetailDrawer).vm.$emit(event, "detail_video123");
+    await flushPromises();
+    expect(mocks.push).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        params: { itemId: "archive-123", mediaId: "detail_video123" },
+        query: { panel, returnTo: expect.stringContaining("editorReturn=1") }
+      })
+    );
+  });
+  it("导航异常时提示错误并释放进入锁，下一次仍能打开编辑页", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const result = await showResult(wrapper);
+    mocks.replace.mockRejectedValueOnce(new Error("navigation failed"));
+    result.vm.$emit("editWatermark", "video-123");
+    await flushPromises();
+    expect(mocks.push).not.toHaveBeenCalled();
+    expect(mocks.message.error).toHaveBeenCalledOnce();
+    result.vm.$emit("editWatermark", "video-123");
+    await flushPromises();
+    expect(mocks.push).toHaveBeenCalledOnce();
+  });
+  it("返回相同列表地址后仍能第二次进入水印页，保留筛选、排序和页码", async () => {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: "/tools/media-archive", component: { render: () => null } },
+        {
+          path: "/tools/media-archive/video-editor/:itemId/:mediaId",
+          name: "archive-video-editor",
+          component: { render: () => null }
+        }
+      ]
+    });
+    mocks.router = router;
+    await router.push("/tools/media-archive");
+    const replace = vi.spyOn(router, "replace");
+    const wrapper = mountPage();
+    await flushPromises();
+    const list = wrapper.getComponent(ArchiveListPanel);
+    list.vm.$emit("update:keyword", "待发布");
+    list.vm.$emit("update:sort", "published-asc");
+    list.vm.$emit("update:page", 3);
+    list.vm.$emit("openDetail", "archive-123");
+    await flushPromises();
+    const allowNavigation = router.beforeEach(() => false);
+    wrapper.getComponent(XhsDetailDrawer).vm.$emit("editWatermark", "video-123");
+    await flushPromises();
+    expect(isNavigationFailure(await replace.mock.results[0]!.value, NavigationFailureType.aborted)).toBe(true);
+    expect(router.currentRoute.value.path).toBe("/tools/media-archive");
+    allowNavigation();
+    wrapper.getComponent(XhsDetailDrawer).vm.$emit("editWatermark", "video-123");
+    await flushPromises();
+    expect(router.currentRoute.value.name).toBe("archive-video-editor");
+    const returnTo = String(router.currentRoute.value.query.returnTo);
+    const query = new URL(returnTo, "http://localhost").searchParams;
+    expect(Object.fromEntries(query)).toMatchObject({ keyword: "待发布", sort: "published-asc", page: "3" });
+    await router.push(returnTo);
+    wrapper.getComponent(XhsDetailDrawer).vm.$emit("editWatermark", "video-123");
+    await flushPromises();
+    // 真实 Vue Router 会把同地址 replace 返回为 duplicated，不能当作进入编辑页失败。
+    expect(isNavigationFailure(await replace.mock.results.at(-1)!.value, NavigationFailureType.duplicated)).toBe(true);
+    expect(router.currentRoute.value).toMatchObject({
+      name: "archive-video-editor",
+      params: { itemId: "archive-123", mediaId: "video-123" },
+      query: { returnTo }
+    });
+  });
   it("persists the card publication action and only reports success after confirmation from the API", async () => {
     mocks.api.setPublication!.mockImplementation(async (archiveId, publishedElsewhere) => ({
       archiveId,
@@ -215,9 +349,9 @@ describe("中性多媒体归档页面", () => {
     expect(mocks.message.error).toHaveBeenLastCalledWith("复制标题失败，请检查浏览器剪贴板权限后重试");
     expect(mocks.message.success).not.toHaveBeenCalled();
   });
-  it("详情抽屉用 CSS 同时限制桌面宽度和移动视口，不依赖一次性窗口尺寸", () => {
+  it("居中详情弹窗同时限制桌面宽度和移动视口，不依赖一次性窗口尺寸", () => {
     const wrapper = mountPage();
-    expect(wrapper.findComponent(XhsDetailDrawer).props("width")).toBe("min(720px, 100vw)");
+    expect(wrapper.findComponent(XhsDetailDrawer).props("width")).toBe("min(1040px, calc(100vw - 32px))");
   });
   it("结果区保留复制、翻译、刷新和格式化操作", async () => {
     const wrapper = mountPage();

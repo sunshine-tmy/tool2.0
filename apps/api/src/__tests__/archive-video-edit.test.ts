@@ -1,4 +1,6 @@
 import fs from "node:fs/promises";
+import sharp from "sharp";
+import multipart from "@fastify/multipart";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -6,11 +8,13 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultArchiveAudioSettings,
+  defaultArchiveWatermarkSettings,
   type ArchiveVideoEditInput,
   type AudioLibraryItem,
   type ContentArchiveItem
 } from "@toolbox/shared";
 import { getConfig } from "../config";
+import { registerResponsePolicy } from "../app/responses";
 import { ToolboxDatabase } from "../database/toolbox-database";
 import { createTaskStore } from "../tasks/task-store";
 import { ContentArchiveStore } from "../domains/content-archive/core/store";
@@ -127,6 +131,8 @@ beforeEach(async () => {
   });
   service.initialize();
   app = Fastify();
+  registerResponsePolicy(app);
+  await app.register(multipart);
   registerVideoEditRoutes(app, service, store);
   registerArchivePreviewRoutes(app, store, "media-archive");
   registerArchiveArtifactRoutes(app, store, "media-archive");
@@ -160,6 +166,261 @@ async function execute(overrides: Partial<ArchiveVideoEditInput> = {}) {
   return service.get(job.id)!;
 }
 describe("可重复编辑的归档配乐", () => {
+  it("水印库上传、选择和删除 API 复用独立草稿，删库后仍能保存与再次编辑归档快照", async () => {
+    const prefix = "/api/v1/tools/media-archive";
+    const png = await sharp({ create: { width: 12, height: 8, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const boundary = "watermarkLibraryUpload";
+    const response = await app.inject({
+      method: "POST",
+      url: `${prefix}/watermark-library`,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      payload: Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="brand.png"\r\nContent-Type: image/png\r\n\r\n`
+        ),
+        png,
+        Buffer.from(`\r\n--${boundary}--\r\n`)
+      ])
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const saved = response.json().data;
+    expect(response.body).not.toContain(root);
+    expect((await app.inject(`${prefix}/watermark-library`)).json().data).toEqual([saved]);
+    expect((await app.inject(saved.previewUrl)).headers["content-type"]).toContain("image/png");
+    const selectUrl = `${prefix}/items/${itemId}/media/${mediaId}/watermarks/from-library`;
+    const selected = await app.inject({ method: "POST", url: selectUrl, payload: { libraryId: saved.id } });
+    expect(selected.statusCode, selected.body).toBe(201);
+    const draft = selected.json().data;
+    expect(
+      (await app.inject({ method: "DELETE", url: `${prefix}/watermark-library/${saved.id}?revision=1` })).statusCode
+    ).toBe(200);
+    expect((await app.inject(saved.previewUrl)).statusCode).toBe(404);
+    expect((await app.inject(draft.previewUrl)).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: selectUrl, payload: { libraryId: saved.id } })).statusCode).toBe(
+      404
+    );
+    expect(
+      (await execute({ watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() } })).status
+    ).toBe("completed");
+    const media = (await store.get(itemId))!.media[0];
+    const watermark = media.audioEdit!.watermark!;
+    expect(await fs.stat(path.join(config.xhsArchiveItemsDir, itemId, watermark.file.fileName))).toBeDefined();
+    expect((await execute({ watermark: { settings: { ...watermark.settings, opacity: 30 } } })).status).toBe(
+      "completed"
+    );
+  });
+  it("关键帧预设通过 API 长期保存，刷新读取和删除独立于视频，拒绝非法时间顺序及越权字段", async () => {
+    const body = {
+      name: "商品展示 Z 轨迹",
+      points: [
+        { progress: 0, x: 0, y: 0 },
+        { progress: 0.5, x: 1, y: 0 },
+        { progress: 1, x: 0, y: 1 }
+      ]
+    };
+    const before = await store.get(itemId);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/media-archive/watermark-presets",
+      payload: body
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const preset = response.json().data;
+    expect(service.watermarkPresets.list()).toContainEqual(preset);
+    expect((await app.inject("/api/v1/tools/media-archive/watermark-presets")).json().data).toContainEqual(preset);
+    expect(
+      (await app.inject({ method: "POST", url: "/api/v1/tools/media-archive/watermark-presets", payload: body }))
+        .statusCode
+    ).toBe(409);
+    for (const invalid of [
+      { ...body, fileName: "secret.png" },
+      {
+        ...body,
+        name: "bad",
+        points: [
+          { progress: 0.8, x: 0, y: 0 },
+          { progress: 0.5, x: 1, y: 1 }
+        ]
+      }
+    ])
+      expect(
+        (await app.inject({ method: "POST", url: "/api/v1/tools/media-archive/watermark-presets", payload: invalid }))
+          .statusCode
+      ).toBe(400);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/media-archive/watermark-presets/${preset.id}?revision=2`
+        })
+      ).statusCode
+    ).toBe(409);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/tools/media-archive/watermark-presets/${preset.id}?revision=1`
+        })
+      ).statusCode
+    ).toBe(200);
+    expect(service.watermarkPresets.list()).toEqual([]);
+    expect(await store.get(itemId)).toEqual(before);
+  });
+  it("保存成功及时回收草稿额度，避免连续编辑 32 个视频后无法上传", async () => {
+    const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const first = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    for (let i = 1; i < 32; i++) await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    await expect(service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png")).rejects.toMatchObject({
+      code: "ARCHIVE_WATERMARK_QUOTA"
+    });
+    expect(
+      (await execute({ watermark: { draftId: first.id, settings: defaultArchiveWatermarkSettings() } })).status
+    ).toBe("completed");
+    await vi.waitFor(async () =>
+      expect(
+        await fs.stat(path.join(config.xhsArchiveStagingDir, `watermark-draft-${first.id}`)).catch(() => undefined)
+      ).toBeUndefined()
+    );
+    await expect(service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png")).resolves.toHaveProperty("id");
+  });
+  it("HTTP 单文件上传有受控预览，拒绝缺文件和非法字段，不泄露本机路径", async () => {
+    const png = await sharp({ create: { width: 10, height: 10, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const boundary = "toolboxWatermarkBoundary";
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="logo.png"\r\nContent-Type: image/png\r\n\r\n`
+      ),
+      png,
+      Buffer.from(`\r\n--${boundary}--\r\n`)
+    ]);
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/watermarks`,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      payload: body
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    expect(response.body).not.toContain(root);
+    const saved = response.json().data;
+    expect((await app.inject({ url: saved.previewUrl })).statusCode).toBe(200);
+    expect((await app.inject({ url: saved.previewUrl.replace(itemId, "other_item123") })).statusCode).toBe(404);
+  });
+  it("过期草稿清理受限于自有目录，任务租约保留草稿直到释放，历史成品不受影响", async () => {
+    const png = await sharp({ create: { width: 10, height: 10, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    const lease = await service.watermarks.acquire(itemId, mediaId, draft.id);
+    const directory = path.dirname(lease.path),
+      old = new Date(Date.now() - 25 * 3600_000);
+    await fs.utimes(directory, old, old);
+    await service.watermarks.cleanup();
+    expect(await fs.stat(lease.path)).toBeDefined();
+    lease.release();
+    lease.release();
+    await service.watermarks.cleanup();
+    expect(await fs.stat(directory).catch(() => undefined)).toBeUndefined();
+    const value = await store.mediaPath(itemId, mediaId);
+    expect(await fs.readFile(value!.filePath)).toEqual(original);
+    await expect(service.watermarks.acquire(itemId, mediaId, "../bad")).rejects.toMatchObject({
+      code: "ARCHIVE_WATERMARK_MISSING"
+    });
+  });
+  it("替换水印后清理旧图，试听不写入配方，恢复原片移除水印与配乐", async () => {
+    const png = await sharp({ create: { width: 10, height: 10, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const first = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    await execute({ watermark: { draftId: first.id, settings: defaultArchiveWatermarkSettings() } });
+    const before = (await store.get(itemId))!,
+      watermark = before.media[0].audioEdit!.watermark!;
+    const second = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    expect(
+      (
+        await execute({
+          mode: "preview",
+          watermark: { draftId: second.id, settings: defaultArchiveWatermarkSettings() }
+        })
+      ).status
+    ).toBe("completed");
+    expect(await store.get(itemId)).toEqual(before);
+    expect(
+      (await execute({ watermark: { draftId: second.id, settings: defaultArchiveWatermarkSettings() } })).status
+    ).toBe("completed");
+    await vi.waitFor(async () =>
+      expect(
+        await fs.stat(path.join(config.xhsArchiveItemsDir, itemId, watermark.file.fileName)).catch(() => undefined)
+      ).toBeUndefined()
+    );
+    expect((await execute({ mode: "restore", musicId: undefined, musicRevision: undefined })).status).toBe("completed");
+    const media = (await store.get(itemId))!.media[0];
+    expect(media.audioEdit?.watermark).toBeUndefined();
+    expect(media.audioEdit?.music).toBeUndefined();
+    expect(await fs.readFile((await store.mediaPath(itemId, mediaId))!.filePath)).toEqual(original);
+  });
+  it("水印独立快照持久化，省略保留、替换和移除不影响音乐，原片不变", async () => {
+    const png = await sharp({
+      create: { width: 20, height: 10, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 0.5 } }
+    })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "中文 logo.png", "image/png");
+    expect((await app.inject({ url: draft.previewUrl })).rawPayload).toEqual(png);
+    await expect(service.watermarks.acquire("another_item", mediaId, draft.id)).rejects.toMatchObject({
+      code: "ARCHIVE_WATERMARK_MISSING"
+    });
+    expect(
+      (await execute({ watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() } })).status
+    ).toBe("completed");
+    let media = (await store.get(itemId))!.media[0];
+    expect(media.audioEdit?.watermark?.file.mimeType).toBe("image/png");
+    const savedFile = media.audioEdit!.watermark!.file;
+    expect((await new ContentArchiveStore(config, database).get(itemId))!.media[0].audioEdit?.watermark?.file).toEqual(
+      savedFile
+    );
+    expect((await execute()).status).toBe("completed");
+    expect(render.mock.lastCall?.[0].watermark?.settings.opacity).toBe(70);
+    expect((await store.get(itemId))!.media[0].audioEdit?.watermark?.file).toEqual(savedFile);
+    expect(
+      (await execute({ watermark: { settings: { ...defaultArchiveWatermarkSettings(), opacity: 30 } } })).status
+    ).toBe("completed");
+    expect(render.mock.lastCall?.[0].watermark?.settings.opacity).toBe(30);
+    expect((await execute({ watermark: null })).status).toBe("completed");
+    media = (await store.get(itemId))!.media[0];
+    expect(media.audioEdit?.watermark).toBeUndefined();
+    expect(media.audioEdit?.music?.title).toBe("配乐 A");
+    expect(
+      await fs.readFile(path.join(config.xhsArchiveItemsDir, itemId, savedFile.fileName)).catch(() => undefined)
+    ).toBeUndefined();
+  });
+  it("水印上传拒绝伪造、动态图及超限文件，失败保存不替换旧成品", async () => {
+    await expect(
+      service.uploadWatermark(itemId, mediaId, Buffer.from("bad"), "x.png", "image/png")
+    ).rejects.toMatchObject({ code: "ARCHIVE_WATERMARK_INVALID" });
+    await expect(
+      service.uploadWatermark(itemId, mediaId, Buffer.from("bad"), "x.svg", "image/svg+xml")
+    ).rejects.toMatchObject({ code: "ARCHIVE_WATERMARK_INVALID" });
+    await expect(
+      service.uploadWatermark(itemId, mediaId, Buffer.alloc(20 * 1024 * 1024 + 1), "x.png", "image/png")
+    ).rejects.toMatchObject({ code: "ARCHIVE_WATERMARK_TOO_LARGE" });
+    await execute();
+    const before = await store.get(itemId);
+    const png = await sharp({ create: { width: 10, height: 10, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    render.mockRejectedValueOnce(new Error("render failed"));
+    expect(
+      (await execute({ watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() } })).status
+    ).toBe("failed");
+    expect(await store.get(itemId)).toEqual(before);
+  });
   it("图集生成附加视频并保留原图顺序，重新获取不丢失附加视频", async () => {
     const photos = (await store.get(itemId))!;
     photos.type = "image";

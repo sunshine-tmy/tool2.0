@@ -1,8 +1,7 @@
 <template>
-  <div class="profile-entry">
-    <span>从 TikTok 用户主页发现公开作品，再确认批量归档</span
-    ><n-button secondary @click="show()">TikTok 主页批量归档</n-button>
-  </div>
+  <n-button size="small" secondary title="从 TikTok 用户主页发现公开作品，再确认批量归档" @click="show()"
+    >TikTok 主页批量归档</n-button
+  >
   <n-modal
     v-model:show="open"
     preset="card"
@@ -196,7 +195,15 @@
         </div>
         <n-empty v-else description="尚未发现作品；请查看独立浏览器提示或继续读取"
       /></n-spin>
-      <n-pagination v-if="works.total" :page="page" :page-count="works.pageCount" @update:page="changePage" />
+      <n-pagination
+        v-if="works.total"
+        class="pagination-with-total"
+        :page="page"
+        :page-count="works.pageCount"
+        @update:page="changePage"
+      >
+        <template #prefix>共 {{ works.total }} 条</template>
+      </n-pagination>
     </template>
     <n-empty v-else description="先读取主页作品并核对列表，再确认归档" />
   </n-modal>
@@ -516,17 +523,11 @@ onScopeDispose(() => {
 });
 </script>
 <style scoped>
-.profile-entry,
 .profile-toolbar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-}
-.profile-entry {
-  color: #60708a;
-  font-size: 13px;
-  justify-content: space-between;
 }
 .profile-toolbar {
   margin: 16px 0;

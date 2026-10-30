@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 import { CURRENT_SCHEMA_VERSION, inspectArchiveIdentity } from "./archive-identity";
 
 const MANIFEST = "schema-backup.json";
-const BACKUP_ID = /^schema-v[67]-\d{8}T\d{6}Z-[a-f0-9]{12}$/;
+const BACKUP_ID = /^schema-v[678]-\d{8}T\d{6}Z-[a-f0-9]{12}$/;
 
 export function databaseSchemaVersion(connection: Database.Database) {
   const exists = connection
@@ -134,7 +134,7 @@ export function restoreSchemaBackup(databasePath: string, backupId: string) {
     manifest.formatVersion !== 1 ||
     manifest.backupId !== backupId ||
     !Number.isInteger(manifest.toVersion) ||
-    ![6, CURRENT_SCHEMA_VERSION].includes(Number(manifest.toVersion)) ||
+    ![6, 7, CURRENT_SCHEMA_VERSION].includes(Number(manifest.toVersion)) ||
     !Number.isInteger(manifest.fromVersion) ||
     Number(manifest.fromVersion) < 0 ||
     Number(manifest.fromVersion) >= Number(manifest.toVersion) ||

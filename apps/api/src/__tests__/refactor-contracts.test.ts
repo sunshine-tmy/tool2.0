@@ -54,12 +54,14 @@ it("keeps every API and health method/path while allowing internal source reloca
     );
     expect(snapshot).toHaveLength(273);
     app = await createApp({ config });
-    // Requested TikTok and audio-edit routes are additive; the 273 historical routes remain frozen.
+    // Requested archive features add routes; the 273 historical routes remain frozen.
     expect(routeInventory(app.printRoutes({ commonPrefix: false }))).toEqual(
       [
         ...snapshot,
         "GET /api/v1/tools/media-archive/runtime/tiktok",
         "HEAD /api/v1/tools/media-archive/runtime/tiktok",
+        "DELETE /api/v1/tools/media-archive/items/:id/frames/:mediaId",
+        "DELETE /api/v1/tools/xhs-archive/items/:id/frames/:mediaId",
         ...[
           "GET import/template.csv",
           "HEAD import/template.csv",
@@ -95,6 +97,7 @@ it("keeps every API and health method/path while allowing internal source reloca
           "GET tiktok-profiles/:id/results.csv",
           "HEAD tiktok-profiles/:id/results.csv",
           "GET video-edit-runtime",
+          "POST local-videos",
           "PATCH items/:id/publication",
           "HEAD video-edit-runtime",
           "GET items/:id/media/:mediaId/audio-edits",
@@ -108,7 +111,23 @@ it("keeps every API and health method/path while allowing internal source reloca
           "GET items/:id/media/:mediaId/original",
           "HEAD items/:id/media/:mediaId/original",
           "GET items/:id/media/:mediaId/saved-music",
-          "HEAD items/:id/media/:mediaId/saved-music"
+          "HEAD items/:id/media/:mediaId/saved-music",
+          "POST items/:id/media/:mediaId/watermarks",
+          "GET items/:id/media/:mediaId/watermarks/:draftId",
+          "HEAD items/:id/media/:mediaId/watermarks/:draftId",
+          "GET items/:id/media/:mediaId/saved-watermark",
+          "HEAD items/:id/media/:mediaId/saved-watermark",
+          "GET watermark-presets",
+          "HEAD watermark-presets",
+          "POST watermark-presets",
+          "DELETE watermark-presets/:presetId",
+          "GET watermark-library",
+          "HEAD watermark-library",
+          "POST watermark-library",
+          "GET watermark-library/:watermarkId/image",
+          "HEAD watermark-library/:watermarkId/image",
+          "DELETE watermark-library/:watermarkId",
+          "POST items/:id/media/:mediaId/watermarks/from-library"
         ].map((entry) => {
           const [method, path] = entry.split(" ");
           return `${method} /api/v1/tools/media-archive/${path}`;

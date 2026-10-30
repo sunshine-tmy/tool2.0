@@ -126,7 +126,7 @@
               :key="tool.id"
               class="category-button category-link"
               :to="tool.routePath"
-              :class="{ 'is-active': route.path === tool.routePath }"
+              :class="{ 'is-active': route.path === tool.routePath || route.path.startsWith(`${tool.routePath}/`) }"
               :title="desktopSidebarCollapsed && !isCompact ? tool.title : undefined"
               @click="closeMobileDrawer"
             >

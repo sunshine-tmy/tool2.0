@@ -10,6 +10,8 @@ export const REQUEST_QUOTAS = {
   // 不同资源按成本设置独立限流和并发额度，避免单个上传或模型任务耗尽整个服务容量。
   login: { rateLimit: { max: 5, timeWindow: minute }, concurrencyLimit: 2 },
   lanUpload: { rateLimit: { max: 30, timeWindow: minute }, concurrencyLimit: 4 },
+  // A 1000-file local archive batch needs its own admission budget; media processing stays serial.
+  localArchiveUpload: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
   lanChunk: { rateLimit: { max: 120, timeWindow: minute }, concurrencyLimit: 16 },
   batchDownload: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 2 },
   remoteFetch: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 4 },

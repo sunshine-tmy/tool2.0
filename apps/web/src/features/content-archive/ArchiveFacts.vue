@@ -16,7 +16,9 @@
     <p v-if="item.publishedAt">
       <span>发布时间</span><strong>{{ formatDate(item.publishedAt) }}</strong>
     </p>
-    <a :href="item.canonicalUrl" target="_blank" rel="noopener noreferrer">打开原作品</a>
+    <a v-if="item.platform !== 'local'" :href="item.canonicalUrl" target="_blank" rel="noopener noreferrer"
+      >打开原作品</a
+    >
   </div>
 </template>
 <script setup lang="ts">
