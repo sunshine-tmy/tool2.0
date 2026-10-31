@@ -155,7 +155,7 @@ pwsh ./scripts/package-standalone.ps1 -Platform macos
 
 发布前必须在干净 checkout 执行 `pnpm check`，再从真实 ZIP/TAR.GZ 解压目录执行 `pnpm install --frozen-lockfile`、`pnpm build` 和 `scripts/smoke-standalone.mjs`。冒烟必须覆盖 `/health/ready`、前端预览、上传、下载、删除和有界退出；不得直接把 staging 目录当成分发测试对象。
 
-CI 的 `enterprise-acceptance` job 会在所有静态检查、Node/Python 测试、E2E、构建审计和双平台归档冒烟成功后，使用隔离临时 `STORAGE_ROOT` 重跑迁移 dry-run、初始化、`db:verify` 和 10,000 条数据基准；它不会触碰开发机的现有 storage。重构分支已合并到 main，F06 变更行覆盖率 90% 已对每个 Pull Request 生效。
+2026-10-31 起，普通 push / Pull Request 的综合 CI（含 `enterprise-acceptance` 和差异覆盖率 job）以及自动 Windows 安装验收工作流已移除，不再自动执行远程质量检查。本地 `pnpm check`、`pnpm coverage:diff`、迁移 dry-run、`db:verify` 和 `db:benchmark` 命令继续按需手动执行；数据库验证应使用隔离临时 `STORAGE_ROOT`，避免触碰开发机现有数据。`v*` 标签发布和手动工作流保留，Dependabot 依赖更新配置仍按原计划运行。
 
 ## 10. 常见故障定位
 

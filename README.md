@@ -618,7 +618,7 @@ pnpm dev:ai
 | `pnpm typecheck`                    | 全 workspace 严格类型检查                            |
 | `pnpm format` / `pnpm format:check` | Prettier 写入/校验                                   |
 | `pnpm build`                        | 顺序构建 shared、backend、frontend，并执行产物冒烟   |
-| `pnpm check`                        | CI 同款完整质量门禁                                  |
+| `pnpm check`                        | 本地完整质量检查（手动执行）                         |
 | `pnpm clean`                        | 删除构建与覆盖率产物                                 |
 | `pnpm clear:generated`              | 清空缓存、构建产物、日志和运行时生成数据（保留依赖） |
 | `pnpm db:migrate --dry-run`         | 预检旧 JSON 元数据迁移                               |
@@ -629,6 +629,8 @@ pnpm dev:ai
 | `pnpm desktop:build`                | 构建桌面资源和 Electron 应用目录                     |
 | `pnpm desktop:make`                 | 在 Windows x64 上构建 NSIS 安装器                    |
 | `pnpm --filter desktop test`        | 运行 Electron 主进程、迁移和安装验收相关测试         |
+
+普通代码推送和 Pull Request 不再触发 GitHub Actions 自动检查，综合 CI 和自动 Windows 安装验收工作流已移除。本地检查命令继续按需手动运行；手动验收、macOS 内部打包和 `v*` 标签发布工作流独立保留。Dependabot 依赖更新配置仍按原计划运行。
 
 图片 AI 的可选环境测试：
 
@@ -693,7 +695,7 @@ pnpm desktop:make
 
 普通打包使用仓库已提交的签名能力清单 `apps/api/src/modules/components/catalog.generated.ts`，**不需要**先执行 `components:prepare-*`、制作离线能力包或重新生成清单，也不需要原作者的签名私钥。大型能力在安装后由能力管理下载，或从卡片指向的发布页获取后离线导入，不需要塞进安装器。只有发布新能力版本时，才涉及能力包构建、签名和清单更新。
 
-仓库提供独立的 Windows 安装验收工作流 [desktop-install-acceptance.yml](./.github/workflows/desktop-install-acceptance.yml)：在干净 Windows Runner 上构建测试安装器，执行安装、启动、健康检查、旧数据迁移、卸载和数据保留检查；该工作流不签名、不创建 Release。正式发布走 tag 触发的桌面发行流程，并额外执行签名与干净环境验收。
+Windows 安装验收可在准备好安装包的测试机上，按需手动运行 `scripts/accept-windows-desktop-install.ps1`；它支持签名验收和 `-AllowUnsignedTestArtifact` 未签名测试模式，以及 `-TestLegacyMigration` 旧数据迁移验收。普通提交和 Pull Request 不再自动构建安装器或执行安装验收。正式发布走 tag 触发的桌面发行流程，并额外执行签名与干净环境验收。
 
 ## Apple Silicon macOS 内部测试包
 

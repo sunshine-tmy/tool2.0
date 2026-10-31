@@ -67,23 +67,13 @@ test("NSIS preserves install-root data unless an interactive user confirms delet
   expect(installer).not.toMatch(/RMDir\s+\/r\s+"\$INSTDIR"(?!\\data)/);
 });
 
-test("Windows installation acceptance has explicit signed and unsigned-test modes", async () => {
+test("manual Windows installation acceptance has explicit signed and unsigned-test modes", async () => {
   const repositoryRoot = path.resolve(desktopRoot, "../..");
   const acceptance = await readEntrySource(path.join(repositoryRoot, "scripts", "accept-windows-desktop-install.ps1"));
-  const workflow = await readFile(
-    path.join(repositoryRoot, ".github", "workflows", "desktop-install-acceptance.yml"),
-    "utf8"
-  );
-
   expect(acceptance).toContain("ParameterSetName = 'Signed'");
   expect(acceptance).toContain("ParameterSetName = 'UnsignedTest'");
-  expect(workflow).toContain("workflow_dispatch:");
-  expect(workflow).toContain("push:");
-  expect(workflow).toContain("pull_request:");
-  expect(workflow).toContain("-TestLegacyMigration");
-  expect(workflow).toContain("-AllowUnsignedTestArtifact");
-  expect(workflow).not.toContain("gh release");
-  expect(workflow).not.toContain("WINDOWS_SIGNING_CERTIFICATE");
+  expect(acceptance).toContain("[switch]$TestLegacyMigration");
+  expect(acceptance).toContain("[switch]$AllowUnsignedTestArtifact");
   expect(acceptance).toContain('"/S /D=$installRoot"');
   expect(acceptance).not.toContain("Join-Path $installBaseRoot 'Ecommerce Toolbox'");
   expect(acceptance).toContain("PreviousInstallerPath");
@@ -91,7 +81,6 @@ test("Windows installation acceptance has explicit signed and unsigned-test mode
   expect(acceptance).toContain("ValidateSet('edge-tts', 'douyin-archive')");
   expect(acceptance).toContain("'--component-id', $ComponentId");
   expect(acceptance).toContain("@('xhs-browser', 'douyin-archive')");
-  expect(workflow).toContain("-ComponentId douyin-archive");
   expect(acceptance).toContain("TestExplicitDataDeletion");
   expect(acceptance).toContain("desktop-install-acceptance-report.json");
   expect(acceptance).not.toContain("Get-Process -Name 'EcommerceToolbox'");
