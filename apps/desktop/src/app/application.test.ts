@@ -9,6 +9,7 @@ type BackendOptions = {
   onShutdownStage: (stage: string) => void;
 };
 type DiagnosticsOptions = { retry: () => Promise<void>; preload: string };
+type TrayOptions = { showWindow: () => void; quit: () => void; isQuitting: () => boolean };
 const mock = vi.hoisted(() => ({
   events: [] as string[],
   backendOptions: [] as BackendOptions[],
@@ -37,7 +38,10 @@ const mock = vi.hoisted(() => ({
   migrationIpc: vi.fn(),
   quit: vi.fn(),
   exit: vi.fn(),
-  dialog: vi.fn()
+  dialog: vi.fn(),
+  trayOptions: [] as TrayOptions[],
+  trayAttach: vi.fn(),
+  trayDispose: vi.fn()
 }));
 vi.mock("electron", () => ({
   app: { isPackaged: false, whenReady: mock.ready, getVersion: () => "0.1.0", quit: mock.quit, exit: mock.exit },
@@ -49,11 +53,23 @@ vi.mock("../data/desktop-paths", () => ({ createDesktopPaths: () => ({ initializ
 vi.mock("./application-menu", () => ({ configureApplicationMenu: mock.menu }));
 vi.mock("../data/desktop-root-migration", () => ({ prepareStartupDataMigration: mock.prepare }));
 vi.mock("../data/desktop-data-migration", () => ({ recoverDesktopDataMigrations: mock.recover }));
+vi.mock("../data/data-backup", () => ({
+  createBackupHelper: () => vi.fn(),
+  DesktopDataBackup: class {
+    initialize = vi.fn(async () => undefined);
+  }
+}));
 vi.mock("../data/desktop-settings", () => ({ readDesktopSettings: mock.readSettings }));
 vi.mock("../ipc/register-desktop-ipc", () => ({
   registerDesktopIpc: (context: DesktopIpcContext) => mock.register("fixed-desktop-methods", context)
 }));
 vi.mock("../windows/business-window", () => ({ createBusinessWindow: mock.window }));
+vi.mock("../windows/system-tray", () => ({
+  createSystemTray: (options: TrayOptions) => {
+    mock.trayOptions.push(options);
+    return { attach: mock.trayAttach, dispose: mock.trayDispose };
+  }
+}));
 vi.mock("../windows/shutdown-window", () => ({
   ShutdownWindow: class {
     show() {}
@@ -119,8 +135,10 @@ function application() {
   });
 }
 const frameWindow = {
+  isDestroyed: vi.fn(() => false),
   isMinimized: vi.fn(() => true),
   restore: vi.fn(),
+  show: vi.fn(),
   focus: vi.fn(),
   loadURL: vi.fn(async () => undefined),
   destroy: vi.fn()
@@ -130,6 +148,8 @@ beforeEach(() => {
   mock.events.length = 0;
   mock.backendOptions.length = 0;
   mock.diagnosticsOptions.length = 0;
+  mock.trayOptions.length = 0;
+  frameWindow.isDestroyed.mockReturnValue(false);
   mock.terminated = true;
   mock.init.mockImplementation(() => {
     mock.events.push("paths");
@@ -206,7 +226,9 @@ describe("desktop application assembly", () => {
     expect(mock.recover).toHaveBeenCalledWith(expect.objectContaining({ dataRoot: "synthetic-data" }));
     app.focusMainWindow();
     expect(frameWindow.restore).toHaveBeenCalledOnce();
+    expect(frameWindow.show).toHaveBeenCalledOnce();
     expect(frameWindow.focus).toHaveBeenCalledOnce();
+    expect(mock.trayAttach).toHaveBeenCalledExactlyOnceWith(frameWindow);
   });
   it("retries startup using the same diagnostics and IPC registrations while replacing only the failed backend", async () => {
     const failure = new Error("startup failed");
@@ -295,5 +317,34 @@ describe("desktop application assembly", () => {
     expect(mock.prepare).not.toHaveBeenCalled();
     expect(mock.migrationIpc).not.toHaveBeenCalled();
     expect(mock.entered).toHaveBeenCalledOnce();
+  });
+  it("restores a hidden window from tray or second instance and keeps tray exit behind the normal shutdown handshake", async () => {
+    const applicationInstance = application();
+    await applicationInstance.boot();
+    mock.trayOptions[0].showWindow();
+    expect(frameWindow.show).toHaveBeenCalledOnce();
+    expect(frameWindow.focus).toHaveBeenCalledOnce();
+    expect(mock.stop).not.toHaveBeenCalled();
+    expect(frameWindow.destroy).not.toHaveBeenCalled();
+    mock.trayOptions[0].quit();
+    expect(mock.quit).toHaveBeenCalledOnce();
+    expect(mock.exit).not.toHaveBeenCalled();
+    applicationInstance.beforeQuit({ preventDefault: vi.fn() });
+    await drain();
+    expect(mock.inspect).toHaveBeenCalled();
+    expect(mock.stop).toHaveBeenCalledOnce();
+    expect(mock.trayDispose).toHaveBeenCalledOnce();
+    expect(mock.exit).toHaveBeenCalledWith(0);
+    frameWindow.show.mockClear();
+    applicationInstance.focusMainWindow();
+    expect(frameWindow.show).not.toHaveBeenCalled();
+  });
+  it("does not focus a destroyed main window", async () => {
+    const applicationInstance = application();
+    await applicationInstance.boot();
+    frameWindow.isDestroyed.mockReturnValue(true);
+    applicationInstance.focusMainWindow();
+    expect(frameWindow.show).not.toHaveBeenCalled();
+    expect(frameWindow.focus).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,15 @@
       </n-alert>
 
       <template v-else>
+        <section class="workspace-panel">
+          <div class="panel-heading">
+            <div>
+              <h3>数据备份与恢复</h3>
+              <p class="panel-description">按模块导出完整业务数据，在另一台设备合并或替换导入；保留导入前恢复点。</p>
+            </div>
+            <n-button secondary @click="$router.push('/settings/data-backup')">打开数据备份</n-button>
+          </div>
+        </section>
         <section class="workspace-panel"><DesktopLanAccess mode="panel" /></section>
         <input
           ref="offlineArchiveInput"

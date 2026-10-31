@@ -45,6 +45,22 @@ const RecordSchema = Type.Object(
   { additionalProperties: false }
 );
 type ProfileRecord = import("@sinclair/typebox").Static<typeof RecordSchema>;
+/** Also used at the offline restore boundary before a record can reach startup. */
+export function isStoredTikTokProfileRecord(payload: unknown, entityId: string): payload is ProfileRecord {
+  return (
+    Value.Check(RecordSchema, payload) &&
+    payload.meta.id === entityId &&
+    payload.meta.discoveredCount === payload.works.length &&
+    new Set(payload.works.map((work) => work.id)).size === payload.works.length &&
+    normalizeTikTokProfileLink(payload.meta.url)?.username === payload.meta.username &&
+    payload.nextIndex <= (payload.selectedIds?.length ?? 0) &&
+    payload.works.every((work) =>
+      new RegExp(
+        `^https://www\\.tiktok\\.com/@${payload.meta.username.replaceAll(".", "\\.")}/(?:video|photo)/${work.id}$`
+      ).test(work.url)
+    )
+  );
+}
 const active = (phase: TikTokProfileJob["phase"]) =>
   ["discovering", "waiting-user", "archiving", "stopping"].includes(phase);
 type Outcome = NonNullable<TikTokProfilePage["items"][number]["outcome"]>;
@@ -64,21 +80,7 @@ export class TikTokProfileService {
   ) {
     for (const entity of database.list(kind)) {
       const payload = entity.payload;
-      if (
-        !Value.Check(RecordSchema, payload) ||
-        payload.meta.id !== entity.id ||
-        payload.meta.discoveredCount !== payload.works.length ||
-        new Set(payload.works.map((work) => work.id)).size !== payload.works.length ||
-        normalizeTikTokProfileLink(payload.meta.url)?.username !== payload.meta.username ||
-        payload.nextIndex > (payload.selectedIds?.length ?? 0) ||
-        payload.works.some(
-          (work) =>
-            !new RegExp(
-              `^https://www\\.tiktok\\.com/@${payload.meta.username.replaceAll(".", "\\.")}/(?:video|photo)/${work.id}$`
-            ).test(work.url)
-        )
-      )
-        throw new Error("TIKTOK_PROFILE_RECORD_INVALID");
+      if (!isStoredTikTokProfileRecord(payload, entity.id)) throw new Error("TIKTOK_PROFILE_RECORD_INVALID");
       this.records.set(entity.id, structuredClone(payload));
     }
   }

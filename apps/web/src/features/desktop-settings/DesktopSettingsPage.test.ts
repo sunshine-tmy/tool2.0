@@ -73,6 +73,7 @@ describe("desktop settings section spacing", () => {
       const panels = wrapper.findAll(".desktop-settings-main > .workspace-panel");
       expect(panels.map((panel) => panel.get("h3").text())).toEqual([
         "启动与环境诊断",
+        "数据备份与恢复",
         "局域网访问",
         "启动与更新",
         "存储位置",
@@ -94,7 +95,7 @@ describe("desktop settings section spacing", () => {
     try {
       await flushPromises();
       expect(wrapper.get(".desktop-settings-main > .settings-alert").text()).toContain("读取桌面设置失败");
-      expect(wrapper.findAll(".desktop-settings-main > .workspace-panel")).toHaveLength(6);
+      expect(wrapper.findAll(".desktop-settings-main > .workspace-panel")).toHaveLength(7);
     } finally {
       wrapper.unmount();
     }

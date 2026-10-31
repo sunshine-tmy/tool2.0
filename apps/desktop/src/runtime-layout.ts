@@ -69,3 +69,7 @@ export function desktopBackendEntrypoint(packaged: boolean, resourcesPath?: stri
     ? path.join(resourcesPath ?? process.resourcesPath, "backend", "dist", "desktop-entry.js")
     : path.join(workspaceRoot, "apps", "api", "dist", "desktop-entry.js");
 }
+
+export function desktopBackupEntrypoint(packaged: boolean, resourcesPath?: string) {
+  return path.join(path.dirname(desktopBackendEntrypoint(packaged, resourcesPath)), "data-backup-entry.js");
+}

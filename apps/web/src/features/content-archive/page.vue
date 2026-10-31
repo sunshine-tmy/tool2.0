@@ -14,7 +14,7 @@
       <div class="platform-runtime" aria-label="分平台解析环境">
         <span>小红书：{{ xhsRuntime?.message || "正在读取环境状态" }}</span>
         <span>抖音（匿名）：{{ douyinRuntime?.message || "正在读取环境状态" }}</span>
-        <span>TikTok（匿名）：公开作品 HTTPS 获取，网络可用性以实际任务为准</span>
+        <span>TikTok（匿名）：公开获取；默认通过 TikWM 备用解析缺少地址的商品视频，会发送该作品公开链接</span>
         <n-button size="tiny" quaternary :disabled="douyinRuntimeLoading || submitting" @click="refreshDouyinRuntime">
           刷新抖音状态
         </n-button>
@@ -118,6 +118,9 @@
         v-model:open="drawerOpen"
         :width="detailWidth"
         :detail="detail"
+        :published-elsewhere="detailPublication?.publishedElsewhere"
+        :publication-loading="detailPublicationLoading"
+        :publication-busy="Boolean(detail && publicationBusyIds.includes(detail.id))"
         :format-date="formatDate"
         :remove-item="removeItem"
         :translate-detail="translateDetail"
@@ -130,6 +133,8 @@
         @edit-watermark="detail && openVideoEditor(detail, $event)"
         @edit-audio="detail && openVideoEditor(detail, $event, 'audio')"
         @copy="copyContent"
+        @set-publication="setPublication"
+        @refresh-publication="loadDetailPublication"
       />
       <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
     </section>
@@ -220,6 +225,9 @@ const {
   publicationBusyIds,
   drawerOpen,
   detail,
+  detailPublication,
+  detailPublicationLoading,
+  loadDetailPublication,
   loadArchives,
   toggleArchiveSelection,
   toggleSelectAllArchives
@@ -650,7 +658,23 @@ async function removeSelected() {
   if (removed) message.success(`已删除 ${removed} 条存档`);
   await loadArchives();
 }
+const publicationConfirmingIds = new Set<string>();
 async function setPublication(id: string, publishedElsewhere: boolean) {
+  if (disposed || publicationBusyIds.value.includes(id) || publicationConfirmingIds.has(id)) return;
+  if (!publishedElsewhere) {
+    const item = detail.value?.id === id ? detail.value : archives.value.items.find((value) => value.id === id);
+    if (!item) return;
+    publicationConfirmingIds.add(id);
+    try {
+      const accepted = await confirm(
+        `确认取消“${archiveDisplayTitle(item) || "未命名存档"}”的已发布标记？取消后，此内容将不再显示“已在其他平台发布”。`,
+        { title: "取消已发布标记", positiveText: "确认取消标记", negativeText: "保留标记", danger: false }
+      );
+      if (!accepted || disposed) return;
+    } finally {
+      publicationConfirmingIds.delete(id);
+    }
+  }
   if (await collection.setPublication(id, publishedElsewhere))
     message.success(publishedElsewhere ? "已标记为在其他平台发布" : "已取消发布标记");
 }

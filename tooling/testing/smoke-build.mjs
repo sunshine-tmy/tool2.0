@@ -24,6 +24,7 @@ import { smokeSpeechContract } from "./smoke-speech-contract.mjs";
 import { smokeSystemContract } from "./smoke-system-contract.mjs";
 import { smokeCommonContract } from "./smoke-common-contract.mjs";
 import { smokeDesktopDevelopment } from "./smoke-desktop-development.mjs";
+import { smokeDataBackup } from "./smoke-data-backup.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", publicEntryUrl));
 const sharedDist = path.join(repoRoot, "packages", "shared", "dist");
@@ -48,6 +49,7 @@ await smokeProjectRoot(repoRoot);
 await smokeProjectRoot(repoRoot, ["backend"]);
 await smokeApiLayout(repoRoot);
 await smokeApiLayout(repoRoot, true);
+await smokeDataBackup(repoRoot);
 await smokeWebLayout(repoRoot);
 
 const shared = await importFile(path.join(sharedDist, "index.js"));

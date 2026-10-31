@@ -125,6 +125,10 @@ describe("多媒体归档 API 与兼容性", () => {
     const task = await create(app);
     const id = task.archiveId!;
     const detail = (await app.inject(`${prefix}/items/${id}`)).json().data;
+    const publication = () => app.inject(`${prefix}/items/${id}/publication`);
+    expect((await publication()).json().data).toEqual({ archiveId: id, publishedElsewhere: false });
+    expect((await publication()).headers["cache-control"]).toBe("no-store");
+    expect((await app.inject(`${prefix}/items/missing_archive/publication`)).statusCode).toBe(404);
     const mediaBefore = await app.inject(detail.media[0].downloadUrl);
     for (const payload of [{}, { publishedElsewhere: "true" }, { publishedElsewhere: true, cookie: "forbidden" }])
       expect(
@@ -146,6 +150,7 @@ describe("多媒体归档 API 与兼容性", () => {
     });
     expect(mark.statusCode).toBe(200);
     expect(mark.json().data).toMatchObject({ archiveId: id, publishedElsewhere: true, markedAt: expect.any(String) });
+    expect((await publication()).json().data).toEqual(mark.json().data);
     expect((await app.inject(`${prefix}/items`)).json().data.items[0]).toMatchObject({
       id,
       publishedElsewhere: true,
@@ -155,12 +160,14 @@ describe("多媒体归档 API 与兼容性", () => {
     await app.close();
     const restarted = await appWith();
     expect((await restarted.inject(`${prefix}/items`)).json().data.items[0].publishedElsewhere).toBe(true);
+    expect((await restarted.inject(`${prefix}/items/${id}/publication`)).json().data).toEqual(mark.json().data);
     const cleared = await restarted.inject({
       method: "PATCH",
       url: `${prefix}/items/${id}/publication`,
       payload: { publishedElsewhere: false }
     });
     expect(cleared.json().data).toEqual({ archiveId: id, publishedElsewhere: false });
+    expect((await restarted.inject(`${prefix}/items/${id}/publication`)).json().data).toEqual(cleared.json().data);
     expect((await restarted.inject(`${prefix}/items`)).json().data.items[0].publishedElsewhere).toBeUndefined();
     expect((await restarted.inject(detail.media[0].downloadUrl)).rawPayload).toEqual(mediaBefore.rawPayload);
   });

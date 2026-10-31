@@ -8,6 +8,21 @@ const kind = "archive-publication";
 export class ArchivePublicationStore {
   constructor(private readonly database: ToolboxDatabase) {}
 
+  get(archiveId: string): ContentArchivePublication {
+    if (!this.database.get("xhs-archive", archiveId))
+      throw new ArchiveTaskError("ARCHIVE_NOT_FOUND", "存档不存在，请刷新列表", 404);
+    const record = this.database.get(kind, archiveId);
+    if (!record) return { archiveId, publishedElsewhere: false };
+    if (
+      !Value.Check(ContentArchivePublicationSchema, record.payload) ||
+      record.payload.archiveId !== archiveId ||
+      !record.payload.publishedElsewhere ||
+      !record.payload.markedAt
+    )
+      throw new Error("ARCHIVE_PUBLICATION_RECORD_INVALID");
+    return structuredClone(record.payload);
+  }
+
   marked() {
     return new Set(
       this.database.list(kind).map((record) => {

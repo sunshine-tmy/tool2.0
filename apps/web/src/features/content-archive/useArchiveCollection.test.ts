@@ -5,7 +5,9 @@ import { useArchiveCollection } from "./useArchiveCollection";
 import { contentArchiveApi } from "./content-api";
 import { ApiRequestError } from "../../shared/http/http";
 import { archiveFixture, listFixture } from "./__tests__/fixtures";
-vi.mock("./content-api", () => ({ contentArchiveApi: { list: vi.fn(), detail: vi.fn(), setPublication: vi.fn() } }));
+vi.mock("./content-api", () => ({
+  contentArchiveApi: { list: vi.fn(), detail: vi.fn(), publication: vi.fn(), setPublication: vi.fn() }
+}));
 const scopes: EffectScope[] = [];
 function setup() {
   const scope = effectScope();
@@ -27,6 +29,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(contentArchiveApi.list).mockResolvedValue(listFixture());
   vi.mocked(contentArchiveApi.detail).mockResolvedValue(archiveFixture());
+  vi.mocked(contentArchiveApi.publication)
+    .mockReset()
+    .mockImplementation(async (archiveId) => ({ archiveId, publishedElsewhere: false }));
   vi.mocked(contentArchiveApi.setPublication).mockImplementation(async (archiveId, publishedElsewhere) => ({
     archiveId,
     publishedElsewhere
@@ -36,6 +41,62 @@ afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
 });
 describe("双平台归档集合", () => {
+  it("不在当前列表的详情也读取独立发布状态，并可标记或撤销而不改写媒体快照", async () => {
+    const { collection: c } = setup();
+    vi.mocked(contentArchiveApi.list).mockResolvedValue(listFixture([]));
+    vi.mocked(contentArchiveApi.publication).mockResolvedValue({ archiveId: "archive-123", publishedElsewhere: true });
+    await c.loadArchives();
+    await c.openDetail("archive-123");
+    expect(c.detailPublication.value?.publishedElsewhere).toBe(true);
+    expect(await c.setPublication("archive-123", false)).toBe(true);
+    expect(c.detailPublication.value?.publishedElsewhere).toBe(false);
+    const updated = archiveFixture({ totalBytes: 500 });
+    c.updateItem(updated);
+    expect(c.detail.value).toEqual(updated);
+    expect(c.detailPublication.value?.publishedElsewhere).toBe(false);
+    expect(c.archives.value.items).toEqual([]);
+  });
+  it("发布状态读取失败仍可查看详情，重试状态读取不重载媒体", async () => {
+    const { collection: c, report } = setup();
+    vi.mocked(contentArchiveApi.publication).mockRejectedValueOnce(new Error("offline"));
+    await c.openDetail("archive-123");
+    expect(c.detail.value?.id).toBe("archive-123");
+    expect(c.detailPublication.value).toBeUndefined();
+    expect(c.detailPublicationLoading.value).toBe(false);
+    expect(report).toHaveBeenCalledOnce();
+    await c.loadDetailPublication();
+    expect(c.detailPublication.value?.publishedElsewhere).toBe(false);
+    expect(contentArchiveApi.detail).toHaveBeenCalledOnce();
+  });
+  it("详情标记写入成功后不被迟到的旧状态读取覆盖", async () => {
+    const { collection: c } = setup();
+    const pending = deferred<{ archiveId: string; publishedElsewhere: boolean }>();
+    vi.mocked(contentArchiveApi.publication).mockReturnValueOnce(pending.promise);
+    await c.openDetail("archive-123");
+    expect(c.detailPublicationLoading.value).toBe(true);
+    expect(await c.setPublication("archive-123", true)).toBe(true);
+    expect(c.detailPublicationLoading.value).toBe(false);
+    pending.resolve({ archiveId: "archive-123", publishedElsewhere: false });
+    await nextTick();
+    expect(c.detailPublication.value?.publishedElsewhere).toBe(true);
+  });
+  it.each(["switch", "close", "dispose"])("发布状态读取中 %s 后旧响应不污染详情", async (mode) => {
+    const { collection: c, scope } = setup();
+    const pending = deferred<{ archiveId: string; publishedElsewhere: boolean }>();
+    vi.mocked(contentArchiveApi.publication).mockReturnValueOnce(pending.promise);
+    await c.openDetail("archive-123");
+    const signal = vi.mocked(contentArchiveApi.publication).mock.calls[0]![1]!;
+    if (mode === "switch") {
+      vi.mocked(contentArchiveApi.detail).mockResolvedValueOnce(archiveFixture({ id: "archive-456" }));
+      await c.openDetail("archive-456");
+    } else if (mode === "close") c.drawerOpen.value = false;
+    else scope.stop();
+    expect(signal.aborted).toBe(true);
+    pending.resolve({ archiveId: "archive-123", publishedElsewhere: true });
+    await nextTick();
+    expect(c.detailPublication.value?.publishedElsewhere).not.toBe(true);
+    if (mode === "switch") expect(c.detailPublication.value?.archiveId).toBe("archive-456");
+  });
   it("本地上传筛选可从视频编辑返回地址恢复", async () => {
     const scope = effectScope();
     scopes.push(scope);

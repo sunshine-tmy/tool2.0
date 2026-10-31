@@ -2,6 +2,11 @@ import type { ConfigContext } from "./context";
 import path from "node:path";
 import { readInteger } from "@toolbox/runtime-core";
 import { getEnv, resolveConfigPath } from "./environment";
+function readTikTokShopFallback(value: string | undefined): "tikwm" | "off" {
+  const normalized = value?.trim().toLowerCase() || "tikwm";
+  if (normalized === "tikwm" || normalized === "off") return normalized;
+  throw new Error("TIKTOK_SHOP_FALLBACK must be tikwm or off");
+}
 export function readArchiveConfig(context: ConfigContext) {
   const { runtime, xhsArchiveDir, xhsTranslationRuntimeDir, fileEnv, environment, pathEnv } = context;
   return {
@@ -15,6 +20,7 @@ export function readArchiveConfig(context: ConfigContext) {
     ),
     xhsProviderUrl: getEnv("XHS_PROVIDER_URL", fileEnv, environment)?.trim() || undefined,
     tiktokHttpsProxy: getEnv("TIKTOK_HTTPS_PROXY", fileEnv, environment)?.trim() || undefined,
+    tiktokShopFallback: readTikTokShopFallback(getEnv("TIKTOK_SHOP_FALLBACK", fileEnv, environment)),
     xhsProviderToken: getEnv("XHS_PROVIDER_TOKEN", fileEnv, environment)?.trim() || undefined,
     xhsProviderPort: readInteger(
       "XHS_PROVIDER_PORT",

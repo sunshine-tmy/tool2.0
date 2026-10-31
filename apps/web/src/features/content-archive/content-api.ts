@@ -247,6 +247,11 @@ export const contentArchiveApi = {
     ),
   remove: (id: string, signal?: AbortSignal) =>
     withApiError(() => httpClient.delete(itemPath(id), XhsArchiveRemovalSchema, { signal }), "删除存档失败"),
+  publication: (id: string, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.get(`${itemPath(id)}/publication`, ContentArchivePublicationSchema, { signal }),
+      "读取已发布标记失败"
+    ),
   setPublication: (id: string, publishedElsewhere: boolean, signal?: AbortSignal) =>
     withApiError(
       () =>

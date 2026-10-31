@@ -1,6 +1,11 @@
 /** 双平台列表/抽屉状态：筛选清空选择，取消旧请求，代际校验防止迟到响应覆盖新页面。 */
 import { onScopeDispose, ref, watch } from "vue";
-import type { ContentArchiveItem, ContentArchiveListQuery, ContentArchiveListResponse } from "@toolbox/shared";
+import type {
+  ContentArchiveItem,
+  ContentArchiveListQuery,
+  ContentArchiveListResponse,
+  ContentArchivePublication
+} from "@toolbox/shared";
 import { contentArchiveApi } from "./content-api";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
 import { isApiErrorCancelled } from "../../shared/http/http";
@@ -35,7 +40,11 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
   const publicationBusyIds = ref<string[]>([]);
   const current = ref<ContentArchiveItem>();
   const detail = ref<ContentArchiveItem>();
+  const detailPublication = ref<ContentArchivePublication>();
+  const detailPublicationLoading = ref(false);
   const drawerOpen = ref(false);
+  let detailTargetId: string | undefined;
+  let detailPublicationRevision = 0;
   let listGeneration = 0;
   let detailGeneration = 0;
   let listController: AbortController | undefined;
@@ -72,6 +81,10 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
       if (!open) {
         detailGeneration++;
         detailController?.abort();
+        detailTargetId = undefined;
+        detailPublicationRevision++;
+        detailPublication.value = undefined;
+        detailPublicationLoading.value = false;
       }
     },
     { flush: "sync" }
@@ -105,7 +118,10 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
     detailController = new AbortController();
     const signal = AbortSignal.any([scope.signal, detailController.signal]);
     detail.value = undefined;
+    detailTargetId = id;
+    detailPublication.value = undefined;
     drawerOpen.value = true;
+    void loadDetailPublication();
     try {
       const result = await contentArchiveApi.detail(id, signal);
       if (signal.aborted || generation !== detailGeneration) return;
@@ -115,13 +131,36 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
       if (!signal.aborted && generation === detailGeneration && !isApiErrorCancelled(error)) reportError(error);
     }
   }
+  async function loadDetailPublication() {
+    if (scope.aborted || !drawerOpen.value || !detailTargetId || !detailController) return;
+    const id = detailTargetId;
+    const generation = detailGeneration;
+    const revision = ++detailPublicationRevision;
+    const signal = AbortSignal.any([scope.signal, detailController.signal]);
+    const active = () => !signal.aborted && generation === detailGeneration && revision === detailPublicationRevision;
+    detailPublicationLoading.value = true;
+    try {
+      const state = await contentArchiveApi.publication(id, signal);
+      if (!active()) return;
+      if (state.archiveId !== id) throw new Error("读取已发布标记返回了不匹配的作品");
+      detailPublication.value = state;
+    } catch (error) {
+      if (active() && !isApiErrorCancelled(error)) reportError(error);
+    } finally {
+      if (active()) detailPublicationLoading.value = false;
+    }
+  }
   function updateItem(item: ContentArchiveItem) {
     if (scope.aborted) return;
     if (current.value?.id === item.id) current.value = item;
     if (detail.value?.id === item.id) detail.value = item;
   }
   async function setPublication(id: string, publishedElsewhere: boolean) {
-    if (scope.aborted || publicationBusyIds.value.includes(id) || !archives.value.items.some((item) => item.id === id))
+    if (
+      scope.aborted ||
+      publicationBusyIds.value.includes(id) ||
+      (!archives.value.items.some((item) => item.id === id) && detail.value?.id !== id)
+    )
       return false;
     publicationBusyIds.value = [...publicationBusyIds.value, id];
     try {
@@ -133,6 +172,12 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
         ...archives.value,
         items: archives.value.items.map((item) => (item.id === id ? { ...item, publishedElsewhere } : item))
       };
+      if (detailTargetId === id && drawerOpen.value) {
+        // 确认写入后使在途的旧读取失效；详情状态独立于媒体/译文快照。
+        detailPublicationRevision++;
+        detailPublication.value = state;
+        detailPublicationLoading.value = false;
+      }
       // Reuse current filters/page and invalidate any pre-mutation list response; selection stays intact.
       await loadArchives();
       return !scope.aborted;
@@ -180,6 +225,9 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
     setPublication,
     current,
     detail,
+    detailPublication,
+    detailPublicationLoading,
+    loadDetailPublication,
     drawerOpen,
     filter,
     loadArchives,

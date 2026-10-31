@@ -79,6 +79,12 @@ describe("多媒体归档客户端", () => {
   });
   it("encodes the publication target and preserves strict response validation and cancellation", async () => {
     const signal = new AbortController().signal;
+    await api.publication("id/123", signal);
+    expect(http.get).toHaveBeenLastCalledWith(
+      "/tools/media-archive/items/id%2F123/publication",
+      ContentArchivePublicationSchema,
+      { signal }
+    );
     for (const publishedElsewhere of [true, false]) {
       await api.setPublication("id/123", publishedElsewhere, signal);
       expect(http.patch).toHaveBeenLastCalledWith(

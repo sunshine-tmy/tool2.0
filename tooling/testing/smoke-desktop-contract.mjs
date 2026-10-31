@@ -25,6 +25,11 @@ export async function smokeDesktopContract(repoRoot) {
       const settings: Promise<DesktopSettingsState> = desktop.updateSettings({startAtLogin: true});
       const migrated: Promise<DesktopRootMigrationResult | void> = desktop.migrateStartupData();
       const optional: DesktopBridge['saveDiagnosticReport'] = undefined;
+      const backupState = desktop.getDataBackupState?.();
+      const backupJob: Promise<string> | undefined = desktop.importModuleData?.('00000000-0000-0000-0000-000000000000');
+      desktop.exportModuleData?.({modules:['image-ai', 'speech']});
+      // @ts-expect-error Module identifiers remain closed at the desktop boundary.
+      desktop.exportModuleData?.({modules:['arbitrary-module']});
       const stop: () => void = desktop.onStartupDiagnostics((state: StartupSnapshot) => { const revision: number = state.revision; });
       const shutdown: ShutdownPreparation = {busy:false, blocked:false, prepared:true};
       // @ts-expect-error A generic renderer IPC capability must never exist.

@@ -22,6 +22,18 @@ beforeEach(async () => {
 });
 
 const calls = [
+  ["getDataBackupState", "desktop:data-backup-state", []],
+  ["selectDataBackup", "desktop:data-backup-select", []],
+  [
+    "previewDataBackup",
+    "desktop:data-backup-preview",
+    [{ selectionId: "selection", modules: ["speech"], mode: "merge" }]
+  ],
+  ["exportModuleData", "desktop:data-backup-export", [{ modules: ["speech"] }]],
+  ["importModuleData", "desktop:data-backup-import", ["plan", undefined]],
+  ["cancelDataBackup", "desktop:data-backup-cancel", ["operation"]],
+  ["rollbackModuleData", "desktop:data-backup-rollback", ["point", undefined]],
+  ["deleteDataRestorePoint", "desktop:data-backup-delete-point", ["point"]],
   ["getStartupDiagnostics", "diagnostics:startup-state", []],
   ["retryStartup", "diagnostics:startup-retry", []],
   ["copyStartupDiagnostics", "diagnostics:startup-copy", []],

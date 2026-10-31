@@ -32,7 +32,7 @@ export class EdgeTtsTaskRepository {
   async initialize() {
     await fsp.mkdir(this.root, { recursive: true });
     const stored = this.database.list(TASK_KIND);
-    if (stored.length) {
+    if (stored.length || this.database.isDomainInitialized(TASK_KIND)) {
       for (const entity of stored) {
         const task = entity.payload as EdgeTtsTask;
         if (!isStoredTask(task)) continue;

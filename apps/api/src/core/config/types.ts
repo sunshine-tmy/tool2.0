@@ -39,6 +39,7 @@ export type AppConfig = {
   xhsRuntimeDir: string;
   xhsProviderUrl?: string;
   tiktokHttpsProxy?: string;
+  tiktokShopFallback: "tikwm" | "off";
   xhsProviderToken?: string;
   xhsProviderPort: number;
   xhsInstallTimeoutMs: number;

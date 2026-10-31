@@ -19,9 +19,21 @@ let png: Buffer;
 let app: Awaited<ReturnType<typeof createApp>> | undefined;
 let gallery: boolean;
 let failMedia: boolean;
-let videoShape: "standard" | "structured" | "mobile" | "empty";
+let videoShape: "standard" | "structured" | "mobile" | "empty" | "shop";
+let failFallback: boolean;
 let gate: (() => void) | undefined;
 const video = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypisom"), Buffer.alloc(40)]);
+function box(kind: string, body: Buffer) {
+  const header = Buffer.alloc(8);
+  header.writeUInt32BE(body.length + 8);
+  header.write(kind, 4);
+  return Buffer.concat([header, body]);
+}
+const shopVideo = Buffer.concat([
+  box("ftyp", Buffer.from("isom0000")),
+  box("mdat", Buffer.from("video fixture")),
+  box("moov", box("trak", box("mdia", box("hdlr", Buffer.concat([Buffer.alloc(8), Buffer.from("vide")])))))
+]);
 beforeEach(async () => {
   root = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-tiktok-api-"));
   png = await sharp({ create: { width: 32, height: 48, channels: 3, background: "red" } })
@@ -30,6 +42,7 @@ beforeEach(async () => {
   gallery = false;
   failMedia = false;
   videoShape = "standard";
+  failFallback = false;
   const config = getConfig({
     layout: createDevelopmentRuntimeLayout({ storageRoot: root, runtimeRoot: path.join(root, "runtime") }),
     dotenvPath: false,
@@ -60,6 +73,7 @@ beforeEach(async () => {
           id: contentId,
           desc: "商品说明 #展示",
           author: { uniqueId: "shop", nickname: "Shop" },
+          ...(videoShape === "shop" ? { isECVideo: 1, isAd: false } : {}),
           ...(gallery
             ? {
                 imagePost: {
@@ -69,8 +83,9 @@ beforeEach(async () => {
               }
             : {
                 video: {
-                  playAddr:
-                    videoShape === "structured" || videoShape === "empty" ? "" : "https://v16.tiktok.com/video.mp4",
+                  playAddr: ["structured", "empty", "shop"].includes(videoShape)
+                    ? ""
+                    : "https://v16.tiktok.com/video.mp4",
                   ...(videoShape === "structured"
                     ? { PlayAddrStruct: { UrlList: ["https://v16.tiktok.com/video.mp4"] } }
                     : {}),
@@ -89,6 +104,14 @@ beforeEach(async () => {
         });
       if (target === "https://v16.tiktok.com/video.mp4")
         return new Response(new Uint8Array(video), { headers: { "content-type": "video/mp4" } });
+      if (target.startsWith("https://www.tikwm.com/api/?")) {
+        expect(new URL(target).searchParams.get("url")).toBe(url);
+        const value = failFallback
+          ? { code: -1 }
+          : { code: 0, data: { id: contentId, title: "不应采用第三方标题", play: "https://v16.tiktok.com/shop.mp4" } };
+        return Object.defineProperty(new Response(JSON.stringify(value)), "url", { value: target });
+      }
+      if (target === "https://v16.tiktok.com/shop.mp4") return new Response(new Uint8Array(shopVideo));
       throw new Error("Unexpected real network request");
     })
   );
@@ -207,6 +230,29 @@ it("preserves all gallery images and the old archive when a refresh cannot downl
     errorCode: "ARCHIVE_MEDIA_DOWNLOAD_FAILED"
   });
   expect((await app!.inject(endpoint)).json().data.media).toEqual(previous.media);
+});
+it("archives shop fallback bytes through the real API/store and keeps the old archive after fallback refresh failure", async () => {
+  videoShape = "shop";
+  const state = await create();
+  expect(state.status).toBe("completed");
+  const endpoint = `${base}/items/${state.archiveId}`;
+  const item = (await app!.inject(endpoint)).json().data;
+  expect(item).toMatchObject({
+    platform: "tiktok",
+    contentId,
+    title: "商品说明 #展示",
+    media: [{ kind: "video" }, { kind: "cover" }]
+  });
+  expect((await app!.inject(item.media[0].previewUrl)).rawPayload).toEqual(shopVideo);
+  expect((await app!.inject(`${base}/items?platform=tiktok`)).json().data.total).toBe(1);
+  failFallback = true;
+  const refresh = await app!.inject({ method: "POST", url: `${endpoint}/refresh` });
+  expect(await terminal(refresh.json().data.id)).toMatchObject({
+    status: "failed",
+    errorCode: "TIKTOK_SHOP_FALLBACK_FAILED"
+  });
+  expect((await app!.inject(endpoint)).json().data).toEqual(item);
+  expect((await app!.inject(item.media[0].downloadUrl)).rawPayload).toEqual(shopVideo);
 });
 it.each(["structured", "mobile"] as const)(
   "archives the actual video bytes from a %s public page through the existing file gateway",

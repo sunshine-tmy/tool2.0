@@ -5,6 +5,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { createRouter, createMemoryHistory } from "vue-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ToolLayout from "./ToolLayout.vue";
+import { diagnosticConnection } from "../shared/http/diagnostics";
 
 vi.mock("naive-ui", async (original) => ({
   ...(await original<typeof import("naive-ui")>()),
@@ -23,10 +24,11 @@ vi.mock("../shared/http/http", () => ({
 
 afterEach(() => {
   vi.restoreAllMocks();
+  diagnosticConnection.value = "online";
   localStorage.clear();
   document.body.classList.remove("sidebar-drawer-active");
 });
-async function layout(compact = false) {
+async function layout(compact = false, path = "/settings/diagnostics") {
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
     matches: compact,
     media: query,
@@ -44,7 +46,7 @@ async function layout(compact = false) {
       component: { template: "<div />" }
     }))
   });
-  await router.push("/settings/diagnostics");
+  await router.push(path);
   await router.isReady();
   const wrapper = mount(ToolLayout, { global: { plugins: [router] }, slots: { default: "诊断内容" } });
   await flushPromises();
@@ -52,6 +54,29 @@ async function layout(compact = false) {
 }
 
 describe("application shell header layout", () => {
+  it("keeps loaded content and the diagnostic action available when the service warning appears, then removes the warning on recovery", async () => {
+    diagnosticConnection.value = "offline";
+    const { wrapper, router } = await layout(false, "/settings/data-backup");
+    try {
+      const content = wrapper.get(".content");
+      expect(content.text()).toContain("本地服务暂不可用，已加载的内容不会被清除。");
+      expect(content.text()).toContain("诊断内容");
+      await content.get(".shell-service-warning button").trigger("click");
+      await flushPromises();
+      expect(router.currentRoute.value).toMatchObject({
+        path: "/settings/diagnostics",
+        query: { module: "data-backup" }
+      });
+      expect(content.text()).toContain("诊断内容");
+      await router.push("/settings/data-backup");
+      diagnosticConnection.value = "online";
+      await flushPromises();
+      expect(content.find(".shell-service-warning").exists()).toBe(false);
+      expect(content.text()).toContain("诊断内容");
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("keeps the desktop LAN panel behind a lazy import instead of expanding the shared entry bundle", () => {
     const source = readFileSync(resolve("src/shell/ToolLayout.vue"), "utf8");
     expect(source).toMatch(

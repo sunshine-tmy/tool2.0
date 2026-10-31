@@ -68,6 +68,24 @@ function setup() {
 }
 beforeEach(() => vi.clearAllMocks());
 describe("desktop maintenance order", () => {
+  it("guards backup playback and packages after restart while the maintenance lock is still held", async () => {
+    const s = setup();
+    s.setPlaying();
+    await expect(s.flow.withBackendStopped(async () => undefined, { requireIdlePlayback: true })).rejects.toThrow(
+      "播放"
+    );
+    expect(s.backend.stop).not.toHaveBeenCalled();
+    const next = setup();
+    await next.flow.withBackendStopped(async () => "snapshot", {
+      returnPath: "/settings/data-backup",
+      afterRestart: async (result) => {
+        expect(result).toBe("snapshot");
+        expect(next.critical()).toBe(true);
+        expect(next.events).toContain("start");
+      }
+    });
+    expect(next.load).toHaveBeenCalledWith("http://127.0.0.1:43211/settings/data-backup");
+  });
   it("freezes/stops, performs migration, then restarts/monitors/reloads before releasing the guard", async () => {
     const s = setup();
     expect(

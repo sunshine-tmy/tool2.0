@@ -104,6 +104,12 @@ describe("XHS archive list panel", () => {
       });
       expect(wrapper.get(".card-publication-badge").text()).toBe("已发布");
       expect(wrapper.get(".card-publication-badge").attributes("title")).toBe("已在其他平台发布");
+      await wrapper
+        .findAll("button")
+        .find((button) => button.text() === "取消已发布标记")!
+        .trigger("click");
+      expect(wrapper.emitted("setPublication")?.at(-1)).toEqual(["archive_123", false]);
+      expect(wrapper.emitted("openDetail")).toBeUndefined();
       await wrapper.get("article").trigger("click");
       await wrapper.get("article").trigger("keyup", { key: "Enter" });
       expect(wrapper.emitted("openDetail")).toEqual([["archive_123"], ["archive_123"]]);

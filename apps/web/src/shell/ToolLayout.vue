@@ -159,6 +159,7 @@
           "
           type="warning"
           :bordered="false"
+          class="shell-notice shell-service-warning"
         >
           本地服务暂不可用，已加载的内容不会被清除。<n-button
             text
@@ -167,7 +168,12 @@
             >查看诊断</n-button
           >
         </n-alert>
-        <n-alert v-if="desktopCapabilityHint" type="info" :bordered="false" class="desktop-capability-hint">
+        <n-alert
+          v-if="desktopCapabilityHint"
+          type="info"
+          :bordered="false"
+          class="shell-notice desktop-capability-hint"
+        >
           <div class="desktop-capability-hint-content">
             <div>
               <strong>{{ desktopCapabilityHint.title }}：{{ desktopCapabilityHint.heading }}</strong>
@@ -330,6 +336,10 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.shell-notice {
+  grid-column: 1 / -1;
+  align-self: start;
+}
 .admin-session-section {
   display: grid;
   gap: 12px;

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArchiveDownloadGateway } from "../domains/content-archive/core/download-gateway";
 import { getConfig } from "../config";
 import type { ArchiveSource } from "../domains/content-archive/core/provider";
+import { assertMp4VideoTrack } from "../domains/content-archive/core/mp4-video";
 
 let root: string;
 let config: ReturnType<typeof getConfig>;
@@ -135,6 +136,95 @@ describe("归档媒体下载", () => {
         signal()
       )
     ).toMatchObject({ mimeType: "video/mp4", durationMs: 1000 });
+  });
+  it("商品视频备用文件必须有视频轨道，纯音频候选清理后才尝试下一地址", async () => {
+    const box = (kind: string, body: Buffer) => {
+      const header = Buffer.alloc(8);
+      header.writeUInt32BE(body.length + 8);
+      header.write(kind, 4);
+      return Buffer.concat([header, body]);
+    };
+    const mp4 = (handler: string) =>
+      Buffer.concat([
+        box("ftyp", Buffer.from("isom0000")),
+        box("mdat", Buffer.from("fixture")),
+        box("moov", box("trak", box("mdia", box("hdlr", Buffer.concat([Buffer.alloc(8), Buffer.from(handler)])))))
+      ]);
+    remote
+      .mockResolvedValueOnce(new Response(new Uint8Array(mp4("soun"))))
+      .mockResolvedValueOnce(new Response(new Uint8Array(mp4("vide"))));
+    const media = await gateway.download(
+      {
+        kind: "video",
+        index: 0,
+        urls: ["https://v16.tiktok.com/one.mp4", "https://v16.tiktok.com/two.mp4"],
+        requireVideoTrack: true
+      },
+      "tiktok",
+      root,
+      "archive_123456",
+      signal()
+    );
+    expect(remote).toHaveBeenCalledTimes(2);
+    expect(await fs.readdir(root)).toEqual([media.fileName]);
+    expect(media).toMatchObject({ kind: "video", mimeType: "video/mp4", size: mp4("vide").length });
+    expect(media).not.toHaveProperty("requireVideoTrack");
+  });
+  it("纯音频备用文件不会提交归档，也不会遗留下载文件", async () => {
+    remote.mockResolvedValue(new Response(Buffer.from("0000ftypisom0000vide")));
+    await expect(
+      gateway.download({ ...entry, kind: "video", requireVideoTrack: true }, "tiktok", root, "archive_123456", signal())
+    ).rejects.toMatchObject({ code: "ARCHIVE_MEDIA_DOWNLOAD_FAILED" });
+    expect(await fs.readdir(root)).toEqual([]);
+  });
+  it("视频轨道检查支持扩展长度和文件尾 moov，并拒绝越界、伪标识和过多容器", async () => {
+    const box = (kind: string, body: Buffer, wide = false) => {
+      const header = Buffer.alloc(wide ? 16 : 8);
+      header.writeUInt32BE(wide ? 1 : body.length + 8);
+      header.write(kind, 4);
+      if (wide) header.writeBigUInt64BE(BigInt(body.length + 16), 8);
+      return Buffer.concat([header, body]);
+    };
+    const file = path.join(root, "track-check.mp4");
+    const ftyp = box("ftyp", Buffer.from("isom0000"));
+    const handler = box("hdlr", Buffer.concat([Buffer.alloc(8), Buffer.from("vide")]));
+    const movie = box("moov", box("trak", box("mdia", handler, true)), true);
+    await fs.writeFile(file, Buffer.concat([ftyp, box("mdat", Buffer.alloc(64)), movie]));
+    await assertMp4VideoTrack(file, signal());
+    const extendsToEnd = Buffer.from(movie);
+    extendsToEnd.writeUInt32BE(0);
+    // Normal 8-byte moov with zero size extends to EOF.
+    await fs.writeFile(file, Buffer.concat([ftyp, extendsToEnd.subarray(0, 8), movie.subarray(16)]));
+    await assertMp4VideoTrack(file, signal());
+    const overrun = Buffer.alloc(8);
+    overrun.writeUInt32BE(999);
+    overrun.write("moov", 4);
+    const tooSmall = Buffer.alloc(8);
+    tooSmall.writeUInt32BE(4);
+    tooSmall.write("moov", 4);
+    const wideOverrun = Buffer.alloc(16);
+    wideOverrun.writeUInt32BE(1);
+    wideOverrun.write("moov", 4);
+    wideOverrun.writeBigUInt64BE(2n ** 63n, 8);
+    const maxBoxes = Buffer.concat(Array.from({ length: 4097 }, () => box("free", Buffer.alloc(0))));
+    for (const invalid of [
+      overrun,
+      tooSmall,
+      wideOverrun,
+      wideOverrun.subarray(0, 12),
+      handler,
+      box("moov", handler),
+      maxBoxes
+    ]) {
+      await fs.writeFile(file, Buffer.concat([ftyp, invalid]));
+      await expect(assertMp4VideoTrack(file, signal())).rejects.toBeInstanceOf(Error);
+    }
+    await fs.writeFile(file, Buffer.concat([ftyp, movie]));
+    const controller = new AbortController();
+    controller.abort();
+    await expect(assertMp4VideoTrack(file, controller.signal)).rejects.toMatchObject({ name: "AbortError" });
+    // On Windows this also proves all failure paths released their file handles.
+    await fs.rename(file, file + ".released");
   });
   it("小红书保留历史缺省格式，但不内联活动 HTML", async () => {
     remote.mockResolvedValueOnce(

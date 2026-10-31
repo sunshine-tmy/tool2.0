@@ -2,6 +2,15 @@ import type { DesktopBridge, StartupSnapshot } from "@toolbox/shared/desktop";
 import { contextBridge, ipcRenderer } from "electron";
 
 const desktopBridge: Required<DesktopBridge> = {
+  getDataBackupState: () => ipcRenderer.invoke("desktop:data-backup-state"),
+  selectDataBackup: () => ipcRenderer.invoke("desktop:data-backup-select"),
+  previewDataBackup: (input) => ipcRenderer.invoke("desktop:data-backup-preview", input),
+  exportModuleData: (input) => ipcRenderer.invoke("desktop:data-backup-export", input),
+  importModuleData: (planId, preferences) => ipcRenderer.invoke("desktop:data-backup-import", planId, preferences),
+  cancelDataBackup: (operationId) => ipcRenderer.invoke("desktop:data-backup-cancel", operationId),
+  rollbackModuleData: (restorePointId, preferences) =>
+    ipcRenderer.invoke("desktop:data-backup-rollback", restorePointId, preferences),
+  deleteDataRestorePoint: (restorePointId) => ipcRenderer.invoke("desktop:data-backup-delete-point", restorePointId),
   getStartupDiagnostics: () => ipcRenderer.invoke("diagnostics:startup-state"),
   onStartupDiagnostics: (callback: (state: StartupSnapshot) => void) => {
     const listener = (_event: unknown, state: StartupSnapshot) => callback(state);

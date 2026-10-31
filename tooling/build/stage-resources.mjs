@@ -58,6 +58,7 @@ export async function run({ rebuild }) {
   async function assertStagedRuntime() {
     const requiredPaths = [
       path.join(stageBackend, "dist", "desktop-entry.js"),
+      path.join(stageBackend, "dist", "data-backup-entry.js"),
       path.join(stageBackend, "node_modules", "better-sqlite3"),
       path.join(stageBackend, "node_modules", "sharp"),
       path.join(stageBackend, "node_modules", "detect-libc"),

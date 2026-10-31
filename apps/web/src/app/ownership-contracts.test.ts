@@ -29,6 +29,7 @@ describe("R08 application ownership contracts", () => {
       [
         ["/", "home"],
         ["/settings", "desktop-settings"],
+        ["/settings/data-backup", "data-backup"],
         ["/settings/diagnostics", "diagnostics"],
         ["/tools/audio-library", "audio-library"],
         ["/tools/edge-tts", "edge-tts"],

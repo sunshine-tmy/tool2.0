@@ -21,6 +21,7 @@ export type ArchiveSource = Pick<
     width?: number;
     height?: number;
     durationMs?: number;
+    requireVideoTrack?: true;
   }>;
 };
 export type ArchiveProgress = (stage: ContentArchiveTask["stage"], progress: number, message: string) => void;

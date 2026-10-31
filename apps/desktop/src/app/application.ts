@@ -2,6 +2,7 @@ import { createDesktopMaintenance } from "./maintenance";
 import { createDesktopQuitFlow } from "./quit-flow";
 import { createDesktopPaths } from "../data/desktop-paths";
 import { createBusinessWindow } from "../windows/business-window";
+import { createSystemTray } from "../windows/system-tray";
 import { createStartupMigrationFlow } from "./startup-migration-flow";
 import { registerDesktopIpc } from "../ipc/register-desktop-ipc";
 import { app, type BrowserWindow, ipcMain, session } from "electron";
@@ -11,7 +12,8 @@ import { recoverDesktopDataMigrations, type DesktopDataMigrationOptions } from "
 import { readDesktopSettings } from "../data/desktop-settings";
 import { prepareStartupDataMigration } from "../data/desktop-root-migration";
 import { createDesktopUpdater, scheduleAutomaticUpdateCheck, type DesktopUpdater } from "../updates/desktop-updater";
-import { createDesktopRuntimeLayout, desktopBackendEntrypoint } from "../runtime-layout";
+import { createDesktopRuntimeLayout, desktopBackendEntrypoint, desktopBackupEntrypoint } from "../runtime-layout";
+import { DesktopDataBackup, createBackupHelper } from "../data/data-backup";
 import { StartupDiagnostics } from "./startup-diagnostics";
 import { configureApplicationMenu } from "./application-menu";
 type DesktopApplicationOptions = {
@@ -34,6 +36,14 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
   let startupDiagnostics: StartupDiagnostics | undefined;
   let desktopIpcRegistered = false;
   let versionIpcRegistered = false;
+  let dataBackup: DesktopDataBackup | undefined;
+  const systemTray = createSystemTray({
+    iconPath: desktopIconPath,
+    platform: process.platform,
+    isQuitting: () => quitting,
+    showWindow: focusMainWindow,
+    quit: () => app.quit()
+  });
 
   const { initializeDesktopPaths } = createDesktopPaths({
     installRoot,
@@ -66,6 +76,7 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
     isPlaybackActive: () => audioPlaybackActive,
     setQuitting: (active) => {
       quitting = active;
+      if (active) systemTray.dispose();
     }
   });
   const quitFlow = createDesktopQuitFlow({
@@ -82,6 +93,7 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
     isQuitting: () => quitting,
     setQuitting: (active) => {
       quitting = active;
+      if (active) systemTray.dispose();
     },
     clearAutomaticUpdateTimer: () => {
       if (automaticUpdateTimer) clearTimeout(automaticUpdateTimer);
@@ -141,6 +153,11 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
       desktopOperationInProgress = true;
       try {
         await recoverDesktopDataMigrations(migrationOptions(layout));
+        dataBackup ??= new DesktopDataBackup(
+          { layout, withBackendStopped },
+          createBackupHelper(layout, desktopBackupEntrypoint(app.isPackaged, process.resourcesPath), app.getVersion())
+        );
+        await dataBackup.initialize();
       } finally {
         desktopOperationInProgress = false;
       }
@@ -177,6 +194,7 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
           },
           scheduleConfiguredUpdateCheck,
           withBackendStopped,
+          dataBackup,
           migrationOptions: migrationOptions(layout)
         });
         desktopIpcRegistered = true;
@@ -191,6 +209,7 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
         getMainWindow: () => mainWindow,
         onCreated: (window) => {
           mainWindow = window;
+          systemTray.attach(window);
         },
         closeStartupMigration: startupMigration.closeForMainWindow,
         isQuitting: () => quitting
@@ -225,8 +244,9 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
     checkForUpdates: async () => ({ enabled: false, checking: false })
   };
   function focusMainWindow() {
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed() || quitting) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
     mainWindow.focus();
   }
   return { boot, focusMainWindow, beforeQuit: quitFlow.beforeQuit };

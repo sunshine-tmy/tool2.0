@@ -1,4 +1,5 @@
 /** Desktop wire contracts only: no Electron, Node, persistence or executable validation. */
+import type { DataBackupBridge } from "../system/data-backup-contract";
 export type DesktopMigrationSummary = {
   id: string;
   status: "imported" | "rolled-back";
@@ -82,7 +83,7 @@ export type ShutdownInspection = { busy: boolean; blocked: boolean; reason?: str
 export type ShutdownPreparation = ShutdownInspection & { prepared: boolean };
 
 /** Each method remains a fixed capability; never expose a generic invoke/channel API. */
-export interface DesktopBridge {
+export interface DesktopBridge extends Partial<DataBackupBridge> {
   getStartupDiagnostics(): Promise<StartupSnapshot>;
   onStartupDiagnostics(callback: (state: StartupSnapshot) => void): () => void;
   retryStartup(): Promise<void>;

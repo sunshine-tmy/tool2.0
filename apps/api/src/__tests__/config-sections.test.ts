@@ -9,6 +9,14 @@ const root = path.join(os.tmpdir(), "config-sections-中文 空格");
 const layout = createRuntimeLayout({ appRoot: root, configRoot: path.join(root, "settings") });
 const base = { layout, dotenvPath: false as const };
 
+it("defaults shop fallback to TikWM and allows explicit opt-out without accepting arbitrary providers", () => {
+  expect(getConfig({ ...base, environment: {} }).tiktokShopFallback).toBe("tikwm");
+  expect(getConfig({ ...base, environment: { TIKTOK_SHOP_FALLBACK: " OFF " } }).tiktokShopFallback).toBe("off");
+  expect(() => getConfig({ ...base, environment: { TIKTOK_SHOP_FALLBACK: "https://evil.test" } })).toThrow(
+    "TIKTOK_SHOP_FALLBACK"
+  );
+});
+
 it("keeps explicit roots, flat values and the original test database default", () => {
   const value = getConfig({ ...base, environment: { NODE_ENV: "test" } });
   expect(value.runtime).toBe(layout);

@@ -20,7 +20,7 @@ const mediaDomains = [
   "ibytedtos.com"
 ];
 
-function mediaUrls(value: unknown): string[] {
+export function tikTokMediaUrls(value: unknown): string[] {
   const entries =
     typeof value === "string"
       ? [value]
@@ -49,6 +49,12 @@ function mediaUrls(value: unknown): string[] {
   ].slice(0, 8);
 }
 
+export class TikTokShopVideoMissingError extends ArchiveTaskError {
+  constructor() {
+    super("TIKTOK_MEDIA_INVALID", "TikTok 商品视频未提供可下载的视频地址，备用解析未启用或未能取得视频");
+  }
+}
+
 export function tikTokWorkIdentity(input: string) {
   const url = new URL(input);
   const match = /^\/@([A-Za-z0-9_.-]+)\/(video|photo)\/(\d{5,24})\/?$/.exec(url.pathname);
@@ -62,7 +68,7 @@ export function tikTokWorkIdentity(input: string) {
     : undefined;
 }
 
-export function normalizeTikTokItem(value: unknown, expectedId: string): ArchiveSource {
+export function normalizeTikTokItem(value: unknown, expectedId: string, shopVideoUrls?: string[]): ArchiveSource {
   const item = object(value);
   if (item.id !== expectedId || !/^\d{5,24}$/.test(expectedId))
     throw new ArchiveTaskError("TIKTOK_IDENTITY_MISMATCH", "TikTok 返回的作品与请求不一致，未保存任何内容");
@@ -81,7 +87,7 @@ export function normalizeTikTokItem(value: unknown, expectedId: string): Archive
       throw new ArchiveTaskError("TIKTOK_MEDIA_INVALID", "TikTok 图集为空或超过归档数量上限");
     for (const [index, value] of images.entries()) {
       const image = object(value);
-      const urls = mediaUrls(image.imageURL);
+      const urls = tikTokMediaUrls(image.imageURL);
       if (!urls.length)
         throw new ArchiveTaskError("TIKTOK_MEDIA_INVALID", "TikTok 图集缺少可下载图片，未保存不完整图集");
       media.push({
@@ -100,16 +106,21 @@ export function normalizeTikTokItem(value: unknown, expectedId: string): Archive
       ? video.playAddr.map((entry) => (typeof entry === "string" ? entry : object(entry).src))
       : video.playAddr;
     const alternatives = Array.isArray(video.bitrateInfo)
-      ? video.bitrateInfo.flatMap((entry) => mediaUrls(object(entry).PlayAddr))
+      ? video.bitrateInfo.flatMap((entry) => tikTokMediaUrls(object(entry).PlayAddr))
       : [];
-    const urls = [
+    let urls = [
       ...new Set([
-        ...mediaUrls(playAddr),
-        ...mediaUrls(video.downloadAddr),
+        ...tikTokMediaUrls(playAddr),
+        ...tikTokMediaUrls(video.downloadAddr),
         ...alternatives,
-        ...mediaUrls(video.PlayAddrStruct)
+        ...tikTokMediaUrls(video.PlayAddrStruct)
       ])
     ].slice(0, 8);
+    const useShopFallback = !urls.length && (item.isECVideo === 1 || item.isECVideo === true);
+    if (useShopFallback) {
+      if (shopVideoUrls === undefined) throw new TikTokShopVideoMissingError();
+      urls = tikTokMediaUrls(shopVideoUrls);
+    }
     if (!urls.length)
       throw new ArchiveTaskError(
         "TIKTOK_MEDIA_INVALID",
@@ -119,11 +130,14 @@ export function normalizeTikTokItem(value: unknown, expectedId: string): Archive
       kind: "video",
       index: 0,
       urls,
+      ...(useShopFallback ? { requireVideoTrack: true as const } : {}),
       width: positive(video.width),
       height: positive(video.height),
       durationMs: positive(video.duration) ? Math.round(Number(video.duration) * 1000) : undefined
     });
-    const cover = mediaUrls(video.originCover).length ? mediaUrls(video.originCover) : mediaUrls(video.cover);
+    const cover = tikTokMediaUrls(video.originCover).length
+      ? tikTokMediaUrls(video.originCover)
+      : tikTokMediaUrls(video.cover);
     if (cover.length) media.push({ kind: "cover", index: 1, urls: cover });
   }
   const description = text(item.desc);
@@ -155,7 +169,7 @@ export function normalizeTikTokItem(value: unknown, expectedId: string): Archive
   };
 }
 
-export function readTikTokPage(html: string, expectedId: string): ArchiveSource | undefined {
+export function readTikTokPage(html: string, expectedId: string, shopVideoUrls?: string[]): ArchiveSource | undefined {
   for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     const id = /\bid\s*=\s*["']([^"']+)["']/i.exec(match[1])?.[1];
     if (
@@ -180,7 +194,7 @@ export function readTikTokPage(html: string, expectedId: string): ArchiveSource 
       object(detail.itemInfo).itemStruct ??
       object(data.ItemModule)[expectedId] ??
       object(object(object(data.props).pageProps).itemInfo).itemStruct;
-    if (value !== undefined) return normalizeTikTokItem(value, expectedId);
+    if (value !== undefined) return normalizeTikTokItem(value, expectedId, shopVideoUrls);
   }
   return undefined;
 }

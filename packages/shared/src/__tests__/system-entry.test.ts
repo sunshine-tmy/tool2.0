@@ -5,11 +5,15 @@ import * as system from "../system/index";
 import * as capabilities from "../system/component-packages";
 import * as diagnostics from "../system/diagnostics";
 import * as cleanup from "../system/cleanup";
+import * as backup from "../system/data-backup";
+import * as backupPreferences from "../system/backup-preferences";
 
 describe("system contract entry", () => {
   it("reuses exactly the existing capability and diagnostic exports", () => {
     const existing = { ...capabilities, ...diagnostics, ...cleanup };
-    expect(Object.keys(system).sort()).toEqual(Object.keys(existing).sort());
+    const expected = { ...existing, ...backup, ...backupPreferences };
+    expect(Object.keys(system).sort()).toEqual(Object.keys(expected).sort());
+    for (const [key, value] of Object.entries(expected)) expect(Reflect.get(system, key)).toBe(value);
     for (const [key, value] of Object.entries(existing)) {
       expect(Reflect.get(system, key)).toBe(value);
       expect(Reflect.get(root, key)).toBe(value);

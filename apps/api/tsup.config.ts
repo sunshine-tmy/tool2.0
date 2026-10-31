@@ -8,6 +8,7 @@ export default defineConfig({
     app: "src/app.ts",
     bootstrap: "src/bootstrap.ts",
     "desktop-entry": "src/desktop-entry.ts",
+    "data-backup-entry": "src/data-backup-entry.ts",
     server: "src/server.ts"
   },
   outDir: "dist",

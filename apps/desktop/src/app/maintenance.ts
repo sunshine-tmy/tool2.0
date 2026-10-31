@@ -13,8 +13,17 @@ type MaintenanceContext = {
 };
 
 export function createDesktopMaintenance(context: MaintenanceContext) {
-  async function withBackendStopped<T>(operation: () => Promise<T>) {
+  async function withBackendStopped<T>(
+    operation: () => Promise<T>,
+    options: {
+      returnPath?: "/settings/data-backup";
+      requireIdlePlayback?: boolean;
+      afterRestart?: (result: T) => Promise<void>;
+    } = {}
+  ): Promise<T> {
     if (context.isOperation()) throw new Error("已有桌面维护操作正在执行");
+    if (options.requireIdlePlayback && context.isPlaybackActive())
+      throw new Error("请先暂停音频播放，再备份或恢复数据");
     if (!context.getBackend()) throw new Error("本地服务尚未启动");
     context.setOperation(true);
     try {
@@ -33,12 +42,13 @@ export function createDesktopMaintenance(context: MaintenanceContext) {
         context.setBackendOrigin(await context.getBackend()!.start());
         context.getBackend()!.monitorUnexpectedExit();
         if (context.getMainWindow() && context.getBackendOrigin())
-          await context.getMainWindow()!.loadURL(context.getBackendOrigin()!);
+          await context.getMainWindow()!.loadURL(context.getBackendOrigin()! + (options.returnPath ?? ""));
       } catch (restartError) {
         throw new Error(`本地服务重启失败：${message(restartError)}`);
       }
       if (operationError) throw operationError;
-      return result!;
+      if (options.afterRestart) await options.afterRestart(result as T);
+      return result as T;
     } finally {
       context.setOperation(false);
     }

@@ -87,6 +87,94 @@ describe("TikTok anonymous runtime", () => {
       await runtime.close();
     }
   });
+  it("uses the fallback only for a public shop video with missing addresses and strips share parameters", async () => {
+    const url = canonical.replace("/photo/", "/video/");
+    const official = {
+      id,
+      desc: "官方标题",
+      isECVideo: 1,
+      isAd: false,
+      author: { uniqueId: "shop" },
+      video: { playAddr: "", duration: 25 }
+    };
+    const remote = vi
+      .fn()
+      .mockResolvedValueOnce(response(page(official), url + "?share_token=never-forward#fragment"))
+      .mockResolvedValueOnce(
+        response(
+          JSON.stringify({
+            code: 0,
+            data: { id, title: "第三方标题", play: "https://v16.tiktokcdn-us.com/video.mp4" }
+          }),
+          "https://www.tikwm.com/api/"
+        )
+      );
+    const runtime = new TikTokRuntime({ remoteFetch: remote });
+    const progress = vi.fn();
+    try {
+      const source = await runtime.extract(url, new AbortController().signal, progress);
+      expect(source.title).toBe("官方标题");
+      expect(source.media[0]).toMatchObject({ kind: "video", requireVideoTrack: true });
+      expect(new URL(remote.mock.calls[1][0]).searchParams.get("url")).toBe(url);
+      expect(remote.mock.calls[1][1].headers).not.toHaveProperty("cookie");
+      expect(progress).toHaveBeenCalledWith("parsing", 24, expect.stringContaining("TikWM"));
+    } finally {
+      await runtime.close();
+    }
+  });
+  it.each(["off", "private", "wrong-id", "normal-video", "images", "playable-shop"])(
+    "does not use shop fallback for %s",
+    async (mode) => {
+      const url = canonical.replace("/photo/", "/video/");
+      const item = {
+        id,
+        isECVideo: mode === "normal-video" ? 0 : 1,
+        privateItem: mode === "private",
+        author: { uniqueId: "shop" },
+        video: { playAddr: mode === "playable-shop" ? "https://v16.tiktokcdn-us.com/video.mp4" : "" },
+        ...(mode === "images" ? { imagePost: { images: [{ imageURL: { urlList: [] } }] } } : {})
+      };
+      if (mode === "wrong-id") item.id = "123456";
+      const remote = vi.fn().mockResolvedValue(response(page(item), url));
+      const runtime = new TikTokRuntime({ remoteFetch: remote, shopFallback: mode === "off" ? "off" : "tikwm" });
+      try {
+        if (mode === "playable-shop")
+          expect((await runtime.extract(url, new AbortController().signal)).media[0].requireVideoTrack).toBeUndefined();
+        else await expect(runtime.extract(url, new AbortController().signal)).rejects.toBeInstanceOf(Error);
+        expect(remote).toHaveBeenCalledTimes(1);
+      } finally {
+        await runtime.close();
+      }
+    }
+  );
+  it("cancels an in-flight shop fallback and suppresses its late result", async () => {
+    const url = canonical.replace("/photo/", "/video/");
+    let complete!: (value: Response) => void;
+    const remote = vi
+      .fn()
+      .mockResolvedValueOnce(response(page({ id, isECVideo: 1, video: { playAddr: "" } }), url))
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            complete = resolve;
+          })
+      );
+    const runtime = new TikTokRuntime({ remoteFetch: remote });
+    const controller = new AbortController();
+    const pending = runtime.extract(url, controller.signal);
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.waitFor(() => expect(remote).toHaveBeenCalledTimes(2));
+    controller.abort();
+    await rejected;
+    complete(
+      response(
+        JSON.stringify({ code: 0, data: { id, play: "https://v16.tiktokcdn-us.com/video.mp4" } }),
+        "https://www.tikwm.com/api/"
+      )
+    );
+    await runtime.close();
+    expect(runtime.isActive()).toBe(false);
+  });
   it("cancels and closes promptly even when an injected transport ignores abort", async () => {
     const remote = vi.fn(() => new Promise<Response>(() => undefined));
     const runtime = new TikTokRuntime({ remoteFetch: remote });

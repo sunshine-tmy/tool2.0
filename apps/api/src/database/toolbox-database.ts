@@ -19,15 +19,24 @@ export class ToolboxDatabase {
   readonly connection: Database.Database;
   readonly schemaBackupId: string | undefined;
 
-  constructor(databasePath: string) {
+  constructor(databasePath: string, options: { maintenance?: boolean; readonly?: boolean } = {}) {
     this.path = databasePath;
     const existing = databasePath !== ":memory:" && fs.existsSync(databasePath) && fs.statSync(databasePath).size > 0;
-    if (databasePath !== ":memory:") fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+    if (databasePath !== ":memory:" && !options.readonly) fs.mkdirSync(path.dirname(databasePath), { recursive: true });
     this.connection = new Database(databasePath, {
       timeout: 5_000,
-      fileMustExist: false
+      fileMustExist: options.maintenance === true,
+      readonly: options.readonly === true
     });
     try {
+      // Offline backup must not migrate schemas or rewrite interrupted work on open.
+      if (options.maintenance) {
+        if (databaseSchemaVersion(this.connection) !== DATABASE_SCHEMA_VERSION)
+          throw new Error("备份需要当前版本已正常启动过的数据库，请先完成正常启动");
+        this.connection.pragma("foreign_keys = ON");
+        this.connection.pragma("trusted_schema = OFF");
+        return;
+      }
       this.schemaBackupId = existing ? backupBeforeSchemaMigration(this.connection, databasePath) : undefined;
       const upgrading = databaseSchemaVersion(this.connection) < DATABASE_SCHEMA_VERSION;
       // WAL 提升读写并发；外键和 trusted_schema 关闭不可信扩展路径，busy_timeout

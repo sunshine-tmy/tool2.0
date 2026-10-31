@@ -99,6 +99,8 @@ it("keeps every API and health method/path while allowing internal source reloca
           "GET video-edit-runtime",
           "POST local-videos",
           "PATCH items/:id/publication",
+          "GET items/:id/publication",
+          "HEAD items/:id/publication",
           "HEAD video-edit-runtime",
           "GET items/:id/media/:mediaId/audio-edits",
           "HEAD items/:id/media/:mediaId/audio-edits",

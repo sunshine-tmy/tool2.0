@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
       "refresh",
       "remove",
       "setPublication",
+      "publication",
       "xhsRuntime",
       "douyinRuntime",
       "startXhsAuth",
@@ -107,13 +108,14 @@ beforeEach(() => {
   Object.values(mocks.api).forEach((fn) => fn.mockResolvedValue({}));
   mocks.api.list!.mockResolvedValue(listFixture());
   mocks.api.detail!.mockResolvedValue(archiveFixture());
+  mocks.api.publication!.mockImplementation(async (archiveId) => ({ archiveId, publishedElsewhere: false }));
   mocks.api.create!.mockResolvedValue(taskFixture());
   mocks.api.refresh!.mockResolvedValue(taskFixture());
   mocks.api.translate!.mockResolvedValue({ id: "translation-123" });
   mocks.api.translateBatch!.mockResolvedValue({ id: "translation-123" });
   mocks.api.xhsRuntime!.mockResolvedValue({ message: "小红书环境就绪" });
   mocks.api.douyinRuntime!.mockResolvedValue({ available: false, message: "抖音组件未安装" });
-  mocks.confirm.mockResolvedValue(true);
+  mocks.confirm.mockReset().mockResolvedValue(true);
 });
 afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
@@ -273,12 +275,122 @@ describe("中性多媒体归档页面", () => {
     await flushPromises();
     expect(mocks.api.setPublication).toHaveBeenCalledWith("archive-123", true, expect.any(AbortSignal));
     expect(mocks.message.success).toHaveBeenCalledWith("已标记为在其他平台发布");
+    expect(mocks.confirm).not.toHaveBeenCalled();
     mocks.message.success.mockClear();
     mocks.api.setPublication!.mockRejectedValueOnce(new Error("write failed"));
     panel.vm.$emit("setPublication", "archive-123", false);
     await flushPromises();
     expect(mocks.message.success).not.toHaveBeenCalled();
     expect(mocks.message.error).toHaveBeenCalled();
+  });
+  it.each(["列表", "详情"] as const)("%s取消发布标记需二次确认，拒绝或重复点击不会写入", async (source) => {
+    let published = true;
+    mocks.api.list!.mockImplementation(async () => {
+      const result = listFixture();
+      result.items[0]!.publishedElsewhere = published;
+      return result;
+    });
+    mocks.api.publication!.mockImplementation(async (archiveId) => ({ archiveId, publishedElsewhere: published }));
+    mocks.api.setPublication!.mockImplementation(async (archiveId, value) => {
+      published = value;
+      return { archiveId, publishedElsewhere: value };
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.getComponent(ArchiveListPanel);
+    panel.vm.$emit("openDetail", "archive-123");
+    await flushPromises();
+    const modal = wrapper.getComponent(XhsDetailDrawer);
+    const action = source === "列表" ? panel : modal;
+    let decide!: (accepted: boolean) => void;
+    mocks.confirm.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          decide = resolve;
+        })
+    );
+    action.vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.stringContaining("日落"),
+      expect.objectContaining({ title: "取消已发布标记", positiveText: "确认取消标记", negativeText: "保留标记" })
+    );
+    expect(mocks.api.setPublication).not.toHaveBeenCalled();
+    panel.vm.$emit("setPublication", "archive-123", false);
+    modal.vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(mocks.confirm).toHaveBeenCalledTimes(1);
+    decide(false);
+    await flushPromises();
+    expect(mocks.api.setPublication).not.toHaveBeenCalled();
+    expect(mocks.message.success).not.toHaveBeenCalled();
+    expect(panel.props("archives").items[0]?.publishedElsewhere).toBe(true);
+    expect(modal.props("publishedElsewhere")).toBe(true);
+    mocks.confirm.mockResolvedValueOnce(true);
+    action.vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(mocks.api.setPublication).toHaveBeenCalledTimes(1);
+    expect(mocks.api.setPublication).toHaveBeenCalledWith("archive-123", false, expect.any(AbortSignal));
+    expect(panel.props("archives").items[0]?.publishedElsewhere).toBe(false);
+    expect(modal.props("publishedElsewhere")).toBe(false);
+    expect(mocks.message.success).toHaveBeenCalledWith("已取消发布标记");
+  });
+  it("离开归档页面后，迟到的取消标记确认不会发起写入", async () => {
+    const list = listFixture();
+    list.items[0]!.publishedElsewhere = true;
+    mocks.api.list!.mockResolvedValue(list);
+    const wrapper = mountPage();
+    await flushPromises();
+    let decide!: (accepted: boolean) => void;
+    mocks.confirm.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          decide = resolve;
+        })
+    );
+    wrapper.getComponent(ArchiveListPanel).vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(mocks.confirm).toHaveBeenCalledTimes(1);
+    wrappers.splice(wrappers.indexOf(wrapper), 1);
+    wrapper.unmount();
+    decide(true);
+    await flushPromises();
+    expect(mocks.api.setPublication).not.toHaveBeenCalled();
+    expect(mocks.message.success).not.toHaveBeenCalled();
+  });
+  it("详情与列表的发布按钮双向同步，失败不改变状态或显示成功", async () => {
+    let published = false;
+    mocks.api.list!.mockImplementation(async () => {
+      const result = listFixture();
+      result.items[0]!.publishedElsewhere = published;
+      return result;
+    });
+    mocks.api.setPublication!.mockImplementation(async (archiveId, value) => {
+      published = value;
+      return { archiveId, publishedElsewhere: value };
+    });
+    const wrapper = mountPage();
+    await flushPromises();
+    const panel = wrapper.getComponent(ArchiveListPanel);
+    panel.vm.$emit("openDetail", "archive-123");
+    await flushPromises();
+    const modal = wrapper.getComponent(XhsDetailDrawer);
+    expect(modal.props("publishedElsewhere")).toBe(false);
+    modal.vm.$emit("setPublication", "archive-123", true);
+    await flushPromises();
+    expect(modal.props("publishedElsewhere")).toBe(true);
+    expect(panel.props("archives").items[0]?.publishedElsewhere).toBe(true);
+    mocks.message.success.mockClear();
+    mocks.api.setPublication!.mockRejectedValueOnce(new Error("write failed"));
+    modal.vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(modal.props("publishedElsewhere")).toBe(true);
+    expect(mocks.message.success).not.toHaveBeenCalled();
+    panel.vm.$emit("setPublication", "archive-123", false);
+    await flushPromises();
+    expect(modal.props("publishedElsewhere")).toBe(false);
+    expect(panel.props("archives").items[0]?.publishedElsewhere).toBe(false);
+    expect(mocks.message.success).toHaveBeenCalledWith("已取消发布标记");
   });
   it("wires date sorting into the server request and keeps it on explicit refresh", async () => {
     const wrapper = mountPage();

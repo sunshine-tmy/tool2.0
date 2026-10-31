@@ -23,7 +23,11 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
   const fileMetadata = new FileMetadataRepository(database, config.storageRoot);
   const taskStore = createTaskStore(1000, database);
   const remoteFetch = createRemoteFetch({ resolver: remoteAddressResolver });
-  const tiktokRuntime = new TikTokRuntime({ proxy: config.tiktokHttpsProxy, resolver: remoteAddressResolver });
+  const tiktokRuntime = new TikTokRuntime({
+    proxy: config.tiktokHttpsProxy,
+    resolver: remoteAddressResolver,
+    shopFallback: config.tiktokShopFallback
+  });
   const xhsStore = new XhsArchiveStore(config, database, fileMetadata);
   let stopCapabilityBeforeUninstall: (componentId: string) => Promise<void> = async () => undefined;
   let refreshDesktopCapabilities: NonNullable<ComponentManagerOptions["onAfterMutation"]> = async () => undefined;

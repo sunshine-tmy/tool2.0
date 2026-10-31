@@ -11,6 +11,7 @@ import type { ContentArchiveMedia, ArchivePlatform } from "@toolbox/shared";
 import type { AppConfig } from "../../../config";
 import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../../../security/remote-fetch";
 import { abortable, ArchiveTaskError, normalizeArchiveStorageError, type ArchiveSource } from "./provider";
+import { assertMp4VideoTrack } from "./mp4-video";
 
 export class ArchiveDownloadGateway {
   constructor(
@@ -118,6 +119,7 @@ export class ArchiveDownloadGateway {
               await handle.close();
             }
             if (header.subarray(4, 8).toString() !== "ftyp") throw new Error("MEDIA_FORMAT_INVALID");
+            if (source.requireVideoTrack) await assertMp4VideoTrack(temporary, signal);
             mimeType = "video/mp4";
           }
         }

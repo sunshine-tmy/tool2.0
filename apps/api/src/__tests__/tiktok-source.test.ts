@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeTikTokItem,
   readTikTokPage,
-  tikTokWorkIdentity
+  tikTokWorkIdentity,
+  TikTokShopVideoMissingError
 } from "../domains/content-archive/providers/tiktok/source";
 
 const id = "7700596613189963029";
@@ -109,9 +110,28 @@ describe("TikTok public page normalization", () => {
       },
       music: { playUrl: "https://v16.tiktok.com/music.mp4" }
     };
-    expect(() => readTikTokPage(html(item), id)).toThrow("普通浏览器");
-    expect(() => normalizeTikTokItem(item, id)).toThrow("出口地区");
+    expect(() => readTikTokPage(html(item), id)).toThrow(TikTokShopVideoMissingError);
+    expect(() => normalizeTikTokItem(item, id)).toThrow("商品视频");
     expect(() => normalizeTikTokItem({ ...item, isECVideo: 0 }, id)).toThrow("出口地区");
+  });
+  it("only supplements missing shop video URLs and keeps official metadata and access checks", () => {
+    const item = { ...video(), isECVideo: 1, isAd: false, video: { ...video().video, playAddr: "" } };
+    const urls = ["https://v16.tiktokcdn-us.com/verified.mp4"];
+    const source = readTikTokPage(html(item), id, urls)!;
+    expect(source).toMatchObject({
+      title: "商品介绍 #Tea [保留原文]",
+      description: item.desc,
+      author: { name: "商家" }
+    });
+    expect(source.media[0]).toMatchObject({ urls, requireVideoTrack: true, durationMs: 25000, width: 576 });
+    expect(source.media[1].kind).toBe("cover");
+    expect(() => normalizeTikTokItem({ ...item, privateItem: true }, id, urls)).toThrow("匿名公开访问");
+    expect(() => normalizeTikTokItem({ ...item, id: "123456" }, id, urls)).toThrow("不一致");
+    expect(() => normalizeTikTokItem({ ...item, isECVideo: 0 }, id, urls)).toThrow("视频地址");
+    expect(() => normalizeTikTokItem(item, id, ["https://evil.test/video.mp4"])).toThrow("视频地址");
+    const original = normalizeTikTokItem({ ...video(), isECVideo: 1 }, id, urls);
+    expect(original.media[0].urls).toEqual([video().video.playAddr]);
+    expect(original.media[0].requireVideoTrack).toBeUndefined();
   });
   it.each([
     "https://127.0.0.1/video",

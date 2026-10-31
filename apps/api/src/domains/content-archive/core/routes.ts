@@ -91,6 +91,26 @@ export function registerContentArchiveRoutes(
       return item ? ok(item) : reply.code(404).send(fail("ARCHIVE_NOT_FOUND", "存档不存在"));
     }
   );
+  app.get<{ Params: XhsArchiveIdParams }>(
+    "/api/v1/tools/media-archive/items/:id/publication",
+    {
+      schema: {
+        params: XhsArchiveIdParamsSchema,
+        response: { 200: apiSuccessSchema(ContentArchivePublicationSchema), 404: ApiFailureSchema }
+      }
+    },
+    async (request, reply) => {
+      try {
+        await store.initialize();
+        reply.header("cache-control", "no-store");
+        return ok(store.publications.get(request.params.id));
+      } catch (error) {
+        if (error instanceof ArchiveTaskError)
+          return reply.code(error.statusCode).send(fail(error.code, error.message));
+        throw error;
+      }
+    }
+  );
   app.patch<{ Params: XhsArchiveIdParams; Body: { publishedElsewhere: boolean } }>(
     "/api/v1/tools/media-archive/items/:id/publication",
     {

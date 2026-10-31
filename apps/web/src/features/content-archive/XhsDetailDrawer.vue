@@ -33,6 +33,18 @@
     </template>
     <template #footer>
       <div class="detail-actions">
+        <n-button
+          v-if="props.detail"
+          :type="props.publishedElsewhere ? 'default' : 'primary'"
+          secondary
+          :loading="props.publicationBusy || props.publicationLoading"
+          :disabled="props.publicationBusy || props.publicationLoading"
+          :aria-pressed="props.publishedElsewhere === true"
+          @click="togglePublication"
+        >
+          <template #icon><BadgeCheck :size="15" /></template>
+          {{ publicationLabel }}
+        </n-button>
         <n-button type="error" secondary @click="props.removeItem">
           <template #icon><Trash2 :size="15" /></template>删除存档
         </n-button>
@@ -63,25 +75,32 @@
 
 <script setup lang="ts">
 import { NButton, NModal } from "naive-ui";
-import { Languages, Trash2 } from "lucide-vue-next";
+import { computed } from "vue";
+import { BadgeCheck, Languages, Trash2 } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import ArchiveFacts from "./ArchiveFacts.vue";
 import { canEditTranslation } from "./presentation";
 import BilingualContent from "./BilingualContent.vue";
 import MediaGallery from "./MediaGallery.vue";
 
-const props = defineProps<{
-  open: boolean;
-  width: number | string;
-  detail?: ContentArchiveItem;
-  formatDate: (value: string) => string;
-  removeItem: () => void | Promise<void>;
-  translateDetail: () => void | Promise<void>;
-  editTranslation: (item: ContentArchiveItem) => void;
-  resetTranslation: (item: ContentArchiveItem) => void | Promise<void>;
-  hasEdited: (item: ContentArchiveItem) => boolean;
-  zipUrl: (id: string) => string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    open: boolean;
+    width: number | string;
+    detail?: ContentArchiveItem;
+    publishedElsewhere?: boolean;
+    publicationBusy?: boolean;
+    publicationLoading?: boolean;
+    formatDate: (value: string) => string;
+    removeItem: () => void | Promise<void>;
+    translateDetail: () => void | Promise<void>;
+    editTranslation: (item: ContentArchiveItem) => void;
+    resetTranslation: (item: ContentArchiveItem) => void | Promise<void>;
+    hasEdited: (item: ContentArchiveItem) => boolean;
+    zipUrl: (id: string) => string;
+  }>(),
+  { publishedElsewhere: undefined }
+);
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
@@ -90,7 +109,19 @@ const emit = defineEmits<{
   editWatermark: [mediaId: string];
   editAudio: [mediaId: string];
   copy: [text: string, label: string];
+  setPublication: [id: string, publishedElsewhere: boolean];
+  refreshPublication: [];
 }>();
+const publicationLabel = computed(() => {
+  if (props.publicationLoading) return "读取发布状态";
+  if (props.publishedElsewhere === undefined) return "重试发布状态";
+  return props.publishedElsewhere ? "取消已发布标记" : "标记为已发布";
+});
+function togglePublication() {
+  if (!props.detail || props.publicationBusy || props.publicationLoading) return;
+  if (props.publishedElsewhere === undefined) emit("refreshPublication");
+  else emit("setPublication", props.detail.id, !props.publishedElsewhere);
+}
 </script>
 
 <style scoped>

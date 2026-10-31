@@ -12,7 +12,8 @@ export type DesktopIpcContext = {
   setPlaybackActive: (active: boolean) => void;
   scheduleConfiguredUpdateCheck: (updater: DesktopUpdater, settings: { automaticUpdateChecks: boolean }) => void;
   migrationOptions: DesktopDataMigrationOptions;
-  withBackendStopped: <T>(operation: () => Promise<T>) => Promise<T>;
+  withBackendStopped: ReturnType<typeof import("../app/maintenance").createDesktopMaintenance>["withBackendStopped"];
+  dataBackup?: import("../data/data-backup").DesktopDataBackup;
 };
 export type DesktopIpcSecurity = {
   assertTrustedSender: (event: IpcMainInvokeEvent) => void;
