@@ -16,13 +16,13 @@
   "dependencies": {
     "@sinclair/typebox": "^0.34.52",
     "@toolbox/shared": "workspace:*",
-    "axios": "^1.20.0",
-    "lucide-vue-next": "^0.555.0",
+    "axios": "^1.21.0",
+    "lucide-vue-next": "^1.0.0",
     "naive-ui": "^2.45.3",
     "qrcode": "^1.5.4",
-    "vue": "^3.5.42",
-    "vue-router": "^4.6.4",
-    "wavesurfer.js": "^8.0.2"
+    "vue": "^3.5.44",
+    "vue-router": "^5.4.0",
+    "wavesurfer.js": "^8.0.3"
   },
   "devDependencies": {
     "@toolbox/runtime-core": "workspace:*",
