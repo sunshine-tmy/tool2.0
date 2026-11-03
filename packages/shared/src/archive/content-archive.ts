@@ -67,6 +67,9 @@ export const ContentArchiveListQuerySchema = Type.Composite(
     XhsArchiveListQuerySchema,
     Type.Object({
       platform: Type.Optional(Type.Union([Type.Literal("all"), ContentArchivePlatformSchema])),
+      publication: Type.Optional(
+        Type.Union([Type.Literal("all"), Type.Literal("published"), Type.Literal("unpublished")])
+      ),
       sort: Type.Optional(
         Type.Union([
           Type.Literal("published-desc"),
@@ -83,7 +86,8 @@ export const ContentArchiveListQuerySchema = Type.Composite(
 export const ContentArchiveCreateInputSchema = Type.Object(
   {
     url: Type.String({ minLength: 1, maxLength: 10_000 }),
-    platform: Type.Optional(Type.Union([Type.Literal("auto"), ArchivePlatformSchema]))
+    platform: Type.Optional(Type.Union([Type.Literal("auto"), ArchivePlatformSchema])),
+    groupId: Type.Optional(ArchiveGroupIdSchema)
   },
   { additionalProperties: false }
 );
@@ -101,7 +105,14 @@ export const ContentArchivePublicationSchema = Type.Object(
 );
 export type ContentArchivePublication = Static<typeof ContentArchivePublicationSchema>;
 export const ContentArchiveTaskSchema = Type.Composite(
-  [XhsArchiveTaskSchema, Type.Object({ platform: ArchivePlatformSchema, skipped: Type.Optional(Type.Boolean()) })],
+  [
+    XhsArchiveTaskSchema,
+    Type.Object({
+      platform: ArchivePlatformSchema,
+      skipped: Type.Optional(Type.Boolean()),
+      groupId: Type.Optional(ArchiveGroupIdSchema)
+    })
+  ],
   { additionalProperties: false }
 );
 export type ContentArchiveItem = Static<typeof ContentArchiveItemSchema>;

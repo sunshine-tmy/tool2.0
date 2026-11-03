@@ -238,15 +238,11 @@ export function useArchiveBatchImport(reportError: (error: unknown) => void, cha
     busy.value = true;
     historyGeneration++;
     const id = batch.value.id;
-    const profileId = owner.value?.id;
     stopRead();
     try {
-      if (profileId) await tiktokProfileApi.remove(profileId, scope.signal);
-      else await archiveImportApi.remove(id, scope.signal);
+      await archiveImportApi.remove(id, scope.signal);
       if (scope.aborted) return;
-      history.value = history.value.filter(
-        (value) => value.id !== id && (!profileId || value.ownerProfileId !== profileId)
-      );
+      history.value = history.value.filter((value) => value.id !== id);
       batch.value = undefined;
       owner.value = undefined;
       selectedId.value = undefined;

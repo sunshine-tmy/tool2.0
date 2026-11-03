@@ -116,7 +116,13 @@ export function normalizeTikTokItem(value: unknown, expectedId: string, shopVide
         ...tikTokMediaUrls(video.PlayAddrStruct)
       ])
     ].slice(0, 8);
-    const useShopFallback = !urls.length && (item.isECVideo === 1 || item.isECVideo === true);
+    // Some public shop pages omit isECVideo and only expose the product anchor (33),
+    // e.g. 7546456512328207623. Do not treat every anchor or every missing address as a shop video.
+    const hasShopMarker =
+      item.isECVideo === 1 ||
+      item.isECVideo === true ||
+      (Array.isArray(item.AnchorTypes) && item.AnchorTypes.some((type) => type === "33" || type === 33));
+    const useShopFallback = !urls.length && hasShopMarker;
     if (useShopFallback) {
       if (shopVideoUrls === undefined) throw new TikTokShopVideoMissingError();
       urls = tikTokMediaUrls(shopVideoUrls);

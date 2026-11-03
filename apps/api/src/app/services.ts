@@ -58,8 +58,9 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
           .list()
           .some(
             (task) =>
-              ["media-archive-audio-edit", "media-archive-local-upload"].includes(task.toolId) &&
-              ["pending", "running"].includes(task.status)
+              ["media-archive-audio-edit", "media-archive-local-upload", "audio-convert", "audio-extract"].includes(
+                task.toolId
+              ) && ["pending", "running"].includes(task.status)
           )) ||
       taskStore
         .list()

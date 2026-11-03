@@ -63,7 +63,10 @@ beforeEach(() => {
 
 async function mountTrash() {
   const wrapper = shallowMount(Page, {
-    global: { renderStubDefaultSlot: true, stubs: { NPagination: pagination, Pagination: pagination } }
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: { RouterLink: { template: "<a><slot /></a>" }, NPagination: pagination, Pagination: pagination }
+    }
   });
   await flushPromises();
   await wrapper
@@ -157,7 +160,7 @@ describe("Audio library recycle bin actions", () => {
     const wrapper = shallowMount(Page, {
       global: {
         renderStubDefaultSlot: true,
-        stubs: { NPagination: pagination, Pagination: pagination }
+        stubs: { RouterLink: { template: "<a><slot /></a>" }, NPagination: pagination, Pagination: pagination }
       }
     });
     await flushPromises();

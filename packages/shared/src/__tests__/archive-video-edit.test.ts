@@ -16,6 +16,9 @@ describe("配乐参数与用途契约", () => {
   });
   it("默认参数有效，允许无音乐及独立静音，不修改历史用途", () => {
     expect(Value.Check(ArchiveVideoEditInputSchema, input())).toBe(true);
+    expect(Value.Check(ArchiveVideoEditInputSchema, { ...input(), mode: "preview", previewFullLength: true })).toBe(
+      true
+    );
     expect(
       Value.Check(ArchiveVideoEditInputSchema, {
         ...input(),
@@ -34,6 +37,7 @@ describe("配乐参数与用途契约", () => {
       { ...input(), settings: { ...defaultArchiveAudioSettings(), originalVolume: NaN } },
       { ...input(), settings: { ...defaultArchiveAudioSettings(), musicVolume: -1 } },
       { ...input(), revision: -1 },
+      { ...input(), previewFullLength: "true" },
       { ...input(), slideshow: { images: [], secondsPerImage: 3, aspect: "portrait" } }
     ])
       expect(Value.Check(ArchiveVideoEditInputSchema, invalid)).toBe(false);

@@ -254,13 +254,17 @@ describe("多媒体归档客户端", () => {
       keyword: "晚霞",
       type: "video" as const,
       sort: "published-asc" as const,
+      publication: "unpublished" as const,
       page: 2,
       pageSize: 12
     };
-    const create = { url: "https://v.douyin.com/example/", platform: "douyin" as const };
+    const create = { url: "https://v.douyin.com/example/", platform: "douyin" as const, groupId: "group_123456" };
     const form = new FormData();
     form.append("sourceMediaId", "video-123");
-    const batch = { mode: "missing-or-stale" as const, filter: { platform: "douyin" as const, keyword: "晚霞" } };
+    const batch = {
+      mode: "missing-or-stale" as const,
+      filter: { platform: "douyin" as const, keyword: "晚霞", publication: "unpublished" as const }
+    };
     const edit = { sourceHash: "a".repeat(64), title: { edited: "Sunset" }, topics: [] };
     await api.create(create, signal);
     await api.task("task/1", signal);

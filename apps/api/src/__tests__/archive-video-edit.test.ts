@@ -166,6 +166,72 @@ async function execute(overrides: Partial<ArchiveVideoEditInput> = {}) {
   return service.get(job.id)!;
 }
 describe("可重复编辑的归档配乐", () => {
+  it("HTTP 手动结束保留数值并拒绝 0、越界时间、字符串及额外字段，不误判为自动模式", async () => {
+    const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    const settings = { ...defaultArchiveWatermarkSettings(), endSeconds: 1.25 };
+    const request = await input({ watermark: { draftId: draft.id, settings } });
+    const url = `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/audio-edits`;
+    for (const endSeconds of [0, 2.001, "1.25"]) {
+      const response = await app.inject({
+        method: "POST",
+        url,
+        payload: { ...request, watermark: { ...request.watermark, settings: { ...settings, endSeconds } } }
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe(
+        typeof endSeconds === "number" ? "ARCHIVE_WATERMARK_TIME_INVALID" : "ARCHIVE_EDIT_INPUT_INVALID"
+      );
+    }
+    const invalid = await app.inject({
+      method: "POST",
+      url,
+      payload: {
+        ...request,
+        watermark: { ...request.watermark, settings: { ...settings, endSeconds: null, autoEnd: true } }
+      }
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(render).not.toHaveBeenCalled();
+    const saved = await app.inject({ method: "POST", url, payload: request });
+    expect(saved.statusCode, saved.body).toBe(202);
+    await vi.waitFor(() => expect(service.get(saved.json().data.id)?.status).toBe("completed"));
+    expect(render.mock.lastCall?.[0].watermark?.settings.endSeconds).toBe(1.25);
+    expect((await store.get(itemId))!.media[0].audioEdit?.watermark?.settings.endSeconds).toBe(1.25);
+  });
+  it.each(["preview", "save"] as const)("HTTP %s 保留自动结束的 null，不被参数校验转换成 0", async (mode) => {
+    const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    const request = await input({
+      mode,
+      watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() }
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/audio-edits`,
+      payload: request
+    });
+    expect(response.statusCode, response.body).toBe(202);
+    const id = response.json().data.id;
+    await vi.waitFor(() => expect(service.get(id)?.status).toBe("completed"));
+    expect(render.mock.lastCall?.[0].watermark?.settings.endSeconds).toBeNull();
+    if (mode === "save") {
+      const media = (await store.get(itemId))!.media[0];
+      expect(media.audioEdit?.watermark?.settings.endSeconds).toBeNull();
+      const second = await app.inject({
+        method: "POST",
+        url: `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/audio-edits`,
+        payload: await input({ watermark: { settings: media.audioEdit!.watermark!.settings } })
+      });
+      expect(second.statusCode, second.body).toBe(202);
+      await vi.waitFor(() => expect(service.get(second.json().data.id)?.status).toBe("completed"));
+      expect((await store.get(itemId))!.media[0].audioEdit?.revision).toBe(2);
+    }
+  });
   it("水印库上传、选择和删除 API 复用独立草稿，删库后仍能保存与再次编辑归档快照", async () => {
     const prefix = "/api/v1/tools/media-archive";
     const png = await sharp({ create: { width: 12, height: 8, channels: 4, background: "red" } })
@@ -455,6 +521,45 @@ describe("可重复编辑的归档配乐", () => {
     expect((await store.get(itemId))!.media[2].id).toBe(job.resultMediaId);
     for (const media of photos.media)
       expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, itemId, media.fileName))).toEqual(original);
+  });
+  it("carries full audition and the saved music offset through preview and watermark saves without altering the original", async () => {
+    expect((await execute({ settings: { ...defaultArchiveAudioSettings(), musicStartSeconds: 0.4 } })).status).toBe(
+      "completed"
+    );
+    const before = (await store.get(itemId))!;
+    const preview = await execute({
+      mode: "preview",
+      previewFullLength: true,
+      previewStartSeconds: 0,
+      musicId: undefined,
+      musicRevision: undefined,
+      useSavedMusic: true,
+      watermark: null,
+      settings: before.media[0].audioEdit!.settings
+    });
+    expect(preview.status).toBe("completed");
+    expect(render.mock.lastCall?.[0]).toMatchObject({
+      preview: true,
+      previewFullLength: true,
+      settings: { musicStartSeconds: 0.4 }
+    });
+    expect(await store.get(itemId)).toEqual(before);
+    const png = await sharp({ create: { width: 20, height: 10, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    const saved = await execute({
+      musicId: undefined,
+      musicRevision: undefined,
+      useSavedMusic: true,
+      watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() },
+      settings: before.media[0].audioEdit!.settings
+    });
+    expect(saved.status).toBe("completed");
+    const media = (await store.get(itemId))!.media[0];
+    expect(media.audioEdit!.music).toEqual(before.media[0].audioEdit!.music);
+    expect(media.audioEdit!.settings.musicStartSeconds).toBe(0.4);
+    expect(media.audioEdit!.original.checksum).toBe(hash(original));
   });
   it("保存最新视频，原片和音乐独立保留，Range 与 ZIP 返回最新成品", async () => {
     const job = await execute();

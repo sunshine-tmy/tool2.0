@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { router } from "./router";
 
 describe("多媒体归档路由兼容", () => {
-  it("只注册保留的六个业务模块及归档兼容跳转", () => {
+  it("注册八个业务模块及归档兼容跳转", () => {
     expect(
       router
         .getRoutes()
@@ -12,6 +12,8 @@ describe("多媒体归档路由兼容", () => {
         .map((route) => route.path)
         .sort()
     ).toEqual([
+      "/tools/audio-convert",
+      "/tools/audio-extract",
       "/tools/audio-library",
       "/tools/edge-tts",
       "/tools/image-ai",

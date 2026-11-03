@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { mount, flushPromises, type VueWrapper } from "@vue/test-utils";
+import { defineComponent } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NButton, NSelect, NSlider, NPagination } from "naive-ui";
 import {
@@ -10,6 +11,8 @@ import {
 } from "@toolbox/shared";
 import ArchiveWatermarkControls from "./ArchiveWatermarkControls.vue";
 import ArchiveAudioEditor from "./ArchiveAudioEditor.vue";
+import ArchiveMusicRange from "./ArchiveMusicRange.vue";
+import ArchiveWatermarkPreview from "./ArchiveWatermarkPreview.vue";
 const mocks = vi.hoisted(() => ({
   runtime: vi.fn(),
   list: vi.fn(),
@@ -21,11 +24,12 @@ const mocks = vi.hoisted(() => ({
   music: vi.fn(),
   upload: vi.fn(),
   detail: vi.fn(),
+  musicItem: vi.fn(),
   confirm: vi.fn()
 }));
 vi.mock("./video-edit-api", () => ({ videoEditApi: mocks }));
 vi.mock("../audio-library/integrations/music", () => ({
-  archiveMusicLibraryApi: { list: mocks.music, upload: mocks.upload }
+  archiveMusicLibraryApi: { list: mocks.music, upload: mocks.upload, item: mocks.musicItem }
 }));
 vi.mock("./content-api", () => ({ contentArchiveApi: { detail: mocks.detail } }));
 vi.mock("../../shared/composables/useConfirmDialog", () => ({ useConfirmDialog: () => mocks.confirm }));
@@ -84,7 +88,10 @@ beforeEach(() => {
   mocks.runtime.mockReset().mockResolvedValue({ ready: true });
   mocks.list.mockReset().mockResolvedValue([]);
   mocks.music.mockReset().mockResolvedValue({ items: [selectedMusic], total: 1 });
-  mocks.create.mockReset().mockResolvedValue(pending);
+  mocks.musicItem.mockReset().mockResolvedValue(selectedMusic);
+  mocks.create
+    .mockReset()
+    .mockImplementation((_item, _media, input) => Promise.resolve({ ...pending, mode: input.mode }));
   mocks.get.mockReset().mockResolvedValue({ ...pending, status: "completed", progress: 100 });
   mocks.detail.mockReset().mockResolvedValue(original);
   mocks.confirm.mockReset().mockResolvedValue(true);
@@ -105,11 +112,32 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
-async function setup(item = original) {
+async function setup(item = original, initialPanel?: "audio" | "watermark") {
   const wrapper = mount(ArchiveAudioEditor, {
-    props: { show: true, item, mediaId: item.media[0].id },
+    props: { show: true, item, mediaId: item.media[0].id, initialPanel },
     global: {
-      stubs: { teleport: true, Modal: { template: "<div><slot /></div>" }, NModal: { template: "<div><slot /></div>" } }
+      stubs: {
+        RouterLink: { template: "<a><slot /></a>" },
+        teleport: true,
+        Modal: { template: "<div><slot /></div>" },
+        NModal: { template: "<div><slot /></div>" },
+        ArchiveMusicRange: defineComponent({
+          name: "ArchiveMusicRange",
+          props: {
+            url: String,
+            title: String,
+            musicDuration: Number,
+            videoDuration: Number,
+            start: Number,
+            disabled: Boolean,
+            loop: Boolean,
+            volume: Number
+          },
+          emits: ["update:start"],
+          methods: { stop: () => undefined },
+          template: "<div />"
+        })
+      }
     }
   });
   wrappers.push(wrapper);
@@ -120,6 +148,15 @@ function button(wrapper: VueWrapper, text: string) {
   return wrapper.findAllComponents(NButton).find((entry) => entry.text() === text)!;
 }
 describe("归档视频配乐编辑交互", () => {
+  it("selects converted library music on return without saving the video automatically", async () => {
+    const wrapper = await setup();
+    await wrapper.setProps({ initialMusicId: selectedMusic.id, show: false });
+    await wrapper.setProps({ show: true });
+    await flushPromises();
+    expect(mocks.musicItem).toHaveBeenCalledWith(selectedMusic.id);
+    expect(wrapper.findAllComponents(NSelect).some((select) => select.props("value") === selectedMusic.id)).toBe(true);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
   it("配乐选择分页展示服务端总数，并在搜索后更新总数及页码", async () => {
     mocks.music.mockResolvedValue({ items: [selectedMusic], total: 43 });
     const wrapper = await setup();
@@ -238,7 +275,16 @@ describe("归档视频配乐编辑交互", () => {
       }
     };
     const wrapper = await setup(edited);
+    mocks.get.mockResolvedValueOnce({
+      ...pending,
+      mode: "preview",
+      status: "completed",
+      progress: 100,
+      previewUrl: "/clean-watermark-base.mp4"
+    });
     await button(wrapper, "水印设置").trigger("click");
+    await vi.advanceTimersByTimeAsync(800);
+    await flushPromises();
     const controls = wrapper.findComponent(ArchiveWatermarkControls);
     expect(controls.props("asset")?.url).toContain("/saved-watermark");
     controls.vm.$emit("update:settings", { ...defaultArchiveWatermarkSettings(), endSeconds: 0.5, startSeconds: 1 });
@@ -301,6 +347,7 @@ describe("归档视频配乐编辑交互", () => {
     );
     const saved = structuredClone(original);
     saved.media[0].checksum = "b".repeat(64);
+    saved.media[0].previewUrl = `/latest.mp4?v=${saved.media[0].checksum}`;
     saved.media[0].audioEdit = {
       revision: 1,
       original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
@@ -312,6 +359,11 @@ describe("归档视频配乐编辑交互", () => {
     await vi.advanceTimersByTimeAsync(800);
     await flushPromises();
     expect(wrapper.emitted("saved")?.[0]).toEqual([saved]);
+    await button(wrapper, "水印设置").trigger("click");
+    await flushPromises();
+    expect(wrapper.get("video").attributes("src")).toContain("/latest.mp4?v=");
+    expect(wrapper.get("video").attributes("src")).not.toContain("/original");
+    expect(wrapper.getComponent(ArchiveWatermarkPreview).props("active")).toBe(true);
     await button(wrapper, "保存为最新版本").trigger("click");
     await flushPromises();
     expect(mocks.create).toHaveBeenLastCalledWith(
@@ -321,6 +373,131 @@ describe("归档视频配乐编辑交互", () => {
       expect.any(AbortSignal)
     );
     expect(mocks.create.mock.lastCall?.[2]).not.toHaveProperty("musicId");
+  });
+  it("reopens a saved music version directly in watermark settings and keeps the same version when switching panels", async () => {
+    const saved = structuredClone(original);
+    saved.media[0].previewUrl = "/saved-with-music.mp4?v=revision2";
+    saved.media[0].audioEdit = {
+      revision: 2,
+      original: { fileName: "original.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
+      music: { fileName: "music.mp3", mimeType: "audio/mpeg", size: 20, checksum: "c".repeat(64), title: "音乐快照" },
+      settings: { ...defaultArchiveAudioSettings(), originalVolume: 30, musicStartSeconds: 1 },
+      updatedAt: "2026-11-01"
+    };
+    const w = await setup(saved, "watermark");
+    const probe = w.get("[data-original-duration]");
+    Object.defineProperty(probe.element, "duration", { value: 1.96 });
+    await probe.trigger("loadedmetadata");
+    w.getComponent(ArchiveWatermarkPreview).vm.$emit("duration", 2.05);
+    await flushPromises();
+    expect(w.getComponent(ArchiveWatermarkControls).props("duration")).toBe(1.96);
+    expect(w.get("video").attributes("src")).toContain("/saved-with-music.mp4?v=revision2");
+    await button(w, "配乐设置").trigger("click");
+    await flushPromises();
+    expect(w.getComponent(ArchiveMusicRange).props("url")).toContain(`/saved-music?v=${"c".repeat(64)}`);
+    await button(w, "水印设置").trigger("click");
+    await flushPromises();
+    expect(w.get("video").attributes("src")).toContain("/saved-with-music.mp4?v=revision2");
+    expect(mocks.create).not.toHaveBeenCalled();
+    w.getComponent(ArchiveWatermarkControls).vm.$emit("upload", new File(["png"], "logo.png"));
+    await flushPromises();
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
+      useSavedMusic: true,
+      revision: 2,
+      settings: { originalVolume: 30, musicStartSeconds: 1 },
+      watermark: { settings: { endSeconds: null } }
+    });
+  });
+  it("prepares a clean watermark canvas with the saved soundtrack, without baking in the old watermark or saving automatically", async () => {
+    const saved = structuredClone(original);
+    saved.media[0].audioEdit = {
+      revision: 1,
+      original: { fileName: "original.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
+      music: { fileName: "music.mp3", mimeType: "audio/mpeg", size: 20, checksum: "c".repeat(64), title: "音乐快照" },
+      settings: { ...defaultArchiveAudioSettings(), musicStartSeconds: 1 },
+      watermark: {
+        file: { fileName: "logo.png", mimeType: "image/png", size: 10, checksum: "d".repeat(64) },
+        width: 100,
+        height: 50,
+        settings: defaultArchiveWatermarkSettings()
+      },
+      updatedAt: "2026-11-01"
+    };
+    mocks.get.mockResolvedValueOnce({
+      ...pending,
+      mode: "preview",
+      status: "completed",
+      progress: 100,
+      previewUrl: "/clean-music-base.mp4"
+    });
+    const w = await setup(saved, "watermark");
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
+      mode: "preview",
+      previewFullLength: true,
+      watermark: null,
+      useSavedMusic: true,
+      settings: { musicStartSeconds: 1 }
+    });
+    await button(w, "配乐设置").trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(800);
+    await flushPromises();
+    expect(w.get("video").attributes("src")).toContain("/video");
+    await button(w, "水印设置").trigger("click");
+    await flushPromises();
+    expect(w.get("video").attributes("src")).toContain("/clean-music-base.mp4");
+    expect(w.getComponent(ArchiveWatermarkPreview).props("active")).toBe(true);
+    expect(w.emitted("saved")).toBeUndefined();
+    await w.get("video").trigger("error");
+    await flushPromises();
+    expect(w.get("video").attributes("src")).toContain("/video");
+    expect(button(w, "重试水印编辑画面").exists()).toBe(true);
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
+      mode: "save",
+      useSavedMusic: true,
+      revision: 1,
+      watermark: { settings: { opacity: 70 } }
+    });
+  });
+  it("submits the dragged music range for both full audition and saving and does not shorten the range to a preview clip", async () => {
+    const item = structuredClone(original);
+    item.media[0].durationMs = 22000;
+    mocks.music.mockResolvedValue({ items: [{ ...selectedMusic, duration: 120 }], total: 1 });
+    const w = await setup(item);
+    w.findAllComponents(NSelect)
+      .find((s) => s.attributes("aria-label") === "选择背景音乐")!
+      .vm.$emit("update:value", selectedMusic.id);
+    await flushPromises();
+    const range = w.getComponent(ArchiveMusicRange);
+    range.vm.$emit("update:start", 42);
+    await button(w, "试听完整视频效果").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
+      mode: "preview",
+      previewFullLength: true,
+      settings: { musicStartSeconds: 42 }
+    });
+    mocks.get.mockResolvedValueOnce({
+      ...pending,
+      mode: "preview",
+      status: "completed",
+      progress: 100,
+      previewUrl: "/full.mp4"
+    });
+    await vi.advanceTimersByTimeAsync(800);
+    await flushPromises();
+    w.getComponent(ArchiveWatermarkPreview).vm.$emit("duration", 15);
+    await flushPromises();
+    expect(range.props("videoDuration")).toBe(22);
+    expect(w.text()).not.toContain("音乐起点（秒）");
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ mode: "save", settings: { musicStartSeconds: 42 } });
   });
   it("试听不替换归档，使用后台生成片段且不触发保存通知", async () => {
     mocks.create.mockResolvedValueOnce({ ...pending, mode: "preview" });
@@ -332,12 +509,13 @@ describe("归档视频配乐编辑交互", () => {
       previewUrl: "/preview.mp4"
     });
     const wrapper = await setup();
-    await button(wrapper, "试听 15 秒效果").trigger("click");
+    await button(wrapper, "试听完整视频效果").trigger("click");
     await flushPromises();
     await vi.advanceTimersByTimeAsync(800);
     await flushPromises();
     expect(wrapper.get("video").attributes("src")).toContain("/preview.mp4");
-    expect(wrapper.text()).toContain("试听片段（尚未保存）");
+    expect(wrapper.text()).toContain("完整试听（尚未保存）");
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ previewFullLength: true, previewStartSeconds: 0 });
     expect(mocks.detail).not.toHaveBeenCalled();
     expect(wrapper.emitted("saved")).toBeUndefined();
   });

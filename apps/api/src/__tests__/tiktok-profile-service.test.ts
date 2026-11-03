@@ -140,7 +140,11 @@ beforeEach(() => {
   source.findBySource.mockResolvedValue(undefined);
   source.findByUrl.mockResolvedValue(undefined);
   database = new ToolboxDatabase(":memory:");
-  imports = new ArchiveImportService(database, source, taskApi, { intervalMs: 0, pollMs: 3600000 });
+  imports = new ArchiveImportService(database, source, taskApi, {
+    intervalMs: 0,
+    pollMs: 3600000,
+    beforeRemove: (batch) => profiles.snapshotBeforeBatchRemoval(batch)
+  });
   imports.initialize();
   profiles = new TikTokProfileService(database, imports, reader, { pollMs: 3600000 });
   profiles.initialize();
@@ -169,14 +173,17 @@ it("discovers without downloading and splits 201 works into owner-bound batches 
   expect(imports.list().every((batch) => batch.ownerProfileId === id)).toBe(true);
   expect(taskApi.createImport).not.toHaveBeenCalled();
   const child = imports.list()[0]!;
-  await expect(imports.remove(child.id)).rejects.toMatchObject({ code: "ARCHIVE_IMPORT_OWNED" });
   await expect(imports.retry(child.id)).rejects.toMatchObject({ code: "ARCHIVE_IMPORT_OWNED" });
+  const results = profiles.results(id);
+  await imports.remove(child.id);
+  expect(profiles.results(id)).toEqual(results);
+  expect(profiles.get(id)?.skippedCount).toBe(201);
   await profiles.remove(id);
-  expect(imports.list()).toHaveLength(0);
+  expect(imports.list()).toHaveLength(2);
   expect(profiles.get(id)).toBeUndefined();
-  expect(database.list("archive-import-batch")).toHaveLength(0);
+  expect(database.list("archive-import-batch")).toHaveLength(2);
 });
-it("atomically cleans only the selected profile and its terminal batches, with rollback on either removal failure", async () => {
+it("deletes only the selected profile and retains all batches, with rollback on removal failure", async () => {
   const id = await ready(201);
   source.findBySource.mockResolvedValue({ id: "existing_archive" });
   await profiles.start(id, { selection: "all", existing: "skip", allowPartial: false });
@@ -188,7 +195,7 @@ it("atomically cleans only the selected profile and its terminal batches, with r
     rows: [{ rowNumber: 1, inputUrl: works(1)[0]!.url, inputPlatform: "tiktok" }]
   });
   const remove = database.remove.bind(database);
-  for (const failingKind of ["archive-import-batch", "tiktok-profile-job"]) {
+  for (const failingKind of ["tiktok-profile-job"]) {
     const failure = vi.spyOn(database, "remove").mockImplementation((kind, recordId) => {
       if (kind === failingKind) throw new Error("simulated remove failure");
       return remove(kind, recordId);
@@ -203,10 +210,72 @@ it("atomically cleans only the selected profile and its terminal batches, with r
   await profiles.remove(id);
   expect(imports.get(manual.id)).toBeDefined();
   expect(profiles.get(other)).toBeDefined();
-  expect(imports.list()).toHaveLength(1);
+  expect(imports.list()).toHaveLength(4);
   // Reopening uses exactly the committed records; no removed child or owner is resurrected.
-  expect(new ArchiveImportService(database, source, taskApi).list()).toHaveLength(1);
+  expect(new ArchiveImportService(database, source, taskApi).list()).toHaveLength(4);
   expect(new TikTokProfileService(database, imports, reader).list().map((job) => job.id)).toEqual([other]);
+});
+it("preserves failed work outcomes and retries after batch deletion, including rollback and service restart", async () => {
+  const id = await failWorks();
+  const batch = imports.list()[0]!;
+  const before = profiles.results(id);
+  const record = database.get("tiktok-profile-job", id);
+  const failure = vi.spyOn(database, "appendAudit").mockImplementationOnce(() => {
+    throw new Error("audit failed");
+  });
+  await expect(imports.remove(batch.id)).rejects.toThrow("audit failed");
+  failure.mockRestore();
+  expect(database.get("tiktok-profile-job", id)).toEqual(record);
+  expect(profiles.results(id)).toEqual(before);
+  expect(imports.get(batch.id)).toBeDefined();
+  await imports.remove(batch.id);
+  expect(imports.get(batch.id)).toBeUndefined();
+  expect(profiles.results(id)).toEqual(before);
+  expect(profiles.get(id)).toMatchObject({ failedCount: 2, batchCount: 1 });
+  await profiles.close();
+  profiles = new TikTokProfileService(database, imports, reader, { pollMs: 3600000 });
+  profiles.initialize();
+  expect(profiles.results(id)).toEqual(before);
+  await profiles.retry(id, "12345");
+  await profiles.tick();
+  expect(imports.list()).toHaveLength(1);
+  expect(imports.get(imports.list()[0]!.id)?.rows).toHaveLength(1);
+});
+it("keeps the newest attempt when batches are removed in reverse order", async () => {
+  const id = await failWorks(1);
+  const older = imports.list()[0]!.id;
+  await profiles.retry(id, "12345");
+  await profiles.tick();
+  await imports.tick();
+  const pending = [...tasks.values()].find((task) => task.status === "pending")!;
+  const archiveId = saveArchive();
+  const completed = { ...pending, status: "completed" as const, stage: "completed" as const, progress: 100, archiveId };
+  tasks.set(completed.id, completed);
+  persistTask(completed);
+  await imports.tick();
+  await profiles.tick();
+  const newer = imports.list().find((batch) => batch.id !== older)!.id;
+  const before = profiles.results(id);
+  await imports.remove(newer);
+  expect(profiles.results(id)).toEqual(before);
+  await imports.remove(older);
+  expect(profiles.results(id)).toEqual(before);
+  expect(profiles.get(id)?.archivedCount).toBe(1);
+  expect(imports.list()).toHaveLength(0);
+});
+it("retains old profile history over scheduling, shutdown and restart without automatic expiry", async () => {
+  const id = await ready(1);
+  await profiles.close();
+  const stored = database.get("tiktok-profile-job", id)!;
+  const payload = structuredClone(stored.payload) as { meta: { createdAt: string; updatedAt: string } };
+  payload.meta.createdAt = payload.meta.updatedAt = "2020-01-01T00:00:00.000Z";
+  database.upsert({ ...stored, payload, createdAt: payload.meta.createdAt, updatedAt: payload.meta.updatedAt });
+  profiles = new TikTokProfileService(database, imports, reader, { pollMs: 3600000 });
+  profiles.initialize();
+  await profiles.tick();
+  expect(profiles.list().map((job) => job.id)).toEqual([id]);
+  expect(profiles.page(id)?.total).toBe(1);
+  expect(database.get("tiktok-profile-job", id)).toBeDefined();
 });
 it("refuses cleanup while an owned batch is active even if the parent record was interrupted", async () => {
   const id = await ready(1);

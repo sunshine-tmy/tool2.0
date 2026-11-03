@@ -78,7 +78,7 @@ async function create(server: NonNullable<typeof app>) {
   await vi.waitFor(async () => expect((await server.inject(`${base}/${id}`)).json().data.phase).toBe("ready"));
   return id;
 }
-it("discovers, archives and cleans profile/batch metadata while preserving stored media and groups", async () => {
+it("deletes only profile history while preserving batch metadata, stored media and groups", async () => {
   const server = await setup(),
     id = await create(server);
   expect((await server.inject("/api/v1/tools/media-archive/items")).json().data.total).toBe(0);
@@ -118,14 +118,44 @@ it("discovers, archives and cleans profile/batch metadata while preserving store
   const mediaAfter = await server.inject(itemBefore.media[0].downloadUrl);
   expect(mediaAfter.statusCode).toBe(200);
   expect(mediaAfter.rawPayload).toEqual(mediaBefore.rawPayload);
-  expect((await server.inject("/api/v1/tools/media-archive/import/batches")).json().data).toHaveLength(0);
-  expect((await server.inject(`/api/v1/tools/media-archive/import/batches/${batches[0].id}`)).statusCode).toBe(404);
+  expect((await server.inject("/api/v1/tools/media-archive/import/batches")).json().data).toHaveLength(1);
+  expect((await server.inject(`/api/v1/tools/media-archive/import/batches/${batches[0].id}`)).statusCode).toBe(200);
   expect(
     (await server.inject("/api/v1/tools/media-archive/groups"))
       .json()
       .data.some((value: { id: string }) => value.id === group.id)
   ).toBe(true);
   expect((await server.inject(`/api/v1/tools/media-archive/items?groupId=${group.id}`)).json().data.total).toBe(1);
+}, 15000);
+it("deletes only a batch through the API and preserves the profile results and retry path", async () => {
+  const server = await setup(),
+    id = await create(server);
+  vi.mocked(TikTokRuntime.prototype.extract).mockRejectedValueOnce(
+    new ArchiveTaskError("TIKTOK_MEDIA_UNAVAILABLE", "测试失败")
+  );
+  await server.inject({
+    method: "POST",
+    url: `${base}/${id}/archive`,
+    payload: { selection: "all", existing: "skip", allowPartial: false }
+  });
+  await vi.waitFor(
+    async () =>
+      expect((await server.inject(`${base}/${id}`)).json().data).toMatchObject({ phase: "completed", failedCount: 1 }),
+    { timeout: 8000, interval: 80 }
+  );
+  const before = (await server.inject(`${base}/${id}/works`)).json().data;
+  const batches = (await server.inject("/api/v1/tools/media-archive/import/batches")).json().data;
+  const removed = await server.inject({
+    method: "DELETE",
+    url: `/api/v1/tools/media-archive/import/batches/${batches[0].id}`
+  });
+  expect(removed.statusCode).toBe(200);
+  expect((await server.inject(base)).json().data).toHaveLength(1);
+  expect((await server.inject(`${base}/${id}/works`)).json().data).toEqual(before);
+  expect((await server.inject(`/api/v1/tools/media-archive/import/batches/${batches[0].id}`)).statusCode).toBe(404);
+  expect(
+    (await server.inject({ method: "POST", url: `${base}/${id}/retry`, payload: { itemId: "12345" } })).statusCode
+  ).toBe(200);
 }, 15000);
 it("rejects credentials and invalid selections before AJV stripping, and requires partial confirmation", async () => {
   const server = await setup();

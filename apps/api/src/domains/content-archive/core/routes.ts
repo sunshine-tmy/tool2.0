@@ -51,7 +51,7 @@ export function registerContentArchiveRoutes(
       config: REQUEST_QUOTAS.remoteFetch,
       preValidation: async (request, reply) => {
         if (!isContentArchiveCreateInput(request.body))
-          return reply.code(400).send(fail("ARCHIVE_INPUT_INVALID", "仅接受作品链接和平台选择，请检查输入"));
+          return reply.code(400).send(fail("ARCHIVE_INPUT_INVALID", "仅接受作品链接、平台选择和归档分组，请检查输入"));
       },
       schema: {
         body: ContentArchiveCreateInputSchema,
@@ -60,7 +60,11 @@ export function registerContentArchiveRoutes(
     },
     async (request, reply) => {
       try {
-        return reply.code(202).send(ok(service.create(request.body.url, request.body.platform)));
+        return reply
+          .code(202)
+          .send(
+            ok(service.create(request.body.url, request.body.platform, undefined, { groupId: request.body.groupId }))
+          );
       } catch (error) {
         if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
           return reply.code(error.statusCode).send(fail(error.code, error.message));

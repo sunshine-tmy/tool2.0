@@ -43,6 +43,7 @@
       <div class="watermark-fields">
         <label
           >开始显示（秒）<n-input-number
+            aria-label="水印开始时间"
             :value="settings.startSeconds"
             :min="0"
             :max="duration"
@@ -51,14 +52,19 @@
         /></label>
         <label
           >结束显示（秒）<n-input-number
-            :value="settings.endSeconds"
+            aria-label="水印结束时间"
+            :value="settings.endSeconds ?? (duration > 0 ? duration : null)"
             :min="0"
             :max="duration"
             placeholder="视频结束"
-            :disabled="disabled"
+            :disabled="disabled || settings.endSeconds === null"
             @update:value="set('endSeconds', $event)"
         /></label>
       </div>
+      <n-checkbox :checked="settings.endSeconds === null" :disabled="disabled" @update:checked="autoEnd"
+        >自动跟随视频结尾</n-checkbox
+      >
+      <small v-if="settings.endSeconds === null">已自动识别视频时长，保存时以原片的实际结尾为准，无需手填。</small>
       <label
         >运动方式<n-select
           :value="settings.motion.type"
@@ -177,7 +183,7 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, toRaw } from "vue";
-import { NButton, NInputNumber, NSelect, NSlider } from "naive-ui";
+import { NButton, NCheckbox, NInputNumber, NSelect, NSlider } from "naive-ui";
 import {
   ARCHIVE_WATERMARK_BOUNCE_STYLES,
   archiveWatermarkPosition,
@@ -217,6 +223,9 @@ const motions = [
 const positions = [0.03, 0.5, 0.97].flatMap((y) => [0.03, 0.5, 0.97].map((x) => ({ x, y })));
 const positionNames = ["左上", "上中", "右上", "左中", "居中", "右中", "左下", "下中", "右下"];
 const validation = computed(() => (props.asset ? watermarkTimingError(props.settings, props.duration) : undefined));
+function autoEnd(checked: boolean) {
+  if (!props.disabled) set("endSeconds", checked ? null : props.duration);
+}
 function set<K extends keyof ArchiveWatermarkSettings>(key: K, value: ArchiveWatermarkSettings[K]) {
   emit("update:settings", JSON.parse(JSON.stringify({ ...props.settings, [key]: value })) as ArchiveWatermarkSettings);
 }

@@ -70,6 +70,19 @@ const legacy: XhsArchiveItem = {
 };
 
 describe("content archive contract", () => {
+  it("发布标记筛选区分已发布、未发布及全部，并与列表和翻译筛选兼容", () => {
+    expect(isContentArchiveListQuery({})).toBe(true);
+    for (const publication of ["all", "published", "unpublished"]) {
+      const filter = { publication, platform: "local", type: "video", groupId: "ungrouped" };
+      expect(isContentArchiveListQuery({ ...filter, page: 2, sort: "archived-asc" })).toBe(true);
+      expect(isContentTranslationBatchInput({ mode: "missing-or-stale", filter })).toBe(true);
+      expect(Value.Check(XhsArchiveListQuerySchema, { publication })).toBe(false);
+    }
+    for (const publication of [true, false, "true", "invalid", "", null, ["published"]]) {
+      expect(isContentArchiveListQuery({ publication })).toBe(false);
+      expect(isContentTranslationBatchInput({ mode: "missing-or-stale", filter: { publication } })).toBe(false);
+    }
+  });
   it("本地来源只用于归档与列表，不扩张链接获取和远程任务的平台范围", () => {
     const local = {
       ...fromXhsArchive(legacy),
@@ -134,8 +147,11 @@ describe("content archive contract", () => {
     expect(isContentTranslationTask({ ...task, providerUrl: "https://secret.test" })).toBe(false);
     expect(isContentTranslationTask({ ...task, progress: 101 })).toBe(false);
   });
-  it("创建输入仅接受链接和平台，不能带入 Cookie 或内部配置", () => {
+  it("创建输入支持可选目标分组，仍拒绝 Cookie、内部配置及无效分组", () => {
     expect(isContentArchiveCreateInput({ url: "https://www.douyin.com/video/123", platform: "auto" })).toBe(true);
+    expect(isContentArchiveCreateInput({ url: "link", platform: "tiktok", groupId: "group_123456" })).toBe(true);
+    for (const groupId of [null, "", "all", "../group_123", 123, ["group_123456"]])
+      expect(isContentArchiveCreateInput({ url: "link", groupId })).toBe(false);
     expect(isContentArchiveCreateInput({ url: "link", cookie: "secret" })).toBe(false);
     expect(isContentArchiveCreateInput(null)).toBe(false);
   });
@@ -184,6 +200,8 @@ describe("content archive contract", () => {
       updatedAt: now
     };
     expect(Value.Check(ContentArchiveTaskSchema, task)).toBe(true);
+    expect(Value.Check(ContentArchiveTaskSchema, { ...task, groupId: "group_123456" })).toBe(true);
+    expect(Value.Check(ContentArchiveTaskSchema, { ...task, groupId: "../group" })).toBe(false);
     const { platform: _platform, ...unbound } = task;
     expect(Value.Check(ContentArchiveTaskSchema, unbound)).toBe(false);
   });

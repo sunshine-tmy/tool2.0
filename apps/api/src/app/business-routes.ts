@@ -6,6 +6,8 @@ import { registerImageAiRoutes } from "../domains/image-ai/routes";
 import { registerEdgeTtsRoutes } from "../domains/speech/edge-tts";
 import { registerChatterboxRoutes } from "../domains/speech/chatterbox/routes";
 import { registerAudioLibraryRoutes } from "../domains/audio-library/routes";
+import { registerAudioExtractionRoutes } from "../domains/audio-extract/routes";
+import { registerAudioConversionRoutes } from "../domains/audio-convert/routes";
 import { registerLanTransferRoutes } from "../domains/lan-transfer/routes";
 import { registerXhsArchiveRoutes } from "../domains/content-archive/routes";
 import { registerMaintenanceRoutes } from "../modules/maintenance";
@@ -38,6 +40,8 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
     chatterboxArchive.batches,
     edgeTtsBatches
   );
+  await registerAudioConversionRoutes(app, config, database, taskStore, componentManager, audioLibrary);
+  await registerAudioExtractionRoutes(app, config, database, taskStore, componentManager, audioLibrary);
   await registerLanTransferRoutes({ app, config, database, fileMetadata });
   await registerXhsArchiveRoutes({
     app,

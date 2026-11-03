@@ -38,6 +38,10 @@
       "types": "./dist/audio-library.d.ts",
       "import": "./dist/audio-library.js"
     },
+    "./audio-convert": {
+      "types": "./dist/audio-convert.d.ts",
+      "import": "./dist/audio-convert.js"
+    },
     "./image": {
       "types": "./dist/image.d.ts",
       "import": "./dist/image.js"
@@ -53,6 +57,10 @@
     "./chatterbox": {
       "types": "./dist/chatterbox.d.ts",
       "import": "./dist/chatterbox.js"
+    },
+    "./audio-extract": {
+      "types": "./dist/audio-extract.d.ts",
+      "import": "./dist/audio-extract.js"
     }
   },
   "scripts": {

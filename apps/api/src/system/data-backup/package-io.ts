@@ -59,7 +59,7 @@ const manifestSchema = Type.Object(
         },
         { additionalProperties: false }
       ),
-      { minItems: 1, maxItems: 6 }
+      { minItems: 1, maxItems: backupModules.length }
     )
   },
   { additionalProperties: false }

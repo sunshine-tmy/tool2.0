@@ -28,7 +28,14 @@ export class ArchiveImportService {
     private readonly database: ToolboxDatabase,
     private readonly store: Pick<ContentArchiveStore, "findBySource" | "findByUrl">,
     private readonly tasks: Pick<ContentArchiveTaskService, "createImport" | "get" | "cancel">,
-    private readonly options: { intervalMs?: number; pollMs?: number; now?: () => number; onError?: () => void } = {}
+    private readonly options: {
+      intervalMs?: number;
+      pollMs?: number;
+      now?: () => number;
+      onError?: () => void;
+      /** Runs inside the delete transaction; publish any cached snapshot only after commit. */
+      beforeRemove?: (batch: ArchiveImportBatch) => (() => void) | undefined;
+    } = {}
   ) {
     for (const entity of database.list(kind)) {
       if (!Value.Check(ArchiveImportBatchSchema, entity.payload)) throw new Error("ARCHIVE_IMPORT_RECORD_INVALID");
@@ -155,29 +162,23 @@ export class ArchiveImportService {
     return this.serial(() => {
       const batch = this.get(id);
       if (!batch) return false;
-      if (batch.ownerProfileId && this.database.get("tiktok-profile-job", batch.ownerProfileId))
-        throw new ArchiveTaskError(
-          "ARCHIVE_IMPORT_OWNED",
-          "该批次属于主页任务，请使用“清理所属主页任务记录”一次清理关联记录；作品和媒体均保留",
-          409
-        );
       if (active(batch)) throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "请先停止并等待当前任务结束", 409);
-      this.database.remove(kind, id);
+      let publish: (() => void) | undefined;
+      this.database.transaction(() => {
+        if (batch.ownerProfileId && this.database.get("tiktok-profile-job", batch.ownerProfileId)) {
+          if (!this.options.beforeRemove) throw new Error("ARCHIVE_IMPORT_HISTORY_SNAPSHOT_UNAVAILABLE");
+          publish = this.options.beforeRemove(batch);
+        }
+        this.database.remove(kind, id);
+        this.database.appendAudit({
+          action: "archive.import_history.delete",
+          outcome: "success",
+          details: { batchId: id, ownerProfileId: batch.ownerProfileId, archivesRetained: true }
+        });
+      });
+      publish?.();
       this.batches.delete(id);
       return true;
-    });
-  }
-  /** Parent and owned batch metadata commit together; archives and running tasks are never removed here. */
-  removeOwned(profileId: string, removeParent: () => void) {
-    return this.serial(() => {
-      const owned = [...this.batches.values()].filter((batch) => batch.ownerProfileId === profileId);
-      if (owned.some(active))
-        throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "所属批次仍在执行，请先停止主页任务并等待当前作品结束", 409);
-      this.database.transaction(() => {
-        for (const batch of owned) this.database.remove(kind, batch.id);
-        removeParent();
-      });
-      for (const batch of owned) this.batches.delete(batch.id);
     });
   }
   async stop() {

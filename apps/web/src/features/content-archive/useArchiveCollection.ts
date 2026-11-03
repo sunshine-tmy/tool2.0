@@ -27,10 +27,13 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
   const groupFilter = ref(
     typeof restored.group === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(restored.group) ? restored.group : "all"
   );
+  const publicationFilter = ref<NonNullable<ContentArchiveListQuery["publication"]>>(
+    restored.publication === "published" || restored.publication === "unpublished" ? restored.publication : "all"
+  );
   const sort = ref<NonNullable<ContentArchiveListQuery["sort"]>>(
     ["archived-desc", "archived-asc", "published-desc", "published-asc"].includes(String(restored.sort))
       ? (restored.sort as NonNullable<ContentArchiveListQuery["sort"]>)
-      : "archived-desc"
+      : "published-desc"
   );
   const restoredPage = Number(restored.page);
   const page = ref(Number.isSafeInteger(restoredPage) && restoredPage > 0 && restoredPage <= 100000 ? restoredPage : 1);
@@ -55,6 +58,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
       keyword: keyword.value,
       type: typeFilter.value,
       platform: platformFilter.value,
+      ...(publicationFilter.value !== "all" ? { publication: publicationFilter.value } : {}),
       ...(groupFilter.value !== "all" ? { groupId: groupFilter.value } : {})
     };
   }
@@ -66,14 +70,14 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
   }
   // 搜索文字变化只重置分页，不逐字发送请求；类型/平台切换自动读取新范围。
   watch(
-    [keyword, typeFilter, platformFilter, groupFilter, sort],
+    [keyword, typeFilter, platformFilter, publicationFilter, groupFilter, sort],
     () => {
       invalidateList();
       page.value = 1;
     },
     { flush: "sync" }
   );
-  watch([typeFilter, platformFilter, groupFilter, sort], () => void loadArchives());
+  watch([typeFilter, platformFilter, publicationFilter, groupFilter, sort], () => void loadArchives());
   watch(page, invalidateList, { flush: "sync" });
   watch(
     drawerOpen,
@@ -103,6 +107,11 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
         signal
       );
       if (signal.aborted || generation !== listGeneration) return;
+      if (publicationFilter.value !== "all" && page.value > result.pageCount) {
+        page.value = result.pageCount;
+        await loadArchives();
+        return;
+      }
       archives.value = result;
       selectedArchiveIds.value = selectedArchiveIds.value.filter((id) => result.items.some((item) => item.id === id));
     } catch (error) {
@@ -215,6 +224,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
     keyword,
     typeFilter,
     platformFilter,
+    publicationFilter,
     groupFilter,
     sort,
     page,

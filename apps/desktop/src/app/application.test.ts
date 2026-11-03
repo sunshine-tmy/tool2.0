@@ -41,6 +41,7 @@ const mock = vi.hoisted(() => ({
   dialog: vi.fn(),
   trayOptions: [] as TrayOptions[],
   trayAttach: vi.fn(),
+  trayHide: vi.fn(() => true),
   trayDispose: vi.fn()
 }));
 vi.mock("electron", () => ({
@@ -67,7 +68,7 @@ vi.mock("../windows/business-window", () => ({ createBusinessWindow: mock.window
 vi.mock("../windows/system-tray", () => ({
   createSystemTray: (options: TrayOptions) => {
     mock.trayOptions.push(options);
-    return { attach: mock.trayAttach, dispose: mock.trayDispose };
+    return { attach: mock.trayAttach, hideWindow: mock.trayHide, dispose: mock.trayDispose };
   }
 }));
 vi.mock("../windows/shutdown-window", () => ({
@@ -321,6 +322,10 @@ describe("desktop application assembly", () => {
   it("restores a hidden window from tray or second instance and keeps tray exit behind the normal shutdown handshake", async () => {
     const applicationInstance = application();
     await applicationInstance.boot();
+    const windowOptions = mock.window.mock.calls[0][0] as { hideToTray: (window: BrowserWindow) => boolean };
+    expect(windowOptions.hideToTray(frameWindow as unknown as BrowserWindow)).toBe(true);
+    expect(mock.trayHide).toHaveBeenCalledWith(frameWindow);
+    expect(mock.stop).not.toHaveBeenCalled();
     mock.trayOptions[0].showWindow();
     expect(frameWindow.show).toHaveBeenCalledOnce();
     expect(frameWindow.focus).toHaveBeenCalledOnce();

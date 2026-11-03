@@ -163,10 +163,10 @@ it("requires confirmation to delete only the batch record", async () => {
     .find((button) => button.text() === "删除批次记录")!
     .trigger("click");
   await flushPromises();
-  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("已归档作品及媒体不会删除"), expect.any(Object));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("TikTok 主页历史、其他批次"), expect.any(Object));
   expect(mocks.remove).toHaveBeenCalledWith("batch_123", expect.any(AbortSignal));
 });
-it("shows readable searchable batch cards and confirms cleanup of the exact owning profile and all its batches", async () => {
+it("shows readable searchable batch cards and deletes only the selected batch after confirmation", async () => {
   const first = { ...saved, sourceName: "TikTok @shop · 第 1 批", ownerProfileId: profile.id };
   const second = { ...first, id: "batch_456", sourceName: "TikTok @shop · 第 2 批" };
   const unrelated = { ...saved, id: "manual_123", sourceName: "其他表格.xlsx" };
@@ -192,23 +192,23 @@ it("shows readable searchable batch cards and confirms cleanup of the exact owni
   await flushPromises();
   expect(mocks.get).toHaveBeenLastCalledWith(second.id, expect.any(AbortSignal));
   expect(cards()[0].attributes("aria-pressed")).toBe("true");
-  const cleanup = () => wrapper.findAll("button").find((button) => button.text() === "清理所属主页任务记录")!;
+  const cleanup = () => wrapper.findAll("button").find((button) => button.text() === "删除批次记录")!;
   mocks.confirm.mockResolvedValueOnce(false);
   await cleanup().trigger("click");
   await flushPromises();
   expect(mocks.profileRemove).not.toHaveBeenCalled();
   await cleanup().trigger("click");
   await flushPromises();
-  expect(mocks.confirm).toHaveBeenLastCalledWith(
-    expect.stringContaining("@shop 的主页任务及其全部批次记录"),
-    expect.any(Object)
-  );
-  expect(mocks.profileRemove).toHaveBeenCalledExactlyOnceWith(profile.id, expect.any(AbortSignal));
-  expect(mocks.remove).not.toHaveBeenCalled();
+  expect(mocks.confirm).toHaveBeenLastCalledWith(expect.stringContaining("只删除当前批次记录"), expect.any(Object));
+  expect(mocks.profileRemove).not.toHaveBeenCalled();
+  expect(mocks.remove).toHaveBeenCalledExactlyOnceWith(second.id, expect.any(AbortSignal));
   wrapper.getComponent(NInput).vm.$emit("update:value", "");
   await flushPromises();
-  expect(cards()).toHaveLength(1);
-  expect(cards()[0].text()).toContain(unrelated.sourceName);
+  expect(cards()).toHaveLength(2);
+  expect(cards().map((card) => card.text())).toEqual([
+    expect.stringContaining(first.sourceName),
+    expect.stringContaining(unrelated.sourceName)
+  ]);
 });
 it("provides a direct owner link and stop action while disabling cleanup of an active profile", async () => {
   const owned = { ...saved, ownerProfileId: profile.id };
@@ -222,13 +222,13 @@ it("provides a direct owner link and stop action while disabling cleanup of an a
     .trigger("click");
   await flushPromises();
   const button = (label: string) => wrapper.findAll("button").find((button) => button.text() === label)!;
-  expect(button("清理所属主页任务记录").attributes("disabled")).toBeDefined();
+  expect(button("删除批次记录").attributes("disabled")).toBeDefined();
   mocks.profileCancel.mockResolvedValue({ ...profile, phase: "cancelled" });
   mocks.profileGet.mockResolvedValue({ ...profile, phase: "cancelled" });
   await button("停止主页任务").trigger("click");
   await flushPromises();
   expect(mocks.profileCancel).toHaveBeenCalledWith(profile.id, expect.any(AbortSignal));
-  expect(button("清理所属主页任务记录").attributes("disabled")).toBeUndefined();
+  expect(button("删除批次记录").attributes("disabled")).toBeUndefined();
   await button("打开所属主页任务").trigger("click");
   expect(wrapper.emitted("openProfile")).toEqual([[profile.id]]);
 });

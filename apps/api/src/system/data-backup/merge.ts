@@ -281,6 +281,8 @@ export function planRestore(
       }
   // A task and its domain representation must share one ID; global task table collisions take precedence.
   const projectionKinds = new Set([
+    "audio-convert-job",
+    "audio-extract-job",
     "image-ai-task",
     "edge-tts-task",
     "chatterbox-task",

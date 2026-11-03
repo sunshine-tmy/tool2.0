@@ -35,6 +35,7 @@ export function registerVideoEditRoutes(
   store: ContentArchiveStore
 ) {
   const prefix = "/api/v1/tools/media-archive";
+  const automaticWatermarkEnd = new WeakSet<FastifyRequest>();
   const failure = (error: unknown) => {
     if (error instanceof VideoEditError || error instanceof ContentArchiveStoreError) return error;
     throw error;
@@ -278,6 +279,9 @@ export function registerVideoEditRoutes(
       preValidation: async (request, reply) => {
         if (!Value.Check(ArchiveVideoEditInputSchema, request.body))
           return reply.code(400).send(fail("ARCHIVE_EDIT_INPUT_INVALID", "配乐参数无效，请检查音量、版本和音乐来源"));
+        // AJV may coerce the number/null union's null into 0. Remember only the
+        // strictly validated automatic-end sentinel; explicit numeric 0 stays invalid.
+        if (request.body.watermark?.settings.endSeconds === null) automaticWatermarkEnd.add(request);
       },
       schema: {
         params: XhsArchiveMediaParamsSchema,
@@ -287,6 +291,9 @@ export function registerVideoEditRoutes(
     },
     async (request, reply) => {
       try {
+        if (automaticWatermarkEnd.has(request) && request.body.watermark)
+          request.body.watermark.settings.endSeconds = null;
+        automaticWatermarkEnd.delete(request);
         return reply.code(202).send(ok(await service.create(request.params.id, request.params.mediaId, request.body)));
       } catch (error) {
         const known = failure(error);

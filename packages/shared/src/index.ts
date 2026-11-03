@@ -29,6 +29,8 @@ export * from "./archive/video-edit";
 export * from "./archive/video-watermark";
 export * from "./system/component-packages";
 export * from "./audio-library/contracts";
+export * from "./audio-convert";
+export * from "./audio-extract";
 export * from "./system/diagnostics";
 export * from "./lan/lan-access";
 export type {

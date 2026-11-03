@@ -58,6 +58,48 @@ it("keeps every API and health method/path while allowing internal source reloca
     expect(routeInventory(app.printRoutes({ commonPrefix: false }))).toEqual(
       [
         ...snapshot,
+        ...[
+          "GET jobs",
+          "GET completed-selection",
+          "HEAD completed-selection",
+          "HEAD jobs",
+          "GET jobs/:id",
+          "HEAD jobs/:id",
+          "POST uploads",
+          "POST jobs/:id/cancel",
+          "DELETE jobs/:id",
+          "POST jobs/:id/library",
+          "GET jobs/:id/audio",
+          "HEAD jobs/:id/audio",
+          "POST downloads",
+          "GET downloads/:id",
+          "HEAD downloads/:id"
+        ].map((entry) => {
+          const [method, path] = entry.split(" ");
+          return `${method} /api/v1/tools/audio-convert/${path}`;
+        }),
+        ...[
+          "POST sources",
+          "DELETE sources/:id",
+          "POST jobs",
+          "GET jobs",
+          "HEAD jobs",
+          "GET completed-selection",
+          "HEAD completed-selection",
+          "GET jobs/:id",
+          "HEAD jobs/:id",
+          "POST jobs/:id/cancel",
+          "DELETE jobs/:id",
+          "POST jobs/:id/library",
+          "GET jobs/:id/audio",
+          "HEAD jobs/:id/audio",
+          "POST downloads",
+          "GET downloads/:id",
+          "HEAD downloads/:id"
+        ].map((entry) => {
+          const [method, path] = entry.split(" ");
+          return `${method} /api/v1/tools/audio-extract/${path}`;
+        }),
         "GET /api/v1/tools/media-archive/runtime/tiktok",
         "HEAD /api/v1/tools/media-archive/runtime/tiktok",
         "DELETE /api/v1/tools/media-archive/items/:id/frames/:mediaId",

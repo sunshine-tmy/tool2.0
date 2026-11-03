@@ -23,13 +23,19 @@
         <section class="editor-preview">
           <ArchiveWatermarkPreview
             :video="video"
-            :active="panel === 'watermark' && !previewIsDraft && previewUrl === originalUrl"
+            :active="
+              panel === 'watermark' &&
+              !previewIsDraft &&
+              !viewingOriginal &&
+              previewUrl === watermarkBaseUrl &&
+              Boolean(!current?.audioEdit?.watermark || basePreviewUrl)
+            "
             :asset="watermarkAsset"
             :settings="watermarkSettings"
             :disabled="busy"
             @move="moveWatermark"
             @time="playhead = $event"
-            @duration="videoDuration = $event"
+            @duration="recordDuration"
           >
             <video
               v-if="!isImage || previewIsDraft"
@@ -39,9 +45,21 @@
               controls
               playsinline
               preload="metadata"
+              @play="musicRange?.stop()"
+              @error="previewError"
             />
             <img v-else class="slideshow-image" :src="previewUrl" alt="图集原图预览" />
           </ArchiveWatermarkPreview>
+          <video
+            v-if="current?.audioEdit && !isImage"
+            :key="`${originalUrl}/${current.checksum}`"
+            data-original-duration
+            :src="originalUrl"
+            preload="metadata"
+            hidden
+            style="display: none"
+            @loadedmetadata="recordOriginalDuration"
+          />
           <div v-if="isImage" class="editor-fades">
             <label
               >每张停留（秒）<n-input-number
@@ -66,17 +84,21 @@
               previewIsDraft
                 ? panel === "watermark"
                   ? "效果预览片段（尚未保存）"
-                  : "试听片段（尚未保存）"
+                  : "完整试听（尚未保存）"
                 : isImage
                   ? "原图预览"
-                  : previewUrl === originalUrl
-                    ? "原始视频 · 水印实时预览"
-                    : "当前已保存视频"
+                  : viewingOriginal
+                    ? "原始视频"
+                    : panel === "watermark" && previewUrl === watermarkBaseUrl
+                      ? "当前已保存配乐 · 水印实时预览"
+                      : "当前已保存视频"
             }}
           </p>
           <div class="editor-actions">
             <n-button @click="viewOriginal">{{ isImage ? "查看原图" : "查看原始视频" }}</n-button>
+            <n-button v-if="viewingOriginal && !isImage" @click="viewCurrent">查看当前已保存视频</n-button>
             <n-input-number
+              v-if="panel === 'watermark'"
               v-model:value="previewStart"
               :min="0"
               :max="Math.max(0, (current?.durationMs || 0) / 1000 - 0.1)"
@@ -84,9 +106,13 @@
               aria-label="试听起点秒数"
             />
             <n-button :disabled="busy || !ready || Boolean(watermarkValidation)" @click="submit('preview')">{{
-              panel === "watermark" ? "生成 15 秒水印效果" : "试听 15 秒效果"
+              panel === "watermark" ? "生成 15 秒水印效果" : "试听完整视频效果"
             }}</n-button>
           </div>
+          <p v-if="basePreviewJob && activeJob" class="editor-hint">
+            正在准备保留当前配乐的无水印编辑画面，避免重复叠加旧水印…
+          </p>
+          <n-button v-if="basePreviewFailed && !busy" @click="submit('preview', true)">重试水印编辑画面</n-button>
           <template v-if="job">
             <n-progress
               type="line"
@@ -162,6 +188,14 @@
                 @update:value="searchMusic"
               />
               <n-button :disabled="busy" @click="fileInput?.click()">上传音乐</n-button>
+              <router-link
+                v-if="embedded"
+                :to="{
+                  path: '/tools/audio-convert',
+                  query: { archiveId: item.id, mediaId, returnTo: conversionReturnTo }
+                }"
+                ><n-button :disabled="busy">OGG / MGG / FLAC 转 MP3</n-button></router-link
+              >
               <input ref="fileInput" hidden type="file" accept=".mp3,.wav,.m4a,.flac" @change="uploadMusic" />
             </div>
             <div class="editor-actions">
@@ -191,13 +225,20 @@
               @update:page="loadMusic"
               ><template #prefix>共 {{ musicTotal }} 条</template></n-pagination
             >
-            <audio v-if="musicUrl" ref="audio" :key="musicUrl" :src="musicUrl" controls preload="metadata" />
-            <label
-              >音乐起点（秒）<n-input-number
-                v-model:value="settings.musicStartSeconds"
-                :min="0"
-                :disabled="busy || !musicId"
-            /></label>
+            <ArchiveMusicRange
+              v-if="musicUrl"
+              ref="musicRange"
+              :key="musicUrl"
+              v-model:start="settings.musicStartSeconds"
+              :url="musicUrl"
+              :title="chosenMusic?.title ?? current?.audioEdit?.music?.title ?? '当前配乐'"
+              :music-duration="chosenMusic?.duration"
+              :video-duration="editDuration"
+              :disabled="busy"
+              :loop="settings.loop"
+              :volume="settings.musicVolume"
+              @play="video?.pause()"
+            />
             <n-checkbox v-model:checked="settings.loop" :disabled="busy || !musicId"
               >音乐不足时循环；超出视频部分自动截断</n-checkbox
             >
@@ -273,6 +314,7 @@ import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import ArchiveWatermarkControls from "./ArchiveWatermarkControls.vue";
 import ArchiveWatermarkPreview from "./ArchiveWatermarkPreview.vue";
+import ArchiveMusicRange from "./ArchiveMusicRange.vue";
 import { useArchiveWatermark } from "./useArchiveWatermark";
 const props = defineProps<{
   show: boolean;
@@ -280,13 +322,16 @@ const props = defineProps<{
   mediaId: string;
   embedded?: boolean;
   initialPanel?: "audio" | "watermark";
+  initialMusicId?: string;
+  conversionReturnTo?: string;
 }>();
 const emit = defineEmits<{ "update:show": [value: boolean]; saved: [item: ContentArchiveItem] }>();
 const confirm = useConfirmDialog();
 const current = ref<ContentArchiveMedia>();
 const panel = ref(props.initialPanel ?? "audio"),
   playhead = ref(0),
-  videoDuration = ref(0);
+  videoDuration = ref(0),
+  originalDuration = ref(0);
 const {
   settings: watermarkSettings,
   asset: watermarkAsset,
@@ -311,6 +356,12 @@ const watermarkValidation = computed(() =>
 const isImage = computed(() => current.value?.kind === "image");
 const secondsPerImage = ref(3),
   aspect = ref<"portrait" | "landscape" | "square">("portrait");
+const editDuration = computed(() =>
+  isImage.value
+    ? props.item.media.filter((entry) => entry.kind === "image" && !entry.frameSourceMediaId).length *
+      secondsPerImage.value
+    : videoDuration.value
+);
 const settings = reactive(defaultArchiveAudioSettings());
 const musicId = ref<string | null>(null),
   chosenMusic = ref<AudioLibraryItemView>(),
@@ -329,8 +380,12 @@ const previewUrl = ref(""),
   previewIsDraft = ref(false),
   previewStart = ref(0),
   video = ref<HTMLVideoElement>(),
-  audio = ref<HTMLAudioElement>(),
   fileInput = ref<HTMLInputElement>();
+const musicRange = ref<InstanceType<typeof ArchiveMusicRange>>();
+const viewingOriginal = ref(false),
+  basePreviewUrl = ref(""),
+  basePreviewJob = ref<string>(),
+  basePreviewFailed = ref(false);
 const activeJob = computed(() => Boolean(job.value && ["pending", "running"].includes(job.value.status)));
 const initialRecipe = ref("");
 const recipe = computed(() =>
@@ -349,6 +404,10 @@ const originalUrl = computed(() =>
     `/api/v1/tools/media-archive/items/${props.item.id}/media/${current.value?.id ?? props.mediaId}/original`
   )
 );
+const savedUrl = computed(() => (current.value ? resolveBackendUrl(current.value.previewUrl) : ""));
+const watermarkBaseUrl = computed(() =>
+  current.value?.audioEdit?.watermark ? basePreviewUrl.value || savedUrl.value : savedUrl.value
+);
 const musicOptions = computed(() => {
   const items = [...music.value];
   if (chosenMusic.value && !items.some((item) => item.id === chosenMusic.value!.id)) items.unshift(chosenMusic.value);
@@ -364,7 +423,7 @@ const musicOptions = computed(() => {
 const musicUrl = computed(() =>
   musicId.value === "__saved__"
     ? resolveBackendUrl(
-        `/api/v1/tools/media-archive/items/${props.item.id}/media/${current.value?.id ?? props.mediaId}/saved-music`
+        `/api/v1/tools/media-archive/items/${props.item.id}/media/${current.value?.id ?? props.mediaId}/saved-music?v=${current.value?.audioEdit?.music?.checksum ?? ""}`
       )
     : chosenMusic.value
       ? resolveBackendUrl(chosenMusic.value.audioUrl)
@@ -378,7 +437,7 @@ function dispose() {
   scope.abort();
   if (timer) clearTimeout(timer);
   video.value?.pause();
-  audio.value?.pause();
+  musicRange.value?.stop();
 }
 onScopeDispose(dispose);
 function beforeUnload(event: BeforeUnloadEvent) {
@@ -413,6 +472,15 @@ watch(
       ready.value = runtime.ready;
       job.value = jobs.find((entry) => ["pending", "running"].includes(entry.status));
       if (job.value) schedulePoll(version);
+      if (props.initialMusicId && /^[A-Za-z0-9_-]{1,80}$/.test(props.initialMusicId)) {
+        const selected = await audioLibraryApi.item(props.initialMusicId);
+        if (version !== generation || scope.signal.aborted) return;
+        if (!selected.deletedAt && selected.available) {
+          chosenMusic.value = selected;
+          musicId.value = selected.id;
+          settings.musicStartSeconds = 0;
+        }
+      }
     } catch (e) {
       if (version === generation && !isApiErrorCancelled(e)) error.value = formatApiError(e);
     } finally {
@@ -425,14 +493,15 @@ function applyMedia(media?: ContentArchiveMedia) {
   current.value = media ? structuredClone(toRaw(media)) : undefined;
   loadWatermark(current.value);
   videoDuration.value = (media?.durationMs ?? 0) / 1000;
+  originalDuration.value = 0;
   Object.assign(settings, media?.audioEdit?.settings ?? defaultArchiveAudioSettings());
   musicId.value = media?.audioEdit?.music ? "__saved__" : null;
   chosenMusic.value = undefined;
-  previewUrl.value = media
-    ? panel.value === "watermark"
-      ? originalUrl.value
-      : resolveBackendUrl(media.previewUrl)
-    : "";
+  basePreviewUrl.value = "";
+  basePreviewJob.value = undefined;
+  basePreviewFailed.value = false;
+  viewingOriginal.value = false;
+  previewUrl.value = savedUrl.value;
   previewIsDraft.value = false;
   initialRecipe.value = recipe.value;
 }
@@ -459,7 +528,6 @@ function chooseMusic(id: string | null) {
   musicId.value = id;
   chosenMusic.value = music.value.find((entry) => entry.id === id);
   settings.musicStartSeconds = id === "__saved__" ? (current.value?.audioEdit?.settings.musicStartSeconds ?? 0) : 0;
-  audio.value?.pause();
 }
 async function uploadMusic(event: Event) {
   const element = event.target as HTMLInputElement,
@@ -489,30 +557,70 @@ function viewOriginal() {
   video.value?.pause();
   previewUrl.value = originalUrl.value;
   previewIsDraft.value = false;
+  viewingOriginal.value = true;
+}
+function viewCurrent() {
+  video.value?.pause();
+  previewUrl.value = panel.value === "watermark" ? watermarkBaseUrl.value : savedUrl.value;
+  previewIsDraft.value = false;
+  viewingOriginal.value = false;
+}
+function recordDuration(value: number) {
+  if (!previewIsDraft.value && Number.isFinite(value) && value > 0)
+    videoDuration.value = originalDuration.value || value;
+}
+function recordOriginalDuration(event: Event) {
+  const element = event.currentTarget as HTMLVideoElement;
+  if (element.getAttribute("src") !== originalUrl.value || !Number.isFinite(element.duration) || element.duration <= 0)
+    return;
+  originalDuration.value = element.duration;
+  videoDuration.value = element.duration;
+}
+function previewError() {
+  if (basePreviewUrl.value && previewUrl.value === basePreviewUrl.value) {
+    basePreviewUrl.value = "";
+    basePreviewFailed.value = true;
+    previewUrl.value = savedUrl.value;
+    error.value = "水印编辑画面已过期或加载失败，请重试；当前已保存视频保留";
+  }
 }
 function seekWatermark(time: number) {
-  viewOriginal();
+  viewCurrent();
   if (video.value) video.value.currentTime = Math.min(videoDuration.value, Math.max(0, time));
 }
 watch(panel, (value) => {
-  if (value === "watermark") viewOriginal();
+  if (!activeJob.value) viewCurrent();
+  if (value === "watermark") prepareWatermarkBase();
 });
+function prepareWatermarkBase() {
+  if (
+    panel.value === "watermark" &&
+    initialized.value &&
+    ready.value &&
+    !busy.value &&
+    current.value?.audioEdit?.watermark &&
+    !basePreviewUrl.value &&
+    !basePreviewFailed.value
+  )
+    void submit("preview", true);
+}
+watch([initialized, () => current.value?.checksum], prepareWatermarkBase);
 watch(
   watermarkInput,
   () => {
-    if (panel.value === "watermark" && previewUrl.value !== originalUrl.value) viewOriginal();
+    if (panel.value === "watermark" && !activeJob.value) viewCurrent();
   },
   { deep: true }
 );
-async function submit(mode: ArchiveVideoEditInput["mode"]) {
+async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = false) {
   if (!current.value || busy.value) return;
-  if (mode !== "restore" && watermarkValidation.value) {
+  if (!cleanWatermarkBase && mode !== "restore" && watermarkValidation.value) {
     error.value = watermarkValidation.value;
     return;
   }
   video.value?.pause();
-  audio.value?.pause();
   error.value = "";
+  musicRange.value?.stop();
   const version = generation;
   submitting.value = true;
   const images = props.item.media.filter((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
@@ -535,7 +643,8 @@ async function submit(mode: ArchiveVideoEditInput["mode"]) {
               ? { ...watermarkInput.value, settings: JSON.parse(JSON.stringify(watermarkSettings.value)) }
               : null
         }),
-    previewStartSeconds: previewStart.value,
+    previewStartSeconds: panel.value === "audio" || cleanWatermarkBase ? 0 : previewStart.value,
+    previewFullLength: mode === "preview" && (panel.value === "audio" || cleanWatermarkBase),
     ...(isImage.value
       ? {
           slideshow: {
@@ -551,12 +660,24 @@ async function submit(mode: ArchiveVideoEditInput["mode"]) {
       ? { musicId: chosenMusic.value.id, musicRevision: chosenMusic.value.revision }
       : {})
   };
+  if (cleanWatermarkBase) {
+    input.useSavedMusic = Boolean(current.value.audioEdit?.music);
+    input.settings = structuredClone(toRaw(current.value.audioEdit?.settings ?? defaultArchiveAudioSettings()));
+    input.watermark = null;
+    delete input.musicId;
+    delete input.musicRevision;
+  }
   try {
     const result = await videoEditApi.create(props.item.id, current.value.id, input, scope.signal);
     if (version !== generation || scope.signal.aborted) return;
     job.value = result;
+    if (cleanWatermarkBase) {
+      basePreviewJob.value = result.id;
+      basePreviewFailed.value = false;
+    }
     schedulePoll(version);
   } catch (e) {
+    if (cleanWatermarkBase && version === generation) basePreviewFailed.value = true;
     if (version === generation && !isApiErrorCancelled(e)) error.value = formatApiError(e);
   } finally {
     if (version === generation) submitting.value = false;
@@ -576,13 +697,26 @@ async function poll(version: number) {
     else if (result.status === "completed") {
       if (result.mode === "preview" && result.previewUrl) {
         previewUrl.value = resolveBackendUrl(result.previewUrl);
-        previewIsDraft.value = true;
+        if (result.id === basePreviewJob.value) {
+          basePreviewUrl.value = previewUrl.value;
+          if (panel.value !== "watermark") previewUrl.value = savedUrl.value;
+          basePreviewJob.value = undefined;
+          previewIsDraft.value = false;
+          viewingOriginal.value = false;
+        } else {
+          previewIsDraft.value = true;
+          viewingOriginal.value = false;
+        }
       } else {
         const item = await contentArchiveApi.detail(props.item.id, scope.signal);
         if (scope.signal.aborted || version !== generation) return;
         applyMedia(item.media.find((entry) => entry.id === (result.resultMediaId ?? props.mediaId)));
         emit("saved", item);
       }
+      prepareWatermarkBase();
+    } else if (result.id === basePreviewJob.value) {
+      basePreviewJob.value = undefined;
+      basePreviewFailed.value = true;
     }
   } catch (e) {
     if (version === generation && !isApiErrorCancelled(e)) error.value = formatApiError(e);

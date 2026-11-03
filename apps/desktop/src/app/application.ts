@@ -212,7 +212,8 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
           systemTray.attach(window);
         },
         closeStartupMigration: startupMigration.closeForMainWindow,
-        isQuitting: () => quitting
+        isQuitting: () => quitting,
+        hideToTray: systemTray.hideWindow
       });
       startupDiagnostics.ready();
       updater = createDesktopUpdater({

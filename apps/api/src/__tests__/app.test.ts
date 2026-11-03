@@ -107,6 +107,8 @@ describe("api app", () => {
       "lan-transfer",
       "edge-tts",
       "audio-library",
+      "audio-extract",
+      "audio-convert",
       "xhs-archive"
     ]);
     // 退役模块的负向回归：旧接口不可继续解析、下载或创建任务。

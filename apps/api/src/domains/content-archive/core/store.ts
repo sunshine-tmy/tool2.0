@@ -95,6 +95,7 @@ export class ContentArchiveStore {
       pageSize?: number;
       platform?: ContentArchivePlatform | "all";
       groupId?: string;
+      publication?: ContentArchiveListQuery["publication"];
       sort?: ContentArchiveListQuery["sort"];
     } = {}
   ): Promise<ContentArchiveListResponse> {
@@ -108,6 +109,13 @@ export class ContentArchiveStore {
     const sort = options.sort;
     const matched = [...this.items.values()]
       .filter((item) => !options.platform || options.platform === "all" || item.platform === options.platform)
+      .filter((item) =>
+        options.publication === "published"
+          ? published.has(item.id)
+          : options.publication === "unpublished"
+            ? !published.has(item.id)
+            : true
+      )
       .filter(
         (item) =>
           !options.groupId ||

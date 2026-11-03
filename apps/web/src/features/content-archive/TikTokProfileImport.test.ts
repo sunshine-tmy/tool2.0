@@ -369,7 +369,7 @@ it("polls progress, emits archive updates, stops/retries explicitly and deletes 
   await click(wrapper, "删除主页任务记录");
   expect(mocks.remove).not.toHaveBeenCalled();
   await click(wrapper, "删除主页任务记录");
-  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("作品、媒体和分组均保留"), expect.any(Object));
+  expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("表格批次、其他主页任务"), expect.any(Object));
   expect(mocks.remove).toHaveBeenCalledWith("profile_123", expect.any(AbortSignal));
 });
 it("rejects invalid profiles, reports errors and aborts late reads when disposed", async () => {

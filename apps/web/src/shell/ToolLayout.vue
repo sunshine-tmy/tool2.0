@@ -4,9 +4,11 @@
     class="workspace"
     :class="{
       'sidebar-collapsed': !isCompact && desktopSidebarCollapsed,
-      'sidebar-drawer-open': isCompact && mobileDrawerOpen
+      'sidebar-drawer-open': isCompact && mobileDrawerOpen,
+      'has-desktop-titlebar': isDesktop
     }"
   >
+    <div v-if="isDesktop" class="desktop-window-titlebar" aria-hidden="true"><span>电商工具箱</span></div>
     <header class="topbar">
       <div class="topbar-leading">
         <n-button
@@ -336,6 +338,29 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.workspace.has-desktop-titlebar {
+  grid-template-rows: env(titlebar-area-height, 0px) var(--topbar-height) minmax(0, 1fr);
+}
+.desktop-window-titlebar {
+  height: env(titlebar-area-height, 0px);
+  overflow: hidden;
+  background: #edf3fa;
+}
+.desktop-window-titlebar > span {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: env(titlebar-area-width, 100%);
+  height: 100%;
+  margin-left: env(titlebar-area-x, 0px);
+  padding: 0 16px;
+  overflow: hidden;
+  color: #243047;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-app-region: drag;
+}
 .shell-notice {
   grid-column: 1 / -1;
   align-self: start;

@@ -32,6 +32,8 @@ describe("R08 application ownership contracts", () => {
         ["/settings/data-backup", "data-backup"],
         ["/settings/diagnostics", "diagnostics"],
         ["/tools/audio-library", "audio-library"],
+        ["/tools/audio-convert", "audio-convert"],
+        ["/tools/audio-extract", "audio-extract"],
         ["/tools/edge-tts", "edge-tts"],
         ["/tools/image-ai", "image-ai"],
         ["/tools/image-compress", "image-compress"],

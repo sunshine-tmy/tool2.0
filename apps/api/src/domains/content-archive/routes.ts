@@ -127,8 +127,9 @@ export async function registerXhsArchiveRoutes(options: {
     tools: () => videoEdits.mediaTools()
   });
   registerLocalVideoUploadRoutes(app, localUploads);
-  const imports = new ArchiveImportService(database, store.content, service.content, {
-    onError: () => app.log.error("ARCHIVE_IMPORT_STORAGE_FAILED")
+  const imports: ArchiveImportService = new ArchiveImportService(database, store.content, service.content, {
+    onError: () => app.log.error("ARCHIVE_IMPORT_STORAGE_FAILED"),
+    beforeRemove: (batch) => profiles.snapshotBeforeBatchRemoval(batch)
   });
   imports.initialize();
   registerArchiveImportRoutes(app, imports);

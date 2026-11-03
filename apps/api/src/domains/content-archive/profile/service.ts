@@ -6,7 +6,9 @@ import {
   normalizeTikTokProfileLink,
   TikTokProfileJobSchema,
   TikTokProfileWorkSchema,
+  ArchiveImportRowSchema,
   TIKTOK_PROFILE_MAX_WORKS,
+  type ArchiveImportBatch,
   type TikTokProfileJob,
   type TikTokProfilePage,
   type TikTokProfileStart
@@ -25,6 +27,16 @@ import {
 
 const kind = "tiktok-profile-job";
 const id = Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" });
+const SavedOutcomeSchema = Type.Object(
+  {
+    workId: TikTokProfileWorkSchema.properties.id,
+    batchIndex: Type.Integer({ minimum: 0, maximum: 999 }),
+    attemptKey: Type.String({ maxLength: 256 }),
+    attemptAt: Type.String({ format: "date-time" }),
+    outcome: Type.Pick(ArchiveImportRowSchema, ["status", "progress", "message", "errorCode", "archiveId"])
+  },
+  { additionalProperties: false }
+);
 const RecordSchema = Type.Object(
   {
     version: Type.Literal(1),
@@ -40,20 +52,27 @@ const RecordSchema = Type.Object(
     ),
     nextIndex: Type.Integer({ minimum: 0, maximum: TIKTOK_PROFILE_MAX_WORKS }),
     currentBatchId: Type.Optional(id),
-    successMatches: Type.Optional(Type.Array(SuccessMatchSchema, { maxItems: TIKTOK_PROFILE_MAX_WORKS }))
+    successMatches: Type.Optional(Type.Array(SuccessMatchSchema, { maxItems: TIKTOK_PROFILE_MAX_WORKS })),
+    savedOutcomes: Type.Optional(Type.Array(SavedOutcomeSchema, { maxItems: TIKTOK_PROFILE_MAX_WORKS }))
   },
   { additionalProperties: false }
 );
 type ProfileRecord = import("@sinclair/typebox").Static<typeof RecordSchema>;
 /** Also used at the offline restore boundary before a record can reach startup. */
 export function isStoredTikTokProfileRecord(payload: unknown, entityId: string): payload is ProfileRecord {
+  if (!Value.Check(RecordSchema, payload)) return false;
+  const workIds = new Set(payload.works.map((work) => work.id));
   return (
-    Value.Check(RecordSchema, payload) &&
     payload.meta.id === entityId &&
     payload.meta.discoveredCount === payload.works.length &&
-    new Set(payload.works.map((work) => work.id)).size === payload.works.length &&
+    workIds.size === payload.works.length &&
     normalizeTikTokProfileLink(payload.meta.url)?.username === payload.meta.username &&
     payload.nextIndex <= (payload.selectedIds?.length ?? 0) &&
+    (!payload.savedOutcomes ||
+      (new Set(payload.savedOutcomes.map((entry) => entry.workId)).size === payload.savedOutcomes.length &&
+        payload.savedOutcomes.every(
+          (entry) => entry.batchIndex < payload.batchIds.length && workIds.has(entry.workId)
+        ))) &&
     payload.works.every((work) =>
       new RegExp(
         `^https://www\\.tiktok\\.com/@${payload.meta.username.replaceAll(".", "\\.")}/(?:video|photo)/${work.id}$`
@@ -74,7 +93,7 @@ export class TikTokProfileService {
   private discovery?: { id: string; controller: AbortController; done: Promise<void> };
   constructor(
     private readonly database: ToolboxDatabase,
-    private readonly imports: Pick<ArchiveImportService, "create" | "get" | "cancel" | "removeOwned">,
+    private readonly imports: Pick<ArchiveImportService, "create" | "get" | "cancel">,
     private readonly reader: Pick<TikTokProfileReader, "read">,
     private readonly options: { pollMs?: number; onError?: () => void } = {}
   ) {
@@ -274,14 +293,55 @@ export class TikTokProfileService {
     });
   }
   remove(id: string) {
-    return this.serial(async () => {
+    return this.serial(() => {
       const record = this.required(id);
       if (active(record.meta.phase))
         throw new ArchiveTaskError("TIKTOK_PROFILE_BUSY", "请先停止并等待当前任务结束", 409);
-      await this.imports.removeOwned(id, () => this.database.remove(kind, id));
+      if (record.batchIds.some((id) => ["running", "stopping"].includes(this.imports.get(id)?.status ?? "")))
+        throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "所属批次仍在执行，请先等待当前作品结束", 409);
+      this.database.transaction(() => {
+        this.database.remove(kind, id);
+        this.database.appendAudit({
+          action: "archive.profile_history.delete",
+          outcome: "success",
+          details: { profileId: id, batchesRetained: true, archivesRetained: true }
+        });
+      });
       this.records.delete(id);
       this.successRevisions.delete(id);
     });
+  }
+  /** Snapshot results before deleting only a spreadsheet batch. Caller owns the transaction. */
+  snapshotBeforeBatchRemoval(batch: ArchiveImportBatch): (() => void) | undefined {
+    const current = batch.ownerProfileId ? this.records.get(batch.ownerProfileId) : undefined;
+    if (!current) return undefined;
+    if (active(current.meta.phase))
+      throw new ArchiveTaskError("TIKTOK_PROFILE_BUSY", "主页任务正在执行，请先停止并等待结束后再删除批次记录", 409);
+    const next = structuredClone(current);
+    const batchIndex = next.batchIds.indexOf(batch.id);
+    if (batchIndex < 0) throw new Error("TIKTOK_PROFILE_OWNERSHIP_FAILED");
+    const context = profileSuccessContext(this.database);
+    const saved = new Map(next.savedOutcomes?.map((entry) => [entry.workId, entry]));
+    const workIds = new Set(next.works.map((work) => work.id));
+    for (const row of batch.rows) {
+      const workId = /\/(?:video|photo)\/(\d{5,24})\/?$/.exec(new URL(row.inputUrl).pathname)?.[1];
+      if (!workId || !workIds.has(workId) || (saved.get(workId)?.batchIndex ?? -1) > batchIndex) continue;
+      const { status, progress, message, errorCode, archiveId } = row;
+      saved.set(workId, {
+        workId,
+        batchIndex,
+        attemptKey: row.taskId ?? `${batch.id}:${row.rowNumber}`,
+        attemptAt: (row.taskId && context.taskTimes.get(row.taskId)) || batch.updatedAt,
+        outcome: { status, progress, message, ...(errorCode ? { errorCode } : {}), ...(archiveId ? { archiveId } : {}) }
+      });
+    }
+    next.savedOutcomes = [...saved.values()];
+    if (next.currentBatchId === batch.id) next.currentBatchId = undefined;
+    this.write(next);
+    return () => {
+      this.records.set(next.meta.id, next);
+      this.successRevisions.delete(next.meta.id);
+    };
   }
   tick() {
     return this.serial(async () => {
@@ -469,12 +529,19 @@ export class TikTokProfileService {
   private project(record: ProfileRecord, context: ProfileSuccessContext = profileSuccessContext(this.database)) {
     const outcomes = new Map<string, Outcome>();
     const attempts = new Map<string, { key: string; time: string }>();
-    for (const id of record.batchIds) {
+    const latestBatch = new Map<string, number>();
+    for (const saved of record.savedOutcomes ?? []) {
+      outcomes.set(saved.workId, structuredClone(saved.outcome));
+      attempts.set(saved.workId, { key: saved.attemptKey, time: saved.attemptAt });
+      latestBatch.set(saved.workId, saved.batchIndex);
+    }
+    for (const [batchIndex, id] of record.batchIds.entries()) {
       const batch = this.imports.get(id);
       if (!batch || batch.ownerProfileId !== record.meta.id) continue;
       for (const row of batch.rows) {
         const work = /\/(?:video|photo)\/(\d{5,24})\/?$/.exec(new URL(row.inputUrl).pathname)?.[1];
-        if (work) {
+        if (work && batchIndex >= (latestBatch.get(work) ?? -1)) {
+          latestBatch.set(work, batchIndex);
           attempts.set(work, {
             key: row.taskId ?? `${batch.id}:${row.rowNumber}`,
             time: (row.taskId && context.taskTimes.get(row.taskId)) || batch.updatedAt

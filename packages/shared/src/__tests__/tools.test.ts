@@ -16,6 +16,8 @@ describe("tool registry", () => {
       "lan-transfer",
       "edge-tts",
       "audio-library",
+      "audio-extract",
+      "audio-convert",
       "xhs-archive"
     ]);
     expect(tools.every((tool) => tool.requiresAuth === false)).toBe(true);

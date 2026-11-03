@@ -12,6 +12,12 @@ export default defineConfig({
       "@toolbox/shared/speech": fileURLToPath(new URL("../../packages/shared/src/speech/index.ts", import.meta.url)),
       "@toolbox/shared/archive": fileURLToPath(new URL("../../packages/shared/src/archive/index.ts", import.meta.url)),
       "@toolbox/shared/lan": fileURLToPath(new URL("../../packages/shared/src/lan/index.ts", import.meta.url)),
+      "@toolbox/shared/audio-extract": fileURLToPath(
+        new URL("../../packages/shared/src/audio-extract.ts", import.meta.url)
+      ),
+      "@toolbox/shared/audio-convert": fileURLToPath(
+        new URL("../../packages/shared/src/audio-convert.ts", import.meta.url)
+      ),
       "@toolbox/shared/audio-library": fileURLToPath(
         new URL("../../packages/shared/src/audio-library/index.ts", import.meta.url)
       ),

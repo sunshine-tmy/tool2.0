@@ -6,7 +6,7 @@ export const BackupSelectionSchema = Type.Object(
   {
     modules: Type.Array(Type.Union(backupModules.map(({ id }) => Type.Literal(id))), {
       minItems: 1,
-      maxItems: 6,
+      maxItems: backupModules.length,
       uniqueItems: true
     }),
     preferences: Type.Optional(Type.Record(Type.String(), Type.String({ maxLength: 500_000 }), { maxProperties: 20 })),

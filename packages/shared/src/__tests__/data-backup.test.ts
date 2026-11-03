@@ -2,8 +2,8 @@ import { expect, expectTypeOf, it } from "vitest";
 import type { Static } from "@sinclair/typebox";
 import { BackupSelectionSchema, type BackupSelection } from "../system/data-backup";
 import { backupModules, isBackupSelection, isBackupPreviewRequest, cleanBackupPreferences } from "../system/index";
-it("has six business modules and requires a bounded unique selection without filesystem capabilities", () => {
-  expect(backupModules).toHaveLength(6);
+it("has eight business modules and requires a bounded unique selection without filesystem capabilities", () => {
+  expect(backupModules).toHaveLength(8);
   expectTypeOf<Static<typeof BackupSelectionSchema>>().toEqualTypeOf<BackupSelection>();
   expect(isBackupSelection({ modules: backupModules.map((m) => m.id) })).toBe(true);
   for (const value of [

@@ -53,6 +53,19 @@ async function choose(wrapper: VueWrapper, files: File[]) {
   await flushPromises();
 }
 describe("本地视频批量上传队列", () => {
+  it("清空上传列表只移除页面队列，已成功归档的内容保留且不会再发出服务请求", async () => {
+    const wrapper = await setup();
+    await choose(wrapper, [video("one.mp4")]);
+    await button(wrapper, "开始批量归档").trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("archived")).toHaveLength(1);
+    const archived = wrapper.emitted("archived")![0];
+    expect(button(wrapper, "清空上传列表").attributes("title")).toContain("不删除归档作品、表格批次或 TikTok 主页历史");
+    await button(wrapper, "清空上传列表").trigger("click");
+    expect(wrapper.findAll("tbody tr")).toHaveLength(0);
+    expect(mocks.upload).toHaveBeenCalledOnce();
+    expect(wrapper.emitted("archived")![0]).toEqual(archived);
+  });
   it("整轮固定目标分组，重复项保留原组，下一轮可清空分组选择", async () => {
     const groups = ["素材甲", "素材乙"].map((name, index) => ({
       id: `group-${index}`,
@@ -192,7 +205,7 @@ describe("本地视频批量上传队列", () => {
     expect(wrapper.getComponent(NPagination).props("itemCount")).toBe(1000);
     await button(wrapper, "移除此项").trigger("click");
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 999 条");
-    await button(wrapper, "清空列表").trigger("click");
+    await button(wrapper, "清空上传列表").trigger("click");
     expect(wrapper.findAll("tbody tr")).toHaveLength(0);
     expect(wrapper.findComponent(NPagination).exists()).toBe(false);
     expect(wrapper.text()).not.toContain("请分批选择");

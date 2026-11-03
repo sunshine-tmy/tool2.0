@@ -160,7 +160,7 @@ it("reports validation/network failures and handles cancel, retry and metadata-o
   await model.remove();
   expect(model.batch.value).toBeUndefined();
 });
-it("cleans a selected owner's records in one request and retains unrelated batches, including on failure", async () => {
+it("deletes only the selected batch without removing its owner or siblings, including on failure", async () => {
   const owned = { ...batch("completed"), ownerProfileId: owner.id };
   const sibling = { ...owned, id: "sibling_123" };
   const unrelated = { ...batch("completed"), id: "manual_123" };
@@ -169,15 +169,15 @@ it("cleans a selected owner's records in one request and retains unrelated batch
   const { model, error } = setup();
   await model.show();
   expect(model.owner.value?.id).toBe(owner.id);
-  profiles.remove.mockRejectedValueOnce(new Error("cleanup failed"));
+  api.remove.mockRejectedValueOnce(new Error("cleanup failed"));
   await model.remove();
   expect(error).toHaveBeenCalled();
   expect(model.history.value).toHaveLength(3);
   expect(model.batch.value?.id).toBe(owned.id);
   await model.remove();
-  expect(profiles.remove).toHaveBeenLastCalledWith(owner.id, expect.any(AbortSignal));
-  expect(api.remove).not.toHaveBeenCalled();
-  expect(model.history.value.map((entry) => entry.id)).toEqual([unrelated.id]);
+  expect(profiles.remove).not.toHaveBeenCalled();
+  expect(api.remove).toHaveBeenLastCalledWith(owned.id, expect.any(AbortSignal));
+  expect(model.history.value.map((entry) => entry.id)).toEqual([sibling.id, unrelated.id]);
   expect(model.batch.value).toBeUndefined();
   expect(model.owner.value).toBeUndefined();
 });

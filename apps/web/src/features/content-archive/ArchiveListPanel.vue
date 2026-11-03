@@ -1,42 +1,22 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
   <section class="workspace-panel archive-panel">
-    <div class="archive-toolbar">
-      <n-input v-model:value="keyword" clearable placeholder="搜索标题、正文或作者" @keyup.enter="$emit('search')">
+    <div class="archive-toolbar" role="search" aria-label="搜索归档内容">
+      <n-input
+        v-model:value="keyword"
+        clearable
+        placeholder="搜索标题、正文或作者"
+        :input-props="{ 'aria-label': '归档关键词' }"
+        @keyup.enter="$emit('search')"
+      >
         <template #prefix><Search :size="16" /></template>
       </n-input>
-      <n-select v-model:value="typeFilter" :options="typeOptions" style="width: 150px" />
-      <n-select
-        v-model:value="platformFilter"
-        :options="platformOptions"
-        aria-label="归档平台筛选"
-        style="width: 150px"
-      />
-      <n-select v-model:value="sort" :options="sortOptions" aria-label="归档列表排序" style="width: 210px" />
-      <n-checkbox
-        class="archive-select-all"
-        :checked="allCurrentArchivesSelected"
-        :indeterminate="someCurrentArchivesSelected"
-        :disabled="!archives.items.length"
-        @update:checked="$emit('toggleSelectAll', $event)"
-      >
-        全选
-      </n-checkbox>
-      <n-button secondary :loading="listLoading" @click="$emit('refresh')">
-        <template #icon><RefreshCw :size="15" /></template>刷新
-      </n-button>
-      <n-button type="error" secondary :disabled="!selectedIds.length" @click="$emit('removeSelected')">
-        删除所选 {{ selectedIds.length || "" }}
-      </n-button>
-      <n-button secondary @click="$emit('translateSelected')">
-        <template #icon><Languages :size="15" /></template>
-        {{ selectedIds.length ? `翻译所选 ${selectedIds.length} 条` : "补全未翻译内容" }}
-      </n-button>
-    </div>
-    <div class="archive-list-heading">
-      <p class="filter-scope">
-        当前筛选范围 {{ archives.total }} 条；未选择时仅补全此范围内未翻译或已过期内容（每批最多 100 条）。
-      </p>
+      <div class="archive-filter-options" role="group" aria-label="归档筛选与排序">
+        <n-select v-model:value="typeFilter" :options="typeOptions" aria-label="归档类型筛选" />
+        <n-select v-model:value="platformFilter" :options="platformOptions" aria-label="归档平台筛选" />
+        <n-select v-model:value="publicationFilter" :options="publicationOptions" aria-label="发布标记筛选" />
+        <n-select v-model:value="sort" :options="sortOptions" aria-label="归档列表排序" />
+      </div>
       <div class="archive-view-switch" role="group" aria-label="归档展示方式">
         <n-button
           size="small"
@@ -58,8 +38,51 @@
         </n-button>
       </div>
     </div>
+    <div class="archive-list-heading">
+      <div class="archive-selection-info">
+        <n-checkbox
+          class="archive-select-all"
+          :checked="allCurrentArchivesSelected"
+          :indeterminate="someCurrentArchivesSelected"
+          :disabled="!archives.items.length"
+          @update:checked="$emit('toggleSelectAll', $event)"
+        >
+          全选本页
+        </n-checkbox>
+        <p class="filter-scope" aria-live="polite">
+          共 {{ archives.total }} 条<span v-if="selectedIds.length">，已选 {{ selectedIds.length }} 条</span>
+        </p>
+      </div>
+      <div class="archive-batch-actions" role="group" aria-label="归档批量操作">
+        <n-button size="small" secondary :loading="listLoading" @click="$emit('refresh')">
+          <template #icon><RefreshCw :size="15" /></template>刷新
+        </n-button>
+        <n-button v-if="selectedIds.length" size="small" quaternary @click="$emit('toggleSelectAll', false)">
+          取消选择
+        </n-button>
+        <n-button
+          size="small"
+          secondary
+          :title="selectedIds.length ? '翻译选中的归档作品' : '仅补全当前筛选范围内未翻译或已过期内容，每批最多 100 条'"
+          @click="$emit('translateSelected')"
+        >
+          <template #icon><Languages :size="15" /></template>
+          {{ selectedIds.length ? `翻译所选 ${selectedIds.length} 条` : "补全未翻译内容" }}
+        </n-button>
+        <n-button v-if="selectedIds.length" size="small" type="error" secondary @click="$emit('removeSelected')">
+          删除所选 {{ selectedIds.length }}
+        </n-button>
+      </div>
+    </div>
     <n-spin :show="listLoading">
-      <n-empty v-if="!archives.items.length" description="还没有内容存档，可在上方获取链接内容或批量上传视频" />
+      <n-empty
+        v-if="!archives.items.length"
+        :description="
+          publicationFilter === 'all'
+            ? '还没有内容存档，可在上方获取链接内容或批量上传视频'
+            : '当前筛选条件下没有归档内容'
+        "
+      />
       <div v-else class="archive-grid" :class="{ 'is-list': viewMode === 'list' }">
         <article
           v-for="archive in archives.items"
@@ -181,8 +204,11 @@ const typeFilter = defineModel<NonNullable<ContentArchiveListQuery["type"]>>("ty
 const platformFilter = defineModel<NonNullable<ContentArchiveListQuery["platform"]>>("platformFilter", {
   default: "all"
 });
+const publicationFilter = defineModel<NonNullable<ContentArchiveListQuery["publication"]>>("publicationFilter", {
+  default: "all"
+});
 const page = defineModel<number>("page", { required: true });
-const sort = defineModel<NonNullable<ContentArchiveListQuery["sort"]>>("sort", { default: "archived-desc" });
+const sort = defineModel<NonNullable<ContentArchiveListQuery["sort"]>>("sort", { default: "published-desc" });
 const viewModeStorageKey = "toolbox:media-archive:view-mode";
 const viewMode = ref(readViewMode());
 function readViewMode(): "card" | "list" {
@@ -219,6 +245,11 @@ const platformOptions = [
   { label: "抖音", value: "douyin" },
   { label: "TikTok", value: "tiktok" },
   { label: "本地上传", value: "local" }
+];
+const publicationOptions = [
+  { label: "全部发布状态", value: "all" },
+  { label: "已发布", value: "published" },
+  { label: "未发布", value: "unpublished" }
 ];
 
 const allCurrentArchivesSelected = computed(
@@ -263,10 +294,17 @@ function formatDate(value: string | undefined) {
 }
 .archive-toolbar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+}
+.archive-filter-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) minmax(190px, 1.4fr);
+  flex: 1 1 580px;
+  min-width: 0;
+  gap: 10px;
 }
 .filter-scope {
   color: #687386;
@@ -278,13 +316,23 @@ function formatDate(value: string | undefined) {
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  margin: -8px 0 16px;
+  gap: 10px 20px;
+  padding-top: 14px;
+  margin-bottom: 16px;
+  border-top: 1px solid #edf0f5;
+}
+.archive-selection-info,
+.archive-batch-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
 }
 .archive-view-switch {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .card-platform-badge {
   display: inline-block;
@@ -324,14 +372,11 @@ function formatDate(value: string | undefined) {
   background: #f3e8ff;
 }
 .archive-toolbar .n-input {
-  flex: 1;
+  flex: 1 1 220px;
+  min-width: 0;
 }
 .archive-select-all {
   flex: 0 0 auto;
-  padding: 8px 10px;
-  border: 1px solid #e3e8ef;
-  border-radius: 8px;
-  background: #f8fafc;
 }
 .archive-grid {
   display: grid;
@@ -513,15 +558,18 @@ function formatDate(value: string | undefined) {
   margin-top: 0;
 }
 @media (max-width: 900px) {
+  .archive-filter-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .archive-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 640px) {
-  .archive-toolbar {
-    flex-wrap: wrap;
-  }
   .archive-toolbar .n-input {
+    flex-basis: 100%;
+  }
+  .archive-filter-options {
     flex-basis: 100%;
   }
   .archive-grid {

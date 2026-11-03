@@ -232,10 +232,12 @@ describe("中性多媒体归档页面", () => {
     mocks.router = router;
     await router.push("/tools/media-archive");
     const replace = vi.spyOn(router, "replace");
+    mocks.api.list!.mockResolvedValue({ ...listFixture(), total: 25, pageCount: 3 });
     const wrapper = mountPage();
     await flushPromises();
     const list = wrapper.getComponent(ArchiveListPanel);
     list.vm.$emit("update:keyword", "待发布");
+    list.vm.$emit("update:publicationFilter", "unpublished");
     list.vm.$emit("update:sort", "published-asc");
     list.vm.$emit("update:page", 3);
     list.vm.$emit("openDetail", "archive-123");
@@ -251,7 +253,12 @@ describe("中性多媒体归档页面", () => {
     expect(router.currentRoute.value.name).toBe("archive-video-editor");
     const returnTo = String(router.currentRoute.value.query.returnTo);
     const query = new URL(returnTo, "http://localhost").searchParams;
-    expect(Object.fromEntries(query)).toMatchObject({ keyword: "待发布", sort: "published-asc", page: "3" });
+    expect(Object.fromEntries(query)).toMatchObject({
+      keyword: "待发布",
+      publication: "unpublished",
+      sort: "published-asc",
+      page: "3"
+    });
     await router.push(returnTo);
     wrapper.getComponent(XhsDetailDrawer).vm.$emit("editWatermark", "video-123");
     await flushPromises();
@@ -396,7 +403,7 @@ describe("中性多媒体归档页面", () => {
     const wrapper = mountPage();
     await flushPromises();
     const panel = wrapper.getComponent(ArchiveListPanel);
-    expect(panel.props("sort")).toBe("archived-desc");
+    expect(panel.props("sort")).toBe("published-desc");
     panel.vm.$emit("update:page", 2);
     panel.vm.$emit("update:sort", "published-asc");
     await flushPromises();
@@ -435,6 +442,55 @@ describe("中性多媒体归档页面", () => {
     await flushPromises();
     expect(mocks.api.create).toHaveBeenCalledTimes(1);
     expect(mocks.api.cancel).not.toHaveBeenCalled();
+  });
+  it("链接获取提交目标分组，分组更新或删除后清理失效选择，不混入列表筛选", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const form = wrapper.getComponent(ArchiveTaskPanel),
+      groups = wrapper.getComponent(ArchiveGroups);
+    const group = {
+      id: "group_123456",
+      name: "商品素材",
+      createdAt: "2026-10-01T00:00:00Z",
+      updatedAt: "2026-10-01T00:00:00Z"
+    };
+    groups.vm.$emit("loaded", [group]);
+    form.vm.$emit("update:groupId", group.id);
+    form.vm.$emit("update:inputUrl", "https://www.tiktok.com/@shop/video/12345");
+    await flushPromises();
+    expect(form.props("groups")).toEqual([group]);
+    expect(wrapper.getComponent(ArchiveListPanel).props("archives").total).toBe(1);
+    form.vm.$emit("submit");
+    await flushPromises();
+    expect(mocks.api.create).toHaveBeenCalledWith(
+      { url: "https://www.tiktok.com/@shop/video/12345", platform: "tiktok", groupId: group.id },
+      expect.any(AbortSignal)
+    );
+    groups.vm.$emit("loaded", []);
+    await flushPromises();
+    expect(form.props("groupId")).toBeNull();
+  });
+  it("抖音预检等待期间也使用点击提交时的目标分组，后续选择不改变已提交任务", async () => {
+    const wrapper = mountPage();
+    await flushPromises();
+    const form = wrapper.getComponent(ArchiveTaskPanel);
+    form.vm.$emit("update:inputUrl", "https://www.douyin.com/video/123456789");
+    form.vm.$emit("update:groupId", "group_first");
+    let resolve!: (value: { available: boolean; message: string }) => void;
+    mocks.api.douyinRuntime!.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      })
+    );
+    form.vm.$emit("submit");
+    await flushPromises();
+    form.vm.$emit("update:groupId", "group_second");
+    resolve({ available: true, message: "就绪" });
+    await flushPromises();
+    expect(mocks.api.create).toHaveBeenCalledWith(
+      { url: "https://www.douyin.com/video/123456789", platform: "douyin", groupId: "group_first" },
+      expect.any(AbortSignal)
+    );
   });
   it("opens the exact owning profile directly from its batch record", async () => {
     const wrapper = mountPage();

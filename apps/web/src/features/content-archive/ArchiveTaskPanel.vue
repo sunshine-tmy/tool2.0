@@ -24,6 +24,18 @@
     <div class="platform-row">
       <span>来源平台</span>
       <n-select v-model:value="platform" :options="platformOptions" aria-label="归档来源平台" style="width: 160px" />
+      <span>归档分组</span>
+      <n-select
+        v-model:value="groupId"
+        :options="groupOptions"
+        placeholder="不指定分组"
+        aria-label="链接归档目标分组"
+        title="不指定时，新作品归入未分组，已有作品保留原分组"
+        class="fetch-group-select"
+        clearable
+        filterable
+        :disabled="submitting || activeTask || authWaiting"
+      />
       <span
         v-if="inputUrl.trim()"
         class="platform-hint"
@@ -110,6 +122,7 @@ import { Archive, Box, Check, Download, FileSearch, HardDriveDownload } from "lu
 import {
   identifyArchiveLink,
   type ArchivePlatformSelection,
+  type ArchiveGroup,
   type ContentArchiveTask,
   type XhsArchiveTaskStage
 } from "@toolbox/shared";
@@ -122,6 +135,7 @@ const props = defineProps<{
   douyinCanAutoInstall?: boolean;
   douyinMessage?: string;
   authWaiting: boolean;
+  groups?: ArchiveGroup[];
 }>();
 
 const emit = defineEmits<{
@@ -140,6 +154,8 @@ defineExpose({
   }
 });
 const platform = defineModel<ArchivePlatformSelection>("platform", { default: "auto" });
+const groupId = defineModel<string | null>("groupId", { default: null });
+const groupOptions = computed(() => (props.groups ?? []).map((group) => ({ label: group.name, value: group.id })));
 const platformOptions = [
   { label: "自动识别", value: "auto" },
   { label: "小红书", value: "xiaohongshu" },
@@ -212,6 +228,10 @@ function stageClass(stage: XhsArchiveTaskStage) {
 }
 .platform-hint.warning {
   color: #b45309;
+}
+.fetch-group-select {
+  width: 240px;
+  max-width: 100%;
 }
 .input-row {
   display: flex;

@@ -55,6 +55,8 @@
         ref="fetchPanel"
         v-model:input-url="inputUrl"
         v-model:platform="platform"
+        v-model:group-id="fetchGroupId"
+        :groups="archiveGroups"
         :task="task"
         :submitting="submitting"
         :cancelling="cancellingTask"
@@ -96,6 +98,7 @@
         v-model:keyword="keyword"
         v-model:type-filter="typeFilter"
         v-model:platform-filter="platformFilter"
+        v-model:publication-filter="publicationFilter"
         v-model:sort="sort"
         v-model:page="page"
         :archives="archives"
@@ -211,11 +214,16 @@ const collection = useArchiveCollection(
   router.currentRoute?.value.query
 );
 const archiveGroups = ref<ArchiveGroup[]>([]);
+const fetchGroupId = ref<string | null>(null);
+watch(archiveGroups, (groups) => {
+  if (fetchGroupId.value && !groups.some((group) => group.id === fetchGroupId.value)) fetchGroupId.value = null;
+});
 const {
   current,
   keyword,
   typeFilter,
   platformFilter,
+  publicationFilter,
   sort,
   groupFilter,
   page,
@@ -245,6 +253,7 @@ async function openVideoEditor(item: ContentArchiveItem, mediaId: string, panel:
     keyword: keyword.value,
     type: typeFilter.value,
     platform: platformFilter.value,
+    publication: publicationFilter.value,
     group: groupFilter.value,
     sort: sort.value,
     page: String(page.value)
@@ -327,6 +336,7 @@ async function startFetch() {
     return;
   }
   submitting.value = true;
+  const targetGroupId = fetchGroupId.value;
   try {
     if (link.platform === "douyin") {
       // 提交前重新读取能力状态，避免页面挂起期间组件被卸载或修复后仍使用过期状态。
@@ -337,7 +347,10 @@ async function startFetch() {
       }
     }
     // 创建获取任务立即返回 taskId；后续进度由 SSE 驱动，不阻塞页面输入和浏览。
-    task.value = await contentArchiveApi.create({ url: link.url, platform: link.platform }, requestScope.signal);
+    task.value = await contentArchiveApi.create(
+      { url: link.url, platform: link.platform, ...(targetGroupId ? { groupId: targetGroupId } : {}) },
+      requestScope.signal
+    );
   } catch (error) {
     if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取失败"));
   } finally {

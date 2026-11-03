@@ -19,7 +19,7 @@ let png: Buffer;
 let app: Awaited<ReturnType<typeof createApp>> | undefined;
 let gallery: boolean;
 let failMedia: boolean;
-let videoShape: "standard" | "structured" | "mobile" | "empty" | "shop";
+let videoShape: "standard" | "structured" | "mobile" | "empty" | "shop" | "shop-anchor";
 let failFallback: boolean;
 let gate: (() => void) | undefined;
 const video = Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from("ftypisom"), Buffer.alloc(40)]);
@@ -74,6 +74,7 @@ beforeEach(async () => {
           desc: "商品说明 #展示",
           author: { uniqueId: "shop", nickname: "Shop" },
           ...(videoShape === "shop" ? { isECVideo: 1, isAd: false } : {}),
+          ...(videoShape === "shop-anchor" ? { AnchorTypes: ["33"], isAd: false } : {}),
           ...(gallery
             ? {
                 imagePost: {
@@ -83,7 +84,7 @@ beforeEach(async () => {
               }
             : {
                 video: {
-                  playAddr: ["structured", "empty", "shop"].includes(videoShape)
+                  playAddr: ["structured", "empty", "shop", "shop-anchor"].includes(videoShape)
                     ? ""
                     : "https://v16.tiktok.com/video.mp4",
                   ...(videoShape === "structured"
@@ -128,12 +129,15 @@ afterEach(async () => {
     throw new Error("Unsafe fixture path");
   await fs.rm(root, { recursive: true, force: true });
 });
-async function terminal(id: string) {
+async function terminal(id: string, timeout = 1000) {
   let state;
-  await vi.waitFor(async () => {
-    state = (await app!.inject(`${base}/tasks/${id}`)).json().data;
-    expect(["completed", "failed"]).toContain(state.status);
-  });
+  await vi.waitFor(
+    async () => {
+      state = (await app!.inject(`${base}/tasks/${id}`)).json().data;
+      expect(["completed", "failed"]).toContain(state.status);
+    },
+    { timeout }
+  );
   return state! as { status: string; archiveId?: string; errorCode?: string };
 }
 async function create() {
@@ -231,29 +235,33 @@ it("preserves all gallery images and the old archive when a refresh cannot downl
   });
   expect((await app!.inject(endpoint)).json().data.media).toEqual(previous.media);
 });
-it("archives shop fallback bytes through the real API/store and keeps the old archive after fallback refresh failure", async () => {
-  videoShape = "shop";
-  const state = await create();
-  expect(state.status).toBe("completed");
-  const endpoint = `${base}/items/${state.archiveId}`;
-  const item = (await app!.inject(endpoint)).json().data;
-  expect(item).toMatchObject({
-    platform: "tiktok",
-    contentId,
-    title: "商品说明 #展示",
-    media: [{ kind: "video" }, { kind: "cover" }]
-  });
-  expect((await app!.inject(item.media[0].previewUrl)).rawPayload).toEqual(shopVideo);
-  expect((await app!.inject(`${base}/items?platform=tiktok`)).json().data.total).toBe(1);
-  failFallback = true;
-  const refresh = await app!.inject({ method: "POST", url: `${endpoint}/refresh` });
-  expect(await terminal(refresh.json().data.id)).toMatchObject({
-    status: "failed",
-    errorCode: "TIKTOK_SHOP_FALLBACK_FAILED"
-  });
-  expect((await app!.inject(endpoint)).json().data).toEqual(item);
-  expect((await app!.inject(item.media[0].downloadUrl)).rawPayload).toEqual(shopVideo);
-});
+it.each(["shop", "shop-anchor"] as const)(
+  "archives %s fallback bytes through the real API/store and keeps the old archive after fallback refresh failure",
+  async (shape) => {
+    videoShape = shape;
+    const state = await create();
+    expect(state.status).toBe("completed");
+    const endpoint = `${base}/items/${state.archiveId}`;
+    const item = (await app!.inject(endpoint)).json().data;
+    expect(item).toMatchObject({
+      platform: "tiktok",
+      contentId,
+      title: "商品说明 #展示",
+      media: [{ kind: "video" }, { kind: "cover" }]
+    });
+    expect((await app!.inject(item.media[0].previewUrl)).rawPayload).toEqual(shopVideo);
+    expect((await app!.inject(`${base}/items?platform=tiktok`)).json().data.total).toBe(1);
+    failFallback = true;
+    const refresh = await app!.inject({ method: "POST", url: `${endpoint}/refresh` });
+    // A refresh shares the provider's 1.1-second serial spacing with its first request.
+    expect(await terminal(refresh.json().data.id, 3000)).toMatchObject({
+      status: "failed",
+      errorCode: "TIKTOK_SHOP_FALLBACK_FAILED"
+    });
+    expect((await app!.inject(endpoint)).json().data).toEqual(item);
+    expect((await app!.inject(item.media[0].downloadUrl)).rawPayload).toEqual(shopVideo);
+  }
+);
 it.each(["structured", "mobile"] as const)(
   "archives the actual video bytes from a %s public page through the existing file gateway",
   async (shape) => {

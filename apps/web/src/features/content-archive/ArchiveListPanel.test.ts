@@ -71,6 +71,73 @@ describe("XHS archive list panel", () => {
       }
     });
   }
+  it("提供全部、已发布及未发布筛选，卡片与列表共用同一筛选条件", async () => {
+    const wrapper = mountPanel();
+    try {
+      const select = wrapper
+        .findAllComponents(NSelect)
+        .find((entry) => entry.attributes("aria-label") === "发布标记筛选")!;
+      expect(select.props("value")).toBe("all");
+      expect(select.props("options")).toEqual([
+        { label: "全部发布状态", value: "all" },
+        { label: "已发布", value: "published" },
+        { label: "未发布", value: "unpublished" }
+      ]);
+      select.vm.$emit("update:value", "published");
+      expect(wrapper.emitted("update:publicationFilter")).toEqual([["published"]]);
+      await wrapper.setProps({ publicationFilter: "published" });
+      await wrapper.get(".archive-view-switch button:last-child").trigger("click");
+      expect(select.props("value")).toBe("published");
+      select.vm.$emit("update:value", "unpublished");
+      select.vm.$emit("update:value", "all");
+      expect(wrapper.emitted("update:publicationFilter")).toEqual([["published"], ["unpublished"], ["all"]]);
+      await wrapper.setProps({ publicationFilter: "unpublished", archives: { ...archives, items: [], total: 0 } });
+      expect(wrapper.text()).toContain("当前筛选条件下没有归档内容");
+      expect(wrapper.emitted("setPublication")).toBeUndefined();
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("搜索与筛选共用工具栏，回车搜索且刷新位于下方操作行", async () => {
+    const wrapper = mountPanel();
+    try {
+      const search = wrapper.get('[role="search"]');
+      expect(search.findAllComponents(NSelect)).toHaveLength(4);
+      expect(search.findAll("button").some((button) => ["搜索", "刷新"].includes(button.text()))).toBe(false);
+      expect(wrapper.get('[aria-label="归档筛选与排序"]').findAllComponents(NSelect)).toHaveLength(4);
+      const clickButton = async (label: string) => {
+        await wrapper
+          .findAll("button")
+          .find((button) => button.text() === label)!
+          .trigger("click");
+      };
+      await wrapper.get('input[aria-label="归档关键词"]').trigger("keyup", { key: "Enter" });
+      expect(wrapper.emitted("search")).toHaveLength(1);
+      expect(wrapper.get(".archive-list-heading").text()).toContain("刷新");
+      await clickButton("刷新");
+      expect(wrapper.emitted("refresh")).toHaveLength(1);
+      expect(wrapper.get(".archive-selection-info").text()).toContain("共 1 条，已选 1 条");
+      await clickButton("翻译所选 1 条");
+      expect(wrapper.emitted("translateSelected")).toHaveLength(1);
+      await clickButton("删除所选 1");
+      expect(wrapper.emitted("removeSelected")).toHaveLength(1);
+      await clickButton("取消选择");
+      expect(wrapper.emitted("toggleSelectAll")).toEqual([[false]]);
+      await wrapper.setProps({ selectedIds: [] });
+      const actions = wrapper.get('[aria-label="归档批量操作"]');
+      expect(actions.text()).not.toContain("删除所选");
+      expect(actions.text()).not.toContain("取消选择");
+      expect(wrapper.get(".archive-selection-info").text()).not.toContain("已选");
+      const translate = actions.findAll("button").find((button) => button.text() === "补全未翻译内容")!;
+      expect(translate.text()).toBe("补全未翻译内容");
+      expect(translate.attributes("title")).toContain("当前筛选范围");
+      await translate.trigger("click");
+      expect(wrapper.emitted("translateSelected")).toHaveLength(2);
+      expect(wrapper.props()).toMatchObject({ keyword: "测试", sort: "published-asc", page: 2 });
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("切换为逐行列表保留筛选、排序、页码及选择，详情和发布标记仍指向同一归档", async () => {
     const wrapper = mountPanel();
     try {
@@ -191,7 +258,7 @@ describe("XHS archive list panel", () => {
     const sorting = wrapper
       .findAllComponents(NSelect)
       .find((select) => select.attributes("aria-label") === "归档列表排序")!;
-    expect(sorting.props("value")).toBe("archived-desc");
+    expect(sorting.props("value")).toBe("published-desc");
     expect(sorting.props("options")?.map((option) => option.value)).toEqual([
       "archived-desc",
       "archived-asc",

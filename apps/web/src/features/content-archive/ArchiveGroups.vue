@@ -1,20 +1,50 @@
 <template>
   <section class="archive-groups" aria-label="归档作品分组">
-    <n-select v-model:value="groupId" :options="filterOptions" aria-label="归档分组筛选" class="archive-group-select" />
-    <n-button :disabled="busy" @click="edit()">新建分组</n-button>
-    <n-button :disabled="busy || !current" @click="edit(current)">重命名分组</n-button>
-    <n-button :disabled="busy || !current" @click="remove">删除分组</n-button>
-    <n-select
-      v-model:value="target"
-      :options="moveOptions"
-      placeholder="选择目标分组"
-      aria-label="移入目标分组"
-      class="archive-group-select"
-    />
-    <n-button :disabled="busy || !selectedIds.length || !target" @click="move"
-      >移动所选 {{ selectedIds.length || "" }}</n-button
-    >
-    <n-button :disabled="busy" @click="load">刷新分组</n-button>
+    <div class="archive-group-filter">
+      <span class="archive-group-label">作品分组</span>
+      <n-select
+        v-model:value="groupId"
+        :options="filterOptions"
+        filterable
+        size="small"
+        aria-label="归档分组筛选"
+        class="archive-group-select"
+      />
+    </div>
+    <div class="archive-group-actions">
+      <n-button size="small" :disabled="busy" @click="edit()">新建分组</n-button>
+      <n-popover v-model:show="managementOpen" trigger="click" placement="bottom-end" :disabled="busy">
+        <template #trigger>
+          <n-button size="small" :disabled="busy" :aria-expanded="managementOpen">管理分组</n-button>
+        </template>
+        <div class="archive-group-menu" role="group" aria-label="分组管理操作">
+          <n-button size="small" quaternary :disabled="busy || !current" @click="edit(current)">重命名分组</n-button>
+          <n-button size="small" quaternary :disabled="busy || !current" @click="remove">删除分组</n-button>
+          <n-button size="small" quaternary :disabled="busy" @click="refreshGroups">刷新分组</n-button>
+        </div>
+      </n-popover>
+    </div>
+    <n-button v-if="selectedIds.length" size="small" secondary :disabled="busy" @click="openMove">
+      移动所选 {{ selectedIds.length }}
+    </n-button>
+    <n-modal v-model:show="moving" preset="card" title="移动到分组" style="width: min(420px, calc(100vw - 32px))">
+      <p class="archive-move-description">将选中的 {{ selectedIds.length }} 条作品移入：</p>
+      <n-select
+        v-model:value="target"
+        :options="moveOptions"
+        filterable
+        placeholder="选择目标分组"
+        aria-label="移入目标分组"
+      />
+      <template #footer>
+        <div class="archive-group-dialog-actions">
+          <n-button :disabled="busy" @click="moving = false">取消</n-button>
+          <n-button type="primary" :loading="busy" :disabled="busy || !selectedIds.length || !target" @click="move">
+            确认移动
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
     <n-modal v-model:show="editing" preset="card" title="编辑分组" style="width: min(420px, calc(100vw - 32px))">
       <n-input
         v-model:value="name"
@@ -33,8 +63,8 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
-import { NButton, NInput, NModal, NSelect, useMessage } from "naive-ui";
+import { computed, onMounted, ref, watch } from "vue";
+import { NButton, NInput, NModal, NPopover, NSelect, useMessage } from "naive-ui";
 import type { ArchiveGroup } from "@toolbox/shared/archive";
 import { archiveGroupApi } from "./content-api";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
@@ -50,6 +80,8 @@ const groups = ref<ArchiveGroup[]>([]),
   editing = ref(false),
   name = ref("");
 const editingId = ref<string>();
+const managementOpen = ref(false),
+  moving = ref(false);
 const message = useMessage(),
   confirm = useConfirmDialog(),
   scope = useRequestScope();
@@ -60,6 +92,12 @@ const moveOptions = computed(() => [
   ...groups.value.map((group) => ({ label: group.name, value: group.id }))
 ]);
 const filterOptions = computed(() => [{ label: "全部分组", value: "all" }, ...moveOptions.value]);
+watch(
+  () => props.selectedIds.length,
+  (count) => {
+    if (!count) moving.value = false;
+  }
+);
 function report(error: unknown) {
   if (!scope.aborted && !isApiErrorCancelled(error)) message.error(formatApiError(error, "分组操作失败"));
 }
@@ -82,10 +120,20 @@ async function load() {
     report(error);
   }
 }
+function refreshGroups() {
+  managementOpen.value = false;
+  return load();
+}
 function edit(group?: ArchiveGroup) {
+  managementOpen.value = false;
   editingId.value = group?.id;
   name.value = group?.name ?? "";
   editing.value = true;
+}
+function openMove() {
+  if (busy.value || !props.selectedIds.length) return;
+  managementOpen.value = false;
+  moving.value = true;
 }
 async function save() {
   if (busy.value || !name.value.trim()) return;
@@ -116,6 +164,7 @@ async function move() {
       scope.signal
     );
     if (!scope.aborted) {
+      moving.value = false;
       emit("changed");
       message.success("所选作品已移动");
     }
@@ -127,6 +176,7 @@ async function move() {
 }
 async function remove() {
   const group = current.value;
+  managementOpen.value = false;
   if (
     busy.value ||
     !group ||
@@ -159,9 +209,46 @@ onMounted(load);
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+  padding: 2px 0;
+}
+.archive-group-filter,
+.archive-group-actions,
+.archive-group-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.archive-group-filter {
+  min-width: 0;
+}
+.archive-group-label {
+  flex-shrink: 0;
+  color: #687386;
+  font-size: 13px;
 }
 .archive-group-select {
-  width: 190px;
+  width: 240px;
   max-width: 100%;
+}
+.archive-group-menu {
+  display: grid;
+  gap: 4px;
+  min-width: 128px;
+}
+.archive-group-dialog-actions {
+  justify-content: flex-end;
+}
+.archive-move-description {
+  margin: 0 0 12px;
+}
+@media (max-width: 640px) {
+  .archive-group-filter {
+    flex: 1 1 100%;
+  }
+  .archive-group-select {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
 }
 </style>

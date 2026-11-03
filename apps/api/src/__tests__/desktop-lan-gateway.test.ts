@@ -58,6 +58,7 @@ describe("desktop LAN gateway", () => {
       "/api/v1/tools/image-ai/health",
       "/api/v1/tools/edge-tts/chatterbox/health",
       "/api/v1/tools/audio-library/items",
+      "/api/v1/tools/audio-convert/jobs",
       "/api/v1/tools/xhs-archive/items",
       "/api/v1/tools/media-archive/items",
       "/api/v1/tools/image-compress/tasks",
@@ -94,7 +95,7 @@ describe("desktop LAN gateway", () => {
     expect(deniedSession.status).toBe(404);
     expect(deniedOtherTool.status).toBe(404);
     expect(hiddenPage.status).toBe(404);
-    expect(requests).toHaveLength(12);
+    expect(requests).toHaveLength(13);
 
     for (const pagePath of ["/", ...listTools().map((tool) => tool.routePath), "/tools/xhs-archive"]) {
       const modulePage = await fetch(`http://127.0.0.1:${gateway.port}${pagePath}`, {
@@ -103,7 +104,7 @@ describe("desktop LAN gateway", () => {
       expect(modulePage.status).toBe(201);
       expect(await modulePage.json()).toEqual({ path: pagePath });
     }
-    expect(requests).toHaveLength(20);
+    expect(requests).toHaveLength(23);
   });
 
   it("rejects cross-site, forged Host and ambiguous paths before forwarding", async () => {

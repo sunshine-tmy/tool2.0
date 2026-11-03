@@ -430,6 +430,7 @@ export class ArchiveVideoEditService {
           signal: controller.signal,
           preview: input.mode === "preview",
           previewStartSeconds: input.previewStartSeconds,
+          previewFullLength: input.previewFullLength,
           maxBytes: Math.min(available, config.xhsArchiveMaxStorageBytes),
           onProgress: (value) => {
             if (value >= lastProgress + 2 && !controller.signal.aborted) {
@@ -454,7 +455,7 @@ export class ArchiveVideoEditService {
             status: "completed",
             stage: "completed",
             progress: 100,
-            message: "试听片段已生成，尚未修改归档",
+            message: input.previewFullLength ? "完整试听已生成，尚未修改归档" : "试听片段已生成，尚未修改归档",
             previewUrl: `/api/v1/tools/media-archive/video-edits/${job.id}/preview`
           });
           keepPreview = true;

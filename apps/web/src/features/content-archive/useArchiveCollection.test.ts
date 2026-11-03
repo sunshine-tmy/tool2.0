@@ -108,6 +108,7 @@ describe("双平台归档集合", () => {
     );
   });
   it("从视频编辑返回时恢复筛选、排序和页码，无标记或非法参数仍用默认值", async () => {
+    vi.mocked(contentArchiveApi.list).mockResolvedValue({ ...listFixture(), page: 3, total: 25, pageCount: 3 });
     const scope = effectScope();
     scopes.push(scope);
     const c = scope.run(() =>
@@ -116,6 +117,7 @@ describe("双平台归档集合", () => {
         keyword: "水印素材",
         type: "video",
         platform: "tiktok",
+        publication: "unpublished",
         group: "ungrouped",
         sort: "published-asc",
         page: "3"
@@ -127,16 +129,103 @@ describe("双平台归档集合", () => {
         keyword: "水印素材",
         type: "video",
         platform: "tiktok",
+        publication: "unpublished",
         groupId: "ungrouped",
         sort: "published-asc",
         page: 3
       }),
       expect.any(AbortSignal)
     );
-    const defaults = scope.run(() => useArchiveCollection(vi.fn(), { keyword: "ignored", page: "999" }))!;
+    const defaults = scope.run(() =>
+      useArchiveCollection(vi.fn(), { keyword: "ignored", page: "999", publication: "published" })
+    )!;
     expect(defaults.keyword.value).toBe("");
     expect(defaults.page.value).toBe(1);
+    expect(defaults.sort.value).toBe("published-desc");
+    expect(defaults.publicationFilter.value).toBe("all");
+    for (const publication of ["invalid", ["published"], null, true]) {
+      const invalid = scope.run(() => useArchiveCollection(vi.fn(), { editorReturn: "1", publication }))!;
+      expect(invalid.publicationFilter.value).toBe("all");
+    }
   });
+  it("发布状态筛选清空跨范围选择并重置页码，翻译范围同步限定且忽略迟到的旧列表", async () => {
+    const { collection: c } = setup();
+    c.platformFilter.value = "local";
+    c.groupFilter.value = "group_123";
+    c.typeFilter.value = "video";
+    await nextTick();
+    await c.loadArchives();
+    c.page.value = 3;
+    c.toggleSelectAllArchives(true);
+    const old = deferred<ReturnType<typeof listFixture>>();
+    vi.mocked(contentArchiveApi.list).mockReturnValueOnce(old.promise);
+    const reading = c.loadArchives();
+    const oldSignal = vi.mocked(contentArchiveApi.list).mock.calls.at(-1)![1]!;
+    c.publicationFilter.value = "published";
+    expect(oldSignal.aborted).toBe(true);
+    expect(c.page.value).toBe(1);
+    expect(c.selectedArchiveIds.value).toEqual([]);
+    await nextTick();
+    await c.loadArchives();
+    expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        publication: "published",
+        platform: "local",
+        groupId: "group_123",
+        type: "video",
+        page: 1
+      }),
+      expect.any(AbortSignal)
+    );
+    expect(c.filter()).toMatchObject({ publication: "published" });
+    old.resolve(listFixture([archiveFixture({ id: "old_unfiltered" })]));
+    await reading;
+    expect(c.archives.value.items[0]?.id).toBe("archive-123");
+    c.publicationFilter.value = "unpublished";
+    await nextTick();
+    expect(c.filter()).toMatchObject({ publication: "unpublished" });
+    c.publicationFilter.value = "all";
+    await nextTick();
+    expect(c.filter()).not.toHaveProperty("publication");
+  });
+  it.each(["published", "unpublished"] as const)(
+    "%s 筛选下更新标记后刷新范围，末页变空时返回有效页并保留详情状态",
+    async (publication) => {
+      const { collection: c } = setup();
+      let changed = false;
+      const totalAfter = publication === "published" ? 0 : 12;
+      vi.mocked(contentArchiveApi.list).mockImplementation(async (query) => {
+        const result = listFixture(
+          changed ? (totalAfter && query.page === 1 ? [archiveFixture({ id: "remaining" })] : []) : undefined
+        );
+        result.items.forEach((entry) => {
+          entry.publishedElsewhere = publication === "published";
+        });
+        return { ...result, page: query.page!, total: changed ? totalAfter : 13, pageCount: changed ? 1 : 2 };
+      });
+      vi.mocked(contentArchiveApi.setPublication).mockImplementation(async (archiveId, publishedElsewhere) => {
+        changed = true;
+        return { archiveId, publishedElsewhere };
+      });
+      c.publicationFilter.value = publication;
+      await nextTick();
+      c.page.value = 2;
+      await c.loadArchives();
+      c.toggleSelectAllArchives(true);
+      await c.openDetail("archive-123");
+      expect(await c.setPublication("archive-123", publication !== "published")).toBe(true);
+      expect(c.page.value).toBe(1);
+      expect(c.archives.value).toMatchObject({ page: 1, pageCount: 1, total: totalAfter });
+      expect(c.archives.value.items.some((entry) => entry.id === "archive-123")).toBe(false);
+      expect(c.selectedArchiveIds.value).toEqual([]);
+      expect(c.detail.value?.id).toBe("archive-123");
+      expect(c.detailPublication.value?.publishedElsewhere).toBe(publication !== "published");
+      expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ publication, page: 1 }),
+        expect.any(AbortSignal)
+      );
+    }
+  );
   it("marks and unmarks only the chosen archive without resetting page, order or selection", async () => {
     const { collection: c } = setup();
     await c.loadArchives();
@@ -149,7 +238,7 @@ describe("双平台归档集合", () => {
     expect(contentArchiveApi.setPublication).toHaveBeenCalledWith("archive-123", true, expect.any(AbortSignal));
     expect(c.archives.value.items[0]?.publishedElsewhere).toBe(true);
     expect(c.page.value).toBe(2);
-    expect(c.sort.value).toBe("archived-desc");
+    expect(c.sort.value).toBe("published-desc");
     expect(c.selectedArchiveIds.value).toEqual(["archive-123"]);
     expect(c.publicationBusyIds.value).toEqual([]);
     expect(await c.setPublication("archive-123", false)).toBe(true);
@@ -201,6 +290,7 @@ describe("双平台归档集合", () => {
     c.groupFilter.value = "group_123";
     c.platformFilter.value = "tiktok";
     c.keyword.value = "商品";
+    c.sort.value = "archived-desc";
     await nextTick();
     for (const sort of ["published-desc", "published-asc", "archived-asc", "archived-desc"] as const) {
       c.page.value = 3;
@@ -262,7 +352,7 @@ describe("双平台归档集合", () => {
     const { collection: c } = setup();
     await c.loadArchives();
     expect(contentArchiveApi.list).toHaveBeenCalledWith(
-      { platform: "all", type: "all", keyword: "", sort: "archived-desc", page: 1, pageSize: 12 },
+      { platform: "all", type: "all", keyword: "", sort: "published-desc", page: 1, pageSize: 12 },
       expect.any(AbortSignal)
     );
     c.toggleArchiveSelection("unknown", true);
@@ -290,7 +380,7 @@ describe("双平台归档集合", () => {
     await nextTick();
     await nextTick();
     expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
-      { platform: "douyin", type: "video", keyword: "晚霞", sort: "archived-desc", page: 1, pageSize: 12 },
+      { platform: "douyin", type: "video", keyword: "晚霞", sort: "published-desc", page: 1, pageSize: 12 },
       expect.any(AbortSignal)
     );
     const count = vi.mocked(contentArchiveApi.list).mock.calls.length;

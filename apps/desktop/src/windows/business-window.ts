@@ -8,6 +8,7 @@ type BusinessWindowOptions = {
   onCreated: (window: BrowserWindow) => void;
   closeStartupMigration: () => void;
   isQuitting: () => boolean;
+  hideToTray: (window: BrowserWindow) => boolean;
 };
 export async function createBusinessWindow(context: BusinessWindowOptions) {
   const { origin, preload, desktopIconPath } = context;
@@ -18,6 +19,12 @@ export async function createBusinessWindow(context: BusinessWindowOptions) {
     minWidth: 1024,
     minHeight: 720,
     show: false,
+    ...(process.platform === "win32"
+      ? {
+          titleBarStyle: "hidden" as const,
+          titleBarOverlay: { height: 44, color: "#edf3fa", symbolColor: "#243047" }
+        }
+      : {}),
     webPreferences: {
       preload,
       nodeIntegration: false,
@@ -41,6 +48,8 @@ export async function createBusinessWindow(context: BusinessWindowOptions) {
   mainWindow.on("close", (event) => {
     if (context.isQuitting()) return;
     event.preventDefault();
+    if (context.hideToTray(mainWindow)) return;
+    // A failed tray must not make the application impossible to restore or exit.
     app.quit();
   });
   await mainWindow.loadURL(origin);

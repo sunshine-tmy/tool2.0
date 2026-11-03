@@ -117,6 +117,34 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("归档媒体编辑入口", () => {
+  it("shows a slideshow cover on first open without preloading or playing the generated video", async () => {
+    const image = {
+      ...archiveWithFrame.media[1]!,
+      id: "source_image123",
+      frameSourceMediaId: undefined,
+      frameTimestampMs: undefined
+    };
+    const generated = {
+      ...archive.media[0],
+      id: "slideshow123",
+      derivedFromImages: [{ id: image.id, checksum: image.checksum }]
+    };
+    const item: ContentArchiveItem = { ...archive, type: "image", media: [image, generated] };
+    const { wrapper } = mountGallery(item);
+    const thumb = () => wrapper.get('[aria-label="预览媒体 2"]');
+    expect(thumb().get("video").attributes("poster")).toContain("/frame.png");
+    expect(thumb().get("video").attributes("preload")).toBe("none");
+    expect(thumb().find(".video-thumb-placeholder").exists()).toBe(false);
+    await thumb().trigger("click");
+    expect(wrapper.get(".media-stage video").attributes("poster")).toContain("/frame.png");
+    wrapper.unmount();
+    const reopened = mountGallery(item).wrapper;
+    expect(reopened.get('[aria-label="预览媒体 2"] video').attributes("poster")).toContain("/frame.png");
+    await reopened.setProps({ item: { ...item, media: [{ ...image, checksum: "c".repeat(64) }, generated] } });
+    expect(reopened.get('[aria-label="预览媒体 2"] video').attributes("poster")).toBeUndefined();
+    expect(reopened.find('[aria-label="预览媒体 2"] .video-thumb-placeholder').exists()).toBe(true);
+    reopened.unmount();
+  });
   it.each(["video", "live-photo"] as const)("%s 配乐和水印均派发页面跳转事件，不打开弹窗", async (kind) => {
     const { wrapper, video } = mountGallery({ ...archive, media: [{ ...archive.media[0]!, kind }] });
     const pause = vi.spyOn(video!, "pause").mockImplementation(() => {});

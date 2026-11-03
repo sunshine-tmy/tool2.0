@@ -44,9 +44,10 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.restoreAllMocks());
-async function setup() {
+async function setup(trayAvailable = true) {
   let main: BrowserWindow | undefined,
     quitting = false;
+  const hideToTray = vi.fn(() => trayAvailable);
   await createBusinessWindow({
     origin: "http://127.0.0.1:43210",
     preload: "fixed-preload.cjs",
@@ -59,16 +60,39 @@ async function setup() {
     closeStartupMigration: () => {
       mock.events.push("close-startup");
     },
-    isQuitting: () => quitting
+    isQuitting: () => quitting,
+    hideToTray
   });
   return {
     window: mock.windows[0],
+    hideToTray,
     setQuitting: () => {
       quitting = true;
     }
   };
 }
 describe("business window boundary", () => {
+  it.each(["win32", "darwin", "linux"] as const)(
+    "uses taller native caption controls only on %s when supported",
+    async (platform) => {
+      const original = Object.getOwnPropertyDescriptor(process, "platform")!;
+      Object.defineProperty(process, "platform", { value: platform, configurable: true });
+      try {
+        const { window } = await setup();
+        if (platform === "win32")
+          expect(window.options).toMatchObject({
+            titleBarStyle: "hidden",
+            titleBarOverlay: { height: 44, color: "#edf3fa", symbolColor: "#243047" }
+          });
+        else {
+          expect(window.options).not.toHaveProperty("titleBarStyle");
+          expect(window.options).not.toHaveProperty("titleBarOverlay");
+        }
+      } finally {
+        Object.defineProperty(process, "platform", original);
+      }
+    }
+  );
   it("attaches the window before closing migration and loading the fixed backend origin", async () => {
     const { window } = await setup();
     expect(mock.events).toEqual(["attached", "close-startup", "load"]);
@@ -102,7 +126,7 @@ describe("business window boundary", () => {
     expect(mock.external).toHaveBeenCalledWith("https://example.test");
   });
   it("keeps internal navigation and routes untrusted navigation/close through fixed policies", async () => {
-    const { window, setQuitting } = await setup(),
+    const { window, setQuitting, hideToTray } = await setup(),
       preventDefault = vi.fn();
     window.emit("will-navigate", { preventDefault }, "http://127.0.0.1:43210/tools/image-ai");
     expect(preventDefault).not.toHaveBeenCalled();
@@ -112,9 +136,19 @@ describe("business window boundary", () => {
     const close = vi.fn();
     window.emit("close", { preventDefault: close });
     expect(close).toHaveBeenCalledOnce();
-    expect(mock.quit).toHaveBeenCalledOnce();
+    expect(hideToTray).toHaveBeenCalledExactlyOnceWith(window);
+    expect(mock.quit).not.toHaveBeenCalled();
     setQuitting();
     window.emit("close", { preventDefault: close });
     expect(close).toHaveBeenCalledOnce();
+    expect(hideToTray).toHaveBeenCalledOnce();
+  });
+  it("keeps a safe quit fallback when the tray cannot provide a recovery entry", async () => {
+    const { window, hideToTray } = await setup(false);
+    const preventDefault = vi.fn();
+    window.emit("close", { preventDefault });
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(hideToTray).toHaveBeenCalledOnce();
+    expect(mock.quit).toHaveBeenCalledOnce();
   });
 });

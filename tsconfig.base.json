@@ -22,7 +22,9 @@
       "@toolbox/shared/system": ["packages/shared/src/system/index.ts"],
       "@toolbox/shared/common": ["packages/shared/src/common/index.ts"],
       "@toolbox/shared/audio-library": ["packages/shared/src/audio-library/index.ts"],
-      "@toolbox/shared/desktop": ["packages/shared/src/desktop/types.ts"]
+      "@toolbox/shared/audio-convert": ["packages/shared/src/audio-convert.ts"],
+      "@toolbox/shared/desktop": ["packages/shared/src/desktop/types.ts"],
+      "@toolbox/shared/audio-extract": ["packages/shared/src/audio-extract.ts"]
     }
   }
 }

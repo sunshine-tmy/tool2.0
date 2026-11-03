@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { toXhsArchive, type ContentArchiveItem } from "@toolbox/shared";
+import { toXhsArchive, type ContentArchiveItem, type ContentArchiveListQuery } from "@toolbox/shared";
 import { getConfig, type AppConfig } from "../config";
 import { ToolboxDatabase } from "../database/toolbox-database";
 import { FileMetadataRepository } from "../database/file-metadata";
@@ -87,6 +87,43 @@ async function staging(value: ContentArchiveItem, contents = bytes) {
 const target = (id = "archive_123456") => path.join(config.xhsArchiveItemsDir, id);
 
 describe("多媒体共享存储与小红书过滤视图", () => {
+  it("两个列表读取入口均在排序分页前筛选发布标记，兼容未标记旧数据及组合筛选", async () => {
+    const platforms = ["xiaohongshu", "douyin", "tiktok", "local"] as const;
+    for (const [index, platform] of platforms.entries()) {
+      const base = item(`filter_${index}`, platform);
+      const value = {
+        ...base,
+        media: base.media.map((media) => ({ ...media, id: `video_${index}` })),
+        contentId: `filter_${index}`,
+        fetchedAt: `2026-10-0${index + 1}T00:00:00.000Z`
+      };
+      await store.commit(value, await staging(value));
+    }
+    const group = store.groups.save("待发布素材");
+    store.groups.assign({ itemIds: ["filter_1", "filter_2"], groupId: group.id });
+    store.publications.set("filter_0", true);
+    store.publications.set("filter_2", true);
+    const repository = new ContentArchiveRepository(database);
+    const check = async (query: ContentArchiveListQuery, ids: string[], total = ids.length) => {
+      const fromStore = await store.list({ sort: "archived-asc", ...query });
+      expect(fromStore.items.map((entry) => entry.id)).toEqual(ids);
+      expect(fromStore.total).toBe(total);
+      expect(fromStore.pageCount).toBe(Math.max(1, Math.ceil(total / (query.pageSize ?? 12))));
+      expect(repository.list({ sort: "archived-asc", ...query })).toEqual(fromStore);
+    };
+    await check({}, ["filter_0", "filter_1", "filter_2", "filter_3"]);
+    await check({ publication: "all" }, ["filter_0", "filter_1", "filter_2", "filter_3"]);
+    await check({ publication: "published", pageSize: 1, page: 2 }, ["filter_2"], 2);
+    await check({ publication: "unpublished", pageSize: 1, page: 2 }, ["filter_3"], 2);
+    await check({ publication: "published", sort: "archived-desc" }, ["filter_2", "filter_0"]);
+    await check({ publication: "unpublished", groupId: group.id, type: "video", keyword: "测试" }, ["filter_1"]);
+    await check({ publication: "published", groupId: group.id, platform: "tiktok" }, ["filter_2"]);
+    await check({ publication: "unpublished", platform: "local", groupId: "ungrouped" }, ["filter_3"]);
+    await check({ publication: "published", platform: "local" }, []);
+    store.publications.set("filter_2", false);
+    await check({ publication: "published" }, ["filter_0"]);
+    await check({ publication: "unpublished" }, ["filter_1", "filter_2", "filter_3"]);
+  });
   it("截帧下载占用和视频编辑租约期间保留文件，释放后可单独删除", async () => {
     const value = item();
     await store.commit(value, await staging(value));

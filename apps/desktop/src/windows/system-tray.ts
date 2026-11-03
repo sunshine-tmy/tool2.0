@@ -11,16 +11,25 @@ type SystemTrayOptions = {
 /** App-owned tray. A window is hidden only after its recovery entry is available. */
 export function createSystemTray(context: SystemTrayOptions) {
   let tray: Tray | undefined;
-  let attached: { window: BrowserWindow; minimize: () => void; closed: () => void } | undefined;
+  let attached: { window: BrowserWindow; closed: () => void } | undefined;
 
   function detach() {
     if (!attached) return;
-    attached.window.removeListener("minimize", attached.minimize);
     attached.window.removeListener("closed", attached.closed);
     attached = undefined;
   }
   function hideWindow(window: BrowserWindow) {
-    if (!context.isQuitting() && tray && !tray.isDestroyed() && !window.isDestroyed()) window.hide();
+    if (
+      context.platform !== "win32" ||
+      context.isQuitting() ||
+      !tray ||
+      tray.isDestroyed() ||
+      window.isDestroyed() ||
+      attached?.window !== window
+    )
+      return false;
+    window.hide();
+    return true;
   }
   function attach(window: BrowserWindow) {
     // Keep the existing Dock/window behavior on other operating systems.
@@ -36,7 +45,7 @@ export function createSystemTray(context: SystemTrayOptions) {
           Menu.buildFromTemplate([
             { label: "显示主窗口", click: context.showWindow },
             {
-              label: "最小化到托盘",
+              label: "隐藏到托盘",
               click: () => {
                 if (attached) hideWindow(attached.window);
               }
@@ -50,17 +59,15 @@ export function createSystemTray(context: SystemTrayOptions) {
         tray = candidate;
       } catch (error) {
         if (candidate && !candidate.isDestroyed()) candidate.destroy();
-        console.warn("系统托盘初始化失败，将保留普通最小化行为", error);
+        console.warn("系统托盘初始化失败，将保留普通窗口行为和安全退出入口", error);
         return;
       }
     }
     detach();
-    const minimize = () => hideWindow(window);
     const closed = () => {
       if (attached?.window === window) detach();
     };
-    attached = { window, minimize, closed };
-    window.on("minimize", minimize);
+    attached = { window, closed };
     window.once("closed", closed);
   }
   function dispose() {
@@ -68,5 +75,5 @@ export function createSystemTray(context: SystemTrayOptions) {
     if (tray && !tray.isDestroyed()) tray.destroy();
     tray = undefined;
   }
-  return { attach, dispose };
+  return { attach, hideWindow, dispose };
 }

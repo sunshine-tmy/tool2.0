@@ -87,41 +87,44 @@ describe("TikTok anonymous runtime", () => {
       await runtime.close();
     }
   });
-  it("uses the fallback only for a public shop video with missing addresses and strips share parameters", async () => {
-    const url = canonical.replace("/photo/", "/video/");
-    const official = {
-      id,
-      desc: "官方标题",
-      isECVideo: 1,
-      isAd: false,
-      author: { uniqueId: "shop" },
-      video: { playAddr: "", duration: 25 }
-    };
-    const remote = vi
-      .fn()
-      .mockResolvedValueOnce(response(page(official), url + "?share_token=never-forward#fragment"))
-      .mockResolvedValueOnce(
-        response(
-          JSON.stringify({
-            code: 0,
-            data: { id, title: "第三方标题", play: "https://v16.tiktokcdn-us.com/video.mp4" }
-          }),
-          "https://www.tikwm.com/api/"
-        )
-      );
-    const runtime = new TikTokRuntime({ remoteFetch: remote });
-    const progress = vi.fn();
-    try {
-      const source = await runtime.extract(url, new AbortController().signal, progress);
-      expect(source.title).toBe("官方标题");
-      expect(source.media[0]).toMatchObject({ kind: "video", requireVideoTrack: true });
-      expect(new URL(remote.mock.calls[1][0]).searchParams.get("url")).toBe(url);
-      expect(remote.mock.calls[1][1].headers).not.toHaveProperty("cookie");
-      expect(progress).toHaveBeenCalledWith("parsing", 24, expect.stringContaining("TikWM"));
-    } finally {
-      await runtime.close();
+  it.each([{ isECVideo: 1 }, { AnchorTypes: ["33"] }, { AnchorTypes: [33], isECVideo: 0 }])(
+    "uses the fallback for public shop markers %j with missing addresses and strips share parameters",
+    async (marker) => {
+      const url = canonical.replace("/photo/", "/video/");
+      const official = {
+        id,
+        desc: "官方标题",
+        ...marker,
+        isAd: false,
+        author: { uniqueId: "shop" },
+        video: { playAddr: "", duration: 25 }
+      };
+      const remote = vi
+        .fn()
+        .mockResolvedValueOnce(response(page(official), url + "?share_token=never-forward#fragment"))
+        .mockResolvedValueOnce(
+          response(
+            JSON.stringify({
+              code: 0,
+              data: { id, title: "第三方标题", play: "https://v16.tiktokcdn-us.com/video.mp4" }
+            }),
+            "https://www.tikwm.com/api/"
+          )
+        );
+      const runtime = new TikTokRuntime({ remoteFetch: remote });
+      const progress = vi.fn();
+      try {
+        const source = await runtime.extract(url, new AbortController().signal, progress);
+        expect(source.title).toBe("官方标题");
+        expect(source.media[0]).toMatchObject({ kind: "video", requireVideoTrack: true });
+        expect(new URL(remote.mock.calls[1][0]).searchParams.get("url")).toBe(url);
+        expect(remote.mock.calls[1][1].headers).not.toHaveProperty("cookie");
+        expect(progress).toHaveBeenCalledWith("parsing", 24, expect.stringContaining("TikWM"));
+      } finally {
+        await runtime.close();
+      }
     }
-  });
+  );
   it.each(["off", "private", "wrong-id", "normal-video", "images", "playable-shop"])(
     "does not use shop fallback for %s",
     async (mode) => {
@@ -129,6 +132,7 @@ describe("TikTok anonymous runtime", () => {
       const item = {
         id,
         isECVideo: mode === "normal-video" ? 0 : 1,
+        AnchorTypes: mode === "normal-video" ? ["3"] : ["33"],
         privateItem: mode === "private",
         author: { uniqueId: "shop" },
         video: { playAddr: mode === "playable-shop" ? "https://v16.tiktokcdn-us.com/video.mp4" : "" },

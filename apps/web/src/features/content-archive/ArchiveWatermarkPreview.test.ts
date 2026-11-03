@@ -1,10 +1,97 @@
 // @vitest-environment happy-dom
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultArchiveWatermarkSettings } from "@toolbox/shared/archive";
+import { ARCHIVE_WATERMARK_BOUNCE_STYLES, defaultArchiveWatermarkSettings } from "@toolbox/shared/archive";
 import Preview from "./ArchiveWatermarkPreview.vue";
 afterEach(() => vi.restoreAllMocks());
 describe("水印画面坐标及生命周期", () => {
+  it("切换视频引用后清除旧坐标，忽略旧元素迟到事件并释放新旧监听", async () => {
+    const first = document.createElement("video"),
+      second = document.createElement("video");
+    for (const video of [first, second]) {
+      Object.defineProperties(video, {
+        videoWidth: { value: 200 },
+        videoHeight: { value: 100 },
+        duration: { value: video === first ? 9 : NaN, configurable: true },
+        paused: { value: true }
+      });
+      vi.spyOn(video, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 200));
+    }
+    const firstRemove = vi.spyOn(first, "removeEventListener"),
+      secondRemove = vi.spyOn(second, "removeEventListener");
+    const settings = defaultArchiveWatermarkSettings();
+    settings.motion.type = "bounce";
+    settings.motion.bounceStyle = "cross";
+    const wrapper = mount(Preview, {
+      props: { active: true, disabled: false, settings, asset: { width: 100, height: 50, url: "/logo.png" } }
+    });
+    try {
+      await wrapper.setProps({ video: first });
+      expect(wrapper.find(".watermark-path").exists()).toBe(true);
+      await wrapper.setProps({ video: second });
+      expect(wrapper.find(".watermark-viewport").exists()).toBe(false);
+      const calls = wrapper.emitted("duration")?.length;
+      first.dispatchEvent(new Event("loadedmetadata"));
+      await wrapper.vm.$nextTick();
+      expect(wrapper.emitted("duration")?.length).toBe(calls);
+      for (const invalidDuration of [0, Infinity]) {
+        Object.defineProperty(second, "duration", { value: invalidDuration });
+        second.dispatchEvent(new Event("durationchange"));
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find(".watermark-viewport").exists()).toBe(false);
+      }
+      Object.defineProperty(second, "duration", { value: 6 });
+      second.dispatchEvent(new Event("loadedmetadata"));
+      await wrapper.vm.$nextTick();
+      expect(wrapper.emitted("duration")?.at(-1)).toEqual([6]);
+      expect(wrapper.find(".watermark-path").exists()).toBe(true);
+    } finally {
+      wrapper.unmount();
+    }
+    for (const remove of [firstRemove, secondRemove])
+      for (const name of ["loadedmetadata", "durationchange", "loadstart", "emptied", "error"])
+        expect(remove).toHaveBeenCalledWith(name, expect.any(Function));
+  });
+  it.each(ARCHIVE_WATERMARK_BOUNCE_STYLES.filter((style) => style.value !== "standard"))(
+    "切换到 $label 时等待新视频元数据，不以 NaN 时长计算轨迹，加载后恢复预览",
+    async ({ value }) => {
+      const video = document.createElement("video");
+      Object.defineProperties(video, {
+        videoWidth: { value: 200 },
+        videoHeight: { value: 100 },
+        duration: { value: NaN, configurable: true },
+        paused: { value: true }
+      });
+      vi.spyOn(video, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 200));
+      const settings = defaultArchiveWatermarkSettings();
+      settings.motion.type = "bounce";
+      settings.motion.bounceStyle = value;
+      const errors: unknown[] = [];
+      const wrapper = mount(Preview, {
+        props: { active: false, disabled: false, settings, asset: { width: 100, height: 50, url: "/logo.png" } },
+        global: { config: { errorHandler: (error) => errors.push(error) } }
+      });
+      try {
+        await wrapper.setProps({ video });
+        await wrapper.setProps({ active: true });
+        expect(errors).toEqual([]);
+        expect(wrapper.find(".watermark-path").exists()).toBe(false);
+        Object.defineProperty(video, "duration", { value: 9 });
+        video.dispatchEvent(new Event("loadedmetadata"));
+        await wrapper.vm.$nextTick();
+        expect(wrapper.get(".watermark-path polyline").attributes("points")).not.toMatch(/NaN|Infinity/);
+        expect(wrapper.find(".watermark-handle").exists()).toBe(true);
+        video.dispatchEvent(new Event("emptied"));
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find(".watermark-viewport").exists()).toBe(false);
+        video.dispatchEvent(new Event("loadedmetadata"));
+        await wrapper.vm.$nextTick();
+        expect(wrapper.find(".watermark-path").exists()).toBe(true);
+      } finally {
+        wrapper.unmount();
+      }
+    }
+  );
   it("只在实际画面定位，避开上下黑边，拖动钳制边界，移除时释放监听", async () => {
     const video = document.createElement("video");
     Object.defineProperties(video, {

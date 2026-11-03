@@ -11,7 +11,7 @@
     <n-alert type="info" :bordered="false"
       >读取时会打开运行服务电脑上的独立 TikTok
       浏览器；需要正常登录或验证时请在那里完成。关闭此弹窗不会停止后台任务。仅归档可访问的公开作品，每批最多 100
-      条，成功结果长期保留。</n-alert
+      条。主页任务历史长期保留，不自动清除；删除记录只影响选中的主页任务，批次和归档作品保留。</n-alert
     >
     <details class="profile-browser-help">
       <summary>自动窗口仍然出错？使用普通浏览器采集</summary>
@@ -462,7 +462,7 @@ async function remove() {
   if (
     !id ||
     busy.value ||
-    !(await confirm("将一并清理本主页任务及其全部批次记录，已归档作品、媒体和分组均保留。", {
+    !(await confirm("只删除当前主页任务历史，表格批次、其他主页任务、已归档作品、媒体及分组均保留。", {
       title: "删除主页任务记录",
       positiveText: "删除记录"
     })) ||

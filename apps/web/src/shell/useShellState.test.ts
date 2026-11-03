@@ -73,7 +73,7 @@ describe("shell state ownership", () => {
     vi.spyOn(window, "matchMedia").mockReturnValue(media);
     const { state, wrapper } = setup(useShellNavigation);
     state.startNavigation();
-    expect(state.tools).toHaveLength(6);
+    expect(state.tools).toHaveLength(8);
     state.keyword.value = "图片压缩";
     expect(state.filteredTools.value.map((x) => x.id)).toEqual(["image-compress"]);
     state.keyword.value = "not-found";

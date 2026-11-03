@@ -15,6 +15,22 @@ import {
   applyArchiveWatermarkPreset
 } from "../index";
 describe("归档水印契约与轨迹", () => {
+  it("元数据尚未就绪或失效时，所有运动方式对非有限时间返回隐藏位置", () => {
+    const settings = defaultArchiveWatermarkSettings();
+    for (const type of ["fixed", "linear", "ping-pong", "bounce", "keyframes"]) {
+      settings.motion.type = type;
+      settings.motion.keyframes = [
+        { timeSeconds: 0, x: 0, y: 0 },
+        { timeSeconds: 9, x: 1, y: 1 }
+      ];
+      for (const style of ARCHIVE_WATERMARK_BOUNCE_STYLES) {
+        settings.motion.bounceStyle = style.value;
+        for (const time of [NaN, Infinity, -Infinity]) {
+          expect(archiveWatermarkPosition(settings, time)).toEqual({ ...settings.motion.from, visible: false });
+        }
+      }
+    }
+  });
   it("水印库返回严格的图片元数据，不接受路径、超限大小或空名称", () => {
     const item = {
       id: "abcdefghijkl",

@@ -1,11 +1,11 @@
 <template>
-  <div class="audio-waveform">
+  <div class="audio-waveform" :class="{ 'is-fixed-range': fixedRangeDuration !== undefined }">
     <div
       ref="container"
       class="audio-waveform-canvas"
       :role="editing ? 'group' : 'slider'"
       tabindex="0"
-      :aria-label="`${title} 波形播放位置`"
+      :aria-label="`${title} ${fixedRangeDuration === undefined ? '波形播放位置' : '配乐选区'}`"
       :aria-valuemin="editing ? undefined : 0"
       :aria-valuemax="editing ? undefined : duration"
       :aria-valuenow="editing ? undefined : position"
@@ -17,7 +17,11 @@
       <n-button v-if="error" text size="tiny" :disabled="disabled" @click="load">波形加载失败，点击重试</n-button>
       <span v-else>{{ available ? "正在生成真实波形…" : "音频不可用" }}</span>
     </div>
-    <span v-if="editing && ready" class="audio-waveform-help">拖动两端调整范围 · 拖动选区移动 · 空白处拖选</span>
+    <span v-if="editing && ready" class="audio-waveform-help">{{
+      fixedRangeDuration !== undefined
+        ? "拖动蓝色选区移动 · 方向键微调 · 选区长度随视频固定"
+        : "拖动两端调整范围 · 拖动选区移动 · 空白处拖选"
+    }}</span>
   </div>
 </template>
 <script setup lang="ts">
@@ -36,6 +40,7 @@ const props = defineProps<{
   editing: boolean;
   disabled: boolean;
   available: boolean;
+  fixedRangeDuration?: number;
 }>();
 const emit = defineEmits<{ seek: [value: number]; "update:range": [value: number[]]; preview: [] }>();
 const container = ref<HTMLElement>(),
@@ -76,11 +81,11 @@ async function load() {
       barGap: 3,
       barRadius: 1,
       normalize: true,
-      waveColor: "#aab1c1",
-      progressColor: "#7665ff",
-      cursorColor: "#7665ff",
+      waveColor: props.fixedRangeDuration === undefined ? "#aab1c1" : "#64748b",
+      progressColor: props.fixedRangeDuration === undefined ? "#7665ff" : "#64748b",
+      cursorColor: props.fixedRangeDuration === undefined ? "#7665ff" : "#2563eb",
       cursorWidth: 1,
-      minPxPerSec: 18,
+      minPxPerSec: props.fixedRangeDuration === undefined ? 18 : 0,
       autoScroll: true,
       autoCenter: false,
       hideScrollbar: false,
@@ -104,10 +109,10 @@ async function load() {
       if (selection && selection !== region) selection.remove();
       selection = region;
       labelHandles(region);
-      emit("update:range", [region.start, region.end]);
+      emitRange(region);
     });
     regions.on("region-update", (region) => {
-      if (!syncing) emit("update:range", [region.start, region.end]);
+      if (!syncing && !props.disabled) emitRange(region);
     });
     regions.on("region-double-clicked", (_region, event) => {
       event.stopPropagation();
@@ -115,6 +120,14 @@ async function load() {
     });
   } catch {
     if (!own.signal.aborted && !disposed) error.value = true;
+  }
+}
+function emitRange(region: Region) {
+  if (props.fixedRangeDuration === undefined) emit("update:range", [region.start, region.end]);
+  else {
+    const length = Math.min(props.duration, props.fixedRangeDuration);
+    const start = Math.max(0, Math.min(props.duration - length, region.start));
+    emit("update:range", [start, start + length]);
   }
 }
 function labelHandles(region: Region) {
@@ -146,12 +159,23 @@ function syncRange() {
       start,
       end,
       minLength: 0.05,
-      color: "rgba(118,101,255,0.10)",
+      color: props.fixedRangeDuration === undefined ? "rgba(118,101,255,0.10)" : "rgba(37,99,235,0.26)",
       drag: !props.disabled,
-      resize: !props.disabled
+      resize: !props.disabled && props.fixedRangeDuration === undefined,
+      ...(props.fixedRangeDuration !== undefined ? { minLength: 0, maxLength: Infinity, content: "拖动" } : {})
     });
     labelHandles(selection);
-  } else selection.setOptions({ start, end, drag: !props.disabled, resize: !props.disabled });
+  } else {
+    // Resize is disabled for a fixed range. Exact min=max rejects valid drags after floating-point rounding.
+    selection.minLength = props.fixedRangeDuration === undefined ? 0.05 : 0;
+    selection.maxLength = Infinity;
+    selection.setOptions({
+      start,
+      end,
+      drag: !props.disabled,
+      resize: !props.disabled && props.fixedRangeDuration === undefined
+    });
+  }
   selection.element?.querySelectorAll<HTMLElement>('[part~="region-handle"]').forEach((handle, index) => {
     handle.setAttribute("aria-valuemin", "0");
     handle.setAttribute("aria-valuemax", String(props.duration));
@@ -171,10 +195,31 @@ function syncEditing() {
     return;
   }
   syncRange();
-  if (!props.disabled) disableDrag = regions.enableDragSelection({ color: "rgba(118,101,255,0.10)", minLength: 0.05 });
+  if (!props.disabled && props.fixedRangeDuration === undefined)
+    disableDrag = regions.enableDragSelection({ color: "rgba(118,101,255,0.10)", minLength: 0.05 });
 }
 function onKeydown(event: KeyboardEvent) {
   if (props.disabled || !ready.value || event.target !== container.value) return;
+  if (props.editing && props.fixedRangeDuration !== undefined) {
+    const length = Math.min(props.duration, props.fixedRangeDuration),
+      max = Math.max(0, props.duration - length);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? max
+          : event.key === "ArrowLeft"
+            ? props.range[0] - 0.1
+            : event.key === "ArrowRight"
+              ? props.range[0] + 0.1
+              : undefined;
+    if (next !== undefined) {
+      event.preventDefault();
+      const start = Math.max(0, Math.min(max, next));
+      emit("update:range", [start, start + length]);
+    }
+    return;
+  }
   const value =
     event.key === "Home"
       ? 0
@@ -223,7 +268,7 @@ watch(
   }
 );
 watch(() => props.range, syncRange, { deep: true });
-watch([() => props.editing, () => props.disabled], syncEditing);
+watch([() => props.editing, () => props.disabled, () => props.fixedRangeDuration], syncEditing);
 onBeforeUnmount(() => {
   disposed = true;
   observer?.disconnect();
@@ -274,5 +319,26 @@ onBeforeUnmount(() => {
 }
 .audio-waveform-canvas::part(region-handle):focus-visible {
   outline: 2px solid #7665ff;
+}
+.is-fixed-range .audio-waveform-canvas :deep(div)::part(region) {
+  box-sizing: border-box;
+  border: 2px solid #2563eb;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px #fff;
+  cursor: grab;
+}
+.is-fixed-range .audio-waveform-canvas :deep(div)::part(region-content) {
+  padding: 1px 2px;
+  color: #fff;
+  background: #2563eb;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.is-fixed-range .audio-waveform-help {
+  color: #1d4ed8;
+  font-weight: 500;
 }
 </style>

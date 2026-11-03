@@ -133,6 +133,39 @@ describe("TikTok public page normalization", () => {
     expect(original.media[0].urls).toEqual([video().video.playAddr]);
     expect(original.media[0].requireVideoTrack).toBeUndefined();
   });
+  it.each([{ AnchorTypes: ["33"] }, { AnchorTypes: [33] }, { AnchorTypes: ["other", "33"] }])(
+    "recognizes product anchors %j when a public shop page omits isECVideo",
+    ({ AnchorTypes }) => {
+      const sampleId = "7546456512328207623";
+      const item = {
+        ...video(),
+        id: sampleId,
+        AnchorTypes,
+        isAd: false,
+        author: { uniqueId: "tangtea5" },
+        video: { ...video().video, playAddr: "", downloadAddr: "" }
+      };
+      expect(item).not.toHaveProperty("isECVideo");
+      expect(() => readTikTokPage(html(item), sampleId)).toThrow(TikTokShopVideoMissingError);
+      const urls = ["https://v16.tiktokcdn-us.com/verified.mp4"];
+      const source = readTikTokPage(html(item), sampleId, urls)!;
+      expect(source.canonicalUrl).toBe(`https://www.tiktok.com/@tangtea5/video/${sampleId}`);
+      expect(source.media[0]).toMatchObject({ kind: "video", urls, requireVideoTrack: true });
+      expect(() => normalizeTikTokItem({ ...item, privateItem: true }, sampleId, urls)).toThrow("匿名公开访问");
+      expect(() => normalizeTikTokItem(item, "123456", urls)).toThrow("不一致");
+      expect(normalizeTikTokItem({ ...item, video: video().video }, sampleId, urls).media[0].urls).toEqual([
+        video().video.playAddr
+      ]);
+    }
+  );
+  it.each([undefined, null, [], ["3"], ["330"], [true], "33", { type: 33 }].map((AnchorTypes) => ({ AnchorTypes })))(
+    "does not classify unrelated or malformed anchors as shop videos: %j",
+    ({ AnchorTypes }) => {
+      const item = { ...video(), AnchorTypes, video: { playAddr: "" } };
+      expect(() => normalizeTikTokItem(item, id, ["https://v16.tiktokcdn-us.com/video.mp4"])).toThrow("视频地址");
+      expect(() => normalizeTikTokItem(item, id)).toThrow("普通浏览器");
+    }
+  );
   it.each([
     "https://127.0.0.1/video",
     "http://v16.tiktok.com/video",

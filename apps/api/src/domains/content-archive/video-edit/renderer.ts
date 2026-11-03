@@ -189,6 +189,7 @@ export type RenderVideoOptions = {
   signal: AbortSignal;
   maxBytes: number;
   previewStartSeconds?: number;
+  previewFullLength?: boolean;
   preview?: boolean;
   onProgress: (value: number) => void;
 };
@@ -232,8 +233,9 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
       watermarkFilter(options.watermark.settings, options.music ? 2 : 1, size.width, size.height)
     );
   }
-  const start = options.preview ? Math.min(options.previewStartSeconds ?? 0, Math.max(0, source.duration - 0.1)) : 0;
-  const duration = options.preview ? Math.min(15, source.duration - start) : source.duration;
+  const shortPreview = options.preview && !options.previewFullLength;
+  const start = shortPreview ? Math.min(options.previewStartSeconds ?? 0, Math.max(0, source.duration - 0.1)) : 0;
+  const duration = shortPreview ? Math.min(15, source.duration - start) : source.duration;
   args.push(
     "-filter_complex",
     filters.join(";"),
@@ -244,7 +246,7 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
     "-map_metadata",
     "0"
   );
-  if (!options.watermark && !options.preview && ["h264", "hevc"].includes(source.codec)) args.push("-c:v", "copy");
+  if (!options.watermark && !shortPreview && ["h264", "hevc"].includes(source.codec)) args.push("-c:v", "copy");
   else args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p");
   if (options.watermark) args.push("-metadata:s:v:0", "rotate=0");
   if (start) args.push("-ss", String(start));

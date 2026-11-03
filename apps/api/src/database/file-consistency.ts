@@ -26,8 +26,8 @@ export async function reconcileFileMetadataStorage(
 ): Promise<FileConsistencyResult> {
   const result: FileConsistencyResult = { checked: 0, quarantined: 0, removedMetadata: 0, failures: [] };
   for (const metadata of database.listFiles()) {
-    // 永久音频库由其恢复清单管理；缺失或损坏只报告，不能移入随后会被清空的全局隔离区。
-    if (metadata.entityKind === "audio-library-item") continue;
+    // 永久音频库及转换结果由领域层管理；缺失或损坏由访问检查报告，不移入全局缓存隔离区。
+    if (["audio-library-item", "audio-convert-job", "audio-extract-job"].includes(metadata.entityKind)) continue;
     result.checked += 1;
     const target = resolveStoragePath(config.storageRoot, metadata.relativePath);
     if (!target) {

@@ -181,6 +181,8 @@ export function archiveWatermarkBouncePath(settings: ArchiveWatermarkSettings) {
 }
 export function archiveWatermarkPosition(settings: ArchiveWatermarkSettings, time: number) {
   const motion = settings.motion;
+  // Media elements temporarily expose non-finite times while their source is changing.
+  if (!Number.isFinite(time)) return { x: clamp(motion.from.x), y: clamp(motion.from.y), visible: false };
   const t = Math.max(0, time - settings.startSeconds);
   let point = motion.from;
   if (motion.type === "linear" || motion.type === "ping-pong") {

@@ -7,6 +7,7 @@
         kicker="AUDIO LIBRARY"
         ><template #actions
           ><n-button @click="uploadVisible = true">上传音频</n-button
+          ><router-link to="/tools/audio-convert"><n-button>音频转 MP3</n-button></router-link
           ><n-button tag="a" :href="api.exportUrl()">完整备份</n-button
           ><n-button :loading="restoring" @click="backupInput?.click()">恢复备份</n-button></template
         ></ToolPageHeader

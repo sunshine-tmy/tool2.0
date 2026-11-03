@@ -44,6 +44,6 @@ describe("common contract entry", () => {
       expect(common.isImageWorkerProcess(sample)).toBe(root.isImageWorkerProcess(sample));
     }
     expect(common.listTools().map((tool) => tool.id)).toEqual(root.listTools().map((tool) => tool.id));
-    expect(common.listTools()).toHaveLength(6);
+    expect(common.listTools()).toHaveLength(8);
   });
 });

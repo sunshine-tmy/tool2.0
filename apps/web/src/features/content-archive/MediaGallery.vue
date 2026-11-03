@@ -15,6 +15,7 @@
         :key="thumbnailKey(media)"
         :src="mediaUrl(media.previewUrl)"
         crossorigin="anonymous"
+        :poster="videoPoster(media)"
         controls
         playsinline
         preload="metadata"
@@ -70,7 +71,7 @@
           <video
             v-else
             :src="mediaUrl(entry.previewUrl)"
-            :poster="videoThumbnails.get(thumbnailKey(entry))"
+            :poster="videoPoster(entry)"
             crossorigin="anonymous"
             muted
             playsinline
@@ -80,7 +81,12 @@
             @seeked="rememberVideoThumbnail(entry, $event)"
           />
           <span
-            v-if="isVideoMedia(entry) && selected !== index && !videoThumbnails.has(thumbnailKey(entry))"
+            v-if="
+              isVideoMedia(entry) &&
+              selected !== index &&
+              !videoThumbnails.has(thumbnailKey(entry)) &&
+              !videoPoster(entry)
+            "
             class="video-thumb-placeholder"
           >
             <Play :size="18" aria-hidden="true" />视频
@@ -258,6 +264,22 @@ function mediaUrl(url: string) {
 function thumbnailKey(entry: ContentArchiveItem["media"][number]) {
   return JSON.stringify([props.item.id, entry.id, entry.checksum, entry.previewUrl]);
 }
+function videoPoster(entry: ContentArchiveItem["media"][number]) {
+  const decoded = videoThumbnails.value.get(thumbnailKey(entry));
+  if (decoded) return decoded;
+  // Generated slideshows start with their first source image. Reuse it immediately without fetching every video.
+  const first = entry.derivedFromImages?.[0];
+  const image =
+    first &&
+    props.item.media.find(
+      (candidate) =>
+        candidate.id === first.id &&
+        candidate.checksum === first.checksum &&
+        candidate.kind === "image" &&
+        !candidate.frameSourceMediaId
+    );
+  return image ? mediaUrl(image.previewUrl) : undefined;
+}
 
 function rememberVideoThumbnail(entry: ContentArchiveItem["media"][number], event: Event) {
   const video = event.currentTarget as HTMLVideoElement;
@@ -431,6 +453,7 @@ function changeMedia(direction: -1 | 1) {
   margin-bottom: 18px;
 }
 .media-stage {
+  --media-padding: 12px;
   position: relative;
   display: flex;
   width: min(100%, 520px);
@@ -441,7 +464,7 @@ function changeMedia(direction: -1 | 1) {
   justify-content: center;
   overflow: hidden;
   box-sizing: border-box;
-  padding: 12px;
+  padding: var(--media-padding);
   border-radius: 14px;
   background: #101318;
 }
@@ -495,8 +518,7 @@ function changeMedia(direction: -1 | 1) {
   align-items: center;
   justify-content: center;
 }
-.media-image :deep(img),
-.media-stage video {
+.media-image :deep(img) {
   display: block;
   width: auto !important;
   height: auto !important;
@@ -504,10 +526,19 @@ function changeMedia(direction: -1 | 1) {
   max-height: 100% !important;
   object-fit: contain;
 }
+.media-stage > video {
+  position: absolute;
+  inset: var(--media-padding);
+  display: block;
+  width: calc(100% - 2 * var(--media-padding)) !important;
+  height: calc(100% - 2 * var(--media-padding)) !important;
+  object-fit: contain;
+}
 .is-compact .media-stage {
+  --media-padding: 8px;
   width: min(100%, 480px);
   height: auto;
-  padding: 8px;
+  padding: var(--media-padding);
 }
 .media-thumbs {
   display: flex;
@@ -645,9 +676,10 @@ function changeMedia(direction: -1 | 1) {
 
 @media (max-width: 640px) {
   .media-stage {
+    --media-padding: 8px;
     width: min(100%, 420px);
     height: auto;
-    padding: 8px;
+    padding: var(--media-padding);
   }
   .is-compact .media-stage {
     width: min(100%, 400px);

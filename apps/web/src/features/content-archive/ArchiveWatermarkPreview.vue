@@ -3,7 +3,7 @@
     <slot />
     <div v-if="active && asset && videoSize.width && box.width" class="watermark-viewport" :style="viewportStyle">
       <svg
-        v-if="paused && settings.motion.type !== 'fixed'"
+        v-if="paused && settings.motion.type !== 'fixed' && trajectory"
         class="watermark-path"
         :viewBox="`0 0 ${videoSize.width} ${videoSize.height}`"
         aria-hidden="true"
@@ -55,6 +55,7 @@ const props = defineProps<{
 const emit = defineEmits<{ move: [{ x: number; y: number }]; time: [number]; duration: [number] }>();
 const stage = ref<HTMLElement>(),
   time = ref(0),
+  metadataDuration = ref(0),
   paused = ref(true);
 const videoSize = reactive({ width: 0, height: 0 }),
   box = reactive({ left: 0, top: 0, width: 0, height: 0 });
@@ -75,17 +76,18 @@ const imageStyle = computed(() => ({
   height: `${(size.value.height / videoSize.height) * 100}%`
 }));
 const trajectory = computed(() => {
-  if (!props.asset || !props.video) return "";
+  if (!props.active || !props.asset || !props.video || metadataDuration.value <= 0) return "";
   const start = props.settings.startSeconds,
     end = Math.min(
-      props.settings.endSeconds ?? props.video.duration,
-      props.video.duration,
+      props.settings.endSeconds ?? metadataDuration.value,
+      metadataDuration.value,
       props.settings.motion.type === "bounce" &&
         props.settings.motion.bounceStyle &&
         props.settings.motion.bounceStyle !== "standard"
         ? start + props.settings.motion.periodSeconds
         : Infinity
     );
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return "";
   const times = Array.from({ length: 61 }, (_, index) => start + ((end - start) * index) / 60);
   const path = props.settings.motion.type === "bounce" ? archiveWatermarkBouncePath(props.settings) : undefined;
   if (path)
@@ -102,17 +104,30 @@ const trajectory = computed(() => {
     .join(" ");
 });
 let stop = () => undefined as void;
+function resetVideo() {
+  metadataDuration.value = 0;
+  Object.assign(videoSize, { width: 0, height: 0 });
+  Object.assign(box, { left: 0, top: 0, width: 0, height: 0 });
+  time.value = 0;
+  paused.value = true;
+}
 watch(
   () => props.video,
   (video) => {
     stop();
+    resetVideo();
     if (!video) return;
     let animation: number | undefined;
     const measure = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0 || !video.videoWidth || !video.videoHeight) {
+        resetVideo();
+        return;
+      }
       const bounds = video.getBoundingClientRect(),
         parent = stage.value?.getBoundingClientRect();
       videoSize.width = video.videoWidth;
       videoSize.height = video.videoHeight;
+      metadataDuration.value = video.duration;
       if (!parent || !videoSize.width || !videoSize.height) return;
       const scale = Math.min(bounds.width / videoSize.width, bounds.height / videoSize.height);
       Object.assign(box, {
@@ -139,7 +154,10 @@ watch(
     const events = ["timeupdate", "seeking", "seeked", "pause", "ended"];
     events.forEach((name) => video.addEventListener(name, update));
     video.addEventListener("play", play);
-    video.addEventListener("loadedmetadata", measure);
+    const metadataEvents = ["loadedmetadata", "durationchange"];
+    const resetEvents = ["emptied", "loadstart", "error"];
+    metadataEvents.forEach((name) => video.addEventListener(name, measure));
+    resetEvents.forEach((name) => video.addEventListener(name, resetVideo));
     const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
     resize?.observe(video);
     if (stage.value) resize?.observe(stage.value);
@@ -152,7 +170,8 @@ watch(
       window.removeEventListener("resize", measure);
       events.forEach((name) => video.removeEventListener(name, update));
       video.removeEventListener("play", play);
-      video.removeEventListener("loadedmetadata", measure);
+      metadataEvents.forEach((name) => video.removeEventListener(name, measure));
+      resetEvents.forEach((name) => video.removeEventListener(name, resetVideo));
     };
   },
   { flush: "post" }

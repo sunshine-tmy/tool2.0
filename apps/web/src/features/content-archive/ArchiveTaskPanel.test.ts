@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
-import type { ArchivePlatformSelection, ContentArchiveTask } from "@toolbox/shared";
+import type { ArchivePlatformSelection, ContentArchiveTask, ArchiveGroup } from "@toolbox/shared";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
 import { NSelect } from "naive-ui";
 
@@ -53,6 +53,8 @@ function mountPanel(
     douyinAvailable: boolean;
     douyinCanAutoInstall: boolean;
     douyinMessage: string;
+    groups: ArchiveGroup[];
+    groupId: string | null;
   }> = {}
 ) {
   return mount(ArchiveTaskPanel, {
@@ -79,6 +81,36 @@ function mountPanel(
 }
 
 describe("XHS archive task panel", () => {
+  it("链接归档提供可清空的目标分组，提交或任务执行及登录期间锁定分组选择", async () => {
+    const wrapper = mountPanel({
+      groups: [
+        { id: "group_123456", name: "商品素材", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }
+      ]
+    });
+    try {
+      const target = wrapper
+        .findAllComponents(NSelect)
+        .find((select) => select.attributes("aria-label") === "链接归档目标分组")!;
+      expect(target.props("value")).toBeNull();
+      expect(target.props("options")).toEqual([{ label: "商品素材", value: "group_123456" }]);
+      target.vm.$emit("update:value", "group_123456");
+      expect(wrapper.emitted("update:groupId")).toEqual([["group_123456"]]);
+      target.vm.$emit("update:value", null);
+      expect(wrapper.emitted("update:groupId")?.at(-1)).toEqual([null]);
+      for (const props of [
+        { submitting: true },
+        { submitting: false, task: task() },
+        { task: undefined, authWaiting: true }
+      ]) {
+        await wrapper.setProps(props);
+        expect(target.props("disabled")).toBe(true);
+      }
+      await wrapper.setProps({ authWaiting: false });
+      expect(target.props("disabled")).toBe(false);
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("identifies TikTok and submits without the Douyin capability, but rejects a platform mismatch", async () => {
     const wrapper = mountPanel({ inputUrl: "https://vt.tiktok.com/ZSgQrEYNG/", douyinAvailable: false });
     expect(wrapper.text()).toContain("TikTok");

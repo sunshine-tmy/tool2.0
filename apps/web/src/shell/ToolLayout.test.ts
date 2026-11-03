@@ -27,6 +27,7 @@ afterEach(() => {
   diagnosticConnection.value = "online";
   localStorage.clear();
   document.body.classList.remove("sidebar-drawer-active");
+  delete window.toolboxDesktop;
 });
 async function layout(compact = false, path = "/settings/diagnostics") {
   vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
@@ -48,12 +49,35 @@ async function layout(compact = false, path = "/settings/diagnostics") {
   });
   await router.push(path);
   await router.isReady();
-  const wrapper = mount(ToolLayout, { global: { plugins: [router] }, slots: { default: "诊断内容" } });
+  const wrapper = mount(ToolLayout, {
+    global: { plugins: [router], stubs: { DesktopLanAccess: true } },
+    slots: { default: "诊断内容" }
+  });
   await flushPromises();
   return { wrapper, router };
 }
 
 describe("application shell header layout", () => {
+  it("reserves only the native overlay height for the desktop drag strip and leaves browser layout unchanged", async () => {
+    const browser = await layout();
+    try {
+      expect(browser.wrapper.find(".desktop-window-titlebar").exists()).toBe(false);
+      expect(browser.wrapper.classes()).not.toContain("has-desktop-titlebar");
+    } finally {
+      browser.wrapper.unmount();
+    }
+    Object.defineProperty(window, "toolboxDesktop", { configurable: true, value: {} });
+    const desktop = await layout();
+    try {
+      expect(desktop.wrapper.classes()).toContain("has-desktop-titlebar");
+      const titlebar = desktop.wrapper.get(".desktop-window-titlebar");
+      expect(titlebar.text()).toBe("电商工具箱");
+      expect(titlebar.attributes("aria-hidden")).toBe("true");
+      expect(titlebar.element.nextElementSibling).toBe(desktop.wrapper.get(".topbar").element);
+    } finally {
+      desktop.wrapper.unmount();
+    }
+  });
   it("keeps loaded content and the diagnostic action available when the service warning appears, then removes the warning on recovery", async () => {
     diagnosticConnection.value = "offline";
     const { wrapper, router } = await layout(false, "/settings/data-backup");
@@ -91,7 +115,7 @@ describe("application shell header layout", () => {
       const actions = wrapper.get(".topbar-actions");
       expect(actions.findAll("button")).toHaveLength(3);
       expect(actions.text()).toContain("基础服务正常");
-      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("6");
+      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("8");
       expect(wrapper.get(".sidebar-head").find('[aria-label="本地服务与管理员会话"]').exists()).toBe(false);
       await actions.get('[aria-label="桌面设置"]').trigger("click");
       await flushPromises();

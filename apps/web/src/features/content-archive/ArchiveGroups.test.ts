@@ -50,19 +50,40 @@ function setup(groupId = "all") {
     props: { show: Boolean },
     template: '<div v-if="show"><slot /><slot name="footer" /></div>'
   });
+  const Popover = defineComponent({
+    props: { show: Boolean, disabled: Boolean },
+    emits: ["update:show"],
+    template:
+      '<div><div @click="!disabled && $emit(\'update:show\', !show)"><slot name="trigger" /></div><div v-if="show"><slot /></div></div>'
+  });
   const wrapper = mount(ArchiveGroups, {
     props: { groupId, selectedIds: ["archive_123"] },
-    global: { stubs: { NModal: Modal, "n-modal": Modal, Teleport: true } }
+    global: { stubs: { NModal: Modal, "n-modal": Modal, NPopover: Popover, Teleport: true } }
   });
   wrappers.push(wrapper);
   return wrapper;
 }
 async function click(wrapper: ReturnType<typeof setup>, label: string) {
+  if (
+    ["重命名分组", "删除分组", "刷新分组"].includes(label) &&
+    !wrapper.findAll("button").some((button) => button.text() === label)
+  )
+    await click(wrapper, "管理分组");
   await wrapper
     .findAll("button")
     .find((button) => button.text() === label)!
     .trigger("click");
   await flushPromises();
+}
+async function destination(wrapper: ReturnType<typeof setup>) {
+  await click(wrapper, "移动所选 1");
+  return wrapper.findAllComponents(NSelect).find((select) => select.attributes("aria-label") === "移入目标分组")!;
+}
+async function moveTo(wrapper: ReturnType<typeof setup>, target: string) {
+  const select = await destination(wrapper);
+  select.vm.$emit("update:value", target);
+  await flushPromises();
+  await click(wrapper, "确认移动");
 }
 it("creates and renames groups, moves only the explicit selection, and ungroups without deleting media", async () => {
   const wrapper = setup();
@@ -80,25 +101,24 @@ it("creates and renames groups, moves only the explicit selection, and ungroups 
   await flushPromises();
   await click(wrapper, "保存分组");
   expect(mocks.save).toHaveBeenLastCalledWith("新品素材", "group_new", expect.any(AbortSignal));
-  wrapper.findAllComponents(NSelect)[1]!.vm.$emit("update:value", "group_new");
-  await flushPromises();
-  await click(wrapper, "移动所选 1");
+  await moveTo(wrapper, "group_new");
   expect(mocks.assign).toHaveBeenLastCalledWith(
     { groupId: "group_new", itemIds: ["archive_123"] },
     expect.any(AbortSignal)
   );
-  wrapper.findAllComponents(NSelect)[1]!.vm.$emit("update:value", "ungrouped");
-  await flushPromises();
-  await click(wrapper, "移动所选 1");
+  await moveTo(wrapper, "ungrouped");
   expect(mocks.assign).toHaveBeenLastCalledWith({ groupId: null, itemIds: ["archive_123"] }, expect.any(AbortSignal));
   expect(wrapper.emitted("changed")).toHaveLength(2);
-  const destination = wrapper.findAllComponents(NSelect)[1]!;
-  destination.vm.$emit("update:value", "group_new");
+  let select = await destination(wrapper);
+  select.vm.$emit("update:value", "group_new");
   await flushPromises();
+  await click(wrapper, "取消");
   mocks.confirm.mockResolvedValueOnce(false);
   await click(wrapper, "删除分组");
   expect(mocks.remove).not.toHaveBeenCalled();
-  expect(destination.props("value")).toBe("group_new");
+  select = await destination(wrapper);
+  expect(select.props("value")).toBe("group_new");
+  await click(wrapper, "取消");
   await click(wrapper, "删除分组");
   expect(mocks.confirm).toHaveBeenCalledWith(
     expect.stringContaining("作品、媒体、翻译和截帧均保留"),
@@ -106,13 +126,14 @@ it("creates and renames groups, moves only the explicit selection, and ungroups 
   );
   expect(mocks.remove).toHaveBeenCalledWith("group_new", expect.any(AbortSignal));
   expect(wrapper.emitted("update:groupId")?.at(-1)).toEqual(["all"]);
-  expect(destination.text()).toContain("选择目标分组");
-  expect(destination.text()).not.toContain("group_new");
-  expect(destination.props("value")).toBeNull();
+  select = await destination(wrapper);
+  expect(select.text()).toContain("选择目标分组");
+  expect(select.text()).not.toContain("group_new");
+  expect(select.props("value")).toBeNull();
   expect(
     wrapper
       .findAll("button")
-      .find((button) => button.text() === "移动所选 1")!
+      .find((button) => button.text() === "确认移动")!
       .attributes("disabled")
   ).toBeDefined();
 });
@@ -127,9 +148,7 @@ it("reports request errors and refuses late results or UI updates after unmount"
   await click(wrapper, "删除分组");
   expect(mocks.error).toHaveBeenCalledTimes(2);
   mocks.assign.mockRejectedValueOnce(new Error("move failed"));
-  wrapper.findAllComponents(NSelect)[1]!.vm.$emit("update:value", "group_123");
-  await flushPromises();
-  await click(wrapper, "移动所选 1");
+  await moveTo(wrapper, "group_123");
   expect(mocks.error).toHaveBeenCalledTimes(3);
   mocks.list.mockRejectedValueOnce(new Error("load failed"));
   await click(wrapper, "刷新分组");
@@ -154,14 +173,16 @@ it("reports request errors and refuses late results or UI updates after unmount"
 it("clears a deleted selection immediately even when refreshing the group list fails", async () => {
   const wrapper = setup("group_123");
   await flushPromises();
-  const destination = wrapper.findAllComponents(NSelect)[1]!;
-  destination.vm.$emit("update:value", "group_123");
+  let select = await destination(wrapper);
+  select.vm.$emit("update:value", "group_123");
   await flushPromises();
+  await click(wrapper, "取消");
   mocks.list.mockRejectedValueOnce(new Error("refresh failed"));
   await click(wrapper, "删除分组");
   expect(mocks.remove).toHaveBeenCalledWith("group_123", expect.any(AbortSignal));
-  expect(destination.props("value")).toBeNull();
-  expect(destination.text()).toContain("选择目标分组");
+  select = await destination(wrapper);
+  expect(select.props("value")).toBeNull();
+  expect(select.text()).toContain("选择目标分组");
   expect(wrapper.emitted("loaded")?.at(-1)).toEqual([[]]);
   expect(wrapper.emitted("update:groupId")?.at(-1)).toEqual(["all"]);
   expect(mocks.error).toHaveBeenCalledOnce();
@@ -172,11 +193,41 @@ it.each(["group_456", "ungrouped"])(
     records.push(group("另一组", "group_456"));
     const wrapper = setup("group_123");
     await flushPromises();
-    const destination = wrapper.findAllComponents(NSelect)[1]!;
-    destination.vm.$emit("update:value", target);
+    let select = await destination(wrapper);
+    select.vm.$emit("update:value", target);
     await flushPromises();
+    await click(wrapper, "取消");
     await click(wrapper, "删除分组");
-    expect(destination.props("value")).toBe(target);
-    expect(destination.text()).toContain(target === "ungrouped" ? "未分组" : "另一组");
+    select = await destination(wrapper);
+    expect(select.props("value")).toBe(target);
+    expect(select.text()).toContain(target === "ungrouped" ? "未分组" : "另一组");
   }
 );
+it("收起分组管理操作，只有选中作品后显示移动入口，取消或清空选择不提交移动", async () => {
+  const wrapper = setup();
+  await flushPromises();
+  await wrapper.setProps({ selectedIds: [] });
+  expect(wrapper.findAll("button").map((button) => button.text())).toEqual(["新建分组", "管理分组"]);
+  expect(wrapper.findAllComponents(NSelect)).toHaveLength(1);
+  await click(wrapper, "管理分组");
+  const menu = wrapper.get('[aria-label="分组管理操作"]');
+  for (const label of ["重命名分组", "删除分组"])
+    expect(
+      menu
+        .findAll("button")
+        .find((button) => button.text() === label)!
+        .attributes("disabled")
+    ).toBeDefined();
+  await click(wrapper, "管理分组");
+  await wrapper.setProps({ selectedIds: ["archive_123"] });
+  const select = await destination(wrapper);
+  select.vm.$emit("update:value", "group_123");
+  await flushPromises();
+  expect(mocks.assign).not.toHaveBeenCalled();
+  await click(wrapper, "取消");
+  expect(mocks.assign).not.toHaveBeenCalled();
+  await destination(wrapper);
+  await wrapper.setProps({ selectedIds: [] });
+  expect(wrapper.findAllComponents(NSelect)).toHaveLength(1);
+  expect(mocks.assign).not.toHaveBeenCalled();
+});

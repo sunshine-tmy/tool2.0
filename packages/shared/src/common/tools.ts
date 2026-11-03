@@ -74,6 +74,28 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/v1/tools/audio-library"
   },
   {
+    id: "audio-extract",
+    title: "音频提取器",
+    description: "从视频提取独立音轨，支持批量、原编码输出和 MP3，不改动原视频。",
+    category: "audio",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: [".mp4", ".mkv", ".avi", ".mov", ".webm"],
+    routePath: "/tools/audio-extract",
+    apiNamespace: "/api/v1/tools/audio-extract"
+  },
+  {
+    id: "audio-convert",
+    title: "音频格式转换",
+    description: "批量将 OGG、FLAC 与支持的 MGG/MFLAC 转为 MP3，可加入音频素材库。",
+    category: "audio",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["audio/ogg", "audio/flac", ".mgg", ".mflac"],
+    routePath: "/tools/audio-convert",
+    apiNamespace: "/api/v1/tools/audio-convert"
+  },
+  {
     id: "xhs-archive",
     title: "多媒体内容归档",
     description: "将小红书、抖音与 TikTok 作品的正文、图片和视频保存到本机，支持预览、翻译与截帧。",

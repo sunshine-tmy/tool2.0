@@ -19,6 +19,8 @@ import type { BackupManifest, ModuleData } from "../system/data-backup/types";
 import { writeDurable, recoverRestores, inspectPackage } from "../system/data-backup/service";
 import { planRestore } from "../system/data-backup/merge";
 import { validateModuleData } from "../system/data-backup/validation";
+import { rewriteRecord } from "../system/data-backup/references";
+import { keyOf } from "../system/data-backup/registry";
 import {
   defaultArchiveAudioSettings,
   defaultArchiveWatermarkSettings,
@@ -26,9 +28,12 @@ import {
   type AudioLibraryItem
 } from "@toolbox/shared";
 import { AudioLibraryStore } from "../domains/audio-library/store";
+import { AudioExtractionService } from "../domains/audio-extract/service";
+import { createTaskStore } from "../tasks/task-store";
 import { ContentArchiveStore } from "../domains/content-archive/core/store";
 import { createLanFileStore, createLanNoteStore } from "../domains/lan-transfer/repositories";
 import type { BackupModuleId } from "@toolbox/shared/system";
+import { backupModules } from "@toolbox/shared/system";
 const now = "2026-10-01T00:00:00.000Z",
   expires = "2030-01-01T00:00:00.000Z";
 async function putFile(context: BackupContext, relative: string, content: string) {
@@ -187,6 +192,182 @@ async function restoreFile(
 }
 
 const roots: string[] = [];
+it("roundtrips extraction results with merge/replace, preserves other modules and excludes temporary videos", async () => {
+  const source = await fixture(),
+    target = await fixture(),
+    id = "e".repeat(21);
+  async function extracted(context: BackupContext, body: string) {
+    const db = new ToolboxDatabase(context.config.databasePath);
+    const payload = {
+      id,
+      name: "视频.mkv",
+      sourceSha256: "a".repeat(64),
+      sourceBytes: 1234,
+      track: {
+        index: 2,
+        codec: "opus",
+        language: "eng",
+        title: "English",
+        channels: 2,
+        sampleRate: 48000,
+        duration: 1,
+        default: true
+      },
+      format: "original",
+      bitrate: 192,
+      status: "completed",
+      phase: "已完成",
+      progress: 100,
+      extension: "ogg",
+      mimeType: "audio/ogg",
+      duration: 1,
+      bytes: Buffer.byteLength(body),
+      sha256: hashText(body),
+      createdAt: now,
+      updatedAt: now
+    };
+    putEntity(db, "audio-extract-job", payload);
+    putEntity(db, "task", {
+      id,
+      toolId: "audio-extract",
+      status: "completed",
+      progress: 100,
+      createdAt: now,
+      updatedAt: now
+    });
+    putEntity(db, "audio-library-group", {
+      id: "unrelated_group",
+      name: "保留分组",
+      parentId: null,
+      createdAt: now,
+      updatedAt: now
+    });
+    db.close();
+    await putFile(context, `audio-extract/results/${id}/audio.ogg`, body);
+    await putFile(context, "audio-extract/staging/private/source", "not included");
+  }
+  await extracted(source.context, "incoming opus");
+  await extracted(target.context, "local opus");
+  const bundle = await snapshot(
+    source.context,
+    { modules: ["audio-extract"] },
+    path.join(source.root, "extract-snapshot")
+  );
+  expect(bundle.modules[0].files.map((f) => f.path)).toEqual([`audio-extract/results/${id}/audio.ogg`]);
+  const bad = structuredClone(bundle.modules[0]);
+  (bad.records.find((r) => r.kind === "audio-extract-job")!.payload as Record<string, unknown>).extension = "../mp3";
+  expect(() => validateModuleData(bad)).toThrow();
+  const missing = structuredClone(bundle.modules[0]);
+  missing.files = [];
+  expect(() => validateModuleData(missing)).toThrow("缺少");
+  const file = await backupFile(source, ["audio-extract"]);
+  await restoreFile(target, file, ["audio-extract"], "merge");
+  let db = new ToolboxDatabase(target.context.config.databasePath);
+  try {
+    const rows = db.list("audio-extract-job");
+    expect(rows).toHaveLength(2);
+    const imported = rows.find((r) => r.id !== id)!;
+    expect(
+      await fs.readFile(
+        path.join(target.context.config.storageRoot, `audio-extract/results/${imported.id}/audio.ogg`),
+        "utf8"
+      )
+    ).toBe("incoming opus");
+    expect(db.get("task", imported.id)).toBeDefined();
+    expect(db.get("audio-library-group", "unrelated_group")).toBeDefined();
+    const reader = new AudioExtractionService(
+      target.context.config.storageRoot,
+      db,
+      createTaskStore(1000, db),
+      async () => {
+        throw new Error("read/download needs no FFmpeg");
+      }
+    );
+    expect(reader.get(imported.id).extension).toBe("ogg");
+    const held = await reader.acquire(imported.id);
+    held.release();
+  } finally {
+    db.close();
+  }
+  await restoreFile(target, file, ["audio-extract"], "replace");
+  db = new ToolboxDatabase(target.context.config.databasePath);
+  try {
+    expect(db.list("audio-extract-job")).toHaveLength(1);
+    expect(db.get("audio-library-group", "unrelated_group")).toBeDefined();
+  } finally {
+    db.close();
+  }
+});
+it("roundtrips conversion output, remaps colliding IDs and excludes inputs/keys", async () => {
+  const source = await fixture(),
+    target = await fixture();
+  async function converted(context: BackupContext, body: string) {
+    const id = "conversion_first",
+      db = new ToolboxDatabase(context.config.databasePath);
+    const payload = {
+      id,
+      name: "示例.flac",
+      bitrate: 192,
+      status: "completed",
+      progress: 100,
+      format: "flac",
+      duration: 1,
+      bytes: body.length,
+      sha256: hashText(body),
+      createdAt: now,
+      updatedAt: now
+    };
+    putEntity(db, "audio-convert-job", payload);
+    putEntity(db, "task", {
+      id,
+      toolId: "audio-convert",
+      status: "completed",
+      progress: 100,
+      createdAt: now,
+      updatedAt: now
+    });
+    db.close();
+    await putFile(context, `audio-convert/results/${id}/audio.mp3`, body);
+    await putFile(context, "audio-convert/staging/not-exported/source", "private input");
+  }
+  await converted(source.context, "source mp3");
+  await converted(target.context, "target mp3");
+  const snapshotBundle = await snapshot(
+    source.context,
+    { modules: ["audio-convert"] },
+    path.join(source.root, "snapshot")
+  );
+  expect(snapshotBundle.modules[0].files.map((f) => f.path)).toEqual([
+    "audio-convert/results/conversion_first/audio.mp3"
+  ]);
+  const file = await backupFile(
+    source,
+    backupModules.map((m) => m.id)
+  );
+  await restoreFile(target, file, ["audio-convert"], "merge");
+  const db = new ToolboxDatabase(target.context.config.databasePath);
+  try {
+    const rows = db.list("audio-convert-job");
+    expect(rows).toHaveLength(2);
+    const imported = rows.find((r) => r.id !== "conversion_first")!;
+    expect(
+      await fs.readFile(
+        path.join(target.context.config.storageRoot, `audio-convert/results/${imported.id}/audio.mp3`),
+        "utf8"
+      )
+    ).toBe("source mp3");
+    expect(db.get("task", imported.id)).toBeDefined();
+  } finally {
+    db.close();
+  }
+  await restoreFile(target, file, ["audio-convert"], "replace");
+  const replaced = new ToolboxDatabase(target.context.config.databasePath);
+  try {
+    expect(replaced.list("audio-convert-job")).toHaveLength(1);
+  } finally {
+    replaced.close();
+  }
+});
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const root of roots.splice(0)) {
@@ -732,6 +913,38 @@ it("rejects unsafe media types and malformed profile histories before they can b
   const row = { id: "profile_first", kind: "tiktok-profile-job", payload: profile, createdAt: now, updatedAt: now };
   const clean = { ...module, records: [row], files: [] };
   expect(() => validateModuleData(clean)).not.toThrow();
+  const saved = {
+    ...profile,
+    meta: { ...profile.meta, batchCount: 1 },
+    batchIds: ["batch_first"],
+    savedOutcomes: [
+      {
+        workId: "12345678",
+        batchIndex: 0,
+        attemptKey: "task_first",
+        attemptAt: now,
+        outcome: { status: "completed", progress: 100, message: "成功", archiveId: "archive_first" }
+      }
+    ]
+  };
+  const savedRow = { ...row, payload: saved };
+  expect(() => validateModuleData({ ...clean, records: [savedRow] })).not.toThrow();
+  const rewritten = rewriteRecord(savedRow, clean, {
+    [keyOf("content-archive", "xhs-archive", "archive_first")]: "archive_merged",
+    [keyOf("content-archive", "tiktok-profile-job", "profile_first")]: "profile_merged"
+  });
+  expect(() => validateModuleData({ ...clean, records: [rewritten] })).not.toThrow();
+  expect(rewritten.payload).toMatchObject({
+    meta: { id: "profile_merged" },
+    savedOutcomes: [{ workId: "12345678", outcome: { archiveId: "archive_merged" } }]
+  });
+  expect(saved.savedOutcomes[0].outcome.archiveId).toBe("archive_first");
+  expect(() =>
+    validateModuleData({
+      ...clean,
+      records: [{ ...savedRow, payload: { ...saved, savedOutcomes: [...saved.savedOutcomes, ...saved.savedOutcomes] } }]
+    })
+  ).toThrow("主页历史格式");
   profile.meta.discoveredCount = 2;
   expect(() => validateModuleData(clean)).toThrow("主页历史格式");
   profile.meta.discoveredCount = 1;

@@ -100,6 +100,15 @@ describe.skipIf(!available)("真实 FFmpeg 合成视频水印回归（不使用�
       red: reds.reduce((a, b) => a + b, 0) / reds.length
     };
   }
+  it("uses the exact source ending for automatic timing without accepting a rounded end beyond it", async () => {
+    const settings = defaultArchiveWatermarkSettings();
+    settings.opacity = 100;
+    const file = await render(settings);
+    expect((await bounds(file, 2.9)).count).toBeGreaterThan(0);
+    await expect(render({ ...settings, endSeconds: 3.001 })).rejects.toMatchObject({
+      code: "ARCHIVE_WATERMARK_TIME_INVALID"
+    });
+  });
   it("固定水印的透明度与原始 alpha 相乘，输出位置尺寸正确，原片不改写", async () => {
     const settings = defaultArchiveWatermarkSettings();
     settings.opacity = 50;

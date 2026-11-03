@@ -341,19 +341,32 @@ describe("双平台共用翻译契约", () => {
     }
     expect((await app.inject({ method: "POST", url: `${old}/items/${dy.id}/translation/reset` })).statusCode).toBe(404);
   });
-  it("补全缺失译文限定平台/关键词/类型筛选，不翻译筛选外作品", async () => {
+  it("补全缺失译文限定平台/关键词/类型/发布状态筛选，不翻译筛选外作品", async () => {
     const selected = await seed("douyin", "selected_123456", "目标作品"),
       other = await seed("douyin", "other_123456", "其他作品"),
+      published = await seed("douyin", "published_123456", "目标作品已发布"),
       xhs = await seed("xiaohongshu"),
       app = await appWith();
+    expect(
+      (
+        await app.inject({
+          method: "PATCH",
+          url: `${base}/items/${published.id}/publication`,
+          payload: { publishedElsewhere: true }
+        })
+      ).statusCode
+    ).toBe(200);
     const response = await app.inject({
       method: "POST",
       url: `${base}/translation/batches`,
-      payload: { mode: "missing-or-stale", filter: { platform: "douyin", keyword: "目标", type: "image" } }
+      payload: {
+        mode: "missing-or-stale",
+        filter: { platform: "douyin", keyword: "目标", type: "image", publication: "unpublished" }
+      }
     });
     expect(response.statusCode).toBe(202);
     expect((await terminal(app, response.json().data.id)).itemIds).toEqual([selected.id]);
-    for (const id of [other.id, xhs.id]) expect((await detail(app, id)).translation).toBeUndefined();
+    for (const id of [other.id, xhs.id, published.id]) expect((await detail(app, id)).translation).toBeUndefined();
     const noop = await app.inject({
       method: "POST",
       url: `${base}/translation/batches`,

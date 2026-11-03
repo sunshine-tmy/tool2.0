@@ -1,13 +1,37 @@
 // @vitest-environment happy-dom
 import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { NButton, NInputNumber, NSelect, NSlider } from "naive-ui";
+import { NButton, NCheckbox, NInputNumber, NSelect, NSlider } from "naive-ui";
 import { defaultArchiveWatermarkSettings } from "@toolbox/shared/archive";
 import Controls from "./ArchiveWatermarkControls.vue";
 vi.mock("./ArchiveWatermarkPresets.vue", () => ({ default: { template: "<div />" } }));
 vi.mock("./ArchiveWatermarkLibrary.vue", () => ({ default: { template: "<div />" } }));
 const asset = { width: 100, height: 50, url: "/logo.png" };
 describe("水印面板", () => {
+  it("displays the detected video end while retaining an automatic null end in the saved recipe", async () => {
+    const settings = defaultArchiveWatermarkSettings();
+    const wrapper = mount(Controls, {
+      props: { settings, asset, duration: 9, time: 0, disabled: false, selectedPoint: "from", selectedFrame: 0 }
+    });
+    const end = () =>
+      wrapper.findAllComponents(NInputNumber).find((field) => field.attributes("aria-label") === "水印结束时间")!;
+    expect(end().props("value")).toBe(9);
+    expect(end().props("disabled")).toBe(true);
+    await wrapper.setProps({ duration: 8.96 });
+    expect(end().props("value")).toBe(8.96);
+    expect(settings.endSeconds).toBeNull();
+    expect(wrapper.emitted("update:settings")).toBeUndefined();
+    wrapper.getComponent(NCheckbox).vm.$emit("update:checked", false);
+    const manual = wrapper.emitted("update:settings")!.at(-1)![0] as typeof settings;
+    expect(manual.endSeconds).toBe(8.96);
+    await wrapper.setProps({ settings: manual });
+    expect(end().props("disabled")).toBe(false);
+    end().vm.$emit("update:value", 5);
+    expect(wrapper.emitted("update:settings")!.at(-1)![0]).toMatchObject({ endSeconds: 5 });
+    wrapper.getComponent(NCheckbox).vm.$emit("update:checked", true);
+    expect(wrapper.emitted("update:settings")!.at(-1)![0]).toMatchObject({ endSeconds: null });
+    wrapper.unmount();
+  });
   it("保留经典反弹并增加六种样式，切换 Z 型使用规范起点，随机路线种子显式保存", async () => {
     const settings = defaultArchiveWatermarkSettings();
     settings.motion.type = "bounce";

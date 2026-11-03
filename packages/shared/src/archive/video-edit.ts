@@ -70,6 +70,8 @@ export const ArchiveVideoEditInputSchema = Type.Object(
     // 省略保留当前水印；null 明确移除；对象配置当前水印或上传的草稿。
     watermark: Type.Optional(Type.Union([ArchiveWatermarkInputSchema, Type.Null()])),
     previewStartSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 86400 })),
+    // Full-length audition uses the same recipe/timeline as save without replacing the archived video.
+    previewFullLength: Type.Optional(Type.Boolean()),
     slideshow: Type.Optional(
       Type.Object(
         {

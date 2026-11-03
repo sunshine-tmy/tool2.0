@@ -90,7 +90,7 @@
         <span
           >所属主页任务：TikTok @{{
             owner.username
-          }}。可一次清理主页及其全部批次记录，已归档作品、媒体和分组保留。</span
+          }}。删除当前批次记录不会删除主页任务历史或其他批次，主页处理结果仍会保留。</span
         >
         <n-button size="small" :disabled="busy || loading" @click="openOwner">打开所属主页任务</n-button>
         <n-button
@@ -103,8 +103,8 @@
         >
         <small v-if="ownerActive">{{
           owner.phase === "stopping"
-            ? "正在等待当前作品安全结束，结束后即可清理记录。"
-            : "主页任务仍在执行，停止后即可清理记录。"
+            ? "正在等待当前作品安全结束，结束后即可删除当前批次记录。"
+            : "主页任务仍在执行，停止后即可删除当前批次记录。"
         }}</small>
       </div>
       <span v-if="batch.groupId"
@@ -132,7 +132,7 @@
         secondary
         :disabled="busy || loading || ownerActive"
         @click="removeHistory"
-        >{{ owner ? "清理所属主页任务记录" : "删除批次记录" }}</n-button
+        >删除批次记录</n-button
       >
       <small v-if="batch.status === 'stopping'">当前正在处理的作品会按正常规则完成，后续项目不再执行。</small>
     </div>
@@ -265,12 +265,10 @@ async function removeHistory() {
   const profile = owner.value;
   if (!selected || busy.value || loading.value || ownerActive.value) return;
   if (
-    await confirm(
-      profile
-        ? `将清理 TikTok @${profile.username} 的主页任务及其全部批次记录。已归档作品及媒体不会删除，分组也会保留。`
-        : "只删除本次批次记录，已归档作品及媒体不会删除。",
-      { title: profile ? "清理主页及批次记录" : "删除批次记录", positiveText: profile ? "确认清理记录" : "删除记录" }
-    )
+    await confirm("只删除当前批次记录。TikTok 主页历史、其他批次、已归档作品、媒体及分组均保留。", {
+      title: "删除当前批次记录",
+      positiveText: "删除记录"
+    })
   )
     if (open.value && batch.value?.id === selected.id && owner.value?.id === profile?.id) await model.remove();
 }

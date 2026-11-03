@@ -23,7 +23,12 @@
       >
       <n-button v-if="running" @click="stop">停止剩余上传</n-button>
       <n-button :disabled="running || !rows.some(retryable)" @click="retry()">重试失败/已停止项</n-button>
-      <n-button :disabled="running || !rows.length" @click="clear">清空列表</n-button>
+      <n-button
+        :disabled="running || !rows.length"
+        title="仅清空当前上传列表，不删除归档作品、表格批次或 TikTok 主页历史"
+        @click="clear"
+        >清空上传列表</n-button
+      >
       <input
         ref="fileInput"
         type="file"

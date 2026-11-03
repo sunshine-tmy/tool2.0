@@ -85,10 +85,12 @@ test("custom archive groups can be created, renamed, filtered and deleted withou
   await page.getByLabel("分组名称", { exact: true }).fill("浏览器素材组");
   await page.getByRole("button", { name: "保存分组", exact: true }).click();
   await expect(page.getByLabel("归档分组筛选", { exact: true })).toContainText("浏览器素材组");
+  await page.getByRole("button", { name: "管理分组", exact: true }).click();
   await page.getByRole("button", { name: "重命名分组", exact: true }).click();
   await page.getByLabel("分组名称", { exact: true }).fill("浏览器素材已整理");
   await page.getByRole("button", { name: "保存分组", exact: true }).click();
   await expect(page.getByLabel("归档分组筛选", { exact: true })).toContainText("浏览器素材已整理");
+  await page.getByRole("button", { name: "管理分组", exact: true }).click();
   await page.getByRole("button", { name: "删除分组", exact: true }).click();
   await expect(page.getByText(/作品、媒体、翻译和截帧均保留/)).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "删除分组", exact: true }).click();

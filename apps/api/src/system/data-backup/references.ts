@@ -11,6 +11,8 @@ export function mapped(map: IdMapping, module: BackupModuleId, kind: string, id:
 export function taskKind(tool: string) {
   const kinds: Record<string, string> = {
     "image-ai": "image-ai-task",
+    "audio-convert": "audio-convert-job",
+    "audio-extract": "audio-extract-job",
     "edge-tts": "edge-tts-task",
     "edge-tts-batch": "edge-tts-batch",
     chatterbox: "chatterbox-task",
@@ -26,6 +28,8 @@ export function mapFilePath(file: BackupFile, module: ModuleData, map: IdMapping
   const m = (kind: string, id: string) => mapped(map, module.id, kind, id);
   if (module.id === "image-compress") parts[1] = parts[1].replace(file.entityId, m("task", file.entityId));
   if (module.id === "image-ai") parts[2] = m("image-ai-task", parts[2]);
+  if (module.id === "audio-convert") parts[2] = m("audio-convert-job", parts[2]);
+  if (module.id === "audio-extract") parts[2] = m("audio-extract-job", parts[2]);
   if (module.id === "speech") {
     const kind =
       parts[0] === "edge-tts"

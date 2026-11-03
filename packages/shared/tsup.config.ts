@@ -8,6 +8,8 @@ export default defineConfig({
     index: "src/index.ts",
     image: "src/image/index.ts",
     "audio-library": "src/audio-library/index.ts",
+    "audio-convert": "src/audio-convert.ts",
+    "audio-extract": "src/audio-extract.ts",
     lan: "src/lan/index.ts",
     archive: "src/archive/index.ts",
     speech: "src/speech/index.ts",

@@ -12,6 +12,10 @@ export const REQUEST_QUOTAS = {
   lanUpload: { rateLimit: { max: 30, timeWindow: minute }, concurrencyLimit: 4 },
   // A 1000-file local archive batch needs its own admission budget; media processing stays serial.
   localArchiveUpload: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
+  audioExtractUpload: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
+  audioExtractLibrary: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
+  audioConvertUpload: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
+  audioConvertLibrary: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
   lanChunk: { rateLimit: { max: 120, timeWindow: minute }, concurrencyLimit: 16 },
   batchDownload: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 2 },
   remoteFetch: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 4 },

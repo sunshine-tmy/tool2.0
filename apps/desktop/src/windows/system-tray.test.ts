@@ -57,21 +57,27 @@ function setup(platform: NodeJS.Platform = "win32", iconPath: string | undefined
   controller.attach(window as unknown as BrowserWindow);
   return { controller, window, showWindow, quit, isQuitting };
 }
-it("keeps one tray across window replacements and removes obsolete minimize listeners", () => {
+it("keeps minimize in the taskbar and hides only the current app window on explicit request", () => {
   const { controller, window } = setup();
   window.emit("minimize");
-  expect(window.hide).toHaveBeenCalledOnce();
+  expect(window.hide).not.toHaveBeenCalled();
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(true);
   controller.attach(window as unknown as BrowserWindow);
-  expect(window.listenerCount("minimize")).toBe(1);
+  expect(window.listenerCount("minimize")).toBe(0);
+  expect(window.listenerCount("closed")).toBe(1);
   const next = windowFixture();
   controller.attach(next as unknown as BrowserWindow);
   expect(mock.trays).toHaveLength(1);
   window.emit("minimize");
   expect(window.hide).toHaveBeenCalledOnce();
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   next.emit("minimize");
+  expect(next.hide).not.toHaveBeenCalled();
+  expect(controller.hideWindow(next as unknown as BrowserWindow)).toBe(true);
   expect(next.hide).toHaveBeenCalledOnce();
   next.emit("closed");
   expect(next.listenerCount("minimize")).toBe(0);
+  expect(controller.hideWindow(next as unknown as BrowserWindow)).toBe(false);
   controller.dispose();
 });
 it("provides restore actions for both click types and routes tray exit through the application's safe quit callback", () => {
@@ -85,6 +91,7 @@ it("provides restore actions for both click types and routes tray exit through t
   Reflect.apply(menu[0].click!, undefined, []);
   expect(showWindow).toHaveBeenCalledTimes(3);
   Reflect.apply(menu[1].click!, undefined, []);
+  expect(menu[1].label).toBe("隐藏到托盘");
   expect(window.hide).toHaveBeenCalledOnce();
   Reflect.apply(menu[3].click!, undefined, []);
   expect(quit).toHaveBeenCalledOnce();
@@ -94,25 +101,26 @@ it("provides restore actions for both click types and routes tray exit through t
 it("does not hide windows during shutdown, after disposal or if the tray/window has been destroyed", () => {
   const { controller, window, isQuitting } = setup();
   isQuitting.mockReturnValue(true);
-  window.emit("minimize");
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(window.hide).not.toHaveBeenCalled();
   isQuitting.mockReturnValue(false);
   window.isDestroyed.mockReturnValue(true);
-  window.emit("minimize");
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(window.hide).not.toHaveBeenCalled();
   window.isDestroyed.mockReturnValue(false);
   mock.trays[0].destroyed = true;
-  window.emit("minimize");
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(window.hide).not.toHaveBeenCalled();
   controller.dispose();
   controller.dispose();
-  window.emit("minimize");
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(window.hide).not.toHaveBeenCalled();
 });
 it.each(["darwin", "linux"] as const)("preserves native minimize behavior on %s", (platform) => {
   const { window, controller } = setup(platform);
   window.emit("minimize");
   expect(window.hide).not.toHaveBeenCalled();
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(mock.create).not.toHaveBeenCalled();
   controller.dispose();
 });
@@ -122,6 +130,7 @@ it("keeps a recovery entry available by falling back to normal minimize when the
   const { window, controller } = setup();
   window.emit("minimize");
   expect(window.hide).not.toHaveBeenCalled();
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(mock.create).not.toHaveBeenCalled();
   expect(warn).toHaveBeenCalledOnce();
   controller.dispose();
@@ -133,11 +142,13 @@ it("destroys a partially initialized tray and retries on the next attachment wit
   });
   const { window, controller } = setup();
   expect(mock.trays[0].destroy).toHaveBeenCalledOnce();
-  window.emit("minimize");
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(window.hide).not.toHaveBeenCalled();
   controller.attach(window as unknown as BrowserWindow);
   expect(mock.trays).toHaveLength(2);
   window.emit("minimize");
+  expect(window.hide).not.toHaveBeenCalled();
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(true);
   expect(window.hide).toHaveBeenCalledOnce();
   controller.dispose();
   expect(mock.trays[1].destroy).toHaveBeenCalledOnce();

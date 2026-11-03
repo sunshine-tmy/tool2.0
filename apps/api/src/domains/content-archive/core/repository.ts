@@ -58,6 +58,13 @@ export class ContentArchiveRepository {
     const items = rows
       .map(decode)
       .filter((item) => !options.type || options.type === "all" || item.type === options.type)
+      .filter((item) =>
+        options.publication === "published"
+          ? published.has(item.id)
+          : options.publication === "unpublished"
+            ? !published.has(item.id)
+            : true
+      )
       .filter(
         (item) =>
           !options.groupId ||

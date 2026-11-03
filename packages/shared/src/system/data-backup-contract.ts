@@ -4,6 +4,8 @@ export const backupModules = [
   { id: "image-ai", name: "AI 图片处理" },
   { id: "speech", name: "多国语言配音" },
   { id: "audio-library", name: "音频素材库" },
+  { id: "audio-convert", name: "音频格式转换" },
+  { id: "audio-extract", name: "音频提取器" },
   { id: "content-archive", name: "多媒体内容归档" },
   { id: "lan-transfer", name: "局域网文件传输" }
 ] as const;

@@ -21,6 +21,8 @@ import {
   LanNoteSchema,
   LanNoteImageSchema
 } from "@toolbox/shared";
+import { AudioExtractJobSchema } from "@toolbox/shared/audio-extract";
+import { AudioConvertJobSchema } from "@toolbox/shared";
 import { TaskSchema } from "@toolbox/shared";
 import { archiveMediaAssets } from "../../domains/content-archive/core/media-assets";
 import { isStoredTikTokProfileRecord } from "../../domains/content-archive/profile/service";
@@ -75,6 +77,8 @@ const imageStoredSchema = Type.Composite(
 );
 const schemas: Record<string, TSchema> = {
   task: TaskSchema,
+  "audio-convert-job": AudioConvertJobSchema,
+  "audio-extract-job": AudioExtractJobSchema,
   "xhs-archive": ContentArchiveItemSchema,
   "archive-group": ArchiveGroupSchema,
   "archive-publication": ContentArchivePublicationSchema,
@@ -157,6 +161,32 @@ export function validateModuleData(module: ModuleData) {
       }
     if (row.kind === "task" && module.id === "image-compress" && p.outputPath)
       required(`outputs/${text(p.outputPath)}`);
+    if (row.kind === "audio-extract-job") {
+      if (row.status !== p.status) throw new Error("提取任务状态不一致");
+      const types: Record<string, string> = {
+        mp3: "audio/mpeg",
+        m4a: "audio/mp4",
+        flac: "audio/flac",
+        ogg: "audio/ogg",
+        wav: "audio/wav",
+        mka: "audio/x-matroska"
+      };
+      if (types[String(p.extension)] !== p.mimeType || (p.format === "mp3" && p.extension !== "mp3"))
+        throw new Error("提取结果格式不一致");
+      if (p.status === "completed") {
+        if (typeof p.bytes !== "number" || typeof p.sha256 !== "string" || typeof p.duration !== "number")
+          throw new Error("提取结果信息不完整");
+        required(`audio-extract/results/${row.id}/audio.${p.extension}`, p.bytes, p.sha256);
+      }
+    }
+    if (row.kind === "audio-convert-job") {
+      if (row.status !== p.status) throw new Error("转换任务状态不一致");
+      if (p.status === "completed") {
+        if (typeof p.bytes !== "number" || typeof p.sha256 !== "string" || typeof p.duration !== "number")
+          throw new Error("转换结果信息不完整");
+        required(`audio-convert/results/${row.id}/audio.mp3`, p.bytes, p.sha256);
+      }
+    }
     if (row.kind === "image-ai-task") {
       const requirePath = (value: unknown) => {
         const portable = text(value);

@@ -18,6 +18,8 @@ export function useShellNavigation() {
     "lan-transfer": FileArchive,
     "edge-tts": AudioLines,
     "audio-library": AudioLines,
+    "audio-convert": AudioLines,
+    "audio-extract": AudioLines,
     "xhs-archive": LibraryBig
   };
 
@@ -29,7 +31,7 @@ export function useShellNavigation() {
 
   const toolGroupDefinitions = [
     { label: "图片工具", ids: ["image-compress", "image-ai"] },
-    { label: "视频与文案", ids: ["edge-tts", "audio-library", "xhs-archive"] },
+    { label: "视频与文案", ids: ["edge-tts", "audio-library", "audio-convert", "audio-extract", "xhs-archive"] },
     { label: "文件协作", ids: ["lan-transfer"] }
   ];
 

@@ -97,12 +97,21 @@ export async function smokeDataBackup(repoRoot) {
     node(appPrelude(target) + "await app.close();");
     const id = crypto.randomUUID(),
       file = path.join(root, "离线 备份.zip");
-    const modules = ["image-compress", "image-ai", "speech", "audio-library", "content-archive", "lan-transfer"];
+    const modules = [
+      "image-compress",
+      "image-ai",
+      "speech",
+      "audio-library",
+      "audio-convert",
+      "audio-extract",
+      "content-archive",
+      "lan-transfer"
+    ];
     const exported = helper(source, { action: "snapshot", id, selection: { modules } });
-    assert.equal(exported.length, 6);
+    assert.equal(exported.length, 8);
     helper(source, { action: "pack", id, file });
     helper(target, { action: "recover", id: crypto.randomUUID() });
-    assert.equal(helper(target, { action: "inspect", id: crypto.randomUUID(), file }).length, 6);
+    assert.equal(helper(target, { action: "inspect", id: crypto.randomUUID(), file }).length, 8);
     const preview = helper(target, {
       action: "preview",
       id: crypto.randomUUID(),
@@ -129,6 +138,6 @@ export async function smokeDataBackup(repoRoot) {
     await rm(root, { recursive: true, force: true });
   }
   console.log(
-    "Data backup dist smoke passed: copied helper, six-module export, selective restore, real startup/read, rollback, foreign cwd; parent port emulated."
+    "Data backup dist smoke passed: copied helper, eight-module export, selective restore, real startup/read, rollback, foreign cwd; parent port emulated."
   );
 }

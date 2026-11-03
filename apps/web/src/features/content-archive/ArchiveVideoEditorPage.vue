@@ -17,6 +17,8 @@
         :media-id="mediaId"
         embedded
         :initial-panel="initialPanel"
+        :initial-music-id="typeof route.query.convertedMusic === 'string' ? route.query.convertedMusic : undefined"
+        :conversion-return-to="typeof route.query.returnTo === 'string' ? route.query.returnTo : undefined"
         @saved="item = $event"
         @update:show="leave"
       />

@@ -104,6 +104,81 @@ async function terminal(id: string) {
 }
 
 describe("多平台获取生命周期", () => {
+  it.each(["xiaohongshu", "douyin", "tiktok"] as const)(
+    "%s 将指定分组与归档原子提交，未指定时刷新保留原分组",
+    async (platform) => {
+      const url = platform === "tiktok" ? "https://www.tiktok.com/@shop/video/123456789" : link(platform);
+      if (platform === "tiktok")
+        providers.push({
+          platform,
+          extract: vi.fn(async () => ({ ...source(), platform, canonicalUrl: url })),
+          close: vi.fn(async () => undefined)
+        });
+      const first = store.groups.save("第一组"),
+        second = store.groups.save("第二组");
+      const created = service.create(url, platform, undefined, { groupId: first.id });
+      expect(created.groupId).toBe(first.id);
+      const state = await terminal(created.id);
+      expect(state).toMatchObject({ status: "completed", groupId: first.id });
+      expect(store.groups.memberships().get(state.archiveId!)).toBe(first.id);
+      expect(new ArchiveTaskRepository(database, events).get(created.id)?.groupId).toBe(first.id);
+      const refreshed = await terminal((await service.refresh(state.archiveId!))!.id);
+      expect(refreshed.archiveId).toBe(state.archiveId);
+      expect(store.groups.memberships().get(state.archiveId!)).toBe(first.id);
+      const moved = await terminal(service.create(url, platform, undefined, { groupId: second.id }).id);
+      expect(moved).toMatchObject({ status: "completed", archiveId: state.archiveId, groupId: second.id });
+      expect(store.groups.memberships().get(state.archiveId!)).toBe(second.id);
+      expect((await store.list()).total).toBe(1);
+    }
+  );
+  it("创建时拒绝不存在的分组，不生成任务，也不复用不同分组的在途任务", async () => {
+    expect(() => service.create(link(), "douyin", undefined, { groupId: "missing_group" })).toThrow("分组不存在");
+    expect(database.list("archive-fetch-task")).toEqual([]);
+    const first = store.groups.save("第一组"),
+      second = store.groups.save("第二组");
+    vi.mocked(providers[1].extract).mockImplementation(() => new Promise(() => undefined));
+    const task = service.create(link(), "douyin", undefined, { groupId: first.id });
+    expect(service.create(link(), "douyin", undefined, { groupId: first.id }).id).toBe(task.id);
+    expect(() => service.create(link(), "douyin", undefined, { groupId: second.id })).toThrow("相同链接正在处理");
+    expect(() => service.create(link())).toThrow("相同链接正在处理");
+    expect(service.get(task.id)?.groupId).toBe(first.id);
+    await service.cancel(task.id);
+    expect((await store.list()).total).toBe(0);
+  });
+  it("所选分组在下载期间删除时明确失败，不重建分组或生成未分组归档", async () => {
+    const group = store.groups.save("任务目标");
+    let release!: (value: ArchiveSource) => void;
+    vi.mocked(providers[1].extract).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    const task = service.create(link(), "douyin", undefined, { groupId: group.id });
+    await vi.waitFor(() => expect(providers[1].extract).toHaveBeenCalledOnce());
+    store.groups.remove(group.id);
+    release(source());
+    expect(await terminal(task.id)).toMatchObject({ status: "failed", errorCode: "ARCHIVE_GROUP_NOT_FOUND" });
+    expect((await store.list()).total).toBe(0);
+    expect(store.groups.list()).toEqual([]);
+  });
+  it("分组写入失败回滚新文件和记录，保留旧媒体及原分组，不发布成功终态", async () => {
+    const first = store.groups.save("第一组"),
+      second = store.groups.save("第二组");
+    const initial = await terminal(service.create(link(), "douyin", undefined, { groupId: first.id }).id);
+    const previous = (await store.get(initial.archiveId!))!;
+    const file = path.join(config.xhsArchiveItemsDir, previous.id, previous.media[0].fileName);
+    const before = await fs.readFile(file);
+    vi.spyOn(store.groups, "assign").mockImplementationOnce(() => {
+      throw new Error("group write failed");
+    });
+    const failed = await terminal(service.create(link(), "douyin", undefined, { groupId: second.id }).id);
+    expect(failed.status).toBe("failed");
+    expect(await store.get(previous.id)).toEqual(previous);
+    expect(await fs.readFile(file)).toEqual(before);
+    expect(store.groups.memberships().get(previous.id)).toBe(first.id);
+    expect(afterCommit).toHaveBeenCalledOnce();
+  });
   it("本地上传记录不能通过刷新进入远程提供者，也不会生成额外任务", async () => {
     const staging = await store.createStaging("local_seed_123456");
     await fs.writeFile(path.join(staging, "cover.png"), png);

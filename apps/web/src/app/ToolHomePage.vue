@@ -78,6 +78,9 @@ const iconByTool: Record<string, unknown> = {
   "image-ai": ScanLine,
   "lan-transfer": FileArchive,
   "edge-tts": AudioLines,
+  "audio-library": AudioLines,
+  "audio-convert": AudioLines,
+  "audio-extract": AudioLines,
   "xhs-archive": LibraryBig
 };
 

@@ -50,6 +50,16 @@ export const router = createRouter({
       component: () => import("../features/audio-library/page.vue")
     },
     {
+      path: "/tools/audio-extract",
+      name: "audio-extract",
+      component: () => import("../features/audio-extract/page.vue")
+    },
+    {
+      path: "/tools/audio-convert",
+      name: "audio-convert",
+      component: () => import("../features/audio-convert/page.vue")
+    },
+    {
       path: "/tools/media-archive/video-editor/:itemId/:mediaId",
       name: "archive-video-editor",
       component: () => import("../features/content-archive/ArchiveVideoEditorPage.vue")

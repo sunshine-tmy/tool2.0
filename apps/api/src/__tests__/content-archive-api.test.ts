@@ -120,6 +120,55 @@ async function create(app: FastifyInstance) {
 }
 
 describe("多媒体归档 API 与兼容性", () => {
+  it.each(["douyin", "xiaohongshu"] as const)(
+    "%s 单条获取按目标分组归档，重启后分组和任务仍可读取，旧接口不增加字段",
+    async (platform) => {
+      const app = await appWith();
+      const group = (
+        await app.inject({ method: "POST", url: `${prefix}/groups`, payload: { name: "链接素材" } })
+      ).json().data;
+      const sourceUrl = platform === "douyin" ? url : "https://www.xiaohongshu.com/explore/123456789";
+      const response = await app.inject({
+        method: "POST",
+        url: `${prefix}/items`,
+        payload: { url: sourceUrl, platform, groupId: group.id }
+      });
+      expect(response.statusCode).toBe(202);
+      const task = await terminal(app, response.json().data.id);
+      expect(task).toMatchObject({ status: "completed", groupId: group.id });
+      expect((await app.inject(`${prefix}/items?groupId=${group.id}`)).json().data.items[0]).toMatchObject({
+        id: task.archiveId,
+        groupId: group.id
+      });
+      if (platform === "xiaohongshu") {
+        const legacy = (await app.inject(`/api/v1/tools/xhs-archive/tasks/${task.id}`)).json().data;
+        expect(legacy.id).toBe(task.id);
+        expect(legacy).not.toHaveProperty("groupId");
+      }
+      await app.close();
+      const restarted = await appWith();
+      expect((await restarted.inject(`${prefix}/tasks/${task.id}`)).json().data.groupId).toBe(group.id);
+      expect((await restarted.inject(`${prefix}/items?groupId=${group.id}`)).json().data.total).toBe(1);
+    }
+  );
+  it("单条获取拒绝无效或不存在的分组及夹带字段，不创建获取任务", async () => {
+    const app = await appWith();
+    for (const payload of [
+      { url, groupId: null },
+      { url, groupId: "all" },
+      { url, groupId: "../outside" },
+      { url, groupId: "group_123", cookie: "forbidden" }
+    ])
+      expect((await app.inject({ method: "POST", url: `${prefix}/items`, payload })).statusCode).toBe(400);
+    const missing = await app.inject({
+      method: "POST",
+      url: `${prefix}/items`,
+      payload: { url, groupId: "missing_group" }
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json().error.code).toBe("ARCHIVE_GROUP_NOT_FOUND");
+    expect(extract).not.toHaveBeenCalled();
+  });
   it("persists publication marks through the real list/restart API and accepts explicit cancellation only", async () => {
     const app = await appWith();
     const task = await create(app);
@@ -128,6 +177,9 @@ describe("多媒体归档 API 与兼容性", () => {
     const publication = () => app.inject(`${prefix}/items/${id}/publication`);
     expect((await publication()).json().data).toEqual({ archiveId: id, publishedElsewhere: false });
     expect((await publication()).headers["cache-control"]).toBe("no-store");
+    expect((await app.inject(`${prefix}/items?publication=unpublished`)).json().data.total).toBe(1);
+    expect((await app.inject(`${prefix}/items?publication=published`)).json().data.total).toBe(0);
+    expect((await app.inject(`${prefix}/items?publication=invalid`)).statusCode).toBe(400);
     expect((await app.inject(`${prefix}/items/missing_archive/publication`)).statusCode).toBe(404);
     const mediaBefore = await app.inject(detail.media[0].downloadUrl);
     for (const payload of [{}, { publishedElsewhere: "true" }, { publishedElsewhere: true, cookie: "forbidden" }])
@@ -151,6 +203,9 @@ describe("多媒体归档 API 与兼容性", () => {
     expect(mark.statusCode).toBe(200);
     expect(mark.json().data).toMatchObject({ archiveId: id, publishedElsewhere: true, markedAt: expect.any(String) });
     expect((await publication()).json().data).toEqual(mark.json().data);
+    expect((await app.inject(`${prefix}/items?publication=published`)).json().data.items[0].id).toBe(id);
+    expect((await app.inject(`${prefix}/items?publication=unpublished`)).json().data.total).toBe(0);
+    expect((await app.inject(`${prefix}/items?publication=all`)).json().data.total).toBe(1);
     expect((await app.inject(`${prefix}/items`)).json().data.items[0]).toMatchObject({
       id,
       publishedElsewhere: true,
@@ -169,6 +224,8 @@ describe("多媒体归档 API 与兼容性", () => {
     expect(cleared.json().data).toEqual({ archiveId: id, publishedElsewhere: false });
     expect((await restarted.inject(`${prefix}/items/${id}/publication`)).json().data).toEqual(cleared.json().data);
     expect((await restarted.inject(`${prefix}/items`)).json().data.items[0].publishedElsewhere).toBeUndefined();
+    expect((await restarted.inject(`${prefix}/items?publication=published`)).json().data.total).toBe(0);
+    expect((await restarted.inject(`${prefix}/items?publication=unpublished`)).json().data.items[0].id).toBe(id);
     expect((await restarted.inject(detail.media[0].downloadUrl)).rawPayload).toEqual(mediaBefore.rawPayload);
   });
   it("新旧入口同作品 ID 共存，旧任务/列表/详情不能读抖音", async () => {

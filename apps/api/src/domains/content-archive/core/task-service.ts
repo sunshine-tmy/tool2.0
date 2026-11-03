@@ -25,6 +25,7 @@ type Job = {
   url: string;
   platform: ContentArchiveTask["platform"];
   archiveId?: string;
+  groupId?: string;
   controller: AbortController;
   skipExisting?: boolean;
 };
@@ -50,8 +51,13 @@ export class ContentArchiveTaskService {
   get(id: string) {
     return this.options.tasks.get(id);
   }
-  create(input: string, selection: ArchivePlatformSelection = "auto", archiveId?: string) {
-    return this.enqueue(input, selection, archiveId);
+  create(
+    input: string,
+    selection: ArchivePlatformSelection = "auto",
+    archiveId?: string,
+    options: { groupId?: string } = {}
+  ) {
+    return this.enqueue(input, selection, archiveId, undefined, options.groupId);
   }
   createImport(
     input: string,
@@ -66,11 +72,13 @@ export class ContentArchiveTaskService {
     input: string,
     selection: ArchivePlatformSelection,
     archiveId?: string,
-    imported?: { skipExisting: boolean; beforeEnqueue: (task: ContentArchiveTask) => void }
+    imported?: { skipExisting: boolean; beforeEnqueue: (task: ContentArchiveTask) => void },
+    groupId?: string
   ) {
     if (this.stopped) throw new ArchiveTaskError("ARCHIVE_SERVICE_STOPPED", "获取服务已关闭，请重启后重试", 503);
     const link = identifyArchiveLink(input, selection);
     if (!link.ok) throw new ArchiveTaskError("ARCHIVE_URL_INVALID", link.message);
+    if (groupId) this.options.store.groups.assertExists(groupId);
     if ((link.platform === "douyin" || link.platform === "tiktok") && new URL(link.url).protocol !== "https:")
       throw new ArchiveTaskError("ARCHIVE_URL_INVALID", "抖音作品链接必须使用 HTTPS");
     const duplicate = [this.active?.job, ...this.queue].find((job) => {
@@ -80,7 +88,8 @@ export class ContentArchiveTaskService {
       return status === "pending" || status === "running";
     });
     if (duplicate) {
-      if (imported) throw new ArchiveTaskError("ARCHIVE_TASK_BUSY", "相同链接正在处理，请等待后再提交", 409);
+      if (imported || duplicate.groupId !== groupId)
+        throw new ArchiveTaskError("ARCHIVE_TASK_BUSY", "相同链接正在处理，请等待后再提交", 409);
       return this.get(duplicate.id)!;
     }
     if (this.queue.length >= 16)
@@ -89,6 +98,7 @@ export class ContentArchiveTaskService {
     const task = this.options.tasks.save({
       id: nanoid(12),
       platform: link.platform,
+      ...(groupId ? { groupId } : {}),
       status: "pending",
       stage: "installing",
       progress: 0,
@@ -111,6 +121,7 @@ export class ContentArchiveTaskService {
       platform: link.platform,
       url: link.url,
       archiveId,
+      groupId,
       skipExisting: imported?.skipExisting,
       controller: new AbortController()
     });
@@ -298,7 +309,7 @@ export class ContentArchiveTaskService {
       };
       progress("archiving", 92, "正在提交本地存档");
       // 原子提交阶段不可取消；如果提交成功，即使退出同时到达也应如实记为成功。
-      await this.options.store.commit(item, staging);
+      await this.options.store.commit(item, staging, { groupId: job.groupId });
       this.update(job.id, {
         status: "completed",
         stage: "completed",

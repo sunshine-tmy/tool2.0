@@ -27,6 +27,8 @@ export const ownership: Record<BackupModuleId, { kinds: string[]; tools: string[
     tools: ["chatterbox", "chatterbox-batch", "edge-tts", "edge-tts-batch"]
   },
   "audio-library": { kinds: ["audio-library-group", "audio-library-item", "audio-library-preset"], tools: [] },
+  "audio-convert": { kinds: ["audio-convert-job"], tools: ["audio-convert"] },
+  "audio-extract": { kinds: ["audio-extract-job"], tools: ["audio-extract"] },
   "content-archive": {
     kinds: [
       "xhs-archive",
@@ -188,6 +190,16 @@ export async function inventory(database: ToolboxDatabase, config: AppConfig, id
         bytes: Number(p.size),
         sha256: String(p.checksum)
       });
+    if (row.kind === "audio-extract-job" && p.status === "completed")
+      await add(`audio-extract/results/${row.id}/audio.${p.extension}`, row.kind, row.id, true, {
+        bytes: Number(p.bytes),
+        sha256: String(p.sha256)
+      });
+    if (row.kind === "audio-convert-job" && p.status === "completed")
+      await add(`audio-convert/results/${row.id}/audio.mp3`, row.kind, row.id, true, {
+        bytes: Number(p.bytes),
+        sha256: String(p.sha256)
+      });
     if (fixedSpeechFiles[row.kind]) {
       for (const filename of fixedSpeechFiles[row.kind]) {
         const required =
@@ -311,6 +323,23 @@ export function assertFileOwnership(module: ModuleData, file: BackupFile) {
         (item) => item.id === file.entityId && file.path === `audio-library/items/${item.id}/${item.fileName}`
       )
     );
+  if (module.id === "audio-extract")
+    valid =
+      file.entityKind === "audio-extract-job" &&
+      module.records.some(
+        (r) =>
+          r.kind === "audio-extract-job" &&
+          r.id === file.entityId &&
+          object(r.payload).status === "completed" &&
+          file.path === `audio-extract/results/${r.id}/audio.${object(r.payload).extension}`
+      );
+  if (module.id === "audio-convert")
+    valid =
+      file.entityKind === "audio-convert-job" &&
+      file.path === `audio-convert/results/${file.entityId}/audio.mp3` &&
+      module.records.some(
+        (r) => r.kind === file.entityKind && r.id === file.entityId && object(r.payload).status === "completed"
+      );
   if (module.id === "lan-transfer") {
     valid = module.records.some(
       (r) =>

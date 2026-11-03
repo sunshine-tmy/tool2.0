@@ -40,6 +40,7 @@ describe("desktop LAN application access", () => {
         "/api/v1/tools/edge-tts/health",
         "/api/v1/tools/edge-tts/chatterbox/batches",
         "/api/v1/tools/audio-library/items",
+        "/api/v1/tools/audio-extract/jobs",
         "/api/v1/tools/media-archive/items"
       ]) {
         const response = await fetch(origin + route);
@@ -105,7 +106,7 @@ describe("desktop LAN application access", () => {
         status: "ready",
         urls: [`http://192.168.1.241:${gateway.port}/`],
         port: gateway.port,
-        toolCount: 6
+        toolCount: 8
       });
       vi.mocked(os.networkInterfaces).mockReturnValue({});
       expect((await (await fetch(`${origin}/api/v1/lan-access`)).json()).data).toMatchObject({
