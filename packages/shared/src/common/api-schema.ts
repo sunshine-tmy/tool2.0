@@ -114,7 +114,7 @@ const ToolCategorySchema = Type.Union([
   Type.Literal("table")
 ]);
 
-export const ToolDefinitionSchema = Type.Object({
+const toolDefinitionFields = {
   id: Type.String({ minLength: 1 }),
   title: Type.String({ minLength: 1 }),
   description: Type.String(),
@@ -122,9 +122,16 @@ export const ToolDefinitionSchema = Type.Object({
   status: Type.Union([Type.Literal("ready"), Type.Literal("planned")]),
   requiresAuth: Type.Literal(false),
   acceptedTypes: Type.Array(Type.String()),
-  routePath: Type.String({ pattern: "^/" }),
-  apiNamespace: Type.String({ pattern: "^/api/v1/" })
-});
+  routePath: Type.String({ pattern: "^/" })
+};
+export const ToolDefinitionSchema = Type.Union([
+  Type.Object({
+    ...toolDefinitionFields,
+    execution: Type.Optional(Type.Literal("server")),
+    apiNamespace: Type.String({ pattern: "^/api/v1/" })
+  }),
+  Type.Object({ ...toolDefinitionFields, execution: Type.Literal("browser"), apiNamespace: Type.Null() })
+]);
 
 export const ToolListSchema = Type.Array(ToolDefinitionSchema);
 

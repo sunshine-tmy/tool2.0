@@ -41,6 +41,59 @@ afterEach(() => {
   scopes.splice(0).forEach((scope) => scope.stop());
 });
 describe("双平台归档集合", () => {
+  it("defaults to 50 rows; resizing resets page and selection, keeps filters and ignores late old responses", async () => {
+    const { collection: c } = setup();
+    expect(c.pageSize.value).toBe(50);
+    c.platformFilter.value = "tiktok";
+    c.groupFilter.value = "group_123";
+    c.keyword.value = "商品";
+    await nextTick();
+    await c.loadArchives();
+    for (const pageSize of [100, 200, 500, 50]) {
+      c.page.value = 3;
+      c.toggleSelectAllArchives(true);
+      const old = deferred<ReturnType<typeof listFixture>>();
+      vi.mocked(contentArchiveApi.list).mockReturnValueOnce(old.promise);
+      const pending = c.loadArchives();
+      const signal = vi.mocked(contentArchiveApi.list).mock.calls.at(-1)![1]!;
+      const calls = vi.mocked(contentArchiveApi.list).mock.calls.length;
+      c.pageSize.value = pageSize;
+      expect(c.page.value).toBe(1);
+      expect(c.selectedArchiveIds.value).toEqual([]);
+      expect(signal.aborted).toBe(true);
+      await nextTick();
+      await nextTick();
+      expect(contentArchiveApi.list).toHaveBeenCalledTimes(calls + 1);
+      expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          page: 1,
+          pageSize,
+          platform: "tiktok",
+          groupId: "group_123",
+          keyword: "商品",
+          sort: "published-desc"
+        }),
+        expect.any(AbortSignal)
+      );
+      old.resolve(listFixture([archiveFixture({ id: "stale_old_page" })]));
+      await pending;
+      expect(c.archives.value.items[0]?.id).not.toBe("stale_old_page");
+      expect(c.filter()).not.toHaveProperty("pageSize");
+    }
+  });
+  it("only restores configured page sizes from editor return links", () => {
+    const { scope } = setup();
+    for (const size of ["50", "100", "200", "500"]) {
+      const c = scope.run(() => useArchiveCollection(vi.fn(), { editorReturn: "1", pageSize: size }))!;
+      expect(c.pageSize.value).toBe(Number(size));
+    }
+    for (const size of ["12", "51", "501", "-1", "100.5", "100e0", ["100"], null]) {
+      expect(
+        scope.run(() => useArchiveCollection(vi.fn(), { editorReturn: "1", pageSize: size }))!.pageSize.value
+      ).toBe(50);
+    }
+    expect(scope.run(() => useArchiveCollection(vi.fn(), { pageSize: "500" }))!.pageSize.value).toBe(50);
+  });
   it("不在当前列表的详情也读取独立发布状态，并可标记或撤销而不改写媒体快照", async () => {
     const { collection: c } = setup();
     vi.mocked(contentArchiveApi.list).mockResolvedValue(listFixture([]));
@@ -352,7 +405,7 @@ describe("双平台归档集合", () => {
     const { collection: c } = setup();
     await c.loadArchives();
     expect(contentArchiveApi.list).toHaveBeenCalledWith(
-      { platform: "all", type: "all", keyword: "", sort: "published-desc", page: 1, pageSize: 12 },
+      { platform: "all", type: "all", keyword: "", sort: "published-desc", page: 1, pageSize: 50 },
       expect.any(AbortSignal)
     );
     c.toggleArchiveSelection("unknown", true);
@@ -380,7 +433,7 @@ describe("双平台归档集合", () => {
     await nextTick();
     await nextTick();
     expect(contentArchiveApi.list).toHaveBeenLastCalledWith(
-      { platform: "douyin", type: "video", keyword: "晚霞", sort: "published-desc", page: 1, pageSize: 12 },
+      { platform: "douyin", type: "video", keyword: "晚霞", sort: "published-desc", page: 1, pageSize: 50 },
       expect.any(AbortSignal)
     );
     const count = vi.mocked(contentArchiveApi.list).mock.calls.length;

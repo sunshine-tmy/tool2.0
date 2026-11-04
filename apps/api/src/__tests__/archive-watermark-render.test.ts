@@ -12,6 +12,7 @@ import {
   type ArchiveWatermarkSettings
 } from "@toolbox/shared";
 import { renderArchiveVideo, runMediaProcess } from "../domains/content-archive/video-edit/renderer";
+import { renderSlideshow } from "../domains/content-archive/video-edit/slideshow";
 const tools = { ffmpeg: process.env.TEST_FFMPEG_PATH ?? "ffmpeg", ffprobe: process.env.TEST_FFPROBE_PATH ?? "ffprobe" };
 const available = [tools.ffmpeg, tools.ffprobe].every(
   (tool) => spawnSync(tool, ["-version"], { windowsHide: true, stdio: "ignore" }).status === 0
@@ -70,6 +71,66 @@ describe.skipIf(!available)("真实 FFmpeg 合成视频水印回归（不使用�
     });
     return output;
   }
+  it.each([false, true])("图集经同一管线生成完整带水印配乐的视频（预览 %s），图片文件不改写", async (preview) => {
+    const images: string[] = [];
+    for (const [index, background] of ["blue", "green"].entries()) {
+      const file = path.join(root, `batch-photo-${index}.png`);
+      await sharp({ create: { width: 64, height: 64, channels: 3, background } })
+        .png()
+        .toFile(file);
+      images.push(file);
+    }
+    const before = await Promise.all(images.map((file) => fs.readFile(file)));
+    const directory = path.join(root, preview ? "batch-preview" : "batch-slides");
+    await fs.mkdir(directory);
+    const master = path.join(directory, "master.mp4");
+    await renderSlideshow({
+      tools,
+      images,
+      settings: { images: [], aspect: "square", secondsPerImage: 0.5 },
+      directory,
+      output: master,
+      signal: new AbortController().signal,
+      maxBytes: 20 * 1024 * 1024,
+      onProgress: () => undefined
+    });
+    const result = path.join(directory, "result.mp4");
+    const batchLogo = path.join(directory, "opaque-logo.png");
+    await sharp({ create: { width: 32, height: 16, channels: 3, background: "red" } })
+      .png()
+      .toFile(batchLogo);
+    const rendered = await renderArchiveVideo({
+      tools,
+      source: master,
+      music: source,
+      output: result,
+      settings: defaultArchiveAudioSettings(),
+      watermark: {
+        file: batchLogo,
+        width: 32,
+        height: 16,
+        settings: { ...defaultArchiveWatermarkSettings(), opacity: 100 }
+      },
+      signal: new AbortController().signal,
+      maxBytes: 20 * 1024 * 1024,
+      preview,
+      previewFullLength: preview,
+      onProgress: () => undefined
+    });
+    expect(rendered).toMatchObject({ hasAudio: true, width: 1080, height: 1080 });
+    expect(rendered.duration).toBeCloseTo(1, 1);
+    const first = await frame(result, 0.2),
+      second = await frame(result, 0.8);
+    const center = (image: typeof first) => {
+      const index =
+        (Math.floor(image.info.height / 2) * image.info.width + Math.floor(image.info.width / 2)) * image.info.channels;
+      return [...image.data.subarray(index, index + 3)];
+    };
+    expect(center(first)[2]).toBeGreaterThan(200);
+    expect(center(second)[1]).toBeGreaterThan(90);
+    expect((await bounds(result, 0.2)).count).toBeGreaterThan(0);
+    expect(await Promise.all(images.map((file) => fs.readFile(file)))).toEqual(before);
+  });
   async function frame(file: string, time: number) {
     const image = path.join(root, `frame-${Math.random().toString(36).slice(2)}.png`);
     await runMediaProcess(

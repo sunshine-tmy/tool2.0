@@ -1,7 +1,17 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { listTools } from "@toolbox/shared";
-import { AudioLines, FileArchive, ImageDown, LibraryBig, ScanLine } from "lucide-vue-next";
+import {
+  AudioLines,
+  FileArchive,
+  ImageDown,
+  LibraryBig,
+  ScanLine,
+  Braces,
+  Binary,
+  Link,
+  Fingerprint
+} from "lucide-vue-next";
 export function useShellNavigation() {
   const route = useRoute();
   const keyword = ref("");
@@ -20,7 +30,11 @@ export function useShellNavigation() {
     "audio-library": AudioLines,
     "audio-convert": AudioLines,
     "audio-extract": AudioLines,
-    "xhs-archive": LibraryBig
+    "xhs-archive": LibraryBig,
+    "json-format": Braces,
+    base64: Binary,
+    "url-codec": Link,
+    "uuid-generator": Fingerprint
   };
 
   const filteredTools = computed(() => {
@@ -32,7 +46,8 @@ export function useShellNavigation() {
   const toolGroupDefinitions = [
     { label: "图片工具", ids: ["image-compress", "image-ai"] },
     { label: "视频与文案", ids: ["edge-tts", "audio-library", "audio-convert", "audio-extract", "xhs-archive"] },
-    { label: "文件协作", ids: ["lan-transfer"] }
+    { label: "文件协作", ids: ["lan-transfer"] },
+    { label: "开发工具", ids: ["json-format", "base64", "url-codec", "uuid-generator"] }
   ];
 
   const filteredToolGroups = computed(() =>

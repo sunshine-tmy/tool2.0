@@ -14,8 +14,7 @@ export type ToolDefinition = {
   requiresAuth: false;
   acceptedTypes: string[];
   routePath: string;
-  apiNamespace: string;
-};
+} & ({ execution?: "server"; apiNamespace: string } | { execution: "browser"; apiNamespace: null });
 
 const tools: ToolDefinition[] = [
   {
@@ -105,6 +104,54 @@ const tools: ToolDefinition[] = [
     acceptedTypes: ["text/plain"],
     routePath: "/tools/media-archive",
     apiNamespace: "/api/v1/tools/xhs-archive"
+  },
+  {
+    id: "json-format",
+    title: "JSON 格式化",
+    description: "本地校验、格式化和压缩 JSON，保留数字精度与字段顺序，支持复制和下载。",
+    category: "text",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["application/json", "text/plain"],
+    routePath: "/tools/json-format",
+    execution: "browser",
+    apiNamespace: null
+  },
+  {
+    id: "base64",
+    title: "Base64 编解码",
+    description: "本地编解码 UTF-8 文本和文件，支持 Base64URL、二进制还原与复制下载。",
+    category: "text",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["*/*"],
+    routePath: "/tools/base64",
+    execution: "browser",
+    apiNamespace: null
+  },
+  {
+    id: "url-codec",
+    title: "URL 编解码",
+    description: "本地编解码 URL 组件、完整 URL 和表单字段值，支持 UTF-8、错误定位与复制下载。",
+    category: "text",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["text/plain"],
+    routePath: "/tools/url-codec",
+    execution: "browser",
+    apiNamespace: null
+  },
+  {
+    id: "uuid-generator",
+    title: "UUID 生成",
+    description: "本地批量生成随机 UUID v4，支持大小写、连字符、JSON 数组和复制下载。",
+    category: "text",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: [],
+    routePath: "/tools/uuid-generator",
+    execution: "browser",
+    apiNamespace: null
   }
 ];
 

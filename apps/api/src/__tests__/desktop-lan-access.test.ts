@@ -106,7 +106,7 @@ describe("desktop LAN application access", () => {
         status: "ready",
         urls: [`http://192.168.1.241:${gateway.port}/`],
         port: gateway.port,
-        toolCount: 8
+        toolCount: 12
       });
       vi.mocked(os.networkInterfaces).mockReturnValue({});
       expect((await (await fetch(`${origin}/api/v1/lan-access`)).json()).data).toMatchObject({

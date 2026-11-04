@@ -40,6 +40,10 @@
 | 多国语言配音   | `/tools/edge-tts`       | `/api/v1/tools/edge-tts/*`      | Edge-TTS 在线配音与 Chatterbox V3 本机声音克隆                                                                                                                |
 | 直播音频库     | `/tools/audio-library`  | `/api/v1/tools/audio-library/*` | 克隆结果一键永久归档、本地上传、双语检索、分类分组、队列播放与备份恢复；[使用说明](docs/audio-library.md)                                                     |
 | 多媒体内容归档 | `/tools/media-archive`  | `/api/v1/tools/media-archive/*` | 小红书、抖音与 TikTok 内容获取、本地存档、翻译、截帧及导出；支持[批量上传本地视频](docs/local-video-archive.md)，继续配乐和水印编辑；线上获取仅接受可访问作品 |
+| JSON 格式化    | `/tools/json-format`    | 无，浏览器本地处理              | JSON 校验、格式化、压缩、错误定位、文件导入和复制下载；保留大整数与字段顺序；[使用说明](docs/json-format.md)                                                  |
+| Base64 编解码  | `/tools/base64`         | 无，浏览器本地处理              | UTF-8 文本与文件编解码、Base64URL、二进制还原、复制和下载；[使用说明](docs/base64.md)                                                                         |
+| URL 编解码     | `/tools/url-codec`      | 无，浏览器本地处理              | URL 组件、完整 URL 和表单字段值编解码，支持 UTF-8、错误定位和复制下载；[使用说明](docs/url-codec.md)                                                          |
+| UUID 生成      | `/tools/uuid-generator` | 无，浏览器本地处理              | 批量生成随机 UUID v4，支持大小写、连字符、JSON 数组和复制下载；[使用说明](docs/uuid-generator.md)                                                             |
 
 ## 选择使用方式
 

@@ -375,6 +375,7 @@ const job = ref<ArchiveVideoEditJob>(),
   ready = ref(false),
   initialized = ref(false),
   submitting = ref(false),
+  syncingResult = ref(false),
   uploading = ref(false);
 const previewUrl = ref(""),
   previewIsDraft = ref(false),
@@ -397,7 +398,13 @@ const recipe = computed(() =>
   ])
 );
 const busy = computed(
-  () => submitting.value || uploading.value || watermarkUploading.value || activeJob.value || !initialized.value
+  () =>
+    submitting.value ||
+    syncingResult.value ||
+    uploading.value ||
+    watermarkUploading.value ||
+    activeJob.value ||
+    !initialized.value
 );
 const originalUrl = computed(() =>
   resolveBackendUrl(
@@ -449,7 +456,8 @@ function beforeUnload(event: BeforeUnloadEvent) {
 window.addEventListener("beforeunload", beforeUnload);
 onScopeDispose(() => window.removeEventListener("beforeunload", beforeUnload));
 watch(
-  () => [props.show, props.item.id, props.mediaId] as const,
+  // 同一作品的保存结果会由父页面回写，不能因此中断刚创建的编辑画面任务。
+  [() => props.show, () => props.item.id, () => props.mediaId],
   async ([show]) => {
     dispose();
     scope = new AbortController();
@@ -458,6 +466,7 @@ watch(
     error.value = "";
     job.value = undefined;
     submitting.value = false;
+    syncingResult.value = false;
     uploading.value = false;
     initialized.value = false;
     ready.value = false;
@@ -613,7 +622,7 @@ watch(
   { deep: true }
 );
 async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = false) {
-  if (!current.value || busy.value) return;
+  if (!current.value || busy.value || scope.signal.aborted) return;
   if (!cleanWatermarkBase && mode !== "restore" && watermarkValidation.value) {
     error.value = watermarkValidation.value;
     return;
@@ -689,9 +698,10 @@ function schedulePoll(version: number) {
 }
 async function poll(version: number) {
   if (!job.value || scope.signal.aborted || version !== generation) return;
+  const jobId = job.value.id;
   try {
-    const result = await videoEditApi.get(job.value.id, scope.signal);
-    if (scope.signal.aborted || version !== generation) return;
+    const result = await videoEditApi.get(jobId, scope.signal);
+    if (scope.signal.aborted || version !== generation || job.value?.id !== jobId) return;
     job.value = result;
     if (["pending", "running"].includes(result.status)) schedulePoll(version);
     else if (result.status === "completed") {
@@ -708,10 +718,16 @@ async function poll(version: number) {
           viewingOriginal.value = false;
         }
       } else {
-        const item = await contentArchiveApi.detail(props.item.id, scope.signal);
-        if (scope.signal.aborted || version !== generation) return;
-        applyMedia(item.media.find((entry) => entry.id === (result.resultMediaId ?? props.mediaId)));
-        emit("saved", item);
+        // 终态与详情同步视为同一次操作，避免旧版本尚未回写就接受下一次保存。
+        syncingResult.value = true;
+        try {
+          const item = await contentArchiveApi.detail(props.item.id, scope.signal);
+          if (scope.signal.aborted || version !== generation || job.value?.id !== jobId) return;
+          applyMedia(item.media.find((entry) => entry.id === (result.resultMediaId ?? props.mediaId)));
+          emit("saved", item);
+        } finally {
+          if (version === generation) syncingResult.value = false;
+        }
       }
       prepareWatermarkBase();
     } else if (result.id === basePreviewJob.value) {

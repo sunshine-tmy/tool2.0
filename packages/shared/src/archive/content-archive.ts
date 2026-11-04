@@ -27,6 +27,8 @@ const ContentIdSchema = Type.String({
   maxLength: 256,
   pattern: "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]*[^\\s\\x00-\\x1f\\x7f])?$"
 });
+export const CONTENT_ARCHIVE_MAX_PAGE_SIZE = 500;
+export const CONTENT_ARCHIVE_PAGE_SIZES = [50, 100, 200, CONTENT_ARCHIVE_MAX_PAGE_SIZE] as const;
 export const ContentArchiveMediaSchema = XhsArchiveMediaSchema;
 export const ContentArchiveItemSchema = Type.Composite(
   [
@@ -57,15 +59,16 @@ export const ContentArchiveListResponseSchema = Type.Object(
     items: Type.Array(ContentArchiveListItemSchema),
     total: Type.Integer({ minimum: 0 }),
     page: Type.Integer({ minimum: 1 }),
-    pageSize: Type.Integer({ minimum: 1, maximum: 50 }),
+    pageSize: Type.Integer({ minimum: 1, maximum: CONTENT_ARCHIVE_MAX_PAGE_SIZE }),
     pageCount: Type.Integer({ minimum: 1 })
   },
   { additionalProperties: false }
 );
 export const ContentArchiveListQuerySchema = Type.Composite(
   [
-    XhsArchiveListQuerySchema,
+    Type.Omit(XhsArchiveListQuerySchema, ["pageSize"]),
     Type.Object({
+      pageSize: Type.Optional(Type.Integer({ minimum: 1, maximum: CONTENT_ARCHIVE_MAX_PAGE_SIZE })),
       platform: Type.Optional(Type.Union([Type.Literal("all"), ContentArchivePlatformSchema])),
       publication: Type.Optional(
         Type.Union([Type.Literal("all"), Type.Literal("published"), Type.Literal("unpublished")])

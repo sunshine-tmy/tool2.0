@@ -58,6 +58,13 @@ async function layout(compact = false, path = "/settings/diagnostics") {
 }
 
 describe("application shell header layout", () => {
+  it("keeps modal masks, transparent hit surfaces and service drawers below the measured header", () => {
+    const css = readFileSync(resolve("src/styles/components/shell.css"), "utf8");
+    expect(css).toMatch(
+      /\.n-modal-mask,\s*\.n-modal-body-wrapper,\s*body > \.n-drawer-container\s*\{\s*top: var\(--shell-overlay-top, 0px\) !important;/
+    );
+    expect(css).not.toMatch(/\.topbar\s*\{[^}]*z-index:\s*\d{4,}/s);
+  });
   it("reserves only the native overlay height for the desktop drag strip and leaves browser layout unchanged", async () => {
     const browser = await layout();
     try {
@@ -115,7 +122,12 @@ describe("application shell header layout", () => {
       const actions = wrapper.get(".topbar-actions");
       expect(actions.findAll("button")).toHaveLength(3);
       expect(actions.text()).toContain("基础服务正常");
-      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("8");
+      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("12");
+      expect(wrapper.get(".sidebar").text()).toContain("开发工具");
+      expect(wrapper.find('a[href="/tools/json-format"]').exists()).toBe(true);
+      expect(wrapper.find('a[href="/tools/base64"]').exists()).toBe(true);
+      expect(wrapper.find('a[href="/tools/url-codec"]').exists()).toBe(true);
+      expect(wrapper.find('a[href="/tools/uuid-generator"]').exists()).toBe(true);
       expect(wrapper.get(".sidebar-head").find('[aria-label="本地服务与管理员会话"]').exists()).toBe(false);
       await actions.get('[aria-label="桌面设置"]').trigger("click");
       await flushPromises();

@@ -2,7 +2,6 @@
  * 中文模块说明：前端应用层，负责 路由、懒加载和页面导航配置
  */
 import { createRouter, createWebHistory } from "vue-router";
-import ToolHomePage from "./ToolHomePage.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -16,7 +15,7 @@ export const router = createRouter({
     {
       path: "/",
       name: "home",
-      component: ToolHomePage
+      component: () => import("./ToolHomePage.vue")
     },
     {
       path: "/settings",
@@ -58,6 +57,26 @@ export const router = createRouter({
       path: "/tools/audio-convert",
       name: "audio-convert",
       component: () => import("../features/audio-convert/page.vue")
+    },
+    {
+      path: "/tools/json-format",
+      name: "json-format",
+      component: () => import("../features/json-format/page.vue")
+    },
+    {
+      path: "/tools/base64",
+      name: "base64",
+      component: () => import("../features/base64/page.vue")
+    },
+    {
+      path: "/tools/url-codec",
+      name: "url-codec",
+      component: () => import("../features/url-codec/page.vue")
+    },
+    {
+      path: "/tools/uuid-generator",
+      name: "uuid-generator",
+      component: () => import("../features/uuid-generator/page.vue")
     },
     {
       path: "/tools/media-archive/video-editor/:itemId/:mediaId",

@@ -34,12 +34,16 @@ describe("R08 application ownership contracts", () => {
         ["/tools/audio-library", "audio-library"],
         ["/tools/audio-convert", "audio-convert"],
         ["/tools/audio-extract", "audio-extract"],
+        ["/tools/base64", "base64"],
         ["/tools/edge-tts", "edge-tts"],
         ["/tools/image-ai", "image-ai"],
         ["/tools/image-compress", "image-compress"],
+        ["/tools/json-format", "json-format"],
         ["/tools/lan-transfer", "lan-transfer"],
         ["/tools/media-archive", "xhs-archive"],
         ["/tools/media-archive/video-editor/:itemId/:mediaId", "archive-video-editor"],
+        ["/tools/url-codec", "url-codec"],
+        ["/tools/uuid-generator", "uuid-generator"],
         ["/tools/xhs-archive", undefined]
       ].sort()
     );

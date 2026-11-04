@@ -47,12 +47,13 @@ import {
 } from "@toolbox/shared/archive";
 const props = defineProps<{
   video?: HTMLVideoElement;
+  virtualVideo?: { width: number; height: number; duration: number; currentTime: number; paused: boolean };
   active: boolean;
   disabled: boolean;
   asset?: { width: number; height: number; url: string };
   settings: ArchiveWatermarkSettings;
 }>();
-const emit = defineEmits<{ move: [{ x: number; y: number }]; time: [number]; duration: [number] }>();
+const emit = defineEmits<{ move: [{ x: number; y: number }]; time: [number]; duration: [number]; pause: [] }>();
 const stage = ref<HTMLElement>(),
   time = ref(0),
   metadataDuration = ref(0),
@@ -76,7 +77,7 @@ const imageStyle = computed(() => ({
   height: `${(size.value.height / videoSize.height) * 100}%`
 }));
 const trajectory = computed(() => {
-  if (!props.active || !props.asset || !props.video || metadataDuration.value <= 0) return "";
+  if (!props.active || !props.asset || (!props.video && !props.virtualVideo) || metadataDuration.value <= 0) return "";
   const start = props.settings.startSeconds,
     end = Math.min(
       props.settings.endSeconds ?? metadataDuration.value,
@@ -177,10 +178,68 @@ watch(
   { flush: "post" }
 );
 onScopeDispose(() => stop());
+// 虚拟画布仅共享轨迹和坐标算法，不向编辑器报告真实视频时长。
+watch(
+  [
+    stage,
+    () => props.video,
+    () => props.virtualVideo?.width,
+    () => props.virtualVideo?.height,
+    () => props.virtualVideo?.duration
+  ],
+  ([element], _previous, cleanup) => {
+    if (!props.virtualVideo) {
+      if (!props.video) resetVideo();
+      return;
+    }
+    if (!element || props.video) return;
+    const measure = () => {
+      const virtual = props.virtualVideo;
+      if (!virtual || props.video) return;
+      if (![virtual.width, virtual.height, virtual.duration].every((value) => Number.isFinite(value) && value > 0)) {
+        resetVideo();
+        return;
+      }
+      const bounds = element.getBoundingClientRect();
+      // 使用布局尺寸，避免弹窗入场缩放让即时示意框重复缩小；无布局的测试环境回退到 bounds。
+      const width = element.clientWidth || bounds.width,
+        height = element.clientHeight || bounds.height;
+      const scale = Math.min(width / virtual.width, height / virtual.height);
+      Object.assign(videoSize, { width: virtual.width, height: virtual.height });
+      metadataDuration.value = virtual.duration;
+      Object.assign(box, {
+        width: virtual.width * scale,
+        height: virtual.height * scale,
+        left: (width - virtual.width * scale) / 2,
+        top: (height - virtual.height * scale) / 2
+      });
+    };
+    const resize = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
+    resize?.observe(element);
+    window.addEventListener("resize", measure);
+    measure();
+    cleanup(() => {
+      resize?.disconnect();
+      window.removeEventListener("resize", measure);
+    });
+  },
+  { flush: "post" }
+);
+watch(
+  [() => props.virtualVideo?.currentTime, () => props.virtualVideo?.paused, () => props.video],
+  () => {
+    if (props.virtualVideo && !props.video) {
+      time.value = props.virtualVideo.currentTime;
+      paused.value = props.virtualVideo.paused;
+    }
+  },
+  { immediate: true }
+);
 let pointer: { id: number; x: number; y: number; left: number; top: number } | undefined;
 function startDrag(event: PointerEvent) {
   if (props.disabled) return;
   props.video?.pause();
+  emit("pause");
   pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, left: position.value.x, top: position.value.y };
   (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
   event.preventDefault();
@@ -207,6 +266,7 @@ function keyboardMove(event: KeyboardEvent) {
   if (!offset[event.key] || props.disabled) return;
   event.preventDefault();
   props.video?.pause();
+  emit("pause");
   const [x, y] = offset[event.key];
   emit("move", {
     x: Math.max(0, Math.min(1, position.value.x + x)),

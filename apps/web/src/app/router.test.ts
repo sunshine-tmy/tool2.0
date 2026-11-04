@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { router } from "./router";
 
 describe("多媒体归档路由兼容", () => {
-  it("注册八个业务模块及归档兼容跳转", () => {
+  it("注册十二个工具模块及归档兼容跳转", () => {
     expect(
       router
         .getRoutes()
@@ -15,20 +15,33 @@ describe("多媒体归档路由兼容", () => {
       "/tools/audio-convert",
       "/tools/audio-extract",
       "/tools/audio-library",
+      "/tools/base64",
       "/tools/edge-tts",
       "/tools/image-ai",
       "/tools/image-compress",
+      "/tools/json-format",
       "/tools/lan-transfer",
       "/tools/media-archive",
       "/tools/media-archive/video-editor/:itemId/:mediaId",
+      "/tools/url-codec",
+      "/tools/uuid-generator",
       "/tools/xhs-archive"
     ]);
   });
-  it("新入口继续复用已有页面懒加载与稳定路由名", () => {
+  it("归档、首页和 JSON 工具使用懒加载并保留稳定路由名", () => {
     expect(router.resolve("/tools/media-archive").name).toBe("xhs-archive");
-    expect(router.getRoutes().find((route) => route.path === "/tools/media-archive")?.components?.default).toBeTypeOf(
-      "function"
-    );
+    expect(router.resolve("/tools/json-format").name).toBe("json-format");
+    expect(router.resolve("/tools/url-codec").name).toBe("url-codec");
+    expect(router.resolve("/tools/uuid-generator").name).toBe("uuid-generator");
+    for (const path of [
+      "/",
+      "/tools/media-archive",
+      "/tools/json-format",
+      "/tools/base64",
+      "/tools/url-codec",
+      "/tools/uuid-generator"
+    ])
+      expect(router.getRoutes().find((route) => route.path === path)?.components?.default).toBeTypeOf("function");
   });
 
   it("旧入口的重定向保留参数，不重定向 API 或磁盘目录", () => {

@@ -5,6 +5,47 @@ import { ARCHIVE_WATERMARK_BOUNCE_STYLES, defaultArchiveWatermarkSettings } from
 import Preview from "./ArchiveWatermarkPreview.vue";
 afterEach(() => vi.restoreAllMocks());
 describe("水印画面坐标及生命周期", () => {
+  it("虚拟画布共用真实视频的轨迹及拖动坐标，但不报告 15 秒为原片时长", async () => {
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 400, 400));
+    const settings = defaultArchiveWatermarkSettings();
+    settings.motion.type = "linear";
+    settings.motion.from = { x: 0, y: 0 };
+    settings.motion.to = { x: 1, y: 1 };
+    settings.motion.periodSeconds = 4;
+    settings.startSeconds = 2;
+    settings.endSeconds = 6;
+    const virtual = { width: 200, height: 100, duration: 15, currentTime: 4, paused: true };
+    const wrapper = mount(Preview, {
+      props: {
+        active: true,
+        disabled: false,
+        settings,
+        virtualVideo: virtual,
+        asset: { width: 100, height: 50, url: "/logo.png" }
+      }
+    });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get(".watermark-viewport").attributes("style")).toContain("top: 100px");
+    expect(wrapper.get(".watermark-viewport").attributes("style")).toContain("height: 200px");
+    expect(wrapper.get(".watermark-handle").attributes("style")).toContain("left: 42.5%");
+    expect(wrapper.get(".watermark-path polyline").attributes("points")).not.toMatch(/NaN|Infinity/);
+    expect(wrapper.emitted("duration")).toBeUndefined();
+    const measured = bounds.mock.calls.length;
+    await wrapper.setProps({ virtualVideo: { ...virtual, currentTime: 5 } });
+    expect(bounds.mock.calls.length).toBe(measured); // 播放每帧仅更新位置，不重建测量和观察器。
+    const handle = wrapper.get(".watermark-handle");
+    await handle.trigger("pointerdown", { pointerId: 1, clientX: 100, clientY: 100 });
+    await handle.trigger("pointermove", { pointerId: 1, clientX: 10000, clientY: -10000 });
+    expect(wrapper.emitted("move")?.at(-1)).toEqual([{ x: 1, y: 0 }]);
+    expect(wrapper.emitted("pause")).toHaveLength(1);
+    await wrapper.setProps({ virtualVideo: { ...virtual, currentTime: 7 } });
+    expect(wrapper.find(".watermark-handle").exists()).toBe(false);
+    await wrapper.setProps({ virtualVideo: undefined });
+    expect(wrapper.find(".watermark-viewport").exists()).toBe(false);
+    wrapper.unmount();
+  });
   it("切换视频引用后清除旧坐标，忽略旧元素迟到事件并释放新旧监听", async () => {
     const first = document.createElement("video"),
       second = document.createElement("video");

@@ -80,8 +80,12 @@ export class ArchiveVideoEditService {
   async uploadWatermark(itemId: string, mediaId: string, bytes: Buffer, name: string, mime: string) {
     if (this.stopped) throw new VideoEditError("ARCHIVE_EDIT_STOPPED", "服务正在退出", 503);
     const media = await this.options.store.mediaPath(itemId, mediaId);
-    if (!media || !["video", "live-photo"].includes(media.media.kind))
-      throw new VideoEditError("ARCHIVE_EDIT_VIDEO_REQUIRED", "请选择归档视频", 404);
+    if (
+      !media ||
+      (!["video", "live-photo"].includes(media.media.kind) &&
+        !(media.media.kind === "image" && !media.media.frameSourceMediaId))
+    )
+      throw new VideoEditError("ARCHIVE_EDIT_VIDEO_REQUIRED", "请选择归档视频或图集原图", 404);
     return this.watermarks.upload(itemId, mediaId, bytes, name, mime);
   }
   initialize() {

@@ -117,6 +117,49 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("归档媒体编辑入口", () => {
+  it.each(["tiktok", "douyin", "local"] as const)(
+    "%s 普通视频首次打开及切到封面后均复用归档封面，其他视频不借用该封面",
+    async (platform) => {
+      const cover = {
+        ...archiveWithFrame.media[1]!,
+        id: "cover-123",
+        kind: "cover" as const,
+        frameSourceMediaId: undefined,
+        frameTimestampMs: undefined,
+        previewUrl: "/cover.jpg"
+      };
+      const otherVideo = { ...archive.media[0]!, id: "live-456", kind: "live-photo" as const };
+      const item = { ...archive, platform, coverMediaId: cover.id, media: [...archive.media, cover, otherVideo] };
+      const { wrapper } = mountGallery(item);
+      expect(wrapper.get(".media-stage video").attributes("poster")).toContain("/cover.jpg");
+      expect(wrapper.get('[aria-label="预览媒体 1"] video').attributes("poster")).toContain("/cover.jpg");
+      expect(wrapper.get('[aria-label="预览媒体 3"] video').attributes("poster")).toBeUndefined();
+      await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+      expect(wrapper.get('[aria-label="预览媒体 1"] video').attributes("preload")).toBe("none");
+      expect(wrapper.find('[aria-label="预览媒体 1"] .video-thumb-placeholder').exists()).toBe(false);
+      expect(wrapper.get('[aria-label="预览媒体 1"] video').attributes("poster")).toContain("/cover.jpg");
+      expect(wrapper.get('[aria-label="预览媒体 3"] video').attributes("preload")).toBe("none");
+      wrapper.unmount();
+      const reopened = mountGallery(item).wrapper;
+      expect(reopened.get('[aria-label="预览媒体 1"] video').attributes("poster")).toContain("/cover.jpg");
+      reopened.unmount();
+    }
+  );
+  it("归档没有封面时复用主预览已解码画面，切换归档后不沿用旧画面", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn()
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/jpeg;base64,cHJldmlldw==");
+    const { wrapper, video } = mountGallery(archiveWithFrame);
+    setVideoState(video!, { readyState: 4, videoWidth: 720, videoHeight: 1280 });
+    await wrapper.get(".media-stage video").trigger("loadeddata");
+    await wrapper.get('[aria-label="预览媒体 2"]').trigger("click");
+    expect(wrapper.get(".media-thumbs video").attributes("poster")).toBe("data:image/jpeg;base64,cHJldmlldw==");
+    expect(wrapper.find(".video-thumb-placeholder").exists()).toBe(false);
+    await wrapper.setProps({ item: { ...archiveWithFrame, id: "another-archive" } });
+    expect(wrapper.get(".media-thumbs video").attributes("poster")).toBeUndefined();
+    wrapper.unmount();
+  });
   it("shows a slideshow cover on first open without preloading or playing the generated video", async () => {
     const image = {
       ...archiveWithFrame.media[1]!,

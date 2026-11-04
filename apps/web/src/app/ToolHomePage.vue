@@ -54,11 +54,15 @@ import { computed } from "vue";
 import { listTools } from "@toolbox/shared";
 import {
   ArrowRight,
+  Braces,
+  Binary,
   AudioLines,
   Clock3,
   FileArchive,
+  Fingerprint,
   ImageDown,
   LibraryBig,
+  Link,
   ScanLine,
   ShieldCheck,
   Wrench
@@ -81,7 +85,11 @@ const iconByTool: Record<string, unknown> = {
   "audio-library": AudioLines,
   "audio-convert": AudioLines,
   "audio-extract": AudioLines,
-  "xhs-archive": LibraryBig
+  "xhs-archive": LibraryBig,
+  "json-format": Braces,
+  base64: Binary,
+  "url-codec": Link,
+  "uuid-generator": Fingerprint
 };
 
 function categoryLabel(category: (typeof tools)[number]["category"]) {
@@ -89,6 +97,7 @@ function categoryLabel(category: (typeof tools)[number]["category"]) {
   if (category === "video") return "视频";
   if (category === "audio") return "音频";
   if (category === "file") return "文件";
+  if (category === "text") return "开发";
   return "工具";
 }
 </script>

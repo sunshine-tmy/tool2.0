@@ -73,9 +73,14 @@ describe("shell state ownership", () => {
     vi.spyOn(window, "matchMedia").mockReturnValue(media);
     const { state, wrapper } = setup(useShellNavigation);
     state.startNavigation();
-    expect(state.tools).toHaveLength(8);
+    expect(state.tools).toHaveLength(12);
     state.keyword.value = "图片压缩";
     expect(state.filteredTools.value.map((x) => x.id)).toEqual(["image-compress"]);
+    state.keyword.value = "URL 编解码";
+    expect(state.filteredTools.value.map((x) => x.id)).toEqual(["url-codec"]);
+    expect(state.filteredToolGroups.value.map((group) => group.label)).toEqual(["开发工具"]);
+    state.keyword.value = "UUID";
+    expect(state.filteredTools.value.map((x) => x.id)).toEqual(["uuid-generator"]);
     state.keyword.value = "not-found";
     expect(state.filteredToolGroups.value).toEqual([]);
     const focus = vi.fn();

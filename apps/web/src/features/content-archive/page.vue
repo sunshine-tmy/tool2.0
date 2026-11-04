@@ -101,6 +101,7 @@
         v-model:publication-filter="publicationFilter"
         v-model:sort="sort"
         v-model:page="page"
+        v-model:page-size="pageSize"
         :archives="archives"
         :list-loading="listLoading"
         :selected-ids="selectedArchiveIds"
@@ -115,6 +116,13 @@
         @toggle-selection="toggleArchiveSelection"
         @toggle-select-all="toggleSelectAllArchives"
         @page-change="loadArchives"
+        @edit-images="editSelectedImages"
+      />
+      <ArchiveImageBatchEditor
+        ref="imageBatchEditor"
+        @updated="collection.updateItem"
+        @finished="loadArchives"
+        @open-archive="openDetail"
       />
 
       <XhsDetailDrawer
@@ -146,7 +154,7 @@
 
 <script setup lang="ts">
 import { formatBytesThroughGb as formatBytes } from "../../shared/utils/format-bytes";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton, useMessage } from "naive-ui";
 import { isNavigationFailure, NavigationFailureType, useRouter } from "vue-router";
 import {
@@ -181,8 +189,11 @@ import { archiveDisplayTitle, archiveDisplayText, archiveClipboardText, canEditT
 import { useArchiveCollection } from "./useArchiveCollection";
 import { formatArchiveDate } from "./format-date";
 
+const loadImageBatchEditor = () => import("./ArchiveImageBatchEditor.vue");
+const ArchiveImageBatchEditor = defineAsyncComponent(loadImageBatchEditor);
 const message = useMessage();
 const profileImport = ref<InstanceType<typeof TikTokProfileImport>>();
+const imageBatchEditor = ref<InstanceType<typeof ArchiveImageBatchEditor>>();
 const fetchPanel = ref<InstanceType<typeof ArchiveTaskPanel>>();
 const router = useRouter();
 const confirm = useConfirmDialog();
@@ -227,6 +238,7 @@ const {
   sort,
   groupFilter,
   page,
+  pageSize,
   listLoading,
   archives,
   selectedArchiveIds,
@@ -240,6 +252,21 @@ const {
   toggleArchiveSelection,
   toggleSelectAllArchives
 } = collection;
+async function editSelectedImages(kind: "watermark" | "audio") {
+  const items = archives.value.items.filter(
+    (item) => item.type === "image" && selectedArchiveIds.value.includes(item.id)
+  );
+  if (!items.length) return;
+  try {
+    await loadImageBatchEditor();
+    await nextTick();
+    if (requestScope.aborted) return;
+    if (!imageBatchEditor.value) throw new Error("图文编辑器尚未就绪，请重试");
+    await imageBatchEditor.value.show(kind, items);
+  } catch (error) {
+    if (!requestScope.aborted) message.error(formatApiError(error, "打开图文批量编辑失败，请重试"));
+  }
+}
 async function localVideosFinished(item: ContentArchiveItem | undefined) {
   if (item) current.value = item;
   await loadArchives();
@@ -256,7 +283,8 @@ async function openVideoEditor(item: ContentArchiveItem, mediaId: string, panel:
     publication: publicationFilter.value,
     group: groupFilter.value,
     sort: sort.value,
-    page: String(page.value)
+    page: String(page.value),
+    pageSize: String(pageSize.value)
   });
   const returnTo = `/tools/media-archive?${query}`;
   try {

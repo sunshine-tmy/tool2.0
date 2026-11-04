@@ -7,7 +7,7 @@
 - `GET /api/v1/health`：主服务、配音、归档与图片 AI 配置状态。
 - `GET /health/live`：仅表示进程存活；供进程守护使用。
 - `GET /health/ready`：检查 SQLite 和必需 storage 目录；依赖不可用时返回 `503 NOT_READY`。
-- `GET /api/v1/tools`：工具注册表。
+- `GET /api/v1/tools`：工具注册表。现有服务端工具保持原有 `apiNamespace` 字符串；纯前端工具（JSON 格式化、Base64 编解码、URL 编解码、UUID 生成）返回 `execution: "browser"`、`apiNamespace: null`，不得据此拼接 API 地址。这些工具没有内容处理 API。
 - `GET /api/v1/tasks`：最近任务，SQLite 默认最多保留 1000 条。
 - `GET /api/v1/tasks/:taskId`：读取一个任务。
 - `GET /api/v1/tasks/:taskId/events`：SSE 任务进度；断线后客户端回退轮询。
@@ -154,10 +154,20 @@
 
 基础路径 `/api/v1/tools/media-archive`，支持小红书、抖音、TikTok 本地浏览、翻译、截帧与导出。抖音及 TikTok 仅处理匿名公开作品；TikTok 支持单条视频、图集和作品短链，无需额外能力包。TikTok 网络及代理设置见 README；就绪状态不代表公网连通性。小红书原有兼容接口继续保留，安装包和 macOS 的实际联网验证需在相应环境完成。
 
+图文多选后的“图文加水印”和“图文加配乐”复用现有视频编辑接口：`POST /items/:id/media/:mediaId/audio-edits` 提交，`GET /video-edits/:taskId` 查询。前端一次只提交一项并等待终态，处理范围固定为点击入口时当前页已选的图文，其他类型不处理。首次按原图 index 顺序生成附加视频（排除视频截帧，最多 100 张）；已有来源 ID、摘要和顺序完全一致的图集视频时，更新最新编辑的一条，不反复追加视频。原始图片保留；加水印保留已有配乐，加配乐保留已有水印。水印上传及 `POST /items/:id/media/:mediaId/watermarks/from-library` 也接受图集原图作为草稿归属，仍拒绝截帧与不存在的媒体；每条作品单独建草稿，保存后复制为独立快照。
+
+批量图文窗口可统一选择水印库素材或上传图片，复用透明度、大小、位置、轨迹及关键帧预设；配乐来自音频素材库，可调整音量、循环和选段起点。可勾选“同时添加背景音乐”或“同时添加水印”，在一轮任务中同时保存两种效果。音乐选段以首条作品时长预览，每条按各自时长渲染。默认水印结束为 `null`，跟随各视频实际结尾。每条成品成功保存后才显示完成，失败保留旧成品。窗口收起继续处理；离开或刷新页面会提示，未提交项不在后台自动接续，已提交的编辑任务仍由原服务执行。批量清单仅在当前页面保存，不新增数据库格式或保留期限；网络轮询失败可继续读取同一任务，提交回执不明则要求查看归档后明确跳过，禁止自动重复提交。此处“配音”沿用现有视频编辑的配乐含义，可选素材库已有语音，不生成新语音。
+
+每条记录提供完整效果预览，复用 `mode: preview`、`previewFullLength: true` 的现有视频编辑任务和同一配方；预览不写入归档、不计入批量保存结果。参数不变时复用页面内已生成的预览，修改配方后重新生成；保存成功后入口播放最新成品。预览与批量保存互斥，状态读取失败可续读同一任务，停止预览仅取消该预览任务。临时预览沿用现有清理规则。
+
+批量水印左侧另有纯前端 15 秒虚拟视频，可播放、暂停、拖动时间轴并编辑水印起终点和关键帧，轨迹及坐标算法与单条视频一致；选择远处关键帧时切换对应的 15 秒示意区间，不改动真实视频时长或自动结束设置。上传水印以图片实际宽高比例显示，关闭窗口或离开时释放动画。批量处理和完整预览的进度统一显示整数百分比，运行中不将接近 100 的小数提前显示为完成。
+
+首次生成时，每条时长为原图张数乘以每张停留秒数；已有匹配图集视频保持各自时长。配乐从同一选定起点开始，过长截断，不足时按勾选项循环，未循环的尾段仅保留原声或静音，不缩短视频。水印自动结束跟随各条实际结尾，手填起止及关键帧仍按绝对秒数复用，越界时报告该条失败，不静默缩放时间轴。
+
 - `POST /items`：JSON `{ url, platform?: "auto" | "xiaohongshu" | "douyin" | "tiktok" }` 创建获取任务，返回 202。
 - `GET /runtime/tiktok`：读取 `{ platform: "tiktok", mode: "anonymous", available, state: "ready" | "busy" | "stopped", message }`；不探测公网、不安装资源。
 - `GET /tasks/:taskId`、`DELETE /tasks/:taskId`：查询/取消获取任务；进度复用 `/api/v1/tasks/:id/events`，中断不会自动重跑。
-- `GET /items?platform=&keyword=&type=&page=&pageSize=`、`GET /items/:id`：列表/详情使用共享 `ContentArchiveItem` 身份 `platform`/`contentId`。
+- `GET /items?platform=&keyword=&type=&page=&pageSize=`、`GET /items/:id`：列表/详情使用共享 `ContentArchiveItem` 身份 `platform`/`contentId`。中性接口 `pageSize` 范围为 1～500（接口未传仍默认 12）；页面默认每页 50 条，支持 50/100/200/500 条，切换时回到首页并清空旧页选择，原筛选与排序保留，视频编辑返回时恢复每页数量。旧小红书兼容接口仍最多每页 50 条。
 - `POST /items/:id/refresh`、`DELETE /items/:id`：刷新或删除；共享配额与存储，不另建第二套媒体目录。
 - `GET /items/:id/media/:mediaId`：本地预览/Range，`?download=1` 下载；`GET /items/:id/download.zip` 包含原文、平台/作品元数据、有效译文、媒体及截帧，媒体缺失或大小不符返回 409。
 - `POST /items/:id/frames`：multipart `file`（PNG）、`sourceMediaId`、`timestampMs`；校验实际像素解码、20 MiB/40 MP 上限并追加到原归档。

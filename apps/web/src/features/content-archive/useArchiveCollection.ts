@@ -1,5 +1,6 @@
 /** 双平台列表/抽屉状态：筛选清空选择，取消旧请求，代际校验防止迟到响应覆盖新页面。 */
 import { onScopeDispose, ref, watch } from "vue";
+import { CONTENT_ARCHIVE_PAGE_SIZES } from "@toolbox/shared/archive";
 import type {
   ContentArchiveItem,
   ContentArchiveListQuery,
@@ -37,8 +38,19 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
   );
   const restoredPage = Number(restored.page);
   const page = ref(Number.isSafeInteger(restoredPage) && restoredPage > 0 && restoredPage <= 100000 ? restoredPage : 1);
+  const restoredPageSize =
+    typeof restored.pageSize === "string" && /^\d+$/.test(restored.pageSize) ? Number(restored.pageSize) : 0;
+  const pageSize = ref<number>(
+    CONTENT_ARCHIVE_PAGE_SIZES.find((size) => size === restoredPageSize) ?? CONTENT_ARCHIVE_PAGE_SIZES[0]
+  );
   const listLoading = ref(false);
-  const archives = ref<ContentArchiveListResponse>({ items: [], total: 0, page: 1, pageSize: 12, pageCount: 1 });
+  const archives = ref<ContentArchiveListResponse>({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: pageSize.value,
+    pageCount: 1
+  });
   const selectedArchiveIds = ref<string[]>([]);
   const publicationBusyIds = ref<string[]>([]);
   const current = ref<ContentArchiveItem>();
@@ -70,14 +82,14 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
   }
   // 搜索文字变化只重置分页，不逐字发送请求；类型/平台切换自动读取新范围。
   watch(
-    [keyword, typeFilter, platformFilter, publicationFilter, groupFilter, sort],
+    [keyword, typeFilter, platformFilter, publicationFilter, groupFilter, sort, pageSize],
     () => {
       invalidateList();
       page.value = 1;
     },
     { flush: "sync" }
   );
-  watch([typeFilter, platformFilter, publicationFilter, groupFilter, sort], () => void loadArchives());
+  watch([typeFilter, platformFilter, publicationFilter, groupFilter, sort, pageSize], () => void loadArchives());
   watch(page, invalidateList, { flush: "sync" });
   watch(
     drawerOpen,
@@ -103,7 +115,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
     listLoading.value = true;
     try {
       const result = await contentArchiveApi.list(
-        { ...filter(), sort: sort.value, page: page.value, pageSize: 12 },
+        { ...filter(), sort: sort.value, page: page.value, pageSize: pageSize.value },
         signal
       );
       if (signal.aborted || generation !== listGeneration) return;
@@ -228,6 +240,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
     groupFilter,
     sort,
     page,
+    pageSize,
     listLoading,
     archives,
     selectedArchiveIds,

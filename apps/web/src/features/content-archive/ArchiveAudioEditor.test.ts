@@ -464,6 +464,86 @@ describe("归档视频配乐编辑交互", () => {
       watermark: { settings: { opacity: 70 } }
     });
   });
+  it("保存水印后父页面回写归档不会中断或重复创建无水印编辑画面任务", async () => {
+    const w = await setup(original, "watermark");
+    w.getComponent(ArchiveWatermarkControls).vm.$emit("upload", new File(["png"], "logo.png"));
+    await flushPromises();
+    const saved = structuredClone(original);
+    saved.media[0].checksum = "b".repeat(64);
+    saved.media[0].previewUrl = "/saved-watermark.mp4";
+    saved.media[0].audioEdit = {
+      revision: 1,
+      original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
+      settings: defaultArchiveAudioSettings(),
+      watermark: {
+        file: { fileName: "logo.png", mimeType: "image/png", size: 10, checksum: "c".repeat(64) },
+        width: 100,
+        height: 50,
+        settings: defaultArchiveWatermarkSettings()
+      },
+      updatedAt: "2026-11-04"
+    };
+    mocks.detail.mockResolvedValueOnce(saved);
+    let finishBase!: (value: ArchiveVideoEditJob) => void;
+    mocks.create.mockResolvedValueOnce(pending).mockReturnValueOnce(
+      new Promise<ArchiveVideoEditJob>((resolve) => {
+        finishBase = resolve;
+      })
+    );
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(800);
+    await flushPromises();
+    expect(w.emitted("saved")?.[0]).toEqual([saved]);
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    const baseSignal = mocks.create.mock.calls[1][3] as AbortSignal;
+    // 与页面的 @saved="item = $event" 一致，同一归档的新对象回写给编辑器。
+    await w.setProps({ item: saved });
+    await flushPromises();
+    expect(baseSignal.aborted).toBe(false);
+    expect(mocks.list).toHaveBeenCalledTimes(1);
+    expect(mocks.create).toHaveBeenCalledTimes(2);
+    finishBase({ ...pending, id: "clean_base123", mode: "preview" });
+    mocks.get.mockResolvedValueOnce({
+      ...pending,
+      id: "clean_base123",
+      mode: "preview",
+      status: "completed",
+      previewUrl: "/clean-watermark-base.mp4"
+    });
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(800);
+    await flushPromises();
+    expect(w.get("video").attributes("src")).toContain("/clean-watermark-base.mp4");
+    expect(w.text()).not.toContain("ARCHIVE_EDIT_BUSY");
+    expect(button(w, "重试水印编辑画面")).toBeUndefined();
+    expect(button(w, "保存为最新版本").props("disabled")).toBe(false);
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create).toHaveBeenCalledTimes(3);
+    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ mode: "save", revision: 1, checksum: "b".repeat(64) });
+  });
+  it("保存终态刷新详情期间保持操作锁，切换水印面板不抢先创建新任务", async () => {
+    const w = await setup();
+    let finishDetail!: (value: ContentArchiveItem) => void;
+    mocks.detail.mockReturnValueOnce(
+      new Promise<ContentArchiveItem>((resolve) => {
+        finishDetail = resolve;
+      })
+    );
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(800);
+    await flushPromises();
+    expect(mocks.detail).toHaveBeenCalledTimes(1);
+    expect(button(w, "保存为最新版本").props("disabled")).toBe(true);
+    await button(w, "水印设置").trigger("click");
+    await flushPromises();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    finishDetail(original);
+    await flushPromises();
+    expect(button(w, "保存为最新版本").props("disabled")).toBe(false);
+  });
   it("submits the dragged music range for both full audition and saving and does not shorten the range to a preview clip", async () => {
     const item = structuredClone(original);
     item.media[0].durationMs = 22000;

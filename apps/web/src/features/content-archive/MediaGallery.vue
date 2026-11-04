@@ -278,7 +278,19 @@ function videoPoster(entry: ContentArchiveItem["media"][number]) {
         candidate.kind === "image" &&
         !candidate.frameSourceMediaId
     );
-  return image ? mediaUrl(image.previewUrl) : undefined;
+  if (image) return mediaUrl(image.previewUrl);
+  if (entry.derivedFromImages || props.item.type !== "video" || entry.kind !== "video") return undefined;
+  const primaryVideo = props.item.media.find((candidate) => candidate.kind === "video" && !candidate.derivedFromImages);
+  if (entry.id !== primaryVideo?.id) return undefined;
+  // 单条视频的归档封面可直接作为 poster，切到封面时也无需重新加载视频缩略图。
+  const cover =
+    props.item.media.find(
+      (candidate) =>
+        candidate.id === props.item.coverMediaId &&
+        (candidate.kind === "image" || candidate.kind === "cover") &&
+        !candidate.frameSourceMediaId
+    ) ?? props.item.media.find((candidate) => candidate.kind === "cover");
+  return cover ? mediaUrl(cover.previewUrl) : undefined;
 }
 
 function rememberVideoThumbnail(entry: ContentArchiveItem["media"][number], event: Event) {
@@ -286,7 +298,7 @@ function rememberVideoThumbnail(entry: ContentArchiveItem["media"][number], even
   const key = thumbnailKey(entry);
   if (
     video.readyState < 2 ||
-    !video.closest(".media-thumbs") ||
+    (video !== videoElement.value && !video.closest(".media-thumbs")) ||
     video.seeking ||
     !video.videoWidth ||
     !video.videoHeight ||
@@ -310,7 +322,7 @@ function rememberVideoThumbnail(entry: ContentArchiveItem["media"][number], even
   } catch {
     // 无法导出缩略图时仍保留视频已解码的画面，不覆盖占位，也不影响原有 PNG 截帧功能。
   }
-  videoThumbnails.value.set(key, poster);
+  if (poster || video.closest(".media-thumbs")) videoThumbnails.value.set(key, poster);
 }
 
 function showFirstVideoFrame(event: Event) {
@@ -345,9 +357,12 @@ function onVideoPause() {
   videoFrameReady.value = Boolean(video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0);
 }
 
-function onVideoFrameReady() {
-  const video = videoElement.value;
+function onVideoFrameReady(event: Event) {
+  const video = event.currentTarget as HTMLVideoElement;
+  if (video !== videoElement.value) return;
   videoFrameReady.value = Boolean(video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0);
+  if (videoFrameReady.value && media.value && !videoThumbnails.value.has(thumbnailKey(media.value)))
+    rememberVideoThumbnail(media.value, event);
 }
 
 async function removeCurrentFrame() {

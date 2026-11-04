@@ -7,7 +7,7 @@ import { defineComponent } from "vue";
 import { mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
-import { NCheckbox, NSelect } from "naive-ui";
+import { NCheckbox, NPagination, NSelect } from "naive-ui";
 
 const archives = {
   items: [
@@ -52,6 +52,50 @@ const PaginationStub = defineComponent({
 });
 
 describe("XHS archive list panel", () => {
+  it("shows all page size choices and totals, resets to first page and rejects invalid sizes", async () => {
+    const wrapper = mountPanel();
+    try {
+      const pagination = wrapper.getComponent(NPagination);
+      expect(pagination.props("showSizePicker")).toBe(true);
+      expect(pagination.props("pageSize")).toBe(50);
+      expect(pagination.props("pageSizes")).toEqual(
+        [50, 100, 200, 500].map((value) => ({ label: `${value} 条/页`, value }))
+      );
+      for (const size of [100, 200, 500, 50]) {
+        pagination.vm.$emit("update:pageSize", size);
+        await wrapper.setProps({ pageSize: size, page: 1 });
+      }
+      expect(wrapper.emitted("update:pageSize")).toEqual([[100], [200], [500], [50]]);
+      pagination.vm.$emit("update:pageSize", 501);
+      pagination.vm.$emit("update:pageSize", 12);
+      expect(wrapper.emitted("update:pageSize")).toHaveLength(4);
+      expect(wrapper.emitted("update:page")?.[0]).toEqual([1]);
+      expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 1 条");
+    } finally {
+      wrapper.unmount();
+    }
+  });
+  it("多选时只统计图文并提供两个批量入口，不改变选择、筛选或详情", async () => {
+    const wrapper = mountPanel();
+    try {
+      const click = async (text: string) =>
+        wrapper
+          .findAll("button")
+          .find((button) => button.text() === text)!
+          .trigger("click");
+      await click("图文加水印 1 条");
+      await click("图文加配乐 1 条");
+      expect(wrapper.emitted("editImages")).toEqual([["watermark"], ["audio"]]);
+      expect(wrapper.emitted("openDetail")).toBeUndefined();
+      expect(wrapper.emitted("toggleSelection")).toBeUndefined();
+      await wrapper.setProps({ archives: { ...archives, items: [{ ...archives.items[0], type: "video" }] } });
+      expect(wrapper.text()).not.toContain("图文加水印");
+      await wrapper.setProps({ selectedIds: [] });
+      expect(wrapper.text()).not.toContain("图文加配乐");
+    } finally {
+      wrapper.unmount();
+    }
+  });
   const viewModeStorageKey = "toolbox:media-archive:view-mode";
   beforeEach(() => localStorage.removeItem(viewModeStorageKey));
   afterEach(() => {

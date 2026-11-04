@@ -109,8 +109,19 @@ describe("api app", () => {
       "audio-library",
       "audio-extract",
       "audio-convert",
-      "xhs-archive"
+      "xhs-archive",
+      "json-format",
+      "base64",
+      "url-codec",
+      "uuid-generator"
     ]);
+    expect(response.json().data.find((tool: { id: string }) => tool.id === "json-format")).toMatchObject({
+      execution: "browser",
+      apiNamespace: null
+    });
+    expect(response.json().data.find((tool: { id: string }) => tool.id === "image-compress")).not.toHaveProperty(
+      "execution"
+    );
     // 退役模块的负向回归：旧接口不可继续解析、下载或创建任务。
     for (const moduleId of ["video-text", "short-video"]) {
       for (const endpoint of ["tasks", "history", "parse", "preview", "download"]) {

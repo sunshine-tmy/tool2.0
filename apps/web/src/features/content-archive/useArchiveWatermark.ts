@@ -94,12 +94,8 @@ export function useArchiveWatermark(
     }
   }
   function move(point: { x: number; y: number }) {
-    const next = structuredClone(toRaw(settings.value));
-    if (next.motion.type === "keyframes") {
-      if (!next.motion.keyframes[selectedFrame.value]) return;
-      Object.assign(next.motion.keyframes[selectedFrame.value], point);
-    } else next.motion[selectedPoint.value] = point;
-    settings.value = next;
+    const next = moveArchiveWatermarkPoint(settings.value, point, selectedPoint.value, selectedFrame.value);
+    if (next) settings.value = next;
   }
   return {
     settings,
@@ -120,4 +116,19 @@ export function useArchiveWatermark(
       error.value = "";
     }
   };
+}
+
+/** 单条视频与批量示意框共用选中起终点、关键帧的移动语义。 */
+export function moveArchiveWatermarkPoint(
+  settings: ReturnType<typeof defaultArchiveWatermarkSettings>,
+  point: { x: number; y: number },
+  selectedPoint: "from" | "to",
+  selectedFrame: number
+) {
+  const next = structuredClone(toRaw(settings));
+  if (next.motion.type === "keyframes") {
+    if (!next.motion.keyframes[selectedFrame]) return;
+    Object.assign(next.motion.keyframes[selectedFrame], point);
+  } else next.motion[selectedPoint] = point;
+  return next;
 }

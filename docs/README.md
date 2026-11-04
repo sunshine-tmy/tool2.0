@@ -14,6 +14,10 @@
 | [启动诊断](startup-diagnostics.md)                          | 服务状态、只读 doctor 与诊断报告                                          |
 | [桌面帮助](desktop-application-help.md)                     | 安装、能力管理、数据位置、升级和卸载                                      |
 | [音频库](audio-library.md)、[配音批次](edge-tts-batches.md) | 用户操作和既有保留/恢复规则                                               |
+| [JSON 格式化](json-format.md)                               | 本地校验、格式化、压缩、导入及下载，输入不持久化                          |
+| [Base64 编解码](base64.md)                                  | 文本、文件与 URL 安全格式编解码，保留原始字节                             |
+| [URL 编解码](url-codec.md)                                  | URL 组件、完整 URL 和表单字段值，严格校验与本地复制下载                   |
+| [UUID 生成](uuid-generator.md)                              | 安全随机 UUID v4、批量生成、格式调整和复制下载                            |
 | [macOS 内部测试](macos-apple-silicon-build.md)              | 当前平台限制与实机门槛，不表示全模块可用                                  |
 | [重构当前状态](refactoring/README.md)                       | R00–R12 状态及逐阶段证据                                                  |
 | [R12 后专项验收](refactoring/post-r12-acceptance.md)        | 真实模型、能力环境、macOS、安装包及跨设备检查，未执行项明确保留           |

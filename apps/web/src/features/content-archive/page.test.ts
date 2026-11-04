@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   router: undefined as Router | undefined,
   profileShow: vi.fn(),
+  imageBatchShow: vi.fn(),
   copy: vi.fn(),
   streams: [] as Array<{ task: ReturnType<typeof ref>; error: ReturnType<typeof ref> }>
 }));
@@ -79,6 +80,12 @@ function mountPage() {
         NAlert: defineComponent({ template: "<div><slot /><slot name='header'/></div>" }),
         NButton: true,
         ArchiveListPanel: true,
+        ArchiveImageBatchEditor: defineComponent({
+          setup(_props, { expose }) {
+            expose({ show: mocks.imageBatchShow });
+            return () => null;
+          }
+        }),
         ArchiveTaskPanel: true,
         ArchiveBatchImport: true,
         ArchiveLocalVideoUpload: true,
@@ -141,6 +148,27 @@ async function showResult(
 }
 
 describe("中性多媒体归档页面", () => {
+  it("只把当前多选的图文交给批量编辑，保留视频和未选作品", async () => {
+    const selected = archiveFixture({ id: "image-one", type: "image" });
+    mocks.api.list!.mockResolvedValue(
+      listFixture([selected, archiveFixture({ id: "video-two" }), archiveFixture({ id: "image-other", type: "image" })])
+    );
+    const wrapper = mountPage();
+    await flushPromises();
+    const list = wrapper.findComponent(ArchiveListPanel);
+    list.vm.$emit("toggleSelection", "image-one", true);
+    list.vm.$emit("toggleSelection", "video-two", true);
+    await flushPromises();
+    list.vm.$emit("editImages", "watermark");
+    await flushPromises();
+    await vi.waitFor(() =>
+      expect(mocks.imageBatchShow).toHaveBeenCalledWith("watermark", [expect.objectContaining({ id: "image-one" })])
+    );
+    list.vm.$emit("editImages", "audio");
+    await flushPromises();
+    expect(mocks.imageBatchShow).toHaveBeenLastCalledWith("audio", [expect.objectContaining({ id: "image-one" })]);
+    expect(list.props("selectedIds")).toEqual(["image-one", "video-two"]);
+  });
   it("本地视频整轮队列结束后只刷新一次列表并显示最后结果，结果行可直接打开详情", async () => {
     const wrapper = mountPage();
     await flushPromises();
@@ -239,6 +267,7 @@ describe("中性多媒体归档页面", () => {
     list.vm.$emit("update:keyword", "待发布");
     list.vm.$emit("update:publicationFilter", "unpublished");
     list.vm.$emit("update:sort", "published-asc");
+    list.vm.$emit("update:pageSize", 200);
     list.vm.$emit("update:page", 3);
     list.vm.$emit("openDetail", "archive-123");
     await flushPromises();
@@ -257,7 +286,8 @@ describe("中性多媒体归档页面", () => {
       keyword: "待发布",
       publication: "unpublished",
       sort: "published-asc",
-      page: "3"
+      page: "3",
+      pageSize: "200"
     });
     await router.push(returnTo);
     wrapper.getComponent(XhsDetailDrawer).vm.$emit("editWatermark", "video-123");

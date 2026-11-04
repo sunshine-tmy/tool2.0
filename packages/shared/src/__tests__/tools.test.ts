@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { Value } from "@sinclair/typebox/value";
-import { ToolListSchema } from "../common/api-schema";
+import { ToolListSchema, ToolDefinitionSchema } from "../common/api-schema";
 import { getToolById, listTools } from "../common/tools";
 
 describe("tool registry", () => {
@@ -18,7 +18,11 @@ describe("tool registry", () => {
       "audio-library",
       "audio-extract",
       "audio-convert",
-      "xhs-archive"
+      "xhs-archive",
+      "json-format",
+      "base64",
+      "url-codec",
+      "uuid-generator"
     ]);
     expect(tools.every((tool) => tool.requiresAuth === false)).toBe(true);
     expect(Value.Check(ToolListSchema, tools)).toBe(true);
@@ -26,6 +30,40 @@ describe("tool registry", () => {
 
   it("finds a tool by id", () => {
     expect(getToolById("image-compress")?.title).toBe("图片压缩");
+  });
+  it("registers UUID generation as a browser-only tool without an input upload or API", () => {
+    const tool = getToolById("uuid-generator")!;
+    expect(tool).toMatchObject({
+      title: "UUID 生成",
+      routePath: "/tools/uuid-generator",
+      execution: "browser",
+      apiNamespace: null,
+      acceptedTypes: []
+    });
+    expect(Value.Check(ToolDefinitionSchema, tool)).toBe(true);
+  });
+  it("registers URL processing as a browser-only tool with no processing API", () => {
+    const tool = getToolById("url-codec")!;
+    expect(tool).toMatchObject({
+      title: "URL 编解码",
+      routePath: "/tools/url-codec",
+      execution: "browser",
+      apiNamespace: null
+    });
+    expect(Value.Check(ToolDefinitionSchema, tool)).toBe(true);
+  });
+  it("allows a browser-only tool without inventing an API and preserves all server contracts", () => {
+    const json = getToolById("json-format")!;
+    expect(json).toMatchObject({ execution: "browser", apiNamespace: null, routePath: "/tools/json-format" });
+    expect(Value.Check(ToolDefinitionSchema, json)).toBe(true);
+    expect(Value.Check(ToolDefinitionSchema, { ...json, execution: "server" })).toBe(false);
+    expect(Value.Check(ToolDefinitionSchema, { ...json, apiNamespace: "" })).toBe(false);
+    expect(Value.Check(ToolDefinitionSchema, { ...json, execution: undefined })).toBe(false);
+    expect(
+      listTools()
+        .filter((tool) => tool.execution !== "browser")
+        .every((tool) => tool.apiNamespace?.startsWith("/api/v1/") && tool.execution === undefined)
+    ).toBe(true);
   });
 
   it("exposes frontend routes and api namespaces for each tool", () => {

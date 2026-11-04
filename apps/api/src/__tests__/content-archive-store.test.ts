@@ -716,7 +716,8 @@ describe("多媒体共享存储与小红书过滤视图", () => {
     await fs.writeFile(path.join(target() + ".previous", "manifest.json"), JSON.stringify(douyin));
     const recovered = new ContentArchiveStore(config, database);
     expect((await recovered.list({ page: 0, pageSize: 100, platform: "all" })).total).toBe(2);
-    expect((await recovered.list({ page: 0, pageSize: 100 })).pageSize).toBe(50);
+    expect((await recovered.list({ page: 0, pageSize: 100 })).pageSize).toBe(100);
+    expect((await recovered.list({ pageSize: 501 })).pageSize).toBe(500);
     expect((await recovered.list({ pageSize: -1 })).pageSize).toBe(12);
     expect(await fs.readFile(path.join(broken, "manifest.json"), "utf8")).toBe("broken");
     const clone = await recovered.get(douyin.id);

@@ -5,6 +5,15 @@
   grid-template-rows: var(--topbar-height) minmax(0, 1fr);
 }
 
+/* Naive UI overlays are teleported to body and ship unlayered styles.
+   Override only their top boundary, including the transparent modal hit area,
+   so neither the mask nor the dialog surface covers the complete app header. */
+.n-modal-mask,
+.n-modal-body-wrapper,
+body > .n-drawer-container {
+  top: var(--shell-overlay-top, 0px) !important;
+}
+
 .topbar {
   --shell-icon-size: 36px;
   grid-template-columns: minmax(220px, var(--sidebar-width)) minmax(0, 1fr) auto;

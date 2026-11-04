@@ -54,6 +54,12 @@
         </p>
       </div>
       <div class="archive-batch-actions" role="group" aria-label="归档批量操作">
+        <n-button v-if="selectedImageCount" size="small" secondary @click="$emit('editImages', 'watermark')">
+          图文加水印 {{ selectedImageCount }} 条
+        </n-button>
+        <n-button v-if="selectedImageCount" size="small" secondary @click="$emit('editImages', 'audio')">
+          图文加配乐 {{ selectedImageCount }} 条
+        </n-button>
         <n-button size="small" secondary :loading="listLoading" @click="$emit('refresh')">
           <template #icon><RefreshCw :size="15" /></template>刷新
         </n-button>
@@ -162,7 +168,11 @@
       class="pagination-with-total"
       :page="page"
       :page-count="archives.pageCount"
+      :page-size="pageSize"
+      :page-sizes="pageSizes"
+      show-size-picker
       @update:page="updatePage"
+      @update:page-size="updatePageSize"
     >
       <template #prefix>共 {{ archives.total }} 条</template>
     </n-pagination>
@@ -175,6 +185,7 @@ import { computed, ref } from "vue";
 import { NButton, NCheckbox, NEmpty, NInput, NPagination, NSelect, NSpin } from "naive-ui";
 import { BadgeCheck, FileImage, Languages, LayoutGrid, List, Play, RefreshCw, Search, Sparkles } from "lucide-vue-next";
 import type { ContentArchiveListResponse, ContentArchiveListQuery, ArchiveGroup } from "@toolbox/shared";
+import { CONTENT_ARCHIVE_PAGE_SIZES } from "@toolbox/shared/archive";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { archiveDisplayTitle, archivePlatformLabel } from "./presentation";
 import { formatArchiveDate } from "./format-date";
@@ -197,6 +208,7 @@ const emit = defineEmits<{
   toggleSelectAll: [checked: boolean];
   pageChange: [];
   setPublication: [id: string, publishedElsewhere: boolean];
+  editImages: [kind: "watermark" | "audio"];
 }>();
 
 const keyword = defineModel<string>("keyword", { required: true });
@@ -208,6 +220,8 @@ const publicationFilter = defineModel<NonNullable<ContentArchiveListQuery["publi
   default: "all"
 });
 const page = defineModel<number>("page", { required: true });
+const pageSize = defineModel<number>("pageSize", { default: CONTENT_ARCHIVE_PAGE_SIZES[0] });
+const pageSizes = CONTENT_ARCHIVE_PAGE_SIZES.map((value) => ({ label: `${value} 条/页`, value }));
 const sort = defineModel<NonNullable<ContentArchiveListQuery["sort"]>>("sort", { default: "published-desc" });
 const viewModeStorageKey = "toolbox:media-archive:view-mode";
 const viewMode = ref(readViewMode());
@@ -258,10 +272,18 @@ const allCurrentArchivesSelected = computed(
 const someCurrentArchivesSelected = computed(
   () => !allCurrentArchivesSelected.value && props.archives.items.some((item) => props.selectedIds.includes(item.id))
 );
+const selectedImageCount = computed(
+  () => props.archives.items.filter((item) => item.type === "image" && props.selectedIds.includes(item.id)).length
+);
 
 function updatePage(value: number) {
   page.value = value;
   emit("pageChange");
+}
+function updatePageSize(value: number) {
+  if (value === pageSize.value || !CONTENT_ARCHIVE_PAGE_SIZES.some((size) => size === value)) return;
+  pageSize.value = value;
+  page.value = 1;
 }
 
 function mediaUrl(url: string) {

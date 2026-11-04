@@ -6,7 +6,10 @@ import net from "node:net";
 import { isPrivateLanIPv4 } from "../domains/lan-transfer/access";
 import { listTools } from "@toolbox/shared";
 
-const LAN_TOOL_API_PREFIXES = [...listTools().map((tool) => tool.apiNamespace), "/api/v1/tools/media-archive"];
+const LAN_TOOL_API_PREFIXES = [
+  ...listTools().flatMap((tool) => (tool.execution === "browser" ? [] : [tool.apiNamespace])),
+  "/api/v1/tools/media-archive"
+];
 const LAN_TOOL_PAGES = new Set(["/", ...listTools().map((tool) => tool.routePath), "/tools/xhs-archive"]);
 const PUBLIC_ASSETS = new Set(["/favicon.ico", "/favicon-32x32.png", "/ecommerce-toolbox-icon-32.png"]);
 const HOP_BY_HOP_HEADERS = new Set([

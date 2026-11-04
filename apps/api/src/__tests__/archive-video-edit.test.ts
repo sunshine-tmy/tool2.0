@@ -522,6 +522,120 @@ describe("可重复编辑的归档配乐", () => {
     for (const media of photos.media)
       expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, itemId, media.fileName))).toEqual(original);
   });
+  it("图文完整水印配乐预览只产出临时视频，保留原图和草稿且不新增归档视频", async () => {
+    const photos = (await store.get(itemId))!;
+    photos.type = "image";
+    photos.media = [
+      { ...photos.media[0], kind: "image", fileName: "photo.png", mimeType: "image/png", durationMs: undefined }
+    ];
+    const staging = await store.createStaging("preview_photos");
+    await fs.writeFile(path.join(staging, "photo.png"), original);
+    await store.commit(photos, staging);
+    const before = await store.get(itemId);
+    const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+    const preview = await execute({
+      mode: "preview",
+      previewFullLength: true,
+      previewStartSeconds: 0,
+      settings: { ...defaultArchiveAudioSettings(), musicStartSeconds: 0.5, loop: false },
+      slideshow: {
+        images: photos.media.map(({ id, checksum }) => ({ id, checksum })),
+        secondsPerImage: 3,
+        aspect: "portrait"
+      },
+      watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() }
+    });
+    expect(preview.status).toBe("completed");
+    expect(preview.resultMediaId).toBeUndefined();
+    expect(render.mock.lastCall?.[0]).toMatchObject({
+      preview: true,
+      previewFullLength: true,
+      settings: { musicStartSeconds: 0.5, loop: false },
+      watermark: { settings: { endSeconds: null } }
+    });
+    expect(await store.get(itemId)).toEqual(before);
+    expect((await app.inject(preview.previewUrl!)).statusCode).toBe(200);
+    expect((await app.inject(draft.previewUrl)).statusCode).toBe(200);
+    expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, itemId, "photo.png"))).toEqual(original);
+  });
+  it("图文原图可从水印库建立独立草稿，生成带水印配乐的附加视频，后续更新不重复叠加", async () => {
+    const photos = (await store.get(itemId))!;
+    photos.type = "image";
+    photos.media = [{ ...photos.media[0], kind: "image", mimeType: "image/png", fileName: "photo.png" }];
+    const staged = await store.createStaging("watermark_photos");
+    await fs.writeFile(path.join(staged, "photo.png"), original);
+    await store.commit(photos, staged);
+    const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const library = await service.watermarkLibrary.upload(png, "logo.png", "image/png");
+    const selected = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/watermarks/from-library`,
+      payload: { libraryId: library.id }
+    });
+    expect(selected.statusCode).toBe(201);
+    const draft = selected.json().data;
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/audio-edits`,
+      payload: await input({
+        slideshow: {
+          images: photos.media.map(({ id, checksum }) => ({ id, checksum })),
+          secondsPerImage: 3,
+          aspect: "portrait"
+        },
+        watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() }
+      })
+    });
+    expect(response.statusCode).toBe(202);
+    const jobId = response.json().data.id;
+    await vi.waitFor(() => expect(service.get(jobId)?.status).toBe("completed"));
+    const updated = (await store.get(itemId))!;
+    expect(updated.media[0]).toEqual(photos.media[0]);
+    expect(updated.media).toHaveLength(2);
+    const video = updated.media[1];
+    expect(video.audioEdit?.music?.libraryItemId).toBe(libraryItem.id);
+    expect(video.audioEdit?.watermark?.settings.endSeconds).toBeNull();
+    const next = await service.create(itemId, video.id, {
+      mode: "save",
+      checksum: video.checksum,
+      revision: video.audioEdit!.revision,
+      useSavedMusic: true,
+      settings: video.audioEdit!.settings,
+      watermark: { settings: { ...video.audioEdit!.watermark!.settings, opacity: 40 } }
+    });
+    await vi.waitFor(() => expect(service.get(next.id)?.status).toBe("completed"));
+    const final = (await store.get(itemId))!;
+    expect(final.media).toHaveLength(2);
+    expect(final.media[1].audioEdit?.watermark?.settings.opacity).toBe(40);
+    expect(final.media[1].audioEdit?.music).toEqual(video.audioEdit?.music);
+    expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, itemId, "photo.png"))).toEqual(original);
+  });
+  it("水印草稿仍拒绝视频截帧和不存在的媒体", async () => {
+    const item = (await store.get(itemId))!;
+    item.media.push({
+      ...item.media[0],
+      id: "frame_test123",
+      kind: "image",
+      index: 1,
+      fileName: "frame.png",
+      mimeType: "image/png",
+      frameSourceMediaId: mediaId,
+      frameTimestampMs: 0
+    });
+    const staged = await store.createStaging("watermark_frame");
+    await fs.writeFile(path.join(staged, "original.mp4"), original);
+    await fs.writeFile(path.join(staged, "frame.png"), original);
+    await store.commit(item, staged);
+    for (const id of ["frame_test123", "missing12345"])
+      await expect(service.uploadWatermark(itemId, id, Buffer.from("x"), "a.png", "image/png")).rejects.toMatchObject({
+        code: "ARCHIVE_EDIT_VIDEO_REQUIRED"
+      });
+  });
   it("carries full audition and the saved music offset through preview and watermark saves without altering the original", async () => {
     expect((await execute({ settings: { ...defaultArchiveAudioSettings(), musicStartSeconds: 0.4 } })).status).toBe(
       "completed"

@@ -113,3 +113,33 @@ it("exposes all four orders through the real API after restart and rejects unsup
   const previous = await app.inject("/api/v1/tools/media-archive/items?pageSize=50");
   expect(previous.json().data.items.map((item: ContentArchiveItem) => item.id)).toEqual([...indices].reverse().map(id));
 });
+it("returns 50/100/200/500 rows per page consistently through store, repository and HTTP", async () => {
+  const template = repository.get(id(0))!;
+  for (let index = 0; index < 520; index++)
+    repository.save({
+      ...template,
+      id: `bulk_archive_${String(index).padStart(4, "0")}`,
+      contentId: `bulk_${index}`,
+      publishedAt: new Date(Date.UTC(2026, 10, 1, 0, index)).toISOString()
+    });
+  const reloaded = new ContentArchiveStore(config, database!);
+  app = await createApp({ config });
+  for (const pageSize of [50, 100, 200, 500]) {
+    const query: ContentArchiveListQuery = { keyword: "bulk_", sort: "published-desc", pageSize };
+    for (const page of [1, 2]) {
+      const stored = await reloaded.list({ ...query, page });
+      const persisted = repository.list({ ...query, page });
+      expect(stored).toEqual(persisted);
+      expect(stored.items).toHaveLength(Math.min(pageSize, 520 - (page - 1) * pageSize));
+      expect(stored).toMatchObject({ total: 520, pageSize, pageCount: Math.ceil(520 / pageSize), page });
+      const response = await app.inject(
+        `/api/v1/tools/media-archive/items?keyword=bulk_&sort=published-desc&pageSize=${pageSize}&page=${page}`
+      );
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data).toEqual(stored);
+    }
+  }
+  expect((await reloaded.list({ pageSize: 999 })).pageSize).toBe(500);
+  expect((await app.inject("/api/v1/tools/media-archive/items?pageSize=501")).statusCode).toBe(400);
+  expect((await app.inject("/api/v1/tools/xhs-archive/items?pageSize=100")).statusCode).toBe(400);
+});

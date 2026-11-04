@@ -104,7 +104,22 @@ describe("desktop LAN gateway", () => {
       expect(modulePage.status).toBe(201);
       expect(await modulePage.json()).toEqual({ path: pagePath });
     }
-    expect(requests).toHaveLength(23);
+    expect(requests).toHaveLength(27);
+    for (const path of [
+      "/api/v1/tools/json-format",
+      "/api/v1/tools/json-format/process",
+      "/api/v1/tools/base64",
+      "/api/v1/tools/base64/decode",
+      "/api/v1/tools/url-codec",
+      "/api/v1/tools/url-codec/process",
+      "/api/v1/tools/uuid-generator",
+      "/api/v1/tools/uuid-generator/generate",
+      "/null/test",
+      "/api/v1/unrelated"
+    ]) {
+      expect((await fetch(`http://127.0.0.1:${gateway.port}${path}`, { method: "POST" })).status).toBe(404);
+    }
+    expect(requests).toHaveLength(27);
   });
 
   it("rejects cross-site, forged Host and ambiguous paths before forwarding", async () => {

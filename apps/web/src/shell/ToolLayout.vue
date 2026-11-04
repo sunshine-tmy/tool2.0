@@ -9,7 +9,7 @@
     }"
   >
     <div v-if="isDesktop" class="desktop-window-titlebar" aria-hidden="true"><span>电商工具箱</span></div>
-    <header class="topbar">
+    <header ref="topbar" class="topbar">
       <div class="topbar-leading">
         <n-button
           class="sidebar-toggle"
@@ -272,7 +272,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted } from "vue";
+import { computed, defineAsyncComponent, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput } from "naive-ui";
 import {
@@ -290,10 +290,13 @@ import {
 import { diagnosticConnection, localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { useShellNavigation } from "./useShellNavigation";
 import { useShellServices } from "./useShellServices";
+import { useShellOverlayBoundary } from "./useShellOverlayBoundary";
 import { useDesktopCapabilityHint } from "../integrations/desktop/useDesktopCapabilityHint";
 const DesktopLanAccess = defineAsyncComponent(() => import("../integrations/desktop/DesktopLanAccess.vue"));
 const route = useRoute(),
   isDesktop = computed(() => Boolean(window.toolboxDesktop));
+const topbar = ref<HTMLElement>();
+useShellOverlayBoundary(topbar);
 const shellIconButtonStyle = { width: "var(--shell-icon-size, 36px)", height: "var(--shell-icon-size, 36px)" };
 const {
   keyword,

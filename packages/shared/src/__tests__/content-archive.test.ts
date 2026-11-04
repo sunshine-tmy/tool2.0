@@ -221,7 +221,7 @@ describe("content archive contract", () => {
       { platform: "auto" },
       { platform: "instagram" },
       { page: 0 },
-      { pageSize: 51 },
+      { pageSize: 501 },
       { cookie: "private" },
       { sort: "updated-desc" },
       { sort: "published-desc;DROP TABLE xhs_archives" },
@@ -229,6 +229,21 @@ describe("content archive contract", () => {
     ]) {
       expect(Value.Check(ContentArchiveListQuerySchema, invalid)).toBe(false);
       expect(isContentArchiveListQuery(invalid)).toBe(false);
+    }
+  });
+  it("supports up to 500 rows in neutral archive requests/responses while retaining legacy page limits", () => {
+    for (const pageSize of [12, 50, 100, 200, 500]) {
+      expect(isContentArchiveListQuery({ pageSize })).toBe(true);
+      expect(
+        Value.Check(ContentArchiveListResponseSchema, { items: [], page: 1, pageSize, total: 0, pageCount: 1 })
+      ).toBe(true);
+      expect(Value.Check(XhsArchiveListQuerySchema, { pageSize })).toBe(pageSize <= 50);
+    }
+    for (const pageSize of [0, -1, 500.5, 501, "500", null]) {
+      expect(isContentArchiveListQuery({ pageSize })).toBe(false);
+      expect(
+        Value.Check(ContentArchiveListResponseSchema, { items: [], page: 1, pageSize, total: 0, pageCount: 1 })
+      ).toBe(false);
     }
   });
   it("accepts explicit publication booleans only, while keeping publication marks outside archive manifests", () => {

@@ -6,6 +6,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
 import {
+  CONTENT_ARCHIVE_MAX_PAGE_SIZE,
   isContentArchiveItem,
   toContentArchiveListItem,
   type ContentArchivePlatform,
@@ -103,7 +104,7 @@ export class ContentArchiveStore {
     const keyword = options.keyword?.trim().toLowerCase() || "";
     const type = options.type?.trim() || "all";
     const page = positiveInteger(options.page, 1);
-    const pageSize = Math.min(positiveInteger(options.pageSize, 12), 50);
+    const pageSize = Math.min(positiveInteger(options.pageSize, 12), CONTENT_ARCHIVE_MAX_PAGE_SIZE);
     const memberships = this.groups.memberships();
     const published = this.publications.marked();
     const sort = options.sort;
