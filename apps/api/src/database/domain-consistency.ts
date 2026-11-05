@@ -66,20 +66,37 @@ async function reconcileXhsArchive(
   if (!(await directoryExists(config.xhsArchiveDir))) return;
   // 先取媒体行快照：归档行被删除时，media 行会被外键级联一起删除，事后无法再枚举。
   const mediaEntities = database.list("xhs-media");
+  const archives = database.list("xhs-archive");
+  const manifests = archives.map((entity) =>
+    SAFE_ID_PATTERN.test(entity.id) ? path.join(config.xhsArchiveItemsDir, entity.id, "manifest.json") : undefined
+  );
+  // 启动只报告问题，可分批查询存在性；显式清理仍在原位置逐项检查，保留级联删除顺序。
+  const manifestPresence = mode === "report" ? await filePresence(manifests) : undefined;
   const removedArchives = new Set<string>();
-  for (const entity of database.list("xhs-archive")) {
+  for (const [index, entity] of archives.entries()) {
     result.checked += 1;
     if (!SAFE_ID_PATTERN.test(entity.id)) {
       result.failures.push({ kind: "xhs-archive", id: entity.id, reason: "INVALID_ID" });
       continue;
     }
     const manifestPath = path.join(config.xhsArchiveItemsDir, entity.id, "manifest.json");
-    if (await fileExists(manifestPath)) continue;
+    if (manifestPresence ? manifestPresence[index] : await fileExists(manifestPath)) continue;
     if (removeOrReport(database, result, mode, "xhs-archive", entity.id, "MANIFEST_MISSING")) {
       removedArchives.add(entity.id);
     }
   }
-  for (const entity of mediaEntities) {
+  const mediaPresence =
+    mode === "report"
+      ? await filePresence(
+          mediaEntities.map((entity) => {
+            const payload = entity.payload as { archiveId?: string; fileName?: string } | null;
+            return typeof payload?.archiveId === "string" && payload.archiveId && typeof payload.fileName === "string"
+              ? path.join(config.xhsArchiveItemsDir, payload.archiveId, path.basename(payload.fileName))
+              : undefined;
+          })
+        )
+      : undefined;
+  for (const [index, entity] of mediaEntities.entries()) {
     result.checked += 1;
     const payload = entity.payload as { archiveId?: string; fileName?: string } | null;
     const archiveId = typeof payload?.archiveId === "string" ? payload.archiveId : undefined;
@@ -92,7 +109,7 @@ async function reconcileXhsArchive(
     }
     if (typeof payload?.fileName !== "string") continue;
     const mediaPath = path.join(config.xhsArchiveItemsDir, archiveId, path.basename(payload.fileName));
-    if (await fileExists(mediaPath)) continue;
+    if (mediaPresence ? mediaPresence[index] : await fileExists(mediaPath)) continue;
     if (database.get("xhs-media", entity.id))
       removeOrReport(database, result, mode, "xhs-media", entity.id, "MEDIA_MISSING");
   }
@@ -237,6 +254,16 @@ async function directoryExists(target: string) {
 async function fileExists(target: string) {
   const stat = await fsp.stat(target).catch(() => undefined);
   return stat?.isFile() ?? false;
+}
+
+async function filePresence(targets: Array<string | undefined>) {
+  const present: boolean[] = [];
+  for (let offset = 0; offset < targets.length; offset += 32) {
+    present.push(
+      ...(await Promise.all(targets.slice(offset, offset + 32).map((target) => (target ? fileExists(target) : false))))
+    );
+  }
+  return present;
 }
 
 async function pathExists(target: string) {

@@ -12,7 +12,12 @@ const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   success: vi.fn(),
   guard: vi.fn(),
-  route: { query: { archiveId: "archive123", mediaId: "media123", returnTo: "/tools/media-archive?page=3" } }
+  route: {
+    query: { archiveId: "archive123", mediaId: "media123", returnTo: "/tools/media-archive?page=3" } as Record<
+      string,
+      string
+    >
+  }
 }));
 vi.mock("./api", () => ({
   audioConvertApi: {
@@ -37,6 +42,7 @@ let wrapper: VueWrapper | undefined;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  mocks.route.query = { archiveId: "archive123", mediaId: "media123", returnTo: "/tools/media-archive?page=3" };
   mocks.add.mockReset();
   mocks.list.mockReset().mockImplementation(async (page: number) => ({
     items: [job(page === 1 ? "converted123" : "another456")],
@@ -126,12 +132,22 @@ it("adds an independent library item in the chosen group and returns to the orig
   await flushPromises();
   await button(w, "加入并返回视频编辑").trigger("click");
   await flushPromises();
-  expect(mocks.add).toHaveBeenCalledWith("converted123", "group123", "music");
+  expect(mocks.add).toHaveBeenCalledWith("converted123", "group123", "speech");
   expect(mocks.push).toHaveBeenCalledWith({
     name: "archive-video-editor",
     params: { itemId: "archive123", mediaId: "media123" },
     query: { panel: "audio", convertedMusic: "music123", returnTo: "/tools/media-archive?page=3" }
   });
+});
+it("keeps ordinary conversion library additions in the existing music category", async () => {
+  mocks.route.query = {};
+  const w = await setup();
+  await button(w, "加入音频素材库").trigger("click");
+  await flushPromises();
+  await button(w, "加入素材库").trigger("click");
+  await flushPromises();
+  expect(mocks.add).toHaveBeenCalledWith("converted123", null, "music");
+  expect(mocks.push).not.toHaveBeenCalled();
 });
 it("does not return a recycled duplicate to the editor", async () => {
   mocks.add.mockResolvedValue({ item: { id: "music123", deletedAt: "2026-10-01" }, existing: true });

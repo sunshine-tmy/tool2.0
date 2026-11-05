@@ -93,3 +93,5 @@ offline-resources/components/*
 !storage/lan-transfer/
 !storage/lan-transfer/files/
 !storage/lan-transfer/files/.gitkeep
+
+.workbuddy

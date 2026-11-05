@@ -260,6 +260,7 @@ async function openLibrary(ids: string[], batch = false) {
     groups.value = data.groups.map((g) => ({ label: g.name, value: g.id }));
     libraryIds.value = [...ids];
     libraryBatch.value = batch;
+    if (hasEditor.value && !batch) purpose.value = "speech";
     libraryReport.value = "";
     libraryFailed.value = 0;
     libraryVisible.value = true;

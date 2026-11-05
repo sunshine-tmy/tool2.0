@@ -4,7 +4,7 @@
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { getConfig } from "../config";
 import { reconcileDomainRecords } from "../database/domain-consistency";
 import { FileMetadataRepository } from "../database/file-metadata";
@@ -15,6 +15,7 @@ let testRoot: string | undefined;
 const openDatabases: ToolboxDatabase[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   delete process.env.STORAGE_ROOT;
   delete process.env.DATABASE_PATH;
   // 先统一关闭连接再删除临时目录，避免 WAL/SHM 文件被占用导致清理失败。
@@ -162,6 +163,58 @@ describe("domain record consistency", () => {
         .prepare("SELECT COUNT(*) AS count FROM audit_events WHERE action = 'storage.domain_record_consistency'")
         .get()
     ).toEqual({ count: 1 });
+  });
+
+  it("batches startup archive checks with a fixed concurrency limit, preserving every row and report order", async () => {
+    const { config, database } = await createEnv();
+    await fsp.mkdir(config.xhsArchiveItemsDir, { recursive: true });
+    for (let index = 0; index < 70; index++) {
+      const id = `archive-${index}`;
+      upsert(database, "xhs-archive", id, { id, noteId: id }, "ready");
+      upsert(database, "xhs-media", `${id}-media`, { archiveId: id, fileName: "image.jpg" });
+    }
+    const expected = [
+      ...database.list("xhs-archive").map(({ id }) => ({ kind: "xhs-archive", id, reason: "MANIFEST_MISSING" })),
+      ...database.list("xhs-media").map(({ id }) => ({ kind: "xhs-media", id, reason: "MEDIA_MISSING" }))
+    ];
+    let active = 0,
+      peak = 0;
+    const stat = fsp.stat.bind(fsp);
+    vi.spyOn(fsp, "stat").mockImplementation((...args) => {
+      active++;
+      peak = Math.max(peak, active);
+      return stat(...args).finally(() => active--);
+    });
+    const result = await reconcileDomainRecords(config, database, { mode: "report", domains: ["xhs-archive"] });
+    expect(result).toEqual({ checked: 140, removed: 0, missing: 140, failures: expected });
+    expect(peak).toBe(32);
+    expect(active).toBe(0);
+    expect(database.list("xhs-archive")).toHaveLength(70);
+    expect(database.list("xhs-media")).toHaveLength(70);
+  });
+
+  it("keeps explicit archive cleanup sequential and retains media belonging to surviving archives", async () => {
+    const { config, database } = await createEnv();
+    await fsp.mkdir(path.join(config.xhsArchiveItemsDir, "kept"), { recursive: true });
+    await fsp.writeFile(path.join(config.xhsArchiveItemsDir, "kept", "manifest.json"), "{}");
+    await fsp.writeFile(path.join(config.xhsArchiveItemsDir, "kept", "image.jpg"), "image");
+    for (const id of ["gone", "kept"]) {
+      upsert(database, "xhs-archive", id, { id, noteId: id }, "ready");
+      upsert(database, "xhs-media", `${id}-media`, { archiveId: id, fileName: "image.jpg" });
+    }
+    let active = 0,
+      peak = 0;
+    const stat = fsp.stat.bind(fsp);
+    vi.spyOn(fsp, "stat").mockImplementation((...args) => {
+      active++;
+      peak = Math.max(peak, active);
+      return stat(...args).finally(() => active--);
+    });
+    const result = await reconcileDomainRecords(config, database, { domains: ["xhs-archive"] });
+    expect(result.removed).toBe(2);
+    expect(peak).toBe(1);
+    expect(database.list("xhs-archive").map(({ id }) => id)).toEqual(["kept"]);
+    expect(database.list("xhs-media").map(({ id }) => id)).toEqual(["kept-media"]);
   });
 });
 

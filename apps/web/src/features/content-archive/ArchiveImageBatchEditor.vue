@@ -79,7 +79,7 @@
             :options="musicOptions"
             :disabled="locked || loading"
             filterable
-            placeholder="从音频素材库选择配乐"
+            placeholder="从配音素材中选择音频"
             aria-label="批量图文背景音乐"
             @update:value="chooseMusic"
           />
@@ -407,7 +407,7 @@ async function loadMusic() {
   const request = ++musicRequest;
   try {
     const result = await archiveMusicLibraryApi.list(
-      { view: "all", keyword: keyword.value, page: musicPage.value },
+      { view: "speech", keyword: keyword.value, page: musicPage.value },
       scope.signal
     );
     if (scope.aborted || version !== generation || request !== musicRequest) return;

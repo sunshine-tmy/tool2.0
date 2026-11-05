@@ -88,6 +88,7 @@ beforeEach(() => {
   mocks.runtime.mockReset().mockResolvedValue({ ready: true });
   mocks.list.mockReset().mockResolvedValue([]);
   mocks.music.mockReset().mockResolvedValue({ items: [selectedMusic], total: 1 });
+  mocks.upload.mockReset().mockResolvedValue({ item: selectedMusic, existing: false });
   mocks.musicItem.mockReset().mockResolvedValue(selectedMusic);
   mocks.create
     .mockReset()
@@ -160,20 +161,36 @@ describe("归档视频配乐编辑交互", () => {
   it("配乐选择分页展示服务端总数，并在搜索后更新总数及页码", async () => {
     mocks.music.mockResolvedValue({ items: [selectedMusic], total: 43 });
     const wrapper = await setup();
+    expect(mocks.music).toHaveBeenCalledWith(expect.objectContaining({ view: "speech" }), expect.any(AbortSignal));
+    expect(wrapper.find('[aria-label="音乐库范围"]').exists()).toBe(false);
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
     wrapper.getComponent(NPagination).vm.$emit("update:page", 2);
     await flushPromises();
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
-    expect(mocks.music).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }), expect.any(AbortSignal));
+    expect(mocks.music).toHaveBeenLastCalledWith(
+      expect.objectContaining({ view: "speech", page: 2 }),
+      expect.any(AbortSignal)
+    );
     mocks.music.mockResolvedValue({ items: [selectedMusic], total: 21 });
     await wrapper.get('input[placeholder="搜索音乐标题、备注"]').setValue("Tea");
     await button(wrapper, "搜索").trigger("click");
     await flushPromises();
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 21 条");
     expect(mocks.music).toHaveBeenLastCalledWith(
-      expect.objectContaining({ keyword: "Tea", page: 1 }),
+      expect.objectContaining({ view: "speech", keyword: "Tea", page: 1 }),
       expect.any(AbortSignal)
     );
+  });
+  it("编辑器上传的音频加入配音素材，刷新仍使用相同分类", async () => {
+    const wrapper = await setup();
+    const file = new File(["audio"], "voice.mp3", { type: "audio/mpeg" });
+    const input = wrapper.get('input[type="file"]');
+    Object.defineProperty(input.element, "files", { value: [file], configurable: true });
+    await input.trigger("change");
+    await flushPromises();
+    expect(mocks.upload).toHaveBeenCalledWith(file, { purpose: "speech" }, undefined, expect.any(AbortSignal));
+    expect(mocks.music).toHaveBeenLastCalledWith(expect.objectContaining({ view: "speech" }), expect.any(AbortSignal));
+    expect(wrapper.findAllComponents(NSelect).some((select) => select.props("value") === selectedMusic.id)).toBe(true);
   });
   it("库素材选择失败保留当前水印，选择响应迟到不覆盖后来打开的作品", async () => {
     const wrapper = await setup();

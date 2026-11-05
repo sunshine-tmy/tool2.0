@@ -177,16 +177,7 @@
             >
             <p v-if="!isImage" class="editor-hint">原声音量调到 0 即静音，原声中的讲话与已有音乐会一起调节。</p>
             <div class="editor-actions">
-              <n-select
-                v-model:value="musicView"
-                :options="[
-                  { label: '背景音乐', value: 'music' },
-                  { label: '全部音频', value: 'all' }
-                ]"
-                :disabled="busy"
-                aria-label="音乐库范围"
-                @update:value="searchMusic"
-              />
+              <span class="editor-hint">仅查询音频素材库中的「配音素材」</span>
               <n-button :disabled="busy" @click="fileInput?.click()">上传音乐</n-button>
               <router-link
                 v-if="embedded"
@@ -366,8 +357,7 @@ const settings = reactive(defaultArchiveAudioSettings());
 const musicId = ref<string | null>(null),
   chosenMusic = ref<AudioLibraryItemView>(),
   music = ref<AudioLibraryItemView[]>([]);
-const musicView = ref("music"),
-  musicPage = ref(1),
+const musicPage = ref(1),
   musicTotal = ref(0),
   keyword = ref("");
 const job = ref<ArchiveVideoEditJob>(),
@@ -519,7 +509,7 @@ async function loadMusic() {
     version = generation;
   try {
     const result = await audioLibraryApi.list(
-      { view: musicView.value, keyword: keyword.value, page: musicPage.value },
+      { view: "speech", keyword: keyword.value, page: musicPage.value },
       scope.signal
     );
     if (request !== musicRequest || version !== generation || scope.signal.aborted) return;
@@ -550,7 +540,7 @@ async function uploadMusic(event: Event) {
   const version = generation;
   uploading.value = true;
   try {
-    const result = await audioLibraryApi.upload(file, { purpose: "music" }, undefined, scope.signal);
+    const result = await audioLibraryApi.upload(file, { purpose: "speech" }, undefined, scope.signal);
     if (version !== generation || scope.signal.aborted) return;
     chosenMusic.value = result.item;
     musicId.value = result.item.id;

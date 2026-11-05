@@ -315,6 +315,7 @@ describe("图文批量编辑窗口", () => {
   it("选择配乐支持素材版本、音量、循环与选段起点，保留已有水印语义", async () => {
     const wrapper = setup();
     await wrapper.vm.show("audio", listFixture([photo()]).items);
+    expect(mocks.musicList).toHaveBeenCalledWith(expect.objectContaining({ view: "speech" }), expect.any(AbortSignal));
     const select = wrapper
       .findAllComponents(NSelect)
       .find((entry) => entry.attributes("aria-label") === "批量图文背景音乐")!;

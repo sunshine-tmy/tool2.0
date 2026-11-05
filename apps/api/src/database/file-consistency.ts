@@ -5,8 +5,11 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { AppConfig } from "../config";
 import type { ToolboxDatabase } from "./toolbox-database";
+import type { FileMetadata } from "./types";
 
 type FileConsistencyResult = {
   checked: number;
@@ -25,33 +28,37 @@ export async function reconcileFileMetadataStorage(
   database: ToolboxDatabase
 ): Promise<FileConsistencyResult> {
   const result: FileConsistencyResult = { checked: 0, quarantined: 0, removedMetadata: 0, failures: [] };
-  for (const metadata of database.listFiles()) {
-    // 永久音频库及转换结果由领域层管理；缺失或损坏由访问检查报告，不移入全局缓存隔离区。
-    if (["audio-library-item", "audio-convert-job", "audio-extract-job"].includes(metadata.entityKind)) continue;
-    result.checked += 1;
-    const target = resolveStoragePath(config.storageRoot, metadata.relativePath);
-    if (!target) {
-      database.removeFile(metadata.id);
-      result.removedMetadata += 1;
-      result.failures.push({ relativePath: metadata.relativePath, reason: "INVALID_RELATIVE_PATH" });
-      continue;
+  // 永久音频库及转换结果由领域层管理；缺失或损坏由访问检查报告，不移入全局缓存隔离区。
+  const files = database
+    .listFiles()
+    .filter(
+      (metadata) => !["audio-library-item", "audio-convert-job", "audio-extract-job"].includes(metadata.entityKind)
+    );
+  // 只并行两个只读校验，控制磁盘和缓冲区负载；隔离与数据库变更仍按原顺序执行。
+  for (let offset = 0; offset < files.length; offset += 2) {
+    const inspected = await Promise.all(
+      files.slice(offset, offset + 2).map(async (metadata) => ({ metadata, ...(await inspectFile(config, metadata)) }))
+    );
+    let changed = false;
+    for (const entry of inspected) {
+      const { metadata } = entry;
+      result.checked += 1;
+      // 前一项可能通过大小写、点路径等别名移动了同一个文件，不能再使用提前读取的结果。
+      const { target, reason } = changed ? await inspectFile(config, metadata) : entry;
+      if (!reason) continue;
+      if (!target || reason === "FILE_MISSING") {
+        database.removeFile(metadata.id);
+        result.removedMetadata += 1;
+        result.failures.push({ relativePath: metadata.relativePath, reason });
+      } else {
+        const location = await quarantineFile(config, target, metadata.relativePath, reason);
+        database.removeFile(metadata.id);
+        result.removedMetadata += 1;
+        if (location) result.quarantined += 1;
+        else result.failures.push({ relativePath: metadata.relativePath, reason: `${reason}:QUARANTINE_FAILED` });
+      }
+      changed = true;
     }
-    const stat = await fsp.stat(target).catch(() => undefined);
-    if (!stat?.isFile()) {
-      database.removeFile(metadata.id);
-      result.removedMetadata += 1;
-      result.failures.push({ relativePath: metadata.relativePath, reason: "FILE_MISSING" });
-      continue;
-    }
-    const digest = await sha256(target).catch(() => undefined);
-    const reason =
-      stat.size !== metadata.byteSize ? "SIZE_MISMATCH" : digest !== metadata.sha256 ? "SHA256_MISMATCH" : undefined;
-    if (!reason) continue;
-    const location = await quarantineFile(config, target, metadata.relativePath, reason);
-    database.removeFile(metadata.id);
-    result.removedMetadata += 1;
-    if (location) result.quarantined += 1;
-    else result.failures.push({ relativePath: metadata.relativePath, reason: `${reason}:QUARANTINE_FAILED` });
   }
 
   const registeredPaths = new Set(database.listFiles().map((entry) => entry.relativePath));
@@ -74,6 +81,17 @@ export async function reconcileFileMetadataStorage(
     });
   }
   return result;
+}
+
+async function inspectFile(config: AppConfig, metadata: FileMetadata) {
+  const target = resolveStoragePath(config.storageRoot, metadata.relativePath);
+  if (!target) return { target, reason: "INVALID_RELATIVE_PATH" };
+  const stat = await fsp.stat(target).catch(() => undefined);
+  if (!stat?.isFile()) return { target, reason: "FILE_MISSING" };
+  // 大小已不符时原因仍为 SIZE_MISMATCH，无需再读取整个损坏文件。
+  if (stat.size !== metadata.byteSize) return { target, reason: "SIZE_MISMATCH" };
+  const digest = await sha256(target).catch(() => undefined);
+  return { target, reason: digest !== metadata.sha256 ? "SHA256_MISMATCH" : undefined };
 }
 
 function managedDirectories(config: AppConfig) {
@@ -137,8 +155,16 @@ function isTemporaryArtifact(filePath: string) {
 
 async function sha256(filePath: string) {
   const hash = crypto.createHash("sha256");
-  const stream = fs.createReadStream(filePath);
-  for await (const chunk of stream) hash.update(chunk as Buffer);
+  // 每次仍完整校验摘要。大块读取减少往返；pipeline 等待 close，避免 Windows 隔离移动时句柄仍被占用。
+  await pipeline(
+    fs.createReadStream(filePath, { highWaterMark: 1024 * 1024 }),
+    new Writable({
+      write(chunk, _encoding, callback) {
+        hash.update(chunk);
+        callback();
+      }
+    })
+  );
   return hash.digest("hex");
 }
 
