@@ -1,14 +1,14 @@
 # Runtime/API（与 image-ai 基线保持同一审核版本线）
-fastapi==0.141.1
-uvicorn==0.52.4
-pydantic==2.13.5
-starlette==1.6.0
-Pillow==12.3.0
-numpy==2.3.5
-opencv-python-headless==4.11.0.86
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.2
+starlette==1.10.0
+Pillow==13.0.0
+numpy==2.5.4
+opencv-python-headless==5.0.0.93
 
 # 快速档（big-lama TorchScript）需要 CPU 版 PyTorch；CUDA 版在独立扩展包锁定。
-torch==2.6.0+cpu
+torch==2.15.0
 
 # 字幕区域检测（PP-OCRv5，仅 CPU 推理）
 paddleocr==3.7.0
