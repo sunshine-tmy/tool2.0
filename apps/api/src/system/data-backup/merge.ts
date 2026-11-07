@@ -284,6 +284,7 @@ export function planRestore(
     "audio-convert-job",
     "audio-extract-job",
     "image-ai-task",
+    "video-ai-task",
     "edge-tts-task",
     "chatterbox-task",
     "chatterbox-batch",

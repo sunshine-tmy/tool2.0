@@ -114,6 +114,36 @@ beforeEach(() => {
   confirm.mockReset().mockResolvedValue(true);
   vi.mocked(contentArchiveApi.removeFrame).mockReset().mockResolvedValue(archive);
 });
+it("原配乐独立试听下载且不占用视觉轮播位置，播放视频时停止音乐", async () => {
+  const audio = {
+    ...archive.media[0],
+    id: "source_music123",
+    kind: "audio" as const,
+    title: "作品原曲",
+    previewUrl: "/music.wav",
+    downloadUrl: "/music.wav?download=1"
+  };
+  const item = {
+    ...archiveWithFrame,
+    media: [audio, ...archiveWithFrame.media],
+    warnings: ["本次未获取到新配乐，已保留上次归档的原配乐"]
+  };
+  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+  const { wrapper } = mountGallery(item);
+  expect(wrapper.findAll(".media-thumbs > button")).toHaveLength(2);
+  expect(wrapper.get(".archive-soundtrack").text()).toContain("作品原曲");
+  expect(wrapper.get(".archive-soundtrack audio").attributes("src")).toContain("/music.wav");
+  expect(wrapper.get(".archive-soundtrack a").attributes("href")).toContain("download=1");
+  expect(wrapper.text()).toContain("已保留上次归档的原配乐");
+  await wrapper.setProps({ showWarnings: false });
+  expect(wrapper.text()).not.toContain("已保留上次归档的原配乐");
+  await wrapper.get(".media-stage video").trigger("play");
+  expect(pause).toHaveBeenCalled();
+  await wrapper.findAll(".media-thumbs > button")[1].trigger("click");
+  expect(wrapper.find(".media-stage video").exists()).toBe(false);
+  expect(wrapper.find(".archive-soundtrack audio").exists()).toBe(true);
+  wrapper.unmount();
+});
 afterEach(() => vi.restoreAllMocks());
 
 describe("归档媒体编辑入口", () => {

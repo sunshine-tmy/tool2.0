@@ -135,10 +135,22 @@ export class ArchiveVideoEditService {
       throw new VideoEditError("ARCHIVE_EDIT_QUEUE_FULL", "视频编辑任务较多，请稍后重试", 429);
     if ([...this.jobs.values()].some((job) => job.itemId === itemId && active(job)))
       throw new VideoEditError("ARCHIVE_EDIT_BUSY", "该作品已有视频编辑任务，请等待完成或先停止任务", 409);
-    if ((input.musicId && input.useSavedMusic) || (!input.musicId && input.musicRevision))
+    if (
+      [Boolean(input.musicId), input.useSavedMusic, Boolean(input.sourceMusicId)].filter(Boolean).length > 1 ||
+      (!input.musicId && input.musicRevision) ||
+      Boolean(input.sourceMusicId) !== Boolean(input.sourceMusicChecksum)
+    )
       throw new VideoEditError("ARCHIVE_EDIT_MUSIC_INVALID", "请选择一种有效的音乐来源");
     const current = await this.options.store.mediaPath(itemId, mediaId);
     if (!current) throw new VideoEditError("ARCHIVE_MEDIA_NOT_FOUND", "视频不存在", 404);
+    if (
+      input.sourceMusicId &&
+      !current.item.media.some(
+        (media) =>
+          media.id === input.sourceMusicId && media.kind === "audio" && media.checksum === input.sourceMusicChecksum
+      )
+    )
+      throw new VideoEditError("ARCHIVE_EDIT_MUSIC_CHANGED", "原作品配乐不存在或已更新，请重新打开归档", 409);
     if (
       !["video", "live-photo"].includes(current.media.kind) &&
       !(current.media.kind === "image" && input.slideshow && !current.media.frameSourceMediaId)
@@ -353,6 +365,19 @@ export class ArchiveVideoEditService {
           throw new VideoEditError("ARCHIVE_EDIT_MUSIC_MISSING", "当前视频没有可复用的配乐，请重新选曲", 404);
         music = structuredClone(lease.media.audioEdit.music);
         await fs.copyFile(localFile(lease.directory, music.fileName), localFile(directory, music.fileName));
+      } else if (input.mode !== "restore" && input.sourceMusicId) {
+        const source = lease.item.media.find(
+          (media) =>
+            media.id === input.sourceMusicId && media.kind === "audio" && media.checksum === input.sourceMusicChecksum
+        );
+        if (!source) throw new VideoEditError("ARCHIVE_EDIT_MUSIC_CHANGED", "原作品配乐已更新，请重新选择", 409);
+        const fileName = `music-${nanoid(12)}${path.extname(source.fileName)}`;
+        await fs.copyFile(localFile(lease.directory, source.fileName), localFile(directory, fileName));
+        const file = await inspectEditFile(localFile(directory, fileName), source.mimeType);
+        if (file.checksum !== source.checksum || file.size !== source.size)
+          throw new VideoEditError("ARCHIVE_EDIT_MUSIC_CHANGED", "原作品配乐文件已变化，请刷新归档", 409);
+        music = { ...file, title: source.title || "原作品配乐" };
+        addedFiles.push(fileName);
       } else if (input.mode !== "restore" && input.musicId) {
         const selected = await this.options.music.acquire(input.musicId, input.musicRevision);
         try {

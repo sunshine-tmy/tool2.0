@@ -2,6 +2,7 @@
 export const backupModules = [
   { id: "image-compress", name: "图片压缩" },
   { id: "image-ai", name: "AI 图片处理" },
+  { id: "video-ai", name: "视频去字幕" },
   { id: "speech", name: "多国语言配音" },
   { id: "audio-library", name: "音频素材库" },
   { id: "audio-convert", name: "音频格式转换" },

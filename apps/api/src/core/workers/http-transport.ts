@@ -1,4 +1,5 @@
 /** Node Worker HTTP 传输；领域错误与协议兼容策略由调用方保留。 */
+import { Agent } from "undici";
 import { workerAuthHeaders } from "../../security/worker-auth";
 
 type WorkerFailure = { code?: string; message?: string };
@@ -25,28 +26,39 @@ export async function requestWorkerHttp<T>(options: {
   const externalSignal = init.signal;
   const abortFromExternal = () => controller.abort();
   externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+  // Inference returns headers only after finishing. Node fetch otherwise imposes
+  // an independent 300-second headers/body timeout, even with a longer signal.
+  // The deadline above bounds the whole request, including reading the body.
+  // Keep this dispatcher request-local; never relax global HTTP/proxy timeouts.
+  const dispatcher = new Agent({ headersTimeout: 0, bodyTimeout: 0 });
 
   try {
     const headers = new Headers(init.headers);
     for (const [name, value] of Object.entries(workerAuthHeaders(options.getToken()))) headers.set(name, value);
-    const response = await fetch(new URL(pathname, `${options.getBaseUrl()}/`), {
+    const request: RequestInit & { dispatcher: Agent } = {
       ...init,
       headers,
-      signal: controller.signal
+      signal: controller.signal,
+      dispatcher
+    };
+    const response = await fetch(new URL(pathname, `${options.getBaseUrl()}/`), request);
+    const payload: unknown = await response.json().catch((error: unknown) => {
+      if (controller.signal.aborted) throw error;
+      return null;
     });
-    const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) throw errors.http(workerFailure(payload), response);
     if (isRecord(payload) && payload.success === true && validate(payload.data)) return payload.data;
     throw errors.invalid();
   } catch (error) {
     if (errors.owns(error)) throw error;
-    if (error instanceof Error && error.name === "AbortError") {
+    if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
       throw errors.aborted(externalSignal?.aborted === true);
     }
     throw errors.unavailable();
   } finally {
     clearTimeout(timeout);
     externalSignal?.removeEventListener("abort", abortFromExternal);
+    await dispatcher.destroy().catch(() => undefined);
   }
 }
 

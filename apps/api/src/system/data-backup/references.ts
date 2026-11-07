@@ -11,6 +11,7 @@ export function mapped(map: IdMapping, module: BackupModuleId, kind: string, id:
 export function taskKind(tool: string) {
   const kinds: Record<string, string> = {
     "image-ai": "image-ai-task",
+    "video-ai": "video-ai-task",
     "audio-convert": "audio-convert-job",
     "audio-extract": "audio-extract-job",
     "edge-tts": "edge-tts-task",
@@ -28,6 +29,10 @@ export function mapFilePath(file: BackupFile, module: ModuleData, map: IdMapping
   const m = (kind: string, id: string) => mapped(map, module.id, kind, id);
   if (module.id === "image-compress") parts[1] = parts[1].replace(file.entityId, m("task", file.entityId));
   if (module.id === "image-ai") parts[2] = m("image-ai-task", parts[2]);
+  if (module.id === "video-ai") {
+    if (parts[1] === "outputs") parts[2] = `${m("video-ai-task", file.entityId)}.mp4`;
+    else parts[2] = m("video-ai-task", parts[2]);
+  }
   if (module.id === "audio-convert") parts[2] = m("audio-convert-job", parts[2]);
   if (module.id === "audio-extract") parts[2] = m("audio-extract-job", parts[2]);
   if (module.id === "speech") {
@@ -82,9 +87,25 @@ export function rewriteRecord(row: StoredEntity, module: ModuleData, map: IdMapp
     if (typeof value !== "string") return value;
     if (
       value.startsWith("@storage/") &&
-      ["path", "maskPath", "outputPath", "foreground", "original", "background", "erase", "restore"].includes(key)
-    )
-      return `@storage/${filePaths.get(value.slice(9)) ?? value.slice(9)}`;
+      [
+        "path",
+        "maskPath",
+        "outputPath",
+        "inputPath",
+        "progressPath",
+        "cancelFlagPath",
+        "foreground",
+        "original",
+        "background",
+        "erase",
+        "restore"
+      ].includes(key)
+    ) {
+      const relative = value.slice(9);
+      if (module.id === "video-ai" && ["inputPath", "progressPath", "cancelFlagPath"].includes(key))
+        return `@storage/${relative.replace(`/` + row.id + `/`, `/` + mapped(map, module.id, "video-ai-task", row.id) + `/`)}`;
+      return `@storage/${filePaths.get(relative) ?? relative}`;
+    }
     if (key === "id") {
       if (
         context === "tiktok-work" ||
@@ -159,6 +180,7 @@ function rewriteUrl(url: string, module: ModuleData, map: IdMapping) {
   if (parts[4] === "edge-tts" || parts[4] === "chatterbox")
     kind = `${parts[4]}-${parts[5] === "batches" ? "batch" : parts[5] === "voices" ? "voice" : "task"}`;
   if (parts[4] === "image-ai") kind = "image-ai-task";
+  if (parts[4] === "video-ai") kind = "video-ai-task";
   if (parts[4] === "xhs-archive" || parts[4] === "media-archive")
     kind = parts[5] === "watermark-library" ? "archive-watermark-library" : "xhs-archive";
   if (kind && parts[6]) parts[6] = mapped(map, module.id, kind, parts[6]);

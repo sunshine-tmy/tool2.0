@@ -36,19 +36,25 @@ export const componentApi = {
 
   importOffline(componentId: string, files: File[], options: OfflineImportOptions = {}): Promise<ComponentJob> {
     const payload = new FormData();
-    for (const file of files) payload.append("archives", file, file.name);
+    const bundle = files.length === 1 && files[0].name.endsWith(".toolbox-capabilities.zip");
+    for (const file of files) payload.append(bundle ? "bundle" : "archives", file, file.name);
     return withApiError(
       () =>
-        httpClient.post(`/components/${encodeURIComponent(componentId)}/offline-import`, ComponentJobSchema, payload, {
-          timeout: 0,
-          maxBodyLength: Infinity,
-          maxContentLength: Infinity,
-          signal: options.signal,
-          onUploadProgress: (event) => {
-            if (event.progress !== undefined)
-              options.onProgress?.(Math.min(100, Math.round(event.progress * 100)), event);
+        httpClient.post(
+          `/components/${encodeURIComponent(componentId)}/${bundle ? "offline-bundle-import" : "offline-import"}`,
+          ComponentJobSchema,
+          payload,
+          {
+            timeout: 0,
+            maxBodyLength: Infinity,
+            maxContentLength: Infinity,
+            signal: options.signal,
+            onUploadProgress: (event) => {
+              if (event.progress !== undefined)
+                options.onProgress?.(Math.min(100, Math.round(event.progress * 100)), event);
+            }
           }
-        }),
+        ),
       "导入离线能力包失败"
     );
   },

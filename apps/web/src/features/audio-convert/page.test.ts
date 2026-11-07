@@ -132,7 +132,7 @@ it("adds an independent library item in the chosen group and returns to the orig
   await flushPromises();
   await button(w, "加入并返回视频编辑").trigger("click");
   await flushPromises();
-  expect(mocks.add).toHaveBeenCalledWith("converted123", "group123", "speech");
+  expect(mocks.add).toHaveBeenCalledWith("converted123", "group123", "music");
   expect(mocks.push).toHaveBeenCalledWith({
     name: "archive-video-editor",
     params: { itemId: "archive123", mediaId: "media123" },

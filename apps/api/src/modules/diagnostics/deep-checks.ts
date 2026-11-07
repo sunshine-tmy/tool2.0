@@ -64,8 +64,10 @@ export async function executeDeepCheck(
   if (target.startsWith("integrity-")) {
     const id = target.slice(10);
     title = `能力包完整性 · ${id}`;
-    const tester = createDesktopComponentSelfTest((executable, args, cwd, environment) =>
-      diagnosticProcess(executable, args, signal, cwd, environment)
+    const tester = createDesktopComponentSelfTest(
+      (executable, args, cwd, environment) => diagnosticProcess(executable, args, signal, cwd, environment),
+      async (relative) => (await service.components.resolveInstalledAsset("ffmpeg", relative)).path,
+      (componentId) => service.components.resolveInstalledPython(componentId)
     );
     await service.components.verifyCurrent(id, signal, tester);
   } else if (target === "image-ai" || target === "chatterbox") {

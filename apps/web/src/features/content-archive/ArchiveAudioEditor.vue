@@ -177,7 +177,7 @@
             >
             <p v-if="!isImage" class="editor-hint">原声音量调到 0 即静音，原声中的讲话与已有音乐会一起调节。</p>
             <div class="editor-actions">
-              <span class="editor-hint">仅查询音频素材库中的「配音素材」</span>
+              <span class="editor-hint">仅查询音频素材库中的「背景音乐」</span>
               <n-button :disabled="busy" @click="fileInput?.click()">上传音乐</n-button>
               <router-link
                 v-if="embedded"
@@ -222,8 +222,12 @@
               :key="musicUrl"
               v-model:start="settings.musicStartSeconds"
               :url="musicUrl"
-              :title="chosenMusic?.title ?? current?.audioEdit?.music?.title ?? '当前配乐'"
-              :music-duration="chosenMusic?.duration"
+              :title="
+                musicId === '__original__'
+                  ? originalMusic?.title || '原作品配乐'
+                  : (chosenMusic?.title ?? current?.audioEdit?.music?.title ?? '当前配乐')
+              "
+              :music-duration="musicId === '__original__' ? undefined : chosenMusic?.duration"
               :video-duration="editDuration"
               :disabled="busy"
               :loop="settings.loop"
@@ -354,6 +358,7 @@ const editDuration = computed(() =>
     : videoDuration.value
 );
 const settings = reactive(defaultArchiveAudioSettings());
+const originalMusic = computed(() => props.item.media.find((media) => media.kind === "audio"));
 const musicId = ref<string | null>(null),
   chosenMusic = ref<AudioLibraryItemView>(),
   music = ref<AudioLibraryItemView[]>([]);
@@ -409,6 +414,9 @@ const musicOptions = computed(() => {
   const items = [...music.value];
   if (chosenMusic.value && !items.some((item) => item.id === chosenMusic.value!.id)) items.unshift(chosenMusic.value);
   return [
+    ...(originalMusic.value
+      ? [{ label: `${originalMusic.value.title || "原作品配乐"}（随作品归档）`, value: "__original__" }]
+      : []),
     ...(current.value?.audioEdit?.music
       ? [{ label: `${current.value.audioEdit.music.title}（当前配乐快照）`, value: "__saved__" }]
       : []),
@@ -422,9 +430,11 @@ const musicUrl = computed(() =>
     ? resolveBackendUrl(
         `/api/v1/tools/media-archive/items/${props.item.id}/media/${current.value?.id ?? props.mediaId}/saved-music?v=${current.value?.audioEdit?.music?.checksum ?? ""}`
       )
-    : chosenMusic.value
-      ? resolveBackendUrl(chosenMusic.value.audioUrl)
-      : ""
+    : musicId.value === "__original__" && originalMusic.value
+      ? resolveBackendUrl(originalMusic.value.previewUrl)
+      : chosenMusic.value
+        ? resolveBackendUrl(chosenMusic.value.audioUrl)
+        : ""
 );
 let scope = new AbortController(),
   timer: ReturnType<typeof setTimeout> | undefined,
@@ -494,7 +504,11 @@ function applyMedia(media?: ContentArchiveMedia) {
   videoDuration.value = (media?.durationMs ?? 0) / 1000;
   originalDuration.value = 0;
   Object.assign(settings, media?.audioEdit?.settings ?? defaultArchiveAudioSettings());
-  musicId.value = media?.audioEdit?.music ? "__saved__" : null;
+  musicId.value = media?.audioEdit?.music
+    ? "__saved__"
+    : media?.kind === "image" && originalMusic.value
+      ? "__original__"
+      : null;
   chosenMusic.value = undefined;
   basePreviewUrl.value = "";
   basePreviewJob.value = undefined;
@@ -509,7 +523,7 @@ async function loadMusic() {
     version = generation;
   try {
     const result = await audioLibraryApi.list(
-      { view: "speech", keyword: keyword.value, page: musicPage.value },
+      { view: "music", keyword: keyword.value, page: musicPage.value },
       scope.signal
     );
     if (request !== musicRequest || version !== generation || scope.signal.aborted) return;
@@ -540,7 +554,7 @@ async function uploadMusic(event: Event) {
   const version = generation;
   uploading.value = true;
   try {
-    const result = await audioLibraryApi.upload(file, { purpose: "speech" }, undefined, scope.signal);
+    const result = await audioLibraryApi.upload(file, { purpose: "music" }, undefined, scope.signal);
     if (version !== generation || scope.signal.aborted) return;
     chosenMusic.value = result.item;
     musicId.value = result.item.id;
@@ -633,6 +647,9 @@ async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = 
     revision: current.value.audioEdit?.revision ?? 0,
     checksum: current.value.checksum,
     useSavedMusic: musicId.value === "__saved__",
+    ...(musicId.value === "__original__" && originalMusic.value
+      ? { sourceMusicId: originalMusic.value.id, sourceMusicChecksum: originalMusic.value.checksum }
+      : {}),
     settings: { ...settings },
     ...(isImage.value
       ? {}
@@ -665,6 +682,8 @@ async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = 
     input.watermark = null;
     delete input.musicId;
     delete input.musicRevision;
+    delete input.sourceMusicId;
+    delete input.sourceMusicChecksum;
   }
   try {
     const result = await videoEditApi.create(props.item.id, current.value.id, input, scope.signal);

@@ -8,6 +8,7 @@ import { readStorageConfig } from "./core/config/storage";
 import { readLanConfig } from "./core/config/lan";
 import { readArchiveConfig } from "./core/config/archive";
 import { readImageConfig } from "./core/config/image";
+import { readVideoAiConfig } from "./core/config/video";
 import { readSpeechConfig } from "./core/config/speech";
 export type { AppConfig } from "./core/config/types";
 
@@ -24,6 +25,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     : resolveConfigPath(runtime, getEnv("STORAGE_ROOT", fileEnv, environment) ?? runtime.storageRoot);
 
   const imageAiDir = path.join(storageRoot, "image-ai");
+  const videoAiDir = path.join(storageRoot, "video-ai");
   const edgeTtsDir = path.join(storageRoot, "edge-tts");
   const chatterboxDir = path.join(storageRoot, "chatterbox");
   const xhsArchiveDir = path.join(storageRoot, "xhs-archive");
@@ -45,6 +47,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     adminPin,
     storageRoot,
     imageAiDir,
+    videoAiDir,
     edgeTtsDir,
     chatterboxDir,
     xhsArchiveDir,
@@ -60,6 +63,7 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     ...readLanConfig(context),
     ...readArchiveConfig(context),
     ...readImageConfig(context),
+    ...readVideoAiConfig(context),
     ...readSpeechConfig(context),
     deploymentUsage: configuredUsage === "internal-noncommercial" ? "internal-noncommercial" : "commercial"
   };

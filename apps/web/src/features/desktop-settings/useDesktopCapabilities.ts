@@ -23,6 +23,7 @@ export function useDesktopCapabilities() {
   const componentsNotice = ref("");
   const startingComponentId = ref("");
   const cancelingJobId = ref("");
+  const exportingComponentId = ref("");
 
   const jobSubscriptions = new Map<string, () => void>();
 
@@ -53,6 +54,7 @@ export function useDesktopCapabilities() {
 
   onBeforeUnmount(() => {
     offlineUpload.value?.controller.abort();
+    if (exportingComponentId.value) void desktop.value?.cancelCapabilityExport?.().catch(() => undefined);
     for (const unsubscribe of jobSubscriptions.values()) unsubscribe();
     jobSubscriptions.clear();
   });
@@ -106,7 +108,7 @@ export function useDesktopCapabilities() {
   }
 
   function selectOfflineImport(component: ComponentPackageStatus) {
-    if (startingComponentId.value || offlineUpload.value) return;
+    if (startingComponentId.value || offlineUpload.value || exportingComponentId.value) return;
     pendingOfflineImport.value = component;
     if (!offlineArchiveInput.value) {
       componentsError.value = "无法打开离线能力包选择器，请重启桌面应用后重试";
@@ -123,22 +125,23 @@ export function useDesktopCapabilities() {
     const component = pendingOfflineImport.value;
     pendingOfflineImport.value = undefined;
     if (!component || !files.length) return;
-    if (files.some((file) => !file.name.toLowerCase().endsWith(".tar.gz"))) {
-      message.error("请选择能力管理器提供的 .tar.gz 能力包");
+    const bundle = files.length === 1 && files[0].name.endsWith(".toolbox-capabilities.zip");
+    if (!bundle && files.some((file) => !file.name.toLowerCase().endsWith(".tar.gz"))) {
+      message.error("请选择完整的 .tar.gz 能力包，或一个导出的 .toolbox-capabilities.zip 备份包");
       return;
     }
     const totalBytes = files.reduce((total, file) => total + file.size, 0);
-    if (totalBytes !== component.downloadBytes) {
+    if (!bundle && totalBytes !== component.downloadBytes) {
       message.error(
         `所选文件合计 ${formatBytes(totalBytes)}，当前目录要求 ${formatBytes(component.downloadBytes)}；请确认版本和分卷完整`
       );
       return;
     }
     const accepted = await confirm(
-      `将把所选 ${files.length} 个文件（${formatBytes(totalBytes)}）上传到本机，并按应用内受信任清单校验大小、SHA-256、签名文件清单和运行时自检。校验失败不会替换现有可用版本。请先安装该能力缺少的依赖。`,
+      `将把所选 ${files.length} 个文件（${formatBytes(totalBytes)}）上传到本机，并按应用内受信任清单校验大小、SHA-256、签名文件清单和运行时自检。校验失败不会替换现有可用版本。${bundle ? "备份包内的共享依赖会先安装，随后安装所选能力；不导入业务数据。" : "请先安装该能力缺少的依赖。"}`,
       { title: `离线导入“${component.displayName}”`, positiveText: "校验并导入" }
     );
-    if (!accepted || startingComponentId.value || offlineUpload.value) return;
+    if (!accepted || startingComponentId.value || offlineUpload.value || exportingComponentId.value) return;
 
     const controller = new AbortController();
     startingComponentId.value = component.id;
@@ -155,6 +158,7 @@ export function useDesktopCapabilities() {
         }
       });
       trackComponentJob(job);
+      if (bundle) await loadComponents();
     } catch (cause) {
       if (controller.signal.aborted) message.info("离线包传输已取消，未安装任何文件");
       else componentsError.value = formatApiError(cause, "离线能力包导入失败");
@@ -166,6 +170,42 @@ export function useDesktopCapabilities() {
 
   function cancelOfflineImport(component: ComponentPackageStatus) {
     if (offlineUpload.value?.componentId === component.id) offlineUpload.value.controller.abort();
+  }
+
+  async function exportComponent(component: ComponentPackageStatus) {
+    if (exportingComponentId.value || startingComponentId.value || offlineUpload.value) return;
+    if (!desktop.value?.exportCapability) {
+      message.error("当前桌面版本不支持导出，请更新客户端后重试");
+      return;
+    }
+    exportingComponentId.value = component.id;
+    componentsError.value = "";
+    componentsNotice.value =
+      "正在导出能力及其共享依赖；校验和复制大模型可能需要一些时间。若 Python 运行缓存已变化，将联网获取对应原始签名归档恢复导出内容，不修改已安装环境。";
+    try {
+      const result = await desktop.value.exportCapability(component.id);
+      if (result.canceled) message.info("能力包导出已取消");
+      else {
+        componentsNotice.value = `已导出 ${result.fileName}（${formatBytes(result.bytes)}）。可在其他设备的同一能力卡片中离线导入。`;
+        message.success("离线能力包已导出");
+      }
+      if (result.canceled) componentsNotice.value = "";
+    } catch (cause) {
+      componentsNotice.value = "";
+      componentsError.value =
+        cause instanceof Error && cause.message
+          ? `导出能力包失败：${cause.message}`
+          : formatApiError(cause, "导出能力包失败，请检查目标空间及能力版本");
+    } finally {
+      exportingComponentId.value = "";
+    }
+  }
+  async function cancelComponentExport() {
+    try {
+      await desktop.value?.cancelCapabilityExport?.();
+    } catch (cause) {
+      componentsError.value = formatApiError(cause, "取消能力导出失败，请重试");
+    }
   }
 
   async function uninstallComponent(component: ComponentPackageStatus) {
@@ -187,7 +227,7 @@ export function useDesktopCapabilities() {
   }
 
   async function startComponentOperation(component: ComponentPackageStatus, operation: ComponentJob["operation"]) {
-    if (startingComponentId.value) return;
+    if (startingComponentId.value || exportingComponentId.value) return;
     startingComponentId.value = component.id;
     componentsError.value = "";
     componentsNotice.value = "";
@@ -275,6 +315,9 @@ export function useDesktopCapabilities() {
     componentsNotice,
     startingComponentId,
     cancelingJobId,
+    exportingComponentId,
+    exportComponent,
+    cancelComponentExport,
     componentGroups,
     componentTotalLabel,
     loadComponents,

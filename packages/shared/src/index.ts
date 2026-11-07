@@ -9,6 +9,7 @@ export * from "./image/compress-result";
 export * from "./system/cleanup";
 export * from "./image/image-ai";
 export * from "./image/product-image";
+export * from "./video/video-ai";
 export * from "./speech/edge-tts";
 export * from "./speech/edge-tts-batch";
 export * from "./speech/chatterbox";

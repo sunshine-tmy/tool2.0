@@ -12,7 +12,7 @@ export async function smokeCommonContract(repoRoot) {
     check(Value.Check(apiSuccessSchema(Type.Number()),{...ok(1),requestId:'req-1',extra:true}),'response extra fields');
     check(Value.Check(ApiFailureSchema,{...fail('CODE','message'),requestId:'req-1'}),'failure envelope');
     check(WORKER_PROTOCOL_VERSION===1,'worker version');
-    check(listTools().length===12 && listTools().some(tool=>tool.id==='audio-convert') && ['json-format','base64','url-codec','uuid-generator'].every(id=>listTools().some(tool=>tool.id===id && tool.apiNamespace===null && tool.execution==='browser')),'tool registry');
+    check(listTools().length===13 && ['audio-convert','video-subtitle'].every(id=>listTools().some(tool=>tool.id===id)) && ['json-format','base64','url-codec','uuid-generator'].every(id=>listTools().some(tool=>tool.id===id && tool.apiNamespace===null && tool.execution==='browser')),'tool registry');
   `;
   await smokeSharedContract(repoRoot, {
     name: "common",

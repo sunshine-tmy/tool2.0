@@ -21,7 +21,9 @@ test.describe("toolbox critical workflows", () => {
     await page.getByRole("button", { name: "本地服务与管理员会话", exact: true }).click();
     expect((await healthResponse).ok()).toBe(true);
     await expect(page.locator(".service-summary")).toContainText("主服务运行正常");
-    await expect(page.locator(".service-row .service-state")).toHaveCount(6);
+    await expect(page.locator(".service-row .service-state")).toHaveCount(13);
+    for (const name of ["音频素材库", "音频提取器", "音频格式转换", "视频去字幕", "UUID 生成"])
+      await expect(page.locator(".service-row").filter({ hasText: name })).toHaveCount(1);
   });
 
   test("uploads a file, resumes a missing chunk, and batch deletes it", async ({ page, request }) => {

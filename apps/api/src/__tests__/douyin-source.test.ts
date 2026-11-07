@@ -18,6 +18,18 @@ const detail = {
   textExtra: [{ hashtagName: "烟花" }, { hashtagName: "烟花" }],
   video
 };
+it("图文兼容两种配乐地址字段，缺失可选配乐仍保存全部原图", () => {
+  const images = [{ urlList: [`${cdn}/image.webp`] }];
+  for (const music of [
+    { title: "原曲", playUrl: `${cdn}/music.mp3` },
+    { title: "原曲", play_url: { url_list: [`${cdn}/music.mp3`] } }
+  ]) {
+    const result = readDouyinPage(page({ ...detail, images, music }), id)!;
+    expect(result.media.map((entry) => entry.kind)).toEqual(["image", "audio"]);
+    expect(result.media[1]).toMatchObject({ title: "原曲", urls: [`${cdn}/music.mp3`] });
+  }
+  expect(readDouyinPage(page({ ...detail, images, music: { play_url: { url_list: [] } } }), id)!.media).toHaveLength(1);
+});
 function stream(tree: unknown) {
   return `<script>self.__pace_f.push(${JSON.stringify([1, "7:" + JSON.stringify(tree)])})</script>`;
 }

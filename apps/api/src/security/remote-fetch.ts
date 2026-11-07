@@ -193,10 +193,10 @@ export function assertRemoteResponseSize(response: Response, maxBytes: number) {
   }
 }
 
-export function limitedResponseStream(response: Response, maxBytes: number) {
+export function limitedResponseStream(response: Response, maxBytes: number, signal?: AbortSignal) {
   if (!response.body) throw new Error("Remote response did not include a body");
   let received = 0;
-  const source = Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>);
+  const source = Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>, { signal });
   const limiter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       received += chunk.length;
@@ -210,6 +210,8 @@ export function limitedResponseStream(response: Response, maxBytes: number) {
   // Node 的 .pipe() 不会自动转发 Web Stream 的错误；显式转发给 Fastify，
   // 让请求生命周期处理异常，避免升级成未捕获的进程级错误。
   source.once("error", (error) => limiter.destroy(error));
+  // 有总下载时限的调用方需同时释放上游 Web reader；仅销毁下游 Transform 不会取消锁定的正文。
+  if (signal) limiter.once("close", () => source.destroy());
   return source.pipe(limiter);
 }
 

@@ -20106,6 +20106,947 @@ export const packagedComponentCatalog = {
     },
     {
       "protocolVersion": 1,
+      "id": "video-ai",
+      "moduleId": "video-ai",
+      "groupId": "media",
+      "displayName": "视频去字幕（CPU 基础包）",
+      "purpose": "自动检测并修复视频中的硬字幕区域，支持批量任务与手动框选；安装后可使用 OpenCV 快速修复、Big-LaMa 快速档与手动框选，STTN/ProPainter 序列引擎在提供后启用。",
+      "dependencyIds": [
+        "python-312",
+        "ffmpeg"
+      ],
+      "taskToolIds": [
+        "video-ai"
+      ],
+      "installConditions": [
+        "安装与处理全程离线；模型、OCR 与 Worker 均随能力包安装，不会在处理过程中下载任何文件。",
+        "安装过程建议预留约 6 GB 可用磁盘空间，安装后约占 3.2 GB；建议至少 8 GB 内存。此版本使用 CPU，不要求 CUDA。",
+        "字幕检测使用固定版本 PP-OCRv5 中文检测与识别模型；修复使用 Big-LaMa 权重。GPU 均衡档与极致档需要另装 video-ai-cuda 扩展包。",
+        "视频合成复用共享 FFmpeg 8.1.2 组件，不重复打包。"
+      ],
+      "version": "1.1.0-py312-cpu1",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.tar.gz",
+        "bytes": 673898034,
+        "sha256": "0a829d1fa31e8a74e7012284e2a4f63765f8cdf61081fb9e63f831093cad5a0b",
+        "format": "tar.gz"
+      },
+      "installedBytes": 3200000000,
+      "files": [
+        {
+          "path": "models/video-ai/big-lama.pt",
+          "bytes": 205803670,
+          "sha256": "7ba7aa7ac37a4d41fdbbeba3a2af7ead18058552997e3a3cd1a3b2210c9e6b4c"
+        },
+        {
+          "path": "models/video-ai/ocr/detection/inference.json",
+          "bytes": 229777,
+          "sha256": "05feef1acb00aa4cd7362b15f7f501fc4f99d7b1fa73c1c871e0c7b1504b0f5c"
+        },
+        {
+          "path": "models/video-ai/ocr/detection/inference.pdiparams",
+          "bytes": 4692937,
+          "sha256": "afa1820cb16c1fd0dad589d0f8b389139061c1ef6d68019685fd07be997dda5b"
+        },
+        {
+          "path": "models/video-ai/ocr/detection/inference.yml",
+          "bytes": 903,
+          "sha256": "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699"
+        },
+        {
+          "path": "models/video-ai/ocr/recognition/inference.json",
+          "bytes": 217724,
+          "sha256": "24587345250c7332d0fc6f9a44e794d078cdaeb64c302fef906f325619de2569"
+        },
+        {
+          "path": "models/video-ai/ocr/recognition/inference.pdiparams",
+          "bytes": 16458665,
+          "sha256": "2460da90875937c94db97eba74ae3d9e5d4c4c57c42f1f41531c09a26bcc771a"
+        },
+        {
+          "path": "models/video-ai/ocr/recognition/inference.yml",
+          "bytes": 148345,
+          "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e"
+        },
+        {
+          "path": "PROVENANCE.json",
+          "bytes": 2056,
+          "sha256": "da695394e5ad48b87cc2640847bada723d5ba8ae22c073e38f1498fe09fd3c64"
+        },
+        {
+          "path": "requirements.lock",
+          "bytes": 208413,
+          "sha256": "14225eeb0bba9197fd5cc1c3342a0663f30c8cb1455a1c7008dacdfa9f165a4b"
+        },
+        {
+          "path": "scripts/video_ai_engine_assets.py",
+          "bytes": 9346,
+          "sha256": "970b311654b99b9c34bdd04e77e3c9595ef645ecb43ee446202146f3ff232d5f"
+        },
+        {
+          "path": "scripts/video_ai_propainter.py",
+          "bytes": 11000,
+          "sha256": "e2140266f7f649d32b699d6cbde925879dda695e2c9241e2d13e8be45fd3986b"
+        },
+        {
+          "path": "scripts/video_ai_sequence.py",
+          "bytes": 11295,
+          "sha256": "b7dbcb25058d19989216acfd5ba3d4701a4f29b5c1839b1a853937a2e544c76d"
+        },
+        {
+          "path": "scripts/video_ai_sttn.py",
+          "bytes": 7890,
+          "sha256": "371acc2da31117f4a94d8a2cdd38791be62df74e766f5e8f638e19415d3117ea"
+        },
+        {
+          "path": "scripts/video-ai-sequence-support.json",
+          "bytes": 95,
+          "sha256": "dcf15924319942aab60524212658652775ffbb10923d76afec8facd53740140f"
+        },
+        {
+          "path": "scripts/video-ai-worker.py",
+          "bytes": 58110,
+          "sha256": "a1bcef715fe96a1933adac013a833be78426e834b817d556f1926fcb68d005b2"
+        },
+        {
+          "path": "wheelhouse/aiohappyeyeballs-2.7.1-py3-none-any.whl",
+          "bytes": 15038,
+          "sha256": "9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472"
+        },
+        {
+          "path": "wheelhouse/aiohttp-3.14.5-cp312-cp312-win_amd64.whl",
+          "bytes": 506141,
+          "sha256": "2cc38a4f2b516bef1714e690df87a0e043faf1a7693c82d860091684453d5111"
+        },
+        {
+          "path": "wheelhouse/aiosignal-1.4.0-py3-none-any.whl",
+          "bytes": 7490,
+          "sha256": "053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e"
+        },
+        {
+          "path": "wheelhouse/aistudio_sdk-0.3.9-py3-none-any.whl",
+          "bytes": 67186,
+          "sha256": "41621d052ddb7a58643438a7ca541f58ef0ab94a2acdfff0a71db81bf68dc027"
+        },
+        {
+          "path": "wheelhouse/annotated_doc-0.0.5-py3-none-any.whl",
+          "bytes": 5302,
+          "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101"
+        },
+        {
+          "path": "wheelhouse/annotated_types-0.8.0-py3-none-any.whl",
+          "bytes": 13427,
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
+        },
+        {
+          "path": "wheelhouse/anyio-4.16.0-py3-none-any.whl",
+          "bytes": 134521,
+          "sha256": "c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026"
+        },
+        {
+          "path": "wheelhouse/attrs-26.1.0-py3-none-any.whl",
+          "bytes": 67548,
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"
+        },
+        {
+          "path": "wheelhouse/bce_python_sdk-0.9.79-py3-none-any.whl",
+          "bytes": 440268,
+          "sha256": "71799ac8740505e0759d30873f6f1a478fa8f83aedf425d511f1419a5f30082e"
+        },
+        {
+          "path": "wheelhouse/certifi-2026.10.23-py3-none-any.whl",
+          "bytes": 135082,
+          "sha256": "e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1"
+        },
+        {
+          "path": "wheelhouse/cffi-2.1.1-cp312-cp312-win_amd64.whl",
+          "bytes": 185919,
+          "sha256": "f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a"
+        },
+        {
+          "path": "wheelhouse/chardet-7.7.0-cp312-cp312-win_amd64.whl",
+          "bytes": 1308542,
+          "sha256": "e3fa9ea40e766b26b10360edbb4742cfef9e52728b644b39aae7fa39e89df767"
+        },
+        {
+          "path": "wheelhouse/charset_normalizer-3.5.2-cp312-cp312-win_amd64.whl",
+          "bytes": 207486,
+          "sha256": "780fbe7cab297b81dad9fb8dc5eb003c0468ffb0d9e5f65068c53a34661a96bc"
+        },
+        {
+          "path": "wheelhouse/click-8.5.0-py3-none-any.whl",
+          "bytes": 125251,
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360"
+        },
+        {
+          "path": "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+          "bytes": 25335,
+          "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+        },
+        {
+          "path": "wheelhouse/colorlog-6.12.0-py3-none-any.whl",
+          "bytes": 12239,
+          "sha256": "30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e"
+        },
+        {
+          "path": "wheelhouse/crc32c-2.9.post0-cp312-cp312-win_amd64.whl",
+          "bytes": 65911,
+          "sha256": "0284bc548f361d9c66f6e844f2ec6e7a92b86f39ff0fd292a45878c160391230"
+        },
+        {
+          "path": "wheelhouse/cryptography-50.0.2-cp311-abi3-win_amd64.whl",
+          "bytes": 3824692,
+          "sha256": "7afa5a6602a9f29af1f3a2965f831bae7c9d5d597b7cbb716d41ab3b7d89879c"
+        },
+        {
+          "path": "wheelhouse/fastapi-0.141.1-py3-none-any.whl",
+          "bytes": 131954,
+          "sha256": "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3"
+        },
+        {
+          "path": "wheelhouse/filelock-4.2.9-py3-none-any.whl",
+          "bytes": 164734,
+          "sha256": "a379c50a729e5b68c8519a4d26489f755d9769960a236ecd838190e2a78db2e9"
+        },
+        {
+          "path": "wheelhouse/frozenlist-1.8.0-cp312-cp312-win_amd64.whl",
+          "bytes": 44591,
+          "sha256": "34187385b08f866104f0c0617404c8eb08165ab1272e884abc89c112e9c00746"
+        },
+        {
+          "path": "wheelhouse/fsspec-2026.9.0-py3-none-any.whl",
+          "bytes": 221738,
+          "sha256": "8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f"
+        },
+        {
+          "path": "wheelhouse/future-1.0.0-py3-none-any.whl",
+          "bytes": 491326,
+          "sha256": "929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216"
+        },
+        {
+          "path": "wheelhouse/h11-0.16.0-py3-none-any.whl",
+          "bytes": 37515,
+          "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+        },
+        {
+          "path": "wheelhouse/hf_xet-1.8.0-cp38-abi3-win_amd64.whl",
+          "bytes": 3911559,
+          "sha256": "92188598dedc1e1f5609bd718d4db8687a6c89915553912571e2f587892eecec"
+        },
+        {
+          "path": "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+          "bytes": 78784,
+          "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+        },
+        {
+          "path": "wheelhouse/httpcore2-2.16.0-py3-none-any.whl",
+          "bytes": 85070,
+          "sha256": "5c4358319f2602d984ad93182c9fee5160f22e9da7babdda870a5e7c4e2dc34f"
+        },
+        {
+          "path": "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+          "bytes": 73517,
+          "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+        },
+        {
+          "path": "wheelhouse/httpx2-2.16.0-py3-none-any.whl",
+          "bytes": 97880,
+          "sha256": "fd2c5d7909e8d86fe92d53020c310ca0e4e431b838c207c5754b9bbf0308d49a"
+        },
+        {
+          "path": "wheelhouse/huggingface_hub-2.4.0-py3-none-any.whl",
+          "bytes": 857021,
+          "sha256": "42ecfd93ede47bdd333daebbf66a32d7bfe2e18752754fe4d2d4f98a0179d801"
+        },
+        {
+          "path": "wheelhouse/idna-3.20-py3-none-any.whl",
+          "bytes": 69583,
+          "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c"
+        },
+        {
+          "path": "wheelhouse/imagesize-2.0.1-py3-none-any.whl",
+          "bytes": 14794,
+          "sha256": "ea0c9a0384df69ed86a943a15cde37d0360b82491b3910dc2215e202e62b5b02"
+        },
+        {
+          "path": "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "bytes": 134899,
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+        },
+        {
+          "path": "wheelhouse/markupsafe-3.0.4-cp312-cp312-win_amd64.whl",
+          "bytes": 14303,
+          "sha256": "11935df9bf455ed0c04eb87bcd720f02b1fe5e02128a9430f23aed6f93336fc7"
+        },
+        {
+          "path": "wheelhouse/modelscope_hub-0.6.1-py3-none-any.whl",
+          "bytes": 289627,
+          "sha256": "b1dfed21d24ae2ec7f9ada2ca12a463ab8a8fadf17b2101fdd14d61b1466788f"
+        },
+        {
+          "path": "wheelhouse/modelscope-1.40.2-py3-none-any.whl",
+          "bytes": 6062299,
+          "sha256": "ea03e0ec4a73398a488d3d240cda4f0c5b62390377a134756d4074a3036cb909"
+        },
+        {
+          "path": "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "bytes": 536198,
+          "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+        },
+        {
+          "path": "wheelhouse/multidict-7.2.1-cp312-cp312-win_amd64.whl",
+          "bytes": 95372,
+          "sha256": "781ca5dfc2f1d58e47f52216a0c1c7e1ba91ce8aa235459e20de2d402af77fb3"
+        },
+        {
+          "path": "wheelhouse/networkx-3.7-py3-none-any.whl",
+          "bytes": 2142205,
+          "sha256": "e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0"
+        },
+        {
+          "path": "wheelhouse/numpy-2.3.5-cp312-cp312-win_amd64.whl",
+          "bytes": 12782922,
+          "sha256": "86945f2ee6d10cdfd67bcb4069c1662dd711f7e2a4343db5cecec06b87cf31aa"
+        },
+        {
+          "path": "wheelhouse/opencv_contrib_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+          "bytes": 45541421,
+          "sha256": "47ec3160dae75f70e099b286d1a2e086d20dac8b06e759f60eaf867e6bdecba7"
+        },
+        {
+          "path": "wheelhouse/opencv_python_headless-4.11.0.86-cp37-abi3-win_amd64.whl",
+          "bytes": 39402386,
+          "sha256": "6c304df9caa7a6a5710b91709dd4786bf20a74d57672b3c31f7033cc638174ca"
+        },
+        {
+          "path": "wheelhouse/opt_einsum-3.3.0-py3-none-any.whl",
+          "bytes": 65486,
+          "sha256": "2455e59e3947d3c275477df7f5205b30635e266fe6dc300e3d9f9646bfcea147"
+        },
+        {
+          "path": "wheelhouse/packaging-26.3-py3-none-any.whl",
+          "bytes": 129956,
+          "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+        },
+        {
+          "path": "wheelhouse/paddleocr-3.7.0-py3-none-any.whl",
+          "bytes": 146750,
+          "sha256": "c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338"
+        },
+        {
+          "path": "wheelhouse/paddlepaddle-3.3.1-cp312-cp312-win_amd64.whl",
+          "bytes": 104794793,
+          "sha256": "324b5122cf3887dfbd15db17f36e2421ef923fd4569d26111bf1a21fe84d442b"
+        },
+        {
+          "path": "wheelhouse/paddlex-3.7.2-py3-none-any.whl",
+          "bytes": 2239708,
+          "sha256": "f1678bf650bbaccfd8f0d4e49d0ae631b4685c829fdae6e802ccd90d4fcb9a7f"
+        },
+        {
+          "path": "wheelhouse/pandas-3.1.1-cp312-cp312-win_amd64.whl",
+          "bytes": 10751076,
+          "sha256": "eef35cb3f07dbc8e10e298b8a55ee4aa04d6511f27d5277f13c3df45d3bbef5c"
+        },
+        {
+          "path": "wheelhouse/pillow-12.3.0-cp312-cp312-win_amd64.whl",
+          "bytes": 7227137,
+          "sha256": "a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09"
+        },
+        {
+          "path": "wheelhouse/prettytable-3.18.0-py3-none-any.whl",
+          "bytes": 37357,
+          "sha256": "b3346e0e6f79180833aebaac088ae926340586cf6d7d991b9eb125b65f72313a"
+        },
+        {
+          "path": "wheelhouse/propcache-0.5.4-cp312-cp312-win_amd64.whl",
+          "bytes": 46190,
+          "sha256": "98914de2c4d7f0f9f4a8c6ea4bf05841f4175796941e3ef7d47eb718f22311fb"
+        },
+        {
+          "path": "wheelhouse/protobuf-7.36.2-cp310-abi3-win_amd64.whl",
+          "bytes": 456514,
+          "sha256": "a300819d441e078a5608c0d3c709796bb548136058fda017ae51d425b44fd353"
+        },
+        {
+          "path": "wheelhouse/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+          "bytes": 137737,
+          "sha256": "eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988"
+        },
+        {
+          "path": "wheelhouse/py_cpuinfo-9.0.0-py3-none-any.whl",
+          "bytes": 22335,
+          "sha256": "859625bc251f64e21f077d099d4162689c762b5d6a4c3c97553d56241c9674d5"
+        },
+        {
+          "path": "wheelhouse/pyclipper-1.4.0-cp312-cp312-win_amd64.whl",
+          "bytes": 104619,
+          "sha256": "d1e5498d883b706a4ce636247f0d830c6eb34a25b843a1b78e2c969754ca9037"
+        },
+        {
+          "path": "wheelhouse/pycparser-3.12-py3-none-any.whl",
+          "bytes": 62600,
+          "sha256": "a076f3f489b39b43ed13563a1dafe42447445bec2e294154ec5c57fcdda4c85e"
+        },
+        {
+          "path": "wheelhouse/pycryptodome-4.3.0-cp39-abi3-win_amd64.whl",
+          "bytes": 1675134,
+          "sha256": "195c9d781905605b3b9de8567c47986a9d0ee513566b5150eb9400692465b610"
+        },
+        {
+          "path": "wheelhouse/pydantic_core-2.46.5-cp312-cp312-win_amd64.whl",
+          "bytes": 2043140,
+          "sha256": "5e81740c09e310f5aa5cbd3e434a01c154d4bef93241c7877b39f211d2b78ba8"
+        },
+        {
+          "path": "wheelhouse/pydantic-2.13.5-py3-none-any.whl",
+          "bytes": 472589,
+          "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73"
+        },
+        {
+          "path": "wheelhouse/pypdfium2-5.14.0-py3-none-win_amd64.whl",
+          "bytes": 3947280,
+          "sha256": "149fd5c6397b8df8bf7911a93506eff0be874f877afe7ac936cf5d37d21a6a06"
+        },
+        {
+          "path": "wheelhouse/python_bidi-0.6.12-cp312-cp312-win_amd64.whl",
+          "bytes": 162859,
+          "sha256": "cc83590828d48a727923711a1b4e539f40247cae02d7b6fb6d8e22ef532685e5"
+        },
+        {
+          "path": "wheelhouse/python_dateutil-4.0.0-py3-none-any.whl",
+          "bytes": 92853,
+          "sha256": "a5e246f79eb80475e691bf93862cead98decd8a498cf53ba0516fcdc0f50dc1c"
+        },
+        {
+          "path": "wheelhouse/PyYAML-6.0.2-cp312-cp312-win_amd64.whl",
+          "bytes": 156338,
+          "sha256": "7e7401d0de89a9a855c839bc697c079a4af81cf878373abd7dc625847d25cbd8"
+        },
+        {
+          "path": "wheelhouse/requests-2.34.2-py3-none-any.whl",
+          "bytes": 73075,
+          "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+        },
+        {
+          "path": "wheelhouse/ruamel_yaml-0.19.1-py3-none-any.whl",
+          "bytes": 118102,
+          "sha256": "27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93"
+        },
+        {
+          "path": "wheelhouse/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "bytes": 355540,
+          "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f"
+        },
+        {
+          "path": "wheelhouse/setuptools-84.2.1-py3-none-any.whl",
+          "bytes": 876263,
+          "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2"
+        },
+        {
+          "path": "wheelhouse/shapely-2.2.0-cp312-cp312-win_amd64.whl",
+          "bytes": 1791280,
+          "sha256": "90895df6542ae039fc6557dec6194e3509e883fbd6f5788e3c3e7a38fe46b257"
+        },
+        {
+          "path": "wheelhouse/six-1.17.0-py2.py3-none-any.whl",
+          "bytes": 11050,
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
+        },
+        {
+          "path": "wheelhouse/starlette-1.6.0-py3-none-any.whl",
+          "bytes": 75969,
+          "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c"
+        },
+        {
+          "path": "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "bytes": 6189177,
+          "sha256": "db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8"
+        },
+        {
+          "path": "wheelhouse/torch-2.6.0+cpu-cp312-cp312-win_amd64.whl",
+          "bytes": 206493444,
+          "sha256": "4027d982eb2781c93825ab9527f17fbbb12dbabf422298e4b954be60016f87d8"
+        },
+        {
+          "path": "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+          "bytes": 80199,
+          "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"
+        },
+        {
+          "path": "wheelhouse/truststore-0.10.5-py3-none-any.whl",
+          "bytes": 19017,
+          "sha256": "9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c"
+        },
+        {
+          "path": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "bytes": 45571,
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+        },
+        {
+          "path": "wheelhouse/typing_inspection-0.4.5-py3-none-any.whl",
+          "bytes": 14874,
+          "sha256": "bc210535442b39e1bf2805e0c7a17dfd6a4ace760c84c7f7d16245d23a6b1c39"
+        },
+        {
+          "path": "wheelhouse/tzdata-2026.6-py2.py3-none-any.whl",
+          "bytes": 348210,
+          "sha256": "0a10eec6e13ef16b627fabed9a5f2ba61a62b1c67f327305f4e7e412a70b4aec"
+        },
+        {
+          "path": "wheelhouse/ujson-6.1.0-cp312-cp312-win_amd64.whl",
+          "bytes": 227514,
+          "sha256": "5abf10fe9d4c07f8dc069d324d211e09cd21026ec91762554a58d2ba942fb26a"
+        },
+        {
+          "path": "wheelhouse/urllib3-2.8.0-py3-none-any.whl",
+          "bytes": 135717,
+          "sha256": "0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3"
+        },
+        {
+          "path": "wheelhouse/uvicorn-0.52.4-py3-none-any.whl",
+          "bytes": 79871,
+          "sha256": "f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1"
+        },
+        {
+          "path": "wheelhouse/wcwidth-0.9.4-cp310-abi3-win_amd64.whl",
+          "bytes": 597780,
+          "sha256": "f28d77153303450ee13ebbe888297e75cf532c754555b6cabafc9bdda16c421c"
+        },
+        {
+          "path": "wheelhouse/yarl-1.25.1-cp312-cp312-win_amd64.whl",
+          "bytes": 102593,
+          "sha256": "7d575b54cb3863ef9bc290ea4b009999d55dc237326131e4853cf33e888fee03"
+        }
+      ],
+      "pythonEnvironment": {
+        "pythonComponentId": "python-312",
+        "pythonExecutablePath": "python/python.exe",
+        "wheelhousePath": "wheelhouse",
+        "requirementsLockPath": "requirements.lock",
+        "requirementsLockSha256": "14225eeb0bba9197fd5cc1c3342a0663f30c8cb1455a1c7008dacdfa9f165a4b",
+        "expectedPythonVersion": "3.12"
+      },
+      "license": {
+        "name": "MIT",
+        "url": "https://opensource.org/license/mit/"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.spdx.json",
+        "sha256": "c718e11140115d0efd5b3d19029b65940d2224db57542ce038c5a8c20d5d1595"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "fCc8yWjUdkIx3CArT3VJJ/ZwYxj0kLQLzcT/l/Z82PyJmL+x5yr/Xh6+HevX1P531UupXwbhq9gywblDKQ4HDA=="
+    },
+    {
+      "protocolVersion": 1,
+      "id": "video-ai-cuda",
+      "moduleId": "video-ai-cuda",
+      "groupId": "media",
+      "displayName": "视频去字幕 GPU 加速",
+      "purpose": "为视频去字幕增加 STTN 均衡档与 ProPainter 极致档（非商用内部试用）；复用基础包的 OCR、LaMa 和 Worker。",
+      "dependencyIds": [
+        "video-ai",
+        "python-312"
+      ],
+      "taskToolIds": [
+        "video-ai"
+      ],
+      "installConditions": [
+        "需要支持 sequence-assets-v1 的视频基础包；旧基础包拒绝激活本扩展。",
+        "使用固定的 Python 3.12、PyTorch 2.6.0 CUDA 12.4、einops 0.8.1 和 scipy 1.17.1；不安装或修改显卡驱动。",
+        "目标参考 RTX 3060 Ti 8 GB；720p 支持尚未验收，不能据此承诺。",
+        "ProPainter 当前验证配置仅处理原尺寸字幕区域：含周边上下文和补边后不超过 640×480 像素量、单边不超过 640；整幅视频不超过 720p 像素量，不自动缩放。",
+        "ProPainter 仅供已确认的非商用用途；资源就绪不表示生产档位已开放。",
+        "本版本显式开放两套已接入的时序适配器，画质由使用者验收；安装后仍检查本机 CUDA 和显存，不承诺所有素材的修复效果。"
+      ],
+      "version": "1.1.0-py312-cu1241",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241.tar.gz",
+        "bytes": 312164552,
+        "sha256": "f73377a9354da81ad6835c73455fa92f17efaeed2c2e230310e4216d5ea8fb74",
+        "format": "tar.gz",
+        "filePaths": [
+          "models/video-ai/engines/propainter/LICENSE",
+          "models/video-ai/engines/propainter/PROVENANCE.json",
+          "models/video-ai/engines/propainter/sequence-bundle.json",
+          "models/video-ai/engines/propainter/vendor/__init__.py",
+          "models/video-ai/engines/propainter/vendor/model/__init__.py",
+          "models/video-ai/engines/propainter/vendor/model/misc.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/__init__.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/base_module.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/deformconv.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/flow_comp_raft.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/flow_loss_utils.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/sparse_transformer.py",
+          "models/video-ai/engines/propainter/vendor/model/modules/spectral_norm.py",
+          "models/video-ai/engines/propainter/vendor/model/propainter.py",
+          "models/video-ai/engines/propainter/vendor/model/recurrent_flow_completion.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/__init__.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/corr.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/extractor.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/raft.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/update.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/utils/__init__.py",
+          "models/video-ai/engines/propainter/vendor/RAFT/utils/utils.py",
+          "models/video-ai/engines/propainter/weights/ProPainter.pth",
+          "models/video-ai/engines/propainter/weights/raft-things.pth",
+          "models/video-ai/engines/propainter/weights/recurrent_flow_completion.pth",
+          "models/video-ai/engines/sttn/LICENSE",
+          "models/video-ai/engines/sttn/PROVENANCE.json",
+          "models/video-ai/engines/sttn/sequence-bundle.json",
+          "models/video-ai/engines/sttn/vendor/__init__.py",
+          "models/video-ai/engines/sttn/vendor/core/__init__.py",
+          "models/video-ai/engines/sttn/vendor/core/spectral_norm.py",
+          "models/video-ai/engines/sttn/vendor/model/__init__.py",
+          "models/video-ai/engines/sttn/vendor/model/sttn.py",
+          "models/video-ai/engines/sttn/weights/sttn.pth",
+          "PROVENANCE.json",
+          "requirements.lock",
+          "wheelhouse/einops-0.8.1-py3-none-any.whl",
+          "wheelhouse/filelock-4.2.9-py3-none-any.whl",
+          "wheelhouse/fsspec-2026.9.0-py3-none-any.whl",
+          "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "wheelhouse/markupsafe-3.0.4-cp312-cp312-win_amd64.whl",
+          "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "wheelhouse/networkx-3.7-py3-none-any.whl",
+          "wheelhouse/numpy-2.5.4-cp312-cp312-win_amd64.whl",
+          "wheelhouse/pillow-13.0.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/scipy-1.17.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/setuptools-84.2.1-py3-none-any.whl",
+          "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl"
+        ]
+      },
+      "additionalArchives": [
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "bytes": 1498292694,
+          "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
+          "format": "tar.gz",
+          "filePaths": [
+            "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0001"
+          ]
+        },
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "bytes": 1028311500,
+          "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
+          "format": "tar.gz",
+          "filePaths": [
+            "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0002"
+          ]
+        },
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torchvision.tar.gz",
+          "bytes": 6097876,
+          "sha256": "4350957a4485b6de6a481839e41ec49f7682cddcaabaf222098e5d5ac3faed69",
+          "format": "tar.gz",
+          "filePaths": [
+            "wheelhouse/torchvision-0.21.0+cu124-cp312-cp312-win_amd64.whl"
+          ]
+        }
+      ],
+      "assembledFiles": [
+        {
+          "path": "wheelhouse/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl",
+          "bytes": 2532302369,
+          "sha256": "3313061c1fec4c7310cf47944e84513dcd27b6173b72a349bb7ca68d0ee6e9c0",
+          "parts": [
+            {
+              "path": "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0001",
+              "bytes": 1500000000,
+              "sha256": "d954b96bae050157121adf4822cd7c7f0f0a74aff11a5a0df4ee09559002c8e6"
+            },
+            {
+              "path": "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0002",
+              "bytes": 1032302369,
+              "sha256": "3e146a4c99522a7f9cc6c9e0e8f72b453f928642437b8491a6b0f30b49e74bae"
+            }
+          ]
+        }
+      ],
+      "installedBytes": 6000000000,
+      "files": [
+        {
+          "path": "models/video-ai/engines/propainter/LICENSE",
+          "bytes": 1853,
+          "sha256": "4d3e4d1250afaffa460be8e56d54a7310394d81fdd4710775fadbc837fac1251"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/PROVENANCE.json",
+          "bytes": 5676,
+          "sha256": "2191ae5d965797f82a567562a1870cbe7191d7e19930d476cb17fb07112c0a10"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/sequence-bundle.json",
+          "bytes": 4781,
+          "sha256": "831b87ac48d76e877897be56d518c58ead544fe8ceabd1d00719bb98ca195468"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/misc.py",
+          "bytes": 4638,
+          "sha256": "a766303c91f160ebca1757e71fa3fb4710f56ff3ec25c5dfbed8266698052670"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/base_module.py",
+          "bytes": 5583,
+          "sha256": "495659e684e3177fda3d5f018c65949df8180e074b9d6a4b5a580b9aec333a49"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/deformconv.py",
+          "bytes": 1696,
+          "sha256": "cfcb91be57c1795e54077d1de16d78f46298a212e66715078b644678b84581b0"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/flow_comp_raft.py",
+          "bytes": 10071,
+          "sha256": "a72d2f63ba207571dbc16882a8e2b2ae53520d17f85ee49398d5338a16b6e41a"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/flow_loss_utils.py",
+          "bytes": 5654,
+          "sha256": "b08e4441fbb2d611dc5c3bb7bf5d5da830fd9f3c947442eb133ba3a12c0138e4"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/sparse_transformer.py",
+          "bytes": 15866,
+          "sha256": "e29d3dcda72ee18d7aa897df26b79621b22dcb459f996c569afb4e6fa6e44674"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/modules/spectral_norm.py",
+          "bytes": 12358,
+          "sha256": "f94c800f3ecd5b54e791e251def514c8bc2b2d962cc0db709fcb8af286f46267"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/propainter.py",
+          "bytes": 22108,
+          "sha256": "428c1ce9a8c9a834be0ad9710cdf2ec0590b7b822f80aad07404572184e5b5dc"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/model/recurrent_flow_completion.py",
+          "bytes": 12816,
+          "sha256": "cec37d6404d370845b2a592b1d7d9ce79061df725ade0b7576fb0de59a2ea54c"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/__init__.py",
+          "bytes": 54,
+          "sha256": "4eef12ccfcfa5793551dd8dcd62037ea0032fb131a1bacf71a0ba1984639805b"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/corr.py",
+          "bytes": 3640,
+          "sha256": "1aa5456656c26f9fe77100edb1f6134ada2c5ef731bd5470efd3cd5962b48333"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/extractor.py",
+          "bytes": 8847,
+          "sha256": "f6b65d4f4df27001d9c11194f71b84a9799de3231f9d1672cbcf3a052fec79dc"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/raft.py",
+          "bytes": 4870,
+          "sha256": "d104c88d546bb30eb0bd115f93fec21480927f32e5eeb67ffea906cb1d444a93"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/update.py",
+          "bytes": 5224,
+          "sha256": "824855a3f625810a9fe8efe50a87a4d9da8b9ff4c6b8990ff64c77470895ea4e"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/utils/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/vendor/RAFT/utils/utils.py",
+          "bytes": 2451,
+          "sha256": "bfab8e6787032ea5cd15a57cbeee534fd11c454dc2c2babb86138c6fe7642fb0"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/weights/ProPainter.pth",
+          "bytes": 157780510,
+          "sha256": "12c070c4b48f374c91d8a2a17851140b85c159621080989f9e191bbc18bd6591"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/weights/raft-things.pth",
+          "bytes": 21108000,
+          "sha256": "fcfa4125d6418f4de95d84aec20a3c5f4e205101715a79f193243c186ac9a7e1"
+        },
+        {
+          "path": "models/video-ai/engines/propainter/weights/recurrent_flow_completion.pth",
+          "bytes": 20348681,
+          "sha256": "22939a1a7900da878dbe1ccd011d646b1bfb30b8290039d8ff0e0c2fefbfd283"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/LICENSE",
+          "bytes": 1079,
+          "sha256": "150988a0cdb5352aa232ab31507331f73bd1dd8a6e45c9bbe4eca9155ecaf79c"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/PROVENANCE.json",
+          "bytes": 1239,
+          "sha256": "2de59f7ba1e2635c6322b809367a8147cb5f3fe45e88c7dc787ebe8d2692b17e"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/sequence-bundle.json",
+          "bytes": 1698,
+          "sha256": "a463ef3477ed831a57f878ff353c6af83891fd242746d053af2785a5baa08f75"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/vendor/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/vendor/core/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/vendor/core/spectral_norm.py",
+          "bytes": 11942,
+          "sha256": "555b77358e434429f27dedcdf4c07db914785767ebcd76e8ffa37d4d390d40cf"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/vendor/model/__init__.py",
+          "bytes": 30,
+          "sha256": "f35cd89087253da790bfcf4f488fd782d2c77d0597ad839be7d56506a00296b9"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/vendor/model/sttn.py",
+          "bytes": 12771,
+          "sha256": "35eabef3fe1f2c5d563d68c67876e0d1ef3263e33af575e79e36f04fbddb114f"
+        },
+        {
+          "path": "models/video-ai/engines/sttn/weights/sttn.pth",
+          "bytes": 66252587,
+          "sha256": "25b0c2c30042d82efd1893bd42ec726764262d94115393a1718f8d65d2a7817b"
+        },
+        {
+          "path": "PROVENANCE.json",
+          "bytes": 7380,
+          "sha256": "78cd13e5c2a96f34ce5052608012ac94a54a5d736951228c3ec8128bc5dcf6e2"
+        },
+        {
+          "path": "requirements.lock",
+          "bytes": 29624,
+          "sha256": "9da5665ebacaff00879642abd421db59212a53efd7219281473cbc796465f924"
+        },
+        {
+          "path": "wheelhouse/einops-0.8.1-py3-none-any.whl",
+          "bytes": 64359,
+          "sha256": "919387eb55330f5757c6bea9165c5ff5cfe63a642682ea788a6d472576d81737"
+        },
+        {
+          "path": "wheelhouse/filelock-4.2.9-py3-none-any.whl",
+          "bytes": 164734,
+          "sha256": "a379c50a729e5b68c8519a4d26489f755d9769960a236ecd838190e2a78db2e9"
+        },
+        {
+          "path": "wheelhouse/fsspec-2026.9.0-py3-none-any.whl",
+          "bytes": 221738,
+          "sha256": "8dd6e646e99ea382bd85f97a45e6b526a442d79423a7dc673f1e2756d05fcb5f"
+        },
+        {
+          "path": "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "bytes": 134899,
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+        },
+        {
+          "path": "wheelhouse/markupsafe-3.0.4-cp312-cp312-win_amd64.whl",
+          "bytes": 14303,
+          "sha256": "11935df9bf455ed0c04eb87bcd720f02b1fe5e02128a9430f23aed6f93336fc7"
+        },
+        {
+          "path": "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "bytes": 536198,
+          "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+        },
+        {
+          "path": "wheelhouse/networkx-3.7-py3-none-any.whl",
+          "bytes": 2142205,
+          "sha256": "e3fd2c13a7814cee3746340d8d7f8598a67f16a58bf47fb7f8793fab6efca1b0"
+        },
+        {
+          "path": "wheelhouse/numpy-2.5.4-cp312-cp312-win_amd64.whl",
+          "bytes": 12573091,
+          "sha256": "a7b1b6353e36a7e50de2973a38d705c88ee93adcf120673cee7f45a4a3fa223a"
+        },
+        {
+          "path": "wheelhouse/pillow-13.0.0-cp312-cp312-win_amd64.whl",
+          "bytes": 7272166,
+          "sha256": "ff3fe9eb621fbb9db4c4be33ab946f6bac5f98ab50ca8d3260503653656c961b"
+        },
+        {
+          "path": "wheelhouse/scipy-1.17.1-cp312-cp312-win_amd64.whl",
+          "bytes": 36549682,
+          "sha256": "41b71f4a3a4cab9d366cd9065b288efc4d4f3c0b37a91a8e0947fb5bd7f31d87"
+        },
+        {
+          "path": "wheelhouse/setuptools-84.2.1-py3-none-any.whl",
+          "bytes": 876263,
+          "sha256": "ca140b45d5325a9478f880e351484f62fef15f336462e449ca0c03c873d589c2"
+        },
+        {
+          "path": "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "bytes": 6189177,
+          "sha256": "db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8"
+        },
+        {
+          "path": "wheelhouse/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl",
+          "bytes": 2532302369,
+          "sha256": "3313061c1fec4c7310cf47944e84513dcd27b6173b72a349bb7ca68d0ee6e9c0"
+        },
+        {
+          "path": "wheelhouse/torchvision-0.21.0+cu124-cp312-cp312-win_amd64.whl",
+          "bytes": 6140979,
+          "sha256": "ec63c2ee792757492da40590e34b14f2fceda29050558c215f0c1f3b08149c0f"
+        },
+        {
+          "path": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "bytes": 45571,
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+        }
+      ],
+      "pythonEnvironment": {
+        "pythonComponentId": "python-312",
+        "pythonExecutablePath": "python/python.exe",
+        "wheelhousePath": "wheelhouse",
+        "requirementsLockPath": "requirements.lock",
+        "requirementsLockSha256": "9da5665ebacaff00879642abd421db59212a53efd7219281473cbc796465f924",
+        "expectedPythonVersion": "3.12"
+      },
+      "license": {
+        "name": "MIT AND S-Lab License 1.0 (non-commercial)",
+        "url": "https://github.com/sczhou/ProPainter/blob/326782529a63d997cab80ab21439b92ed422b3d3/LICENSE"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241.spdx.json",
+        "sha256": "d35d8334dde7756bea900052a2c874fde0bf1a119e244429ab2b08ae1c01bcdf"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "qI1unfu1aJJgKoJ2qsBHfPzt6dxMFanSM8H6HfNwTouAU4h57AuxQmUb/oKGcqosy/mupHKU2taFEtXly9HCCA=="
+    },
+    {
+      "protocolVersion": 1,
       "id": "xhs-archive",
       "moduleId": "xhs-archive",
       "groupId": "archive",

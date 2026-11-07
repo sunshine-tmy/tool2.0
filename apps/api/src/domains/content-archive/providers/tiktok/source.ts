@@ -98,6 +98,15 @@ export function normalizeTikTokItem(value: unknown, expectedId: string, shopVide
         height: positive(image.imageHeight)
       });
     }
+    const soundtrack = object(item.music);
+    const musicUrls = tikTokMediaUrls(soundtrack.playUrl);
+    if (musicUrls.length)
+      media.push({
+        kind: "audio",
+        index: images.length,
+        urls: musicUrls,
+        title: text(soundtrack.title, 500) || "原作品配乐"
+      });
   } else {
     const video = object(item.video);
     // Public pages can expose structured addresses or explicit source entries instead of a string.

@@ -110,6 +110,7 @@ describe("api app", () => {
       "audio-extract",
       "audio-convert",
       "xhs-archive",
+      "video-subtitle",
       "json-format",
       "base64",
       "url-codec",

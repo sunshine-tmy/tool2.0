@@ -48,6 +48,17 @@ export function normalizeXhsProviderItem(value: unknown, source: string) {
         ? "image"
         : "unknown";
   const description = normalizeXhsText(String(raw["作品描述"] ?? raw.description ?? "")).trim() || undefined;
+  const music = record(raw.music);
+  const musicUrls = list(raw["音乐地址"] ?? raw["背景音乐地址"] ?? raw.musicUrl ?? music.playUrl ?? music.url)
+    .filter((url) => {
+      try {
+        const parsed = new URL(url);
+        return parsed.protocol === "https:" && !parsed.username && !parsed.password && !parsed.port;
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, 8);
   return {
     noteId,
     type: type as XhsArchiveItem["type"],
@@ -66,7 +77,17 @@ export function normalizeXhsProviderItem(value: unknown, source: string) {
         index,
         kind: (/视频|video/i.test(rawType) ? "video" : "image") as XhsArchiveMedia["kind"]
       })),
-      ...lives.map((url, offset) => ({ url, index: downloads.length + offset, kind: "live-photo" as const }))
+      ...lives.map((url, offset) => ({ url, index: downloads.length + offset, kind: "live-photo" as const })),
+      ...(type === "image" && musicUrls.length
+        ? [
+            {
+              url: musicUrls[0],
+              index: downloads.length,
+              kind: "audio" as const,
+              title: String(raw["音乐标题"] ?? music.title ?? "原作品配乐").slice(0, 500)
+            }
+          ]
+        : [])
     ]
   };
 }

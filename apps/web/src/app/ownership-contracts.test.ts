@@ -44,6 +44,7 @@ describe("R08 application ownership contracts", () => {
         ["/tools/media-archive/video-editor/:itemId/:mediaId", "archive-video-editor"],
         ["/tools/url-codec", "url-codec"],
         ["/tools/uuid-generator", "uuid-generator"],
+        ["/tools/video-subtitle", "video-subtitle"],
         ["/tools/xhs-archive", undefined]
       ].sort()
     );

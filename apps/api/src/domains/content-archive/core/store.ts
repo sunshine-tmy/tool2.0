@@ -208,6 +208,18 @@ export class ContentArchiveStore {
         );
         if (duplicate) throw new Error("ARCHIVE_IDENTITY_CONFLICT");
         const nextItem = cloneItem(item)!;
+        // 原配乐获取失败不应在刷新时删除已保存的附件；仍在同一锁和原子提交内复制、校验和计费。
+        if (!nextItem.media.some((media) => media.kind === "audio")) {
+          for (const audio of previousItem?.media.filter((media) => media.kind === "audio") ?? []) {
+            await fsp.copyFile(
+              path.join(target, path.basename(audio.fileName)),
+              path.join(stagingDirectory, path.basename(audio.fileName))
+            );
+            nextItem.media.push(structuredClone(audio));
+          }
+          if (nextItem.media.some((media) => media.kind === "audio"))
+            nextItem.warnings.push("本次未获取到新配乐，已保留上次归档的原配乐");
+        }
         // 用户由图集生成的视频是附加资产，重新获取不得把它当作平台缺失媒体丢弃。
         for (const derived of previousItem?.media.filter((media) => media.derivedFromImages) ?? []) {
           if (

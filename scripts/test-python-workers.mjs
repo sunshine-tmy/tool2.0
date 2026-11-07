@@ -12,7 +12,7 @@ const { values } = parseArgs({
 });
 if (values.help)
   console.log(
-    "pnpm test:python:workers --python <absolute Python 3.12 path> --suite image|chatterbox [--vendor <existing Chatterbox vendor directory>]\nUses existing dependencies only, isolated synthetic storage, no model downloads or external network connections."
+    "pnpm test:python:workers --python <absolute Python 3.12 path> --suite image|video|chatterbox [--vendor <existing Chatterbox vendor directory>]\nUses existing dependencies only, isolated synthetic storage, no model downloads or external network connections."
   );
 else {
   try {

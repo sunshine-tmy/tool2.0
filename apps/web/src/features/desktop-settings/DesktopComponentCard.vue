@@ -10,6 +10,15 @@
           <n-tag v-if="component.health === 'unhealthy'" size="small" type="error">自检异常</n-tag>
         </div>
         <p class="component-purpose">{{ component.purpose }}</p>
+        <n-alert
+          v-if="component.id === 'video-ai' || component.id === 'video-ai-cuda'"
+          type="info"
+          :bordered="false"
+          class="component-message"
+        >
+          均衡 / 极致需要包含 STTN / ProPainter 的新版本能力。请先更新视频去字幕基础包，再更新 GPU
+          扩展；安装后以视频去字幕页面的本机检测结果为准。
+        </n-alert>
       </div>
       <n-space>
         <n-button
@@ -35,12 +44,24 @@
           v-if="!component.retired"
           size="small"
           secondary
-          :disabled="busy || component.state === 'blocked'"
+          :disabled="busy"
           :loading="operationLoading && !offlineUploading"
           @click="$emit('offlineImport', component)"
         >
           <template #icon><Upload :size="15" /></template>离线导入
         </n-button>
+        <n-button
+          v-if="component.installed && !component.retired"
+          size="small"
+          secondary
+          :disabled="busy || updateAvailable || component.health === 'unhealthy'"
+          :loading="exporting"
+          :title="updateAvailable ? '请先更新至当前目录版本后导出' : '包含所选能力及其共享依赖，可在其他设备离线导入'"
+          @click="$emit('offlineExport', component)"
+        >
+          <template #icon><Download :size="15" /></template>导出离线包
+        </n-button>
+        <n-button v-if="exporting" size="small" quaternary @click="$emit('cancelExport')">取消导出</n-button>
         <n-button
           v-if="component.installed"
           size="small"
@@ -156,6 +177,8 @@ const props = defineProps<{
   operationLoading?: boolean;
   offlineUploading?: boolean;
   offlineUploadProgress?: number;
+  exporting?: boolean;
+  managementBusy?: boolean;
 }>();
 
 // Output may be silent while pip writes files; keep the last-output age live without fabricating work.
@@ -176,6 +199,8 @@ defineEmits<{
   reinstall: [component: ComponentPackageStatus];
   uninstall: [component: ComponentPackageStatus];
   offlineImport: [component: ComponentPackageStatus];
+  offlineExport: [component: ComponentPackageStatus];
+  cancelExport: [];
   cancelOfflineImport: [component: ComponentPackageStatus];
   cancel: [job: ComponentJob];
 }>();
@@ -183,6 +208,8 @@ defineEmits<{
 const busy = computed(
   () =>
     props.operationLoading ||
+    props.managementBusy ||
+    props.exporting ||
     props.offlineUploading ||
     ["downloading", "installing"].includes(props.component.state) ||
     Boolean(props.job && ["queued", "running"].includes(props.job.state))

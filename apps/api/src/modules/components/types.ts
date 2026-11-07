@@ -105,4 +105,6 @@ export type InternalJob = {
   controller?: AbortController;
   offlineArchivePaths?: string[];
   offlineImportRoot?: string;
+  /** Already validated signed files from a local capability snapshot; never supplied by the renderer. */
+  offlineFilesRoot?: string;
 };

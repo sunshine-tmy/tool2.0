@@ -21,7 +21,7 @@ test("R08 lazy feature entries keep SPA navigation and legacy archive URLs", asy
     ["/tools/image-compress", "图片压缩"],
     ["/tools/image-ai", "AI 图片处理"],
     ["/tools/edge-tts", "多国语言配音"],
-    ["/tools/audio-library", "直播音频库"],
+    ["/tools/audio-library", "音频素材库"],
     ["/tools/media-archive", "多媒体内容归档"],
     ["/tools/lan-transfer", "局域网文件传输"]
   ]) {

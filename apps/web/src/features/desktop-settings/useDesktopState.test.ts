@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   reinstall: vi.fn(),
   uninstall: vi.fn(),
   importOffline: vi.fn(),
+  exportCapability: vi.fn(),
+  cancelCapabilityExport: vi.fn(),
   cancel: vi.fn(),
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
@@ -100,6 +102,8 @@ beforeEach(() => {
   );
   vi.clearAllMocks();
   mocks.confirm.mockResolvedValue(true);
+  mocks.exportCapability.mockResolvedValue({ canceled: false, fileName: "ffmpeg.toolbox-capabilities.zip", bytes: 42 });
+  mocks.cancelCapabilityExport.mockResolvedValue(undefined);
   mocks.list.mockResolvedValue([component()]);
   mocks.subscribe.mockReturnValue(mocks.unsubscribe);
   for (const fn of [mocks.install, mocks.reinstall, mocks.uninstall, mocks.importOffline, mocks.cancel, mocks.getJob])
@@ -123,6 +127,64 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("desktop state ownership", () => {
+  it("exports through the fixed native bridge and owns busy, cancellation and failure messages", async () => {
+    const { state } = setup(useDesktopCapabilities);
+    let finish!: (value: { canceled: boolean }) => void;
+    mocks.exportCapability.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const running = state.exportComponent(component({ installed: true }));
+    expect(state.exportingComponentId.value).toBe("ffmpeg");
+    await state.exportComponent(component());
+    await state.installComponent(component());
+    expect(mocks.exportCapability).toHaveBeenCalledTimes(1);
+    expect(mocks.install).not.toHaveBeenCalled();
+    await state.cancelComponentExport();
+    expect(mocks.cancelCapabilityExport).toHaveBeenCalledOnce();
+    finish({ canceled: true });
+    await running;
+    expect(state.exportingComponentId.value).toBe("");
+    expect(state.componentsNotice.value).toBe("");
+    await state.exportComponent(component({ installed: true }));
+    expect(state.componentsNotice.value).toContain("ffmpeg.toolbox-capabilities.zip");
+    mocks.exportCapability.mockRejectedValueOnce(new Error("disk"));
+    await state.exportComponent(component({ installed: true }));
+    expect(state.componentsError.value).toContain("导出能力包失败");
+    expect(state.componentsError.value).toContain("disk");
+    expect(state.exportingComponentId.value).toBe("");
+  });
+  it("accepts exported bundles independently of original release archive size", async () => {
+    const { state } = setup(useDesktopCapabilities);
+    state.offlineArchiveInput.value = document.createElement("input");
+    state.selectOfflineImport(component());
+    await state.handleOfflineArchiveSelection({
+      currentTarget: {
+        files: [new File(["backup larger than original"], "ffmpeg.toolbox-capabilities.zip")],
+        value: ""
+      }
+    } as unknown as Event);
+    expect(mocks.importOffline).toHaveBeenCalledWith("ffmpeg", expect.any(Array), expect.any(Object));
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("共享依赖会先安装"), expect.any(Object));
+    expect(mocks.list).toHaveBeenCalled();
+  });
+  it("cancels an unfinished native export when leaving settings", async () => {
+    const { state, wrapper } = setup(useDesktopCapabilities);
+    let finish!: (value: { canceled: true }) => void;
+    mocks.exportCapability.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const running = state.exportComponent(component());
+    wrapper.unmount();
+    expect(mocks.cancelCapabilityExport).toHaveBeenCalledOnce();
+    finish({ canceled: true });
+    await running;
+  });
   it("keeps preference updates and controlled migration identifiers behind the existing bridge", async () => {
     const { state } = setup(useDesktopPreferences);
     await state.loadSettings();

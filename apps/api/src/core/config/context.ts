@@ -7,6 +7,7 @@ export type ConfigContext = Pick<
   | "adminPin"
   | "storageRoot"
   | "imageAiDir"
+  | "videoAiDir"
   | "edgeTtsDir"
   | "chatterboxDir"
   | "xhsArchiveDir"

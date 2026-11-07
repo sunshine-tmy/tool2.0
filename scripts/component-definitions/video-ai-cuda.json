@@ -1,0 +1,27 @@
+{
+  "id": "video-ai-cuda",
+  "groupId": "media",
+  "displayName": "视频去字幕 GPU 加速",
+  "purpose": "为已安装的视频去字幕能力增加 NVIDIA CUDA 推理：启用 STTN 均衡档与 ProPainter 极致档；复用基础包模型与 Worker，不重复下载模型。",
+  "dependencyIds": ["video-ai", "python-312"],
+  "taskToolIds": ["video-ai"],
+  "installConditions": [
+    "下载 CUDA 12.4 推理运行时和固定依赖，首次安装可能需要数 GB 空间；基础包模型与 OCR 由已安装的 video-ai 能力共享，不会再次下载。",
+    "需要 NVIDIA 显卡及兼容的 NVIDIA 驱动（目标环境 RTX 3060 Ti 8 GB）；本模块不会安装或修改显卡驱动。无兼容 GPU 时仍可使用基础包的快速档与 delogo。",
+    "ProPainter 极致档在 8 GB 显存下仅支持 720p 及以下分辨率，更高分辨率会明确失败，不自动降质。",
+    "Python 3.12、PyTorch CUDA 12.4 均版本锁定；生成时无需联网。"
+  ],
+  "version": "1.0.0-py312-cu1241",
+  "installedBytes": 6000000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "MIT",
+    "url": "https://opensource.org/license/mit/"
+  }
+}

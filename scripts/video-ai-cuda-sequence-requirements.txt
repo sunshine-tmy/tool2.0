@@ -1,0 +1,4 @@
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+einops==0.8.1
+scipy==1.17.1

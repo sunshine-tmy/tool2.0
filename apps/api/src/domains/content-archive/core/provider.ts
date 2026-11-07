@@ -21,6 +21,7 @@ export type ArchiveSource = Pick<
     width?: number;
     height?: number;
     durationMs?: number;
+    title?: string;
     requireVideoTrack?: true;
   }>;
 };

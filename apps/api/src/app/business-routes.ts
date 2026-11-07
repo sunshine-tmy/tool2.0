@@ -3,6 +3,7 @@ import { type FastifyInstance } from "fastify";
 import { type AppConfig } from "../config";
 import { registerImageCompressRoutes } from "../domains/image-compress/routes";
 import { registerImageAiRoutes } from "../domains/image-ai/routes";
+import { registerVideoAiRoutes } from "../domains/video-ai/routes";
 import { registerEdgeTtsRoutes } from "../domains/speech/edge-tts";
 import { registerChatterboxRoutes } from "../domains/speech/chatterbox/routes";
 import { registerAudioLibraryRoutes } from "../domains/audio-library/routes";
@@ -31,6 +32,7 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
   } = services;
   registerImageCompressRoutes(app, config, taskStore, fileMetadata);
   await registerImageAiRoutes(app, config, database, taskStore, fileMetadata);
+  await registerVideoAiRoutes(app, config, database, taskStore);
   const edgeTtsBatches = await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
   const chatterboxArchive = await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
   const audioLibrary = await registerAudioLibraryRoutes(

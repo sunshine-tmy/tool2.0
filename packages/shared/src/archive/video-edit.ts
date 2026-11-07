@@ -65,6 +65,8 @@ export const ArchiveVideoEditInputSchema = Type.Object(
     checksum: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     musicId: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9_-]{1,80}$" })),
     musicRevision: Type.Optional(Type.Integer({ minimum: 1 })),
+    sourceMusicId: Type.Optional(Id),
+    sourceMusicChecksum: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })),
     useSavedMusic: Type.Boolean(),
     settings: ArchiveAudioSettingsSchema,
     // 省略保留当前水印；null 明确移除；对象配置当前水印或上传的草稿。

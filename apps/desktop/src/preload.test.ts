@@ -22,6 +22,8 @@ beforeEach(async () => {
 });
 
 const calls = [
+  ["exportCapability", "desktop:capability-export", ["edge-tts"]],
+  ["cancelCapabilityExport", "desktop:capability-export-cancel", []],
   ["getDataBackupState", "desktop:data-backup-state", []],
   ["selectDataBackup", "desktop:data-backup-select", []],
   [

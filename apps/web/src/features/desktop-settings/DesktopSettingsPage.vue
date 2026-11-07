@@ -40,7 +40,7 @@
           ref="offlineArchiveInput"
           class="offline-archive-input"
           type="file"
-          accept=".tar.gz,application/gzip,application/x-gzip"
+          accept=".tar.gz,.zip,application/gzip,application/x-gzip,application/zip"
           multiple
           @change="handleOfflineArchiveSelection"
         />
@@ -169,7 +169,9 @@
             <div>
               <h3>能力管理</h3>
               <p class="panel-description">
-                按需在线安装或从本地导入运行时与模型。离线包仍会按内置签名目录校验；安装失败不会替换可用版本。离线导入请从可信发布页下载卡片所列的全部同版本归档文件。
+                按需在线安装、离线导入或导出已安装的能力。导出包含所选能力及其共享依赖，可在相同平台、相同能力目录版本的客户端中导入；不包含业务数据、登录信息。支持导入导出的
+                .toolbox-capabilities.zip，或可信发布页的全部同版本 .tar.gz
+                分卷。导入按内置签名清单校验，失败不会替换原有可用版本。
               </p>
               <p v-if="componentTotalLabel" class="setting-copy">{{ componentTotalLabel }}（共享依赖只计一次）</p>
             </div>
@@ -197,10 +199,14 @@
                     :operation-loading="startingComponentId === component.id"
                     :offline-uploading="offlineUpload?.componentId === component.id"
                     :offline-upload-progress="offlineUpload?.componentId === component.id ? offlineUpload.progress : 0"
+                    :exporting="exportingComponentId === component.id"
+                    :management-busy="Boolean(exportingComponentId)"
                     @install="installComponent"
                     @reinstall="reinstallComponent"
                     @uninstall="uninstallComponent"
                     @offline-import="selectOfflineImport"
+                    @offline-export="exportComponent"
+                    @cancel-export="cancelComponentExport"
                     @cancel-offline-import="cancelOfflineImport"
                     @cancel="cancelComponentJob"
                   />
@@ -302,6 +308,9 @@ const {
   componentsNotice,
   startingComponentId,
   cancelingJobId,
+  exportingComponentId,
+  exportComponent,
+  cancelComponentExport,
   componentGroups,
   componentTotalLabel,
   loadComponents,

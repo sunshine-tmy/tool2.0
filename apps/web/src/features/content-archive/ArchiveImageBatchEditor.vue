@@ -75,14 +75,17 @@
             <n-button :disabled="locked || loading" @click="searchMusic">搜索音乐</n-button>
           </div>
           <n-select
-            :value="music?.id ?? null"
+            :value="useOriginalMusic ? '__original__' : (music?.id ?? null)"
             :options="musicOptions"
             :disabled="locked || loading"
             filterable
-            placeholder="从配音素材中选择音频"
+            placeholder="从背景音乐中选择音频"
             aria-label="批量图文背景音乐"
             @update:value="chooseMusic"
           />
+          <small v-if="useOriginalMusic"
+            >逐条使用各作品已归档的原配乐，从所设起点按各自视频长度截取或循环；没有原配乐的作品会提示失败，可改选音乐后重试。</small
+          >
           <n-pagination
             v-if="musicTotal > 20"
             v-model:page="musicPage"
@@ -284,17 +287,19 @@ const asset = computed(() =>
 );
 const musicItems = ref<AudioLibraryItemView[]>([]),
   music = ref<AudioLibraryItemView>(),
+  useOriginalMusic = ref(false),
   keyword = ref(""),
   musicPage = ref(1),
   musicTotal = ref(0);
 const musicVolume = ref(20),
   musicStart = ref(0),
   loop = ref(true);
-const musicOptions = computed(() =>
-  [...new Map([...(music.value ? [music.value] : []), ...musicItems.value].map((item) => [item.id, item])).values()]
+const musicOptions = computed(() => [
+  { label: "各作品的原配乐（随作品归档）", value: "__original__" },
+  ...[...new Map([...(music.value ? [music.value] : []), ...musicItems.value].map((item) => [item.id, item])).values()]
     .filter((item) => item.available && !item.deletedAt)
     .map((item) => ({ label: `${item.title} · ${Math.round(item.duration)} 秒`, value: item.id }))
-);
+]);
 const previewOpened = ref(false),
   previewId = ref<string>(),
   previewVideo = ref<HTMLVideoElement>();
@@ -338,7 +343,7 @@ const readyToStart = computed(
     (secondsPerImage.value ?? 0) >= 0.5 &&
     (secondsPerImage.value ?? 0) <= 30 &&
     (!useWatermark.value || Boolean(asset.value)) &&
-    (!useMusic.value || Boolean(music.value))
+    (!useMusic.value || useOriginalMusic.value || Boolean(music.value))
 );
 const aspectOptions = [
   { label: "竖版 720 × 1280", value: "portrait" },
@@ -355,6 +360,7 @@ watch(
       secondsPerImage.value,
       aspect.value,
       useMusic.value,
+      useOriginalMusic.value,
       music.value?.id,
       music.value?.revision,
       musicVolume.value,
@@ -407,7 +413,7 @@ async function loadMusic() {
   const request = ++musicRequest;
   try {
     const result = await archiveMusicLibraryApi.list(
-      { view: "speech", keyword: keyword.value, page: musicPage.value },
+      { view: "music", keyword: keyword.value, page: musicPage.value },
       scope.signal
     );
     if (scope.aborted || version !== generation || request !== musicRequest) return;
@@ -427,6 +433,7 @@ function toggleOther(checked: boolean) {
   if (useMusic.value) void loadMusic();
 }
 function chooseMusic(id: string) {
+  useOriginalMusic.value = id === "__original__";
   music.value = musicItems.value.find((item) => item.id === id) ?? (music.value?.id === id ? music.value : undefined);
   musicStart.value = 0;
 }
@@ -510,8 +517,9 @@ function currentRecipe(): ImageBatchRecipe {
     ...(useMusic.value
       ? {
           music: {
-            id: music.value!.id,
-            revision: music.value!.revision,
+            ...(useOriginalMusic.value
+              ? { source: "original" as const }
+              : { id: music.value!.id, revision: music.value!.revision }),
             volume: musicVolume.value,
             start: musicStart.value,
             loop: loop.value

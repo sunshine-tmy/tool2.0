@@ -63,6 +63,55 @@ export function registerComponentRoutes(
 
   if (options.allowOfflineImport) {
     app.post<{ Params: ComponentIdParams }>(
+      "/api/v1/components/:componentId/offline-export",
+      {
+        schema: { params: ComponentIdParamsSchema }
+      },
+      async (request, reply) => {
+        const controller = new AbortController();
+        const stop = () => controller.abort();
+        request.raw.once("aborted", stop);
+        reply.raw.once("close", () => {
+          request.raw.removeListener("aborted", stop);
+          if (!reply.raw.writableFinished) stop();
+        });
+        try {
+          const exported = await manager.createOfflineExport(request.params.componentId, controller.signal);
+          reply.header("content-type", "application/zip");
+          reply.header("content-disposition", `attachment; filename="${exported.filename}"`);
+          reply.header("cache-control", "no-store");
+          reply.header("x-toolbox-export-max-bytes", exported.maxBytes);
+          return reply.send(exported.stream);
+        } catch (error) {
+          return sendComponentError(reply, error);
+        }
+      }
+    );
+    app.post<{ Params: ComponentIdParams }>(
+      "/api/v1/components/:componentId/offline-bundle-import",
+      {
+        bodyLimit: manager.getOfflineBundleBodyLimit() + 1024 * 1024,
+        schema: { params: ComponentIdParamsSchema, response: { 200: apiSuccessSchema(ComponentJobSchema) } }
+      },
+      async (request, reply) => {
+        try {
+          if (!request.isMultipart())
+            return reply.code(422).send(fail("COMPONENT_IMPORT_INVALID", "请选择导出的离线能力备份包"));
+          const fileSize = manager.getOfflineBundleBodyLimit(request.params.componentId);
+          return ok(
+            await manager.startOfflineBundleImport(
+              request.params.componentId,
+              offlineArchiveUploads(request.parts({ limits: { files: 1, fields: 0, parts: 1, fileSize } }))
+            )
+          );
+        } catch (error) {
+          request.raw.resume();
+          if (error instanceof ComponentManagerError) return sendComponentError(reply, error);
+          return reply.code(422).send(fail("COMPONENT_IMPORT_INVALID", "上传请求无效、已中断或超过能力包限制"));
+        }
+      }
+    );
+    app.post<{ Params: ComponentIdParams }>(
       "/api/v1/components/:componentId/offline-import",
       {
         bodyLimit: manager.getOfflineImportBodyLimit(),

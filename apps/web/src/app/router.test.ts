@@ -25,6 +25,7 @@ describe("多媒体归档路由兼容", () => {
       "/tools/media-archive/video-editor/:itemId/:mediaId",
       "/tools/url-codec",
       "/tools/uuid-generator",
+      "/tools/video-subtitle",
       "/tools/xhs-archive"
     ]);
   });

@@ -41,6 +41,16 @@ describe("componentApi", () => {
     expect(http.get).toHaveBeenCalledWith("/components", expect.any(Object));
   });
 
+  it("routes exported capability bundles to the dedicated validated importer", async () => {
+    const archive = new Blob(["signed bundle"]);
+    Object.defineProperty(archive, "name", { value: "edge-tts.toolbox-capabilities.zip" });
+    await componentApi.importOffline("edge-tts", [archive as File], {});
+    const [url, , payload] = http.post.mock.calls[0]!;
+    expect(url).toBe("/components/edge-tts/offline-bundle-import");
+    expect(payload.getAll("bundle")).toHaveLength(1);
+    expect(payload.getAll("archives")).toHaveLength(0);
+  });
+
   it("uses fixed component IDs for lifecycle operations", async () => {
     const job = { id: "job" };
     http.post.mockResolvedValue(job);

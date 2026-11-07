@@ -40,7 +40,13 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
   const componentManager: ComponentManager = new ComponentManager({
     root: path.join(config.runtime.runtimeRoot, "packages"),
     catalog: bundledComponentCatalogForRuntime(),
-    selfTest: config.desktopManagedCapabilities ? createDesktopComponentSelfTest() : undefined,
+    selfTest: config.desktopManagedCapabilities
+      ? createDesktopComponentSelfTest(
+          undefined,
+          async (relative) => (await componentManager.resolveInstalledAsset("ffmpeg", relative)).path,
+          (componentId) => componentManager.resolveInstalledPython(componentId)
+        )
+      : undefined,
     onBeforeUninstall: async (componentId) => {
       await stopCapabilityBeforeUninstall(componentId);
       if (componentId === "xhs-archive") await xhsRuntimeServices.runtime?.stop();

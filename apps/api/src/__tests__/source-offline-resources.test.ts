@@ -178,7 +178,15 @@ describe("source offline resources", () => {
 
   it("keeps the early PowerShell checklist in sync with the signed catalog and CPU order", () => {
     expect(plan.components.filter((item) => item.required).map((item) => item.id)).toEqual(sourceComponentIds);
-    expect(plan.components).toHaveLength(packagedComponentCatalog.manifests.length);
+    // The source launcher deliberately retains its existing CPU baseline and
+    // voice-only -WithCuda behavior; optional video models are installed manually.
+    expect(plan.components.map((item) => item.id)).toEqual([...sourceComponentIds, "chatterbox-cuda"]);
+    expect(
+      packagedComponentCatalog.manifests
+        .filter((item) => !plan.components.some((planned) => planned.id === item.id))
+        .map((item) => item.id)
+        .sort()
+    ).toEqual(["video-ai", "video-ai-cuda"]);
     for (const item of plan.components) {
       const manifest = packagedComponentCatalog.manifests.find((manifest) => manifest.id === item.id)!;
       expect(item.version).toBe(manifest.version);

@@ -1,0 +1,27 @@
+{
+  "id": "video-ai",
+  "groupId": "media",
+  "displayName": "视频去字幕（CPU 基础包）",
+  "purpose": "自动检测并修复视频中的硬字幕区域，支持批量任务与手动框选；安装后可使用 OpenCV 快速修复、Big-LaMa 快速档与手动框选，STTN/ProPainter 序列引擎在提供后启用。",
+  "dependencyIds": ["python-312", "ffmpeg"],
+  "taskToolIds": ["video-ai"],
+  "installConditions": [
+    "安装与处理全程离线；模型、OCR 与 Worker 均随能力包安装，不会在处理过程中下载任何文件。",
+    "安装过程建议预留约 6 GB 可用磁盘空间，安装后约占 3.2 GB；建议至少 8 GB 内存。此版本使用 CPU，不要求 CUDA。",
+    "字幕检测使用固定版本 PP-OCRv5 中文检测与识别模型；修复使用 Big-LaMa 权重。GPU 均衡档与极致档需要另装 video-ai-cuda 扩展包。",
+    "视频合成复用共享 FFmpeg 8.1.2 组件，不重复打包。"
+  ],
+  "version": "1.0.0-py312-cpu1",
+  "installedBytes": 3200000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "MIT",
+    "url": "https://opensource.org/license/mit/"
+  }
+}

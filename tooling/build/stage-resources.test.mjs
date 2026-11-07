@@ -96,6 +96,10 @@ test("physical deployment is moved without duplicating files; resource paths and
     await readFile(path.join(f.stageRoot, "tooling/source/cleanup-engine.mjs"), "utf8"),
     "fixture: tooling/source/cleanup-engine.mjs"
   );
+  assert.equal(
+    await readFile(path.join(f.stageRoot, "scripts/video-ai-worker-launcher.py"), "utf8"),
+    "fixture: scripts/video-ai-worker-launcher.py"
+  );
   assert.ok(f.messages.some((message) => message.includes("8 files moved into place")));
   assert.ok(f.messages.some((message) => message.includes("Checking staged runtime resources: completed")));
   assert.equal(f.messages.at(-1), `Desktop resources staged: ${f.stageRoot}`);

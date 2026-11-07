@@ -17,6 +17,7 @@ ignore = ["B008"]
 [tool.ruff.lint.per-file-ignores]
 "scripts/chatterbox-worker.py" = ["E402"]
 "scripts/image-ai-worker.py" = ["E402"]
+"scripts/video-ai-worker.py" = ["E402"]
 
 [tool.ruff.format]
 quote-style = "double"

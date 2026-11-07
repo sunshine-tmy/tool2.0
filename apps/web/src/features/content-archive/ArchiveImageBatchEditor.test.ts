@@ -77,6 +77,26 @@ async function click(wrapper: VueWrapper, label: string) {
   await flushPromises();
 }
 describe("图文批量编辑窗口", () => {
+  it("可选择每条作品自己的原配乐，不要求从音乐库选择相同歌曲", async () => {
+    const item = photo();
+    item.media.push({ ...item.media[0], id: "source_music123", kind: "audio", checksum: "b".repeat(64) });
+    mocks.detail.mockResolvedValue(item);
+    const wrapper = setup();
+    await wrapper.vm.show("audio", listFixture([item]).items);
+    const select = wrapper
+      .findAllComponents(NSelect)
+      .find((entry) => entry.attributes("aria-label") === "批量图文背景音乐")!;
+    select.vm.$emit("update:value", "__original__");
+    await flushPromises();
+    expect(wrapper.text()).toContain("逐条使用各作品已归档的原配乐");
+    await click(wrapper, "开始批量保存 1 条");
+    expect(mocks.create).toHaveBeenCalledWith(
+      item.id,
+      item.media[0].id,
+      expect.objectContaining({ sourceMusicId: "source_music123", sourceMusicChecksum: "b".repeat(64) }),
+      expect.any(AbortSignal)
+    );
+  });
   it.each(["preview", "save"] as const)(
     "%s 的进度显示整数百分比，不展示长小数，也不提前四舍五入到 100%%",
     async (mode) => {
@@ -315,7 +335,7 @@ describe("图文批量编辑窗口", () => {
   it("选择配乐支持素材版本、音量、循环与选段起点，保留已有水印语义", async () => {
     const wrapper = setup();
     await wrapper.vm.show("audio", listFixture([photo()]).items);
-    expect(mocks.musicList).toHaveBeenCalledWith(expect.objectContaining({ view: "speech" }), expect.any(AbortSignal));
+    expect(mocks.musicList).toHaveBeenCalledWith(expect.objectContaining({ view: "music" }), expect.any(AbortSignal));
     const select = wrapper
       .findAllComponents(NSelect)
       .find((entry) => entry.attributes("aria-label") === "批量图文背景音乐")!;

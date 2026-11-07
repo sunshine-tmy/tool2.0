@@ -15,6 +15,8 @@ type TestOptions = {
       | "ADMIN_PIN"
       | "DATABASE_PATH"
       | "IMAGE_AI_WORKER_URL"
+      | "VIDEO_AI_WORKER_URL"
+      | "VIDEO_AI_WORKER_TIMEOUT_MS"
       | "DEPLOYMENT_USAGE"
       | "CHATTERBOX_WORKER_URL"
       | "CHATTERBOX_WORKER_TIMEOUT_MS"
@@ -101,6 +103,7 @@ export async function createIsolatedAppFixture() {
               NODE_ENV: "test",
               DATABASE_PATH: ":memory:",
               IMAGE_AI_WORKER_URL: "http://127.0.0.1:1",
+              VIDEO_AI_WORKER_URL: "http://127.0.0.1:1",
               CHATTERBOX_WORKER_URL: "http://127.0.0.1:1",
               EDGE_TTS_FFMPEG_PATH: path.join(root, "uninstalled", "ffmpeg"),
               CHATTERBOX_FFMPEG_PATH: path.join(root, "uninstalled", "ffmpeg"),

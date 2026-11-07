@@ -12,6 +12,7 @@ import type { AppConfig } from "../../../config";
 import { assertRemoteResponseSize, limitedResponseStream, type RemoteFetch } from "../../../security/remote-fetch";
 import { abortable, ArchiveTaskError, normalizeArchiveStorageError, type ArchiveSource } from "./provider";
 import { assertMp4VideoTrack } from "./mp4-video";
+import { ARCHIVE_SOUNDTRACK_MAX_BYTES, inspectArchiveSoundtrack } from "./soundtrack";
 
 export class ArchiveDownloadGateway {
   constructor(
@@ -30,15 +31,24 @@ export class ArchiveDownloadGateway {
     itemId: string,
     signal: AbortSignal
   ): Promise<ContentArchiveMedia> {
+    // 可选配乐的下载正文也需有界，避免慢速音频占满整条图文任务的时限。
+    const downloadSignal =
+      source.kind === "audio"
+        ? AbortSignal.any([signal, AbortSignal.timeout(this.config.remoteFetchTimeoutMs)])
+        : signal;
+    const maxBytes =
+      source.kind === "audio"
+        ? Math.min(this.config.remoteMediaMaxBytes, ARCHIVE_SOUNDTRACK_MAX_BYTES)
+        : this.config.remoteMediaMaxBytes;
     // CDN 备用地址仅在本媒体失败时尝试，每个请求仍完整通过 DNS/重定向安全检查。
     for (const url of source.urls.slice(0, 8)) {
-      signal.throwIfAborted();
+      downloadSignal.throwIfAborted();
       const id = nanoid(12);
       const temporary = path.join(directory, `${id}.downloading`);
       let response: Response | undefined;
       const controller = new AbortController();
       try {
-        const requestSignal = AbortSignal.any([signal, controller.signal]);
+        const requestSignal = AbortSignal.any([downloadSignal, controller.signal]);
         const timer = setTimeout(
           () => controller.abort(new DOMException("媒体连接超时", "TimeoutError")),
           this.config.remoteFetchTimeoutMs
@@ -63,7 +73,7 @@ export class ArchiveDownloadGateway {
           clearTimeout(timer);
         }
         if (!response.ok) throw new Error("MEDIA_HTTP_ERROR");
-        assertRemoteResponseSize(response, this.config.remoteMediaMaxBytes);
+        assertRemoteResponseSize(response, maxBytes);
         const hash = createHash("sha256");
         const hasher = new Transform({
           transform(chunk, _encoding, callback) {
@@ -72,10 +82,10 @@ export class ArchiveDownloadGateway {
           }
         });
         await pipeline(
-          limitedResponseStream(response, this.config.remoteMediaMaxBytes),
+          limitedResponseStream(response, maxBytes, source.kind === "audio" ? downloadSignal : undefined),
           hasher,
           fs.createWriteStream(temporary, { flags: "wx" }),
-          { signal }
+          { signal: downloadSignal }
         );
         signal.throwIfAborted();
         const stat = await fsp.stat(temporary);
@@ -88,14 +98,20 @@ export class ArchiveDownloadGateway {
           .trim()
           .toLowerCase();
         if (
+          source.kind !== "audio" &&
           platform === "xiaohongshu" &&
           !/^(?:image\/(?:jpeg|png|webp|gif|avif)|video\/(?:mp4|quicktime)|application\/octet-stream)$/.test(mimeType)
         )
           throw new Error("MEDIA_FORMAT_INVALID");
         if (mimeType === "application/octet-stream") mimeType = defaultMime(source.kind);
+        let soundtrack: Awaited<ReturnType<typeof inspectArchiveSoundtrack>> | undefined;
+        if (source.kind === "audio") {
+          soundtrack = await inspectArchiveSoundtrack(temporary);
+          mimeType = soundtrack.mimeType;
+        }
         let width = source.width,
           height = source.height;
-        if (platform === "douyin" || platform === "tiktok") {
+        if (source.kind !== "audio" && (platform === "douyin" || platform === "tiktok")) {
           if (source.kind === "image" || source.kind === "cover") {
             const image = await sharp(temporary, { limitInputPixels: 40_000_000 }).metadata();
             const formats: Record<string, string> = {
@@ -123,7 +139,7 @@ export class ArchiveDownloadGateway {
             mimeType = "video/mp4";
           }
         }
-        const extension = extensionFor(mimeType, source.kind);
+        const extension = soundtrack?.extension ?? extensionFor(mimeType, source.kind);
         const fileName = `${String(source.index + 1).padStart(3, "0")}-${id}.${extension}`;
         await fsp.rename(temporary, path.join(directory, fileName));
         return {
@@ -132,11 +148,12 @@ export class ArchiveDownloadGateway {
           index: source.index,
           fileName,
           mimeType,
+          ...(source.title ? { title: source.title.slice(0, 500) } : {}),
           size: stat.size,
           checksum: hash.digest("hex"),
           width,
           height,
-          durationMs: source.durationMs,
+          durationMs: soundtrack?.durationMs ?? source.durationMs,
           previewUrl: `/api/v1/tools/media-archive/items/${itemId}/media/${id}`,
           downloadUrl: `/api/v1/tools/media-archive/items/${itemId}/media/${id}?download=1`
         };
@@ -156,7 +173,7 @@ export class ArchiveDownloadGateway {
   }
 }
 function defaultMime(kind: ContentArchiveMedia["kind"]) {
-  return kind === "video" || kind === "live-photo" ? "video/mp4" : "image/jpeg";
+  return kind === "audio" ? "audio/mpeg" : kind === "video" || kind === "live-photo" ? "video/mp4" : "image/jpeg";
 }
 function extensionFor(mime: string, kind: ContentArchiveMedia["kind"]) {
   const extensions: Record<string, string> = {

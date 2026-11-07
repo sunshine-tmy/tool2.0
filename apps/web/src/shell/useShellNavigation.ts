@@ -31,6 +31,7 @@ export function useShellNavigation() {
     "audio-convert": AudioLines,
     "audio-extract": AudioLines,
     "xhs-archive": LibraryBig,
+    "video-subtitle": ScanLine,
     "json-format": Braces,
     base64: Binary,
     "url-codec": Link,
@@ -45,7 +46,10 @@ export function useShellNavigation() {
 
   const toolGroupDefinitions = [
     { label: "图片工具", ids: ["image-compress", "image-ai"] },
-    { label: "视频与文案", ids: ["edge-tts", "audio-library", "audio-convert", "audio-extract", "xhs-archive"] },
+    {
+      label: "视频与文案",
+      ids: ["edge-tts", "audio-library", "audio-convert", "audio-extract", "xhs-archive", "video-subtitle"]
+    },
     { label: "文件协作", ids: ["lan-transfer"] },
     { label: "开发工具", ids: ["json-format", "base64", "url-codec", "uuid-generator"] }
   ];

@@ -21,6 +21,7 @@ import { archiveTranslationSourceHash } from "../domains/content-archive/core/te
 import { douyinProvider } from "../domains/content-archive/platform-providers";
 import type { DouyinRuntimeManager } from "../domains/content-archive/providers/douyin/douyin-runtime";
 import { readDouyinApiResponse } from "../domains/content-archive/providers/douyin/douyin-source";
+import { soundtrackWav } from "./helpers/soundtrack";
 
 let root: string;
 let database: ToolboxDatabase;
@@ -104,6 +105,64 @@ async function terminal(id: string) {
 }
 
 describe("多平台获取生命周期", () => {
+  it("原配乐独立保存并持久化；刷新下载失败保留原图与旧配乐，再次成功替换配乐", async () => {
+    const extracted = source();
+    extracted.media.push({ kind: "audio", index: 1, title: "作品配乐", urls: ["https://cdn.test/music"] });
+    vi.mocked(providers[1].extract).mockResolvedValue(extracted);
+    const wav = soundtrackWav();
+    remote.mockImplementation(async (url: string) => new Response(new Uint8Array(url.endsWith("/music") ? wav : png)));
+    const first = await terminal(service.create(link()).id);
+    expect(first.status).toBe("completed");
+    const initial = (await store.get(first.archiveId!))!;
+    const audio = initial.media.find((entry) => entry.kind === "audio")!;
+    expect(initial.warnings).toEqual([]);
+    expect(audio).toMatchObject({ title: "作品配乐", mimeType: "audio/wav", durationMs: 1000 });
+    const reloaded = new ContentArchiveStore(config, database);
+    await reloaded.initialize();
+    expect((await reloaded.get(initial.id))!.media).toEqual(initial.media);
+    remote.mockImplementation(async (url: string) =>
+      url.endsWith("/music") ? new Response("failed", { status: 503 }) : new Response(new Uint8Array(png))
+    );
+    expect((await terminal((await service.refresh(initial.id))!.id)).status).toBe("completed");
+    const refreshed = (await store.get(initial.id))!;
+    expect(refreshed.media.find((entry) => entry.kind === "audio")).toEqual(audio);
+    expect(refreshed.warnings.join(" ")).toContain("已保留上次归档的原配乐");
+    expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, initial.id, audio.fileName))).toEqual(wav);
+    const next = Buffer.from(wav);
+    next[44] = 1;
+    remote.mockImplementation(async (url: string) => new Response(new Uint8Array(url.endsWith("/music") ? next : png)));
+    expect((await terminal((await service.refresh(initial.id))!.id)).status).toBe("completed");
+    const updated = (await store.get(initial.id))!;
+    expect(updated.media.find((entry) => entry.kind === "audio")!.checksum).not.toBe(audio.checksum);
+    expect(updated.warnings).toEqual([]);
+    expect(updated.totalBytes).toBe(png.length + next.length);
+  });
+  it.each(["missing", "invalid", "failed"])("原配乐 %s 不阻止图文归档，不保存伪音频", async (mode) => {
+    const extracted = source();
+    if (mode !== "missing") extracted.media.push({ kind: "audio", index: 1, urls: ["https://cdn.test/music"] });
+    vi.mocked(providers[1].extract).mockResolvedValue(extracted);
+    remote.mockImplementation(async (url: string) =>
+      url.endsWith("/music")
+        ? new Response("not audio", { status: mode === "failed" ? 503 : 200 })
+        : new Response(new Uint8Array(png))
+    );
+    const task = await terminal(service.create(link()).id);
+    expect(task.status).toBe("completed");
+    const item = (await store.get(task.archiveId!))!;
+    expect(item.media.map((entry) => entry.kind)).toEqual(["image"]);
+    expect(item.warnings.join(" ")).toContain(mode === "missing" ? "未提供" : "下载或校验失败");
+  });
+  it("仅返回配乐不能被当作图文成功归档", async () => {
+    vi.mocked(providers[1].extract).mockResolvedValue({
+      ...source(),
+      media: [{ kind: "audio", index: 0, urls: ["https://cdn.test/music"] }]
+    });
+    expect(await terminal(service.create(link()).id)).toMatchObject({
+      status: "failed",
+      errorCode: "ARCHIVE_MEDIA_EMPTY"
+    });
+    expect((await store.list()).total).toBe(0);
+  });
   it.each(["xiaohongshu", "douyin", "tiktok"] as const)(
     "%s 将指定分组与归档原子提交，未指定时刷新保留原分组",
     async (platform) => {

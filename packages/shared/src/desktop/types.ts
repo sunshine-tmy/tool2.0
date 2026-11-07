@@ -84,6 +84,10 @@ export type ShutdownPreparation = ShutdownInspection & { prepared: boolean };
 
 /** Each method remains a fixed capability; never expose a generic invoke/channel API. */
 export interface DesktopBridge extends Partial<DataBackupBridge> {
+  exportCapability?(
+    componentId: string
+  ): Promise<{ canceled: true } | { canceled: false; fileName: string; bytes: number }>;
+  cancelCapabilityExport?(): Promise<void>;
   getStartupDiagnostics(): Promise<StartupSnapshot>;
   onStartupDiagnostics(callback: (state: StartupSnapshot) => void): () => void;
   retryStartup(): Promise<void>;

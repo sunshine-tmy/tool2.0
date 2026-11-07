@@ -29,7 +29,7 @@
         <Camera :size="15" aria-hidden="true" />
         <span>截帧</span>
       </span>
-      <template v-if="item.media.length > 1">
+      <template v-if="visualMedia.length > 1">
         <button
           class="media-nav media-nav-prev"
           type="button"
@@ -43,7 +43,7 @@
           class="media-nav media-nav-next"
           type="button"
           aria-label="下一张"
-          :disabled="selected === item.media.length - 1"
+          :disabled="selected === visualMedia.length - 1"
           @click="changeMedia(1)"
         >
           <ChevronRight :size="24" />
@@ -55,7 +55,7 @@
     <template v-if="media">
       <div class="media-thumbs">
         <button
-          v-for="(entry, index) in item.media"
+          v-for="(entry, index) in visualMedia"
           :key="thumbnailKey(entry)"
           type="button"
           :aria-label="`预览媒体 ${index + 1}`"
@@ -139,6 +139,20 @@
       </div>
       <small v-if="frameMessage && !isVideoMedia(media)" class="frame-feedback" role="status">{{ frameMessage }}</small>
     </template>
+    <section v-for="audio in soundtracks" :key="audio.id" class="archive-soundtrack" aria-label="原作品配乐">
+      <strong>{{ audio.title || "原作品配乐" }}</strong>
+      <audio
+        ref="soundtrackPlayers"
+        :src="mediaUrl(audio.previewUrl)"
+        controls
+        preload="none"
+        @play="onSoundtrackPlay"
+      />
+      <a :href="mediaUrl(audio.downloadUrl)">下载原配乐</a>
+    </section>
+    <p v-for="warning in showWarnings ? item.warnings : []" :key="warning" class="frame-feedback" role="status">
+      {{ warning }}
+    </p>
     <ArchiveAudioEditor
       v-if="editorOpen && media"
       v-model:show="editorOpen"
@@ -150,7 +164,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onScopeDispose, ref, watch } from "vue";
 import { NButton, NImage } from "naive-ui";
 import { Camera, ChevronLeft, ChevronRight, Play, Trash2 } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
@@ -164,34 +178,40 @@ const props = withDefaults(
   defineProps<{
     item: ContentArchiveItem;
     compact?: boolean;
+    showWarnings?: boolean;
   }>(),
-  { compact: false }
+  { compact: false, showWarnings: true }
 );
 
 const ArchiveAudioEditor = defineAsyncComponent(() => import("./ArchiveAudioEditor.vue"));
 const editorOpen = ref(false);
+const visualMedia = computed(() => props.item.media.filter((media) => media.kind !== "audio"));
+const soundtracks = computed(() => props.item.media.filter((media) => media.kind === "audio"));
 function openWatermarkEditor() {
   if (!media.value) return;
+  pauseSoundtracks();
   videoElement.value?.pause();
   emit("editWatermark", media.value.id);
 }
 function openSlideshow() {
-  const index = props.item.media.findIndex((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
+  const index = visualMedia.value.findIndex((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
   if (index >= 0) {
+    pauseSoundtracks();
     videoElement.value?.pause();
     selected.value = index;
     editorOpen.value = true;
   }
 }
 function onAudioSaved(updated: ContentArchiveItem) {
-  const generated = updated.media.findIndex(
-    (entry) => entry.derivedFromImages && !props.item.media.some((existing) => existing.id === entry.id)
-  );
+  const generated = updated.media
+    .filter((media) => media.kind !== "audio")
+    .findIndex((entry) => entry.derivedFromImages && !props.item.media.some((existing) => existing.id === entry.id));
   if (generated >= 0) selected.value = generated;
   emit("mediaUpdated", updated);
 }
 function openAudioEditor() {
   if (!media.value) return;
+  pauseSoundtracks();
   videoElement.value?.pause();
   emit("editAudio", media.value.id);
 }
@@ -199,8 +219,17 @@ const selected = ref(0);
 const requestScope = useRequestScope();
 const confirm = useConfirmDialog();
 let itemGeneration = 0;
-const media = computed(() => props.item.media[selected.value] ?? props.item.media[0]);
+const media = computed(() => visualMedia.value[selected.value] ?? visualMedia.value[0]);
 const videoElement = ref<HTMLVideoElement>();
+const soundtrackPlayers = ref<HTMLAudioElement[]>([]);
+function pauseSoundtracks(except?: HTMLAudioElement) {
+  for (const player of soundtrackPlayers.value) if (player !== except) player.pause();
+}
+function onSoundtrackPlay(event: Event) {
+  videoElement.value?.pause();
+  pauseSoundtracks(event.currentTarget as HTMLAudioElement);
+}
+onScopeDispose(() => pauseSoundtracks());
 const videoPaused = ref(true);
 const videoFrameReady = ref(false);
 const savingFrame = ref(false);
@@ -232,6 +261,7 @@ watch(
   () => props.item.id,
   () => {
     itemGeneration++;
+    pauseSoundtracks();
     selected.value = 0;
     frameMessage.value = "";
   },
@@ -344,6 +374,7 @@ function isCapturedVideoFrame(value: ContentArchiveItem["media"][number] | undef
 }
 
 function onVideoPlay() {
+  pauseSoundtracks();
   videoPaused.value = false;
 }
 
@@ -381,13 +412,14 @@ async function removeCurrentFrame() {
     if (!accepted || !current() || media.value?.id !== frame.id || media.value.checksum !== frame.checksum) return;
     const updated = await contentArchiveApi.removeFrame(itemId, frame.id, requestScope.signal);
     if (!current()) return;
-    const retained = updated.media.findIndex((entry) => entry.id === media.value?.id);
+    const visuals = updated.media.filter((entry) => entry.kind !== "audio");
+    const retained = visuals.findIndex((entry) => entry.id === media.value?.id);
     selected.value =
       retained >= 0
         ? retained
         : Math.max(
             0,
-            updated.media.findIndex((entry) => entry.id === frame.frameSourceMediaId)
+            visuals.findIndex((entry) => entry.id === frame.frameSourceMediaId)
           );
     emit("mediaUpdated", updated);
     frameMessage.value = "截帧已删除";
@@ -453,7 +485,7 @@ function formatTimestamp(timestampMs: number) {
 }
 
 function changeMedia(direction: -1 | 1) {
-  const count = props.item.media.length;
+  const count = visualMedia.value.length;
   if (count < 2) return;
   selected.value = Math.max(0, Math.min(count - 1, selected.value + direction));
 }
@@ -466,6 +498,27 @@ function changeMedia(direction: -1 | 1) {
   justify-items: center;
   gap: 10px;
   margin-bottom: 18px;
+}
+.archive-soundtrack {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 520px);
+  min-width: 0;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color, #dce4f0);
+  border-radius: 10px;
+}
+.archive-soundtrack strong {
+  overflow-wrap: anywhere;
+}
+.archive-soundtrack audio {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+  min-width: 0;
 }
 .media-stage {
   --media-padding: 12px;

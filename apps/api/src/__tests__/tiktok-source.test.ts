@@ -24,6 +24,28 @@ const html = (item: unknown) =>
   `<script nonce="fixture" id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify({ __DEFAULT_SCOPE__: { "webapp.video-detail": { statusCode: 0, itemInfo: { itemStruct: item } } } })}</script>`;
 
 describe("TikTok public page normalization", () => {
+  it("图文原配乐作为独立音频候选，普通视频不额外保存音频", () => {
+    const music = { title: "原始曲目", playUrl: "https://sf16.tiktokcdn.com/track.mp3" };
+    const photo = {
+      ...video(),
+      music,
+      imagePost: { images: [{ imageURL: { urlList: ["https://p16.tiktokcdn-us.com/1.jpg"] } }] }
+    };
+    const source = normalizeTikTokItem(photo, id);
+    expect(source.media.map((entry) => entry.kind)).toEqual(["image", "audio"]);
+    expect(source.media[1]).toMatchObject({ title: "原始曲目", index: 1, urls: [music.playUrl] });
+    expect(normalizeTikTokItem({ ...video(), music }, id).media.some((entry) => entry.kind === "audio")).toBe(false);
+    for (const playUrl of [
+      "https://evil.test/song.mp3",
+      "http://sf16.tiktokcdn.com/track.mp3",
+      "https://user:secret@sf16.tiktokcdn.com/track.mp3",
+      ""
+    ]) {
+      expect(
+        normalizeTikTokItem({ ...photo, music: { ...music, playUrl } }, id).media.map((entry) => entry.kind)
+      ).toEqual(["image"]);
+    }
+  });
   it("reads public structured playback addresses when the legacy address fields are empty", () => {
     const item = {
       ...video(),

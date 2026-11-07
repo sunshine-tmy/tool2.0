@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "baseline": "r11-style-contracts.json",
+  "amendments": [
+    {
+      "id": "speech-history-text-actions",
+      "introducedBy": "11c616869521945527c51e88e26355c6b9486fce",
+      "reason": "文字操作按钮保留 Naive UI 自身尺寸，旧的 34px 图标链接样式只作用于普通链接。",
+      "entries": ["apps/web/src/styles/global.css", "apps/web/src/styles/index.css"],
+      "file": "apps/web/src/features/speech/shared/styles/foundation.css",
+      "layer": "foundation",
+      "selector": ".history-actions a:not(.n-button)",
+      "previous": ".history-actions",
+      "next": ".chatterbox-panel .edge-tts-history-list article",
+      "declarations": [
+        ["display", "grid", false],
+        ["width", "34px", false],
+        ["height", "34px", false],
+        ["place-items", "center", false],
+        ["color", "#526174", false],
+        ["background", "#fff", false],
+        ["border", "1px solid #dce3ee", false],
+        ["border-radius", "8px", false],
+        ["cursor", "pointer", false]
+      ],
+      "baselineSelector": ".history-actions a"
+    },
+    {
+      "id": "pagination-total-wrap",
+      "introducedBy": "cb99350a1a37ea4a49e8683cc25dd76ec4be1f96",
+      "reason": "分页总数与分页控件在窄面板中换行，覆盖 Naive UI 的未分层 nowrap。",
+      "entries": ["apps/web/src/styles/redesign.css", "apps/web/src/styles/index.css"],
+      "file": "apps/web/src/styles/components/controls.css",
+      "layer": "components",
+      "selector": ".pagination-with-total",
+      "previous": null,
+      "next": ".tool-page-header, .section-title, .page-heading",
+      "declarations": [
+        ["flex-wrap", "wrap", true],
+        ["row-gap", "8px", false]
+      ],
+      "baselineSelector": null
+    },
+    {
+      "id": "overlay-header-boundary",
+      "introducedBy": "fe4ace08e329dd06fc59bad2fc6af0ceea1e58db",
+      "reason": "弹窗遮罩、命中区域和抽屉从头部栏下方开始，保留桌面头部操作。",
+      "entries": ["apps/web/src/styles/redesign.css", "apps/web/src/styles/index.css"],
+      "file": "apps/web/src/styles/components/shell.css",
+      "layer": "components",
+      "selector": ".n-modal-mask, .n-modal-body-wrapper, body > .n-drawer-container",
+      "previous": ".workspace",
+      "next": ".topbar",
+      "declarations": [["top", "var(--shell-overlay-top, 0px)", true]],
+      "baselineSelector": null
+    }
+  ]
+}

@@ -12,7 +12,11 @@ export type ImageBatchRecipe = {
   secondsPerImage: number;
   aspect: "portrait" | "landscape" | "square";
   watermark?: { settings: ArchiveWatermarkSettings; file?: File; libraryId?: string };
-  music?: { id: string; revision: number; volume: number; start: number; loop: boolean };
+  music?: ({ id: string; revision: number } | { source: "original" }) & {
+    volume: number;
+    start: number;
+    loop: boolean;
+  };
 };
 
 export function imageBatchTarget(item: ContentArchiveItem) {
@@ -70,8 +74,15 @@ export function imageBatchInput(
   }
   if (recipe.kind === "audio" || recipe.music) {
     if (!recipe.music) throw new Error("请先选择音频素材");
-    input.musicId = recipe.music.id;
-    input.musicRevision = recipe.music.revision;
+    if ("source" in recipe.music) {
+      const original = item.media.find((entry) => entry.kind === "audio");
+      if (!original) throw new Error("该作品没有已归档的原配乐，请刷新作品补充或选择背景音乐库中的音乐");
+      input.sourceMusicId = original.id;
+      input.sourceMusicChecksum = original.checksum;
+    } else {
+      input.musicId = recipe.music.id;
+      input.musicRevision = recipe.music.revision;
+    }
     input.useSavedMusic = false;
     Object.assign(input.settings, {
       musicVolume: recipe.music.volume,

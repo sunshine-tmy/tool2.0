@@ -121,7 +121,8 @@ export const XhsArchiveMediaKindSchema = Type.Union([
   Type.Literal("image"),
   Type.Literal("video"),
   Type.Literal("cover"),
-  Type.Literal("live-photo")
+  Type.Literal("live-photo"),
+  Type.Literal("audio")
 ]);
 export const XhsArchiveAuthorSchema = Type.Object(
   { id: Type.Optional(Type.String()), name: Type.Optional(Type.String()), avatarUrl: Type.Optional(Type.String()) },
@@ -223,6 +224,7 @@ export const XhsArchiveMediaSchema = Type.Object(
     index: Type.Integer({ minimum: 0 }),
     fileName: Type.String(),
     mimeType: Type.String(),
+    title: Type.Optional(Type.String({ maxLength: 500 })),
     size: Type.Integer({ minimum: 0 }),
     width: Type.Optional(Type.Integer({ minimum: 1 })),
     height: Type.Optional(Type.Integer({ minimum: 1 })),

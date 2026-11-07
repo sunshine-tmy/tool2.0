@@ -244,11 +244,13 @@ export class ContentArchiveTaskService {
       if (job.archiveId && previous?.id !== job.archiveId)
         throw new ArchiveTaskError("ARCHIVE_IDENTITY_MISMATCH", "刷新结果与原归档作品不一致");
       job.archiveId = previous?.id;
-      if (!source.media.length) throw new ArchiveTaskError("ARCHIVE_MEDIA_EMPTY", "未返回可保存的媒体");
+      if (!source.media.some((entry) => entry.kind !== "audio"))
+        throw new ArchiveTaskError("ARCHIVE_MEDIA_EMPTY", "未返回可保存的媒体");
       const id = previous?.id ?? nanoid(14);
       const media: ContentArchiveItem["media"] = [];
+      const warnings: string[] = [];
       let failures = 0;
-      for (const entry of source.media) {
+      for (const [index, entry] of source.media.entries()) {
         signal.throwIfAborted();
         try {
           let downloaded = await this.options.download.download(entry, job.platform, staging, id, signal);
@@ -277,13 +279,16 @@ export class ContentArchiveTaskService {
         } catch (error) {
           signal.throwIfAborted();
           const normalized = normalizeArchiveStorageError(error);
-          if (normalized instanceof ArchiveTaskError && normalized.statusCode === 507) throw normalized;
-          failures++;
+          if (entry.kind === "audio") warnings.push("原配乐下载或校验失败，已保存图文；可稍后刷新重试");
+          else {
+            if (normalized instanceof ArchiveTaskError && normalized.statusCode === 507) throw normalized;
+            failures++;
+          }
         }
         progress(
           "downloading",
-          38 + Math.round(((media.length + failures) / source.media.length) * 48),
-          `正在保存媒体 ${media.length + failures}/${source.media.length}`
+          38 + Math.round(((index + 1) / source.media.length) * 48),
+          `正在保存媒体 ${index + 1}/${source.media.length}`
         );
       }
       if (failures)
@@ -291,6 +296,8 @@ export class ContentArchiveTaskService {
           media.length ? "ARCHIVE_MEDIA_DOWNLOAD_PARTIAL" : "ARCHIVE_MEDIA_DOWNLOAD_FAILED",
           media.length ? "部分媒体下载失败，旧归档未被覆盖，请稍后重试" : "所有媒体均下载失败，旧归档未被覆盖"
         );
+      if (source.type === "image" && !source.media.some((entry) => entry.kind === "audio"))
+        warnings.push("平台未提供可下载的原配乐，已保存图文");
       signal.throwIfAborted();
       const { media: _sources, ...metadata } = source;
       const now = new Date().toISOString();
@@ -303,7 +310,7 @@ export class ContentArchiveTaskService {
         media,
         coverMediaId: media.find((entry) => entry.kind === "image" || entry.kind === "cover")?.id,
         status: "ready",
-        warnings: [],
+        warnings,
         totalBytes: media.reduce((sum, entry) => sum + entry.size, 0),
         translation: previous?.translation
       };

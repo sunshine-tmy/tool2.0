@@ -106,6 +106,51 @@ function styleStructure(root) {
     });
 }
 
+/** Validate each reviewed post-R11 change, then reconstruct the frozen cascade on a clone. */
+export function restoreReviewedStyleBaseline(root, { repositoryRoot, entryFile, amendments }) {
+  const restored = root.clone();
+  const origin = (node) =>
+    node.source?.input.file && path.relative(repositoryRoot, node.source.input.file).replaceAll("\\", "/");
+  for (const amendment of amendments.filter((item) => item.entries.includes(entryFile))) {
+    const fail = (detail) => {
+      throw new Error(`Reviewed style change ${amendment.id}: ${detail}`);
+    };
+    const matches = [];
+    restored.walkRules((rule) => {
+      if (origin(rule) === amendment.file && cssText(rule.selector) === cssText(amendment.selector)) matches.push(rule);
+    });
+    if (matches.length !== 1) fail("expected exactly one rule in its declared source file");
+    const rule = matches[0];
+    const parents = [];
+    for (let parent = rule.parent; parent.type !== "root"; parent = parent.parent)
+      parents.unshift([parent.type, parent.name, cssText(parent.params)]);
+    const expectedParents = entryFile === "apps/web/src/styles/index.css" ? [["atrule", "layer", amendment.layer]] : [];
+    if (JSON.stringify(parents) !== JSON.stringify(expectedParents)) fail("unexpected layer or media/container scope");
+    const nodes = rule.nodes.filter((node) => node.type !== "comment");
+    if (nodes.some((node) => node.type !== "decl")) fail("unexpected nested node");
+    const declarations = nodes.map((node) => [node.prop, cssText(node.value), Boolean(node.important)]);
+    const expected = amendment.declarations.map(([prop, value, important]) => [prop, cssText(value), important]);
+    if (JSON.stringify(declarations) !== JSON.stringify(expected)) fail("declarations, order or importance changed");
+    const siblings = rule.parent.nodes.filter((node) => node.type !== "comment" && origin(node) === amendment.file);
+    const index = siblings.indexOf(rule);
+    for (const [offset, selector] of [
+      [-1, amendment.previous],
+      [1, amendment.next]
+    ]) {
+      const sibling = siblings[index + offset];
+      if (
+        selector === null
+          ? Boolean(sibling)
+          : sibling?.type !== "rule" || cssText(sibling.selector) !== cssText(selector)
+      )
+        fail("rule moved from its reviewed source position");
+    }
+    if (amendment.baselineSelector === null) rule.remove();
+    else rule.selector = amendment.baselineSelector;
+  }
+  return restored;
+}
+
 /** Conservative candidates only: same declarations, selector and enclosing conditions/layers. */
 export function exactStyleDuplicates(root) {
   const seen = new Map();

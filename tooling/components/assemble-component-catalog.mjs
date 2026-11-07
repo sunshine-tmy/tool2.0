@@ -18,7 +18,7 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
-export async function assembleComponentCatalog(feedDirectory, platform = componentPlatformForBuildHost()) {
+export async function assembleComponentCatalog(feedDirectory, platform = componentPlatformForBuildHost(), baseCatalog) {
   if (platform !== "win32-x64" && platform !== "darwin-arm64") throw new Error("目标平台无效");
   const feedRoot = await fs.realpath(feedDirectory);
   const stat = await fs.stat(feedRoot);
@@ -27,6 +27,16 @@ export async function assembleComponentCatalog(feedDirectory, platform = compone
   const manifests = [];
   const trustedPublicKeys = {};
   const seenIds = new Set();
+  const baseById = new Map();
+  if (baseCatalog) {
+    if (!Array.isArray(baseCatalog.manifests) || !baseCatalog.trustedPublicKeys) throw new Error("基准能力目录无效");
+    for (const manifest of baseCatalog.manifests) {
+      validateCatalogManifest(manifest, platform);
+      if (baseById.has(manifest.id)) throw new Error(`基准目录包含重复 id：${manifest.id}`);
+      verifyCatalogSignature(manifest, baseCatalog.trustedPublicKeys[manifest.keyId]);
+      baseById.set(manifest.id, manifest);
+    }
+  }
 
   for (const manifestPath of manifestPaths) {
     const manifest = await readJson(manifestPath);
@@ -38,41 +48,45 @@ export async function assembleComponentCatalog(feedDirectory, platform = compone
     const keyStat = await fs.lstat(keyPath);
     if (!keyStat.isFile() || keyStat.isSymbolicLink()) throw new Error(`能力包 ${manifest.id} 的公钥文件类型无效`);
     const publicKeyPem = await fs.readFile(keyPath, "utf8");
-    const publicKey = crypto.createPublicKey(publicKeyPem);
-    if (publicKey.asymmetricKeyType !== "ed25519" || publicKeyId(publicKey) !== manifest.keyId) {
-      throw new Error(`能力包 ${manifest.id} 的受信任公钥 ID 不匹配`);
-    }
-    if (
-      !crypto.verify(
-        null,
-        Buffer.from(canonicalManifest(manifest)),
-        publicKey,
-        Buffer.from(manifest.signature, "base64")
-      )
-    ) {
-      throw new Error(`能力包 ${manifest.id} 的 manifest 签名无效`);
-    }
+    verifyCatalogSignature(manifest, publicKeyPem);
 
     const manifestDirectory = path.dirname(manifestPath);
-    await verifyLocalAsset(
-      manifest.archive,
-      manifestDirectory,
-      "能力归档",
-      `${manifest.id}-${manifest.version}.tar.gz`
-    );
-    for (const archive of manifest.additionalArchives ?? []) {
-      const filename = path.basename(new URL(archive.url).pathname);
-      await verifyLocalAsset(archive, manifestDirectory, "能力分片归档", filename);
+    const previous = baseById.get(manifest.id);
+    // Only byte-equivalent signed metadata from an explicitly supplied, verified
+    // baseline can reuse its previous asset verification. New/changed entries
+    // still require every local archive and SBOM to pass size and SHA-256 checks.
+    const unchanged =
+      previous &&
+      previous.signature === manifest.signature &&
+      canonicalManifest(previous) === canonicalManifest(manifest);
+    if (!unchanged) {
+      await verifyLocalAsset(
+        manifest.archive,
+        manifestDirectory,
+        "能力归档",
+        `${manifest.id}-${manifest.version}.tar.gz`
+      );
+      for (const archive of manifest.additionalArchives ?? []) {
+        const filename = path.basename(new URL(archive.url).pathname);
+        await verifyLocalAsset(archive, manifestDirectory, "能力分片归档", filename);
+      }
+      await verifyLocalAsset(
+        manifest.sbom,
+        manifestDirectory,
+        "SPDX SBOM",
+        `${manifest.id}-${manifest.version}.spdx.json`
+      );
     }
-    await verifyLocalAsset(
-      manifest.sbom,
-      manifestDirectory,
-      "SPDX SBOM",
-      `${manifest.id}-${manifest.version}.spdx.json`
-    );
     trustedPublicKeys[manifest.keyId] = publicKeyPem;
     manifests.push(manifest);
   }
+
+  for (const [id, manifest] of baseById)
+    if (!seenIds.has(id)) {
+      manifests.push(manifest);
+      seenIds.add(id);
+      trustedPublicKeys[manifest.keyId] = baseCatalog.trustedPublicKeys[manifest.keyId];
+    }
 
   for (const manifest of manifests) {
     for (const dependencyId of manifest.dependencyIds) {
@@ -81,6 +95,18 @@ export async function assembleComponentCatalog(feedDirectory, platform = compone
       }
     }
   }
+  const visiting = new Set(),
+    visited = new Set(),
+    byId = new Map(manifests.map((m) => [m.id, m]));
+  const visit = (id) => {
+    if (visiting.has(id)) throw new Error(`能力依赖存在循环：${id}`);
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const dep of byId.get(id).dependencyIds) visit(dep);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const id of seenIds) visit(id);
   manifests.sort((left, right) => left.id.localeCompare(right.id));
   return { manifests, trustedPublicKeys };
 }
@@ -89,10 +115,12 @@ export async function writeGeneratedCatalog(
   feedDirectory,
   outputPath,
   platform = componentPlatformForBuildHost(),
-  pythonVersion
+  pythonVersion,
+  baseCatalogPath
 ) {
   if (pythonVersion !== undefined && pythonVersion !== "3.12") throw new Error("统一目录只支持 Python 3.12");
-  const catalog = await assembleComponentCatalog(feedDirectory, platform);
+  const baseCatalog = baseCatalogPath ? await readGeneratedCatalog(baseCatalogPath) : undefined;
+  const catalog = await assembleComponentCatalog(feedDirectory, platform, baseCatalog);
   if (pythonVersion === "3.12") assertUnifiedPythonCatalog(catalog);
   const resolvedOutput = path.resolve(
     outputPath ??
@@ -120,6 +148,25 @@ export async function writeGeneratedCatalog(
     await fs.rm(temporaryPath, { force: true });
   }
   return { outputPath: resolvedOutput, manifestCount: catalog.manifests.length };
+}
+
+/** Parse generated JSON only. Never execute a baseline TS/JS file supplied by CLI. */
+async function readGeneratedCatalog(filename) {
+  const source = await fs.readFile(filename, "utf8");
+  const match = /^export const packagedComponentCatalog = (\{[\s\S]*\}) satisfies ComponentCatalog;\s*$/m.exec(source);
+  if (!match) throw new Error("基准目录必须是标准生成的 catalog.generated.ts");
+  return JSON.parse(match[1]);
+}
+
+function verifyCatalogSignature(manifest, pem) {
+  if (typeof pem !== "string") throw new Error(`能力包 ${manifest.id} 缺少受信任公钥`);
+  const publicKey = crypto.createPublicKey(pem);
+  if (publicKey.asymmetricKeyType !== "ed25519" || publicKeyId(publicKey) !== manifest.keyId)
+    throw new Error(`能力包 ${manifest.id} 的受信任公钥 ID 不匹配`);
+  if (
+    !crypto.verify(null, Buffer.from(canonicalManifest(manifest)), publicKey, Buffer.from(manifest.signature, "base64"))
+  )
+    throw new Error(`能力包 ${manifest.id} 的 manifest 签名无效`);
 }
 
 async function findManifests(feedRoot) {
@@ -378,20 +425,27 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(publicEnt
     const values = new Map();
     if (args.length % 2 !== 0)
       throw new Error(
-        "用法：node scripts/assemble-component-catalog.mjs --feed <目录> [--platform win32-x64|darwin-arm64] [--output <TS 文件>] [--python-version 3.12]"
+        "用法：node scripts/assemble-component-catalog.mjs --feed <目录> [--platform win32-x64|darwin-arm64] [--output <TS 文件>] [--python-version 3.12] [--base-catalog <已验证目录 TS>]"
       );
     for (let index = 0; index < args.length; index += 2) {
       const key = args[index];
       const value = args[index + 1];
       if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
-      if (!["feed", "output", "platform", "python-version"].includes(key.slice(2))) throw new Error(`未知参数 ${key}`);
+      if (!["feed", "output", "platform", "python-version", "base-catalog"].includes(key.slice(2)))
+        throw new Error(`未知参数 ${key}`);
       values.set(key.slice(2), value);
     }
     if (!values.has("feed")) throw new Error("缺少参数 --feed");
     const feedDirectory = path.resolve(values.get("feed"));
     const outputPath = values.has("output") ? path.resolve(values.get("output")) : undefined;
     const platform = values.get("platform") ?? componentPlatformForBuildHost();
-    const result = await writeGeneratedCatalog(feedDirectory, outputPath, platform, values.get("python-version"));
+    const result = await writeGeneratedCatalog(
+      feedDirectory,
+      outputPath,
+      platform,
+      values.get("python-version"),
+      values.get("base-catalog")
+    );
     console.log(`已核验并写入 ${result.manifestCount} 个能力包：${result.outputPath}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "能力目录组装失败");

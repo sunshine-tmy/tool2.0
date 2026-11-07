@@ -42,6 +42,7 @@ export class DiagnosticsService {
     if (this.database.hasStatus("archive-video-edit-job", ["pending", "running"])) return true;
     if (this.database.hasStatus("audio-convert-job", ["pending", "running"])) return true;
     if (this.database.hasStatus("audio-extract-job", ["pending", "running"])) return true;
+    if (this.database.hasStatus("video-ai-task", ["pending", "running"])) return true;
     if (this.database.hasStatus("tiktok-profile-job", ["discovering", "waiting-user", "archiving", "stopping"]))
       return true;
     return [

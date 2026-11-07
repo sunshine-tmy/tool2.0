@@ -22,6 +22,8 @@ const MAX_GITHUB_RELEASE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 const GROUP_IDS = new Set(["shared", "media", "audio", "image", "archive", "translation"]);
 
 export async function buildComponentPackage(options) {
+  const reviewOnly = options.reviewOnly === true;
+  if (reviewOnly && options.signingKeyPath) throw new Error("审阅模式不接受签名密钥；不会读取私钥");
   const definition = await readJson(options.definitionPath, "能力包定义");
   const platform = options.platform ?? componentPlatformForBuildHost();
   if (!COMPONENT_PLATFORMS.has(platform)) throw new Error("能力包目标平台不受支持");
@@ -41,13 +43,22 @@ export async function buildComponentPackage(options) {
   validateDefinition(definition);
   const stageStat = await fs.stat(stageRoot);
   if (!stageStat.isDirectory()) throw new Error("能力目录必须是文件夹");
+  if (
+    definition.id === "video-ai" &&
+    definition.version === "1.0.0-py312-cpu1" &&
+    (await fs.stat(path.join(stageRoot, "scripts", "video-ai-sequence-support.json")).then(
+      () => true,
+      () => false
+    ))
+  )
+    throw new Error("新版视频时序 Worker 不能使用旧 1.0.0 定义打包，请使用新版本派生定义");
   await fs.mkdir(outputPath, { recursive: true });
   const outputRoot = await fs.realpath(outputPath);
   if (stageRoot === outputRoot || isPathWithin(stageRoot, outputRoot) || isPathWithin(outputRoot, stageRoot)) {
     throw new Error("能力目录与产物目录不能互相包含");
   }
-  const signingKeyPath = await fs.realpath(options.signingKeyPath);
-  if (isPathWithin(stageRoot, signingKeyPath)) {
+  const signingKeyPath = reviewOnly ? undefined : await fs.realpath(options.signingKeyPath);
+  if (signingKeyPath && isPathWithin(stageRoot, signingKeyPath)) {
     throw new Error("签名私钥不能位于能力目录中");
   }
 
@@ -67,23 +78,26 @@ export async function buildComponentPackage(options) {
   if (!archiveGroups[0].files.length) throw new Error("主归档必须至少包含一个文件");
 
   const pythonEnvironment = await validatePythonEnvironment(definition.pythonEnvironment, stageRoot);
-  const privateKey = crypto.createPrivateKey({
-    key: await fs.readFile(signingKeyPath),
-    format: "pem",
-    ...(process.env.COMPONENT_SIGNING_KEY_PASSPHRASE
-      ? { passphrase: process.env.COMPONENT_SIGNING_KEY_PASSPHRASE }
-      : {})
-  });
-  if (privateKey.asymmetricKeyType !== "ed25519") throw new Error("能力包签名密钥必须是 Ed25519 私钥");
-  const publicKey = crypto.createPublicKey(privateKey);
-  const publicKeyPem = publicKey.export({ format: "pem", type: "spki" }).toString();
-  const keyId =
-    "ed25519-" +
-    crypto
-      .createHash("sha256")
-      .update(publicKey.export({ format: "der", type: "spki" }))
-      .digest("hex")
-      .slice(0, 24);
+  const privateKey = reviewOnly
+    ? undefined
+    : crypto.createPrivateKey({
+        key: await fs.readFile(signingKeyPath),
+        format: "pem",
+        ...(process.env.COMPONENT_SIGNING_KEY_PASSPHRASE
+          ? { passphrase: process.env.COMPONENT_SIGNING_KEY_PASSPHRASE }
+          : {})
+      });
+  if (privateKey && privateKey.asymmetricKeyType !== "ed25519") throw new Error("能力包签名密钥必须是 Ed25519 私钥");
+  const publicKey = privateKey ? crypto.createPublicKey(privateKey) : undefined;
+  const publicKeyPem = publicKey?.export({ format: "pem", type: "spki" }).toString();
+  const keyId = publicKey
+    ? "ed25519-" +
+      crypto
+        .createHash("sha256")
+        .update(publicKey.export({ format: "der", type: "spki" }))
+        .digest("hex")
+        .slice(0, 24)
+    : undefined;
 
   const artifactDirectory = path.join(outputRoot, definition.id, definition.version);
   if (await pathExists(artifactDirectory)) throw new Error("该能力版本的产物目录已存在，拒绝覆盖");
@@ -130,7 +144,7 @@ export async function buildComponentPackage(options) {
     const archiveSha256 = mainArchive.asset.sha256;
     const additionalArchives = builtArchives.slice(1).map(({ asset }) => asset);
     const sbomName = `${definition.id}-${definition.version}.spdx.json`;
-    const manifestName = `${definition.id}-${definition.version}.manifest.json`;
+    const manifestName = `${definition.id}-${definition.version}.${reviewOnly ? "review" : "manifest"}.json`;
     const sbomUrl = assetUrl(sbomName, definition);
     const lockText = pythonEnvironment
       ? await fs.readFile(path.join(stageRoot, ...pythonEnvironment.requirementsLockPath.split("/")), "utf8")
@@ -168,42 +182,53 @@ export async function buildComponentPackage(options) {
       keyId,
       signature: ""
     };
-    manifest.signature = crypto.sign(null, Buffer.from(canonicalManifest(manifest)), privateKey).toString("base64");
+    if (privateKey)
+      manifest.signature = crypto.sign(null, Buffer.from(canonicalManifest(manifest)), privateKey).toString("base64");
+    const { protocolVersion: _protocol, keyId: _keyId, signature: _signature, ...candidate } = manifest;
+    const review = {
+      reviewFormat: "toolbox-component-review-v1",
+      installable: false,
+      requiresSignature: true,
+      candidate
+    };
     const manifestPath = path.join(stagingOutput, manifestName);
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + "\n", { flag: "wx" });
+    await fs.writeFile(manifestPath, JSON.stringify(reviewOnly ? review : manifest, null, 2) + "\n", { flag: "wx" });
 
-    const keyDirectory = path.join(outputRoot, "trusted-keys");
-    const keyDirectoryStat = await fs.lstat(keyDirectory).catch((error) => {
-      if (error?.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (keyDirectoryStat?.isSymbolicLink() || (keyDirectoryStat && !keyDirectoryStat.isDirectory())) {
-      throw new Error("trusted-keys 必须是普通目录");
+    let publicKeyPath;
+    if (!reviewOnly) {
+      const keyDirectory = path.join(outputRoot, "trusted-keys");
+      const keyDirectoryStat = await fs.lstat(keyDirectory).catch((error) => {
+        if (error?.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (keyDirectoryStat?.isSymbolicLink() || (keyDirectoryStat && !keyDirectoryStat.isDirectory())) {
+        throw new Error("trusted-keys 必须是普通目录");
+      }
+      await fs.mkdir(keyDirectory, { recursive: true });
+      publicKeyPath = path.join(keyDirectory, `${keyId}.pem`);
+      const publicKeyStat = await fs.lstat(publicKeyPath).catch((error) => {
+        if (error?.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (publicKeyStat?.isSymbolicLink() || (publicKeyStat && !publicKeyStat.isFile())) {
+        throw new Error(`keyId ${keyId} 公钥目标不是普通文件`);
+      }
+      const existingKey = publicKeyStat ? await fs.readFile(publicKeyPath, "utf8") : undefined;
+      if (existingKey !== undefined && existingKey !== publicKeyPem) {
+        throw new Error(`keyId ${keyId} 已存在但公钥内容不匹配`);
+      }
+      if (existingKey === undefined) await fs.writeFile(publicKeyPath, publicKeyPem, { flag: "wx" });
     }
-    await fs.mkdir(keyDirectory, { recursive: true });
-    const publicKeyPath = path.join(keyDirectory, `${keyId}.pem`);
-    const publicKeyStat = await fs.lstat(publicKeyPath).catch((error) => {
-      if (error?.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (publicKeyStat?.isSymbolicLink() || (publicKeyStat && !publicKeyStat.isFile())) {
-      throw new Error(`keyId ${keyId} 公钥目标不是普通文件`);
-    }
-    const existingKey = publicKeyStat ? await fs.readFile(publicKeyPath, "utf8") : undefined;
-    if (existingKey !== undefined && existingKey !== publicKeyPem) {
-      throw new Error(`keyId ${keyId} 已存在但公钥内容不匹配`);
-    }
-    if (existingKey === undefined) await fs.writeFile(publicKeyPath, publicKeyPem, { flag: "wx" });
 
     await fs.mkdir(path.dirname(artifactDirectory), { recursive: true });
     await fs.rename(stagingOutput, artifactDirectory);
     return {
       artifactDirectory,
       archivePath: path.join(artifactDirectory, archiveName),
-      manifestPath: path.join(artifactDirectory, manifestName),
+      ...(reviewOnly
+        ? { reviewPath: path.join(artifactDirectory, manifestName), reviewOnly: true }
+        : { manifestPath: path.join(artifactDirectory, manifestName), publicKeyPath, keyId }),
       sbomPath: path.join(artifactDirectory, sbomName),
-      publicKeyPath,
-      keyId,
       archiveBytes: mainArchive.asset.bytes,
       archivePaths: builtArchives.map(({ path: filePath }) => path.join(artifactDirectory, path.basename(filePath))),
       additionalArchivePaths: builtArchives
@@ -472,7 +497,9 @@ function createSpdxSbom({ definition, files, archiveUrl, archiveSha256, lockText
     relatedSpdxElement: file.SPDXID
   }));
   if (lockText) {
-    for (const match of lockText.matchAll(/^([A-Za-z0-9][A-Za-z0-9_.-]*)==([^\s\\]+)\s*\\?\s*$/gm)) {
+    for (const match of lockText.matchAll(
+      /^([A-Za-z0-9][A-Za-z0-9_.-]*)==([^\s\\]+)(?=\s*(?:\\|--hash(?:=|\s)|$))/gm
+    )) {
       const packageId = `SPDXRef-Python-${sbomPackages.length + 1}`;
       sbomPackages.push({
         name: match[1],
@@ -666,14 +693,20 @@ function parseArguments(argv) {
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
-  const signingKeyPath = values.get("signing-key-file") || process.env.COMPONENT_SIGNING_KEY_FILE;
+  if (values.has("review-only") && values.get("review-only") !== "true") throw new Error("--review-only 只接受 true");
+  const reviewOnly = values.get("review-only") === "true";
+  if (reviewOnly && values.has("signing-key-file")) throw new Error("审阅模式不接受签名密钥");
+  const signingKeyPath = reviewOnly
+    ? undefined
+    : values.get("signing-key-file") || process.env.COMPONENT_SIGNING_KEY_FILE;
   for (const required of ["definition", "stage", "output"]) {
     if (!values.has(required)) throw new Error(`缺少参数 --${required}`);
   }
   if (values.has("asset-base-url") === values.has("github-release-url")) {
     throw new Error("必须且只能指定 --asset-base-url 或 --github-release-url 其中之一");
   }
-  if (!signingKeyPath) throw new Error("请通过 --signing-key-file 或 COMPONENT_SIGNING_KEY_FILE 提供内部签名私钥");
+  if (!reviewOnly && !signingKeyPath)
+    throw new Error("请通过 --signing-key-file 或 COMPONENT_SIGNING_KEY_FILE 提供内部签名私钥");
   const allowed = new Set([
     "definition",
     "stage",
@@ -681,6 +714,7 @@ function parseArguments(argv) {
     "asset-base-url",
     "github-release-url",
     "signing-key-file",
+    "review-only",
     "platform"
   ]);
   for (const key of values.keys()) if (!allowed.has(key)) throw new Error(`未知参数 --${key}`);
@@ -691,7 +725,7 @@ function parseArguments(argv) {
     ...(values.has("asset-base-url") ? { assetBaseUrl: values.get("asset-base-url") } : {}),
     ...(values.has("github-release-url") ? { githubReleaseUrl: values.get("github-release-url") } : {}),
     ...(values.has("platform") ? { platform: values.get("platform") } : {}),
-    signingKeyPath: path.resolve(signingKeyPath)
+    ...(reviewOnly ? { reviewOnly: true } : { signingKeyPath: path.resolve(signingKeyPath) })
   };
 }
 
@@ -707,10 +741,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(publicEnt
   try {
     const result = await buildComponentPackage(parseArguments(process.argv.slice(2)));
     console.log(`能力包已生成：${result.artifactDirectory}`);
-    console.log(`归档：${result.archiveBytes} bytes；${result.fileCount} 个文件；受信任密钥 ID：${result.keyId}`);
-    console.log(`清单：${result.manifestPath}`);
+    console.log(`归档：${result.archiveBytes} bytes；${result.fileCount} 个文件`);
+    console.log(
+      result.reviewOnly ? `未签名审阅材料（不可安装）：${result.reviewPath}` : `清单：${result.manifestPath}`
+    );
     console.log(`SBOM：${result.sbomPath}`);
-    console.log(`公钥：${result.publicKeyPath}`);
+    if (!result.reviewOnly) console.log(`公钥：${result.publicKeyPath}；受信任密钥 ID：${result.keyId}`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : "能力包生成失败");
     process.exitCode = 1;

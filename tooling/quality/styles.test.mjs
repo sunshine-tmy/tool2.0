@@ -4,18 +4,33 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { cssParser, exactStyleDuplicates, expandStyles, styleFingerprint } from "./styles.mjs";
+import {
+  cssParser,
+  exactStyleDuplicates,
+  expandStyles,
+  restoreReviewedStyleBaseline,
+  styleFingerprint
+} from "./styles.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const parser = cssParser(root);
 const boundary = path.join(root, "apps/web/src");
 
-test("R11 preserves the frozen full cascade, declarations, selectors, media/container queries and import layers", async () => {
+test("R11 preserves its frozen cascade plus individually reviewed later fixes, without replacing the original hashes", async () => {
   const contract = JSON.parse(await fs.readFile(path.join(root, "docs/refactoring/r11-style-contracts.json"), "utf8"));
+  const amendments = JSON.parse(
+    await fs.readFile(path.join(root, "docs/refactoring/r11-style-amendments.json"), "utf8")
+  );
+  assert.equal(amendments.schemaVersion, 1);
+  assert.equal(amendments.baseline, "r11-style-contracts.json");
   assert.deepEqual(contract.layers, ["tokens", "foundation", "components"]);
   for (const entry of contract.entries) {
     const { semanticSha256, rules, declarations, atRules } = await styleFingerprint(
-      await expandStyles(path.join(root, entry.file), { boundary, parser })
+      restoreReviewedStyleBaseline(await expandStyles(path.join(root, entry.file), { boundary, parser }), {
+        repositoryRoot: root,
+        entryFile: entry.file,
+        amendments: amendments.amendments
+      })
     );
     assert.deepEqual(
       { semanticSha256, rules, declarations, atRules },
@@ -28,6 +43,68 @@ test("R11 preserves the frozen full cascade, declarations, selectors, media/cont
       entry.file
     );
   }
+});
+
+test("reviewed style changes reject altered values, important, order, scope, file, position, missing and duplicate rules", async () => {
+  const entryFile = "apps/web/src/styles/redesign.css";
+  const file = "apps/web/src/styles/components/fixture.css";
+  const amendments = [
+    {
+      id: "fixture",
+      entries: [entryFile, "apps/web/src/styles/index.css"],
+      file,
+      layer: "components",
+      selector: ".reviewed",
+      previous: ".before",
+      next: ".after",
+      declarations: [
+        ["top", "var(--height, 0px)", true],
+        ["color", "red", false]
+      ],
+      baselineSelector: null
+    }
+  ];
+  const rule = ".reviewed{top:var(--height, 0px)!important;color:red}";
+  const source = `.before{color:blue}${rule}.after{color:green}`;
+  const parse = (css, from = file) => parser.parse(css, { from: path.join(root, from) });
+  const restore = (tree) => restoreReviewedStyleBaseline(tree, { repositoryRoot: root, entryFile, amendments });
+  const tree = parse(source);
+  assert.equal(
+    (await styleFingerprint(restore(tree))).semanticSha256,
+    (await styleFingerprint(parse(".before{color:blue}.after{color:green}"))).semanticSha256
+  );
+  assert.equal(tree.toString(), source, "validation must not mutate production CSS");
+  const restoreIndex = (tree) =>
+    restoreReviewedStyleBaseline(tree, {
+      repositoryRoot: root,
+      entryFile: "apps/web/src/styles/index.css",
+      amendments
+    });
+  assert.equal(
+    (await styleFingerprint(restoreIndex(parse(`@layer components{${source}}`)))).semanticSha256,
+    (await styleFingerprint(parse("@layer components{.before{color:blue}.after{color:green}}"))).semanticSha256
+  );
+  assert.throws(() => restoreIndex(parse(source)), /unexpected layer/);
+  for (const changed of [
+    source.replace("0px", "1px"),
+    source.replace("!important", ""),
+    source.replace("top:var(--height, 0px)!important;color:red", "color:red;top:var(--height, 0px)!important"),
+    `@media(max-width:900px){${source}}`,
+    `@layer foundation{${source}}`,
+    source.replace(rule, ""),
+    source.replace(rule, rule + rule),
+    `${rule}.before{color:blue}.after{color:green}`,
+    source.replace(".reviewed", ".other"),
+    source.replace("color:red", "color:red;.nested{color:blue}")
+  ])
+    assert.throws(() => restore(parse(changed)), /Reviewed style change/);
+  assert.throws(() => restore(parse(source, "apps/web/src/styles/components/other.css")), /declared source file/);
+  const unrelated = parse(source + ".unreviewed{color:purple}");
+  assert.notEqual(
+    (await styleFingerprint(restore(unrelated))).semanticSha256,
+    (await styleFingerprint(restore(tree))).semanticSha256,
+    "unreviewed changes must remain visible to the frozen fingerprint"
+  );
 });
 
 test("cascade fingerprint rejects reordered declarations, rules, changed importance or media conditions", async () => {

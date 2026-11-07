@@ -16,12 +16,13 @@ export class DouyinSourceError extends Error {
 }
 
 type MediaSource = {
-  kind: "image" | "video" | "live-photo";
+  kind: "image" | "video" | "live-photo" | "audio";
   index: number;
   urls: string[];
   width?: number;
   height?: number;
   durationMs?: number;
+  title?: string;
 };
 export type DouyinSource = {
   platform: "douyin";
@@ -133,6 +134,22 @@ function normalizeDetail(detail: Record<string, unknown>, expectedId: string): D
       const live =
         Object.keys(video).length > 0 || positive(image.livePhotoType ?? image.live_photo_type) !== undefined;
       if (live) media.push(videoSource(video, index, "live-photo"));
+    }
+    const music = record(detail.music);
+    // 原配乐是可选附件，缺地址时不影响原图完整性。
+    const candidates = music.playUrl ?? music.play_url;
+    const address =
+      typeof candidates === "string" ? [candidates] : (record(candidates).url_list ?? record(candidates).urlList);
+    try {
+      const musicUrls = urls(address);
+      media.push({
+        kind: "audio",
+        index: images.length,
+        urls: musicUrls,
+        title: text(music.title).slice(0, 500) || "原作品配乐"
+      });
+    } catch (error) {
+      if (!(error instanceof DouyinSourceError)) throw error;
     }
   } else {
     if ((detail.awemeType ?? detail.aweme_type) === 68)

@@ -52,6 +52,7 @@
     <div class="result-detail-layout">
       <MediaGallery
         :item="props.current"
+        :show-warnings="false"
         @frame-saved="emit('frameSaved', $event)"
         @media-updated="emit('mediaUpdated', $event)"
         @edit-watermark="emit('editWatermark', $event)"

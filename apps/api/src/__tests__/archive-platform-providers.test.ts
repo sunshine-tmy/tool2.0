@@ -54,6 +54,22 @@ afterEach(() => {
 });
 
 describe("小红书平台读取网关", () => {
+  it("仅在图文 Provider 已返回可用 HTTPS 配乐时附加音频，缺失或不安全地址保留原图", () => {
+    const item = {
+      id: "123456789",
+      downloads: ["https://cdn.test/image.jpg"],
+      music: { title: "原曲", playUrl: "https://cdn.test/music.mp3" }
+    };
+    expect(normalizeXhsProviderItem(item, link).media[1]).toMatchObject({
+      kind: "audio",
+      title: "原曲",
+      url: "https://cdn.test/music.mp3"
+    });
+    for (const playUrl of ["", "http://cdn.test/music.mp3", "https://user:secret@cdn.test/music.mp3"]) {
+      expect(normalizeXhsProviderItem({ ...item, music: { playUrl } }, link).media).toHaveLength(1);
+    }
+    expect(normalizeXhsProviderItem({ ...item, type: "video" }, link).media).toHaveLength(1);
+  });
   it.each(["http://127.0.0.1:3215", "http://localhost:3215", "http://[::1]:3215"])(
     "%s 仅本机 Worker 可接收登录 Cookie 和 Worker Token",
     async (endpoint) => {

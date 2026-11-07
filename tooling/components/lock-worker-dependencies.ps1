@@ -53,7 +53,10 @@ $Locks = @(
   # must not leak into the baseline lock or inflate the default installer.
   @{ Input = "chatterbox-requirements.txt"; Output = "chatterbox.lock.txt"; Torch = "cpu" },
   @{ Input = "chatterbox-cuda-requirements.txt"; Output = "chatterbox-cuda.lock.txt"; Torch = "cu124" },
-  @{ Input = "image-ai-requirements.txt"; Output = "image-ai.lock.txt"; Torch = "cpu" }
+  @{ Input = "image-ai-requirements.txt"; Output = "image-ai.lock.txt"; Torch = "cpu" },
+  @{ Input = "video-ai-requirements.txt"; Output = "video-ai.lock.txt"; Torch = "cpu" },
+  @{ Input = "video-ai-cuda-requirements.txt"; Output = "video-ai-cuda.lock.txt"; Torch = "cu124" },
+  @{ Input = "video-ai-cuda-sequence-requirements.txt"; Output = "video-ai-cuda-sequence.lock.txt"; Torch = "cu124" }
 )
 
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)

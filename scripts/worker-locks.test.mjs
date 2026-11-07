@@ -95,6 +95,32 @@ describe("Windows AI Worker CPU dependency locks", () => {
     assert.doesNotMatch(lock, /^nvidia[-_\w]*==/m);
   });
 
+  it("pins video AI base package to CPU PyTorch with PaddleOCR", async () => {
+    const lock = await readScript("video-ai.lock.txt");
+    const requirements = await readScript("video-ai-requirements.txt");
+    const generator = await readScript("lock-worker-dependencies.ps1");
+
+    assert.match(lock, /^torch==2\.6\.0\+cpu/m);
+    assert.match(lock, /^fastapi==0\.141\.1 \\/m);
+    assert.match(lock, /^paddlepaddle==3\.3\.1 \\/m);
+    assert.doesNotMatch(lock, /^nvidia[-_\w]*==/m);
+    assert.match(requirements, /^opencv-python-headless==/m);
+    assert.match(generator, /video-ai-requirements\.txt"; Output = "video-ai\.lock\.txt"; Torch = "cpu"/);
+  });
+
+  it("pins video AI CUDA extension to cu124 PyTorch only", async () => {
+    const lock = await readScript("video-ai-cuda.lock.txt");
+    const requirements = await readScript("video-ai-cuda-requirements.txt");
+    const generator = await readScript("lock-worker-dependencies.ps1");
+
+    assert.match(lock, /^torch==2\.6\.0\+cu124/m);
+    assert.match(lock, /^torchvision==0\.21\.0\+cu124/m);
+    assert.doesNotMatch(lock, /^fastapi==/m);
+    assert.doesNotMatch(lock, /^paddlepaddle==/m);
+    assert.match(requirements, /^torch==2\.6\.0\+cu124/m);
+    assert.match(generator, /video-ai-cuda-requirements\.txt"; Output = "video-ai-cuda\.lock\.txt"; Torch = "cu124"/);
+  });
+
   it("pins image AI to CPU PyTorch and CPU ONNX Runtime", async () => {
     const lock = await readScript("image-ai.lock.txt");
     const requirements = await readScript("image-ai-requirements.txt");

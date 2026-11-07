@@ -11,9 +11,9 @@ const workspaceRoot = fileURLToPath(new URL("../", publicEntryUrl));
 const prettierCli = fileURLToPath(new URL("../node_modules/prettier/bin/prettier.cjs", publicEntryUrl));
 const MAX_BATCH_CHARS = 12_000;
 
-export function listProjectFiles({ list = execFileSync, exists = existsSync } = {}) {
+export function listProjectFiles({ repositoryRoot = workspaceRoot, list = execFileSync, exists = existsSync } = {}) {
   const output = list("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], {
-    cwd: workspaceRoot,
+    cwd: repositoryRoot,
     maxBuffer: 8 * 1024 * 1024
   });
   return (
@@ -21,7 +21,7 @@ export function listProjectFiles({ list = execFileSync, exists = existsSync } = 
       .toString("utf8")
       .split("\0")
       .filter(Boolean)
-      .map((file) => path.resolve(workspaceRoot, file))
+      .map((file) => path.resolve(repositoryRoot, file))
       // 尚未提交的删除仍会出现在 Git 索引中，不应作为 Prettier 的输入。
       .filter((file) => exists(file))
   );

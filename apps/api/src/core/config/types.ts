@@ -63,6 +63,17 @@ export type AppConfig = {
   imageAiWorkerTimeoutMs: number;
   imageAiRetentionHours: number;
   imageAiQueueLimit: number;
+  videoAiCapabilityReady: boolean;
+  videoAiDir: string;
+  videoAiFfprobePath?: string;
+  videoAiInputsDir: string;
+  videoAiOutputsDir: string;
+  videoAiTasksDir: string;
+  videoAiWorkerUrl: string;
+  videoAiWorkerToken?: string;
+  videoAiWorkerTimeoutMs: number;
+  videoAiRetentionHours: number;
+  videoAiQueueLimit: number;
   edgeTtsDir: string;
   edgeTtsTasksDir: string;
   edgeTtsPythonPath: string;

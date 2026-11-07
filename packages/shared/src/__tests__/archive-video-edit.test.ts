@@ -15,6 +15,20 @@ describe("配乐参数与用途契约", () => {
     useSavedMusic: false
   });
   it("默认参数有效，允许无音乐及独立静音，不修改历史用途", () => {
+    expect(
+      Value.Check(ArchiveVideoEditInputSchema, {
+        ...input(),
+        sourceMusicId: "source_music123",
+        sourceMusicChecksum: "b".repeat(64)
+      })
+    ).toBe(true);
+    expect(
+      Value.Check(ArchiveVideoEditInputSchema, {
+        ...input(),
+        sourceMusicId: "source_music123",
+        sourceMusicChecksum: "not-a-digest"
+      })
+    ).toBe(false);
     expect(Value.Check(ArchiveVideoEditInputSchema, input())).toBe(true);
     expect(Value.Check(ArchiveVideoEditInputSchema, { ...input(), mode: "preview", previewFullLength: true })).toBe(
       true

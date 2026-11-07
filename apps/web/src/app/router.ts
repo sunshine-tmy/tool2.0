@@ -34,6 +34,11 @@ export const router = createRouter({
       component: () => import("../features/image-ai/page.vue")
     },
     {
+      path: "/tools/video-subtitle",
+      name: "video-subtitle",
+      component: () => import("../features/video-ai/page.vue")
+    },
+    {
       path: "/tools/lan-transfer",
       name: "lan-transfer",
       component: () => import("../features/lan-transfer/page.vue")

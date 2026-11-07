@@ -10,6 +10,32 @@ import { getConfig } from "../config";
 afterEach(() => vi.restoreAllMocks());
 
 describe("desktop Chatterbox runtime selection", () => {
+  it("clears the shared video worker configuration before uninstalling its CUDA environment", async () => {
+    const config = getConfig({
+      dotenvPath: false,
+      environment: { NODE_ENV: "test" },
+      desktopManagedCapabilities: true
+    });
+    const missing = vi.fn(async () => {
+      throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "not installed");
+    });
+    const runtime = await configureDesktopCapabilityRuntime(config, {
+      resolveInstalledPython: missing,
+      resolveInstalledAsset: missing
+    } as unknown as ComponentManager);
+    try {
+      await runtime.afterMutation("video-ai-cuda", "uninstall");
+      config.videoAiCapabilityReady = true;
+      config.videoAiWorkerUrl = "http://127.0.0.1:3211";
+      config.videoAiFfprobePath = "removed-overlay/ffprobe";
+      await runtime.beforeUninstall("video-ai-cuda");
+      expect(config.videoAiCapabilityReady).toBe(false);
+      expect(config.videoAiWorkerUrl).toBe("http://127.0.0.1:1");
+      expect(config.videoAiFfprobePath).toBeUndefined();
+    } finally {
+      await runtime.close();
+    }
+  });
   it("still refreshes shared FFmpeg paths for both retained speech engines", async () => {
     const config = getConfig({
       dotenvPath: false,

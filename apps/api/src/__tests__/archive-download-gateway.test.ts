@@ -10,6 +10,7 @@ import { ArchiveDownloadGateway } from "../domains/content-archive/core/download
 import { getConfig } from "../config";
 import type { ArchiveSource } from "../domains/content-archive/core/provider";
 import { assertMp4VideoTrack } from "../domains/content-archive/core/mp4-video";
+import { soundtrackWav } from "./helpers/soundtrack";
 
 let root: string;
 let config: ReturnType<typeof getConfig>;
@@ -37,6 +38,68 @@ afterEach(async () => {
 });
 const signal = () => new AbortController().signal;
 describe("归档媒体下载", () => {
+  it("可选配乐正文停滞会超时清理，不等待整条图文任务过期，也不取消父任务", async () => {
+    config.remoteFetchTimeoutMs = 30;
+    let cancelled = false;
+    remote.mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array([0]));
+          },
+          cancel() {
+            cancelled = true;
+          }
+        })
+      )
+    );
+    const parent = signal();
+    await expect(
+      gateway.download({ ...entry, kind: "audio" }, "tiktok", root, "archive_123456", parent)
+    ).rejects.toBeDefined();
+    expect(parent.aborted).toBe(false);
+    expect(cancelled).toBe(true);
+    expect(await fs.readdir(root)).toEqual([]);
+  });
+  it.each(["tiktok", "douyin", "xiaohongshu"] as const)(
+    "%s 原配乐校验真实格式与时长，不信任 URL 后缀、MIME 和上游时长",
+    async (platform) => {
+      const bytes = soundtrackWav();
+      remote.mockResolvedValue(new Response(new Uint8Array(bytes), { headers: { "content-type": "text/html" } }));
+      const media = await gateway.download(
+        { ...entry, kind: "audio", title: "原配乐", durationMs: 9000 },
+        platform,
+        root,
+        "archive_123456",
+        signal()
+      );
+      expect(media).toMatchObject({
+        kind: "audio",
+        title: "原配乐",
+        mimeType: "audio/wav",
+        durationMs: 1000,
+        size: bytes.length
+      });
+      expect(media.fileName).toMatch(/\.wav$/);
+      expect(await fs.readFile(path.join(root, media.fileName))).toEqual(bytes);
+      await fs.rename(root, root + "-renamed");
+      await fs.rename(root + "-renamed", root);
+    }
+  );
+  it.each(["html", "image", "oversize", "truncated"])(
+    "原配乐 %s 不能冒充可播放音频，也不遗留部分文件",
+    async (mode) => {
+      const bytes = mode === "image" ? png : mode === "html" ? Buffer.from("<html>error</html>") : soundtrackWav();
+      const headers: Record<string, string> = { "content-type": "audio/mpeg" };
+      if (mode === "oversize") headers["content-length"] = String(100 * 1024 * 1024 + 1);
+      if (mode === "truncated") headers["content-length"] = String(bytes.length + 1);
+      remote.mockResolvedValue(new Response(new Uint8Array(bytes), { headers }));
+      await expect(
+        gateway.download({ ...entry, kind: "audio" }, "tiktok", root, "archive_123456", signal())
+      ).rejects.toMatchObject({ code: "ARCHIVE_MEDIA_DOWNLOAD_FAILED" });
+      expect(await fs.readdir(root)).toEqual([]);
+    }
+  );
   it("WebP 校验后不持有 Windows 文件锁，归档 staging 可立即原子移动", async () => {
     const directory = path.join(root, "staging");
     await fs.mkdir(directory);

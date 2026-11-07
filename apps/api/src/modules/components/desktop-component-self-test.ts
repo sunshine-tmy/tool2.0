@@ -5,6 +5,16 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import type { ComponentPackageManifest } from "./component-manager";
 import { isDouyinAdapterManifest } from "@toolbox/shared";
+import type { VerifiedComponentAsset } from "./types";
+import { videoAiCudaPythonEnvironment } from "./video-ai-python-overlay";
+import {
+  hasVideoAiSequenceAssets,
+  videoAiSequenceEnvironment,
+  verifiedVideoFile,
+  validateVideoAiSequenceSupport,
+  VIDEO_AI_SEQUENCE_SUPPORT,
+  VIDEO_AI_SEQUENCE_LOADER
+} from "./video-ai-sequence-assets";
 
 type ProcessRunner = (
   executable: string,
@@ -15,6 +25,13 @@ type ProcessRunner = (
 
 const requiredFiles: Record<string, string[]> = {
   "edge-tts": ["scripts/edge-tts-generate.py"],
+  "video-ai": [
+    "scripts/video-ai-worker.py",
+    "models/video-ai/big-lama.pt",
+    "models/video-ai/ocr/detection/inference.yml",
+    "models/video-ai/ocr/recognition/inference.yml"
+  ],
+  "video-ai-cuda": ["requirements.lock"],
   "image-ai": [
     "scripts/image-ai-worker.py",
     "models/image-ai/torch/hub/checkpoints/big-lama.pt",
@@ -52,7 +69,11 @@ const requiredFiles: Record<string, string[]> = {
   "douyin-archive": ["adapter/manifest.json"]
 };
 
-export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runProcessDefault) {
+export function createDesktopComponentSelfTest(
+  runProcess: ProcessRunner = runProcessDefault,
+  resolveMediaAsset?: (relative: string) => Promise<string>,
+  resolvePythonDependency?: (componentId: string) => Promise<VerifiedComponentAsset>
+) {
   return async (manifest: ComponentPackageManifest, generationRoot: string) => {
     const isMacOS = manifest.platform === "darwin-arm64";
     const ffmpegName = isMacOS ? "ffmpeg" : "ffmpeg.exe";
@@ -134,6 +155,91 @@ export function createDesktopComponentSelfTest(runProcess: ProcessRunner = runPr
         environment
       );
       assertJsonAvailable(output, "Edge-TTS");
+      return;
+    }
+
+    if (manifest.id === "video-ai-cuda") {
+      if (!resolvePythonDependency) throw new Error("视频去字幕 CUDA 自检需要已验证的基础包 Python 环境");
+      const basePython = await resolvePythonDependency("video-ai");
+      const sequenceEnvironment = await videoAiSequenceEnvironment(
+        { path: pythonPath, generationRoot, manifest },
+        basePython
+      );
+      Object.assign(environment, {
+        ...(await videoAiCudaPythonEnvironment(generationRoot, basePython)),
+        ...sequenceEnvironment,
+        PYTHONDONTWRITEBYTECODE: "1",
+        PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True",
+        PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT: "False"
+      });
+      const output = await runProcess(
+        pythonPath,
+        [
+          "-c",
+          "import json, torch, torchvision, cv2, paddle, paddleocr, fastapi, uvicorn; assert torch.version.cuda == '12.4', f'expected CUDA 12.4 PyTorch, found {torch.version.cuda!r}'; print(json.dumps({'available': True, 'cudaAvailable': torch.cuda.is_available()}))"
+        ],
+        generationRoot,
+        environment
+      );
+      assertJsonAvailable(output, "视频去字幕 CUDA 12.4");
+      if (hasVideoAiSequenceAssets({ path: pythonPath, generationRoot, manifest })) {
+        const helper = await verifiedVideoFile(basePython, VIDEO_AI_SEQUENCE_LOADER);
+        environment.PYTHONDONTWRITEBYTECODE = "1";
+        assertJsonAvailable(
+          await runProcess(
+            pythonPath,
+            [
+              helper,
+              "--sttn-root",
+              sequenceEnvironment.VIDEO_AI_STTN_ENGINE_ROOT,
+              "--propainter-root",
+              sequenceEnvironment.VIDEO_AI_PROPAINTER_ENGINE_ROOT
+            ],
+            generationRoot,
+            environment
+          ),
+          "视频时序引擎资源与 CUDA 算子"
+        );
+      }
+      return;
+    }
+    if (manifest.id === "video-ai") {
+      if (manifest.files.some((file) => [VIDEO_AI_SEQUENCE_SUPPORT, VIDEO_AI_SEQUENCE_LOADER].includes(file.path)))
+        await validateVideoAiSequenceSupport({ path: pythonPath, generationRoot, manifest });
+      if (!resolveMediaAsset) throw new Error("视频去字幕自检需要已安装的共享 FFmpeg");
+      environment.VIDEO_AI_FFMPEG = await resolveMediaAsset(`bin/${ffmpegName}`);
+      environment.VIDEO_AI_FFPROBE = await resolveMediaAsset(`bin/${ffprobeName}`);
+      const modelRoot = path.join(generationRoot, "models", "video-ai");
+      Object.assign(environment, {
+        TOOLBOX_DESKTOP_MANAGED: "1",
+        VIDEO_AI_MODELS_ROOT: modelRoot,
+        VIDEO_AI_LAMA_MODEL: path.join(modelRoot, "big-lama.pt"),
+        VIDEO_AI_OCR_DETECTION_MODEL_DIR: path.join(modelRoot, "ocr", "detection"),
+        VIDEO_AI_OCR_RECOGNITION_MODEL_DIR: path.join(modelRoot, "ocr", "recognition"),
+        VIDEO_AI_DEVICE: "cpu",
+        PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True",
+        PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT: "False"
+      });
+      assertJsonAvailable(
+        await runProcess(
+          pythonPath,
+          [
+            "-c",
+            // 基础包使用 TorchScript LaMa，不依赖 torchvision；该包仅由 CUDA 扩展提供。
+            "import json, torch, cv2, paddle, paddleocr, fastapi, uvicorn; print(json.dumps({'available': True}))"
+          ],
+          generationRoot,
+          environment
+        ),
+        "视频去字幕 CPU 依赖"
+      );
+      const output = await runProcess(
+        pythonPath,
+        [path.join(generationRoot, "scripts", "video-ai-worker.py"), "--check"],
+        generationRoot,
+        environment
+      );
+      assertJsonAvailable(output, "视频去字幕");
       return;
     }
 
@@ -277,7 +383,16 @@ function assertJsonAvailable(output: string, label: string) {
 
 function cleanEnvironment() {
   const environment = { ...process.env } as Record<string, string>;
-  for (const key of ["PYTHONPATH", "PYTHONHOME", "HF_TOKEN", "HF_ENDPOINT", "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL"]) {
+  for (const key of [
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "HF_TOKEN",
+    "HF_ENDPOINT",
+    "PIP_INDEX_URL",
+    "PIP_EXTRA_INDEX_URL",
+    "VIDEO_AI_STTN_ENGINE_ROOT",
+    "VIDEO_AI_PROPAINTER_ENGINE_ROOT"
+  ]) {
     delete environment[key];
   }
   return environment;

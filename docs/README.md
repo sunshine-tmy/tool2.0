@@ -22,6 +22,13 @@
 | [重构当前状态](refactoring/README.md)                       | R00–R12 状态及逐阶段证据                                                  |
 | [R12 后专项验收](refactoring/post-r12-acceptance.md)        | 真实模型、能力环境、macOS、安装包及跨设备检查，未执行项明确保留           |
 
+## 专项方案与交付
+
+- [STTN / ProPainter 接入](video-ai-sttn-propainter-plan.md)：非商用视频去字幕扩展的资产、依赖、能力包、时序处理、资源门槛和 S00～S07 阶段证据。
+- [时序引擎交付与验收](video-ai-sequence-release.md)：当前实现范围、未签名离线材料、复现命令、升级兼容矩阵与保留的发行前验收；不表示时序档位已经发布开放。
+- [视频去字幕 1.1.0 本地安装](video-ai-local-installation.md)：后续生成的本地签名试用包、客户端更新、五个归档的离线导入顺序和真实安装验证；尚未上传 GitHub。
+- 当前视频去字幕交付范围见[发布交接文档](video-ai-release-handover.md)；[原模块方案](video-subtitle-removal-plan.md)保留作历史参考，不能据此认定 STTN / ProPainter 已可用。
+
 ## 历史材料
 
 - [原始项目规划](project-plan.md)、[UI 规划](ui-ux-redesign-plan.md)、[早期设计和实施计划](superpowers/specs/2026-07-06-lightweight-ecommerce-toolbox-design.md)：保留原始需求与旧目录，新增功能以当前架构落点为准。

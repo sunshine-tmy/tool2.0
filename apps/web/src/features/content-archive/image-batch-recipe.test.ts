@@ -28,6 +28,30 @@ function recipe(): ImageBatchRecipe {
   };
 }
 describe("图文批量编辑配方", () => {
+  it("按每条作品的原配乐身份选用附件，缺配乐明确失败，不套用其他作品音乐", () => {
+    const selected: ImageBatchRecipe = { ...recipe(), music: { source: "original", start: 0, volume: 80, loop: true } };
+    for (const count of [2, 5]) {
+      const item = photosWithCount(count);
+      const audio: ContentArchiveMedia = {
+        ...item.media[0],
+        id: `music-${count}`,
+        kind: "audio",
+        checksum: String(count).repeat(64)
+      };
+      item.media.push(audio);
+      const result = imageBatchInput(item, selected);
+      expect(result.duration).toBe(count * 3);
+      expect(result.input).toMatchObject({
+        sourceMusicId: audio.id,
+        sourceMusicChecksum: audio.checksum,
+        settings: { musicVolume: 80, musicStartSeconds: 0 },
+        useSavedMusic: false
+      });
+      expect(result.input.musicId).toBeUndefined();
+      expect(result.input.slideshow!.images).toHaveLength(count);
+    }
+    expect(() => imageBatchInput(photos(), selected)).toThrow("没有已归档的原配乐");
+  });
   it("不同图数分别计算预览及保存时长，自动结束和音乐起点不受首条时长影响", () => {
     const selected = { ...recipe(), watermark: { libraryId: "logo", settings: defaultArchiveWatermarkSettings() } };
     for (const count of [1, 3, 7]) {

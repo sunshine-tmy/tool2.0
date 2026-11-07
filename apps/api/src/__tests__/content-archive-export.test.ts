@@ -43,6 +43,12 @@ const media = (overrides: Partial<ContentArchiveMedia> = {}): ContentArchiveMedi
 });
 
 describe("归档导出文档与命名", () => {
+  it("原配乐作为独立附件导出，元数据保留曲名和音频类型", () => {
+    const audio = media({ kind: "audio", title: "作品配乐", fileName: "source.wav", mimeType: "audio/wav" });
+    const item = { ...fixture(), media: [audio] };
+    expect(archiveMediaExportNames(item.media)).toEqual(["原配乐-01.wav"]);
+    expect(JSON.parse(documents(item)["metadata.json"]).media[0]).toMatchObject({ kind: "audio", title: "作品配乐" });
+  });
   it.each(["xiaohongshu", "douyin"] as const)("%s 元数据含平台/作品 ID，原始文本始终独立保留", (platform) => {
     const item = fixture(platform),
       result = documents(item),

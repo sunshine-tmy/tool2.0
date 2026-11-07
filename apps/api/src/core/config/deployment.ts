@@ -8,6 +8,7 @@ export function readDeploymentConfig(context: ConfigContext) {
     desktopManagedCapabilities,
     edgeTtsCapabilityReady: false,
     imageAiCapabilityReady: false,
+    videoAiCapabilityReady: false,
     chatterboxCapabilityReady: false,
     deploymentMode,
     adminPin,

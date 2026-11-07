@@ -5,6 +5,16 @@ import path from "node:path";
 
 export const workerSuites = {
   image: ["image-ai-worker.py", "image_ai_worker_test.py", "worker_lifecycle.py"],
+  video: [
+    "video-ai-worker.py",
+    "test_video_ai_worker.py",
+    "worker_lifecycle.py",
+    "video-ai-worker-launcher.py",
+    "video_ai_sequence.py",
+    "video_ai_engine_assets.py",
+    "video_ai_sttn.py",
+    "video_ai_propainter.py"
+  ],
   chatterbox: ["chatterbox-worker.py", "chatterbox-worker.test.py", "worker_lifecycle.py"]
 };
 
@@ -19,10 +29,11 @@ export function isolatedEnvironment(root, inherited = process.env) {
   );
   for (const name of ["TEMP", "TMP", "TMPDIR", "HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "XDG_CACHE_HOME"])
     environment[name] = path.join(root, "temp");
-  for (const name of ["STORAGE_ROOT", "IMAGE_AI_STORAGE_ROOT", "CHATTERBOX_STORAGE_ROOT"])
+  for (const name of ["STORAGE_ROOT", "IMAGE_AI_STORAGE_ROOT", "VIDEO_AI_STORAGE_ROOT", "CHATTERBOX_STORAGE_ROOT"])
     environment[name] = path.join(root, "storage", name.toLowerCase());
   for (const name of [
     "IMAGE_AI_MODELS_ROOT",
+    "VIDEO_AI_MODELS_ROOT",
     "CHATTERBOX_MODELS_ROOT",
     "HF_HOME",
     "TORCH_HOME",
@@ -47,7 +58,7 @@ export function isolatedEnvironment(root, inherited = process.env) {
 export function runWorkerSuite({ repoRoot, python, suite, vendor, spawn = spawnSync }) {
   if (!path.isAbsolute(python)) throw new Error("--python must name an existing interpreter by absolute path");
   const files = Object.hasOwn(workerSuites, suite) ? workerSuites[suite] : null;
-  if (!files) throw new Error("--suite must be image or chatterbox");
+  if (!files) throw new Error("--suite must be image, video or chatterbox");
   if (vendor && (suite !== "chatterbox" || !path.isAbsolute(vendor) || !statSync(vendor).isDirectory()))
     throw new Error("--vendor requires an explicit existing absolute Chatterbox vendor directory");
   const version = spawn(python, ["-I", "-c", "import sys; print('.'.join(map(str, sys.version_info[:2])))"], {
@@ -109,7 +120,11 @@ if vendor:
     sys.path.insert(0, vendor)
 sys.path.insert(0, ${JSON.stringify(scripts)})
 sys.argv = [test]
-runpy.run_path(test, run_name="__main__")
+if ${JSON.stringify(suite)} == "video":
+    import pytest
+    raise SystemExit(pytest.main([test, "-q", "-p", "no:cacheprovider"]))
+else:
+    runpy.run_path(test, run_name="__main__")
 `;
     const result = spawn(python, ["-I", "-B", "-c", bootstrap, path.join(scripts, files[1])], {
       cwd: root,

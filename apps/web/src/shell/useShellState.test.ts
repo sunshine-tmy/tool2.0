@@ -67,13 +67,24 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("shell state ownership", () => {
+  it("includes every registered tool exactly once in the sidebar, including video subtitle search", () => {
+    const { state } = setup(useShellNavigation);
+    const visibleIds = state.filteredToolGroups.value.flatMap((group) => group.tools.map((tool) => tool.id));
+    expect([...visibleIds].sort()).toEqual(state.tools.map((tool) => tool.id).sort());
+    expect(new Set(visibleIds).size).toBe(visibleIds.length);
+    expect(state.iconByTool["video-subtitle"]).toBeDefined();
+    state.keyword.value = "视频去字幕";
+    expect(state.filteredToolGroups.value).toMatchObject([
+      { label: "视频与文案", tools: [{ id: "video-subtitle", routePath: "/tools/video-subtitle" }] }
+    ]);
+  });
   it("owns search, responsive navigation, keyboard listeners and stored route without changing tool IDs", async () => {
     const media = window.matchMedia("(max-width: 900px)");
     const remove = vi.spyOn(media, "removeEventListener");
     vi.spyOn(window, "matchMedia").mockReturnValue(media);
     const { state, wrapper } = setup(useShellNavigation);
     state.startNavigation();
-    expect(state.tools).toHaveLength(12);
+    expect(state.tools).toHaveLength(13);
     state.keyword.value = "图片压缩";
     expect(state.filteredTools.value.map((x) => x.id)).toEqual(["image-compress"]);
     state.keyword.value = "URL 编解码";

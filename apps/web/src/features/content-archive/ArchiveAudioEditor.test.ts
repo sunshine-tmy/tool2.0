@@ -149,6 +149,41 @@ function button(wrapper: VueWrapper, text: string) {
   return wrapper.findAllComponents(NButton).find((entry) => entry.text() === text)!;
 }
 describe("归档视频配乐编辑交互", () => {
+  it("图集生成视频默认选用归档原配乐，提交身份与摘要，且不把音频加入图片序列", async () => {
+    const item = structuredClone(original);
+    item.type = "image";
+    item.media[0].kind = "image";
+    const source = {
+      ...item.media[0],
+      id: "source_music123",
+      kind: "audio" as const,
+      title: "原曲",
+      mimeType: "audio/mpeg",
+      previewUrl: "/source.mp3",
+      checksum: "b".repeat(64),
+      durationMs: 10000
+    };
+    item.media.push(source);
+    const wrapper = await setup(item);
+    const select = wrapper.findAllComponents(NSelect).find((entry) => entry.props("value") === "__original__")!;
+    expect(select).toBeDefined();
+    expect(wrapper.getComponent(ArchiveMusicRange).props()).toMatchObject({
+      title: "原曲",
+      musicDuration: undefined,
+      videoDuration: 3
+    });
+    await button(wrapper, "生成视频并归档").trigger("click");
+    await flushPromises();
+    const request = mocks.create.mock.calls[0][2];
+    expect(request).toMatchObject({
+      sourceMusicId: source.id,
+      sourceMusicChecksum: source.checksum,
+      slideshow: { images: [{ id: item.media[0].id }] }
+    });
+    expect(request.musicId).toBeUndefined();
+    expect(request.musicRevision).toBeUndefined();
+    expect(request.useSavedMusic).toBe(false);
+  });
   it("selects converted library music on return without saving the video automatically", async () => {
     const wrapper = await setup();
     await wrapper.setProps({ initialMusicId: selectedMusic.id, show: false });
@@ -161,14 +196,14 @@ describe("归档视频配乐编辑交互", () => {
   it("配乐选择分页展示服务端总数，并在搜索后更新总数及页码", async () => {
     mocks.music.mockResolvedValue({ items: [selectedMusic], total: 43 });
     const wrapper = await setup();
-    expect(mocks.music).toHaveBeenCalledWith(expect.objectContaining({ view: "speech" }), expect.any(AbortSignal));
+    expect(mocks.music).toHaveBeenCalledWith(expect.objectContaining({ view: "music" }), expect.any(AbortSignal));
     expect(wrapper.find('[aria-label="音乐库范围"]').exists()).toBe(false);
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
     wrapper.getComponent(NPagination).vm.$emit("update:page", 2);
     await flushPromises();
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
     expect(mocks.music).toHaveBeenLastCalledWith(
-      expect.objectContaining({ view: "speech", page: 2 }),
+      expect.objectContaining({ view: "music", page: 2 }),
       expect.any(AbortSignal)
     );
     mocks.music.mockResolvedValue({ items: [selectedMusic], total: 21 });
@@ -177,19 +212,19 @@ describe("归档视频配乐编辑交互", () => {
     await flushPromises();
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 21 条");
     expect(mocks.music).toHaveBeenLastCalledWith(
-      expect.objectContaining({ view: "speech", keyword: "Tea", page: 1 }),
+      expect.objectContaining({ view: "music", keyword: "Tea", page: 1 }),
       expect.any(AbortSignal)
     );
   });
-  it("编辑器上传的音频加入配音素材，刷新仍使用相同分类", async () => {
+  it("编辑器上传的音频加入背景音乐，刷新仍使用相同分类", async () => {
     const wrapper = await setup();
     const file = new File(["audio"], "voice.mp3", { type: "audio/mpeg" });
     const input = wrapper.get('input[type="file"]');
     Object.defineProperty(input.element, "files", { value: [file], configurable: true });
     await input.trigger("change");
     await flushPromises();
-    expect(mocks.upload).toHaveBeenCalledWith(file, { purpose: "speech" }, undefined, expect.any(AbortSignal));
-    expect(mocks.music).toHaveBeenLastCalledWith(expect.objectContaining({ view: "speech" }), expect.any(AbortSignal));
+    expect(mocks.upload).toHaveBeenCalledWith(file, { purpose: "music" }, undefined, expect.any(AbortSignal));
+    expect(mocks.music).toHaveBeenLastCalledWith(expect.objectContaining({ view: "music" }), expect.any(AbortSignal));
     expect(wrapper.findAllComponents(NSelect).some((select) => select.props("value") === selectedMusic.id)).toBe(true);
   });
   it("库素材选择失败保留当前水印，选择响应迟到不覆盖后来打开的作品", async () => {

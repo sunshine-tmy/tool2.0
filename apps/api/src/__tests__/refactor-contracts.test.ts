@@ -54,10 +54,27 @@ it("keeps every API and health method/path while allowing internal source reloca
     );
     expect(snapshot).toHaveLength(273);
     app = await createApp({ config });
-    // Requested archive features add routes; the 273 historical routes remain frozen.
+    // Requested features add routes; the 273 historical routes remain frozen.
     expect(routeInventory(app.printRoutes({ commonPrefix: false }))).toEqual(
       [
         ...snapshot,
+        ...[
+          "GET health",
+          "HEAD health",
+          "GET history",
+          "HEAD history",
+          "GET tasks/:taskId",
+          "HEAD tasks/:taskId",
+          "POST tasks/:taskId/cancel",
+          "DELETE tasks/:taskId",
+          "GET tasks/:taskId/output",
+          "HEAD tasks/:taskId/output",
+          "POST detect",
+          "POST tasks"
+        ].map((entry) => {
+          const [method, route] = entry.split(" ");
+          return `${method} /api/v1/tools/video-ai/${route}`;
+        }),
         ...[
           "GET jobs",
           "GET completed-selection",

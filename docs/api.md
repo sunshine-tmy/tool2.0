@@ -27,9 +27,11 @@
 - POST /api/v1/components/:componentId/install：从签名清单指定的 HTTPS 源在线安装。
 - POST /api/v1/components/:componentId/reinstall：下载并验证新 generation 后再原子切换。
 - POST /api/v1/components/:componentId/offline-import：以 multipart/form-data 上传一个或多个 archives 文件；必须恰好包含该项 archiveFileNames 中的全部文件。服务端拒绝未知/重复文件名、额外字段、尺寸不符或 SHA-256 不符的内容，并继续执行原有签名清单文件验证、自检和原子切换。
+- POST /api/v1/components/:componentId/offline-export：桌面本机流式导出 `.toolbox-capabilities.zip`（ZIP64）；包含所选能力及递归依赖的签名文件，不包含生成的 Python 环境或用户数据。只接受与当前内置清单一致的安装版本。响应为 `application/zip`，`x-toolbox-export-max-bytes` 提供受信任大小上界；连接关闭会中止导出。桌面固定 IPC `exportCapability(id)` 通过原生保存对话框流式写入，完成后才提交最终文件；`cancelCapabilityExport()` 取消当前导出。
+- POST /api/v1/components/:componentId/offline-bundle-import：以 multipart/form-data 上传单个 `bundle` 文件。拒绝未知、重复、缺失、链接、跨平台或被修改的条目；文件大小和 SHA-256 均来自内置签名清单，不信任 ZIP 自带清单。校验后按依赖顺序创建安装作业，返回所选能力的作业；依赖作业可从能力目录的 `activeJobId` 订阅。失败保留对应能力原可用 generation；已经成功安装的依赖保留。
 - DELETE /api/v1/components/:componentId：卸载运行时；用户作品、历史和个人素材保留。
 
-离线上传限制来自内置签名清单中的归档总大小。renderer 不能指定安装目录、下载地址或命令；上传文件先写入能力管理器维护的临时目录，安装完成或失败后会清理临时归档。
+原始分卷上传限制来自内置签名清单中的归档总大小；能力备份 ZIP 的上界来自所选能力及依赖的签名文件总大小和 ZIP 开销。renderer 不能指定安装目录、下载地址或命令；上传文件先写入能力管理器维护的临时目录，安装完成或失败后会清理临时归档。
 
 ## 图片压缩
 
@@ -58,6 +60,28 @@
 - `files`：去水印 1 张，其他操作最多 10 张。
 - `mask`：去水印必需，尺寸必须与原图一致的 PNG。
 - `scale`：增强操作的 `2 | 4`。
+
+## 视频去字幕
+
+命名空间：`/api/v1/tools/video-ai`。全部处理在本机完成，输入视频最大 2 GiB，结果保留至手动删除。
+
+- `GET /health`：Worker 协议版本、设备、显存总量与四档引擎可用性（含许可证说明）。
+- `POST /detect`：上传单个视频，抽样 OCR 返回归一化字幕区域（`rect` + `startFrame`/`endFrame`），临时文件用完即删。
+- `POST /tasks`：创建异步任务，成功返回 `202`。
+- `GET /tasks/:taskId`：队列位置、进度、阶段、字幕区域、输出元数据和过期时间。
+- `POST /tasks/:taskId/cancel`：等待中直接取消；运行中写入取消标记，在下一个分块边界停止且不保留半成品。
+- `GET /tasks/:taskId/output`：下载处理后的 MP4（修复时 H.264 CRF 18，音轨直通；无字幕时原样封装）。支持 Range，`?preview=1` 内联播放。
+- `DELETE /tasks/:taskId`：删除记录及本机输入、输出；运行中返回 `409`。
+- `GET /history`：分页记录，可按 `status` 过滤。
+
+创建任务字段（`multipart/form-data`）：
+
+- `video`：单个视频，仅接受 MP4/MKV/AVI/MOV/WebM。
+- `mode`：`delogo | fast | balanced | extreme`，默认 `delogo`；当前包开放 OpenCV `delogo` 与 Big-LaMa `fast`，缺失引擎在提交前返回 `VIDEO_AI_MODE_UNAVAILABLE`，不静默降档。
+- `manualArea`：可选 JSON `{ x, y, width, height }`（0–1 归一化），手动框选时跳过自动检测。
+- `segments`：可选 JSON 数组，使用 `/detect` 确认后的字幕区域，避免重复检测。
+
+常见错误码：`COMPONENT_NOT_INSTALLED`、`UNSUPPORTED_CONTAINER`、`INVALID_MODE`、`INVALID_MANUAL_AREA`、`VIDEO_AI_QUEUE_FULL`、`VIDEO_AI_STORAGE_FULL`、`STTN_UNAVAILABLE`、`RESOLUTION_TOO_HIGH`、`CUDA_OUT_OF_MEMORY`、`TASK_CANCELLED`。
 
 ## 局域网文件传输
 
@@ -154,7 +178,13 @@
 
 基础路径 `/api/v1/tools/media-archive`，支持小红书、抖音、TikTok 本地浏览、翻译、截帧与导出。抖音及 TikTok 仅处理匿名公开作品；TikTok 支持单条视频、图集和作品短链，无需额外能力包。TikTok 网络及代理设置见 README；就绪状态不代表公网连通性。小红书原有兼容接口继续保留，安装包和 macOS 的实际联网验证需在相应环境完成。
 
-归档内的配乐选择（单条视频、图集转视频、图文批量配乐及批量水印同时配乐）统一查询音频素材库的“配音素材”分类，搜索及分页固定传入 `view=speech`，不混入背景音乐、通用音频或回收站。编辑器直接上传的音频归入配音素材；从归档编辑跳转转换后单条加入素材库时，默认用途也为配音素材。普通音频转换入库的默认用途不变。既有归档的配乐独立快照继续可用，不修改历史素材的用途。
+归档内的配乐选择（单条视频、图集转视频、图文批量配乐及批量水印同时配乐）统一查询音频素材库的“背景音乐”分类，搜索及分页固定传入 `view=music`，不混入配音素材、通用音频或回收站。编辑器直接上传的音频归入背景音乐；从归档编辑跳转转换后单条加入素材库时，默认用途也为背景音乐。普通音频转换入库的默认用途不变。既有归档的配乐独立快照继续可用，不修改历史素材的用途。
+
+图文获取时，若平台公开解析结果提供原配乐下载地址，会将其保存为独立的 `media.kind=audio` 附件（可选 `title`，实际探测格式、时长、摘要及大小）。TikTok 使用作品 `music.playUrl`，抖音兼容 `music.play_url/playUrl`；小红书仅在现有 Provider 返回音乐地址时保存，不修改已签名 Worker 或能力包。没有地址、不可下载或音频校验失败时，原图仍完整归档，详情显示提示；不会用音乐地址替代缺失的视频，也不会获取登录受限音乐。单个配乐最大 100 MiB、最长 2 小时，且不超过现有远程媒体大小上限；连接和正文均有超时限制。普通视频的原声继续保存在视频内部。
+
+详情中的原配乐可独立试听、下载，不进入图片轮播；归档 ZIP 和模块数据备份均包含该附件。历史作品不在启动时自动补下载，可手动刷新获取；本次未获取到配乐时保留已有配乐，按原存储额度计费，随所属归档一同删除，不新增自动清理规则。
+
+单条图集转视频默认选用已归档原配乐，亦可选背景音乐库；批量配乐可选“各作品的原配乐”，每条按自身视频时长截取或循环，缺原配乐的作品明确报错，不借用其他作品音乐。视频编辑请求使用 `sourceMusicId + sourceMusicChecksum` 选择同归档音频附件，与 `musicId + musicRevision`、`useSavedMusic` 互斥；服务端校验归属与摘要，并在编辑锁内复制为独立快照。刷新原附件、后续换曲或删除音乐库素材不影响已保存视频及配乐快照。
 
 图文多选后的“图文加水印”和“图文加配乐”复用现有视频编辑接口：`POST /items/:id/media/:mediaId/audio-edits` 提交，`GET /video-edits/:taskId` 查询。前端一次只提交一项并等待终态，处理范围固定为点击入口时当前页已选的图文，其他类型不处理。首次按原图 index 顺序生成附加视频（排除视频截帧，最多 100 张）；已有来源 ID、摘要和顺序完全一致的图集视频时，更新最新编辑的一条，不反复追加视频。原始图片保留；加水印保留已有配乐，加配乐保留已有水印。水印上传及 `POST /items/:id/media/:mediaId/watermarks/from-library` 也接受图集原图作为草稿归属，仍拒绝截帧与不存在的媒体；每条作品单独建草稿，保存后复制为独立快照。
 

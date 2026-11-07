@@ -47,13 +47,15 @@
 
 ## 选择使用方式
 
+视频去字幕入口为 `/tools/video-subtitle`，API 为 `/api/v1/tools/video-ai/*`。桌面版在“设置 → 能力管理”按需安装 `video-ai`，NVIDIA 设备可选装 `video-ai-cuda`。旧已发布包提供极速 OpenCV 和快速 Big-LaMa；本地签名试用版 1.1.0 增加 STTN 均衡档与 ProPainter 极致档，需要使用更新后客户端并离线导入新版基础包及 GPU 扩展，见[本地安装说明](docs/video-ai-local-installation.md)。新包尚未上传 GitHub。支持自动检测、手动框选、取消、分页历史、预览下载与模块数据备份，原视频不改动，成功结果长期保留。人工画质和用户桌面实装仍需验收；S06 / S07 历史证据见[时序引擎交付说明](docs/video-ai-sequence-release.md)，原安装问题见[交接文档](docs/video-ai-release-handover.md)。开发时可用已有 Python 3.12 环境启动 `pnpm dev:video-ai`，需按方案配置本地模型及 FFmpeg，运行时不自动下载。
+
 | 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                    |
 | ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装  |
 | Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表全部业务模块可用 |
 | Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                         |
 
-桌面版安装、数据迁移、能力离线导入、升级和卸载说明见[桌面应用使用帮助](./docs/desktop-application-help.md)。桌面安装器是交互式安装程序，不是免安装便携版；安装时可选择目录，但应选择当前 Windows 用户有写入权限的位置。
+桌面版安装、数据迁移、能力离线导入与导出、升级和卸载说明见[桌面应用使用帮助](./docs/desktop-application-help.md)。已安装能力可在设置中导出为 `.toolbox-capabilities.zip`（自动包含共享依赖），在相同平台和能力目录版本的客户端中离线导入。桌面安装器是交互式安装程序，不是免安装便携版；安装时可选择目录，但应选择当前 Windows 用户有写入权限的位置。
 
 Apple Silicon macOS 首版边界、DMG 构建、原生能力包准备顺序及实机验收门槛见[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)。当前 Mac 能力目录在经过签名与实机验收前保持为空。
 

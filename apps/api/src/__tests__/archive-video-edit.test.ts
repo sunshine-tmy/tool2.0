@@ -166,6 +166,70 @@ async function execute(overrides: Partial<ArchiveVideoEditInput> = {}) {
   return service.get(job.id)!;
 }
 describe("可重复编辑的归档配乐", () => {
+  it("使用归档原配乐生成独立快照，刷新更换原附件后仍可复用已保存配乐", async () => {
+    const item = (await store.get(itemId))!;
+    const sourceMusic = {
+      ...item.media[0],
+      id: "source_music123",
+      kind: "audio" as const,
+      fileName: "source.wav",
+      mimeType: "audio/wav",
+      title: "原作品配乐",
+      checksum: hash(musicBytes),
+      size: musicBytes.length
+    };
+    item.media.push(sourceMusic);
+    const staging = await store.createStaging("with_source_music");
+    await fs.writeFile(path.join(staging, "original.mp4"), original);
+    await fs.writeFile(path.join(staging, sourceMusic.fileName), musicBytes);
+    await store.commit(item, staging);
+    const params = {
+      musicId: undefined,
+      musicRevision: undefined,
+      sourceMusicId: sourceMusic.id,
+      sourceMusicChecksum: sourceMusic.checksum
+    };
+    for (const invalid of [
+      { ...params, sourceMusicChecksum: "b".repeat(64) },
+      { ...params, sourceMusicId: mediaId },
+      { ...params, useSavedMusic: true },
+      { ...params, musicId: libraryItem.id, musicRevision: libraryItem.revision },
+      { ...params, sourceMusicChecksum: undefined },
+      { ...params, sourceMusicId: undefined }
+    ])
+      await expect(service.create(itemId, mediaId, await input(invalid))).rejects.toMatchObject({
+        code: expect.stringMatching(/^ARCHIVE_EDIT_MUSIC_(INVALID|CHANGED)$/)
+      });
+    expect((await execute(params)).status).toBe("completed");
+    const saved = (await store.get(itemId))!;
+    const snapshot = saved.media[0].audioEdit!.music!;
+    expect(snapshot).toMatchObject({ title: "原作品配乐", checksum: sourceMusic.checksum });
+    expect(snapshot.fileName).not.toBe(sourceMusic.fileName);
+    expect(snapshot.libraryItemId).toBeUndefined();
+    expect(await fs.readFile(path.join(config.xhsArchiveItemsDir, itemId, snapshot.fileName))).toEqual(musicBytes);
+    const preview = await app.inject({
+      url: sourceMusic.previewUrl.replace(mediaId, sourceMusic.id),
+      headers: { range: "bytes=0-3" }
+    });
+    expect(preview.statusCode).toBe(206);
+    expect(preview.rawPayload).toEqual(musicBytes.subarray(0, 4));
+    const download = await app.inject({ url: sourceMusic.downloadUrl.replace(mediaId, sourceMusic.id) });
+    expect(download.rawPayload).toEqual(musicBytes);
+    const zip = await app.inject(`/api/v1/tools/media-archive/items/${itemId}/download.zip`);
+    expect(
+      [...readArchiveZip(zip.rawPayload).keys()].some((name) => name.includes("原配乐") && name.endsWith(".wav"))
+    ).toBe(true);
+    const nextMusic = Buffer.from("new-music");
+    item.media[1] = { ...sourceMusic, checksum: hash(nextMusic), size: nextMusic.length };
+    const refreshed = await store.createStaging("replace_source_music");
+    await fs.writeFile(path.join(refreshed, "original.mp4"), original);
+    await fs.writeFile(path.join(refreshed, sourceMusic.fileName), nextMusic);
+    await store.commit(item, refreshed);
+    expect((await execute({ musicId: undefined, musicRevision: undefined, useSavedMusic: true })).status).toBe(
+      "completed"
+    );
+    expect((await store.get(itemId))!.media[0].audioEdit!.music).toEqual(snapshot);
+  });
   it("HTTP 手动结束保留数值并拒绝 0、越界时间、字符串及额外字段，不误判为自动模式", async () => {
     const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: "red" } })
       .png()

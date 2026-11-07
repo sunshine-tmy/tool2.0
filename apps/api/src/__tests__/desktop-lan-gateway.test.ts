@@ -104,7 +104,7 @@ describe("desktop LAN gateway", () => {
       expect(modulePage.status).toBe(201);
       expect(await modulePage.json()).toEqual({ path: pagePath });
     }
-    expect(requests).toHaveLength(27);
+    expect(requests).toHaveLength(28);
     for (const path of [
       "/api/v1/tools/json-format",
       "/api/v1/tools/json-format/process",
@@ -119,7 +119,7 @@ describe("desktop LAN gateway", () => {
     ]) {
       expect((await fetch(`http://127.0.0.1:${gateway.port}${path}`, { method: "POST" })).status).toBe(404);
     }
-    expect(requests).toHaveLength(27);
+    expect(requests).toHaveLength(28);
   });
 
   it("rejects cross-site, forged Host and ambiguous paths before forwarding", async () => {

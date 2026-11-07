@@ -2,6 +2,8 @@ import type { DesktopBridge, StartupSnapshot } from "@toolbox/shared/desktop";
 import { contextBridge, ipcRenderer } from "electron";
 
 const desktopBridge: Required<DesktopBridge> = {
+  exportCapability: (componentId) => ipcRenderer.invoke("desktop:capability-export", componentId),
+  cancelCapabilityExport: () => ipcRenderer.invoke("desktop:capability-export-cancel"),
   getDataBackupState: () => ipcRenderer.invoke("desktop:data-backup-state"),
   selectDataBackup: () => ipcRenderer.invoke("desktop:data-backup-select"),
   previewDataBackup: (input) => ipcRenderer.invoke("desktop:data-backup-preview", input),

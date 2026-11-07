@@ -13,6 +13,12 @@ import { ComponentManager, ComponentManagerError } from "../modules/components/c
 import { workerAuthHeaders } from "../security/worker-auth";
 import { DiagnosticJournal } from "@toolbox/runtime-core";
 import { terminateChildProcess } from "../lifecycle/child-process";
+import { videoAiCudaPythonEnvironment } from "../modules/components/video-ai-python-overlay";
+import {
+  videoAiSequenceEnvironment,
+  validateVideoAiSequenceSupport,
+  VIDEO_AI_SEQUENCE_SUPPORT
+} from "../modules/components/video-ai-sequence-assets";
 
 type ManagedWorker = { componentId: string; url: string; token: string; stop: () => Promise<void> };
 const preparing = new WeakSet<AppConfig>();
@@ -47,6 +53,12 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     config.imageAiWorkerUrl = "http://127.0.0.1:1";
     config.imageAiWorkerToken = undefined;
   };
+  const resetVideoAiConfiguration = () => {
+    config.videoAiCapabilityReady = false;
+    config.videoAiFfprobePath = undefined;
+    config.videoAiWorkerUrl = "http://127.0.0.1:1";
+    config.videoAiWorkerToken = undefined;
+  };
   const resetChatterboxConfiguration = () => {
     config.chatterboxCapabilityReady = false;
     config.chatterboxWorkerUrl = "http://127.0.0.1:1";
@@ -57,6 +69,7 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
   const resetConfiguration = () => {
     resetEdgeTtsConfiguration();
     resetImageConfiguration();
+    resetVideoAiConfiguration();
     resetChatterboxConfiguration();
   };
   resetConfiguration();
@@ -242,11 +255,80 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
     );
   };
 
+  const configureVideoAi = async (signal: AbortSignal) => {
+    resetVideoAiConfiguration();
+    await tryConfigure(
+      "视频去字幕",
+      async () => {
+        const [runtime, script, lama, ocrDetection, ocrRecognition, media] = await Promise.all([
+          resolveVideoAiWorkerRuntime(components),
+          optionalAsset(components, "video-ai", "scripts/video-ai-worker.py"),
+          optionalAsset(components, "video-ai", "models/video-ai/big-lama.pt"),
+          optionalAsset(components, "video-ai", "models/video-ai/ocr/detection/inference.yml"),
+          optionalAsset(components, "video-ai", "models/video-ai/ocr/recognition/inference.yml"),
+          resolveMediaTools()
+        ]);
+        if (
+          signal.aborted ||
+          !runtime ||
+          !script ||
+          !lama ||
+          !ocrDetection ||
+          !ocrRecognition ||
+          !media[0] ||
+          !media[1]
+        )
+          return;
+        const generationRoot = script.generationRoot;
+        const modelRoot = path.join(generationRoot, "models", "video-ai");
+        const worker = await startWorker({
+          pythonPath: runtime.python.path,
+          scriptPath: path.join(config.runtime.scriptsRoot, "video-ai-worker-launcher.py"),
+          scriptArguments: [script.path],
+          componentId: "video-ai",
+          generationRoot,
+          healthUrlPath: "/health",
+          tempDirectory: config.tempDir,
+          diagnosticsDirectory: path.join(config.storageRoot, "..", "logs"),
+          signal,
+          environment: {
+            ...runtime.environment,
+            TOOLBOX_DESKTOP_MANAGED: "1",
+            VIDEO_AI_WORKER_HOST: "127.0.0.1",
+            VIDEO_AI_STORAGE_ROOT: config.videoAiDir,
+            VIDEO_AI_MODELS_ROOT: modelRoot,
+            VIDEO_AI_LAMA_MODEL: lama.path,
+            VIDEO_AI_OCR_DETECTION_MODEL_DIR: path.dirname(ocrDetection.path),
+            VIDEO_AI_OCR_RECOGNITION_MODEL_DIR: path.dirname(ocrRecognition.path),
+            VIDEO_AI_FFMPEG: media[0].path,
+            VIDEO_AI_FFPROBE: media[1].path,
+            VIDEO_AI_DEVICE: runtime.componentId === "video-ai-cuda" ? "auto" : "cpu",
+            PYTHONDONTWRITEBYTECODE: "1",
+            PADDLE_PDX_CACHE_HOME: path.join(config.videoAiDir, "cache", "paddlex"),
+            PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True",
+            PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT: "False",
+            HF_HUB_OFFLINE: "1",
+            TRANSFORMERS_OFFLINE: "1"
+          },
+          available: (payload) => payload.available === true
+        });
+        workers.push(worker);
+        if (signal.aborted) return;
+        config.videoAiWorkerUrl = worker.url;
+        config.videoAiFfprobePath = media[1].path;
+        config.videoAiWorkerToken = worker.token;
+        config.videoAiCapabilityReady = true;
+      },
+      signal
+    );
+  };
+
   const configureAll = async (signal: AbortSignal) => {
     await fsp.mkdir(config.tempDir, { recursive: true });
     const [ffmpeg, ffprobe] = await resolveMediaTools();
     await configureEdgeTts(signal);
     await configureImageAi(signal);
+    await configureVideoAi(signal);
     await configureChatterbox(signal, ffmpeg, ffprobe);
   };
   preparing.add(config);
@@ -268,11 +350,14 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
   return {
     beforeUninstall: async (componentId: string) => {
       await initializing.catch(() => undefined);
-      await stopManagedWorkers([componentId]);
+      await stopManagedWorkers(componentId === "video-ai-cuda" ? ["video-ai"] : [componentId]);
       if (componentId === "image-ai") {
         config.imageAiCapabilityReady = false;
         config.imageAiWorkerUrl = "http://127.0.0.1:1";
         config.imageAiWorkerToken = undefined;
+      }
+      if (["video-ai", "video-ai-cuda"].includes(componentId)) {
+        resetVideoAiConfiguration();
       }
       if (["chatterbox", "chatterbox-cuda"].includes(componentId)) {
         resetChatterboxConfiguration();
@@ -313,6 +398,16 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
             !config.imageAiCapabilityReady
           ) {
             throw new Error("AI 图片处理依赖已安装，但 Worker 健康检查未通过");
+          }
+        } else if (["video-ai", "video-ai-cuda"].includes(componentId)) {
+          await stopManagedWorkers(["video-ai"]);
+          await configureVideoAi(controller.signal);
+          if (
+            operation !== "uninstall" &&
+            (await isInstalled(components, componentId)) &&
+            !config.videoAiCapabilityReady
+          ) {
+            throw new Error("视频去字幕依赖已安装，但 Worker 健康检查未通过");
           }
         } else if (["chatterbox", "chatterbox-cuda"].includes(componentId)) {
           await stopManagedWorkers(["chatterbox", "chatterbox-cuda"]);
@@ -368,6 +463,32 @@ export async function resolveChatterboxWorkerRuntime(components: ComponentManage
   }
 }
 
+/** Resolve video dependencies for both installation checks and the actual worker without modifying either venv. */
+export async function resolveVideoAiWorkerRuntime(components: ComponentManager) {
+  const base = await optionalPython(components, "video-ai");
+  if (!base) return undefined;
+  if (base.manifest.files?.some((file) => file.path === VIDEO_AI_SEQUENCE_SUPPORT))
+    await validateVideoAiSequenceSupport(base);
+  const cpu = { componentId: "video-ai", python: base, environment: {} as Record<string, string> };
+  try {
+    const cuda = await optionalPython(components, "video-ai-cuda");
+    if (!cuda) return cpu;
+    return {
+      componentId: "video-ai-cuda",
+      python: cuda,
+      environment: {
+        ...(await videoAiCudaPythonEnvironment(cuda.generationRoot, base)),
+        ...(await videoAiSequenceEnvironment(cuda, base))
+      }
+    };
+  } catch (error) {
+    console.warn(
+      `视频去字幕 CUDA 扩展不可用，回退到 CPU 运行时：${error instanceof Error ? error.message : "未知错误"}`
+    );
+    return cpu;
+  }
+}
+
 async function isInstalled(components: ComponentManager, componentId: string) {
   return (await components.list()).some((component) => component.id === componentId && component.installed);
 }
@@ -411,6 +532,7 @@ function isUnavailableComponent(error: unknown) {
 async function startWorker(options: {
   pythonPath: string;
   scriptPath: string;
+  scriptArguments?: string[];
   componentId: string;
   generationRoot: string;
   healthUrlPath: string;
@@ -424,23 +546,36 @@ async function startWorker(options: {
   const token = crypto.randomBytes(32).toString("base64url");
   const url = `http://127.0.0.1:${port}`;
   const environment = { ...process.env };
-  for (const key of ["PYTHONPATH", "PYTHONHOME", "HF_TOKEN"]) delete environment[key];
+  for (const key of [
+    "PYTHONPATH",
+    "PYTHONHOME",
+    "HF_TOKEN",
+    "VIDEO_AI_STTN_ENGINE_ROOT",
+    "VIDEO_AI_PROPAINTER_ENGINE_ROOT"
+  ])
+    delete environment[key];
   Object.assign(environment, options.environment, {
     IMAGE_AI_WORKER_PORT: String(port),
+    VIDEO_AI_WORKER_PORT: String(port),
     CHATTERBOX_WORKER_PORT: String(port),
     IMAGE_AI_WORKER_TOKEN: token,
+    VIDEO_AI_WORKER_TOKEN: token,
     CHATTERBOX_WORKER_TOKEN: token,
     PYTHONNOUSERSITE: "1",
     PYTHONUNBUFFERED: "1",
     TEMP: options.tempDirectory,
     TMP: options.tempDirectory
   });
-  const child = spawn(options.pythonPath, [options.scriptPath, "--host", "127.0.0.1", "--port", String(port)], {
-    cwd: options.generationRoot,
-    env: environment,
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true
-  });
+  const child = spawn(
+    options.pythonPath,
+    [options.scriptPath, ...(options.scriptArguments ?? []), "--host", "127.0.0.1", "--port", String(port)],
+    {
+      cwd: options.generationRoot,
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true
+    }
+  );
   const journal = new DiagnosticJournal(options.diagnosticsDirectory);
   journal.record(options.componentId, "WORKER_STARTING");
   child.stdout?.on("data", (chunk: Buffer) => journal.consume(options.componentId, chunk));

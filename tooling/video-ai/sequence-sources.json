@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "purpose": "S00/S01 isolated compatibility validation only; not a release capability manifest",
+  "engines": {
+    "sttn": {
+      "repository": "researchmm/STTN",
+      "revision": "f39f62c5bbbe3e3eba084c487353a2c651bfdcde",
+      "license": "MIT",
+      "weights": [
+        {
+          "name": "sttn.pth",
+          "bytes": 66252587,
+          "sha256": "25b0c2c30042d82efd1893bd42ec726764262d94115393a1718f8d65d2a7817b",
+          "url": "https://drive.usercontent.google.com/download?id=1ZAMV8547wmZylKRt5qR_tC5VlosXD4Wv&export=download&confirm=t"
+        }
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "gitBlobSha1": "23a6cd1dfd2ad97408b9acdc0f66fd1a28324094",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "150988a0cdb5352aa232ab31507331f73bd1dd8a6e45c9bbe4eca9155ecaf79c"
+        },
+        {
+          "path": "model/sttn.py",
+          "gitBlobSha1": "bc6dd1d1ca1a6178c3a564903ebfcbad9b9c1f16",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "8c4fb8b58c961463b56bb2cc3e31fc734248e63f50cb2b656a529ccc072ea27c"
+        },
+        {
+          "path": "core/spectral_norm.py",
+          "gitBlobSha1": "632b888eaa674698f34b06c1aea77ea8bdad0863",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "555b77358e434429f27dedcdf4c07db914785767ebcd76e8ffa37d4d390d40cf"
+        }
+      ]
+    },
+    "propainter": {
+      "repository": "sczhou/ProPainter",
+      "revision": "326782529a63d997cab80ab21439b92ed422b3d3",
+      "license": "LicenseRef-S-Lab-1.0",
+      "weights": [
+        {
+          "name": "ProPainter.pth",
+          "bytes": 157780510,
+          "sha256": "12c070c4b48f374c91d8a2a17851140b85c159621080989f9e191bbc18bd6591",
+          "url": "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/ProPainter.pth"
+        },
+        {
+          "name": "raft-things.pth",
+          "bytes": 21108000,
+          "sha256": "fcfa4125d6418f4de95d84aec20a3c5f4e205101715a79f193243c186ac9a7e1",
+          "url": "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/raft-things.pth"
+        },
+        {
+          "name": "recurrent_flow_completion.pth",
+          "bytes": 20348681,
+          "sha256": "22939a1a7900da878dbe1ccd011d646b1bfb30b8290039d8ff0e0c2fefbfd283",
+          "url": "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/recurrent_flow_completion.pth"
+        }
+      ],
+      "files": [
+        {
+          "path": "LICENSE",
+          "gitBlobSha1": "a8f075b52308e65bc7d578d270e1a95a6255021b",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "4d3e4d1250afaffa460be8e56d54a7310394d81fdd4710775fadbc837fac1251"
+        },
+        {
+          "path": "model/propainter.py",
+          "gitBlobSha1": "505a19fc17c047e0def8a309a2a32e9ecff759bf",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "267b55e81eab81a923d897c81cf9c603888192d564dd32a5f5097f6aa3ad798e"
+        },
+        {
+          "path": "model/recurrent_flow_completion.py",
+          "gitBlobSha1": "b002f125cca02948bf72a2482181ab9c627b752a",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "ebb714f3fc157fd270c38f1cd005626afd683cdd040c595b30d9b777f4f9e42e"
+        },
+        {
+          "path": "model/modules/flow_comp_raft.py",
+          "gitBlobSha1": "5add56c45b8fa7a58a83a9c94986560fe477fc6e",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "21b108fcc4d7fc8321e1d5e7c7f70a7bedd067f6d8975f374358c4d6857d20f9"
+        },
+        {
+          "path": "model/modules/base_module.py",
+          "gitBlobSha1": "b28c094308dd4d1bbb62dd75e02e937e2c9ddf14",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "495659e684e3177fda3d5f018c65949df8180e074b9d6a4b5a580b9aec333a49"
+        },
+        {
+          "path": "model/modules/sparse_transformer.py",
+          "gitBlobSha1": "11028ffe05a0f59e9d222b0a18f92b1fde12007b",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "e29d3dcda72ee18d7aa897df26b79621b22dcb459f996c569afb4e6fa6e44674"
+        },
+        {
+          "path": "model/modules/flow_loss_utils.py",
+          "gitBlobSha1": "6e465c0605df760920b5cfc7f9079fadb74fbec1",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "b08e4441fbb2d611dc5c3bb7bf5d5da830fd9f3c947442eb133ba3a12c0138e4"
+        },
+        {
+          "path": "model/modules/deformconv.py",
+          "gitBlobSha1": "89cb31b3d80bd69704a380930964db6fb29a6bbe",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "cfcb91be57c1795e54077d1de16d78f46298a212e66715078b644678b84581b0"
+        },
+        {
+          "path": "model/modules/spectral_norm.py",
+          "gitBlobSha1": "f38c34e98c03caa28ce0b15a4083215fb7d8e9af",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "f94c800f3ecd5b54e791e251def514c8bc2b2d962cc0db709fcb8af286f46267"
+        },
+        {
+          "path": "model/misc.py",
+          "gitBlobSha1": "43b849902245dd338a36f4f4ff09e33425365af6",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "a766303c91f160ebca1757e71fa3fb4710f56ff3ec25c5dfbed8266698052670"
+        },
+        {
+          "path": "RAFT/__init__.py",
+          "gitBlobSha1": "e7179ea3ce4ad81425c619772d4bc47bc7ceea3a",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "4eef12ccfcfa5793551dd8dcd62037ea0032fb131a1bacf71a0ba1984639805b"
+        },
+        {
+          "path": "RAFT/raft.py",
+          "gitBlobSha1": "829ef97b8d3e280aac59ebef7bb2eaf06274b62a",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "d104c88d546bb30eb0bd115f93fec21480927f32e5eeb67ffea906cb1d444a93"
+        },
+        {
+          "path": "RAFT/corr.py",
+          "gitBlobSha1": "449dbd963b8303eda242a65063ca857b95475721",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "1aa5456656c26f9fe77100edb1f6134ada2c5ef731bd5470efd3cd5962b48333"
+        },
+        {
+          "path": "RAFT/update.py",
+          "gitBlobSha1": "f940497f9b5eb1c12091574fe9a0223a1b196d50",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "824855a3f625810a9fe8efe50a87a4d9da8b9ff4c6b8990ff64c77470895ea4e"
+        },
+        {
+          "path": "RAFT/extractor.py",
+          "gitBlobSha1": "9a9c759d1243d4694e8656c2f6f8a37e53edd009",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "f6b65d4f4df27001d9c11194f71b84a9799de3231f9d1672cbcf3a052fec79dc"
+        },
+        {
+          "path": "RAFT/utils/utils.py",
+          "gitBlobSha1": "5f32d281c1c46353a0a2bf36b0550adb74125c65",
+          "encoding": "utf-8",
+          "normalization": "LF; trim end-of-file whitespace; one trailing newline",
+          "sha256": "bfab8e6787032ea5cd15a57cbeee534fd11c454dc2c2babb86138c6fe7642fb0"
+        }
+      ]
+    }
+  }
+}

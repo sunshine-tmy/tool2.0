@@ -44,7 +44,9 @@ const channels = [
   "desktop:reveal-data-directory",
   "desktop:select-legacy-data-directory",
   "desktop:import-legacy-data",
-  "desktop:rollback-data-migration"
+  "desktop:rollback-data-migration",
+  "desktop:capability-export",
+  "desktop:capability-export-cancel"
 ];
 const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
 function setup() {

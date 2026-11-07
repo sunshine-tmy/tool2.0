@@ -36,6 +36,73 @@ import type { BackupModuleId } from "@toolbox/shared/system";
 import { backupModules } from "@toolbox/shared/system";
 const now = "2026-10-01T00:00:00.000Z",
   expires = "2030-01-01T00:00:00.000Z";
+
+it("backs up video repair output independently and rewrites conflicting IDs and portable paths", async () => {
+  const source = await fixture(),
+    target = await fixture(),
+    id = "video_task123";
+  const seed = async (context: BackupContext, content: string) => {
+    const db = new ToolboxDatabase(context.config.databasePath);
+    const outputPath = await putFile(context, `video-ai/outputs/${id}.mp4`, content);
+    const payload = {
+      id,
+      mode: "delogo",
+      status: "completed",
+      progress: 100,
+      queuePosition: null,
+      inputName: "字幕.mp4",
+      inputBytes: 4,
+      inputPath: path.join(context.config.videoAiInputsDir, id, "input.bin"),
+      outputPath,
+      outputBytes: content.length,
+      outputWidth: 1280,
+      outputHeight: 720,
+      outputDurationMs: 1000,
+      progressPath: path.join(context.config.videoAiTasksDir, id, "progress.json"),
+      cancelFlagPath: path.join(context.config.videoAiTasksDir, id, "cancel.flag"),
+      segments: [],
+      warnings: [],
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: null
+    };
+    putEntity(db, "video-ai-task", payload);
+    putEntity(db, "task", {
+      id,
+      toolId: "video-ai",
+      status: "completed",
+      progress: 100,
+      createdAt: now,
+      updatedAt: now,
+      outputPath
+    });
+    db.close();
+  };
+  await seed(source.context, "source-output");
+  await seed(target.context, "target-output");
+  const bundle = await snapshot(source.context, { modules: ["video-ai"] }, path.join(source.root, "video-snapshot"));
+  expect(bundle.modules[0].files.map((f) => f.path)).toEqual([`video-ai/outputs/${id}.mp4`]);
+  const bad = structuredClone(bundle.modules[0]);
+  (bad.records.find((r) => r.kind === "video-ai-task")!.payload as Record<string, unknown>).inputPath =
+    "@storage/other/secret";
+  expect(() => validateModuleData(bad)).toThrow("受管路径");
+  const file = await backupFile(source, ["video-ai"]);
+  await restoreFile(target, file, ["video-ai"], "merge");
+  await restoreFile(target, file, ["video-ai"], "merge");
+  const db = new ToolboxDatabase(target.context.config.databasePath);
+  try {
+    const rows = db.list("video-ai-task");
+    expect(rows).toHaveLength(2);
+    const imported = rows.find((r) => r.id !== id)!;
+    const p = imported.payload as Record<string, string>;
+    expect(p.inputPath).toBe(path.join(target.context.config.videoAiInputsDir, imported.id, "input.bin"));
+    expect(p.progressPath).toBe(path.join(target.context.config.videoAiTasksDir, imported.id, "progress.json"));
+    expect(await fs.readFile(p.outputPath, "utf8")).toBe("source-output");
+    expect(db.get("task", imported.id)?.payload).toMatchObject({ toolId: "video-ai", outputPath: p.outputPath });
+  } finally {
+    db.close();
+  }
+});
 async function putFile(context: BackupContext, relative: string, content: string) {
   const target = path.join(context.config.storageRoot, relative);
   await fs.mkdir(path.dirname(target), { recursive: true });
@@ -52,7 +119,13 @@ function putEntity(db: ToolboxDatabase, kind: string, payload: Record<string, un
     updatedAt: now
   });
 }
-async function archive(context: BackupContext, id = "archive_first", contentId = "12345678", body = "video") {
+async function archive(
+  context: BackupContext,
+  id = "archive_first",
+  contentId = "12345678",
+  body = "video",
+  withSoundtrack = false
+) {
   const file = (fileName: string, content: string, mimeType = "video/mp4") => ({
     fileName,
     mimeType,
@@ -97,6 +170,19 @@ async function archive(context: BackupContext, id = "archive_first", contentId =
     totalBytes: body.length + 7 + 5 + 9,
     coverMediaId: media.id
   };
+  if (withSoundtrack) {
+    item.media.push({
+      id: "source_music123",
+      kind: "audio",
+      index: 1,
+      title: "图文原配乐",
+      ...file("source.ogg", "soundtrack", "audio/ogg"),
+      previewUrl: `/api/v1/tools/media-archive/items/${id}/media/source_music123`,
+      downloadUrl: `/api/v1/tools/media-archive/items/${id}/media/source_music123?download=1`
+    });
+    item.totalBytes += 10;
+    await putFile(context, `xhs-archive/items/${id}/source.ogg`, "soundtrack");
+  }
   for (const [name, value] of Object.entries({
     "video.mp4": body,
     "original.mp4": "original",
@@ -192,6 +278,32 @@ async function restoreFile(
 }
 
 const roots: string[] = [];
+it.each(["merge", "replace"] as const)("%s 保留原配乐附件和曲名，合并 ID 冲突时下载地址同步改写", async (mode) => {
+  const source = await fixture(),
+    target = await fixture();
+  await archive(source.context, "archive_first", "11111111", "incoming", true);
+  await archive(target.context, "archive_first", "22222222", "existing", true);
+  await restoreFile(target, await backupFile(source, ["content-archive"]), ["content-archive"], mode);
+  const db = new ToolboxDatabase(target.context.config.databasePath);
+  try {
+    const imported = db
+      .list("xhs-archive")
+      .map((row) => row.payload as ContentArchiveItem)
+      .find((item) => item.contentId === "11111111")!;
+    const audio = imported.media.find((entry) => entry.kind === "audio")!;
+    expect(audio).toMatchObject({ title: "图文原配乐", mimeType: "audio/ogg", checksum: hashText("soundtrack") });
+    expect(audio.downloadUrl).toBe(`/api/v1/tools/media-archive/items/${imported.id}/media/${audio.id}?download=1`);
+    expect(
+      await fs.readFile(path.join(target.context.config.xhsArchiveItemsDir, imported.id, audio.fileName), "utf8")
+    ).toBe("soundtrack");
+    if (mode === "merge") {
+      expect(imported.id).not.toBe("archive_first");
+      expect(audio.id).not.toBe("source_music123");
+    }
+  } finally {
+    db.close();
+  }
+});
 it("roundtrips extraction results with merge/replace, preserves other modules and excludes temporary videos", async () => {
   const source = await fixture(),
     target = await fixture(),

@@ -6,12 +6,14 @@ import { createDesktopPlaybackHandler } from "./playback";
 import { createDiagnosticReportHandler } from "./diagnostic-report";
 import { createDesktopDataHandlers } from "./data-migration";
 import { createDataBackupHandlers } from "./data-backup";
+import { createCapabilityExportHandlers } from "./capability-export";
 export function registerDesktopIpc(context: DesktopIpcContext) {
   const security = { getMainWindow: context.getMainWindow, assertTrustedSender: desktopSenderAssertion(context) };
   const settings = createDesktopSettingsHandlers({ ...context, ...security });
   const playback = createDesktopPlaybackHandler({ ...context, ...security });
   const saveReport = createDiagnosticReportHandler(security);
   const data = createDesktopDataHandlers({ ...context, ...security });
+  const capabilities = createCapabilityExportHandlers({ ...context, ...security });
   ipcMain.handle("desktop:get-settings", settings.getSettings);
   ipcMain.handle("desktop:audio-playback", playback);
   ipcMain.handle("desktop:save-diagnostic-report", saveReport);
@@ -21,6 +23,8 @@ export function registerDesktopIpc(context: DesktopIpcContext) {
   ipcMain.handle("desktop:select-legacy-data-directory", data.selectLegacyDirectory);
   ipcMain.handle("desktop:import-legacy-data", data.importLegacyData);
   ipcMain.handle("desktop:rollback-data-migration", data.rollbackDataMigration);
+  ipcMain.handle("desktop:capability-export", capabilities.export);
+  ipcMain.handle("desktop:capability-export-cancel", capabilities.cancel);
   if (context.dataBackup) {
     const backup = createDataBackupHandlers(security, context.dataBackup);
     ipcMain.handle("desktop:data-backup-state", backup.state);

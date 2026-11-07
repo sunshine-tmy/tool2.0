@@ -1,0 +1,28 @@
+{
+  "id": "video-ai-cuda",
+  "groupId": "media",
+  "displayName": "视频去字幕 GPU 加速",
+  "purpose": "视频时序引擎资源草案：包含 STTN（MIT）与 ProPainter（S-Lab 非商用）源码及权重；通过适配与画质验收后才开放对应档位。",
+  "dependencyIds": ["video-ai", "python-312"],
+  "taskToolIds": ["video-ai"],
+  "installConditions": [
+    "需要支持 sequence-assets-v1 的视频基础包；旧基础包拒绝激活本扩展。",
+    "使用固定的 Python 3.12、PyTorch 2.6.0 CUDA 12.4、einops 0.8.1 和 scipy 1.17.1；不安装或修改显卡驱动。",
+    "目标参考 RTX 3060 Ti 8 GB；720p 支持尚未验收，不能据此承诺。",
+    "ProPainter 当前验证配置仅处理原尺寸字幕区域：含周边上下文和补边后不超过 640×480 像素量、单边不超过 640；整幅视频不超过 720p 像素量，不自动缩放。",
+    "ProPainter 仅供已确认的非商用用途；资源就绪不表示生产档位已开放。"
+  ],
+  "version": "1.1.0-py312-cu1241",
+  "installedBytes": 6000000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "MIT AND S-Lab License 1.0 (non-commercial)",
+    "url": "https://github.com/sczhou/ProPainter/blob/326782529a63d997cab80ab21439b92ed422b3d3/LICENSE"
+  }
+}

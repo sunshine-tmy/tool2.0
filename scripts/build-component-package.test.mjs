@@ -56,6 +56,89 @@ after(async () => {
 });
 
 describe("buildComponentPackage", () => {
+  it("creates non-installable review archives and SBOM without a key, trusted key directory or signed manifest", async () => {
+    const root = await makeRoot();
+    const stage = path.join(root, "stage");
+    await fs.mkdir(stage);
+    await fs.writeFile(path.join(stage, "worker.py"), "review fixture");
+    const options = {
+      definitionPath: await writeDefinition(root, definition()),
+      stagingDirectory: stage,
+      outputDirectory: path.join(root, "review"),
+      assetBaseUrl: "https://example.invalid/review/",
+      reviewOnly: true
+    };
+    const result = await buildComponentPackage(options);
+    const review = JSON.parse(await fs.readFile(result.reviewPath, "utf8"));
+    assert.equal(review.reviewFormat, "toolbox-component-review-v1");
+    assert.equal(review.installable, false);
+    assert.equal(review.requiresSignature, true);
+    assert.equal(review.protocolVersion, undefined);
+    for (const field of ["signature", "keyId", "protocolVersion"]) assert.equal(review.candidate[field], undefined);
+    assert.equal(result.manifestPath, undefined);
+    assert.equal(result.publicKeyPath, undefined);
+    await assert.rejects(fs.access(path.join(options.outputDirectory, "trusted-keys")), { code: "ENOENT" });
+    assert.ok(!(await fs.readdir(result.artifactDirectory)).some((file) => file.endsWith(".manifest.json")));
+    const contents = [];
+    await tar.t({ file: result.archivePath, onReadEntry: (entry) => contents.push(entry.path) });
+    assert.deepEqual(contents, ["worker.py"]);
+    const sbom = JSON.parse(await fs.readFile(result.sbomPath, "utf8"));
+    assert.equal(sbom.spdxVersion, "SPDX-2.3");
+    assert.equal(sbom.files.length, 1);
+    await assert.rejects(buildComponentPackage(options), /已存在/);
+    await assert.rejects(
+      buildComponentPackage({ ...options, signingKeyPath: path.join(root, "must-not-read.pem") }),
+      /不接受签名密钥/
+    );
+  });
+
+  it("merges verified existing entries without downloading old assets, while checking all new assets", async () => {
+    const root = await makeRoot(),
+      key = await createSigningKey(root);
+    const stage = path.join(root, "stage");
+    await fs.mkdir(stage);
+    await fs.writeFile(path.join(stage, "worker.py"), "signed fixture");
+    const feed = path.join(root, "feed"),
+      baseline = path.join(root, "baseline.ts"),
+      output = path.join(root, "merged.ts");
+    const build = (id) =>
+      buildComponentPackage({
+        definitionPath: path.join(root, `${id}.json`),
+        stagingDirectory: stage,
+        outputDirectory: feed,
+        signingKeyPath: key.privateKeyPath,
+        assetBaseUrl: "https://packages.example.test/"
+      });
+    await fs.writeFile(path.join(root, "base.json"), JSON.stringify(definition({ id: "base" })));
+    const old = await build("base");
+    await writeGeneratedCatalog(feed, baseline);
+    await fs.unlink(old.archivePath);
+    await fs.writeFile(
+      path.join(root, "extension.json"),
+      JSON.stringify(definition({ id: "extension", dependencyIds: ["base"] }))
+    );
+    const added = await build("extension");
+    await assert.rejects(assembleComponentCatalog(feed), /ENOENT/);
+    assert.equal((await writeGeneratedCatalog(feed, output, "win32-x64", undefined, baseline)).manifestCount, 2);
+    const original = await fs.readFile(output, "utf8");
+    await fs.appendFile(added.archivePath, "corrupt");
+    await assert.rejects(writeGeneratedCatalog(feed, output, "win32-x64", undefined, baseline), /摘要不匹配/);
+    assert.equal(await fs.readFile(output, "utf8"), original);
+    const tamperedBase = (await fs.readFile(baseline, "utf8")).replace(
+      '"purpose": "在线自然配音"',
+      '"purpose": "changed"'
+    );
+    await fs.writeFile(path.join(root, "bad-base.ts"), tamperedBase);
+    await assert.rejects(
+      writeGeneratedCatalog(feed, output, "win32-x64", undefined, path.join(root, "bad-base.ts")),
+      /签名无效/
+    );
+    await fs.writeFile(path.join(root, "not-generated.ts"), "process.exit(99)");
+    await assert.rejects(
+      writeGeneratedCatalog(feed, output, "win32-x64", undefined, path.join(root, "not-generated.ts")),
+      /标准生成/
+    );
+  });
   it("the Python 3.12 catalog gate verifies real signatures and preserves output when legacy Python remains", async () => {
     const root = await makeRoot();
     const key = await createSigningKey(root);
@@ -375,7 +458,13 @@ describe("buildComponentPackage", () => {
     await fs.writeFile(path.join(stage, "wheelhouse", "torch-2.6.0+cpu.whl"), "wheel");
     await fs.writeFile(
       path.join(stage, "requirements.lock"),
-      "torch==2.6.0+cpu \\\n    --hash=sha256:" + "a".repeat(64) + "\n"
+      "torch==2.6.0+cpu \\\n    --hash=sha256:" +
+        "a".repeat(64) +
+        "\neinops==0.8.1 --hash=sha256:" +
+        "b".repeat(64) +
+        "\nscipy==1.17.1 --hash=sha256:" +
+        "c".repeat(64) +
+        "\n"
     );
     const key = await createSigningKey(root);
     const definitionPath = await writeDefinition(
@@ -413,6 +502,16 @@ describe("buildComponentPackage", () => {
     assert.equal(manifest.pythonEnvironment.expectedPythonVersion, "3.11");
     assert.equal(manifest.pythonEnvironment.pythonComponentId, "python-311");
     assert.ok(sbom.packages.some((item) => item.name === "torch" && item.versionInfo === "2.6.0+cpu"));
+    const pythonPackages = sbom.packages.filter((item) => item.SPDXID.startsWith("SPDXRef-Python-"));
+    assert.deepEqual(
+      pythonPackages.map((item) => [item.name, item.versionInfo]),
+      [
+        ["torch", "2.6.0+cpu"],
+        ["einops", "0.8.1"],
+        ["scipy", "1.17.1"]
+      ]
+    );
+    assert.equal(sbom.relationships.filter((item) => item.relationshipType === "DEPENDS_ON").length, 3);
   });
 
   it("rejects HTTPS violations, path escape definitions and private keys inside the staged package", async () => {

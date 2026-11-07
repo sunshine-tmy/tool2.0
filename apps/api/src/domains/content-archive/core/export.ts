@@ -132,7 +132,13 @@ export function archiveMediaExportNames(media: ContentArchiveMedia[]) {
       name = `视频截帧-${String(entry.index + 1).padStart(3, "0")}-${parts.join("-")}-${String(milliseconds % 1000).padStart(3, "0")}.png`;
     } else {
       const label =
-        entry.kind === "image" || entry.kind === "cover" ? "图片" : entry.kind === "live-photo" ? "实况" : "视频";
+        entry.kind === "audio"
+          ? "原配乐"
+          : entry.kind === "image" || entry.kind === "cover"
+            ? "图片"
+            : entry.kind === "live-photo"
+              ? "实况"
+              : "视频";
       const extension = path
         .extname(entry.fileName)
         .replace(/[^.\w]/g, "")

@@ -15,6 +15,7 @@ import type { BackupFile, ModuleData } from "./types";
 export const ownership: Record<BackupModuleId, { kinds: string[]; tools: string[] }> = {
   "image-compress": { kinds: [], tools: ["image-compress"] },
   "image-ai": { kinds: ["image-ai-task"], tools: ["image-ai"] },
+  "video-ai": { kinds: ["video-ai-task"], tools: ["video-ai"] },
   speech: {
     kinds: [
       "chatterbox-voice",
@@ -104,7 +105,7 @@ export function portablePaths(payload: unknown, config: AppConfig, decode = fals
     if (value && typeof value === "object")
       return Object.fromEntries(Object.entries(object(value)).map(([k, v]) => [k, visit(v, k, key)]));
     const isPath =
-      ["path", "maskPath", "outputPath"].includes(key) ||
+      ["path", "maskPath", "outputPath", "inputPath", "progressPath", "cancelFlagPath"].includes(key) ||
       (parent === "assets" && ["foreground", "original", "background", "erase", "restore"].includes(key));
     if (typeof value === "string" && isPath) {
       if (decode && value.startsWith("@storage/")) return path.join(config.storageRoot, safeRelative(value.slice(9)));
@@ -195,6 +196,11 @@ export async function inventory(database: ToolboxDatabase, config: AppConfig, id
         bytes: Number(p.bytes),
         sha256: String(p.sha256)
       });
+    if (row.kind === "video-ai-task") {
+      await add(`video-ai/inputs/${row.id}/input.bin`, row.kind, row.id, false);
+      if (p.outputPath)
+        await add(`video-ai/outputs/${row.id}.mp4`, row.kind, row.id, true, { bytes: Number(p.outputBytes) });
+    }
     if (row.kind === "audio-convert-job" && p.status === "completed")
       await add(`audio-convert/results/${row.id}/audio.mp3`, row.kind, row.id, true, {
         bytes: Number(p.bytes),
@@ -291,6 +297,11 @@ export function assertFileOwnership(module: ModuleData, file: BackupFile) {
       /^image-ai\/(inputs|outputs)\//.test(file.path) &&
       module.records.some((r) => r.kind === "image-ai-task" && r.id === file.entityId) &&
       file.path.split("/")[2] === file.entityId;
+  if (module.id === "video-ai")
+    valid =
+      file.entityKind === "video-ai-task" &&
+      module.records.some((r) => r.kind === file.entityKind && r.id === file.entityId) &&
+      [`video-ai/inputs/${file.entityId}/input.bin`, `video-ai/outputs/${file.entityId}.mp4`].includes(file.path);
   if (module.id === "speech") {
     const row = module.records.find((r) => r.kind === file.entityKind && r.id === file.entityId);
     valid = Boolean(

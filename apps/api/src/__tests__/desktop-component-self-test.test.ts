@@ -21,6 +21,112 @@ afterEach(async () => {
 });
 
 describe("desktop component self-test", () => {
+  it("checks video CPU assets with the signed shared FFmpeg paths and offline environment", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = [
+      "scripts/video-ai-worker.py",
+      "models/video-ai/big-lama.pt",
+      "models/video-ai/ocr/detection/inference.yml",
+      "models/video-ai/ocr/recognition/inference.yml"
+    ];
+    for (const file of files) await writeAsset(file);
+    const run = vi.fn(async () => '{"available":true}');
+    const resolve = vi.fn(async (relative: string) => `signed-ffmpeg/${relative}`);
+    await createDesktopComponentSelfTest(run, resolve)(manifest("video-ai", files, "3.12"), temporaryRoot);
+    expect(run).toHaveBeenCalledWith(
+      expect.stringContaining("venv"),
+      [path.join(temporaryRoot, "scripts", "video-ai-worker.py"), "--check"],
+      temporaryRoot,
+      expect.objectContaining({
+        VIDEO_AI_FFMPEG: "signed-ffmpeg/bin/ffmpeg.exe",
+        VIDEO_AI_FFPROBE: "signed-ffmpeg/bin/ffprobe.exe",
+        VIDEO_AI_DEVICE: "cpu",
+        HF_HUB_OFFLINE: "1"
+      })
+    );
+    await expect(createDesktopComponentSelfTest(run)(manifest("video-ai", files), temporaryRoot)).rejects.toThrow(
+      "共享 FFmpeg"
+    );
+  });
+  it("installs the signed video CPU package without requiring the CUDA-only torchvision dependency", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = [
+      "scripts/video-ai-worker.py",
+      "models/video-ai/big-lama.pt",
+      "models/video-ai/ocr/detection/inference.yml",
+      "models/video-ai/ocr/recognition/inference.yml"
+    ];
+    for (const file of files) await writeAsset(file);
+    const lock = await fs.readFile(new URL("../../../../scripts/video-ai.lock.txt", import.meta.url), "utf8");
+    expect(lock).not.toMatch(/^torchvision==/m);
+    const run = vi.fn(async (_executable: string, args: string[]) => {
+      if (args[0] === "-c" && /\btorchvision\b/.test(args[1]))
+        throw new Error("ModuleNotFoundError: No module named 'torchvision'");
+      return '{"available":true}';
+    });
+    await createDesktopComponentSelfTest(run, async (relative) => `signed-ffmpeg/${relative}`)(
+      manifest("video-ai", files, "3.12"),
+      temporaryRoot
+    );
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[0][1][1]).toMatch(/import json, torch, cv2, paddle, paddleocr, fastapi, uvicorn/);
+    expect(run.mock.calls[1][1]).toEqual([path.join(temporaryRoot, "scripts/video-ai-worker.py"), "--check"]);
+  });
+  it("checks the video CUDA overlay independently of the Chatterbox package", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    await writeAsset("requirements.lock");
+    const baseRoot = path.join(temporaryRoot, "video-base");
+    const cudaSite = path.join(temporaryRoot, "venv", "Lib", "site-packages");
+    const baseSite = path.join(baseRoot, "venv", "Lib", "site-packages");
+    await fs.mkdir(cudaSite, { recursive: true });
+    await fs.mkdir(baseSite, { recursive: true });
+    const resolve = vi.fn(async () => ({
+      path: path.join(baseRoot, "venv", "Scripts", "python.exe"),
+      generationRoot: baseRoot,
+      manifest: manifest("video-ai", [], "3.12")
+    }));
+    const run = vi.fn(
+      async (_executable: string, _args: string[], _cwd: string, environment: Record<string, string>) => {
+        if (environment.PYTHONPATH !== [cudaSite, baseSite].join(path.delimiter))
+          throw new Error("ModuleNotFoundError: No module named 'cv2'");
+        return '{"available":true,"cudaAvailable":false}';
+      }
+    );
+    await createDesktopComponentSelfTest(
+      run,
+      undefined,
+      resolve
+    )(manifest("video-ai-cuda", ["requirements.lock"], "3.12"), temporaryRoot);
+    expect(resolve).toHaveBeenCalledExactlyOnceWith("video-ai");
+    expect(run.mock.calls[0][1][1]).toContain("torch.version.cuda == '12.4'");
+    expect(run.mock.calls[0][1][1]).toMatch(/torchvision, cv2, paddle, paddleocr, fastapi, uvicorn/);
+    expect(run.mock.calls[0][0]).toBe(path.join(temporaryRoot, "venv", "Scripts", "python.exe"));
+  });
+  it("rejects a video CUDA self-test without a verified CPU dependency resolver", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    await writeAsset("requirements.lock");
+    const run = vi.fn(async () => '{"available":true}');
+    await expect(
+      createDesktopComponentSelfTest(run)(manifest("video-ai-cuda", ["requirements.lock"], "3.12"), temporaryRoot)
+    ).rejects.toThrow("基础包");
+    expect(run).not.toHaveBeenCalled();
+  });
+  it("keeps failed video base dependency resolution from activating CUDA", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    await writeAsset("requirements.lock");
+    const run = vi.fn(async () => '{"available":true}');
+    const resolve = vi.fn(async () => {
+      throw new Error("基础包完整性校验失败");
+    });
+    await expect(
+      createDesktopComponentSelfTest(
+        run,
+        undefined,
+        resolve
+      )(manifest("video-ai-cuda", ["requirements.lock"], "3.12"), temporaryRoot)
+    ).rejects.toThrow("基础包完整性校验失败");
+    expect(run).not.toHaveBeenCalled();
+  });
   it.each(["win32-x64", "darwin-arm64"] as const)("抖音 %s 描述包只做本地协议自检，不启动进程", async (platform) => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
     const descriptor = await fs.readFile(

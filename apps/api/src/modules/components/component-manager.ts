@@ -13,6 +13,13 @@ import { cleanPartialFiles, getAvailableDiskBytes, pathExists } from "./package-
 import { inspectArchive, extractArchive, verifyArchive, verifyInstalledFiles, assembleFiles } from "./package-archive";
 import { readCurrent, switchCurrent, restoreCurrent } from "./package-generation";
 import { downloadComponentArchive } from "./package-download";
+import { recoverExportCaches } from "./offline-export-cache";
+import {
+  bundleByteLimit,
+  COMPONENT_BUNDLE_SUFFIX,
+  extractComponentBundle,
+  packComponentBundle
+} from "./offline-bundle";
 export { downloadComponentArchive } from "./package-download";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -87,6 +94,7 @@ export class ComponentManager {
   private readonly listeners = new Map<string, Set<(job: ComponentJob) => void>>();
   private readonly lastFailures = new Map<string, { code: string; message: string }>();
   private initialized?: Promise<void>;
+  private readonly offlineTransfers = new Set<string>();
 
   constructor(options: ComponentManagerOptions) {
     this.root = path.resolve(options.root);
@@ -251,7 +259,202 @@ export class ComponentManager {
   }
 
   hasActiveJobs() {
-    return this.activeByComponent.size > 0;
+    return this.activeByComponent.size > 0 || this.offlineTransfers.size > 0;
+  }
+
+  private offlineBundleManifests(componentId: string) {
+    const result: ComponentPackageManifest[] = [],
+      visited = new Set<string>();
+    const visit = (id: string) => {
+      if (visited.has(id)) return;
+      const manifest = this.getManifest(id);
+      this.verifyManifest(manifest);
+      visited.add(id);
+      for (const dependency of [...manifest.dependencyIds].sort()) visit(dependency);
+      result.push(manifest);
+    };
+    visit(componentId);
+    return result;
+  }
+
+  getOfflineBundleBodyLimit(componentId?: string) {
+    if (componentId) return bundleByteLimit(componentId, this.offlineBundleManifests(componentId));
+    return Math.max(
+      1024 * 1024,
+      ...[...this.manifests.keys()].map((id) => {
+        try {
+          return bundleByteLimit(id, this.offlineBundleManifests(id));
+        } catch {
+          return 0;
+        }
+      })
+    );
+  }
+
+  private lockOfflineTransfer(ids: string[]) {
+    if (this.hasActiveJobs())
+      throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "能力管理作业尚未完成，请稍后再导入或导出");
+    for (const id of ids) this.offlineTransfers.add(id);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      for (const id of ids) this.offlineTransfers.delete(id);
+    };
+  }
+
+  async createOfflineExport(componentId: string, signal: AbortSignal) {
+    await this.initialize();
+    const manifests = this.offlineBundleManifests(componentId);
+    const unlock = this.lockOfflineTransfer(manifests.map((m) => m.id));
+    const temporaryRoots: string[] = [];
+    const release = () => {
+      unlock();
+      for (const temporary of temporaryRoots.splice(0))
+        void fsp.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
+    };
+    try {
+      const packages = [];
+      const managerRoot = await fsp.realpath(this.root);
+      for (const manifest of manifests) {
+        signal.throwIfAborted();
+        const componentRoot = this.componentRoot(manifest.id);
+        const current = await this.readCurrent(componentRoot, manifest.id);
+        if (!current)
+          throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", `请先安装所需能力：${manifest.displayName}`);
+        if (current.version !== manifest.version || current.manifestSha256 !== sha256Text(canonicalManifest(manifest)))
+          throw new ComponentManagerError(
+            "COMPONENT_MANIFEST_INVALID",
+            `已安装的 ${manifest.displayName} 与当前签名目录不一致，请先更新后导出`
+          );
+        const versions = await fsp.realpath(path.join(componentRoot, "versions"));
+        const root = await fsp.realpath(safeChildPath(versions, current.directory));
+        if (
+          !isPathWithin(managerRoot, versions) ||
+          !isPathWithin(versions, root) ||
+          (await fsp.lstat(path.join(versions, current.directory))).isSymbolicLink()
+        )
+          throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力安装目录包含不安全链接");
+        const temporary = await recoverExportCaches(
+          manifest,
+          root,
+          path.join(componentRoot, "archives"),
+          this.downloadArchive,
+          signal
+        );
+        if (temporary) temporaryRoots.push(temporary);
+        packages.push({ manifest, root, cacheRoot: temporary ? path.join(temporary, "original") : undefined });
+      }
+      return {
+        filename: `${componentId}-${this.getManifest(componentId).version}${COMPONENT_BUNDLE_SUFFIX}`,
+        maxBytes: bundleByteLimit(componentId, manifests),
+        stream: packComponentBundle(componentId, packages, signal, release)
+      };
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  async startOfflineBundleImport(componentId: string, uploads: AsyncIterable<OfflineArchiveUpload>) {
+    await this.initialize();
+    const manifests = this.offlineBundleManifests(componentId);
+    const limit = bundleByteLimit(componentId, manifests);
+    const release = this.lockOfflineTransfer(manifests.map((m) => m.id));
+    const importRoot = safeChildPath(
+      this.componentRoot(componentId),
+      path.join("archives", `.offline-bundle-${crypto.randomUUID()}.partial`)
+    );
+    let handedOff = false;
+    try {
+      for (const manifest of manifests)
+        if (await this.readCurrent(this.componentRoot(manifest.id), manifest.id)) {
+          if (await this.isInUse(manifest.id, this.affectedTaskToolIds(manifest.id)))
+            throw new ComponentManagerError("COMPONENT_IN_USE", `能力正在被任务使用：${manifest.displayName}`);
+        }
+      if ((await this.availableDiskBytes(this.root)) < limit + manifests.reduce((n, m) => n + m.installedBytes, 0))
+        throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘可用空间不足，无法接收和安装离线能力备份包");
+      await fsp.mkdir(importRoot, { recursive: true });
+      const archive = path.join(importRoot, "bundle.zip");
+      let received = false;
+      for await (const upload of uploads) {
+        if (received || upload.fieldName !== "bundle" || !upload.filename.endsWith(COMPONENT_BUNDLE_SUFFIX)) {
+          upload.stream.resume();
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "请只选择一个导出的离线能力备份包");
+        }
+        received = true;
+        let size = 0;
+        const meter = new Transform({
+          transform(chunk: Buffer, _encoding, callback) {
+            size += chunk.length;
+            callback(
+              size > limit ? new ComponentManagerError("COMPONENT_IMPORT_INVALID", "离线能力备份包超过允许大小") : null,
+              chunk
+            );
+          }
+        });
+        await pipeline(upload.stream, meter, fs.createWriteStream(archive, { flags: "wx", mode: 0o600 }));
+        if (upload.stream.truncated || !size)
+          throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "离线能力备份包传输不完整");
+      }
+      if (!received) throw new ComponentManagerError("COMPONENT_IMPORT_INVALID", "未选择离线能力备份包");
+      await extractComponentBundle(archive, importRoot, componentId, manifests);
+      // Finish asynchronous preflight before publishing any reserved jobs.
+      const currents = await Promise.all(
+        manifests.map((manifest) => this.readCurrent(this.componentRoot(manifest.id), manifest.id))
+      );
+      const operations: InternalJob[] = [];
+      for (const [index, manifest] of manifests.entries()) {
+        const current = currents[index];
+        const value = this.createJob(
+          manifest.id,
+          current ? "reinstall" : "install",
+          "queued",
+          "queued",
+          componentDownloadBytes(manifest),
+          manifest.files.length
+        );
+        const internal: InternalJob = { value, offlineFilesRoot: path.join(importRoot, "packages", manifest.id) };
+        operations.push(internal);
+        this.jobs.set(value.id, internal);
+        this.activeByComponent.set(manifest.id, value.id);
+      }
+      handedOff = true;
+      release();
+      void (async () => {
+        let failed = false;
+        for (let index = 0; index < manifests.length; index++) {
+          const internal = operations[index];
+          if (failed)
+            this.failJob(
+              internal,
+              new ComponentManagerError(
+                "COMPONENT_DEPENDENCY_MISSING",
+                "离线依赖安装未成功，后续能力未安装；已有可用版本保留"
+              )
+            );
+          else {
+            await this.runJob(internal, manifests[index]);
+            failed = internal.value.state !== "completed";
+          }
+        }
+      })()
+        .catch((error) => {
+          for (const internal of operations)
+            if (["queued", "running"].includes(internal.value.state)) this.failJob(internal, error);
+        })
+        .finally(() => fsp.rm(importRoot, { recursive: true, force: true }).catch(() => undefined));
+      return operations.at(-1)!.value;
+    } catch (error) {
+      if (error instanceof ComponentManagerError) throw error;
+      throw new ComponentManagerError(
+        (error as NodeJS.ErrnoException)?.code === "ENOSPC" ? "COMPONENT_DISK_SPACE_LOW" : "COMPONENT_IMPORT_INVALID",
+        "离线能力备份包传输或校验失败，现有能力未被替换"
+      );
+    } finally {
+      release();
+      if (!handedOff) await fsp.rm(importRoot, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   /** 仅校验当前代，不安装、不切换版本。取消只中止本次只读检查。 */
@@ -385,7 +588,7 @@ export class ComponentManager {
     await this.initialize();
     const manifest = this.getManifest(componentId);
     this.verifyManifest(manifest);
-    if (this.activeByComponent.has(componentId)) {
+    if (this.offlineTransfers.size || this.activeByComponent.has(componentId)) {
       throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "该能力已有其他管理作业正在运行");
     }
     await this.assertDependenciesReady(manifest);
@@ -549,6 +752,8 @@ export class ComponentManager {
     offlineImportRoot?: string
   ) {
     await this.initialize();
+    if (this.offlineTransfers.size)
+      throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "离线能力包正在传输，请稍后重试");
     this.getManifest(componentId);
     const existingId = this.activeByComponent.get(componentId);
     if (existingId) {
@@ -618,9 +823,10 @@ export class ComponentManager {
       }
       await this.assertDependenciesReady(manifest);
       const freeBytes = await this.availableDiskBytes(this.root);
-      const requiredBytes = internal.offlineArchivePaths
-        ? manifest.installedBytes
-        : componentDownloadBytes(manifest) + manifest.installedBytes;
+      const requiredBytes =
+        internal.offlineArchivePaths || internal.offlineFilesRoot
+          ? manifest.installedBytes
+          : componentDownloadBytes(manifest) + manifest.installedBytes;
       if (freeBytes < requiredBytes) {
         throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘可用空间不足");
       }
@@ -701,48 +907,58 @@ export class ComponentManager {
     const downloadBytesTotal = componentDownloadBytes(manifest);
     try {
       await fsp.mkdir(staging, { recursive: false });
-      for (const [index, archiveAsset] of archiveAssets.entries()) {
-        const archiveManifest = { ...manifest, archive: archiveAsset };
-        const archivePath = safeChildPath(archiveRoot, `${manifest.version}.${index}.${crypto.randomUUID()}.partial`);
-        try {
-          const offlineArchivePath = internal.offlineArchivePaths?.[index];
-          if (offlineArchivePath) {
-            this.updateJob(internal, { phase: "verifying" });
-            await fsp.rename(offlineArchivePath, archivePath);
-            this.updateJob(internal, {
-              progress: progress(downloadedBytes + archiveAsset.bytes, downloadBytesTotal, 0, manifest.files.length)
-            });
-          } else {
-            this.updateJob(internal, { phase: "downloading" });
-            await this.downloadArchive(archiveManifest, archivePath, {
-              signal,
-              onProgress: (partDownloadedBytes) =>
-                this.updateJob(internal, {
-                  progress: progress(
-                    downloadedBytes + partDownloadedBytes,
-                    downloadBytesTotal,
-                    0,
-                    manifest.files.length
-                  )
-                })
-            });
-          }
-          if (signal.aborted) throw new Error("download cancelled");
-          downloadedBytes += archiveAsset.bytes;
-          this.updateJob(internal, {
-            phase: "verifying",
-            progress: progress(downloadedBytes, downloadBytesTotal, 0, manifest.files.length)
-          });
-          await this.verifyArchive(archivePath, archiveAsset);
-          this.updateJob(internal, { phase: "extracting" });
-          await inspectArchive(archivePath, archiveAsset.filePaths);
-          await extractArchive(archivePath, staging);
-        } finally {
-          await fsp.rm(archivePath, { force: true }).catch(() => undefined);
+      if (internal.offlineFilesRoot) {
+        this.updateJob(internal, { phase: "verifying" });
+        for (const file of manifest.files) {
+          signal.throwIfAborted();
+          const destination = safeChildPath(staging, file.path);
+          await fsp.mkdir(path.dirname(destination), { recursive: true });
+          await fsp.rename(safeChildPath(internal.offlineFilesRoot, file.path), destination);
         }
+      } else {
+        for (const [index, archiveAsset] of archiveAssets.entries()) {
+          const archiveManifest = { ...manifest, archive: archiveAsset };
+          const archivePath = safeChildPath(archiveRoot, `${manifest.version}.${index}.${crypto.randomUUID()}.partial`);
+          try {
+            const offlineArchivePath = internal.offlineArchivePaths?.[index];
+            if (offlineArchivePath) {
+              this.updateJob(internal, { phase: "verifying" });
+              await fsp.rename(offlineArchivePath, archivePath);
+              this.updateJob(internal, {
+                progress: progress(downloadedBytes + archiveAsset.bytes, downloadBytesTotal, 0, manifest.files.length)
+              });
+            } else {
+              this.updateJob(internal, { phase: "downloading" });
+              await this.downloadArchive(archiveManifest, archivePath, {
+                signal,
+                onProgress: (partDownloadedBytes) =>
+                  this.updateJob(internal, {
+                    progress: progress(
+                      downloadedBytes + partDownloadedBytes,
+                      downloadBytesTotal,
+                      0,
+                      manifest.files.length
+                    )
+                  })
+              });
+            }
+            if (signal.aborted) throw new Error("download cancelled");
+            downloadedBytes += archiveAsset.bytes;
+            this.updateJob(internal, {
+              phase: "verifying",
+              progress: progress(downloadedBytes, downloadBytesTotal, 0, manifest.files.length)
+            });
+            await this.verifyArchive(archivePath, archiveAsset);
+            this.updateJob(internal, { phase: "extracting" });
+            await inspectArchive(archivePath, archiveAsset.filePaths);
+            await extractArchive(archivePath, staging);
+          } finally {
+            await fsp.rm(archivePath, { force: true }).catch(() => undefined);
+          }
+        }
+        if (signal.aborted) throw new Error("download cancelled");
+        await this.assembleFiles(staging, manifest, signal);
       }
-      if (signal.aborted) throw new Error("download cancelled");
-      await this.assembleFiles(staging, manifest, signal);
       await this.verifyInstalledFiles(staging, manifest);
       await fsp.rename(staging, target);
       targetCreated = true;

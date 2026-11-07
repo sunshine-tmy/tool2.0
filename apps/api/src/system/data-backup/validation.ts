@@ -19,7 +19,8 @@ import {
   ContentArchiveItemSchema,
   LanFileRecordSchema,
   LanNoteSchema,
-  LanNoteImageSchema
+  LanNoteImageSchema,
+  VideoAiTaskSchema
 } from "@toolbox/shared";
 import { AudioExtractJobSchema } from "@toolbox/shared/audio-extract";
 import { AudioConvertJobSchema } from "@toolbox/shared";
@@ -33,6 +34,7 @@ const string = Type.String();
 const imageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
 const videoTypes = ["video/mp4", "video/quicktime", "video/webm"];
 const audioTypes = ["audio/mpeg", "audio/wav", "audio/mp4", "audio/flac"];
+const archiveAudioTypes = [...audioTypes, "audio/aac", "audio/ogg"];
 function assertMediaType(value: unknown, allowed: string[]) {
   if (typeof value !== "string" || !allowed.includes(value)) throw new Error("备份包含不支持的媒体类型");
 }
@@ -78,6 +80,26 @@ const imageStoredSchema = Type.Composite(
 const schemas: Record<string, TSchema> = {
   task: TaskSchema,
   "audio-convert-job": AudioConvertJobSchema,
+  "video-ai-task": Type.Composite(
+    [
+      Type.Omit(VideoAiTaskSchema, ["output"]),
+      Type.Object({
+        inputPath: string,
+        outputPath: Type.Optional(string),
+        outputBytes: Type.Optional(Type.Integer({ minimum: 0 })),
+        outputWidth: Type.Optional(Type.Integer({ minimum: 1 })),
+        outputHeight: Type.Optional(Type.Integer({ minimum: 1 })),
+        outputDurationMs: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])),
+        progressPath: Type.Optional(string),
+        cancelFlagPath: Type.Optional(string),
+        cancelRequested: Type.Optional(Type.Boolean()),
+        manualArea: Type.Optional(
+          Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number(), height: Type.Number() })
+        )
+      })
+    ],
+    { additionalProperties: false }
+  ),
   "audio-extract-job": AudioExtractJobSchema,
   "xhs-archive": ContentArchiveItemSchema,
   "archive-group": ArchiveGroupSchema,
@@ -151,10 +173,17 @@ export function validateModuleData(module: ModuleData) {
       throw new Error("备份包含未结束的领域任务");
     if (row.kind === "xhs-archive")
       for (const media of array(p.media)) {
-        assertMediaType(media.mimeType, ["video", "live-photo"].includes(String(media.kind)) ? videoTypes : imageTypes);
+        assertMediaType(
+          media.mimeType,
+          media.kind === "audio"
+            ? archiveAudioTypes
+            : ["video", "live-photo"].includes(String(media.kind))
+              ? videoTypes
+              : imageTypes
+        );
         for (const asset of archiveMediaAssets(media as import("@toolbox/shared").ContentArchiveMedia)) {
           if (asset.fileName.includes("/") || asset.fileName.includes("\\")) throw new Error("归档资产文件名不安全");
-          assertMediaType(asset.mimeType, [...imageTypes, ...videoTypes, ...audioTypes]);
+          assertMediaType(asset.mimeType, [...imageTypes, ...videoTypes, ...archiveAudioTypes]);
         }
         for (const asset of archiveMediaAssets(media as import("@toolbox/shared").ContentArchiveMedia, false))
           required(`xhs-archive/items/${row.id}/${asset.fileName}`, asset.size, asset.checksum);
@@ -197,6 +226,27 @@ export function validateModuleData(module: ModuleData) {
       for (const output of array(p.results)) requirePath(output.outputPath);
       if (p.maskPath) requirePath(p.maskPath);
       if (p.assets) for (const value of Object.values(object(p.assets))) if (value) requirePath(value);
+    }
+    if (row.kind === "video-ai-task") {
+      if (p.status === "completed" && !p.outputPath) throw new Error("视频去字幕成功记录缺少输出");
+      if (row.status !== p.status) throw new Error("视频去字幕任务状态不一致");
+      if (
+        p.inputPath !== `@storage/video-ai/inputs/${row.id}/input.bin` ||
+        (p.progressPath && p.progressPath !== `@storage/video-ai/tasks/${row.id}/progress.json`) ||
+        (p.cancelFlagPath && p.cancelFlagPath !== `@storage/video-ai/tasks/${row.id}/cancel.flag`)
+      )
+        throw new Error("视频去字幕受管路径无效");
+      if (p.outputPath) {
+        if (
+          p.status !== "completed" ||
+          p.outputPath !== `@storage/video-ai/outputs/${row.id}.mp4` ||
+          !p.outputWidth ||
+          !p.outputHeight ||
+          p.expiresAt !== null
+        )
+          throw new Error("视频去字幕结果元数据无效");
+        required(`video-ai/outputs/${row.id}.mp4`, Number(p.outputBytes));
+      }
     }
     if (row.kind === "chatterbox-voice")
       required(`${speechDirectory(row.kind, row.id, p)}/reference.wav`, Number(p.audioBytes));

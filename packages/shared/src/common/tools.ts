@@ -106,6 +106,17 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/v1/tools/xhs-archive"
   },
   {
+    id: "video-subtitle",
+    title: "视频去字幕",
+    description: "自动检测并修复烧录在画面中的硬字幕，保留原分辨率与原音轨，全程本机处理。",
+    category: "video",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["video/mp4", "video/x-matroska", "video/x-msvideo", "video/quicktime", "video/webm"],
+    routePath: "/tools/video-subtitle",
+    apiNamespace: "/api/v1/tools/video-ai"
+  },
+  {
     id: "json-format",
     title: "JSON 格式化",
     description: "本地校验、格式化和压缩 JSON，保留数字精度与字段顺序，支持复制和下载。",

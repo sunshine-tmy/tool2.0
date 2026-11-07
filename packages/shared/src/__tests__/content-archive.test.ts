@@ -70,6 +70,22 @@ const legacy: XhsArchiveItem = {
 };
 
 describe("content archive contract", () => {
+  it("图文原配乐作为可选音频附件兼容清单，旧媒体无需新增字段", () => {
+    const audio = {
+      ...media,
+      id: "music_123456",
+      kind: "audio",
+      title: "原曲",
+      fileName: "music.m4a",
+      mimeType: "audio/mp4"
+    };
+    expect(Value.Check(ContentArchiveMediaSchema, audio)).toBe(true);
+    expect(Value.Check(ContentArchiveMediaSchema, media)).toBe(true);
+    expect(
+      Value.Check(ContentArchiveItemSchema, { ...fromXhsArchive(legacy), type: "image", media: [media, audio] })
+    ).toBe(true);
+    expect(Value.Check(ContentArchiveMediaSchema, { ...audio, title: "x".repeat(501) })).toBe(false);
+  });
   it("发布标记筛选区分已发布、未发布及全部，并与列表和翻译筛选兼容", () => {
     expect(isContentArchiveListQuery({})).toBe(true);
     for (const publication of ["all", "published", "unpublished"]) {

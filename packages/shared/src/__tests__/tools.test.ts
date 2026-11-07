@@ -19,6 +19,7 @@ describe("tool registry", () => {
       "audio-extract",
       "audio-convert",
       "xhs-archive",
+      "video-subtitle",
       "json-format",
       "base64",
       "url-codec",

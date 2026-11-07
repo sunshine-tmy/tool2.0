@@ -1,0 +1,4 @@
+# GPU 扩展包：CUDA 12.4 版 PyTorch，与 chatterbox-cuda 锁定同一版本线。
+# 均衡档（STTN）与极致档（ProPainter）的序列推理需要 GPU 张量支持。
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124

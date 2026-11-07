@@ -10,6 +10,12 @@
     "workers": [
       "scripts/edge-tts-generate.py",
       "scripts/image-ai-worker.py",
+      "scripts/video-ai-worker.py",
+      "scripts/video-ai-worker-launcher.py",
+      "scripts/video_ai_sequence.py",
+      "scripts/video_ai_engine_assets.py",
+      "scripts/video_ai_sttn.py",
+      "scripts/video_ai_propainter.py",
       "scripts/chatterbox-worker.py",
       "scripts/worker_lifecycle.py",
       "scripts/xhs-provider-worker.py",

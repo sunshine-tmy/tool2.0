@@ -46,6 +46,8 @@ function mountCard(props: {
   job?: ComponentJob;
   offlineUploading?: boolean;
   offlineUploadProgress?: number;
+  exporting?: boolean;
+  managementBusy?: boolean;
 }) {
   return mount(DesktopComponentCard, {
     props,
@@ -67,6 +69,44 @@ function mountCard(props: {
 }
 
 describe("DesktopComponentCard", () => {
+  it.each(["video-ai", "video-ai-cuda"])(
+    "explains the real engine scope of %s without changing signed metadata",
+    (id) => {
+      const wrapper = mountCard({ component: component({ id }) });
+      expect(wrapper.text()).toContain("均衡 / 极致需要包含 STTN / ProPainter 的新版本能力");
+      expect(wrapper.text()).toContain("请先更新视频去字幕基础包，再更新 GPU 扩展");
+      expect(wrapper.text()).not.toContain("安装 GPU 扩展也不会启用");
+      wrapper.unmount();
+    }
+  );
+  it("exports an installed current capability and exposes cancellation while locking other operations", async () => {
+    const wrapper = mountCard({
+      component: component({ installed: true, installedVersion: "7.0.0", state: "ready", health: "healthy" })
+    });
+    const find = (text: string) => wrapper.findAll("button").find((button) => button.text() === text)!;
+    await find("导出离线包").trigger("click");
+    expect(wrapper.emitted("offlineExport")?.[0]?.[0]).toMatchObject({ id: "ffmpeg" });
+    await wrapper.setProps({ exporting: true, managementBusy: true });
+    expect(find("卸载").attributes("disabled")).toBeDefined();
+    await find("取消导出").trigger("click");
+    expect(wrapper.emitted("cancelExport")).toHaveLength(1);
+    await wrapper.setProps({
+      exporting: false,
+      managementBusy: false,
+      component: component({ installed: true, installedVersion: "old", state: "ready" })
+    });
+    expect(find("导出离线包").attributes("disabled")).toBeDefined();
+  });
+  it("allows a bundle with dependencies to be selected before dependencies are installed", () => {
+    const wrapper = mountCard({ component: component({ state: "blocked", blockedReason: "缺少依赖" }) });
+    expect(
+      wrapper
+        .findAll("button")
+        .find((button) => button.text() === "离线导入")
+        ?.attributes("disabled")
+    ).toBeUndefined();
+    expect(wrapper.findAll("button").some((button) => button.text() === "导出离线包")).toBe(false);
+  });
   it("makes a newer approved capability version discoverable without reinstalling automatically", async () => {
     const wrapper = mountCard({
       component: component({ installed: true, installedVersion: "old", version: "new", state: "ready" })
