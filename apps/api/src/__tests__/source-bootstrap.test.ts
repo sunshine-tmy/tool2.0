@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ComponentJob, ComponentPackageStatus } from "@toolbox/shared";
 import { assertSourceStartupAvailable, getSourceConfig } from "../runtime/source-config";
 import { createDevelopmentRuntimeLayout } from "../runtime/runtime-layout";
-import { prepareSourceComponents, sourceComponentIds } from "../runtime/source-bootstrap";
+import { prepareSourceComponents, sourceComponentIds, sourceCudaComponentIds } from "../runtime/source-bootstrap";
 
 function fixture(installed: string[] = []) {
   const statuses = sourceComponentIds.map((id) => ({
@@ -39,14 +39,19 @@ function fixture(installed: string[] = []) {
 describe("source bootstrap", () => {
   it("only adds CUDA when explicitly selected, after its CPU dependency", async () => {
     const { manager, spies, statuses } = fixture();
-    statuses.push({
-      id: "chatterbox-cuda",
-      displayName: "CUDA",
-      installed: false,
-      version: "1"
-    } as ComponentPackageStatus);
+    statuses.push(
+      ...sourceCudaComponentIds.map(
+        (id) =>
+          ({
+            id,
+            displayName: "CUDA",
+            installed: false,
+            version: "1"
+          }) as ComponentPackageStatus
+      )
+    );
     await prepareSourceComponents(manager, () => undefined, undefined, undefined, true);
-    expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual([...sourceComponentIds, "chatterbox-cuda"]);
+    expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual([...sourceComponentIds, ...sourceCudaComponentIds]);
   });
   it("installs all CPU capabilities sequentially in dependency order, excluding CUDA", async () => {
     const { manager, spies } = fixture();
@@ -60,15 +65,20 @@ describe("source bootstrap", () => {
 
   it("adds only the GPU extension when CPU packages are already healthy", async () => {
     const { manager, spies, statuses } = fixture([...sourceComponentIds]);
-    statuses.push({
-      id: "chatterbox-cuda",
-      displayName: "CUDA",
-      installed: false,
-      version: "1"
-    } as ComponentPackageStatus);
+    statuses.push(
+      ...sourceCudaComponentIds.map(
+        (id) =>
+          ({
+            id,
+            displayName: "CUDA",
+            installed: false,
+            version: "1"
+          }) as ComponentPackageStatus
+      )
+    );
     const messages: string[] = [];
     await prepareSourceComponents(manager, (value) => messages.push(value), undefined, undefined, true);
-    expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual(["chatterbox-cuda"]);
+    expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual([...sourceCudaComponentIds]);
     expect(messages[0]).toContain("安装能力包不代表显卡与驱动已通过实际生成验证");
     expect(spies.resolveInstalledPython).toHaveBeenCalledWith("chatterbox");
   });

@@ -24,9 +24,11 @@
       <div class="mode-detail" :class="{ unavailable: !engineAvailable(mode) }">
         <strong>{{ activeOption?.label }} · {{ activeOption?.engine }}</strong>
         <p>{{ activeHint }}</p>
-        <RouterLink v-if="!engineAvailable(mode)" to="/settings?component=video-ai-cuda">前往能力管理</RouterLink>
+        <RouterLink v-if="!checking && !engineAvailable(mode)" to="/settings?component=video-ai-cuda"
+          >前往能力管理</RouterLink
+        >
       </div>
-      <div v-if="unavailableOptions.length" class="availability-note">
+      <div v-if="!checking && unavailableOptions.length" class="availability-note">
         <span>{{ unavailableOptions.join("；") }}</span>
         <RouterLink to="/settings?component=video-ai-cuda">查看视频能力更新</RouterLink>
       </div>
@@ -40,7 +42,9 @@
         </div>
       </div>
       <div class="region-actions">
-        <n-button :disabled="!hasFile || busy" :loading="detecting" @click="$emit('detect')">自动检测字幕</n-button>
+        <n-button :disabled="!hasFile || busy || checking" :loading="detecting" @click="$emit('detect')"
+          >自动检测字幕</n-button
+        >
         <n-button
           :disabled="!hasFile || busy"
           :type="manualMode ? 'primary' : 'default'"
@@ -128,6 +132,7 @@ const props = defineProps<{
   outputUrl?: string;
   canSubmit: boolean;
   canCancel: boolean;
+  checking?: boolean;
 }>();
 
 defineEmits<{
@@ -141,6 +146,7 @@ defineEmits<{
 
 const activeOption = computed(() => props.modeOptions.find((option) => option.value === props.mode));
 const activeHint = computed(() => {
+  if (props.checking) return "处理服务正在准备，将自动更新状态。可先上传视频，服务就绪后即可检测和处理。";
   const reason = !engineAvailable(props.mode) ? props.unavailableReasons[props.mode] : "";
   return `${activeOption.value?.hint || ""}${reason ? ` 当前不可用：${reason}` : ""}`;
 });

@@ -37,72 +37,95 @@ import { backupModules } from "@toolbox/shared/system";
 const now = "2026-10-01T00:00:00.000Z",
   expires = "2030-01-01T00:00:00.000Z";
 
-it("backs up video repair output independently and rewrites conflicting IDs and portable paths", async () => {
-  const source = await fixture(),
-    target = await fixture(),
-    id = "video_task123";
-  const seed = async (context: BackupContext, content: string) => {
-    const db = new ToolboxDatabase(context.config.databasePath);
-    const outputPath = await putFile(context, `video-ai/outputs/${id}.mp4`, content);
-    const payload = {
-      id,
-      mode: "delogo",
-      status: "completed",
-      progress: 100,
-      queuePosition: null,
-      inputName: "字幕.mp4",
-      inputBytes: 4,
-      inputPath: path.join(context.config.videoAiInputsDir, id, "input.bin"),
-      outputPath,
-      outputBytes: content.length,
-      outputWidth: 1280,
-      outputHeight: 720,
-      outputDurationMs: 1000,
-      progressPath: path.join(context.config.videoAiTasksDir, id, "progress.json"),
-      cancelFlagPath: path.join(context.config.videoAiTasksDir, id, "cancel.flag"),
-      segments: [],
-      warnings: [],
-      createdAt: now,
-      updatedAt: now,
-      expiresAt: null
+it.each([false, true])(
+  "backs up video repair data and rewrites conflicting IDs (retained original=%s)",
+  async (retained) => {
+    const source = await fixture(),
+      target = await fixture(),
+      id = "video_task123";
+    const seed = async (context: BackupContext, content: string) => {
+      const db = new ToolboxDatabase(context.config.databasePath);
+      const outputPath = await putFile(context, `video-ai/outputs/${id}.mp4`, content);
+      if (retained) await putFile(context, `video-ai/inputs/${id}/input.bin`, "input-source");
+      const payload = {
+        id,
+        mode: "delogo",
+        status: "completed",
+        progress: 100,
+        queuePosition: null,
+        inputName: "字幕.mp4",
+        inputBytes: retained ? 12 : 4,
+        inputRetained: retained,
+        manualRanges: [{ start: 0.2, end: 0.8, rects: [{ x: 0, y: 0.8, width: 1, height: 0.1 }] }],
+        inputMetadata: { width: 1280, height: 720, fps: 25, frameCount: 25, durationMs: 1000 },
+        inputPath: path.join(context.config.videoAiInputsDir, id, "input.bin"),
+        outputPath,
+        outputBytes: content.length,
+        outputWidth: 1280,
+        outputHeight: 720,
+        outputDurationMs: 1000,
+        progressPath: path.join(context.config.videoAiTasksDir, id, "progress.json"),
+        cancelFlagPath: path.join(context.config.videoAiTasksDir, id, "cancel.flag"),
+        segments: [],
+        warnings: [],
+        createdAt: now,
+        updatedAt: now,
+        expiresAt: null
+      };
+      putEntity(db, "video-ai-task", payload);
+      putEntity(db, "task", {
+        id,
+        toolId: "video-ai",
+        status: "completed",
+        progress: 100,
+        createdAt: now,
+        updatedAt: now,
+        outputPath
+      });
+      db.close();
     };
-    putEntity(db, "video-ai-task", payload);
-    putEntity(db, "task", {
-      id,
-      toolId: "video-ai",
-      status: "completed",
-      progress: 100,
-      createdAt: now,
-      updatedAt: now,
-      outputPath
-    });
-    db.close();
-  };
-  await seed(source.context, "source-output");
-  await seed(target.context, "target-output");
-  const bundle = await snapshot(source.context, { modules: ["video-ai"] }, path.join(source.root, "video-snapshot"));
-  expect(bundle.modules[0].files.map((f) => f.path)).toEqual([`video-ai/outputs/${id}.mp4`]);
-  const bad = structuredClone(bundle.modules[0]);
-  (bad.records.find((r) => r.kind === "video-ai-task")!.payload as Record<string, unknown>).inputPath =
-    "@storage/other/secret";
-  expect(() => validateModuleData(bad)).toThrow("受管路径");
-  const file = await backupFile(source, ["video-ai"]);
-  await restoreFile(target, file, ["video-ai"], "merge");
-  await restoreFile(target, file, ["video-ai"], "merge");
-  const db = new ToolboxDatabase(target.context.config.databasePath);
-  try {
-    const rows = db.list("video-ai-task");
-    expect(rows).toHaveLength(2);
-    const imported = rows.find((r) => r.id !== id)!;
-    const p = imported.payload as Record<string, string>;
-    expect(p.inputPath).toBe(path.join(target.context.config.videoAiInputsDir, imported.id, "input.bin"));
-    expect(p.progressPath).toBe(path.join(target.context.config.videoAiTasksDir, imported.id, "progress.json"));
-    expect(await fs.readFile(p.outputPath, "utf8")).toBe("source-output");
-    expect(db.get("task", imported.id)?.payload).toMatchObject({ toolId: "video-ai", outputPath: p.outputPath });
-  } finally {
-    db.close();
+    await seed(source.context, "source-output");
+    await seed(target.context, "target-output");
+    const bundle = await snapshot(source.context, { modules: ["video-ai"] }, path.join(source.root, "video-snapshot"));
+    expect(bundle.modules[0].files.map((f) => f.path).sort()).toEqual(
+      (retained
+        ? [`video-ai/inputs/${id}/input.bin`, `video-ai/outputs/${id}.mp4`]
+        : [`video-ai/outputs/${id}.mp4`]
+      ).sort()
+    );
+    if (retained) {
+      const missing = structuredClone(bundle.modules[0]);
+      missing.files = missing.files.filter((file) => !file.path.includes("/inputs/"));
+      expect(() => validateModuleData(missing)).toThrow();
+    }
+    const bad = structuredClone(bundle.modules[0]);
+    (bad.records.find((r) => r.kind === "video-ai-task")!.payload as Record<string, unknown>).inputPath =
+      "@storage/other/secret";
+    expect(() => validateModuleData(bad)).toThrow("受管路径");
+    const file = await backupFile(source, ["video-ai"]);
+    await restoreFile(target, file, ["video-ai"], "merge");
+    await restoreFile(target, file, ["video-ai"], "merge");
+    const db = new ToolboxDatabase(target.context.config.databasePath);
+    try {
+      const rows = db.list("video-ai-task");
+      expect(rows).toHaveLength(2);
+      const imported = rows.find((r) => r.id !== id)!;
+      const p = imported.payload as Record<string, string>;
+      expect(p.inputPath).toBe(path.join(target.context.config.videoAiInputsDir, imported.id, "input.bin"));
+      expect(p.progressPath).toBe(path.join(target.context.config.videoAiTasksDir, imported.id, "progress.json"));
+      expect(await fs.readFile(p.outputPath, "utf8")).toBe("source-output");
+      if (retained) expect(await fs.readFile(p.inputPath, "utf8")).toBe("input-source");
+      expect(imported.payload).toMatchObject({
+        inputRetained: retained,
+        manualRanges: [{ start: 0.2, end: 0.8 }],
+        inputMetadata: { fps: 25 }
+      });
+      expect(db.get("task", imported.id)?.payload).toMatchObject({ toolId: "video-ai", outputPath: p.outputPath });
+    } finally {
+      db.close();
+    }
   }
-});
+);
 async function putFile(context: BackupContext, relative: string, content: string) {
   const target = path.join(context.config.storageRoot, relative);
   await fs.mkdir(path.dirname(target), { recursive: true });

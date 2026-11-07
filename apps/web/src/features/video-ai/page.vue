@@ -18,18 +18,23 @@
         </template>
       </ToolPageHeader>
 
-      <n-alert v-if="capabilityError" type="warning" class="capability-alert">
+      <n-alert v-if="capabilityError" :type="healthRecovering ? 'info' : 'warning'" class="capability-alert">
         {{ capabilityError }}
-        <RouterLink to="/settings?component=video-ai">前往能力管理</RouterLink>
+        <RouterLink v-if="!healthRecovering" to="/settings?component=video-ai">前往能力管理</RouterLink>
       </n-alert>
 
       <section class="workspace-panel editor-panel">
         <div class="file-toolbar">
           <n-button type="primary" size="large" :disabled="busy" @click="fileInput?.click()">上传视频</n-button>
           <div class="file-copy">
-            <strong>{{ file ? file.name : "选择需要去除硬字幕的视频" }}</strong>
-            <span v-if="file">
-              {{ formatBytes(file.size)
+            <strong>{{ inputName || "选择需要去除硬字幕的视频" }}</strong>
+            <span v-if="hasInput">
+              {{
+                formatBytes(
+                  file?.size ??
+                    (editingSource === "original" ? editingTask?.inputBytes : editingTask?.output?.bytes) ??
+                    0
+                )
               }}<template v-if="mediaMetadata">
                 · {{ mediaMetadata.width }}×{{ mediaMetadata.height }} ·
                 {{ formatDuration(mediaMetadata.duration) }}</template
@@ -47,6 +52,12 @@
           />
         </div>
 
+        <div v-if="editingTask" class="inspection-banner">
+          正在编辑{{ editingSource === "original" ? "留档原视频" : "处理后的视频" }}：{{
+            editingTask.inputName
+          }}。已恢复编辑信息，可调整或清除后重新框选；处理后新增记录，原视频和旧结果均保留。
+        </div>
+
         <div v-if="inspectedTask" class="inspection-banner">
           <span>正在查看历史任务：{{ inspectedTask.inputName }}</span>
           <n-button v-if="activeTaskId" text @click="returnToActiveTask">返回当前任务</n-button>
@@ -54,16 +65,18 @@
 
         <div class="editor-grid">
           <VideoWorkspace
+            ref="workspace"
+            :key="previewUrl"
             :src="displayPreviewUrl"
             :muted="sourceKind === 'original'"
             :source-kind="sourceKind"
             :show-source-switch="showSourceSwitch"
             :manual-mode="manualMode && !inspectedTask"
-            :manual-area="draftRect"
+            :manual-area="inspectedTask ? inspectedTask.manualArea : draftRect"
             :segments="displaySegments"
-            :manual-ranges="manualRanges"
-            :duration="mediaMetadata?.duration || 0"
-            :editable="!!file && !busy && !inspectedTask && sourceKind === 'original'"
+            :manual-ranges="inspectedTask ? inspectedTask.manualRanges || [] : manualRanges"
+            :duration="displayDuration"
+            :editable="hasInput && !busy && !inspectedTask && sourceKind === 'original'"
             :width="displayWidth"
             :height="displayHeight"
             @update:manual-ranges="manualRanges = $event"
@@ -74,10 +87,11 @@
 
           <VideoProcessingPanel
             v-model:mode="mode"
+            :checking="healthRecovering || (healthLoading && !health)"
             :mode-options="modeOptions"
             :available-modes="availableModes"
             :unavailable-reasons="unavailableReasons"
-            :has-file="!!file"
+            :has-file="hasInput && !inspectedTask"
             :busy="busy"
             :submitting="submitting"
             :detecting="detecting"
@@ -105,11 +119,14 @@
         :items="history"
         :total="historyTotal"
         :page="historyPage"
-        :selected-id="displayTask?.id"
+        :selected-id="displayTask?.id || editingTask?.id"
         :loading="historyLoading"
         :output-url="outputUrlOf"
+        :editing-disabled="busy"
+        :editing-id="editingTask?.id"
         @refresh="refreshHistory"
         @view="openTask"
+        @edit="editTask"
         @remove="removeItem"
         @update:page="historyPage = $event"
       />
@@ -121,10 +138,10 @@
 /**
  * 中文模块说明：视频去字幕页面，集中协调文件、任务和历史状态，展示职责由子组件承担。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton } from "naive-ui";
 import { RouterLink } from "vue-router";
-import type { VideoAiHealth, VideoAiMode, VideoAiRect, VideoAiSegment, VideoAiTask } from "@toolbox/shared";
+import type { VideoAiMode, VideoAiRect, VideoAiSegment, VideoAiTask } from "@toolbox/shared";
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
@@ -134,6 +151,8 @@ import { videoAiApi } from "./api";
 import VideoWorkspace from "./VideoWorkspace.vue";
 import VideoProcessingPanel, { type VideoModeOption } from "./VideoProcessingPanel.vue";
 import VideoHistoryPanel from "./VideoHistoryPanel.vue";
+import { segmentsToTimelineRanges } from "./timeline";
+import { useVideoHealth } from "./useVideoHealth";
 
 const modeOptions: VideoModeOption[] = [
   {
@@ -167,7 +186,13 @@ const modeOptions: VideoModeOption[] = [
 ];
 
 const fileInput = ref<HTMLInputElement>();
+const workspace = ref<InstanceType<typeof VideoWorkspace>>();
 const file = ref<File>();
+const editingTask = ref<VideoAiTask>();
+const editingSource = ref<"original" | "output">("output");
+const editingLoading = ref(false);
+const hasInput = computed(() => !!file.value || !!editingTask.value);
+const inputName = computed(() => file.value?.name || editingTask.value?.inputName);
 const previewUrl = ref<string>();
 const mediaMetadata = ref<{ width: number; height: number; duration: number }>();
 const sourceKind = ref<"original" | "result">("original");
@@ -180,9 +205,7 @@ const draftRect = ref<VideoAiRect>();
 const manualRanges = ref<import("@toolbox/shared").VideoAiTimedRegion[]>([]);
 const detectionNotice = ref("");
 const actionError = ref("");
-const capabilityError = ref("");
-const health = ref<VideoAiHealth>();
-const healthLoading = ref(false);
+const { health, healthLoading, healthRecovering, capabilityError, refreshHealth } = useVideoHealth();
 const activeTaskId = ref<string>();
 const activeTask = ref<VideoAiTask>();
 const inspectedTask = ref<VideoAiTask>();
@@ -192,12 +215,14 @@ const historyTotal = ref(0);
 const historyLoading = ref(false);
 const scope = useRequestScope();
 const confirm = useConfirmDialog();
+let editorRequest = 0;
 
 const { task: liveTask } = useTaskEvents(activeTaskId);
 const currentLiveTask = computed(() => (liveTask.value?.id === activeTaskId.value ? liveTask.value : undefined));
 const busy = computed(
   () =>
     submitting.value ||
+    editingLoading.value ||
     detecting.value ||
     activeTask.value?.status === "pending" ||
     activeTask.value?.status === "running"
@@ -206,10 +231,15 @@ const displayTask = computed(() => inspectedTask.value ?? activeTask.value);
 const displayTaskId = computed(() => displayTask.value?.id);
 const displayOutputUrl = computed(() => (displayTaskId.value ? videoAiApi.outputUrl(displayTaskId.value) : ""));
 const showSourceSwitch = computed(
-  () => !!previewUrl.value && !!displayTask.value?.output && displayTask.value.status === "completed"
+  () =>
+    !!displayTask.value?.output &&
+    displayTask.value.status === "completed" &&
+    (inspectedTask.value ? !!inspectedTask.value.inputRetained : !!previewUrl.value)
 );
 const displayPreviewUrl = computed(() => {
   if (sourceKind.value === "result" && displayTask.value?.output) return `${displayOutputUrl.value}?preview=1`;
+  if (sourceKind.value === "original" && inspectedTask.value?.inputRetained)
+    return `${videoAiApi.inputUrl(inspectedTask.value.id)}?preview=1`;
   if (previewUrl.value && !inspectedTask.value) return previewUrl.value;
   if (displayTask.value?.output) return `${displayOutputUrl.value}?preview=1`;
   return undefined;
@@ -219,10 +249,21 @@ const displaySegments = computed(() => {
   return inspectedTask.value ? inspectedTask.value.segments : detectedSegments.value;
 });
 const displayWidth = computed(() =>
-  sourceKind.value === "result" ? displayTask.value?.output?.width : mediaMetadata.value?.width
+  sourceKind.value === "result"
+    ? displayTask.value?.output?.width
+    : (inspectedTask.value?.inputMetadata?.width ?? mediaMetadata.value?.width)
 );
 const displayHeight = computed(() =>
-  sourceKind.value === "result" ? displayTask.value?.output?.height : mediaMetadata.value?.height
+  sourceKind.value === "result"
+    ? displayTask.value?.output?.height
+    : (inspectedTask.value?.inputMetadata?.height ?? mediaMetadata.value?.height)
+);
+const displayDuration = computed(() =>
+  inspectedTask.value
+    ? (sourceKind.value === "original"
+        ? (inspectedTask.value.inputMetadata?.durationMs ?? inspectedTask.value.output?.durationMs ?? 0)
+        : (inspectedTask.value.output?.durationMs ?? 0)) / 1000
+    : mediaMetadata.value?.duration || 0
 );
 const regionCount = computed(() =>
   manualRanges.value.length
@@ -245,11 +286,12 @@ const unavailableReasons = computed(
 );
 const canSubmit = computed(
   () =>
-    !!file.value &&
+    hasInput.value &&
     !busy.value &&
     !manualMode.value &&
     engineAvailable(mode.value) &&
     !inspectedTask.value &&
+    regionCount.value <= 20 &&
     manualRanges.value.every((range) => range.end > range.start && range.rects.length > 0)
 );
 const canCancelActiveTask = computed(
@@ -289,12 +331,25 @@ const phaseLabel = computed(() => {
   return labels[phase || ""] || (task ? statusLabel(task.status) : "等待开始");
 });
 const healthState = computed(() =>
-  capabilityError.value ? "warning" : health.value?.available ? "available" : "unknown"
+  healthRecovering.value
+    ? "starting"
+    : capabilityError.value
+      ? "warning"
+      : health.value?.available
+        ? "available"
+        : "unknown"
 );
 const healthTitle = computed(() =>
-  health.value?.available ? "处理服务可用" : capabilityError.value ? "能力需要处理" : "正在检查能力"
+  health.value?.available
+    ? "处理服务可用"
+    : healthRecovering.value
+      ? "正在准备处理服务"
+      : capabilityError.value
+        ? "能力需要处理"
+        : "正在检查能力"
 );
 const healthSummary = computed(() => {
+  if (healthRecovering.value) return "就绪后自动启用，无需刷新";
   if (!health.value) return "读取本机引擎状态";
   const count = health.value.engines.filter((engine) => engine.available).length;
   return `${count}/${modeOptions.length} 个修复档位可用`;
@@ -305,7 +360,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+  if (previewUrl.value?.startsWith("blob:")) URL.revokeObjectURL(previewUrl.value);
 });
 
 watch(
@@ -317,22 +372,6 @@ watch(
 );
 
 watch(historyPage, () => void refreshHistory());
-
-async function refreshHealth() {
-  healthLoading.value = true;
-  capabilityError.value = "";
-  try {
-    const value = await videoAiApi.health(scope.signal);
-    if (scope.aborted) return;
-    health.value = value;
-    if (!value.available) capabilityError.value = "视频去字幕能力尚未安装或未启用。";
-  } catch (caught) {
-    if (scope.aborted) return;
-    capabilityError.value = caught instanceof Error ? caught.message : "无法读取视频处理能力状态";
-  } finally {
-    healthLoading.value = false;
-  }
-}
 
 function engineAvailable(value: VideoAiMode) {
   return !!health.value?.engines.find((engine) => engine.provider === value)?.available;
@@ -354,28 +393,48 @@ function onFileChange(event: Event) {
 }
 
 function onMetadata(value: { width: number; height: number; duration: number }) {
-  if (sourceKind.value === "original") mediaMetadata.value = value;
+  if (sourceKind.value === "original" && !inspectedTask.value) mediaMetadata.value = value;
 }
 
 async function detectSubtitle() {
-  if (!file.value) return;
+  if (!hasInput.value || busy.value || inspectedTask.value) return;
   detecting.value = true;
   actionError.value = "";
   detectionNotice.value = "";
+  const request = editorRequest;
   try {
-    const detection = await videoAiApi.detect(file.value, scope.signal);
-    if (scope.aborted) return;
-    detectedSegments.value = detection.segments;
-    manualRanges.value = [];
+    const detection = await videoAiApi.detect(
+      file.value ?? { sourceTaskId: editingTask.value!.id, sourceVersion: editingSource.value },
+      scope.signal
+    );
+    if (scope.aborted || request !== editorRequest) return;
+    const duration = mediaMetadata.value?.duration || (detection.fps > 0 ? detection.frameCount / detection.fps : 0);
+    const ranges = segmentsToTimelineRanges(detection.segments, detection.fps, duration);
+    if (!mediaMetadata.value && duration > 0)
+      mediaMetadata.value = { width: detection.width, height: detection.height, duration };
+    detectedSegments.value = [];
+    manualRanges.value = ranges;
     draftRect.value = undefined;
     manualMode.value = false;
-    detectionNotice.value = detection.warnings.length
-      ? detection.warnings.join("；")
-      : detection.segments.length
-        ? `检测到 ${detection.segments.length} 处字幕区域（共 ${detection.frameCount} 帧，${detection.width}×${detection.height}）`
-        : "未检测到字幕区域，可以改用手动框选";
+    sourceKind.value = "original";
+    detectionNotice.value = [
+      detection.segments.length
+        ? `检测到 ${detection.segments.length} 处字幕区域，已创建 ${ranges.length} 个区间；可拖动时间线调整区间，选中框后移动或缩放。`
+        : "未检测到字幕区域，可以改用手动框选",
+      ...detection.warnings,
+      detection.segments.length > 20 ? "当前最多提交 20 处框选，识别结果已全部保留，请删除多余框选后再处理。" : ""
+    ]
+      .filter(Boolean)
+      .join("；");
     if (!detection.segments.length) manualMode.value = true;
+    else {
+      // Let the preview's source watcher load the original before revealing a range.
+      await nextTick();
+      await nextTick();
+      if (!scope.aborted && request === editorRequest) workspace.value?.revealRange(0);
+    }
   } catch (caught) {
+    if (scope.aborted || request !== editorRequest) return;
     actionError.value = caught instanceof Error ? caught.message : "字幕区域检测失败";
   } finally {
     detecting.value = false;
@@ -395,7 +454,7 @@ function clearRegions() {
 }
 
 async function submit() {
-  if (!file.value || !canSubmit.value) return;
+  if (!canSubmit.value) return;
   submitting.value = true;
   actionError.value = "";
   inspectedTask.value = undefined;
@@ -403,6 +462,8 @@ async function submit() {
     const created = await videoAiApi.create(
       {
         file: file.value,
+        sourceTaskId: editingTask.value?.id,
+        sourceVersion: editingTask.value ? editingSource.value : undefined,
         mode: mode.value,
         manualRanges: manualRanges.value.length ? manualRanges.value : undefined,
         manualArea: manualRanges.value.length ? undefined : draftRect.value,
@@ -468,7 +529,12 @@ async function refreshHistory() {
 }
 
 async function removeItem(id: string) {
-  if (!(await confirm("删除此处理记录和输出视频？原视频不受影响。", { title: "删除视频处理结果", danger: true })))
+  if (
+    !(await confirm("删除此处理记录、留档原视频、成品和编辑信息？您电脑上的原始文件及其他记录不受影响。", {
+      title: "删除视频留档",
+      danger: true
+    }))
+  )
     return;
   try {
     await videoAiApi.remove(id);
@@ -484,6 +550,7 @@ async function removeItem(id: string) {
 }
 
 async function openTask(id: string) {
+  const request = ++editorRequest;
   actionError.value = "";
   if (id === activeTaskId.value) {
     inspectedTask.value = undefined;
@@ -493,15 +560,75 @@ async function openTask(id: string) {
   }
   try {
     const task = await videoAiApi.get(id, scope.signal);
-    if (scope.aborted) return;
+    if (scope.aborted || request !== editorRequest) return;
     inspectedTask.value = task;
     sourceKind.value = task.output ? "result" : "original";
   } catch (caught) {
+    if (scope.aborted || request !== editorRequest) return;
     actionError.value = caught instanceof Error ? caught.message : "读取任务状态失败";
   }
 }
 
+async function editTask(id: string, version: "original" | "output" = "output") {
+  if (busy.value) return;
+  const request = ++editorRequest;
+  editingLoading.value = true;
+  actionError.value = "";
+  try {
+    const task = await videoAiApi.get(id, scope.signal);
+    if (scope.aborted || request !== editorRequest) return;
+    if (task.status !== "completed" || !task.output) throw new Error("该记录没有可重新编辑的已完成视频");
+    if (version === "original" && !task.inputRetained)
+      throw new Error("此记录的原视频已被旧版本清理，请编辑成品或重新上传原视频");
+    resetSelection();
+    file.value = undefined;
+    editingTask.value = task;
+    editingSource.value = version;
+    previewUrl.value = `${version === "original" ? videoAiApi.inputUrl(task.id) : videoAiApi.outputUrl(task.id)}?preview=1`;
+    mediaMetadata.value = {
+      width: version === "original" ? (task.inputMetadata?.width ?? task.output.width) : task.output.width,
+      height: version === "original" ? (task.inputMetadata?.height ?? task.output.height) : task.output.height,
+      duration:
+        (version === "original"
+          ? (task.inputMetadata?.durationMs ?? task.output.durationMs ?? 0)
+          : (task.output.durationMs ?? 0)) / 1000
+    };
+    mode.value = engineAvailable(task.mode) ? task.mode : (availableModes.value[0] ?? "delogo");
+    manualRanges.value =
+      task.manualRanges?.map((range) => ({ ...range, rects: range.rects.map((rect) => ({ ...rect })) })) ?? [];
+    if (!manualRanges.value.length && task.manualArea) {
+      manualRanges.value = [
+        {
+          start: 0,
+          end: (task.inputMetadata?.durationMs ?? task.output.durationMs ?? 0) / 1000,
+          rects: [{ ...task.manualArea }]
+        }
+      ];
+      if (!manualRanges.value[0].end) {
+        manualRanges.value = [];
+        draftRect.value = { ...task.manualArea };
+      }
+    }
+    if (!manualRanges.value.length && !task.manualArea) {
+      if (task.inputMetadata?.fps && task.segments.length) {
+        manualRanges.value = segmentsToTimelineRanges(
+          task.segments,
+          task.inputMetadata.fps,
+          task.inputMetadata.durationMs / 1000
+        );
+      } else detectedSegments.value = task.segments.map((segment) => ({ ...segment, rect: { ...segment.rect } }));
+    }
+    sourceKind.value = "original";
+  } catch (caught) {
+    if (!scope.aborted && request === editorRequest)
+      actionError.value = caught instanceof Error ? caught.message : "读取编辑视频失败";
+  } finally {
+    editingLoading.value = false;
+  }
+}
+
 function returnToActiveTask() {
+  editorRequest++;
   inspectedTask.value = undefined;
   sourceKind.value = activeTask.value?.output ? "result" : "original";
 }
@@ -511,8 +638,10 @@ function outputUrlOf(id: string) {
 }
 
 function resetSelection() {
+  editorRequest++;
+  editingTask.value = undefined;
   manualRanges.value = [];
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+  if (previewUrl.value?.startsWith("blob:")) URL.revokeObjectURL(previewUrl.value);
   previewUrl.value = undefined;
   mediaMetadata.value = undefined;
   detectedSegments.value = [];
@@ -593,6 +722,9 @@ function formatBytes(bytes: number) {
 }
 .health-card.warning .health-dot {
   background: var(--color-warning);
+}
+.health-card.starting .health-dot {
+  background: var(--color-primary-600);
 }
 .capability-alert {
   margin: 0;

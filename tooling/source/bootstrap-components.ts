@@ -5,9 +5,8 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { getSourceConfig } from "../../apps/api/src/runtime/source-config";
 import { prepareSourceComponents } from "../../apps/api/src/runtime/source-bootstrap";
-import { ComponentManager } from "../../apps/api/src/modules/components/component-manager";
+import { createSourceComponentManager } from "../../apps/api/src/runtime/source-component-manager";
 import { bundledComponentCatalogForRuntime } from "../../apps/api/src/modules/components/catalog";
-import { createDesktopComponentSelfTest } from "../../apps/api/src/modules/components/desktop-component-self-test";
 import { createSourceOfflineInstaller } from "../../apps/api/src/runtime/source-offline-resources";
 
 if (process.argv.slice(2).some((arg) => arg !== "--with-cuda") || process.argv.length > 3)
@@ -29,10 +28,9 @@ for (const port of [config.port, frontendPort]) {
   });
 }
 const catalog = bundledComponentCatalogForRuntime();
-const manager = new ComponentManager({
+const manager = createSourceComponentManager({
   root: path.join(config.runtime.runtimeRoot, "packages"),
   catalog,
-  selfTest: createDesktopComponentSelfTest(),
   downloadArchive: async () => {
     throw new Error("源码启动仅使用本地能力包，不自动联网下载");
   }

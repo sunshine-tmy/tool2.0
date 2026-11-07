@@ -13,12 +13,17 @@ const mocks = vi.hoisted(() => ({
   confirm: vi.fn(),
   live: undefined as unknown
 }));
-vi.mock("./api", () => ({ videoAiApi: { ...mocks, outputUrl: (id: string) => `/output/${id}` } }));
+vi.mock("./api", () => ({
+  videoAiApi: { ...mocks, outputUrl: (id: string) => `/output/${id}`, inputUrl: (id: string) => `/input/${id}` }
+}));
 vi.mock("../../shared/composables/useTaskEvents", () => ({ useTaskEvents: () => ({ task: mocks.live }) }));
 vi.mock("../../shared/composables/useConfirmDialog", () => ({ useConfirmDialog: () => mocks.confirm }));
 import Page from "./page.vue";
-import { NPagination, NSlider } from "naive-ui";
+import { NPagination } from "naive-ui";
+import VideoTimeline from "./VideoTimeline.vue";
 import VideoWorkspace from "./VideoWorkspace.vue";
+import SubtitleRegion from "./SubtitleRegion.vue";
+import VideoHistoryThumbnail from "./VideoHistoryThumbnail.vue";
 const Button = defineComponent({
   props: { disabled: Boolean, loading: Boolean },
   emits: ["click"],
@@ -95,6 +100,27 @@ async function select(wrapper: ReturnType<typeof mount>) {
   await flushPromises();
 }
 const button = (w: ReturnType<typeof mount>, text: string) => w.findAll("button").find((b) => b.text() === text)!;
+it("automatically enables video processing when the desktop worker becomes ready after opening the page", async () => {
+  vi.useFakeTimers();
+  try {
+    mocks.health.mockRejectedValueOnce(Object.assign(new Error("正在后台准备"), { code: "WORKER_PREPARING" }));
+    const w = await setup();
+    await select(w);
+    expect(w.text()).toContain("无需手动刷新");
+    expect(w.find(".availability-note").exists()).toBe(false);
+    expect(button(w, "自动检测字幕").attributes("disabled")).toBeDefined();
+    expect(button(w, "开始处理").attributes("disabled")).toBeDefined();
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushPromises();
+    expect(mocks.health).toHaveBeenCalledTimes(2);
+    expect(button(w, "自动检测字幕").attributes("disabled")).toBeUndefined();
+    expect(button(w, "开始处理").attributes("disabled")).toBeUndefined();
+    expect(w.text()).not.toContain("无需手动刷新");
+    w.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("explains each unavailable sequence tier and links to the GPU capability update without claiming an installation exists", async () => {
   const w = await setup();
   expect(w.text()).toContain("均衡不可用：引擎未安装");
@@ -182,14 +208,33 @@ it("keeps multiple boxes per time range and submits seconds without assuming a f
   await draw(20);
   await draw(140);
   expect(w.findAll(".subtitle-rect.saved")).toHaveLength(2);
-  w.findComponent(NSlider).vm.$emit("update:value", [2, 5]);
+  const timeline = () => w.findComponent(VideoTimeline);
+  timeline().vm.$emit("seek", 7);
+  await flushPromises();
+  timeline().vm.$emit("select", 0);
+  await flushPromises();
+  expect((w.get("video").element as HTMLVideoElement).currentTime).toBe(7);
+  timeline().vm.$emit(
+    "update:ranges",
+    timeline()
+      .props("ranges")
+      .map((range) => ({ ...range, start: 2, end: 5 }))
+  );
   await flushPromises();
   await button(w, "添加区间").trigger("click");
   await flushPromises();
-  w.findComponent(NSlider).vm.$emit("update:value", [6, 9]);
+  expect(timeline().props("ranges")[1]).toEqual({ start: 7, end: 10, rects: [] });
+  timeline().vm.$emit(
+    "update:ranges",
+    timeline()
+      .props("ranges")
+      .map((range, index) => (index === 1 ? { ...range, start: 6, end: 9 } : range))
+  );
   await flushPromises();
   await draw(100);
   await button(w, "完成框选").trigger("click");
+  timeline().vm.$emit("seek", 7);
+  await flushPromises();
   expect(w.findAll(".subtitle-rect.saved")).toHaveLength(1);
   await button(w, "开始处理").trigger("click");
   await flushPromises();
@@ -212,6 +257,52 @@ it("keeps multiple boxes per time range and submits seconds without assuming a f
     expect.anything()
   );
 });
+it("starts the first manual interval at the playhead and refuses an empty interval at the video end", async () => {
+  const w = await setup();
+  await select(w);
+  w.findComponent(VideoWorkspace).vm.$emit("metadata", { width: 400, height: 200, duration: 10 });
+  await flushPromises();
+  const timeline = w.findComponent(VideoTimeline);
+  timeline.vm.$emit("seek", 2.5);
+  await flushPromises();
+  await button(w, "添加区间").trigger("click");
+  await flushPromises();
+  expect(timeline.props("ranges")).toEqual([{ start: 2.5, end: 10, rects: [] }]);
+  timeline.vm.$emit("seek", 10);
+  await flushPromises();
+  expect(button(w, "添加区间").attributes("disabled")).toBeDefined();
+  await button(w, "添加区间").trigger("click");
+  expect(timeline.props("ranges")).toHaveLength(1);
+  expect(w.text()).toContain("指针已到视频结尾");
+});
+it("edits and deletes the selected box without changing other boxes or intervals", async () => {
+  const w = await setup();
+  await select(w);
+  const workspace = w.findComponent(VideoWorkspace);
+  workspace.vm.$emit("metadata", { width: 400, height: 200, duration: 10 });
+  const first = { x: 0.1, y: 0.1, width: 0.3, height: 0.1 };
+  const second = { ...first, y: 0.7 };
+  workspace.vm.$emit("update:manual-ranges", [
+    { start: 0, end: 5, rects: [first, second] },
+    { start: 6, end: 9, rects: [first] }
+  ]);
+  await flushPromises();
+  expect(w.find(".range-tabs").exists()).toBe(false);
+  expect(button(w, "添加区间").exists()).toBe(true);
+  const region = w.findAllComponents(SubtitleRegion)[0];
+  region.vm.$emit("select");
+  region.vm.$emit("update", { ...first, x: 0.2 });
+  await flushPromises();
+  expect(w.findComponent(VideoTimeline).props("ranges")[0].rects[0].x).toBe(0.2);
+  await region.trigger("keydown", { key: "Backspace" });
+  await flushPromises();
+  expect(w.findComponent(VideoTimeline).props("ranges")).toEqual([
+    { start: 0, end: 5, rects: [second] },
+    { start: 6, end: 9, rects: [first] }
+  ]);
+  await w.get('input[type="file"]').trigger("keydown", { key: "Delete" });
+  expect(w.findComponent(VideoTimeline).props("ranges")[0].rects).toHaveLength(1);
+});
 it("paginates history with totals and asks before permanent deletion", async () => {
   mocks.history.mockResolvedValue({ items: [task("completed")], total: 41 });
   const w = await setup();
@@ -228,9 +319,183 @@ it("paginates history with totals and asks before permanent deletion", async () 
   expect(mocks.remove).toHaveBeenCalledWith("video_task1");
 });
 
+it("shows a clickable first-frame preview only for completed history results", async () => {
+  const saved = task("completed");
+  mocks.history.mockResolvedValue({ items: [saved, { ...task("failed"), id: "failed_task" }], total: 2 });
+  mocks.get.mockResolvedValue(saved);
+  const w = await setup();
+  const thumbnails = w.findAllComponents(VideoHistoryThumbnail);
+  expect(thumbnails).toHaveLength(2);
+  expect(thumbnails[0].props("src")).toBe("/output/video_task1?preview=1");
+  expect(thumbnails[1].props("src")).toBeUndefined();
+  thumbnails[0].vm.$emit("view");
+  await flushPromises();
+  expect(mocks.get).toHaveBeenCalledWith(saved.id, expect.anything());
+});
+
+it("re-edits a saved result and restores its saved time ranges and boxes", async () => {
+  const saved = {
+    ...task("completed"),
+    segments: [{ rect: { x: 0.1, y: 0.1, width: 0.5, height: 0.1 }, startFrame: 0, endFrame: 9 }],
+    output: { ...task("completed").output!, durationMs: 1000 },
+    manualRanges: [{ start: 0, end: 1, rects: [{ x: 0.1, y: 0.1, width: 0.5, height: 0.1 }] }]
+  };
+  mocks.history.mockResolvedValue({ items: [saved], total: 1 });
+  mocks.get.mockResolvedValue(saved);
+  const w = await setup();
+  await button(w, "编辑成品").trigger("click");
+  await flushPromises();
+  const workspace = w.findComponent(VideoWorkspace);
+  expect(workspace.props()).toMatchObject({
+    src: "/output/video_task1?preview=1",
+    sourceKind: "original",
+    editable: true,
+    duration: 1,
+    manualRanges: saved.manualRanges,
+    segments: []
+  });
+  expect(w.text()).toContain("原视频和旧结果均保留");
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  const rect = { x: 0.1, y: 0.7, width: 0.5, height: 0.1 };
+  const ranges = [{ start: 0.2, end: 0.8, rects: [rect] }];
+  workspace.vm.$emit("update:manual-ranges", ranges);
+  await flushPromises();
+  await button(w, "开始处理").trigger("click");
+  await flushPromises();
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({ sourceTaskId: saved.id, file: undefined, manualRanges: ranges }),
+    expect.anything()
+  );
+  expect(button(w, "编辑成品").attributes("disabled")).toBeDefined();
+  expect(mocks.remove).not.toHaveBeenCalled();
+});
+
+it("edits the retained original, restores multi-box intervals and submits the selected source version", async () => {
+  const rect = { x: 0.1, y: 0.2, width: 0.5, height: 0.1 };
+  const ranges = [{ start: 0.2, end: 0.8, rects: [rect, { ...rect, y: 0.7 }] }];
+  const saved = {
+    ...task("completed"),
+    inputRetained: true,
+    manualRanges: ranges,
+    inputMetadata: { width: 64, height: 48, fps: 10, frameCount: 10, durationMs: 1000 },
+    output: { ...task("completed").output!, durationMs: 1000 }
+  };
+  mocks.history.mockResolvedValue({ items: [saved], total: 1 });
+  mocks.get.mockResolvedValue(saved);
+  const w = await setup();
+  await button(w, "查看").trigger("click");
+  await flushPromises();
+  expect(w.findComponent(VideoWorkspace).props("showSourceSwitch")).toBe(true);
+  w.findComponent(VideoWorkspace).vm.$emit("change-source", "original");
+  await flushPromises();
+  expect(w.findComponent(VideoWorkspace).props("src")).toBe("/input/video_task1?preview=1");
+  await button(w, "编辑原视频").trigger("click");
+  await flushPromises();
+  const workspace = w.findComponent(VideoWorkspace);
+  expect(workspace.props()).toMatchObject({
+    src: "/input/video_task1?preview=1",
+    manualRanges: ranges,
+    editable: true,
+    duration: 1
+  });
+  expect(w.text()).toContain("正在编辑留档原视频");
+  const changed = [{ ...ranges[0], start: 0.3, rects: [rect] }];
+  workspace.vm.$emit("update:manual-ranges", changed);
+  await flushPromises();
+  expect(saved.manualRanges).toEqual(ranges);
+  await button(w, "开始处理").trigger("click");
+  await flushPromises();
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({ sourceTaskId: saved.id, sourceVersion: "original", manualRanges: changed }),
+    expect.anything()
+  );
+});
+
+it("restores frame-based or whole-video boxes and disables originals unavailable in old records", async () => {
+  const rect = { x: 0.1, y: 0.2, width: 0.5, height: 0.1 };
+  const saved = {
+    ...task("completed"),
+    segments: [{ rect, startFrame: 2, endFrame: 7 }],
+    inputMetadata: { width: 64, height: 48, fps: 10, frameCount: 10, durationMs: 1000 },
+    output: { ...task("completed").output!, durationMs: 1000 }
+  };
+  mocks.history.mockResolvedValue({ items: [saved], total: 1 });
+  mocks.get.mockResolvedValue(saved);
+  const w = await setup();
+  expect(button(w, "编辑原视频").attributes("disabled")).toBeDefined();
+  await button(w, "编辑成品").trigger("click");
+  await flushPromises();
+  expect(w.findComponent(VideoWorkspace).props("manualRanges")).toEqual([{ start: 0.2, end: 0.8, rects: [rect] }]);
+  mocks.get.mockResolvedValue({ ...saved, manualArea: rect });
+  await button(w, "编辑成品").trigger("click");
+  await flushPromises();
+  expect(w.findComponent(VideoWorkspace).props("manualRanges")).toEqual([{ start: 0, end: 1, rects: [rect] }]);
+});
+
+it("detects a saved result and replaces the editing source when a new file is selected", async () => {
+  const saved = task("completed");
+  mocks.history.mockResolvedValue({ items: [saved], total: 1 });
+  mocks.get.mockResolvedValue(saved);
+  mocks.detect.mockResolvedValue({ segments: [], warnings: [], frameCount: 10, width: 64, height: 48 });
+  const w = await setup();
+  await button(w, "编辑成品").trigger("click");
+  await flushPromises();
+  await button(w, "自动检测字幕").trigger("click");
+  await flushPromises();
+  expect(mocks.detect).toHaveBeenCalledWith({ sourceTaskId: saved.id, sourceVersion: "output" }, expect.anything());
+  await select(w);
+  expect(w.text()).not.toContain("正在编辑处理后的视频");
+  await button(w, "开始处理").trigger("click");
+  await flushPromises();
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({ file: expect.any(File), sourceTaskId: undefined }),
+    expect.anything()
+  );
+  w.unmount();
+  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith("/output/video_task1?preview=1");
+});
+
+it("keeps the current upload when re-editing fails and only offers editing for completed outputs", async () => {
+  mocks.history.mockResolvedValue({ items: [task("failed"), { ...task("completed"), id: "saved_result" }], total: 2 });
+  const w = await setup();
+  expect(w.findAll("button").filter((b) => b.text() === "编辑成品")).toHaveLength(1);
+  await select(w);
+  mocks.get.mockRejectedValueOnce(new Error("该视频已被删除"));
+  await button(w, "编辑成品").trigger("click");
+  await flushPromises();
+  expect(w.text()).toContain("该视频已被删除");
+  expect(w.findComponent(VideoWorkspace).props("src")).toBe("blob:video");
+  expect(w.findComponent(VideoWorkspace).props("editable")).toBe(true);
+});
+
+it("ignores a late edit response after another history record was opened", async () => {
+  const first = task("completed");
+  const second = { ...task("completed"), id: "saved_second", inputName: "second.mp4" };
+  mocks.history.mockResolvedValue({ items: [first, second], total: 2 });
+  let finish!: (value: unknown) => void;
+  mocks.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  const w = await setup();
+  await button(w, "编辑成品").trigger("click");
+  mocks.get.mockResolvedValueOnce(second);
+  await w
+    .findAll("button")
+    .filter((b) => b.text() === "查看")[1]
+    .trigger("click");
+  await flushPromises();
+  finish(first);
+  await flushPromises();
+  expect(w.text()).toContain("正在查看历史任务：second.mp4");
+  expect(w.text()).not.toContain("正在编辑处理后的视频");
+});
+
 it("uses confirmed automatic detection segments and displays only the matching completed task", async () => {
   const segment = { rect: { x: 0.1, y: 0.8, width: 0.8, height: 0.1 }, startFrame: 0, endFrame: 9, confidence: 0.9 };
-  mocks.detect.mockResolvedValue({ width: 64, height: 48, frameCount: 10, segments: [segment], warnings: [] });
+  mocks.detect.mockResolvedValue({ width: 64, height: 48, frameCount: 10, fps: 10, segments: [segment], warnings: [] });
   const w = await setup();
   await select(w);
   await button(w, "自动检测字幕").trigger("click");
@@ -239,7 +504,7 @@ it("uses confirmed automatic detection segments and displays only the matching c
   await button(w, "开始处理").trigger("click");
   await flushPromises();
   expect(mocks.create).toHaveBeenCalledWith(
-    expect.objectContaining({ segments: [{ rect: segment.rect, startFrame: 0, endFrame: 9 }] }),
+    expect.objectContaining({ manualRanges: [{ start: 0, end: 1, rects: [segment.rect] }], segments: undefined }),
     expect.anything()
   );
   const live = mocks.live as { value: unknown };
@@ -252,6 +517,102 @@ it("uses confirmed automatic detection segments and displays only the matching c
   await flushPromises();
   expect(w.get(".workspace-video").attributes("src")).toBe("/output/video_task1?preview=1");
   expect(w.text()).toContain("64 × 48");
+});
+
+it("automatically creates editable multi-box ranges, reveals the first interval and submits manual adjustments", async () => {
+  const rect = { x: 0.1, y: 0.2, width: 0.5, height: 0.1 };
+  const segments = [
+    { rect, startFrame: 10, endFrame: 19, confidence: 0.9 },
+    { rect: { ...rect, y: 0.7 }, startFrame: 10, endFrame: 19, confidence: 0.9 },
+    { rect, startFrame: 30, endFrame: 39, confidence: 0.9 }
+  ];
+  mocks.detect.mockResolvedValue({
+    width: 400,
+    height: 200,
+    frameCount: 50,
+    fps: 10,
+    segments,
+    warnings: ["请检查框选"]
+  });
+  const w = await setup();
+  await select(w);
+  await button(w, "自动检测字幕").trigger("click");
+  await flushPromises();
+  expect(w.text()).toContain("已创建 2 个区间");
+  expect(w.text()).toContain("请检查框选");
+  const timeline = w.findComponent(VideoTimeline);
+  expect(timeline.props("duration")).toBe(5);
+  expect(timeline.props("currentTime")).toBe(1);
+  expect(timeline.props("ranges")).toEqual([
+    { start: 1, end: 2, rects: [rect, { ...rect, y: 0.7 }] },
+    { start: 3, end: 4, rects: [rect] }
+  ]);
+  expect(w.findAllComponents(SubtitleRegion)).toHaveLength(2);
+  const region = w.findAllComponents(SubtitleRegion)[0];
+  region.vm.$emit("select");
+  await flushPromises();
+  expect(w.findAll(".region-handle")).toHaveLength(8);
+  region.vm.$emit("update", { ...rect, x: 0.2, width: 0.6 });
+  await flushPromises();
+  timeline.vm.$emit(
+    "update:ranges",
+    timeline.props("ranges").map((range, i) => (i === 1 ? { ...range, end: 4.5 } : range))
+  );
+  await flushPromises();
+  expect(segments[0].rect.x).toBe(0.1);
+  await button(w, "开始处理").trigger("click");
+  await flushPromises();
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      manualRanges: [
+        {
+          start: 1,
+          end: 2,
+          rects: [
+            { ...rect, x: 0.2, width: 0.6 },
+            { ...rect, y: 0.7 }
+          ]
+        },
+        { start: 3, end: 4.5, rects: [rect] }
+      ],
+      segments: undefined
+    }),
+    expect.anything()
+  );
+});
+
+it("preserves existing edits if timing is invalid and never truncates a detection above the editing limit", async () => {
+  const rect = { x: 0, y: 0.7, width: 1, height: 0.1 };
+  const w = await setup();
+  await select(w);
+  w.findComponent(VideoWorkspace).vm.$emit("metadata", { width: 64, height: 48, duration: 3 });
+  w.findComponent(VideoWorkspace).vm.$emit("update:manual-ranges", [{ start: 0, end: 1, rects: [rect] }]);
+  await flushPromises();
+  mocks.detect.mockResolvedValue({
+    width: 64,
+    height: 48,
+    frameCount: 30,
+    fps: 0,
+    segments: [{ rect, startFrame: 0, endFrame: 1 }],
+    warnings: []
+  });
+  await button(w, "自动检测字幕").trigger("click");
+  await flushPromises();
+  expect(w.findComponent(VideoTimeline).props("ranges")).toEqual([{ start: 0, end: 1, rects: [rect] }]);
+  expect(w.text()).toContain("帧率或视频时长");
+  mocks.detect.mockResolvedValue({
+    width: 64,
+    height: 48,
+    frameCount: 30,
+    fps: 10,
+    segments: Array.from({ length: 21 }, (_, i) => ({ rect, startFrame: i, endFrame: i, confidence: 0.9 })),
+    warnings: []
+  });
+  await button(w, "自动检测字幕").trigger("click");
+  await flushPromises();
+  expect(w.findComponent(VideoTimeline).props("ranges")).toHaveLength(21);
+  expect(w.text()).toContain("识别结果已全部保留");
+  expect(button(w, "开始处理").attributes("disabled")).toBeDefined();
 });
 it("ignores late history and health responses after navigation or a newer page request", async () => {
   let finish!: (value: unknown) => void;

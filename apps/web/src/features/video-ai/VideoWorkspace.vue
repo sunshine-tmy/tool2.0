@@ -12,9 +12,10 @@
           preload="metadata"
           @loadedmetadata="onLoadedMetadata"
           @timeupdate="currentTime = videoEl?.currentTime || 0"
+          @play="trackFrames"
         />
         <div
-          v-if="manualMode"
+          v-if="manualMode && drawingTimeAllowed"
           class="overlay"
           role="presentation"
           @pointerdown="onPointerDown"
@@ -24,14 +25,19 @@
         >
           <div v-if="manualArea" class="subtitle-rect manual" :style="rectStyle(manualArea)"></div>
         </div>
-        <div
-          v-for="(rect, index) in visibleManualRects"
-          :key="`manual-${index}`"
-          class="subtitle-rect manual saved"
-          :style="rectStyle(rect)"
-        >
-          <span>{{ index + 1 }}</span>
-        </div>
+        <SubtitleRegion
+          v-for="(item, index) in visibleManualRects"
+          :key="`${item.rangeIndex}-${item.rectIndex}`"
+          :rect="item.rect"
+          :label="index + 1"
+          :editable="!!editable"
+          :selected="selectedRect === `${item.rangeIndex}-${item.rectIndex}`"
+          :surface-width="surfaceBox.width"
+          :surface-height="surfaceBox.height"
+          @select="selectRect(item.rangeIndex, item.rectIndex)"
+          @update="updateRect(item.rangeIndex, item.rectIndex, $event)"
+          @remove="deleteRect(item.rangeIndex, item.rectIndex)"
+        />
         <template v-if="!manualMode && !manualRanges?.length">
           <div
             v-for="(segment, index) in segments"
@@ -49,44 +55,44 @@
       </div>
     </div>
 
-    <div v-if="editable && (duration || 0) > 0 && manualRanges?.length" class="range-editor">
+    <div v-if="editable && (duration || 0) > 0" class="range-editor">
       <div class="range-actions">
-        <strong>手动字幕区间</strong>
-        <n-button size="small" :disabled="manualRanges.length >= 20" @click="addRange">添加区间</n-button>
-      </div>
-      <div class="range-tabs">
+        <strong>字幕区间</strong>
         <n-button
-          v-for="(range, index) in manualRanges"
-          :key="index"
+          type="primary"
           size="small"
-          :type="activeRange === index ? 'primary' : 'default'"
-          @click="selectRange(index)"
-          >区间 {{ index + 1 }} · {{ range.rects.length }} 处</n-button
+          :disabled="(manualRanges?.length || 0) >= 20 || currentTime >= (duration || 0)"
+          @click="addRange"
+          >添加区间</n-button
         >
       </div>
+      <p v-if="currentTime >= (duration || 0)">指针已到视频结尾，请向前移动指针后添加区间。</p>
+      <VideoTimeline
+        :ranges="manualRanges || []"
+        :duration="duration || 0"
+        :current-time="currentTime"
+        :active-index="activeRange"
+        @update:ranges="$emit('update:manual-ranges', $event)"
+        @seek="seekVideo"
+        @select="activeRange = $event"
+        @remove="removeRange"
+      />
       <template v-if="selectedRange">
         <p>
           {{ selectedRange.start.toFixed(2) }} – {{ selectedRange.end.toFixed(2) }} 秒 ·
           拖动两端调整区间，拖动中间移动区间
         </p>
-        <n-slider
-          range
-          draggable
-          :min="0"
-          :max="duration"
-          :step="0.01"
-          :value="[selectedRange.start, selectedRange.end]"
-          aria-label="字幕时间区间"
-          @update:value="updateRange"
-        />
         <div class="range-actions">
           <n-button size="small" @click="selectRange(activeRange)">定位区间开始</n-button>
-          <n-button size="small" @click="removeRange">删除区间</n-button>
+          <n-button size="small" @click="removeRange()">删除区间</n-button>
           <n-button v-for="(_, index) in selectedRange.rects" :key="index" size="small" @click="removeRect(index)"
             >删除框 {{ index + 1 }}</n-button
           >
         </div>
-        <p>在右侧开启手动框选，可连续添加多个框；最多共 20 处。手动区间存在时按手动区间处理。</p>
+        <p>
+          在右侧开启手动框选，可连续添加多个框；选中框可拖动位置或拉动控制点调整宽高，Backspace／Delete 删除。最多共 20
+          处。
+        </p>
       </template>
     </div>
 
@@ -99,12 +105,15 @@
       </button>
     </div>
     <p v-if="manualMode" class="workspace-tip">请在实际视频画面内拖动框选字幕区域，完成后点击右侧“完成框选”。</p>
+    <p v-if="manualMode && !drawingTimeAllowed" class="workspace-tip">指针不在当前区间内，请移回区间内再框选。</p>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NButton, NSlider } from "naive-ui";
+import { NButton } from "naive-ui";
+import VideoTimeline from "./VideoTimeline.vue";
+import SubtitleRegion from "./SubtitleRegion.vue";
 import type { VideoAiRect, VideoAiSegment, VideoAiTimedRegion } from "@toolbox/shared";
 
 const props = defineProps<{
@@ -131,16 +140,62 @@ const emit = defineEmits<{
 
 const activeRange = ref(0);
 const currentTime = ref(0);
+const selectedRect = ref("");
+watch(activeRange, () => {
+  if (!selectedRect.value.startsWith(`${activeRange.value}-`)) selectedRect.value = "";
+});
+function selectRect(rangeIndex: number, rectIndex: number) {
+  activeRange.value = rangeIndex;
+  selectedRect.value = `${rangeIndex}-${rectIndex}`;
+}
+watch(
+  () => props.src,
+  () => {
+    selectedRect.value = "";
+  }
+);
 const selectedRange = computed(() => props.manualRanges?.[activeRange.value]);
+const drawingTimeAllowed = computed(
+  () =>
+    !selectedRange.value ||
+    (currentTime.value >= selectedRange.value.start && currentTime.value < selectedRange.value.end)
+);
 const visibleManualRects = computed(() =>
   props.sourceKind === "result"
     ? []
-    : props.manualMode
-      ? selectedRange.value?.rects || []
-      : (props.manualRanges || [])
-          .filter((range) => currentTime.value >= range.start && currentTime.value < range.end)
-          .flatMap((range) => range.rects)
+    : (props.manualRanges || []).flatMap((range, rangeIndex) =>
+        currentTime.value >= range.start && currentTime.value < range.end
+          ? range.rects.map((rect, rectIndex) => ({ rect, rangeIndex, rectIndex }))
+          : []
+      )
 );
+watch(visibleManualRects, (rects) => {
+  if (!rects.some((item) => selectedRect.value === `${item.rangeIndex}-${item.rectIndex}`)) selectedRect.value = "";
+});
+watch(drawingTimeAllowed, (allowed) => {
+  if (!allowed) cancelDrag();
+});
+function updateRect(rangeIndex: number, rectIndex: number, rect: VideoAiRect) {
+  if (!props.editable) return;
+  emit(
+    "update:manual-ranges",
+    (props.manualRanges || []).map((range, index) =>
+      index === rangeIndex
+        ? { ...range, rects: range.rects.map((value, index) => (index === rectIndex ? rect : value)) }
+        : range
+    )
+  );
+}
+function deleteRect(rangeIndex: number, rectIndex: number) {
+  if (!props.editable) return;
+  selectedRect.value = "";
+  emit(
+    "update:manual-ranges",
+    (props.manualRanges || []).map((range, index) =>
+      index === rangeIndex ? { ...range, rects: range.rects.filter((_, index) => index !== rectIndex) } : range
+    )
+  );
+}
 watch(
   () => [props.manualMode, props.duration] as const,
   ([enabled]) => {
@@ -156,8 +211,11 @@ watch(
 );
 function addRange() {
   if (!props.editable || !props.duration || (props.manualRanges?.length || 0) >= 20) return;
+  const start = Math.max(0, currentTime.value);
+  if (!Number.isFinite(start) || start >= props.duration) return;
+  videoEl.value?.pause();
   activeRange.value = props.manualRanges?.length || 0;
-  emit("update:manual-ranges", [...(props.manualRanges || []), { start: 0, end: props.duration, rects: [] }]);
+  emit("update:manual-ranges", [...(props.manualRanges || []), { start, end: props.duration, rects: [] }]);
 }
 function selectRange(index: number) {
   activeRange.value = index;
@@ -167,32 +225,24 @@ function selectRange(index: number) {
     currentTime.value = props.manualRanges[index].start;
   }
 }
-function updateRange(value: number | number[]) {
-  if (!Array.isArray(value) || value.length !== 2 || value[1] <= value[0]) return;
-  emit(
-    "update:manual-ranges",
-    (props.manualRanges || []).map((range, index) =>
-      index === activeRange.value ? { ...range, start: value[0], end: value[1] } : range
-    )
-  );
+defineExpose({ revealRange: selectRange });
+function seekVideo(time: number) {
+  currentTime.value = time;
   if (videoEl.value) {
-    videoEl.value.currentTime = value[0];
-    currentTime.value = value[0];
+    videoEl.value.pause();
+    videoEl.value.currentTime = time;
   }
 }
-function removeRange() {
+function removeRange(index = activeRange.value) {
+  if (!props.editable || !props.manualRanges?.[index]) return;
+  selectedRect.value = "";
   emit(
     "update:manual-ranges",
-    (props.manualRanges || []).filter((_, index) => index !== activeRange.value)
+    props.manualRanges.filter((_, rangeIndex) => rangeIndex !== index)
   );
 }
 function removeRect(rectIndex: number) {
-  emit(
-    "update:manual-ranges",
-    (props.manualRanges || []).map((range, index) =>
-      index === activeRange.value ? { ...range, rects: range.rects.filter((_, index) => index !== rectIndex) } : range
-    )
-  );
+  deleteRect(activeRange.value, rectIndex);
 }
 
 const stageEl = ref<HTMLElement>();
@@ -232,11 +282,30 @@ onMounted(() => {
   if (stageEl.value) resizeObserver.observe(stageEl.value);
 });
 
-onBeforeUnmount(() => resizeObserver?.disconnect());
+let frameCallback: number | undefined;
+function stopTrackingFrames() {
+  if (frameCallback !== undefined) videoEl.value?.cancelVideoFrameCallback?.(frameCallback);
+  frameCallback = undefined;
+}
+function trackFrames() {
+  stopTrackingFrames();
+  const video = videoEl.value;
+  if (!video?.requestVideoFrameCallback) return;
+  const update = (_now: number, metadata: { mediaTime: number }) => {
+    currentTime.value = metadata.mediaTime;
+    if (!video.paused) frameCallback = video.requestVideoFrameCallback(update);
+  };
+  frameCallback = video.requestVideoFrameCallback(update);
+}
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  stopTrackingFrames();
+});
 
 watch(
   () => [props.width, props.height, props.src] as const,
   async ([width, height]) => {
+    stopTrackingFrames();
     if (width && height) intrinsic.value = { width, height };
     await nextTick();
     videoEl.value?.load();
@@ -253,6 +322,7 @@ function onLoadedMetadata() {
 let dragStart: { x: number; y: number } | undefined;
 
 function onPointerDown(event: PointerEvent) {
+  if (!drawingTimeAllowed.value) return;
   if ((props.manualRanges || []).reduce((sum, range) => sum + range.rects.length, 0) >= 20) return;
   if (!selectedRange.value && props.duration) addRange();
   const target = event.currentTarget as HTMLElement;
@@ -327,8 +397,7 @@ function rectStyle(rect: VideoAiRect) {
   border-radius: var(--radius-control);
   background: var(--color-surface-subtle);
 }
-.range-actions,
-.range-tabs {
+.range-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -338,11 +407,6 @@ function rectStyle(rect: VideoAiRect) {
 .range-editor p {
   font-size: 12px;
   color: var(--color-text-secondary);
-}
-.saved span {
-  color: white;
-  background: var(--color-warning);
-  padding: 1px 5px;
 }
 .video-stage {
   position: relative;

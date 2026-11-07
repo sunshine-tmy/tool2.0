@@ -26,6 +26,8 @@ import { AudioExtractJobSchema } from "@toolbox/shared/audio-extract";
 import { AudioConvertJobSchema } from "@toolbox/shared";
 import { TaskSchema } from "@toolbox/shared";
 import { archiveMediaAssets } from "../../domains/content-archive/core/media-assets";
+import { manualRangesToSegments } from "../../domains/video-ai/manual-ranges";
+import type { VideoAiTask } from "@toolbox/shared";
 import { isStoredTikTokProfileRecord } from "../../domains/content-archive/profile/service";
 import type { ModuleData } from "./types";
 import { object, array, text, assertOwnedRecord, assertFileOwnership, speechDirectory } from "./registry";
@@ -92,10 +94,7 @@ const schemas: Record<string, TSchema> = {
         outputDurationMs: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])),
         progressPath: Type.Optional(string),
         cancelFlagPath: Type.Optional(string),
-        cancelRequested: Type.Optional(Type.Boolean()),
-        manualArea: Type.Optional(
-          Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number(), height: Type.Number() })
-        )
+        cancelRequested: Type.Optional(Type.Boolean())
       })
     ],
     { additionalProperties: false }
@@ -228,6 +227,15 @@ export function validateModuleData(module: ModuleData) {
       if (p.assets) for (const value of Object.values(object(p.assets))) if (value) requirePath(value);
     }
     if (row.kind === "video-ai-task") {
+      if (Array.isArray(p.manualRanges) && p.manualRanges.length) {
+        const metadata = p.inputMetadata as VideoAiTask["inputMetadata"];
+        if (!metadata) throw new Error("视频去字幕编辑区间缺少原视频元数据");
+        manualRangesToSegments(JSON.stringify(p.manualRanges), metadata);
+      }
+      if (p.inputRetained) {
+        if (p.status !== "completed") throw new Error("原视频留档状态无效");
+        required(`video-ai/inputs/${row.id}/input.bin`, Number(p.inputBytes));
+      }
       if (p.status === "completed" && !p.outputPath) throw new Error("视频去字幕成功记录缺少输出");
       if (row.status !== p.status) throw new Error("视频去字幕任务状态不一致");
       if (

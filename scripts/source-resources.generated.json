@@ -165,6 +165,21 @@
       ]
     },
     {
+      "id": "video-ai",
+      "displayName": "视频去字幕（CPU 基础包）",
+      "version": "1.1.0-py312-cpu1",
+      "required": true,
+      "manifestSha256": "aa304eba2a2271cd2746035cca2b4861af7e1be237278a54e9202a1ca0fe8511",
+      "archives": [
+        {
+          "filename": "video-ai-1.1.0-py312-cpu1.tar.gz",
+          "bytes": 673898034,
+          "sha256": "0a829d1fa31e8a74e7012284e2a4f63765f8cdf61081fb9e63f831093cad5a0b",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.tar.gz"
+        }
+      ]
+    },
+    {
       "id": "chatterbox-cuda",
       "displayName": "参考音色克隆 GPU 加速",
       "version": "1.0.0-py312-cu1241",
@@ -194,6 +209,39 @@
           "bytes": 4116387,
           "sha256": "38dff6b27cc3b0fd318aaf355ec087bf0f7cd6649648d913128ccf32a942b7e3",
           "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "video-ai-cuda",
+      "displayName": "视频去字幕 GPU 加速",
+      "version": "1.1.0-py312-cu1241",
+      "required": false,
+      "manifestSha256": "f1f2ceaa47e27e9a6668481d959c9e4b637e6cb1a7b99e0b30a3792b15a18a06",
+      "archives": [
+        {
+          "filename": "video-ai-cuda-1.1.0-py312-cu1241.tar.gz",
+          "bytes": 312164552,
+          "sha256": "f73377a9354da81ad6835c73455fa92f17efaeed2c2e230310e4216d5ea8fb74",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241.tar.gz"
+        },
+        {
+          "filename": "video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "bytes": 1498292694,
+          "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0001.tar.gz"
+        },
+        {
+          "filename": "video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "bytes": 1028311500,
+          "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0002.tar.gz"
+        },
+        {
+          "filename": "video-ai-cuda-1.1.0-py312-cu1241-cuda-torchvision.tar.gz",
+          "bytes": 6097876,
+          "sha256": "4350957a4485b6de6a481839e41ec49f7682cddcaabaf222098e5d5ac3faed69",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torchvision.tar.gz"
         }
       ]
     }

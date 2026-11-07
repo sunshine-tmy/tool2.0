@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import type { ComponentManager, ComponentCatalog } from "../modules/components/component-manager";
-import { sourceComponentIds } from "./source-bootstrap";
+import { sourceComponentIds, sourceCudaComponentIds } from "./source-bootstrap";
 
 type Manager = Pick<ComponentManager, "list" | "startOfflineImport">;
 
@@ -14,7 +14,7 @@ export async function createSourceOfflineInstaller(
   report: (message: string) => void,
   withCuda = false
 ) {
-  const ids: readonly string[] = withCuda ? [...sourceComponentIds, "chatterbox-cuda"] : sourceComponentIds;
+  const ids: readonly string[] = withCuda ? [...sourceComponentIds, ...sourceCudaComponentIds] : sourceComponentIds;
   const initial = await manager.list();
   if (initial.some((item) => item.activeJobId)) throw new Error("能力安装作业尚未完成，拒绝并发初始化");
   const selected = new Map<string, Array<{ filename: string; file: string }>>();

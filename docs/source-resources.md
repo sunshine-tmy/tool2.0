@@ -2,7 +2,7 @@
 
 # 新电脑启动：离线资源下载清单
 
-本清单对应当前源码内置的签名版本，不依赖旧项目。CPU 基线共 9 项能力、11 个归档；CUDA 扩展另有 4 个归档，默认不需要。下载可使用浏览器或可信下载工具，下载完可复用，不必每次启动重下。
+本清单对应当前源码内置的签名版本，不依赖旧项目。CPU 基线共 10 项能力、12 个归档；CUDA 扩展另有 8 个归档，默认不需要。下载可使用浏览器或可信下载工具，下载完可复用，不必每次启动重下。
 
 [全部能力包发布页](https://github.com/sunshine-tmy/tool2.0/releases/tag/components-v1)。不要下载 Source code ZIP 代替能力包，也不要单独下载另一版本的 Python、模型或 wheel；所需 Python、模型和离线依赖已包含在能力包中。
 
@@ -75,6 +75,12 @@
 
 - [douyin-archive-1.0.0-anonymous-27468de.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/douyin-archive-1.0.0-anonymous-27468de.tar.gz)（0.0 MiB）
 
+### 视频去字幕（CPU 基础包）
+
+版本：`1.1.0-py312-cpu1`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
+
+- [video-ai-1.1.0-py312-cpu1.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.tar.gz)（642.7 MiB）
+
 ### 参考音色克隆 GPU 加速（可选，仅 -WithCuda）
 
 版本：`1.0.0-py312-cu1241`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
@@ -84,7 +90,18 @@
 - [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz)（980.7 MiB）
 - [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz)（3.9 MiB）
 
-以下 4 个归档是 11 个 CPU 基础归档之外的 GPU 扩展，共需准备 15 个文件。文件放入同一目录后，双击根目录 `start-gpu.bat`，或执行 `start.bat -WithCuda`；仅放入包但双击普通 `start.bat` 不会安装 GPU 扩展。可用 `start-gpu.bat -ListResources` 列出完整清单。已有实例须先通过 `stop.bat` 正常停止，已安装且正常的 CPU 能力及模型会复用。需要兼容的 NVIDIA 显卡和驱动，不自动修改驱动；安装包通过校验不等于 GPU 实际生成已验证。此扩展仅加速参考音色克隆，不改变 CPU 图片能力。
+此为可选 GPU 扩展。12 个 CPU 基础归档之外，还需准备声音克隆和视频去字幕 GPU 扩展的全部 8 个归档，共 20 个文件。文件放入同一目录后，双击根目录 `start-gpu.bat`，或执行 `start.bat -WithCuda`；普通 `start.bat` 不安装 GPU 扩展。可用 `start-gpu.bat -ListResources` 列出完整清单。已有实例须先通过 `stop.bat` 正常停止，已安装且正常的能力和模型会复用。需要兼容的 NVIDIA 显卡和驱动，不自动修改驱动；安装包通过校验不等于 GPU 实际生成已验证。
+
+### 视频去字幕 GPU 加速（可选，仅 -WithCuda）
+
+版本：`1.1.0-py312-cu1241`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
+
+- [video-ai-cuda-1.1.0-py312-cu1241.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241.tar.gz)（297.7 MiB）
+- [video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0001.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0001.tar.gz)（1428.9 MiB）
+- [video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0002.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torch-part-0002.tar.gz)（980.7 MiB）
+- [video-ai-cuda-1.1.0-py312-cu1241-cuda-torchvision.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torchvision.tar.gz)（5.8 MiB）
+
+此为可选 GPU 扩展。12 个 CPU 基础归档之外，还需准备声音克隆和视频去字幕 GPU 扩展的全部 8 个归档，共 20 个文件。文件放入同一目录后，双击根目录 `start-gpu.bat`，或执行 `start.bat -WithCuda`；普通 `start.bat` 不安装 GPU 扩展。可用 `start-gpu.bat -ListResources` 列出完整清单。已有实例须先通过 `stop.bat` 正常停止，已安装且正常的能力和模型会复用。需要兼容的 NVIDIA 显卡和驱动，不自动修改驱动；安装包通过校验不等于 GPU 实际生成已验证。
 
 ## 复用旧备份
 

@@ -19,14 +19,18 @@ import { httpClient, withApiError } from "../../shared/http/http";
 class VideoAiApi {
   async health(signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.get("/tools/video-ai/health", VideoAiHealthSchema, { signal }),
+      () => httpClient.get("/tools/video-ai/health", VideoAiHealthSchema, { timeout: 20_000, signal }),
       "无法读取视频处理能力状态"
     );
   }
 
-  async detect(file: File, signal?: AbortSignal) {
+  async detect(source: File | { sourceTaskId: string; sourceVersion?: "original" | "output" }, signal?: AbortSignal) {
     const form = new FormData();
-    form.append("video", file, file.name);
+    if (source instanceof File) form.append("video", source, source.name);
+    else {
+      form.append("sourceTaskId", source.sourceTaskId);
+      if (source.sourceVersion) form.append("sourceVersion", source.sourceVersion);
+    }
     return withApiError(
       () => httpClient.post("/tools/video-ai/detect", VideoAiDetectionSchema, form, { timeout: 1_800_000, signal }),
       "字幕区域检测失败"
@@ -35,7 +39,9 @@ class VideoAiApi {
 
   async create(
     input: {
-      file: File;
+      file?: File;
+      sourceTaskId?: string;
+      sourceVersion?: "original" | "output";
       mode: VideoAiMode;
       manualArea?: VideoAiRect;
       segments?: VideoAiSegment[];
@@ -44,7 +50,9 @@ class VideoAiApi {
     signal?: AbortSignal
   ) {
     const form = new FormData();
-    form.append("video", input.file, input.file.name);
+    if (input.file) form.append("video", input.file, input.file.name);
+    if (input.sourceTaskId) form.append("sourceTaskId", input.sourceTaskId);
+    if (input.sourceVersion) form.append("sourceVersion", input.sourceVersion);
     form.append("mode", input.mode);
     if (input.manualArea) form.append("manualArea", JSON.stringify(input.manualArea));
     if (input.segments?.length) form.append("segments", JSON.stringify(input.segments));
@@ -85,6 +93,9 @@ class VideoAiApi {
 
   outputUrl(taskId: string) {
     return resolveApiUrl(`/tools/video-ai/tasks/${encodeURIComponent(taskId)}/output`);
+  }
+  inputUrl(taskId: string) {
+    return resolveApiUrl(`/tools/video-ai/tasks/${encodeURIComponent(taskId)}/input`);
   }
 }
 

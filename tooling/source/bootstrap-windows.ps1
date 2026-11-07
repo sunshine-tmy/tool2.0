@@ -153,10 +153,10 @@ function Show-SourceResources {
   Write-Host ("Place them in: " + (Join-Path $OfflineRoot 'components'))
   Write-Host 'Keep original filenames; do not extract. Existing installed capabilities are validated again by the manager.'
   if ($WithCuda) {
-    Write-Host 'Selected: CPU baseline + NVIDIA voice cloning GPU extension (15 archives for a fresh setup).'
+    Write-Host 'Selected: CPU baseline + NVIDIA voice cloning and video subtitle GPU extensions (20 archives for a fresh setup).'
   } else {
-    Write-Host 'Selected: CPU baseline (11 archives). GPU is NOT installed by this mode.'
-    Write-Host 'For NVIDIA voice cloning, use start-gpu.bat or start.bat -WithCuda; prepare 4 additional archives.'
+    Write-Host 'Selected: CPU baseline including video subtitles (12 archives). GPU is NOT installed by this mode.'
+    Write-Host 'For NVIDIA voice cloning and video subtitles, use start-gpu.bat or start.bat -WithCuda; prepare 8 additional archives.'
   }
   foreach ($component in $plan.components) {
     if (-not $component.required -and -not $WithCuda) { continue }
@@ -204,9 +204,9 @@ if ($PlanOnly) {
   Write-Host "2/6 Reuse Node 24 or prepare isolated Node $NodeVersion; pinned pnpm $PnpmVersion"
   Write-Host '3/6 Install frozen workspace dependencies and build shared contracts'
   if ($WithCuda) {
-    Write-Host '4/6 Import signed CPU capabilities + NVIDIA voice cloning GPU extension (15 archives; no model downloads)'
+    Write-Host '4/6 Import signed CPU capabilities + NVIDIA voice cloning and video subtitle GPU extensions (20 archives; no model downloads)'
   } else {
-    Write-Host '4/6 Import signed CPU capabilities (11 archives; GPU excluded; use start-gpu.bat for NVIDIA voice cloning)'
+    Write-Host '4/6 Import signed CPU capabilities (12 archives; GPU excluded; use start-gpu.bat for NVIDIA voice cloning and video subtitles)'
   }
   Write-Host '5/6 Reuse managed Python/FFmpeg/models; no developer venv or system changes'
   Write-Host '6/6 Start API, managed Workers and frontend; platform login/online tests remain manual'
@@ -262,7 +262,7 @@ try {
   }
 
   if ($WithCuda) {
-    Write-Host '[4/6] Importing signed local CPU capabilities + NVIDIA voice cloning GPU extension (no automatic model downloads)' -ForegroundColor Cyan
+    Write-Host '[4/6] Importing signed local CPU capabilities + NVIDIA voice cloning and video subtitle GPU extensions (no automatic model downloads)' -ForegroundColor Cyan
   } else {
     Write-Host '[4/6] Importing signed local CPU capabilities; GPU extension excluded. Use start-gpu.bat to add it.' -ForegroundColor Cyan
   }

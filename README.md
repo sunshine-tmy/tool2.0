@@ -47,7 +47,7 @@
 
 ## 选择使用方式
 
-视频去字幕入口为 `/tools/video-subtitle`，API 为 `/api/v1/tools/video-ai/*`。桌面版在“设置 → 能力管理”按需安装 `video-ai`，NVIDIA 设备可选装 `video-ai-cuda`。旧已发布包提供极速 OpenCV 和快速 Big-LaMa；本地签名试用版 1.1.0 增加 STTN 均衡档与 ProPainter 极致档，需要使用更新后客户端并离线导入新版基础包及 GPU 扩展，见[本地安装说明](docs/video-ai-local-installation.md)。新包尚未上传 GitHub。支持自动检测、手动框选、取消、分页历史、预览下载与模块数据备份，原视频不改动，成功结果长期保留。人工画质和用户桌面实装仍需验收；S06 / S07 历史证据见[时序引擎交付说明](docs/video-ai-sequence-release.md)，原安装问题见[交接文档](docs/video-ai-release-handover.md)。开发时可用已有 Python 3.12 环境启动 `pnpm dev:video-ai`，需按方案配置本地模型及 FFmpeg，运行时不自动下载。
+视频去字幕入口为 `/tools/video-subtitle`，API 为 `/api/v1/tools/video-ai/*`。桌面版在“设置 → 能力管理”按需安装 `video-ai`，NVIDIA 设备可选装 `video-ai-cuda`。旧已发布包提供极速 OpenCV 和快速 Big-LaMa；本地签名试用版 1.1.0 增加 STTN 均衡档与 ProPainter 极致档，需要使用更新后客户端并离线导入新版基础包及 GPU 扩展，见[本地安装说明](docs/video-ai-local-installation.md)。支持自动检测、手动框选、取消、分页历史、预览下载与模块数据备份；成功后原视频、成品及区间框选信息长期留档，可选择原视频或成品二次编辑，详见[留档与二次编辑](docs/video-ai-records.md)。原始上传文件不改动，旧版本已清理的上传副本无法恢复。人工画质和用户桌面实装仍需验收；S06 / S07 历史证据见[时序引擎交付说明](docs/video-ai-sequence-release.md)，原安装问题见[交接文档](docs/video-ai-release-handover.md)。开发时可用已有 Python 3.12 环境启动 `pnpm dev:video-ai`，需按方案配置本地模型及 FFmpeg，运行时不自动下载。
 
 | 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                    |
 | ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -134,7 +134,7 @@ Set-Location .\tool2.0
 ### 双击 start.bat 前要准备什么
 
 1. **完整源码目录**：根目录应有 `start.bat`、`package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`、`.env.example`、`scripts/`、`tooling/`、`apps/api/`、`apps/web/`、`apps/desktop/` 和 `packages/`。保留 Git clone 或 GitHub ZIP 中的全部源码及配置，不要只复制启动文件；公开脚本会调用 `tooling/` 中的实现。
-2. **当前版本的 CPU 能力包**：按[逐文件下载清单](docs/source-resources.md)用浏览器或可信下载工具下载 9 项能力的 **11 个 `.tar.gz` 文件**，全部放进项目根目录的 `offline-resources/components/`。保持文件名，**不解压**。Python、FFmpeg、Chromium、图片/配音/翻译模型和 Python 离线依赖都在这些包内，不需要另找模型文件。
+2. **当前版本的 CPU 能力包**：按[逐文件下载清单](docs/source-resources.md)用浏览器或可信下载工具下载 9 项能力的 **12 个 `.tar.gz` 文件**，全部放进项目根目录的 `offline-resources/components/`。保持文件名，**不解压**。Python、FFmpeg、Chromium、图片/配音/翻译模型和 Python 离线依赖都在这些包内，不需要另找模型文件。
 3. **Node/pnpm 可选离线包**：已有 Node 24 x64 会复用；没有时启动器可自动准备。若自动下载也不稳定，将清单中的 `node-v24.22.1-win-x64.zip` 和 `pnpm-11.7.0.tgz` 放进 `offline-resources/bootstrap/`，同样不解压。
 
 目录示例（这些压缩包被 Git 忽略，不上传到源码仓库）：
@@ -147,7 +147,7 @@ tool2.0/
 │  ├─ bootstrap/                 # 可选；已安装工具或有效缓存可复用
 │  │  ├─ node-v24.22.1-win-x64.zip
 │  │  └─ pnpm-11.7.0.tgz
-│  └─ components/                # 必备：清单中 11 个 CPU 能力归档
+│  └─ components/                # 必备：清单中 12 个 CPU 能力归档
 │     ├─ python-312-3.12.14-20260901.tar.gz
 │     ├─ image-ai-1.0.0-py312-cpu1.tar.gz
 │     ├─ chatterbox-1.0.0-py312-cpu1.tar.gz
@@ -176,13 +176,13 @@ tool2.0/
 .\start.bat
 ```
 
-**需要 NVIDIA 参考音色克隆 GPU 加速时：11 个 CPU 包还不够，需再准备 4 个 GPU 归档，共 15 个。** 将[下载清单](docs/source-resources.md)中 GPU 小节的全部 `chatterbox-cuda` 文件放到同一个 `offline-resources/components/` 目录，保持原名、不解压，然后双击根目录 **`start-gpu.bat`**，或执行：
+**需要 NVIDIA 参考音色克隆 GPU 加速时：12 个 CPU 包还不够，需再准备 8 个 GPU 归档，共 20 个。** 将[下载清单](docs/source-resources.md)中 GPU 小节的全部 `chatterbox-cuda` 和 `video-ai-cuda` 文件放到同一个 `offline-resources/components/` 目录，保持原名、不解压，然后双击根目录 **`start-gpu.bat`**，或执行：
 
 ```powershell
 .\start.bat -WithCuda
 ```
 
-GPU 入口复用已有 CPU 能力与模型，只补装缺少或版本不符的扩展；不重复下载模型，不修改驱动。**只放入 GPU 包再双击普通 `start.bat`，不会自动安装扩展。** 已启动 CPU 实例时，先通过 `stop.bat` 正常停止，再使用 GPU 入口；安装过程中不得同时启动另一个实例。需要兼容的 NVIDIA 显卡和驱动，普通虚拟机或无 NVIDIA 显卡的电脑仍使用 CPU 入口；安装完成不等于真实 GPU 生成已通过验证。此扩展仅加速参考音色克隆，不会把当前 CPU 图片能力改为 GPU 版本。
+GPU 入口复用已有 CPU 能力与模型，只补装缺少或版本不符的扩展；不重复下载模型，不修改驱动。**只放入 GPU 包再双击普通 `start.bat`，不会自动安装扩展。** 已启动 CPU 实例时，先通过 `stop.bat` 正常停止，再使用 GPU 入口；安装过程中不得同时启动另一个实例。需要兼容的 NVIDIA 显卡和驱动，普通虚拟机或无 NVIDIA 显卡的电脑仍使用 CPU 入口；安装完成不等于真实 GPU 生成已通过验证。GPU 扩展加速参考音色克隆和视频去字幕，不改变 CPU 图片能力。
 
 无需预先在系统安装 Node、pnpm、Python 或 FFmpeg。Windows x64 一键入口依次执行：
 
@@ -212,8 +212,8 @@ GPU 入口复用已有 CPU 能力与模型，只补装缺少或版本不符的�
 | `.\start.bat -PrepareOnly`       | 准备全部 CPU 基础能力后退出，不启动业务服务                                               |
 | `.\start.bat -NoBrowser`         | 正常准备及启动，但不自动打开浏览器                                                        |
 | `.\start.bat -WithCuda`          | 明确追加克隆 GPU 加速包；需自行准备兼容的 NVIDIA 显卡与驱动，不会修改驱动                 |
-| `.\start-gpu.bat`                | 可直接双击的 GPU 入口，等价于 `start.bat -WithCuda`；首次共需 15 个能力归档               |
-| `.\start-gpu.bat -ListResources` | 列出 CPU 与 GPU 全部 15 个归档；不下载、不安装                                            |
+| `.\start-gpu.bat`                | 可直接双击的 GPU 入口，等价于 `start.bat -WithCuda`；首次共需 20 个能力归档               |
+| `.\start-gpu.bat -ListResources` | 列出 CPU 与 GPU 全部 20 个归档；不下载、不安装                                            |
 | `.\start.bat -BuildDesktop`      | 使用同一套 Node/pnpm 构建桌面测试安装包，不下载业务能力或启动服务；仅明确执行该命令才打包 |
 
 换电脑时，重新克隆源码并复制/下载本节清单对应版本的离线包，再用默认命令即可。UI/API 支持源码开发；若需修改 Python Worker 本身、调试安装细节或自行管理运行时，使用下节，不要误以为能力包内 Worker 会随 `scripts/` 自动热更新。

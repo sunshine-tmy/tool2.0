@@ -3,7 +3,15 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { VideoAiHistory, VideoAiHistoryQuery, VideoAiMode, VideoAiRect, VideoAiSegment } from "@toolbox/shared";
+import type {
+  VideoAiHistory,
+  VideoAiHistoryQuery,
+  VideoAiMode,
+  VideoAiRect,
+  VideoAiSegment,
+  VideoAiTask,
+  VideoAiTimedRegion
+} from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { TaskStore } from "../../tasks/task-store";
@@ -90,14 +98,20 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
   function outputBytesTotal() {
     return Array.from(tasks.values()).reduce((total, task) => total + (task.outputBytes ?? 0), 0);
   }
+  function storageBytesTotal() {
+    return (
+      outputBytesTotal() +
+      Array.from(tasks.values()).reduce((total, task) => total + (task.inputRetained ? task.inputBytes : 0), 0)
+    );
+  }
 
   async function ensureStorageCapacity(inputBytes: number) {
     const pendingBytes = Array.from(tasks.values()).reduce(
       (total, task) => total + (task.status === "pending" || task.status === "running" ? task.inputBytes * 2 : 0),
       0
     );
-    if (outputBytesTotal() + pendingBytes + inputBytes * 2 > VIDEO_AI_MAX_STORAGE_BYTES)
-      throw Object.assign(new Error("结果和排队任务的预计空间超过 20 GiB，请删除旧结果或缩短视频"), {
+    if (storageBytesTotal() + pendingBytes + inputBytes * 2 > VIDEO_AI_MAX_STORAGE_BYTES)
+      throw Object.assign(new Error("留档原视频、结果和排队任务的预计空间超过 20 GiB，请删除旧记录或缩短视频"), {
         code: "VIDEO_AI_STORAGE_FULL"
       });
     const disk = await fs.statfs(config.videoAiDir);
@@ -115,6 +129,8 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
     inputBytes: number;
     manualArea?: VideoAiRect;
     segments?: VideoAiSegment[];
+    manualRanges?: VideoAiTimedRegion[];
+    inputMetadata?: VideoAiTask["inputMetadata"];
   }) {
     const now = new Date();
     const taskDir = path.join(config.videoAiTasksDir, input.id);
@@ -134,6 +150,9 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
       inputPath: input.inputPath,
       segments,
       manualArea: input.manualArea,
+      manualRanges: input.manualRanges?.map((range) => ({ ...range, rects: range.rects.map((rect) => ({ ...rect })) })),
+      inputMetadata: input.inputMetadata,
+      inputRetained: false,
       warnings: [],
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -350,8 +369,12 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
       });
       if (task.cancelRequested) throw new VideoAiWorkerError("TASK_CANCELLED", "任务已取消");
       const stat = await fs.stat(outputPath);
-      if (!stat.isFile() || !stat.size || outputBytesTotal() + stat.size > VIDEO_AI_MAX_STORAGE_BYTES)
-        throw new Error("输出为空或结果存储超过 20 GiB，请检查视频或清理历史结果");
+      if (
+        !stat.isFile() ||
+        !stat.size ||
+        storageBytesTotal() + task.inputBytes + stat.size > VIDEO_AI_MAX_STORAGE_BYTES
+      )
+        throw new Error("输出为空或原视频及结果留档超过 20 GiB，请检查视频或清理历史记录");
       const outputInfo = await probeVideo(config, outputPath, shutdown.signal);
       if (
         outputInfo.width !== metadata.width ||
@@ -371,6 +394,14 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
         outputWidth: outputInfo.width,
         outputHeight: outputInfo.height,
         outputDurationMs: outputInfo.durationMs,
+        inputRetained: true,
+        inputMetadata: {
+          width: metadata.width,
+          height: metadata.height,
+          fps: metadata.fps,
+          frameCount: metadata.frameCount,
+          durationMs: metadata.durationMs
+        },
         processedFrames: result.frameCount,
         totalFrames: result.frameCount,
         segments: task.segments.length
@@ -404,7 +435,7 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
       clearInterval(polling);
       await fs.rm(progressPath, { force: true }).catch(() => undefined);
       await fs.rm(cancelFlagPath, { force: true }).catch(() => undefined);
-      await fs.rm(task.inputPath, { force: true }).catch(() => undefined);
+      if (!task.inputRetained) await fs.rm(task.inputPath, { force: true }).catch(() => undefined);
     }
   }
 
@@ -421,6 +452,7 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
     activeCount,
     tryReserveSlot,
     outputBytesTotal,
+    storageBytesTotal,
     ensureStorageCapacity,
     create,
     get,

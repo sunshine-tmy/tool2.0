@@ -3,7 +3,7 @@
     <div class="history-header">
       <div>
         <h2>处理记录</h2>
-        <p>共 {{ total }} 条，成功结果长期保留</p>
+        <p>共 {{ total }} 条，成功后原视频、成品及编辑信息长期留档，手动删除</p>
       </div>
       <n-button :loading="loading" @click="$emit('refresh')">刷新</n-button>
     </div>
@@ -11,27 +11,54 @@
     <div v-if="!items.length" class="history-empty">暂无处理记录</div>
     <ul v-else class="history-list">
       <li v-for="item in items" :key="item.id" :class="{ selected: selectedId === item.id }">
-        <div class="history-main">
+        <VideoHistoryThumbnail
+          :src="item.status === 'completed' && item.output ? `${outputUrl(item.id)}?preview=1` : undefined"
+          :name="item.inputName"
+          @view="$emit('view', item.id)"
+        />
+        <div class="video-history-main">
           <div class="history-title-row">
             <strong class="history-name" :title="item.inputName">{{ item.inputName }}</strong>
             <span class="status-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
           </div>
-          <p>
-            {{ modeLabel(item.mode) }} · {{ new Date(item.createdAt).toLocaleString() }}
-            <template v-if="item.output"> · {{ item.output.width }}×{{ item.output.height }}</template>
+          <p class="video-history-meta">
+            <span>{{ modeLabel(item.mode) }}</span>
+            <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString() }}</time>
+            <span v-if="item.output">{{ item.output.width }}×{{ item.output.height }}</span>
           </p>
           <p v-if="item.status === 'failed'" class="history-failure">
             原始上传副本已清理；如需重试，请重新选择原视频。
           </p>
+          <p v-else-if="item.status === 'completed' && !item.inputRetained" class="history-failure">
+            旧记录未留存原视频，可继续编辑成品
+          </p>
         </div>
-        <div class="history-actions">
-          <n-button text @click="$emit('view', item.id)">查看</n-button>
-          <n-button v-if="item.output" text tag="a" :href="outputUrl(item.id)" target="_blank" rel="noopener"
+        <div class="video-history-actions">
+          <n-button size="small" @click="$emit('view', item.id)">查看</n-button>
+          <n-button
+            v-if="item.status === 'completed' && item.output"
+            size="small"
+            type="primary"
+            secondary
+            :disabled="editingDisabled || !item.inputRetained"
+            @click="$emit('edit', item.id, 'original')"
+            >编辑原视频</n-button
+          >
+          <n-button
+            v-if="item.status === 'completed' && item.output"
+            size="small"
+            :disabled="editingDisabled"
+            @click="$emit('edit', item.id, 'output')"
+            >编辑成品</n-button
+          >
+          <n-button v-if="item.output" size="small" tag="a" :href="outputUrl(item.id)" target="_blank" rel="noopener"
             >下载</n-button
           >
           <n-button
-            text
-            :disabled="item.status === 'pending' || item.status === 'running'"
+            size="small"
+            type="error"
+            quaternary
+            :disabled="item.status === 'pending' || item.status === 'running' || editingId === item.id"
             @click="$emit('remove', item.id)"
           >
             删除
@@ -56,6 +83,7 @@
 <script setup lang="ts">
 import { NButton, NPagination } from "naive-ui";
 import type { VideoAiMode, VideoAiTask } from "@toolbox/shared";
+import VideoHistoryThumbnail from "./VideoHistoryThumbnail.vue";
 
 defineProps<{
   items: VideoAiTask[];
@@ -64,11 +92,14 @@ defineProps<{
   selectedId?: string;
   loading?: boolean;
   outputUrl: (id: string) => string;
+  editingDisabled?: boolean;
+  editingId?: string;
 }>();
 
 defineEmits<{
   refresh: [];
   view: [id: string];
+  edit: [id: string, source: "original" | "output"];
   remove: [id: string];
   "update:page": [page: number];
 }>();
@@ -89,7 +120,7 @@ function modeLabel(mode: VideoAiMode) {
 }
 .history-header,
 .history-title-row,
-.history-actions {
+.video-history-actions {
   display: flex;
   align-items: center;
 }
@@ -99,14 +130,14 @@ function modeLabel(mode: VideoAiMode) {
 }
 .history-header h2,
 .history-header p,
-.history-main p {
+.video-history-main p {
   margin: 0;
 }
 .history-header h2 {
   font-size: 18px;
 }
 .history-header p,
-.history-main p {
+.video-history-main p {
   color: var(--color-text-secondary);
   font-size: 12px;
 }
@@ -120,30 +151,31 @@ function modeLabel(mode: VideoAiMode) {
 }
 .history-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface-subtle);
+  text-align: left;
 }
 .history-list li.selected {
   border-color: var(--color-primary-200);
   background: var(--color-primary-50);
 }
-.history-main {
+.video-history-main {
   min-width: 0;
-}
-.history-main {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  align-items: stretch;
 }
 .history-title-row {
   gap: var(--space-2);
 }
 .history-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -169,8 +201,18 @@ function modeLabel(mode: VideoAiMode) {
   color: var(--color-primary-700);
   background: var(--color-primary-100);
 }
-.history-actions {
+.video-history-actions {
   gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.video-history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+.video-history-meta time {
+  white-space: nowrap;
 }
 .history-failure {
   color: var(--color-warning) !important;
@@ -181,12 +223,13 @@ function modeLabel(mode: VideoAiMode) {
   place-items: center;
   color: var(--color-text-tertiary);
 }
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .history-list li {
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
   }
-  .history-actions {
-    justify-content: flex-end;
+  .video-history-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 }
 </style>

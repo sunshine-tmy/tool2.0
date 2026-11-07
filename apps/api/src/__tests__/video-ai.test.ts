@@ -12,6 +12,7 @@ import { createIsolatedAppFixture } from "./helpers/isolated-app";
 import { isVideoAiModeValue, toPublicTask } from "../domains/video-ai/task-projections";
 import { isDetection, isProcessResult } from "../domains/video-ai/worker-client";
 import type { StoredVideoAiTask } from "../domains/video-ai/types";
+import * as desktopRuntime from "../runtime/desktop-capability-runtime";
 vi.mock("../domains/video-ai/media", () => ({
   probeVideo: vi.fn(async () => ({ width: 1280, height: 720, durationMs: 1000, frameCount: 10, fps: 10 }))
 }));
@@ -118,6 +119,205 @@ describe("video-ai worker payload validation", () => {
 });
 
 describe("video-ai api", () => {
+  it("distinguishes desktop worker preparation from a missing capability", async () => {
+    const fixture = await createIsolatedAppFixture();
+    disposers.push(() => fixture.dispose());
+    const app = await fixture.start({ desktopManagedCapabilities: true });
+    const preparing = vi.spyOn(desktopRuntime, "desktopCapabilitiesPreparing").mockReturnValue(true);
+    try {
+      const pending = await app.inject({ method: "GET", url: "/api/v1/tools/video-ai/health" });
+      expect(pending.statusCode).toBe(503);
+      expect(pending.json().error.code).toBe("WORKER_PREPARING");
+      expect(pending.json().message).not.toContain("安装");
+      preparing.mockReturnValue(false);
+      const missing = await app.inject({ method: "GET", url: "/api/v1/tools/video-ai/health" });
+      expect(missing.json().error.code).toBe("COMPONENT_NOT_INSTALLED");
+    } finally {
+      preparing.mockRestore();
+    }
+  });
+  it("retains originals and editing settings across restarts, edits either version and deletes only the chosen record", async () => {
+    const seen: string[] = [];
+    worker = await startFakeWorker({
+      onProcess: async (body) => {
+        seen.push(await fs.readFile(String(body.input_path), "utf8"));
+      }
+    });
+    const fixture = await createIsolatedAppFixture();
+    disposers.push(() => fixture.dispose());
+    const environment = {
+      VIDEO_AI_WORKER_URL: worker.url,
+      DATABASE_PATH: path.join(fixture.layout.storageRoot, "video-test.sqlite")
+    };
+    const app = await fixture.start({ environment });
+    const rect = { x: 0.1, y: 0.2, width: 0.5, height: 0.1 };
+    const ranges = [{ start: 0.25, end: 0.75, rects: [rect, { ...rect, y: 0.7 }] }];
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/video-ai/tasks",
+      ...multipart({ fileName: "original.mov", fields: { mode: "delogo", manualRanges: JSON.stringify(ranges) } })
+    });
+    expect(created.statusCode).toBe(202);
+    const id = created.json().data.id;
+    const done = await waitForStatus(app, id, "completed");
+    expect(done).toMatchObject({
+      inputRetained: true,
+      manualRanges: ranges,
+      inputMetadata: { fps: 10, durationMs: 1000, frameCount: 10 }
+    });
+    await fixture.closeApps();
+    const reopened = await fixture.start({ environment });
+    const restored = (await reopened.inject({ method: "GET", url: `/api/v1/tools/video-ai/tasks/${id}` })).json().data;
+    expect(restored).toMatchObject({
+      expiresAt: null,
+      inputRetained: true,
+      manualRanges: ranges,
+      segments: done.segments
+    });
+    const range = await reopened.inject({
+      method: "GET",
+      url: `/api/v1/tools/video-ai/tasks/${id}/input?preview=1`,
+      headers: { range: "bytes=0-3" }
+    });
+    expect(range.statusCode).toBe(206);
+    expect(range.body).toBe("fake");
+    expect(range.headers["content-type"]).toContain("video/quicktime");
+    expect(range.headers["content-disposition"]).toBeUndefined();
+    expect((await reopened.inject({ method: "GET", url: `/api/v1/tools/video-ai/tasks/${id}/input` })).body).toBe(
+      "fake-video-bytes"
+    );
+    for (const version of ["original", "output"]) {
+      const next = await reopened.inject({
+        method: "POST",
+        url: "/api/v1/tools/video-ai/tasks",
+        ...multipart({
+          fields: { sourceTaskId: id, sourceVersion: version, mode: "delogo", manualRanges: JSON.stringify(ranges) }
+        })
+      });
+      expect(next.statusCode).toBe(202);
+      const nextId = next.json().data.id;
+      await waitForStatus(reopened, nextId, "completed");
+      expect(seen.at(-1)).toBe(version === "original" ? "fake-video-bytes" : "processed-video");
+      expect(
+        (await reopened.inject({ method: "DELETE", url: `/api/v1/tools/video-ai/tasks/${nextId}` })).statusCode
+      ).toBe(200);
+      expect((await reopened.inject({ method: "GET", url: `/api/v1/tools/video-ai/tasks/${id}/output` })).body).toBe(
+        "processed-video"
+      );
+    }
+    expect((await reopened.inject({ method: "DELETE", url: `/api/v1/tools/video-ai/tasks/${id}` })).statusCode).toBe(
+      200
+    );
+    for (const version of ["input", "output"])
+      expect(
+        (await reopened.inject({ method: "GET", url: `/api/v1/tools/video-ai/tasks/${id}/${version}` })).statusCode
+      ).toBe(404);
+  });
+  it("reprocesses a private result snapshot with new boxes, independently of source deletion", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let count = 0;
+    let copiedInput = "";
+    worker = await startFakeWorker({
+      onProcess: async (body) => {
+        if (++count === 2) {
+          copiedInput = await fs.readFile(String(body.input_path), "utf8");
+          await gate;
+        }
+      }
+    });
+    const app = await startApp({ VIDEO_AI_WORKER_URL: worker.url });
+    try {
+      const first = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/video-ai/tasks",
+        ...multipart({ fileName: "clip.mov", fields: { mode: "delogo" } })
+      });
+      const firstId = first.json().data.id;
+      await waitForStatus(app, firstId, "completed");
+      const rect = { x: 0.1, y: 0.2, width: 0.5, height: 0.1 };
+      const second = await app.inject({
+        method: "POST",
+        url: "/api/v1/tools/video-ai/tasks",
+        ...multipart({
+          fields: {
+            mode: "delogo",
+            sourceTaskId: firstId,
+            manualRanges: JSON.stringify([{ start: 0.2, end: 0.8, rects: [rect] }])
+          }
+        })
+      });
+      expect(second.statusCode).toBe(202);
+      const secondId = second.json().data.id;
+      expect(secondId).not.toBe(firstId);
+      expect(second.json().data).toMatchObject({
+        inputName: "clip.mp4",
+        segments: [{ rect, startFrame: 2, endFrame: 7 }]
+      });
+      await vi.waitFor(() => expect(copiedInput).toBe("processed-video"));
+      expect((await app.inject({ method: "DELETE", url: `/api/v1/tools/video-ai/tasks/${firstId}` })).statusCode).toBe(
+        200
+      );
+      release();
+      await waitForStatus(app, secondId, "completed");
+      expect((await app.inject({ method: "GET", url: `/api/v1/tools/video-ai/tasks/${secondId}/output` })).body).toBe(
+        "processed-video"
+      );
+    } finally {
+      release();
+    }
+  });
+  it("detects a saved result and rejects missing, invalid or conflicting sources", async () => {
+    worker = await startFakeWorker();
+    const app = await startApp({ VIDEO_AI_WORKER_URL: worker.url });
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/video-ai/tasks",
+      ...multipart({ fileName: "clip.mp4", fields: { mode: "delogo" } })
+    });
+    const sourceTaskId = first.json().data.id;
+    await waitForStatus(app, sourceTaskId, "completed");
+    const detection = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/video-ai/detect",
+      ...multipart({ fields: { sourceTaskId } })
+    });
+    expect(detection.statusCode).toBe(200);
+    for (const endpoint of ["tasks", "detect"]) {
+      const invalidFields: Record<string, string>[] = [
+        { sourceTaskId, sourceVersion: "bad" },
+        { sourceVersion: "original" }
+      ];
+      for (const fields of invalidFields) {
+        const invalid = await app.inject({
+          method: "POST",
+          url: `/api/v1/tools/video-ai/${endpoint}`,
+          ...multipart({ fields })
+        });
+        expect(invalid.statusCode).toBe(422);
+      }
+      for (const source of ["../../outside", "missing_123456"]) {
+        const response = await app.inject({
+          method: "POST",
+          url: `/api/v1/tools/video-ai/${endpoint}`,
+          ...multipart({ fields: { sourceTaskId: source } })
+        });
+        expect(response.statusCode).toBe(422);
+        expect(response.json().error.code).toBe(source.startsWith("..") ? "INVALID_SOURCE_TASK" : "OUTPUT_NOT_FOUND");
+      }
+      const conflict = await app.inject({
+        method: "POST",
+        url: `/api/v1/tools/video-ai/${endpoint}`,
+        ...multipart({ fileName: "clip.mp4", fields: { sourceTaskId } })
+      });
+      expect(conflict.statusCode).toBe(422);
+      expect(conflict.json().error.code).toBe("INVALID_SOURCE_TASK");
+    }
+    const history = (await app.inject({ method: "GET", url: "/api/v1/tools/video-ai/history" })).json().data;
+    expect(history.total).toBe(1);
+  });
   it("refuses unavailable tiers before creating a persisted task", async () => {
     worker = await startFakeWorker();
     const app = await startApp({ VIDEO_AI_WORKER_URL: worker.url });
@@ -361,7 +561,7 @@ async function waitForStatus(
   throw new Error(`task ${taskId} did not reach ${status}`);
 }
 
-function multipart(input: { fileName: string; fields: Record<string, string> }) {
+function multipart(input: { fileName?: string; fields: Record<string, string> }) {
   const boundary = `----toolbox-${Math.random().toString(16).slice(2)}`;
   const fieldChunks = Object.entries(input.fields).map(([name, value]) =>
     Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`)
@@ -369,11 +569,15 @@ function multipart(input: { fileName: string; fields: Record<string, string> }) 
   const content = Buffer.from("fake-video-bytes");
   const chunks = [
     ...fieldChunks,
-    Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="video"; filename="${input.fileName}"\r\nContent-Type: video/mp4\r\n\r\n`
-    ),
-    content,
-    Buffer.from("\r\n"),
+    ...(input.fileName
+      ? [
+          Buffer.from(
+            `--${boundary}\r\nContent-Disposition: form-data; name="video"; filename="${input.fileName}"\r\nContent-Type: video/mp4\r\n\r\n`
+          ),
+          content,
+          Buffer.from("\r\n")
+        ]
+      : []),
     Buffer.from(`--${boundary}--\r\n`)
   ];
   return {
@@ -391,6 +595,7 @@ async function startFakeWorker(
     passthrough?: boolean;
     progressBeforeFailure?: boolean;
     progressStage?: "load" | "flow" | "propagate";
+    onProcess?: (body: Record<string, unknown>) => Promise<void>;
   } = {}
 ): Promise<FakeWorker> {
   const server: Server = createServer((request, response) => void handle(request, response));
@@ -417,6 +622,7 @@ async function startFakeWorker(
     }
     if (request.url === "/process" && request.method === "POST") {
       const body = await readJson(request);
+      await options.onProcess?.(body);
       if (options.progressStage)
         await fs.writeFile(
           String(body.progress_path),
@@ -457,6 +663,15 @@ async function startFakeWorker(
           height: 720,
           warnings: []
         }
+      });
+    }
+    if (request.url === "/subtitle/detect" && request.method === "POST") {
+      const body = await readJson(request);
+      if (!["processed-video", "fake-video-bytes"].includes(await fs.readFile(String(body.input_path), "utf8")))
+        throw new Error("Invalid snapshot");
+      return json(response, {
+        success: true,
+        data: { width: 1280, height: 720, fps: 10, frameCount: 10, hasAudio: true, segments: [], warnings: [] }
       });
     }
     return json(response, { success: false, error: { code: "NOT_FOUND", message: "not found" } }, 404);

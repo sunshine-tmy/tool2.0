@@ -90,7 +90,7 @@ test(
         `$env:PATH='';Set-Location ${quote(os.tmpdir())};& ${quote(path.join(scratch, "scripts/bootstrap-windows.ps1"))} -PlanOnly;& ${quote(path.join(scratch, "scripts/bootstrap-windows.ps1"))} -ListResources -WithCuda`
       );
       assert.match(output, /no downloads, writes/);
-      assert.match(output, /15 archives/);
+      assert.match(output, /20 archives/);
       assert.deepEqual(await fs.readdir(scratch), ["scripts", "tooling"]);
       assert.deepEqual(await fs.readdir(path.join(scratch, "scripts")), [
         "bootstrap-windows.ps1",
@@ -160,16 +160,22 @@ test("resource-list mode works before Node and does not create an install", { sk
   assert.match(output, /GPU is NOT installed/);
 });
 
-test("CUDA resource-list and plan modes explicitly include all four GPU archives", { skip: !windows }, async () => {
+test("CUDA resource-list and plan modes include voice and video GPU archives", { skip: !windows }, async () => {
   const plan = JSON.parse(await fs.readFile(path.join(root, "scripts/source-resources.generated.json"), "utf8"));
   const cpu = plan.components.filter((item) => item.required);
   const cuda = plan.components.find((item) => item.id === "chatterbox-cuda");
-  assert.equal(cpu.flatMap((item) => item.archives).length, 11);
+  const videoCuda = plan.components.find((item) => item.id === "video-ai-cuda");
+  assert.equal(cpu.flatMap((item) => item.archives).length, 12);
   assert.equal(cuda.archives.length, 4);
+  assert.equal(videoCuda.archives.length, 4);
   const output = run(`& ${quote(entryScript)} -ListResources -WithCuda`);
-  for (const item of [...cpu, cuda]) for (const archive of item.archives) assert.ok(output.includes(archive.filename));
-  assert.match(output, /15 archives/);
-  assert.match(run(`& ${quote(entryScript)} -PlanOnly -WithCuda`), /NVIDIA voice cloning GPU extension/);
+  for (const item of [...cpu, cuda, videoCuda])
+    for (const archive of item.archives) assert.ok(output.includes(archive.filename));
+  assert.match(output, /20 archives/);
+  assert.match(
+    run(`& ${quote(entryScript)} -PlanOnly -WithCuda`),
+    /NVIDIA voice cloning and video subtitle GPU extensions/
+  );
 });
 
 test(

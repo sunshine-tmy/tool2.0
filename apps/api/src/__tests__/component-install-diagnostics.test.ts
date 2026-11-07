@@ -20,6 +20,15 @@ describe("component install diagnostics", () => {
     expect(installFailureAdvice("__proto__", "constructor: secret")).toContain("证据不足");
     expect(installFailureAdvice(undefined, "private 文案 token=secret")).not.toContain("secret");
   });
+  it("reports recognized self-test wiring and timeout errors without echoing arbitrary output", () => {
+    expect(installFailureAdvice("COMPONENT_INSTALL_FAILED", "视频去字幕自检需要已安装的共享 FFmpeg")).toContain(
+      "共享 FFmpeg"
+    );
+    expect(
+      installFailureAdvice("COMPONENT_INSTALL_FAILED", "视频去字幕 CUDA 自检需要已验证的基础包 Python 环境")
+    ).toContain("基础包 Python");
+    expect(installFailureAdvice("COMPONENT_INSTALL_FAILED", "桌面能力安装自检超时")).toContain("自检超时");
+  });
 
   it("explains timeouts, disk failures and strictly recognized HTTP or integrity failures", () => {
     expect(knownInstallFailure(new DOMException("private", "TimeoutError"))).toContain("ETIMEDOUT");

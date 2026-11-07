@@ -41,6 +41,9 @@ export function installFailureAdvice(code: string | undefined, message: string |
   const http = /^能力包下载服务未返回有效的分段响应（HTTP (\d{3})）$/.exec(message ?? "");
   if (http) return `HTTP ${http[1]}：下载服务未接受分段请求；请检查来源可达性或代理兼容性`;
   const trustedMessages = [
+    "视频去字幕自检需要已安装的共享 FFmpeg",
+    "视频去字幕 CUDA 自检需要已验证的基础包 Python 环境",
+    "桌面能力安装自检超时",
     "能力包下载大小校验失败",
     "能力包下载摘要校验失败",
     "能力包分段范围校验失败",

@@ -13,8 +13,10 @@ export const sourceComponentIds = [
   "xhs-browser",
   "xhs-archive",
   "xhs-translation",
-  "douyin-archive"
+  "douyin-archive",
+  "video-ai"
 ] as const;
+export const sourceCudaComponentIds = ["chatterbox-cuda", "video-ai-cuda"] as const;
 
 type Manager = Pick<
   ComponentManager,
@@ -45,7 +47,7 @@ export async function prepareSourceComponents(
   withCuda = false,
   install: (id: string) => Promise<ComponentJob> = (id) => manager.startInstall(id)
 ) {
-  const ids: readonly string[] = withCuda ? [...sourceComponentIds, "chatterbox-cuda"] : sourceComponentIds;
+  const ids: readonly string[] = withCuda ? [...sourceComponentIds, ...sourceCudaComponentIds] : sourceComponentIds;
   const initial = await manager.list();
   if (initial.some((entry) => entry.activeJobId)) throw new Error("能力安装作业尚未完成，拒绝并发初始化");
   for (const id of ids) {
@@ -53,8 +55,8 @@ export async function prepareSourceComponents(
   }
   report(
     withCuda
-      ? "本次准备 CPU 基础能力及参考音色克隆 GPU 扩展；安装能力包不代表显卡与驱动已通过实际生成验证。"
-      : "本次只准备 CPU 基础能力，不安装 GPU 扩展；已有 GPU 能力保留。需 GPU 加速时请准备额外 4 个包，使用 start-gpu.bat 或 start.bat -WithCuda。"
+      ? "本次准备 CPU 基础能力、参考音色克隆及视频去字幕 GPU 扩展；安装能力包不代表显卡与驱动已通过实际生成验证。"
+      : "本次只准备 CPU 基础能力（含视频去字幕），不安装 GPU 扩展；已有 GPU 能力保留。需 GPU 加速时请准备额外 8 个包，使用 start-gpu.bat 或 start.bat -WithCuda。"
   );
   for (const [index, id] of ids.entries()) {
     signal.throwIfAborted();

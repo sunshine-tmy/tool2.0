@@ -12,7 +12,7 @@ import {
 } from "../modules/components/component-manager";
 import { packagedComponentCatalog } from "../modules/components/catalog.generated";
 import { createSourceOfflineInstaller } from "../runtime/source-offline-resources";
-import { sourceComponentIds } from "../runtime/source-bootstrap";
+import { sourceComponentIds, sourceCudaComponentIds } from "../runtime/source-bootstrap";
 import plan from "../../../../scripts/source-resources.generated.json";
 
 let scratch = "";
@@ -25,7 +25,7 @@ async function fixture(installed: string[] = []) {
   const root = path.join(scratch, "中文 resources (1)");
   await fs.mkdir(root);
   const catalog = {
-    manifests: sourceComponentIds.map((id) => ({
+    manifests: [...sourceComponentIds, "video-ai-cuda"].map((id) => ({
       id,
       version: "1",
       archive: { url: `https://example.com/${id}-1.tar.gz`, bytes: 3 }
@@ -176,17 +176,25 @@ describe("source offline resources", () => {
     }
   );
 
+  it("requires the video GPU package before any installation even if voice CUDA is already present", async () => {
+    const { root, catalog, manager, populate } = await fixture([...sourceComponentIds, "chatterbox-cuda"]);
+    catalog.manifests.push({ ...catalog.manifests[0], id: "chatterbox-cuda" });
+    await populate();
+    await fs.unlink(path.join(root, "video-ai-cuda-1.tar.gz"));
+    await expect(createSourceOfflineInstaller(manager, catalog, root, () => undefined, true)).rejects.toThrow(
+      "video-ai-cuda-1.tar.gz"
+    );
+    expect(manager.startOfflineImport).not.toHaveBeenCalled();
+  });
   it("keeps the early PowerShell checklist in sync with the signed catalog and CPU order", () => {
     expect(plan.components.filter((item) => item.required).map((item) => item.id)).toEqual(sourceComponentIds);
-    // The source launcher deliberately retains its existing CPU baseline and
-    // voice-only -WithCuda behavior; optional video models are installed manually.
-    expect(plan.components.map((item) => item.id)).toEqual([...sourceComponentIds, "chatterbox-cuda"]);
+    expect(plan.components.map((item) => item.id)).toEqual([...sourceComponentIds, ...sourceCudaComponentIds]);
     expect(
       packagedComponentCatalog.manifests
         .filter((item) => !plan.components.some((planned) => planned.id === item.id))
         .map((item) => item.id)
         .sort()
-    ).toEqual(["video-ai", "video-ai-cuda"]);
+    ).toEqual([]);
     for (const item of plan.components) {
       const manifest = packagedComponentCatalog.manifests.find((manifest) => manifest.id === item.id)!;
       expect(item.version).toBe(manifest.version);

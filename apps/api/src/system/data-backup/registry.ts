@@ -197,7 +197,13 @@ export async function inventory(database: ToolboxDatabase, config: AppConfig, id
         sha256: String(p.sha256)
       });
     if (row.kind === "video-ai-task") {
-      await add(`video-ai/inputs/${row.id}/input.bin`, row.kind, row.id, false);
+      await add(
+        `video-ai/inputs/${row.id}/input.bin`,
+        row.kind,
+        row.id,
+        p.inputRetained === true,
+        p.inputRetained ? { bytes: Number(p.inputBytes) } : undefined
+      );
       if (p.outputPath)
         await add(`video-ai/outputs/${row.id}.mp4`, row.kind, row.id, true, { bytes: Number(p.outputBytes) });
     }

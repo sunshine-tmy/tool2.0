@@ -36,8 +36,11 @@ export function manualRangesToSegments(
       !range.rects.length
     )
       throw invalid();
-    const startFrame = Math.floor(range.start * metadata.fps);
-    const endFrame = Math.min(metadata.frameCount - 1, Math.ceil(range.end * metadata.fps) - 1);
+    // Preserve exact frame boundaries when seconds conversion lands a few ULPs
+    // either side of an integer, without rounding actual manual adjustments.
+    const stableFrame = (value: number) => (Math.abs(value - Math.round(value)) < 1e-7 ? Math.round(value) : value);
+    const startFrame = Math.floor(stableFrame(range.start * metadata.fps));
+    const endFrame = Math.min(metadata.frameCount - 1, Math.ceil(stableFrame(range.end * metadata.fps)) - 1);
     if (startFrame > endFrame) throw invalid();
     for (const rect of range.rects) {
       if (

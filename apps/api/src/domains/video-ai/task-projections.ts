@@ -44,6 +44,10 @@ export function toPublicTask(task: StoredVideoAiTask): VideoAiTask {
     inputName: task.inputName,
     inputBytes: task.inputBytes,
     segments: task.segments.map((segment) => ({ ...segment, rect: { ...segment.rect } })),
+    manualRanges: task.manualRanges?.map((range) => ({ ...range, rects: range.rects.map((rect) => ({ ...rect })) })),
+    manualArea: task.manualArea ? { ...task.manualArea } : undefined,
+    inputMetadata: task.inputMetadata ? { ...task.inputMetadata } : undefined,
+    inputRetained: task.inputRetained ?? false,
     warnings: [...task.warnings],
     output:
       task.outputPath && task.outputBytes !== undefined

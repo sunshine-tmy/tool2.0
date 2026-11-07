@@ -40,6 +40,27 @@ export const VideoAiSegmentSchema = Type.Object(
   { additionalProperties: false }
 );
 
+/** Editing coordinates are stored in seconds independently of frame conversion. */
+export const VideoAiTimedRegionSchema = Type.Object(
+  {
+    start: Type.Number({ minimum: 0 }),
+    end: Type.Number({ minimum: 0 }),
+    rects: Type.Array(VideoAiRectSchema, { minItems: 1, maxItems: 20 })
+  },
+  { additionalProperties: false }
+);
+
+export const VideoAiInputMetadataSchema = Type.Object(
+  {
+    width: Type.Integer({ minimum: 1 }),
+    height: Type.Integer({ minimum: 1 }),
+    fps: Type.Number({ exclusiveMinimum: 0 }),
+    frameCount: Type.Integer({ minimum: 1 }),
+    durationMs: Type.Integer({ minimum: 1 })
+  },
+  { additionalProperties: false }
+);
+
 export const VideoAiDetectionSchema = Type.Object(
   {
     width: Type.Integer({ minimum: 1 }),
@@ -87,6 +108,10 @@ export const VideoAiTaskSchema = Type.Object(
     inputName: Type.String({ minLength: 1 }),
     inputBytes: Type.Integer({ minimum: 0 }),
     segments: Type.Array(VideoAiSegmentSchema),
+    manualRanges: Type.Optional(Type.Array(VideoAiTimedRegionSchema, { maxItems: 20 })),
+    manualArea: Type.Optional(VideoAiRectSchema),
+    inputMetadata: Type.Optional(VideoAiInputMetadataSchema),
+    inputRetained: Type.Optional(Type.Boolean()),
     warnings: Type.Array(Type.String()),
     output: Type.Union([VideoAiOutputSchema, Type.Null()]),
     error: Type.Optional(Type.String()),
@@ -161,7 +186,7 @@ export type VideoAiMode = Static<typeof VideoAiModeSchema>;
 export type VideoAiTaskStatus = Static<typeof VideoAiTaskStatusSchema>;
 export type VideoAiRect = Static<typeof VideoAiRectSchema>;
 export type VideoAiSegment = Static<typeof VideoAiSegmentSchema>;
-export type VideoAiTimedRegion = { start: number; end: number; rects: VideoAiRect[] };
+export type VideoAiTimedRegion = Static<typeof VideoAiTimedRegionSchema>;
 export type VideoAiDetection = Static<typeof VideoAiDetectionSchema>;
 export type VideoAiOutput = Static<typeof VideoAiOutputSchema>;
 export type VideoAiTask = Static<typeof VideoAiTaskSchema>;

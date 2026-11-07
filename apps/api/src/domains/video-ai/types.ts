@@ -1,7 +1,7 @@
 /**
  * 中文模块说明：视频去字幕领域，负责任务队列、Worker 调用和本机结果文件
  */
-import type { VideoAiSegment, VideoAiTask } from "@toolbox/shared";
+import type { VideoAiTask } from "@toolbox/shared";
 
 export type StoredVideoAiTask = Omit<VideoAiTask, "output"> & {
   inputPath: string;
@@ -14,5 +14,4 @@ export type StoredVideoAiTask = Omit<VideoAiTask, "output"> & {
   progressPath?: string;
   cancelFlagPath?: string;
   cancelRequested?: boolean;
-  manualArea?: VideoAiSegment["rect"];
 };

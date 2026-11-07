@@ -23,6 +23,7 @@ import {
   type VideoAiHistoryQuery,
   type VideoAiRect,
   type VideoAiSegment,
+  type VideoAiTimedRegion,
   type VideoAiTaskParams
 } from "@toolbox/shared";
 import { nanoid } from "nanoid";
@@ -35,6 +36,7 @@ import { isVideoAiModeValue } from "./task-projections";
 import { VideoAiWorkerError } from "./worker-client";
 import { probeVideo } from "./media";
 import { sendFileRange } from "../../core/media/file-range";
+import { desktopCapabilitiesPreparing } from "../../runtime/desktop-capability-runtime";
 
 export async function registerVideoAiRoutes(
   app: FastifyInstance,
@@ -48,10 +50,61 @@ export async function registerVideoAiRoutes(
 
   const componentMissing = () => config.desktopManagedCapabilities && !config.videoAiCapabilityReady;
 
+  // Re-editing takes a private snapshot of a completed result. Never retain a
+  // reference to another task's file: deleting either task must stay independent.
+  async function savedVideo(taskId: string, version: "original" | "output") {
+    if (!/^[A-Za-z0-9_-]{6,64}$/.test(taskId)) throw validationError("INVALID_SOURCE_TASK", "重新编辑的记录 ID 无效");
+    const source = manager.getStored(taskId);
+    if (source?.status !== "completed" || !source.outputPath)
+      throw validationError("OUTPUT_NOT_FOUND", "该记录没有可编辑的已完成视频，请重新上传视频");
+    if (version === "original" && !source.inputRetained)
+      throw validationError("INPUT_NOT_FOUND", "此记录的原视频已被旧版本清理，可选择处理后的视频或重新上传原视频");
+    try {
+      const root = await fs.realpath(version === "original" ? config.videoAiInputsDir : config.videoAiOutputsDir);
+      const file = await fs.realpath(version === "original" ? source.inputPath : source.outputPath);
+      const relative = path.relative(root, file);
+      const stat = await fs.stat(file);
+      if (
+        !relative ||
+        relative === ".." ||
+        relative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relative) ||
+        !stat.isFile()
+      )
+        throw new Error("Invalid output path");
+      if (!stat.size || stat.size > VIDEO_AI_MAX_FILE_BYTES)
+        throw validationError("FILE_TOO_LARGE", "该结果为空或超过 2 GiB，请另行选择视频");
+      return {
+        file,
+        size: stat.size,
+        name: version === "original" ? source.inputName : `${path.parse(source.inputName).name}.mp4`
+      };
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        ["FILE_TOO_LARGE", "VIDEO_AI_STORAGE_FULL"].includes(String(error.code))
+      )
+        throw error;
+      throw validationError(
+        version === "original" ? "INPUT_NOT_FOUND" : "OUTPUT_NOT_FOUND",
+        "已保存的视频不存在或已被删除，请刷新记录或重新上传"
+      );
+    }
+  }
+  async function copySavedVideo(taskId: string, destination: string, version: "original" | "output") {
+    const source = await savedVideo(taskId, version);
+    await manager.ensureStorageCapacity(source.size);
+    await fs.copyFile(source.file, destination, fs.constants.COPYFILE_EXCL);
+    return { ...source, path: destination };
+  }
+
   app.get(
     "/api/v1/tools/video-ai/health",
     { schema: { response: { 200: apiSuccessSchema(VideoAiHealthSchema), 503: ApiFailureSchema } } },
     async (_request, reply) => {
+      if (componentMissing() && desktopCapabilitiesPreparing(config))
+        return reply.code(503).send(fail("WORKER_PREPARING", "视频处理服务正在后台准备，就绪后自动启用，请稍候"));
       try {
         return ok(await manager.worker.health());
       } catch (error) {
@@ -128,7 +181,7 @@ export async function registerVideoAiRoutes(
       try {
         const deleted = await manager.remove(request.params.taskId);
         return deleted
-          ? ok({ id: request.params.taskId, deleted: true as const }, "任务记录及本机输入、输出已删除")
+          ? ok({ id: request.params.taskId, deleted: true as const }, "任务记录、留档原视频及输出已删除")
           : reply.code(404).send(fail("TASK_NOT_FOUND", "任务不存在或已被删除"));
       } catch (error) {
         const busy = error instanceof Error && "code" in error && error.code === "VIDEO_AI_TASK_BUSY";
@@ -140,6 +193,34 @@ export async function registerVideoAiRoutes(
               busy ? "任务尚在等待或处理中，请先取消并等待结束后再删除" : "未能完整删除本机文件，记录已保留，请稍后重试"
             )
           );
+      }
+    }
+  );
+
+  app.get<{ Params: VideoAiTaskParams }>(
+    "/api/v1/tools/video-ai/tasks/:taskId/input",
+    { schema: { params: VideoAiTaskParamsSchema } },
+    async (request, reply) => {
+      try {
+        const source = await savedVideo(request.params.taskId, "original");
+        const extension = path.extname(source.name).toLowerCase();
+        const types: Record<string, string> = {
+          ".mp4": "video/mp4",
+          ".mkv": "video/x-matroska",
+          ".avi": "video/x-msvideo",
+          ".mov": "video/quicktime",
+          ".webm": "video/webm"
+        };
+        reply.header("X-Content-Type-Options", "nosniff");
+        if (!(request.query as { preview?: string }).preview)
+          reply.header(
+            "Content-Disposition",
+            `attachment; filename="video-ai-original-${request.params.taskId}${extension}"`
+          );
+        reply.type(types[extension] || "application/octet-stream");
+        return sendFileRange(reply, source.file, source.size, request.headers.range);
+      } catch {
+        return reply.code(404).send(fail("INPUT_NOT_FOUND", "留档原视频不存在，旧版本已清理的原视频需重新上传"));
       }
     }
   );
@@ -195,21 +276,38 @@ export async function registerVideoAiRoutes(
       const tempDir = path.join(config.videoAiInputsDir, tempId);
       await fs.mkdir(tempDir, { recursive: true });
       try {
-        const file = await request.file({
-          limits: { files: 1, fields: 0, parts: 1, fileSize: VIDEO_AI_MAX_FILE_BYTES }
-        });
-        if (!file) return reply.code(400).send(fail("FILE_REQUIRED", "请选择一个视频文件"));
-        if (file.fieldname !== "video") {
-          file.file.resume();
-          throw validationError("FILE_REQUIRED", "请选择 video 字段中的视频");
-        }
-        assertVideoExtension(file.filename);
         const destination = path.join(tempDir, "input.bin");
-        const stored = await storeStream(file.file, destination, VIDEO_AI_MAX_FILE_BYTES);
-        if (file.file.truncated) throw validationError("FILE_TOO_LARGE", "上传文件超过大小限制");
-        if (!stored.size) throw Object.assign(new Error("上传的视频为空文件"), { code: "EMPTY_FILE" });
-        await probeVideo(config, stored.path, new AbortController().signal);
-        return ok(await manager.detect(stored.path));
+        let sourceTaskId: string | undefined;
+        let sourceVersion: "original" | "output" = "output";
+        const fields = new Set<string>();
+        let hasFile = false;
+        for await (const part of request.parts({
+          limits: { files: 1, fields: 2, parts: 3, fileSize: VIDEO_AI_MAX_FILE_BYTES }
+        })) {
+          if (part.type === "field") {
+            if (!["sourceTaskId", "sourceVersion"].includes(part.fieldname) || fields.has(part.fieldname))
+              throw validationError("INVALID_FIELD", "包含未知或重复字段");
+            fields.add(part.fieldname);
+            if (part.fieldname === "sourceTaskId") sourceTaskId = String(part.value ?? "");
+            else sourceVersion = parseSourceVersion(String(part.value ?? ""));
+          } else {
+            if (part.fieldname !== "video") {
+              part.file.resume();
+              throw validationError("FILE_REQUIRED", "请选择 video 字段中的视频");
+            }
+            assertVideoExtension(part.filename);
+            const stored = await storeStream(part.file, destination, VIDEO_AI_MAX_FILE_BYTES);
+            if (part.file.truncated) throw validationError("FILE_TOO_LARGE", "上传文件超过大小限制");
+            if (!stored.size) throw Object.assign(new Error("上传的视频为空文件"), { code: "EMPTY_FILE" });
+            hasFile = true;
+          }
+        }
+        if ((hasFile && sourceTaskId !== undefined) || (fields.has("sourceVersion") && sourceTaskId === undefined))
+          throw validationError("INVALID_SOURCE_TASK", "上传视频和历史结果不能同时指定");
+        if (sourceTaskId !== undefined) await copySavedVideo(sourceTaskId, destination, sourceVersion);
+        else if (!hasFile) return reply.code(400).send(fail("FILE_REQUIRED", "请选择一个视频文件"));
+        await probeVideo(config, destination, new AbortController().signal);
+        return ok(await manager.detect(destination));
       } catch (error) {
         const info = routeError(error);
         return reply.code(info.status).send(fail(info.code, info.message));
@@ -241,10 +339,10 @@ export async function registerVideoAiRoutes(
           .code(422)
           .send(fail("COMPONENT_NOT_INSTALLED", "视频去字幕能力尚未安装，请前往设置 → 能力管理安装。"));
       }
-      if (manager.outputBytesTotal() >= VIDEO_AI_MAX_STORAGE_BYTES) {
+      if (manager.storageBytesTotal() >= VIDEO_AI_MAX_STORAGE_BYTES) {
         return reply
           .code(409)
-          .send(fail("VIDEO_AI_STORAGE_FULL", "视频去字幕结果已占用 20 GiB，请先删除部分历史结果再提交"));
+          .send(fail("VIDEO_AI_STORAGE_FULL", "视频去字幕原视频及结果留档已占用 20 GiB，请先删除部分历史记录再提交"));
       }
       const releaseReservation = manager.tryReserveSlot();
       if (!releaseReservation) {
@@ -261,14 +359,18 @@ export async function registerVideoAiRoutes(
         let manualArea: VideoAiRect | undefined;
         let segments: VideoAiSegment[] | undefined;
         let manualRanges: string | undefined;
+        let sourceTaskId: string | undefined;
+        let sourceVersion: "original" | "output" = "output";
         let uploaded = 0;
         const fields = new Set<string>();
         for await (const part of request.parts({
-          limits: { files: 1, fields: 3, parts: 4, fileSize: VIDEO_AI_MAX_FILE_BYTES }
+          limits: { files: 1, fields: 5, parts: 6, fileSize: VIDEO_AI_MAX_FILE_BYTES }
         })) {
           if (part.type === "field") {
             if (
-              !["mode", "manualArea", "segments", "manualRanges"].includes(part.fieldname) ||
+              !["mode", "manualArea", "segments", "manualRanges", "sourceTaskId", "sourceVersion"].includes(
+                part.fieldname
+              ) ||
               fields.has(part.fieldname)
             )
               throw validationError("INVALID_FIELD", "包含未知或重复字段");
@@ -277,6 +379,8 @@ export async function registerVideoAiRoutes(
             if (part.fieldname === "manualArea") manualArea = parseManualArea(String(part.value ?? ""));
             if (part.fieldname === "segments") segments = parseSegments(String(part.value ?? ""));
             if (part.fieldname === "manualRanges") manualRanges = String(part.value ?? "");
+            if (part.fieldname === "sourceTaskId") sourceTaskId = String(part.value ?? "");
+            if (part.fieldname === "sourceVersion") sourceVersion = parseSourceVersion(String(part.value ?? ""));
             continue;
           }
           if (part.fieldname !== "video") {
@@ -291,6 +395,13 @@ export async function registerVideoAiRoutes(
           if (!stored.size) throw validationError("EMPTY_FILE", "上传的视频为空文件");
           storedPath = stored.path;
           uploaded += 1;
+        }
+        if ((storedPath && sourceTaskId !== undefined) || (fields.has("sourceVersion") && sourceTaskId === undefined))
+          throw validationError("INVALID_SOURCE_TASK", "上传视频和历史结果不能同时指定");
+        if (sourceTaskId !== undefined) {
+          const copied = await copySavedVideo(sourceTaskId, path.join(inputDir, "input.bin"), sourceVersion);
+          storedPath = copied.path;
+          inputName = copied.name;
         }
         if (!storedPath) throw validationError("FILE_REQUIRED", "请选择一个视频文件");
         if (!isVideoAiModeValue(mode)) throw validationError("INVALID_MODE", "不支持的修复档位");
@@ -312,7 +423,22 @@ export async function registerVideoAiRoutes(
           inputName,
           inputBytes: (await fs.stat(storedPath)).size,
           manualArea,
-          segments
+          segments,
+          manualRanges:
+            manualRanges === undefined
+              ? undefined
+              : (JSON.parse(manualRanges) as VideoAiTimedRegion[]).map((range) => ({
+                  start: range.start,
+                  end: range.end,
+                  rects: range.rects.map((rect) => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }))
+                })),
+          inputMetadata: {
+            width: metadata.width,
+            height: metadata.height,
+            durationMs: metadata.durationMs,
+            fps: metadata.fps,
+            frameCount: metadata.frameCount
+          }
         });
         return reply.code(202).send(ok(task));
       } catch (error) {
@@ -324,6 +450,12 @@ export async function registerVideoAiRoutes(
       }
     }
   );
+}
+
+function parseSourceVersion(value: string): "original" | "output" {
+  if (value !== "original" && value !== "output")
+    throw validationError("INVALID_SOURCE_VERSION", "请选择原视频或处理后的视频");
+  return value;
 }
 
 function assertVideoExtension(filename: string | undefined) {

@@ -41,6 +41,17 @@ export function createVideoAiTaskPersistence(
       const task = entity.payload as StoredVideoAiTask;
       if (!isReadableStoredTask(task) || task.id !== entity.id || !hasOwnedPaths(task)) continue;
       let changed = false;
+      // Legacy releases deleted the input after success. Only advertise originals
+      // that actually survived; never fabricate one from the processed result.
+      if (task.inputRetained === undefined) {
+        task.inputRetained =
+          task.status === "completed" &&
+          (await fs
+            .stat(task.inputPath)
+            .then((stat) => stat.isFile() && stat.size === task.inputBytes)
+            .catch(() => false));
+        changed = true;
+      }
       if (task.status === "pending" || task.status === "running") {
         patchTask(task, {
           status: "failed",
