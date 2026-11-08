@@ -19,6 +19,7 @@
               <span>缩放</span
               ><n-slider
                 v-model:value="zoom"
+                v-slider-label="{ label: '预览缩放', text: `${Math.round(zoom * 100)}%` }"
                 :min="0.5"
                 :max="4"
                 :step="0.25"
@@ -102,8 +103,20 @@
             <p v-if="!source.canRestore" class="product-hint">
               {{ source.reason }}
             </p>
-            <label>笔刷大小（代理像素）<n-slider v-model:value="brush" :min="4" :max="240" :disabled="busy" /></label>
-            <label>笔刷强度<n-slider v-model:value="strength" :min="5" :max="100" :disabled="busy" /></label>
+            <label>笔刷大小（代理像素）<n-slider
+                v-model:value="brush"
+                v-slider-label="{ label: '笔刷大小', text: `${brush} 像素` }"
+                :min="4"
+                :max="240"
+                :disabled="busy"
+            /></label>
+            <label>笔刷强度<n-slider
+                v-model:value="strength"
+                v-slider-label="{ label: '笔刷强度', text: `${strength}%` }"
+                :min="5"
+                :max="100"
+                :disabled="busy"
+            /></label>
             <div class="product-tools">
               <n-button size="small" :disabled="busy || !canUndo" @click="canvas?.undo()">撤销</n-button
               ><n-button size="small" :disabled="busy || !canRedo" @click="canvas?.redo()">重做</n-button>
@@ -211,6 +224,7 @@
             </div>
             <label
               >商品占比 {{ Math.round(recipe.layout.fill * 100) }}%<n-slider
+                v-slider-label="{ label: '商品占比', text: `${Math.round(recipe.layout.fill * 100)}%` }"
                 :value="Math.round(recipe.layout.fill * 100)"
                 :min="50"
                 :max="95"
@@ -222,6 +236,7 @@
             /></label>
             <label
               >缩小商品<n-slider
+                v-slider-label="{ label: '商品缩放', text: `${Math.round(recipe.layout.scale * 100)}%` }"
                 :value="recipe.layout.scale"
                 :min="0.1"
                 :max="1"
@@ -269,6 +284,7 @@
 </template>
 
 <script setup lang="ts">
+import { vSliderLabel } from "../../../shared/ui/slider-label";
 import { NAlert, NButton, NColorPicker, NInputNumber, NSelect, NSlider, NSpin } from "naive-ui";
 import { ImagePlus, Upload } from "lucide-vue-next";
 import type { ImageAiTask } from "@toolbox/shared";
@@ -561,12 +577,12 @@ label {
   border: 1px solid var(--color-border);
   border-radius: 10px;
 }
-@media (max-width: 1180px) {
+@container tool-content (max-width: 1180px) {
   .product-editor-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-@media (max-width: 680px) {
+@container tool-content (max-width: 680px) {
   .product-zoom-control {
     order: 3;
     flex-basis: 100%;

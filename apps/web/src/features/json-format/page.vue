@@ -5,9 +5,7 @@
         title="JSON 格式化"
         kicker="JSON / DATA"
         description="校验、格式化和压缩 JSON，保留数字精度与原始字段顺序。"
-      >
-        <template #actions><span class="local-badge">仅在本地处理</span></template>
-      </ToolPageHeader>
+      />
       <section class="developer-workspace json-panel" @dragover.prevent @drop.prevent="drop">
         <section class="developer-settings">
           <h3 class="module-section-title">处理设置</h3>
@@ -304,18 +302,11 @@ textarea[readonly] {
 .output-actions small {
   margin-right: auto;
 }
-.local-badge {
-  padding: 6px 10px;
-  color: #0f766e;
-  background: #d9faf2;
-  border-radius: var(--radius-card);
-  font-size: 12px;
-}
 .stale {
   color: #b45309;
   font-size: 12px;
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .editors {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -324,7 +315,7 @@ textarea[readonly] {
     height: 36vh;
   }
 }
-@media (max-width: 480px) {
+@container tool-content (max-width: 480px) {
   .json-panel {
     padding: 14px;
   }

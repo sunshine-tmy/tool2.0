@@ -1,0 +1,138 @@
+/* Shared interaction rules. Feature-owned grids retain their own breakpoints. */
+/* Approved module rasters contain a white exterior canvas. Blend that canvas
+   into the light theme without clipping the lavender tile or regenerating art. */
+.ui-v2 :is(.tool-page-icon, .workbench-card-icon, .module-sidebar-icon img, .library-player-art) {
+  mix-blend-mode: multiply;
+}
+
+.ui-v2 :where(button, a, summary, [tabindex]):focus-visible,
+.n-modal :where(button, a, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 3px;
+  scroll-margin-block: 16px;
+}
+
+.ui-v2 .content > *,
+.ui-v2 :where(.main-column, .developer-workspace, .generator-workspace) {
+  min-width: 0;
+}
+
+/* Use browser-native wrapping; do not hide overflowing workflow controls. */
+.ui-v2 :where(.n-pagination, .backup-pagination, .record-pagination) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ui-v2 .n-pagination :where(.n-pagination-prefix, .n-pagination-suffix) {
+  margin: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  /* One mobile target rule, including teleported dialogs. No number-input width overrides. */
+  :root .ui-v2 .n-button,
+  :root .n-modal .n-button {
+    min-height: 44px;
+    min-width: 44px;
+    max-width: 100%;
+  }
+  :root .ui-v2 .n-button .n-button__content,
+  :root .n-modal .n-button .n-button__content {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+  :root .ui-v2 :is(.n-input__input-el, .n-input__textarea-el),
+  :root .n-modal :is(.n-input__input-el, .n-input__textarea-el),
+  :root .ui-v2 .n-base-selection-input__input,
+  :root .n-modal .n-base-selection-input__input {
+    font-size: 16px;
+  }
+  :root .ui-v2 :is(.n-input:not(.n-input--textarea), .n-base-selection),
+  :root .n-modal :is(.n-input:not(.n-input--textarea), .n-base-selection) {
+    min-height: 44px;
+  }
+  :root .ui-v2 .n-base-selection-label,
+  :root .n-modal .n-base-selection-label {
+    min-height: 42px;
+  }
+  :root .ui-v2 .n-checkbox,
+  :root .n-modal .n-checkbox {
+    min-height: 44px;
+    align-items: center;
+  }
+  /* Card selectors stay attached to the cover, with a larger touch area. */
+  :root .ui-v2 .card-selector {
+    min-width: 44px;
+    justify-content: center;
+  }
+  :root .ui-v2 .topbar :is(.shell-icon-button, .topbar-status) {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .ui-v2 .topbar {
+    padding-inline: 12px;
+    gap: 4px;
+  }
+  .ui-v2 :is(.topbar-leading, .brand, .brand > div) {
+    min-width: 0;
+  }
+  .ui-v2 .brand-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ui-v2 .topbar-actions {
+    gap: 0;
+  }
+  .ui-v2 .topbar .brand-mark {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+  :root .ui-v2 .n-pagination .n-pagination-item {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  :root .ui-v2 .tool-page-header {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 12px;
+  }
+  :root .ui-v2 .tool-page-header .tool-page-icon {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
+  :root .ui-v2 .tool-page-header h2 {
+    font-size: 24px;
+    line-height: 32px;
+    overflow-wrap: anywhere;
+  }
+  .ui-v2 .content {
+    padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  }
+  .ui-v2 .module-footer {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  :root .ui-v2 .v2-tool-page .editor-pane > textarea,
+  :root .ui-v2 .uuid-page .generator-results textarea {
+    font-size: 16px;
+    min-height: 240px;
+  }
+  .ui-v2 :where(.workbench-categories button, .n-tabs-tab) {
+    min-height: 44px;
+  }
+  /* Transparent hit area, retaining the existing visual handle and keyboard semantics. */
+  :root :is(.ui-v2, .n-modal) .n-slider-handle-wrapper::before {
+    content: "";
+    position: absolute;
+    inset: -13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-v2 :where(.archive-card, .workbench-card, .file-upload-area) {
+    transition: none;
+    transform: none;
+  }
+}

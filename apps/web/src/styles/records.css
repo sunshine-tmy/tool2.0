@@ -51,7 +51,7 @@
   font-size: 12px;
   border-radius: 8px;
 }
-:root .record-region .record-card .n-button:not(:where(.library-item-player *))--error-type,
+:root .record-region .record-card .n-button--error-type:not(:where(.library-item-player *)),
 :root .record-region .record-toolbar .n-button--error-type {
   --n-color: var(--color-error);
   --n-border: 1px solid var(--color-error);
@@ -70,4 +70,23 @@
 }
 :root .record-region .n-empty {
   padding: 28px 0;
+}
+
+@media (max-width: 600px) {
+  :root .record-region .record-card {
+    padding: 14px;
+    gap: 12px;
+  }
+  :root .record-region :is(.record-heading, .record-toolbar) {
+    gap: 8px 12px;
+  }
+  :root .record-region .record-heading > strong {
+    font-size: 18px;
+  }
+  :root .record-region .record-card .n-button:not(:where(.library-item-player *)),
+  :root .record-region .record-toolbar .n-button,
+  :root .record-region .record-heading .n-button {
+    min-height: 44px;
+    font-size: 13px;
+  }
 }

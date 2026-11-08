@@ -200,7 +200,7 @@ function choose(e: Event) {
 .module-help summary {
   cursor: pointer;
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .extract-setup-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -216,7 +216,7 @@ function choose(e: Event) {
     grid-column: 1/-1;
   }
 }
-@media (max-width: 560px) {
+@container tool-content (max-width: 560px) {
   .extract-configuration {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { defineComponent } from "vue";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
-import { NButton, NProgress } from "naive-ui";
+import { NButton, NProgress, NSlider } from "naive-ui";
 import Page from "./page.vue";
 const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
@@ -121,4 +121,26 @@ it("retains the failed row and permits retry without losing its local preview", 
   expect(wrapper.get(".image-result-status.done").text()).toBe("已完成");
   expect(wrapper.findAll(".image-result-row")).toHaveLength(1);
   expect(mocks.revoke).not.toHaveBeenCalled();
+});
+it("names the actual quality slider and keeps numeric editing synchronized with submitted quality", async () => {
+  const slider = () => wrapper.getComponent(NSlider);
+  const qualityInput = () => wrapper.get('input[aria-label="压缩质量百分比"]');
+  expect(wrapper.get('[role="slider"]').attributes("aria-label")).toBe("压缩质量");
+  slider().vm.$emit("update:value", 67);
+  await flushPromises();
+  expect((qualityInput().element as HTMLInputElement).value).toBe("67");
+  expect(wrapper.get('[role="slider"]').attributes("aria-valuetext")).toBe("67%");
+  await qualityInput().setValue("72");
+  await qualityInput().trigger("blur");
+  await flushPromises();
+  expect(slider().props("value")).toBe(72);
+  await qualityInput().setValue("");
+  await qualityInput().trigger("blur");
+  await flushPromises();
+  expect(slider().props("value")).toBe(72);
+  await add(["mobile.png"]);
+  mocks.upload.mockResolvedValue(result("mobile.png", 500));
+  await button("开始压缩").trigger("click");
+  await flushPromises();
+  expect((mocks.upload.mock.calls[0][0] as FormData).get("quality")).toBe("72");
 });

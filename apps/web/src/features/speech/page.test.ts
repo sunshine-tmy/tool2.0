@@ -4,6 +4,7 @@ import { defineComponent, onMounted, onUnmounted, ref } from "vue";
 import { flushPromises, mount, shallowMount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import Page from "./page.vue";
+import ServiceStatusPopover from "../../shared/ui/tool/ServiceStatusPopover.vue";
 
 vi.mock("naive-ui", async (importOriginal) => ({
   ...(await importOriginal<typeof import("naive-ui")>()),
@@ -25,6 +26,53 @@ vi.mock("./edge-tts/api", () => ({
 }));
 
 describe("Multilingual speech default engine", () => {
+  it("shows the active engine status and refreshes only that engine", async () => {
+    const cloneRefresh = vi.fn().mockResolvedValue(undefined);
+    const edgeRefresh = vi.fn().mockResolvedValue(undefined);
+    const wrapper = shallowMount(Page, {
+      global: {
+        renderStubDefaultSlot: true,
+        stubs: {
+          ToolLayout: { template: "<main><slot /></main>" },
+          ToolPageHeader: { template: "<header><slot name='actions' /></header>" },
+          ChatterboxPanel: defineComponent({
+            emits: ["notice"],
+            setup(_, { emit, expose }) {
+              expose({ refreshHealth: cloneRefresh });
+              onMounted(() => emit("notice", { label: "V3 已加载 · CPU", available: true, type: "success" }));
+            },
+            template: "<section />"
+          }),
+          EdgeTtsPanel: defineComponent({
+            emits: ["health"],
+            setup(_, { emit, expose }) {
+              expose({ refreshHealth: edgeRefresh });
+              onMounted(() => emit("health", { available: false, message: "服务未就绪" }));
+            },
+            template: "<section />"
+          })
+        }
+      }
+    });
+    try {
+      await flushPromises();
+      const indicator = wrapper.getComponent(ServiceStatusPopover);
+      expect(indicator.props("status")).toBe("available");
+      expect(indicator.props("summary")).toContain("CPU");
+      indicator.vm.$emit("refresh");
+      await flushPromises();
+      expect(cloneRefresh).toHaveBeenCalledOnce();
+      await wrapper.findAll('[role="tab"]')[1].trigger("click");
+      await flushPromises();
+      expect(indicator.props("status")).toBe("unavailable");
+      indicator.vm.$emit("refresh");
+      await flushPromises();
+      expect(edgeRefresh).toHaveBeenCalledOnce();
+      expect(cloneRefresh).toHaveBeenCalledOnce();
+    } finally {
+      wrapper.unmount();
+    }
+  });
   it("retains both engine drafts and mounts each engine once across KeepAlive switches", async () => {
     const counts = { mounted: 0, unmounted: 0 };
     const panel = (name: string) =>
@@ -72,7 +120,7 @@ describe("Multilingual speech default engine", () => {
     await flushPromises();
     const tabs = wrapper.findAll('[role="tab"]');
     expect(tabs[0].text()).toContain("参考音色克隆");
-    expect(tabs[1].text()).toContain("在线自然音色");
+    expect(tabs[1].text()).toContain("在线配音");
     expect(tabs[0].attributes("aria-selected")).toBe("true");
     expect(wrapper.findComponent({ name: "ChatterboxPanel" }).exists()).toBe(true);
 

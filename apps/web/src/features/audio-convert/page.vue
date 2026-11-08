@@ -128,7 +128,10 @@
             @update:checked="(checked) => toggle(job.id, checked)"
           />
           <div class="conversion-job-body">
-            <strong>{{ job.name }}</strong>
+            <div class="conversion-job-heading">
+              <strong>{{ job.name }}</strong>
+              <p>{{ labels[job.status] }}{{ job.error ? `：${job.error}` : "" }}</p>
+            </div>
             <p>
               {{ job.format || "待识别" }} · {{ job.bitrate }} kbps ·
               {{ job.duration ? `${job.duration.toFixed(1)} 秒 · ` : "" }}{{ new Date(job.createdAt).toLocaleString() }}
@@ -138,7 +141,6 @@
               type="line"
               :percentage="Math.floor(job.progress)"
             />
-            <p>{{ labels[job.status] }}{{ job.error ? `：${job.error}` : "" }}</p>
           </div>
           <div class="conversion-actions">
             <template v-if="job.status === 'completed'"
@@ -452,8 +454,25 @@ onBeforeRouteLeave(
 }
 .conversion-job-body {
   flex: 1;
-  min-width: 200px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   overflow-wrap: anywhere;
+}
+.conversion-panel .conversion-job {
+  padding: 12px 16px;
+  gap: 12px;
+}
+.conversion-job-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.conversion-job-body p {
+  margin: 0;
+  line-height: 1.5;
 }
 .conversion-job > .conversion-audio-preview {
   flex: 0 0 100%;
@@ -464,7 +483,7 @@ onBeforeRouteLeave(
   display: grid;
   gap: 16px;
 }
-@media (max-width: 768px) {
+@container tool-content (max-width: 768px) {
   .conversion-upload {
     grid-template-columns: 1fr;
   }
@@ -609,7 +628,7 @@ onBeforeRouteLeave(
   padding: 16px;
   margin-top: 12px;
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .conversion-setup-grid {
     grid-template-columns: minmax(0, 1fr);
   }

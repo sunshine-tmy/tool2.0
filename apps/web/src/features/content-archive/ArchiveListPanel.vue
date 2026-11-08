@@ -578,12 +578,12 @@ function formatDate(value: string | undefined) {
   align-self: center;
   margin-top: 0;
 }
-@media (min-width: 901px) and (max-width: 1180px) {
+@container tool-content (min-width: 901px) and (max-width: 1180px) {
   .archive-grid:not(.is-list) {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .archive-filter-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -591,7 +591,7 @@ function formatDate(value: string | undefined) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (max-width: 640px) {
+@container tool-content (max-width: 640px) {
   .archive-toolbar .n-input {
     flex-basis: 100%;
   }

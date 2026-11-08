@@ -445,7 +445,7 @@ function downloadTask(task: ImageAiTask) {
   border: 1px solid var(--color-border);
   border-radius: 14px;
 }
-@media (max-width: 1000px) {
+@container tool-content (max-width: 1000px) {
   .history-item {
     grid-template-columns: 20px 76px minmax(0, 1fr);
   }
@@ -454,7 +454,7 @@ function downloadTask(task: ImageAiTask) {
     justify-content: flex-start;
   }
 }
-@media (max-width: 640px) {
+@container tool-content (max-width: 640px) {
   .history-toolbar {
     padding: 16px;
     gap: 16px;

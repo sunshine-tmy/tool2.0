@@ -149,6 +149,7 @@
             <label v-if="!isImage"
               >视频原声音量 {{ settings.originalVolume }}%<n-slider
                 v-model:value="settings.originalVolume"
+                v-slider-label="{ label: '视频原声音量', text: `${settings.originalVolume}%` }"
                 :min="0"
                 :max="100"
                 :disabled="busy"
@@ -164,6 +165,7 @@
             <label
               >背景音乐音量 {{ settings.musicVolume }}%<n-slider
                 v-model:value="settings.musicVolume"
+                v-slider-label="{ label: '背景音乐音量', text: `${settings.musicVolume}%` }"
                 :min="0"
                 :max="100"
                 :disabled="busy"
@@ -282,6 +284,7 @@
 </template>
 
 <script setup lang="ts">
+import { vSliderLabel } from "../../shared/ui/slider-label";
 import { computed, onScopeDispose, reactive, ref, watch, toRaw } from "vue";
 import {
   NAlert,

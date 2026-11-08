@@ -100,19 +100,27 @@
                     size="small"
                     :loading="downloadingItemId === item.id"
                     :disabled="downloading || Boolean(downloadingItemId)"
+                    :aria-label="`下载 ${item.file.name} 的压缩结果`"
                     @click="downloadOne(item)"
                   >
-                    <template #icon><Download :size="16" /></template>
+                    <template #icon><Download :size="16" aria-hidden="true" /></template>
                     下载
                   </n-button>
-                  <n-button text size="small" type="error" :disabled="submitting" @click="removeItem(item.id)">
-                    <template #icon><Trash2 :size="15" /></template>
+                  <n-button
+                    text
+                    size="small"
+                    type="error"
+                    :disabled="submitting"
+                    :aria-label="`删除 ${item.file.name}`"
+                    @click="removeItem(item.id)"
+                  >
+                    <template #icon><Trash2 :size="15" aria-hidden="true" /></template>
                     删除
                   </n-button>
                 </div>
               </div>
             </article>
-            <n-empty v-if="!items.length" description="暂无图片" />
+            <n-empty v-if="!items.length" description="添加图片后，在这里查看压缩进度和结果" />
           </div>
           <footer class="image-compress-downloads">
             <n-button
@@ -123,13 +131,13 @@
               @click="downloadAll"
             >
               <template #icon>
-                <Download :size="16" />
+                <Download :size="16" aria-hidden="true" />
               </template>
               批量下载
             </n-button>
             <n-button :disabled="!items.length || submitting" @click="clearItems">
               <template #icon>
-                <Trash2 :size="16" />
+                <Trash2 :size="16" aria-hidden="true" />
               </template>
               清空
             </n-button>
@@ -138,7 +146,7 @@
       </section>
 
       <aside class="side-column">
-        <section class="workspace-panel image-compress-settings">
+        <section class="workspace-panel image-compress-settings" aria-label="压缩设置">
           <div class="panel-heading">
             <h3>压缩设置</h3>
           </div>
@@ -177,9 +185,30 @@
           <div class="compression-setting-field compression-quality">
             <div class="compression-setting-label">
               <h4>压缩质量</h4>
-              <n-tag size="small" :bordered="false">{{ quality }}%</n-tag>
+              <n-input-number
+                :value="quality"
+                class="compression-quality-input"
+                :min="30"
+                :max="95"
+                :step="1"
+                :precision="0"
+                :clearable="false"
+                :disabled="submitting"
+                :input-props="{ 'aria-label': '压缩质量百分比', inputmode: 'numeric' }"
+                @update:value="setQuality"
+              >
+                <template #suffix>%</template>
+              </n-input-number>
             </div>
-            <n-slider v-model:value="quality" :min="30" :max="95" :step="1" :disabled="submitting" />
+            <n-slider
+              v-model:value="quality"
+              v-slider-label="{ label: '压缩质量', text: `${quality}%` }"
+              class="compression-quality-slider"
+              :min="30"
+              :max="95"
+              :step="1"
+              :disabled="submitting"
+            />
           </div>
           <div class="compression-setting-field">
             <h4>宽度限制 <span>（可选）</span></h4>
@@ -204,7 +233,7 @@
             @click="compressAll"
           >
             <template #icon>
-              <Play :size="19" fill="currentColor" />
+              <Play :size="19" fill="currentColor" aria-hidden="true" />
             </template>
             开始压缩
           </n-button>
@@ -217,8 +246,9 @@
 <script setup lang="ts">
 import { formatBytesAdaptive as formatBytes } from "../../shared/utils/format-bytes";
 import { computed, onBeforeUnmount, ref } from "vue";
-import { NButton, NEmpty, NInputNumber, NProgress, NSlider, NTag, useMessage } from "naive-ui";
+import { NButton, NEmpty, NInputNumber, NProgress, NSlider, useMessage } from "naive-ui";
 import { CircleCheck, Download, Play, Trash2, UploadCloud } from "lucide-vue-next";
+import { vSliderLabel } from "../../shared/ui/slider-label";
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
@@ -250,6 +280,9 @@ const quality = ref(78);
 const width = ref<number | null>(null);
 const outputFormat = ref<OutputFormat>("png");
 const activePreset = ref<ImageCompressionPresetValue>("balanced");
+function setQuality(value: number | null) {
+  if (value !== null && Number.isFinite(value)) quality.value = Math.min(95, Math.max(30, Math.round(value)));
+}
 const presets = imageCompressionPresets;
 
 const formatOptions: Array<{ label: string; value: OutputFormat }> = [
@@ -459,34 +492,46 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.compression-setting-field .compression-quality-input {
+  width: 100%;
+  min-width: 0;
+}
+.compression-quality-slider {
+  margin-block: 12px;
+}
+.compression-quality-slider :deep(.n-slider-handle-wrapper)::before {
+  position: absolute;
+  inset: -13px;
+  content: "";
+}
 .compression-layout :deep(.content.compress-content) {
   grid-template-columns: minmax(0, 1fr);
   padding-inline: 32px;
   gap: 16px;
 }
 .compression-layout :deep(.tool-page-header) {
-  min-height: 96px;
+  min-height: 72px;
   margin-bottom: 0;
-  padding-inline: 8px;
-  gap: 24px;
+  padding-inline: 0;
+  gap: 16px;
 }
 .compression-layout :deep(.tool-page-icon) {
-  width: 96px;
-  height: 96px;
-  flex-basis: 96px;
+  width: 64px;
+  height: 64px;
+  flex-basis: 64px;
 }
 .compression-layout :deep(.tool-page-header h2) {
-  font-size: 32px;
-  line-height: 42px;
+  font-size: 26px;
+  line-height: 36px;
 }
 .compression-layout :deep(.tool-page-header p) {
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 22px;
 }
 .image-compress-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 28%);
-  align-items: stretch;
+  align-items: start;
   gap: 20px;
   min-width: 0;
 }
@@ -497,7 +542,7 @@ onBeforeUnmount(() => {
 .image-compress-workspace .image-compress-panel {
   display: flex;
   flex-direction: column;
-  min-height: 640px;
+  min-height: 480px;
   padding: 0;
   overflow: hidden;
 }
@@ -532,7 +577,7 @@ onBeforeUnmount(() => {
   color: var(--color-primary-700);
 }
 .image-compress-summary > div:nth-child(3) strong {
-  color: var(--color-cyan);
+  color: var(--color-primary-700);
 }
 .image-compress-summary strong.is-larger,
 .image-result-savings.is-larger {
@@ -552,19 +597,20 @@ onBeforeUnmount(() => {
   padding: 0 20px 20px;
 }
 .image-result-list > :deep(.n-empty) {
-  padding-block: 16px;
+  padding: 24px 16px;
+  line-height: 1.7;
 }
 .image-result-row {
-  grid-template-columns: 88px minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
   min-height: 100px;
   gap: 16px;
-  padding: 6px;
+  padding: 12px;
   border-radius: 12px;
   border-color: var(--color-border);
   background: var(--color-surface);
 }
 .image-thumb {
-  width: 88px;
+  width: 72px;
   border: 0;
   border-radius: 9px;
 }
@@ -572,7 +618,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .image-result-heading strong {
   min-width: 0;
@@ -586,11 +632,11 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 5px;
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 .image-result-status.done,
 .image-result-savings {
-  color: var(--color-success);
+  color: color-mix(in srgb, var(--color-success) 70%, var(--color-text));
 }
 .image-result-status.failed {
   color: var(--color-error);
@@ -615,7 +661,7 @@ onBeforeUnmount(() => {
   border-radius: 5px;
 }
 .image-result-details > .image-result-savings {
-  color: var(--color-success);
+  color: color-mix(in srgb, var(--color-success) 70%, var(--color-text));
 }
 .image-result-details > .is-larger {
   color: var(--color-error);
@@ -640,6 +686,7 @@ onBeforeUnmount(() => {
   gap: 16px;
 }
 .image-result-controls :deep(.n-button) {
+  min-height: 32px;
   background: transparent;
   box-shadow: none;
 }
@@ -659,8 +706,7 @@ onBeforeUnmount(() => {
   position: static;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 640px;
+  min-height: 0;
   padding: 0 24px 24px;
   background: var(--color-surface);
 }
@@ -671,16 +717,16 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
 }
 .panel-heading h3 {
-  font-size: 22px;
-  line-height: 30px;
+  font-size: 20px;
+  line-height: 28px;
 }
 .compression-setting-field {
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
 .compression-setting-field h4 {
-  margin: 0 0 12px;
-  font-size: 16px;
-  line-height: 24px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 22px;
 }
 .compression-setting-field h4 span {
   font-size: 13px;
@@ -698,7 +744,7 @@ onBeforeUnmount(() => {
 }
 .preset-tabs button,
 .compression-format-options button {
-  min-height: 42px;
+  min-height: 40px;
   padding: 8px 4px;
   border: 1px solid var(--color-border);
   border-radius: 9px;
@@ -718,20 +764,42 @@ onBeforeUnmount(() => {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.preset-tabs button:not(:disabled):hover,
+.compression-format-options button:not(:disabled):hover {
+  color: var(--color-primary-700);
+  background: var(--color-primary-50);
+  border-color: var(--color-primary-200);
+}
+.preset-tabs button:not(:disabled):active,
+.compression-format-options button:not(:disabled):active {
+  background: var(--color-primary-100);
+  border-color: var(--color-primary-600);
+}
 .compression-setting-label {
-  display: flex;
-  align-items: baseline;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 140px);
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+.compression-setting-label h4 {
+  margin: 0;
+  white-space: nowrap;
 }
 .compression-setting-field :deep(.n-input-number) {
   width: 100%;
 }
 .compression-submit {
-  margin-top: auto;
-  min-height: 50px;
-  font-size: 17px;
+  margin-top: 4px;
+  min-height: 44px;
+  font-size: 14px;
 }
-@media (max-width: 1100px) {
+@container tool-content (max-width: 900px) {
+  .image-compress-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container tool-content (max-width: 1100px) {
   .image-result-row {
     grid-template-columns: 72px minmax(0, 1fr);
   }
@@ -748,7 +816,7 @@ onBeforeUnmount(() => {
     padding: 0;
   }
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .image-compress-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -769,8 +837,8 @@ onBeforeUnmount(() => {
     flex-basis: 56px;
   }
   .compression-layout :deep(.tool-page-header h2) {
-    font-size: 26px;
-    line-height: 34px;
+    font-size: 24px;
+    line-height: 32px;
   }
   .image-compress-workspace .image-compress-panel {
     min-height: 0;
@@ -809,9 +877,50 @@ onBeforeUnmount(() => {
   .image-result-heading strong {
     flex-basis: 100%;
     font-size: 14px;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .image-compress-downloads {
     padding: 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .image-compress-downloads :deep(.n-button) {
+    width: 100%;
+    min-width: 0;
+  }
+  .image-result-controls {
+    grid-column: 1 / -1;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .image-result-row .file-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .image-compress-workspace .image-compress-settings {
+    padding-inline: 16px;
+  }
+  .image-compress-settings .panel-heading {
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+  .compression-setting-field :deep(input) {
+    font-size: 16px;
+  }
+  .compression-setting-field :deep(.n-input-number),
+  .compression-setting-field :deep(.n-input) {
+    --n-height: 44px !important;
+  }
+}
+@media (pointer: coarse), (max-width: 560px) {
+  .preset-tabs button,
+  .compression-format-options button,
+  .image-result-controls :deep(.n-button),
+  .image-compress-downloads :deep(.n-button) {
+    min-height: 44px;
+    min-width: 44px;
   }
 }
 </style>

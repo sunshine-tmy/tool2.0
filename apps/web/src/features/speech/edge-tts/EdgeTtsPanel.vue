@@ -54,17 +54,35 @@
           <label class="range-control"
             ><span
               >语速 <strong>{{ panel.rate }}%</strong></span
-            ><n-slider v-model:value="panel.rate" :min="-50" :max="100" :step="5" :tooltip="false"
+            ><n-slider
+              v-model:value="panel.rate"
+              v-slider-label="{ label: '语速', text: `${panel.rate}%` }"
+              :min="-50"
+              :max="100"
+              :step="5"
+              :tooltip="false"
           /></label>
           <label class="range-control"
             ><span
               >音量 <strong>{{ panel.volume }}%</strong></span
-            ><n-slider v-model:value="panel.volume" :min="-50" :max="50" :step="5" :tooltip="false"
+            ><n-slider
+              v-model:value="panel.volume"
+              v-slider-label="{ label: '音量', text: `${panel.volume}%` }"
+              :min="-50"
+              :max="50"
+              :step="5"
+              :tooltip="false"
           /></label>
           <label class="range-control"
             ><span
               >音调 <strong>{{ panel.pitch }}Hz</strong></span
-            ><n-slider v-model:value="panel.pitch" :min="-50" :max="50" :step="5" :tooltip="false"
+            ><n-slider
+              v-model:value="panel.pitch"
+              v-slider-label="{ label: '音调', text: `${panel.pitch} 赫兹` }"
+              :min="-50"
+              :max="50"
+              :step="5"
+              :tooltip="false"
           /></label>
         </div>
         <div class="control-section">
@@ -287,6 +305,7 @@
   </div>
 </template>
 <script setup lang="ts">
+import { vSliderLabel } from "../../../shared/ui/slider-label";
 import DiagnosticErrorLink from "../../../shared/ui/DiagnosticErrorLink.vue";
 import { provide, reactive, watch } from "vue";
 import { NButton, NCheckbox, NSelect, NSlider, NEmpty, NPagination } from "naive-ui";
@@ -309,5 +328,6 @@ watch(
   () => panel.health,
   (value) => emit("health", value)
 );
+defineExpose({ refreshHealth: panel.loadHealth });
 </script>
 <style src="../chatterbox/ChatterboxPanel.css"></style>

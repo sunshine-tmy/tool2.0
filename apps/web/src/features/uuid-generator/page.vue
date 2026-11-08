@@ -5,9 +5,7 @@
         title="UUID 生成"
         kicker="IDENTITY / UUID"
         description="生成符合 RFC 9562 的随机 UUID v4，支持批量复制和下载。"
-      >
-        <template #actions><span class="local-badge">仅在本地生成</span></template>
-      </ToolPageHeader>
+      />
       <div class="generator-workspace">
         <section class="generator-panel generator-settings">
           <h3 class="module-section-title">生成设置</h3>
@@ -217,7 +215,7 @@ onScopeDispose(releaseDownload);
   line-height: 1.7;
 }
 .validation {
-  color: #b91c1c;
+  color: var(--color-error);
   font-size: 13px;
 }
 .feedback {
@@ -259,14 +257,7 @@ textarea:focus-visible {
 .result-actions .hint {
   margin-right: auto;
 }
-.local-badge {
-  color: #0f766e;
-  background: #d9faf2;
-  border-radius: var(--radius-card);
-  padding: 6px 10px;
-  font-size: 12px;
-}
-@media (max-width: 480px) {
+@container tool-content (max-width: 480px) {
   .generator-panel {
     padding: 14px;
   }

@@ -473,6 +473,18 @@ let dragged = -1;
     grid-row: 3;
   }
 }
+@container (max-width: 420px) {
+  .library-player-transport {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+  .library-player-volume {
+    grid-column: 1 / -1;
+    grid-row: 4;
+    justify-self: center;
+    width: min(200px, 100%);
+  }
+}
 @media (max-width: 700px) {
   .library-player {
     padding: 14px;

@@ -85,7 +85,7 @@ async function process(text: string, action = "格式化") {
 }
 it("shows an idle local-only editor, supports formatting options and keeps original input unchanged", async () => {
   const w = await setup();
-  expect(w.text()).toContain("仅在本地处理");
+  expect(w.find(".local-badge").exists()).toBe(false);
   expect(w.text()).toContain("请输入 JSON");
   expect(w.find('[role="alert"]').exists()).toBe(false);
   expect(button("复制结果").props("disabled")).toBe(true);

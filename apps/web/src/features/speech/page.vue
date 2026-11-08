@@ -5,12 +5,19 @@
         title="多国语言配音"
         description="在线配音与音色克隆，支持多种语言的批量生成。"
         kicker="MULTILINGUAL SPEECH"
+        compact-actions
       >
-        <template #actions
-          ><n-tag v-if="engine === 'edge'" :type="health?.available ? 'success' : 'info'" round
-            >Edge-TTS {{ health?.version || "在线配音" }}</n-tag
-          ><n-tag v-else type="info" round>Chatterbox Multilingual V3</n-tag></template
-        >
+        <template #actions>
+          <ServiceStatusPopover
+            :status="serviceStatus"
+            :title="engine === 'edge' ? '在线配音服务' : '参考音色克隆服务'"
+            :summary="serviceSummary"
+            :loading="refreshing"
+            @refresh="refreshService"
+          >
+            <p v-if="engine === 'chatterbox' && cloneNotice.message">{{ cloneNotice.message }}</p>
+          </ServiceStatusPopover>
+        </template>
       </ToolPageHeader>
       <div v-if="engine === 'edge'" class="edge-tts-privacy">
         <Cloud :size="18" /><span
@@ -23,7 +30,6 @@
           <strong>仅克隆你本人或已获得明确授权的声音</strong>
           <span>一个批次只需上传一次参考音色，可生成独立 MP3、按顺序拼接的总音频及多种字幕。</span>
         </div>
-        <n-tag :type="cloneNotice.type" :title="cloneNotice.message" round>{{ cloneNotice.label }}</n-tag>
       </div>
       <div class="edge-tts-engine-tabs" role="tablist" aria-label="配音引擎">
         <button
@@ -46,26 +52,52 @@
         </button>
       </div>
       <KeepAlive>
-        <EdgeTtsPanel v-if="engine === 'edge'" @health="health = $event" />
-        <ChatterboxPanel v-else @notice="cloneNotice = $event" />
+        <EdgeTtsPanel v-if="engine === 'edge'" ref="edgePanel" @health="health = $event" />
+        <ChatterboxPanel v-else ref="clonePanel" @notice="cloneNotice = $event" />
       </KeepAlive></section
   ></ToolLayout>
 </template>
 <script setup lang="ts">
-import { ref } from "vue";
-import { NTag } from "naive-ui";
+import { computed, ref } from "vue";
 import { Mic2, Cloud, ShieldCheck } from "lucide-vue-next";
 import type { EdgeTtsHealth } from "@toolbox/shared";
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
+import ServiceStatusPopover from "../../shared/ui/tool/ServiceStatusPopover.vue";
 import ChatterboxPanel from "./chatterbox/ChatterboxPanel.vue";
 import EdgeTtsPanel from "./edge-tts/EdgeTtsPanel.vue";
 const engine = ref<"edge" | "chatterbox">("chatterbox");
 const health = ref<EdgeTtsHealth>();
-const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; message?: string }>({
+const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; message?: string; available?: boolean }>({
   label: "读取本机音色状态",
   type: "info"
 });
+const edgePanel = ref<InstanceType<typeof EdgeTtsPanel>>();
+const clonePanel = ref<InstanceType<typeof ChatterboxPanel>>();
+const refreshing = ref(false);
+const serviceStatus = computed(() => {
+  if (refreshing.value) return "loading";
+  const available = engine.value === "edge" ? health.value?.available : cloneNotice.value.available;
+  return available === undefined ? "unknown" : available ? "available" : "unavailable";
+});
+const serviceSummary = computed(() =>
+  engine.value === "edge"
+    ? health.value
+      ? `Edge-TTS${health.value.version ? ` ${health.value.version}` : ""} · ${health.value.message || (health.value.available ? "服务可用" : "服务未就绪")}`
+      : "正在读取在线配音服务状态"
+    : cloneNotice.value.label
+);
+async function refreshService() {
+  if (refreshing.value) return;
+  const panel = engine.value === "edge" ? edgePanel.value : clonePanel.value;
+  if (!panel) return;
+  refreshing.value = true;
+  try {
+    await panel.refreshHealth();
+  } finally {
+    refreshing.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -111,14 +143,6 @@ const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; mes
   width: 16px;
   height: 16px;
   color: var(--color-text-tertiary);
-}
-.speech-page :deep(.chatterbox-notice > .n-tag) {
-  background: var(--color-surface-subtle);
-  color: var(--color-text-secondary);
-  font-size: 11px;
-}
-.speech-page :deep(.chatterbox-notice .n-tag__border) {
-  border-color: var(--color-border);
 }
 .edge-tts-privacy {
   padding: 4px 0;
@@ -677,7 +701,7 @@ const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; mes
   font-size: 12px;
   color: var(--color-text-secondary);
 }
-@media (max-width: 1050px) {
+@container tool-content (max-width: 1050px) {
   .speech-page :deep(.edge-tts-result-actions .library-save-actions) {
     margin-left: 0;
     padding-left: 0;

@@ -26,7 +26,7 @@ import { useChatterboxPanel } from "./useChatterboxPanel";
 const panel = reactive(useChatterboxPanel());
 provide(chatterboxPanelKey, panel);
 const emit = defineEmits<{
-  notice: [value: { label: string; type: "info" | "error" | "success"; message?: string }];
+  notice: [value: { label: string; type: "info" | "error" | "success"; message?: string; available?: boolean }];
 }>();
 watch(
   () => [panel.health, panel.healthLabel] as const,
@@ -34,10 +34,12 @@ watch(
     emit("notice", {
       label,
       type: !health ? "info" : !health.available ? "error" : health.modelLoaded ? "success" : "info",
-      message: health?.message
+      message: health?.message,
+      available: health?.available
     }),
   { immediate: true }
 );
+defineExpose({ refreshHealth: panel.loadHealth });
 </script>
 
 <style src="./ChatterboxPanel.css"></style>

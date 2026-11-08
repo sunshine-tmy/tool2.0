@@ -21,7 +21,7 @@ describe("Chatterbox editor actions", () => {
       savedVoices: [voice],
       languageSavedVoices: [voice],
       selectedVoiceId: "",
-      referenceFile: new File(["wav"], "reference.wav"),
+      referenceFile: undefined as File | undefined,
       voiceName: "",
       batchName: "",
       segments: [{ id: "segment-1", text: "Original", referenceTranslation: "原文", fileName: "first" }],
@@ -82,6 +82,15 @@ describe("Chatterbox editor actions", () => {
       }
     });
     try {
+      const picker = wrapper.get<HTMLDetailsElement>(".speech-reference-picker");
+      expect(picker.element.open).toBe(false);
+      panel.referenceFile = new File(["wav"], "reference.wav");
+      picker.element.open = true;
+      await picker.trigger("toggle");
+      await wrapper.findAll(".voice-source-tabs button")[1].trigger("click");
+      expect(picker.element.open).toBe(true);
+      await wrapper.findAll(".voice-source-tabs button")[0].trigger("click");
+      expect(picker.element.open).toBe(true);
       const inputs = wrapper.findAllComponents(NInput);
       ["Saved voice", "Clone batch", "Changed text", "修改译文", "renamed", "1. Auto"].forEach((value, index) =>
         inputs[index].vm.$emit("update:value", value)
@@ -204,7 +213,7 @@ describe("Chatterbox editor actions", () => {
       "cpu"
     ]);
     const enqueue = wrapper.findAllComponents(NButton).find((button) => button.text().includes("到生成队列"))!;
-    const clear = wrapper.findAllComponents(NButton).find((button) => button.text().includes("清空当前批次内容"))!;
+    const clear = wrapper.findAllComponents(NButton).find((button) => button.text().includes("清空批次"))!;
     expect(wrapper.text()).toContain("参考音色随批次保留 3 天");
     expect(wrapper.text()).not.toContain("批次结束后会删除参考音色");
 

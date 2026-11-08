@@ -25,6 +25,7 @@
     <template v-if="asset">
       <label
         >透明度 {{ settings.opacity }}%<n-slider
+          v-slider-label="{ label: '水印透明度', text: `${settings.opacity}%` }"
           :value="settings.opacity"
           :min="0"
           :max="100"
@@ -34,6 +35,7 @@
       /></label>
       <label
         >水印宽度 {{ settings.widthPercent }}%<n-slider
+          v-slider-label="{ label: '水印宽度', text: `${settings.widthPercent}%` }"
           :value="settings.widthPercent"
           :min="1"
           :max="50"
@@ -183,6 +185,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { vSliderLabel } from "../../shared/ui/slider-label";
 import { computed, ref, toRaw } from "vue";
 import { NButton, NCheckbox, NInputNumber, NSelect, NSlider } from "naive-ui";
 import {

@@ -258,7 +258,7 @@ function formatDate(value: string) {
 .lan-note-draft-images figcaption, .lan-note-images figcaption { padding: 10px; color: var(--color-text-secondary); }
 .lan-note-images figcaption a, .lan-note-images figcaption button { color: var(--color-primary-600); }
 .pagination-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-top: 16px; border-top: 1px solid var(--color-border); color: var(--color-text-secondary); }
-@media (max-width: 600px) {
+@container tool-content (max-width: 600px) {
   .lan-note-section { padding: 16px; gap: 16px; }
   .lan-note-composer, .lan-note-card { padding: 14px; }
   .lan-note-actions { justify-content: flex-start; }

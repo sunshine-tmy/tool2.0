@@ -96,7 +96,12 @@
             ><template #prefix>共 {{ musicTotal }} 条</template></n-pagination
           >
           <label
-            >配乐音量 {{ musicVolume }}%<n-slider v-model:value="musicVolume" :min="0" :max="100" :disabled="locked"
+            >配乐音量 {{ musicVolume }}%<n-slider
+              v-model:value="musicVolume"
+              v-slider-label="{ label: '背景音乐音量', text: `${musicVolume}%` }"
+              :min="0"
+              :max="100"
+              :disabled="locked"
           /></label>
           <n-checkbox v-model:checked="loop" :disabled="locked">音乐不足时循环到视频结束</n-checkbox>
           <ArchiveMusicRange
@@ -222,6 +227,7 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { vSliderLabel } from "../../shared/ui/slider-label";
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import {

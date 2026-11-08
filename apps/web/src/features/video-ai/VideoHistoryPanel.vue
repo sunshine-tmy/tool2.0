@@ -34,8 +34,10 @@
             旧记录未留存原视频，可继续编辑成品
           </p>
         </div>
-        <span class="history-mode">{{ modeLabel(item.mode) }}</span>
-        <time class="history-time" :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString() }}</time>
+        <div class="history-details">
+          <span class="history-mode">{{ modeLabel(item.mode) }}</span>
+          <time class="history-time" :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString() }}</time>
+        </div>
         <span class="status-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
         <div class="video-history-actions">
           <n-button size="small" @click="$emit('view', item.id)">查看</n-button>
@@ -228,7 +230,7 @@ function modeLabel(mode: VideoAiMode) {
   place-items: center;
   color: var(--color-text-tertiary);
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .history-list li {
     grid-template-columns: auto minmax(0, 1fr);
   }
@@ -246,23 +248,25 @@ function modeLabel(mode: VideoAiMode) {
 .history-table-heading { padding: 10px 12px; border-radius: 7px; background: var(--color-primary-50); color: var(--color-text-secondary); font-size: 12px; }
 .history-table-heading > span:first-child { grid-column: span 2; }
 .history-list { gap: 0; }
-.history-list li { padding: 12px; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; }
+.history-list li { padding: 10px 12px; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; }
 .history-list li.selected { background: var(--color-surface-subtle); box-shadow: inset 3px 0 var(--color-primary-500); }
 .history-list li > :deep(.video-history-thumbnail) { width: 88px; height: 52px; border-radius: 6px; }
 .history-name { color: var(--color-text); font-size: 13px; }
 .video-history-meta { gap: 4px 8px; }
 .history-mode, .history-time { font-size: 12px; color: var(--color-text-secondary); }
+.history-details { display: contents; }
 .status-pill { justify-self: start; font-size: 11px; }
 .video-history-actions { flex-wrap: wrap; gap: 6px; grid-column: auto; }
 .video-history-actions :deep(.n-button) { padding-inline: 8px; height: 28px; font-size: 12px; border-radius: 6px; }
 .video-history-actions :deep(.n-button:not(.n-button--error-type)) { color: var(--color-primary-600); background: var(--color-surface-subtle); }
-@media (max-width: 1200px) {
+@container tool-content (max-width: 1000px) {
   .history-table-heading { display: none; }
-  .history-list li { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 10px; }
-  .history-mode { grid-column: 2; }
-  .history-time { grid-column: 2; }
+  .history-list li { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 6px 12px; }
+  .history-list li > :deep(.video-history-thumbnail) { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .video-history-main { grid-column: 2; grid-row: 1; }
+  .history-details { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; grid-column: 2; }
   .status-pill { grid-column: 3; grid-row: 1; }
   .video-history-actions { grid-column: 2 / -1; justify-content: flex-start; }
 }
-@media (max-width: 600px) { .history-panel { padding: 16px; } .video-history-actions { grid-column: 1 / -1; } }
+@container tool-content (max-width: 600px) { .history-panel { padding: 16px; } .video-history-actions { grid-column: 1 / -1; } }
 </style>

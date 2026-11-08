@@ -6,17 +6,18 @@
         title="AI 图片处理"
         description="去水印、变清晰和商品图抠图统一在本机完成，成功结果自动留档，支持回看与下载。"
         kicker="LOCAL AI · 图片不出网"
+        compact-actions
       >
         <template #actions>
-          <div class="image-ai-health" :class="{ 'is-ready': health?.available }">
-            <span class="status-dot" />
-            <div>
-              <strong>{{ health?.available ? "推理服务可用" : "推理服务未就绪" }}</strong>
-              <small>{{ healthLabel }}</small>
-            </div>
-            <n-button size="small" tertiary :loading="loadingHealth" @click="loadHealth">刷新</n-button>
+          <ServiceStatusPopover
+            :status="healthIndicator"
+            :title="loadingHealth ? '正在检查推理服务' : health?.available ? '推理服务可用' : '推理服务未就绪'"
+            :summary="healthLabel"
+            :loading="loadingHealth"
+            @refresh="loadHealth"
+          >
             <DiagnosticErrorLink v-if="health && !health.available" error="AI 图片服务不可用" module="image-ai" />
-          </div>
+          </ServiceStatusPopover>
         </template>
       </ToolPageHeader>
 
@@ -104,12 +105,13 @@
 <script setup lang="ts">
 import DiagnosticErrorLink from "../../shared/ui/DiagnosticErrorLink.vue";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NButton, NTabPane, NTabs, useMessage } from "naive-ui";
+import { NTabPane, NTabs, useMessage } from "naive-ui";
 import { Info } from "lucide-vue-next";
 import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
+import ServiceStatusPopover from "../../shared/ui/tool/ServiceStatusPopover.vue";
 import ImageAiOperationPanel from "./processing/ImageAiOperationPanel.vue";
 import ImageAiWatermarkPanel from "./processing/ImageAiWatermarkPanel.vue";
 import ImageAiHistoryPanel from "./history/ImageAiHistoryPanel.vue";
@@ -165,6 +167,12 @@ const healthLabel = computed(() => {
   if (!health.value) return "请启动本地 Worker";
   const ready = health.value.models.filter((model) => model.available).length;
   return `${health.value.deploymentUsage === "internal-noncommercial" ? "内部非商用" : "商业安全"} · ${ready}/${health.value.models.length} 模型可用`;
+});
+const healthIndicator = computed(() => {
+  if (loadingHealth.value) return "loading";
+  if (!health.value) return "unknown";
+  if (!health.value.available) return "unavailable";
+  return health.value.models.some((model) => !model.available) ? "partial" : "available";
 });
 const modelPolicyLabel = computed(() =>
   health.value?.deploymentUsage === "internal-noncommercial"
@@ -480,7 +488,7 @@ function formatBytes(bytes: number) {
 .image-ai-workspace :deep(.image-ai-filebar strong) {
   overflow-wrap: anywhere;
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .image-ai-workspace :deep(.image-ai-tab-grid) {
     grid-template-columns: minmax(0, 1fr);
   }

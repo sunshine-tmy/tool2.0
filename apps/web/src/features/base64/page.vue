@@ -5,9 +5,7 @@
         title="Base64 编解码"
         kicker="ENCODING / BASE64"
         description="使用 UTF-8 编解码文本，支持文件与 URL 安全格式。"
-      >
-        <template #actions><span class="local-badge">仅在本地处理</span></template>
-      </ToolPageHeader>
+      />
       <section class="developer-workspace codec-panel" @dragover.prevent @drop.prevent="drop">
         <section class="developer-settings">
           <h3 class="module-section-title">输入与设置</h3>
@@ -384,18 +382,11 @@ textarea[readonly],
 .output-actions small {
   margin-right: auto;
 }
-.local-badge {
-  color: #0f766e;
-  background: #d9faf2;
-  border-radius: var(--radius-card);
-  padding: 6px 10px;
-  font-size: 12px;
-}
 .stale {
   color: #b45309;
   font-size: 12px;
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .editors {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -406,7 +397,7 @@ textarea[readonly],
     height: 36vh;
   }
 }
-@media (max-width: 480px) {
+@container tool-content (max-width: 480px) {
   .codec-panel {
     padding: 14px;
   }

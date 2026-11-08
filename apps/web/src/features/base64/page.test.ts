@@ -97,7 +97,7 @@ async function process(text: string, mode: "encode" | "decode" = "encode") {
 }
 it("opens idle and encodes UTF-8 without changing the input, with URL variant and stale-output protection", async () => {
   const w = await setup();
-  expect(w.text()).toContain("仅在本地处理");
+  expect(w.find(".local-badge").exists()).toBe(false);
   expect(w.text()).toContain("请输入内容");
   expect(button("开始编码").props("disabled")).toBe(true);
   expect(button("复制结果").props("disabled")).toBe(true);

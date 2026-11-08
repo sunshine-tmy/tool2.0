@@ -12,14 +12,23 @@
               :disabled="!referenceAudioUrl"
               :aria-label="referencePlaying ? '暂停参考音色' : '试听参考音色'"
               @click.stop.prevent="toggleReferencePreview"
-            ><Pause v-if="referencePlaying" :size="16" fill="currentColor" /><Play v-else :size="16" fill="currentColor" /></button>
+            >
+              <Pause v-if="referencePlaying" :size="16" fill="currentColor" /><Play
+                v-else
+                :size="16"
+                fill="currentColor"
+              />
+            </button>
             <AudioLines class="reference-wave-icon" :size="38" aria-hidden="true" />
             <span class="reference-current-copy">
-              <span class="reference-name-row"><strong>{{
-                panel.referenceSource === "upload"
-                  ? panel.referenceFile?.name || "上传参考音频"
-                  : currentVoice?.name || "选择参考音色"
-              }}</strong><span class="reference-kind">参考音色</span></span>
+              <span class="reference-name-row"
+                ><strong>{{
+                  panel.referenceSource === "upload"
+                    ? panel.referenceFile?.name || "上传参考音频"
+                    : currentVoice?.name || "选择参考音色"
+                }}</strong
+                ><span class="reference-kind">参考音色</span></span
+              >
               <small>{{ referencePreviewError ? "试听加载失败，请展开后重试" : referenceDurationLabel }}</small>
             </span>
             <ChevronDown class="reference-chevron" :size="18" />
@@ -34,7 +43,10 @@
           @playing="referencePlaying = true"
           @pause="referencePlaying = false"
           @ended="referencePlaying = false"
-          @error="referencePlaying = false; referencePreviewError = true"
+          @error="
+            referencePlaying = false;
+            referencePreviewError = true;
+          "
         />
         <div class="speech-reference-body">
           <div class="panel-heading">
@@ -367,17 +379,35 @@
         <label class="range-control"
           ><span
             >情绪强度 <strong>{{ panel.exaggeration.toFixed(2) }}</strong></span
-          ><n-slider v-model:value="panel.exaggeration" :min="0.25" :max="1.5" :step="0.05" :tooltip="false"
+          ><n-slider
+            v-model:value="panel.exaggeration"
+            v-slider-label="{ label: '情绪强度', text: panel.exaggeration.toFixed(2) }"
+            :min="0.25"
+            :max="1.5"
+            :step="0.05"
+            :tooltip="false"
         /></label>
         <label class="range-control"
           ><span
             >音色遵循 <strong>{{ panel.cfgWeight.toFixed(2) }}</strong></span
-          ><n-slider v-model:value="panel.cfgWeight" :min="0" :max="1" :step="0.05" :tooltip="false"
+          ><n-slider
+            v-model:value="panel.cfgWeight"
+            v-slider-label="{ label: '音色遵循', text: panel.cfgWeight.toFixed(2) }"
+            :min="0"
+            :max="1"
+            :step="0.05"
+            :tooltip="false"
         /></label>
         <label class="range-control"
           ><span
             >随机度 <strong>{{ panel.temperature.toFixed(2) }}</strong></span
-          ><n-slider v-model:value="panel.temperature" :min="0.1" :max="1.5" :step="0.05" :tooltip="false"
+          ><n-slider
+            v-model:value="panel.temperature"
+            v-slider-label="{ label: '随机度', text: panel.temperature.toFixed(2) }"
+            :min="0.1"
+            :max="1.5"
+            :step="0.05"
+            :tooltip="false"
         /></label>
         <label class="chatterbox-seed"
           ><span>随机种子</span><n-input-number v-model:value="panel.seed" :min="0" :max="2147483647" :precision="0"
@@ -463,6 +493,7 @@
 </template>
 
 <script setup lang="ts">
+import { vSliderLabel } from "../../../shared/ui/slider-label";
 import { computed, ref, watch } from "vue";
 import DiagnosticErrorLink from "../../../shared/ui/DiagnosticErrorLink.vue";
 import { NButton, NCard, NCheckbox, NEmpty, NInput, NInputNumber, NModal, NSelect, NSlider } from "naive-ui";
@@ -491,17 +522,22 @@ import { useChatterboxPanelContext } from "./chatterbox-panel-context";
 import { pasteSpeechText } from "../shared/paste-speech-text";
 
 const panel = useChatterboxPanelContext();
-const referencePickerOpen = ref(panel.referenceSource === "upload" ? !panel.referenceFile : !panel.selectedVoiceId);
+const referencePickerOpen = ref(false);
 const currentVoice = computed(() => panel.savedVoices.find((voice) => voice.id === panel.selectedVoiceId));
-const referenceAudioUrl = computed(() => panel.referenceSource === "upload"
-  ? panel.referencePreview || ""
-  : currentVoice.value ? panel.mediaUrl(currentVoice.value.audioUrl) : "");
+const referenceAudioUrl = computed(() =>
+  panel.referenceSource === "upload"
+    ? panel.referencePreview || ""
+    : currentVoice.value
+      ? panel.mediaUrl(currentVoice.value.audioUrl)
+      : ""
+);
 const quickReferenceAudio = ref<HTMLAudioElement>();
 const referencePlaying = ref(false);
 const referenceDuration = ref(0);
 const referencePreviewError = ref(false);
 const referenceDurationLabel = computed(() => {
-  const duration = referenceDuration.value || (panel.referenceSource === "saved" ? currentVoice.value?.durationSeconds : 0) || 0;
+  const duration =
+    referenceDuration.value || (panel.referenceSource === "saved" ? currentVoice.value?.durationSeconds : 0) || 0;
   if (!duration) return referenceAudioUrl.value ? "点击左侧试听" : "选择或上传参考音色";
   const seconds = Math.floor(duration);
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -515,9 +551,17 @@ watch(referenceAudioUrl, () => {
 async function toggleReferencePreview() {
   const audio = quickReferenceAudio.value;
   if (!audio || !referenceAudioUrl.value) return;
-  if (!audio.paused) { audio.pause(); return; }
+  if (!audio.paused) {
+    audio.pause();
+    return;
+  }
   referencePreviewError.value = false;
-  try { await audio.play(); } catch { referencePlaying.value = false; referencePreviewError.value = true; }
+  try {
+    await audio.play();
+  } catch {
+    referencePlaying.value = false;
+    referencePreviewError.value = true;
+  }
 }
 function syncReferencePickerOpen(event: Event) {
   referencePickerOpen.value = (event.currentTarget as HTMLDetailsElement).open;
@@ -585,13 +629,60 @@ if (isMacOSDesktop && panel.device === "cuda") panel.device = "cpu";
   }
 }
 
-.reference-quick-play { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; color: white; background: linear-gradient(135deg, #a49aff, var(--color-primary-600)); box-shadow: 0 3px 8px #6554ff24; cursor: pointer; }
-.reference-quick-play:disabled { opacity: .45; cursor: default; }
-.reference-quick-play:focus-visible { outline: 2px solid var(--color-primary-600); outline-offset: 3px; }
-.reference-wave-icon { flex-shrink: 0; color: var(--color-primary-500); }
-.reference-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.reference-kind { flex-shrink: 0; padding: 2px 7px; border-radius: 5px; color: var(--color-primary-600); background: var(--color-primary-100); font-size: 10px; line-height: 1.5; }
-.reference-chevron { margin-left: auto; flex-shrink: 0; color: var(--color-text-secondary); transition: transform .15s; }
-.speech-reference-picker[open] .reference-chevron { transform: rotate(180deg); }
-@media (max-width: 600px) { .reference-wave-icon, .reference-kind { display: none; } }
+.reference-quick-play {
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: white;
+  background: linear-gradient(135deg, #a49aff, var(--color-primary-600));
+  box-shadow: 0 3px 8px #6554ff24;
+  cursor: pointer;
+}
+.reference-quick-play:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.reference-quick-play:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 3px;
+}
+.reference-wave-icon {
+  flex-shrink: 0;
+  color: var(--color-primary-500);
+}
+.reference-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.reference-kind {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--color-primary-600);
+  background: var(--color-primary-100);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.reference-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  transition: transform 0.15s;
+}
+.speech-reference-picker[open] .reference-chevron {
+  transform: rotate(180deg);
+}
+@media (max-width: 600px) {
+  .reference-wave-icon,
+  .reference-kind {
+    display: none;
+  }
+}
 </style>

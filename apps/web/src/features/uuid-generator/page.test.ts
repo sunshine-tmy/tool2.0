@@ -84,7 +84,7 @@ async function generate() {
 }
 it("opens empty and generates five UUIDs using the LAN-safe source only on request", async () => {
   const w = await setup();
-  expect(w.text()).toContain("仅在本地生成");
+  expect(w.find(".local-badge").exists()).toBe(false);
   expect(output()).toBe("");
   expect(w.getComponent(NInputNumber).props("value")).toBe(5);
   expect(button("复制结果").props("disabled")).toBe(true);

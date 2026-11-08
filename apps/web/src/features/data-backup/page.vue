@@ -269,7 +269,7 @@ const date = (value: string) => new Date(value).toLocaleString("zh-CN");
 }
 .backup-module-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
   gap: 16px;
   margin: 18px 0;
 }

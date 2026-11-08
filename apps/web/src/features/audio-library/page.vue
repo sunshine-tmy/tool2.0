@@ -988,7 +988,7 @@ pre {
   font-size: 12px;
 }
 
-@media (max-width: 1350px) {
+@container tool-content (max-width: 1350px) {
   .library-primary-filters {
     grid-template-columns: minmax(220px, 1fr) auto;
     gap: 14px;
@@ -1010,7 +1010,7 @@ pre {
     column-gap: 12px;
   }
 }
-@media (max-width: 1000px) {
+@container tool-content (max-width: 1000px) {
   .library-list-heading {
     display: none;
   }
@@ -1046,7 +1046,7 @@ pre {
     grid-row: 4;
   }
 }
-@media (max-width: 650px) {
+@container tool-content (max-width: 650px) {
   .library-toolbar {
     padding: 14px;
   }

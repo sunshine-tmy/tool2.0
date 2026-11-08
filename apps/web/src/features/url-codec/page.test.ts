@@ -88,7 +88,7 @@ async function process(text: string, direction: "encode" | "decode" = "encode") 
 const output = () => (wrapper!.get("#url-codec-output").element as HTMLTextAreaElement).value;
 it("offers three modes, uses UTF-8 component mode by default, and invalidates stale exports", async () => {
   const w = await setup();
-  expect(w.text()).toContain("仅在本地处理");
+  expect(w.find(".local-badge").exists()).toBe(false);
   expect(button("开始编码").props("disabled")).toBe(true);
   expect(w.getComponent(NSelect).props("options")).toHaveLength(3);
   await process("中文 a+b");

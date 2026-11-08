@@ -247,7 +247,7 @@ onMounted(load);
   width: 240px;
   max-width: 100%;
 }
-@media (max-width: 600px) {
+@container tool-content (max-width: 600px) {
   .archive-groups { padding: 12px; }
   .archive-group-filter { width: 100%; }
   .archive-group-select { flex: 1; width: auto; }
@@ -264,7 +264,7 @@ onMounted(load);
 .archive-move-description {
   margin: 0 0 12px;
 }
-@media (max-width: 640px) {
+@container tool-content (max-width: 640px) {
   .archive-group-filter {
     flex: 1 1 100%;
   }

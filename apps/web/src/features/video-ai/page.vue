@@ -5,16 +5,16 @@
         title="视频去字幕"
         kicker="VIDEO / SUBTITLE"
         description="自动检测并修复烧录在画面中的硬字幕，保留原分辨率与原音轨，全程在本机完成。"
+        compact-actions
       >
         <template #actions>
-          <div class="health-card" :class="healthState">
-            <span class="health-dot" aria-hidden="true"></span>
-            <div>
-              <strong>{{ healthTitle }}</strong>
-              <span>{{ healthSummary }}</span>
-            </div>
-            <n-button text :loading="healthLoading" @click="refreshHealth">刷新</n-button>
-          </div>
+          <ServiceStatusPopover
+            :status="healthIndicator"
+            :title="healthTitle"
+            :summary="healthSummary"
+            :loading="healthLoading"
+            @refresh="refreshHealth"
+          />
         </template>
       </ToolPageHeader>
 
@@ -145,6 +145,7 @@ import { RouterLink } from "vue-router";
 import type { VideoAiMode, VideoAiRect, VideoAiSegment, VideoAiTask } from "@toolbox/shared";
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
+import ServiceStatusPopover from "../../shared/ui/tool/ServiceStatusPopover.vue";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
 import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import { useTaskEvents } from "../../shared/composables/useTaskEvents";
@@ -340,6 +341,14 @@ const healthState = computed(() =>
         ? "available"
         : "unknown"
 );
+const healthIndicator = computed(() => {
+  if (healthLoading.value || healthState.value === "starting") return "loading";
+  if (healthState.value === "warning") return "unavailable";
+  if (healthState.value !== "available") return health.value ? "unavailable" : "unknown";
+  return (health.value?.engines.filter((engine) => engine.available).length ?? 0) < modeOptions.length
+    ? "partial"
+    : "available";
+});
 const healthTitle = computed(() =>
   health.value?.available
     ? "处理服务可用"
@@ -686,47 +695,6 @@ function formatBytes(bytes: number) {
   flex-direction: column;
   gap: var(--space-4);
 }
-.health-card {
-  display: flex;
-  min-width: 260px;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
-}
-.health-card > div {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-}
-.health-card strong {
-  font-size: 13px;
-}
-.health-card span {
-  color: var(--color-text-secondary);
-  font-size: 11px;
-}
-.health-dot {
-  width: 8px;
-  height: 8px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  background: var(--color-text-tertiary);
-}
-.health-card.available {
-  border-color: color-mix(in srgb, var(--color-success) 30%, var(--color-border));
-}
-.health-card.available .health-dot {
-  background: var(--color-success);
-}
-.health-card.warning .health-dot {
-  background: var(--color-warning);
-}
-.health-card.starting .health-dot {
-  background: var(--color-primary-600);
-}
 .capability-alert {
   margin: 0;
 }
@@ -775,16 +743,12 @@ function formatBytes(bytes: number) {
   align-items: stretch;
   gap: var(--space-5);
 }
-@media (max-width: 980px) {
+@container tool-content (max-width: 980px) {
   .editor-grid {
     grid-template-columns: 1fr;
   }
 }
 @media (max-width: 640px) {
-  .health-card {
-    min-width: 0;
-    width: 100%;
-  }
   .file-toolbar {
     align-items: stretch;
     flex-direction: column;
@@ -816,7 +780,7 @@ function formatBytes(bytes: number) {
 .editor-grid {
   grid-template-columns: minmax(0, 1fr) 320px;
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .editor-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -848,7 +812,7 @@ function formatBytes(bytes: number) {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 28%);
   gap: 16px;
 }
-@media (max-width: 980px) {
+@container tool-content (max-width: 980px) {
   .editor-grid {
     grid-template-columns: minmax(0, 1fr);
   }

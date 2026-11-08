@@ -75,11 +75,11 @@ watch(
   display: grid;
   gap: 12px;
 }
-.result {
+.results .result {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
-  padding: 16px;
+  gap: 12px;
+  padding: 12px 16px;
   background: var(--color-surface-subtle);
   border: 1px solid #e1e8f3;
   border-radius: 10px;
@@ -89,11 +89,12 @@ watch(
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 20px;
+  gap: 4px 16px;
 }
 .body strong {
   overflow-wrap: anywhere;
   font-size: 15px;
+  line-height: 1.5;
 }
 .body p {
   color: var(--color-text-secondary);
@@ -101,6 +102,7 @@ watch(
   overflow-wrap: anywhere;
   grid-column: 1;
   margin: 0;
+  line-height: 1.5;
 }
 .body > :deep(.n-progress),
 .body > :deep(.audio-preview) {
@@ -116,7 +118,7 @@ watch(
   max-width: 360px;
   justify-content: flex-end;
 }
-@media (max-width: 1000px) {
+@container tool-content (max-width: 1000px) {
   .body {
     grid-template-columns: minmax(0, 1fr);
   }

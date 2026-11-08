@@ -111,7 +111,7 @@ defineEmits<{
 .share-qr-block { display: grid; justify-items: center; gap: 4px; padding-left: 24px; border-left: 1px solid var(--color-border); }
 .share-qr-block > span { color: var(--color-text-tertiary); font-size: 11px; }
 .share-qr { display: block; box-sizing: border-box; width: 88px; height: 88px; margin: 0; padding: 4px; background: white; border: 1px solid var(--color-border); border-radius: 8px; }
-@media (max-width: 600px) {
+@container tool-content (max-width: 600px) {
   .share-strip { gap: 14px; }
   .share-qr-block { padding-left: 14px; }
   .share-address { flex-wrap: wrap; }

@@ -14,7 +14,14 @@
       </n-button-group>
       <label class="mask-range">
         <span>画笔 {{ brushSize }}px</span>
-        <n-slider v-model:value="brushSize" :min="8" :max="240" :step="2" aria-label="画笔大小" />
+        <n-slider
+          v-model:value="brushSize"
+          v-slider-label="{ label: '画笔大小', text: `${brushSize} 像素` }"
+          :min="8"
+          :max="240"
+          :step="2"
+          aria-label="画笔大小"
+        />
       </label>
       <n-button size="small" secondary aria-label="撤销蒙版操作" :disabled="historyIndex <= 0" @click="undo">
         <template #icon><Undo2 :size="15" /></template>
@@ -31,7 +38,14 @@
       <n-button size="small" secondary @click="clearMask">清空蒙版</n-button>
       <label class="mask-range zoom-control">
         <span>缩放 {{ Math.round(zoom * 100) }}%</span>
-        <n-slider v-model:value="zoom" :min="0.5" :max="2.5" :step="0.1" aria-label="画布缩放" />
+        <n-slider
+          v-model:value="zoom"
+          v-slider-label="{ label: '画布缩放', text: `${Math.round(zoom * 100)}%` }"
+          :min="0.5"
+          :max="2.5"
+          :step="0.1"
+          aria-label="画布缩放"
+        />
       </label>
     </div>
 
@@ -69,6 +83,7 @@
 </template>
 
 <script setup lang="ts">
+import { vSliderLabel } from "../../../shared/ui/slider-label";
 import { nextTick, reactive, ref } from "vue";
 import { NButton, NButtonGroup, NSlider } from "naive-ui";
 import { Eraser, Paintbrush, Redo2, Undo2 } from "lucide-vue-next";

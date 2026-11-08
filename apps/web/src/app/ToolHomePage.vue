@@ -137,3 +137,41 @@ onMounted(() => {
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", focusSearch));
 </script>
+
+<style scoped>
+.workbench-hero {
+  position: relative;
+  isolation: isolate;
+  border-radius: 20px;
+}
+.workbench-hero::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-primary-600) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-primary-600) 8%, transparent) 1px, transparent 1px),
+    radial-gradient(
+      ellipse at 72% 40%,
+      color-mix(in srgb, var(--color-primary-600) 7%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 55% 65%,
+      color-mix(in srgb, var(--color-cyan) 3%, transparent),
+      transparent 62%
+    );
+  background-size: 28px 28px, 28px 28px, 100% 100%, 100% 100%;
+  /* Fade the grid and both glows together before the panel edges. */
+  mask-image: radial-gradient(ellipse 60% 72% at 52% 38%, #000 12%, #0009 40%, transparent 78%);
+}
+@media (max-width: 560px) {
+  .workbench-hero::before {
+    background-size: 24px 24px, 24px 24px, 100% 100%, 100% 100%;
+    opacity: 0.6;
+  }
+}
+</style>

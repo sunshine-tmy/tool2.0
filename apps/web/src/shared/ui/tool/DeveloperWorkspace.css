@@ -125,12 +125,12 @@
 .ui-v2 .uuid-page .generator-results textarea {
   height: clamp(260px, 35vh, 440px);
 }
-@media (max-width: 900px) {
+@container tool-content (max-width: 900px) {
   .ui-v2 .v2-tool-page .editors {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-@media (max-width: 560px) {
+@container tool-content (max-width: 560px) {
   .ui-v2 .v2-tool-page .developer-settings {
     padding: 16px;
   }

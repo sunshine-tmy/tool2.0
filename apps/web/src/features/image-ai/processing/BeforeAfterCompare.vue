@@ -29,13 +29,20 @@
     </div>
     <div class="compare-slider-row">
       <span>{{ beforeLabel }}</span>
-      <n-slider v-model:value="position" :min="0" :max="100" :tooltip="false" />
+      <n-slider
+        v-model:value="position"
+        v-slider-label="{ label: '前后对比位置', text: `${position}%` }"
+        :min="0"
+        :max="100"
+        :tooltip="false"
+      />
       <span>{{ afterLabel }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { vSliderLabel } from "../../../shared/ui/slider-label";
 import { ref } from "vue";
 import { NSlider } from "naive-ui";
 

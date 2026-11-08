@@ -26,6 +26,7 @@
       <span class="sandbox-clock">{{ time.toFixed(1) }} / {{ (windowStart + 15).toFixed(1) }} 秒</span>
     </div>
     <n-slider
+      v-slider-label="{ label: '虚拟视频时间线', text: `${time.toFixed(1)} 秒` }"
       :value="time - windowStart"
       :min="0"
       :max="15"
@@ -41,6 +42,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { vSliderLabel } from "../../shared/ui/slider-label";
 import { computed, onScopeDispose, ref, watch } from "vue";
 import { NButton, NSlider } from "naive-ui";
 import type { ArchiveWatermarkSettings } from "@toolbox/shared/archive";
