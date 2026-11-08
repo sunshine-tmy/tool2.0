@@ -3,7 +3,7 @@
   <section v-if="panel.currentBatch" class="edge-tts-result" :class="`status-${panel.currentBatch.status}`">
     <div class="panel-heading">
       <div>
-        <p class="eyebrow">LATEST BATCH</p>
+        <p class="eyebrow"><AudioLines :size="14" />最新批次</p>
         <h3>{{ panel.batchTitle(panel.currentBatch) }}</h3>
         <p>
           {{ panel.batchStatusLabel(panel.currentBatch.status) }} · {{ panel.currentBatch.completedItems }}/{{
@@ -53,7 +53,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { NButton } from "naive-ui";
-import { ListTree } from "lucide-vue-next";
+import { AudioLines, ListTree } from "lucide-vue-next";
 import { useChatterboxPanelContext } from "./chatterbox-panel-context";
 import { SaveToAudioLibrary } from "../../audio-library/integrations/speech";
 import SpeechBatchDownloads from "../shared/SpeechBatchDownloads.vue";

@@ -378,7 +378,7 @@ defineExpose({ undo, redo, masks, resetRefinement });
   overflow: auto;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  background-color: #fff;
+  background-color: var(--color-surface);
   background-image: conic-gradient(#e9edf4 25%, transparent 0 50%, #e9edf4 0 75%, transparent 0);
   background-size: 20px 20px;
 }

@@ -21,51 +21,15 @@
 </template>
 
 <script setup lang="ts">
-import { NConfigProvider, NDialogProvider, NMessageProvider, type GlobalThemeOverrides } from "naive-ui";
+import { NConfigProvider, NDialogProvider, NMessageProvider } from "naive-ui";
+import { createTheme } from "./theme";
 import UiErrorBoundary from "../shared/ui/UiErrorBoundary.vue";
 import RouteLoading from "../shared/ui/RouteLoading.vue";
 import { AudioLibraryPlayback } from "../features/audio-library/integrations/playback";
 import DiagnosticPlaybackGuard from "./DiagnosticPlaybackGuard.vue";
 import { diagnosticConnection } from "../shared/http/diagnostic-connection";
 
-const themeOverrides: GlobalThemeOverrides = {
-  common: {
-    primaryColor: "#2563eb",
-    primaryColorHover: "#1d4ed8",
-    primaryColorPressed: "#1e3a8a",
-    primaryColorSuppl: "#0f766e",
-    infoColor: "#0f766e",
-    successColor: "#16a34a",
-    warningColor: "#d97706",
-    errorColor: "#dc2626",
-    textColorBase: "#172033",
-    bodyColor: "#f6f8fc",
-    borderColor: "#e2e8f0",
-    borderRadius: "8px",
-    fontFamily:
-      'Inter, "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
-  },
-  Button: {
-    borderRadiusMedium: "8px",
-    heightMedium: "40px",
-    heightLarge: "44px"
-  },
-  Card: {
-    borderRadius: "12px"
-  },
-  Input: {
-    borderRadius: "8px",
-    heightMedium: "40px"
-  },
-  Select: {
-    peers: {
-      InternalSelection: {
-        borderRadius: "8px",
-        heightMedium: "40px"
-      }
-    }
-  }
-};
+const themeOverrides = createTheme(getComputedStyle(document.documentElement));
 </script>
 
 <style scoped>

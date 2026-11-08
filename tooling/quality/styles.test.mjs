@@ -67,7 +67,12 @@ test("reviewed style changes reject altered values, important, order, scope, fil
   const rule = ".reviewed{top:var(--height, 0px)!important;color:red}";
   const source = `.before{color:blue}${rule}.after{color:green}`;
   const parse = (css, from = file) => parser.parse(css, { from: path.join(root, from) });
-  const restore = (tree) => restoreReviewedStyleBaseline(tree, { repositoryRoot: root, entryFile, amendments });
+  const restore = (tree) =>
+    restoreReviewedStyleBaseline(tree, {
+      repositoryRoot: root,
+      entryFile,
+      amendments
+    });
   const tree = parse(source);
   assert.equal(
     (await styleFingerprint(restore(tree))).semanticSha256,
@@ -104,6 +109,64 @@ test("reviewed style changes reject altered values, important, order, scope, fil
     (await styleFingerprint(restore(unrelated))).semanticSha256,
     (await styleFingerprint(restore(tree))).semanticSha256,
     "unreviewed changes must remain visible to the frozen fingerprint"
+  );
+});
+
+test("a reviewed redesign layer validates its entire structure and final position before restoring the historical cascade", async () => {
+  const file = "apps/web/src/styles/ui-v2.css";
+  const source = ":root{--ink:purple}@media(max-width:560px){.workbench{gap:16px}}";
+  const child = parser.parse(source, { from: path.join(root, file) });
+  const amendment = {
+    id: "ui-v2-fixture",
+    kind: "layer-addition",
+    file,
+    entries: ["apps/web/src/styles/index.css"],
+    layer: "components",
+    semanticSha256: (await styleFingerprint(child)).semanticSha256
+  };
+  const before = parser.parse("@layer tokens, foundation, components;@layer foundation{.legacy{color:blue}}", {
+    from: path.join(root, "apps/web/src/styles/index.css")
+  });
+  const build = (css = source, origin = file) => {
+    const tree = before.clone();
+    const layer = parser.atRule({ name: "layer", params: "components" });
+    layer.append(parser.parse(css, { from: path.join(root, origin) }).nodes);
+    tree.append(layer);
+    return tree;
+  };
+  const restore = (tree) =>
+    restoreReviewedStyleBaseline(tree, {
+      repositoryRoot: root,
+      entryFile: amendment.entries[0],
+      amendments: [amendment]
+    });
+  const current = build();
+  assert.equal(
+    (await styleFingerprint(restore(current))).semanticSha256,
+    (await styleFingerprint(before)).semanticSha256
+  );
+  assert.equal(current.nodes.length, before.nodes.length + 1, "production AST is untouched");
+  for (const css of [
+    source.replace("purple", "red"),
+    source.replace("560", "561"),
+    source.replace("16px", "16px!important"),
+    source + ".extra{color:red}"
+  ])
+    assert.throws(() => restore(build(css)), /reviewed layer structure changed/);
+  assert.throws(() => restore(build(source, "apps/web/src/styles/other.css")), /expected exactly one/);
+  const moved = build();
+  moved.prepend(moved.last);
+  assert.throws(() => restore(moved), /final position/);
+  const duplicate = build();
+  duplicate.append(duplicate.last.clone());
+  assert.throws(() => restore(duplicate), /exactly one/);
+  assert.throws(() => restore(before), /exactly one/);
+  const changed = build();
+  changed.first.params = "components, foundation, tokens";
+  assert.notEqual(
+    (await styleFingerprint(restore(changed))).semanticSha256,
+    (await styleFingerprint(before)).semanticSha256,
+    "unreviewed historical changes remain visible"
   );
 });
 

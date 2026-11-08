@@ -53,6 +53,16 @@
       "next": ".topbar",
       "declarations": [["top", "var(--shell-overlay-top, 0px)", true]],
       "baselineSelector": null
+    },
+    {
+      "id": "ui-v2-design-system",
+      "kind": "layer-addition",
+      "introducedBy": "2026-11-07 user-authorized design.md implementation",
+      "reason": "首页集中导航、蓝紫主题和统一工作区。原 R11 级联不改动；只在最后追加一个经过完整结构校验的 components 层。",
+      "entries": ["apps/web/src/styles/index.css"],
+      "file": "apps/web/src/styles/ui-v2.css",
+      "layer": "components",
+      "semanticSha256": "ecc716df89f24b5b0bdc5e5aba76c68ce83ce851e6030c75f4247aa3961c3a99"
     }
   ]
 }

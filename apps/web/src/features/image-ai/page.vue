@@ -1,7 +1,7 @@
 <!-- 中文模块说明：AI 图片前端模块，负责输入配置、任务状态、预览和下载 -->
 <template>
-  <ToolLayout>
-    <section class="main-column image-ai-main">
+  <ToolLayout class="image-ai-layout">
+    <section class="main-column image-ai-main v2-tool-page">
       <ToolPageHeader
         title="AI 图片处理"
         description="去水印、变清晰和商品图抠图统一在本机完成，成功结果自动留档，支持回看与下载。"
@@ -20,11 +20,12 @@
         </template>
       </ToolPageHeader>
 
-      <n-alert type="warning" :bordered="false" class="rights-alert">
-        仅处理你拥有合法使用权的图片。OCR 框选只是水印区域建议，必须由你确认后才会执行修复。
-      </n-alert>
+      <p class="rights-alert" role="note">
+        <Info :size="15" aria-hidden="true" />
+        <span>仅处理你拥有合法使用权的图片。OCR 框选只是水印区域建议，必须由你确认后才会执行修复。</span>
+      </p>
 
-      <section class="workspace-panel image-ai-workspace">
+      <section class="image-ai-workspace">
         <ProductImageEditor
           v-if="editTarget"
           :task-id="editTarget.taskId"
@@ -32,7 +33,7 @@
           @close="editTarget = undefined"
           @saved="historyVersion++"
         />
-        <n-tabs v-else v-model:value="activeTab" type="segment" animated>
+        <n-tabs v-else v-model:value="activeTab" type="line" animated>
           <n-tab-pane name="watermark" tab="去水印">
             <ImageAiWatermarkPanel
               :watermark-file="watermarkFile"
@@ -103,7 +104,8 @@
 <script setup lang="ts">
 import DiagnosticErrorLink from "../../shared/ui/DiagnosticErrorLink.vue";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NAlert, NButton, NTabPane, NTabs, useMessage } from "naive-ui";
+import { NButton, NTabPane, NTabs, useMessage } from "naive-ui";
+import { Info } from "lucide-vue-next";
 import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 
 import ToolLayout from "../../shell/ToolLayout.vue";
@@ -381,3 +383,128 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 </script>
+
+<style scoped>
+.image-ai-workspace {
+  min-width: 0;
+  min-height: 0;
+}
+.image-ai-layout :deep(.content) {
+  max-width: none;
+  padding: 28px 32px 40px;
+}
+.image-ai-main :deep(.tool-page-header) {
+  margin-bottom: 24px;
+}
+.image-ai-main :deep(.tool-page-icon) {
+  width: 72px;
+  height: 72px;
+}
+.image-ai-main :deep(.tool-page-header h2) {
+  font-size: 30px;
+  line-height: 1.3;
+}
+.image-ai-main > .rights-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--color-text-secondary);
+  background: transparent;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.rights-alert > svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+}
+.image-ai-workspace :deep(.n-tabs-nav) {
+  max-width: none;
+  margin-bottom: 20px;
+}
+.image-ai-workspace :deep(.n-tabs-tab) {
+  padding: 14px 20px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.image-ai-workspace :deep(.n-tabs-tab.n-tabs-tab--active),
+.image-ai-workspace :deep(.n-tabs-tab.n-tabs-tab--active .n-tabs-tab__label) {
+  font-weight: 700;
+}
+.image-ai-workspace :deep(.n-tab-pane) {
+  padding-top: 0;
+}
+.image-ai-workspace :deep(.image-ai-tab-grid) {
+  align-items: stretch;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 32%);
+}
+.image-ai-workspace :deep(.image-ai-stage) {
+  min-width: 0;
+  min-height: 0;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.image-ai-workspace :deep(.image-ai-controls) {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.image-ai-workspace :deep(.image-ai-dropzone) {
+  color: var(--color-primary-600);
+  background: var(--color-surface-subtle);
+  border-color: var(--color-primary-200);
+}
+.image-ai-workspace :deep(.image-ai-controls .panel-heading p) {
+  color: var(--color-text-secondary);
+}
+.image-ai-workspace :deep(.image-ai-filebar) {
+  border-color: var(--color-border);
+  background: var(--color-surface-subtle);
+}
+.image-ai-workspace :deep(.image-ai-filebar strong) {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .image-ai-workspace :deep(.image-ai-tab-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .image-ai-workspace :deep(.image-ai-controls) {
+    padding: 20px;
+  }
+}
+@media (max-width: 600px) {
+  .image-ai-layout :deep(.content) {
+    padding: 20px 16px 28px;
+  }
+  .image-ai-main :deep(.tool-page-icon) {
+    width: 56px;
+    height: 56px;
+  }
+  .image-ai-main :deep(.tool-page-header h2) {
+    font-size: 26px;
+  }
+  .image-ai-workspace :deep(.n-tabs-tab) {
+    padding: 12px 8px;
+    font-size: 14px;
+  }
+  .image-ai-workspace :deep(.image-ai-stage) {
+    padding: 16px;
+  }
+}
+</style>

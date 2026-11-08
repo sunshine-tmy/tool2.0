@@ -1,6 +1,6 @@
 <template>
   <ToolLayout>
-    <section class="main-column diagnostics-page">
+    <section class="main-column diagnostics-page v2-tool-page">
       <ToolPageHeader
         title="启动与环境诊断"
         description="先看原因与影响，再决定是否处理。轻检不会加载模型、联网生成或修改数据。"
@@ -43,7 +43,8 @@
         <n-alert v-if="error" type="error" :bordered="false">{{ error }}</n-alert>
         <n-alert v-if="offline" type="warning" :bordered="false">
           页面只能确认连接未成功，无法据此知道后端退出原因。请在项目目录运行
-          <n-text code>pnpm run doctor</n-text> 查看本机环境，或在桌面启动诊断窗口导出摘要。未修改端口、权限或配置。
+          <n-text code>pnpm run doctor</n-text>
+          查看本机环境，或在桌面启动诊断窗口导出摘要。未修改端口、权限或配置。
         </n-alert>
         <n-alert v-if="running" type="info" :bordered="false"
           >{{ run?.phase }}。模型加载取消时需等待当前调用安全结束，期间保持维护锁。</n-alert
@@ -419,7 +420,7 @@ onBeforeUnmount(() => {
   margin: 0 0 12px;
 }
 .muted {
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 .issue-row {
@@ -428,7 +429,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 20px;
   padding: 16px 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border);
 }
 .issue-row p,
 .check-row p {
@@ -437,13 +438,13 @@ onBeforeUnmount(() => {
 }
 .check-row {
   padding: 16px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   margin-bottom: 12px;
 }
 .check-row.focused {
   border-color: #93c5fd;
-  background: #f8fbff;
+  background: var(--color-surface-subtle);
 }
 .check-title {
   display: flex;

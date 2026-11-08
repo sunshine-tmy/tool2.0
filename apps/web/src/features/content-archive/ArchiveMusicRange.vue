@@ -165,7 +165,7 @@ defineExpose({ stop });
 .archive-music-range {
   min-width: 0;
   padding: 12px;
-  border: 1px solid var(--border-color, #dce4f1);
+  border: 1px solid var(--border-color, var(--color-border));
   border-radius: 8px;
 }
 .archive-music-range audio {
@@ -173,6 +173,6 @@ defineExpose({ stop });
 }
 .archive-music-range p {
   font-size: 12px;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
 }
 </style>

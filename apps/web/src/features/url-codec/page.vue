@@ -1,6 +1,6 @@
 <template>
   <ToolLayout>
-    <section class="url-codec-page">
+    <section class="url-codec-page v2-tool-page">
       <ToolPageHeader
         title="URL 编解码"
         kicker="ENCODING / URL"
@@ -8,45 +8,23 @@
       >
         <template #actions><span class="local-badge">仅在本地处理</span></template>
       </ToolPageHeader>
-      <section class="codec-panel">
-        <div class="toolbar" role="group" aria-label="URL 处理选项">
-          <n-radio-group v-model:value="direction" aria-label="编解码方向">
-            <n-radio-button value="encode">编码</n-radio-button><n-radio-button value="decode">解码</n-radio-button>
-          </n-radio-group>
-          <n-select v-model:value="mode" class="mode-select" aria-label="URL 处理模式" :options="modeOptions" />
-          <n-button type="primary" :disabled="!hasInput" @click="run">{{
-            direction === "encode" ? "开始编码" : "开始解码"
-          }}</n-button>
-          <n-button v-if="busy" @click="cancel">停止处理</n-button>
-          <n-button class="clear" :disabled="!hasInput && !result && !notice" @click="clear">清空</n-button>
-        </div>
-        <p class="mode-help">{{ modeHelp[mode] }}</p>
-        <n-checkbox v-model:checked="automatic">自动处理小文本</n-checkbox>
-        <p class="hint">内容不上传、不保存历史，离开或刷新页面后清除。每次只处理一层，不自动访问地址。</p>
-        <n-alert v-if="notice" type="warning" closable @close="notice = ''">{{ notice }}</n-alert>
-        <n-alert v-if="error" :type="['limit', 'internal'].includes(error.code) ? 'warning' : 'error'" class="status">
-          {{ error.message
-          }}<template v-if="!['limit', 'internal'].includes(error.code)">
-            · 第 {{ error.line }} 行，第 {{ error.column }} 列
-            <n-button text type="error" @click="locateError">定位错误</n-button>
-          </template>
-        </n-alert>
-        <p v-else class="status" role="status">
-          {{
-            busy
-              ? "正在处理…"
-              : !hasInput
-                ? "请输入内容"
-                : stale
-                  ? "输入或选项已变化，请重新处理"
-                  : result
-                    ? "处理完成"
-                    : "等待处理"
-          }}
-        </p>
-        <p class="hint">
-          输入最大 1 MiB，输出最大 3 MiB；超过 200 KiB 的文本请手动处理。保留空格和换行，不自动去除前后空白。
-        </p>
+      <section class="developer-workspace codec-panel">
+        <section class="developer-settings">
+          <h3 class="module-section-title">输入与设置</h3>
+          <div class="toolbar" role="group" aria-label="URL 处理选项">
+            <n-radio-group v-model:value="direction" aria-label="编解码方向">
+              <n-radio-button value="encode">编码</n-radio-button><n-radio-button value="decode">解码</n-radio-button>
+            </n-radio-group>
+            <n-select v-model:value="mode" class="mode-select" aria-label="URL 处理模式" :options="modeOptions" />
+            <n-button type="primary" :disabled="!hasInput" @click="run">{{
+              direction === "encode" ? "开始编码" : "开始解码"
+            }}</n-button>
+            <n-button v-if="busy" @click="cancel">停止处理</n-button>
+            <n-button class="clear" :disabled="!hasInput && !result && !notice" @click="clear">清空</n-button>
+          </div>
+          <n-checkbox v-model:checked="automatic">自动处理小文本</n-checkbox>
+          <p class="mode-help">{{ modeHelp[mode] }}</p>
+        </section>
         <div class="editors">
           <section class="editor-pane">
             <label for="url-codec-source">URL 输入</label>
@@ -66,6 +44,10 @@
             <div class="output-heading">
               <label for="url-codec-output">输出</label
               ><span v-if="stale || (error && result)" class="stale">旧结果，已暂停导出</span>
+              <div class="developer-export-actions">
+                <n-button size="small" :disabled="!canExport" @click="copy">复制结果</n-button>
+                <n-button size="small" :disabled="!canExport" @click="download">下载 TXT</n-button>
+              </div>
             </div>
             <textarea
               id="url-codec-output"
@@ -79,11 +61,39 @@
               <small>{{
                 result ? `${result.outputChars} 字符 · ${formatBytesAdaptive(result.outputBytes)}` : "暂无结果"
               }}</small>
-              <n-button size="small" :disabled="!canExport" @click="copy">复制结果</n-button>
-              <n-button size="small" :disabled="!canExport" @click="download">下载 TXT</n-button>
             </div>
           </section>
         </div>
+        <section class="developer-feedback" aria-label="处理状态">
+          <n-alert v-if="notice" type="warning" closable @close="notice = ''">{{ notice }}</n-alert>
+          <n-alert v-if="error" :type="['limit', 'internal'].includes(error.code) ? 'warning' : 'error'" class="status">
+            {{ error.message
+            }}<template v-if="!['limit', 'internal'].includes(error.code)">
+              · 第 {{ error.line }} 行，第 {{ error.column }} 列
+              <n-button text type="error" @click="locateError">定位错误</n-button>
+            </template>
+          </n-alert>
+          <p v-else class="status" role="status">
+            {{
+              busy
+                ? "正在处理…"
+                : !hasInput
+                  ? "请输入内容"
+                  : stale
+                    ? "输入或选项已变化，请重新处理"
+                    : result
+                      ? "处理完成"
+                      : "等待处理"
+            }}
+          </p>
+        </section>
+        <details class="module-help">
+          <summary>使用说明与处理限制</summary>
+          <p class="hint">内容不上传、不保存历史，离开或刷新页面后清除。每次只处理一层，不自动访问地址。</p>
+          <p class="hint">
+            输入最大 1 MiB，输出最大 3 MiB；超过 200 KiB 的文本请手动处理。保留空格和换行，不自动去除前后空白。
+          </p>
+        </details>
       </section>
     </section>
   </ToolLayout>
@@ -181,11 +191,12 @@ onScopeDispose(releaseDownload);
   min-width: 0;
 }
 .codec-panel {
+  box-shadow: var(--shadow-card);
   min-width: 0;
   padding: 20px;
-  background: var(--card-color, #fff);
-  border: 1px solid var(--border-color, #dce4f1);
-  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
 }
 .toolbar,
 .output-heading,
@@ -205,7 +216,7 @@ onScopeDispose(releaseDownload);
 .hint,
 small,
 .mode-help {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   font-size: 12px;
 }
 .mode-help {
@@ -241,13 +252,13 @@ textarea {
   box-sizing: border-box;
   display: block;
   width: 100%;
-  min-height: 420px;
-  height: 55vh;
+  min-height: 320px;
+  height: clamp(320px, 40vh, 480px);
   padding: 14px;
-  border: 1px solid #dce4f1;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fafbfd;
-  color: #172033;
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
   resize: vertical;
   font:
     14px/1.65 Consolas,
@@ -259,11 +270,11 @@ textarea {
   overflow-y: auto;
 }
 textarea:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 1px;
 }
 textarea[readonly] {
-  background: #f5f7fb;
+  background: var(--color-surface-subtle);
 }
 .output-actions small {
   margin-right: auto;
@@ -271,7 +282,7 @@ textarea[readonly] {
 .local-badge {
   color: #0f766e;
   background: #d9faf2;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 6px 10px;
   font-size: 12px;
 }
@@ -300,3 +311,5 @@ textarea[readonly] {
   }
 }
 </style>
+
+<style src="../../shared/ui/tool/DeveloperWorkspace.css"></style>

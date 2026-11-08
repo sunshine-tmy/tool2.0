@@ -1,0 +1,79 @@
+/* A single visual contract for upload surfaces. File rules and handlers stay with each feature. */
+:root .file-upload-area[data-upload-area]:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 144px;
+  margin: 0;
+  padding: 22px 20px;
+  border: 1px dashed var(--color-primary-200);
+  border-radius: 12px;
+  background: var(--color-surface-subtle);
+  color: var(--color-primary-600);
+  text-align: center;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+:root .file-upload-area[data-upload-area]:not([hidden]) > svg {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  color: var(--color-primary-600);
+  stroke-width: 1.8;
+}
+:root .file-upload-area[data-upload-area]:not([hidden]) > strong,
+:root .file-upload-area[data-upload-area]:not([hidden]) > span:not(.product-upload-icon):not(.product-upload-copy) {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  color: var(--color-text-secondary);
+}
+:root .file-upload-area[data-upload-area]:not([hidden]) > strong {
+  color: var(--color-primary-600);
+  font-size: 16px;
+  font-weight: 600;
+}
+:root .file-upload-area[data-upload-area]:not([hidden]) > small {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+:root .file-upload-area[data-upload-area]:not([hidden]) > img {
+  max-width: 160px;
+  max-height: 80px;
+  object-fit: contain;
+}
+:root .file-upload-area[data-upload-area]:not([hidden]):hover,
+:root .file-upload-area[data-upload-area]:not([hidden]).is-dragging {
+  border-color: var(--color-primary-600);
+  background: var(--color-primary-50);
+}
+:root .file-upload-area[data-upload-area]:not([hidden]):focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 3px;
+}
+:root .file-upload-area[data-upload-area]:not([hidden]):is(:disabled, [aria-disabled="true"], .is-disabled),
+:root .file-upload-area[data-upload-area]:not([hidden]):has(input:disabled) {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border);
+}
+@media (max-width: 600px) {
+  :root .file-upload-area[data-upload-area]:not([hidden]) {
+    min-height: 128px;
+    padding: 18px 14px;
+    gap: 8px;
+  }
+}

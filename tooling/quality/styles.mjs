@@ -115,6 +115,30 @@ export function restoreReviewedStyleBaseline(root, { repositoryRoot, entryFile, 
     const fail = (detail) => {
       throw new Error(`Reviewed style change ${amendment.id}: ${detail}`);
     };
+    if (amendment.kind === "layer-addition") {
+      // A deliberate visual redesign is an exact, appended layer, not a reset of R11's frozen inputs.
+      // Validate every node, its source, ordering and complete structure before removing only this layer on the clone.
+      const layers = restored.nodes.filter(
+        (node) =>
+          node.type === "atrule" &&
+          node.name === "layer" &&
+          node.nodes &&
+          node.nodes.some((child) => origin(child) === amendment.file)
+      );
+      if (layers.length !== 1) fail("expected exactly one appended layer");
+      const layer = layers[0];
+      if (layer.params !== amendment.layer || restored.nodes.filter((node) => node.type !== "comment").at(-1) !== layer)
+        fail("layer moved from its reviewed final position");
+      layer.walk((node) => {
+        if (node.type !== "comment" && origin(node) !== amendment.file) fail("unexpected source inside reviewed layer");
+      });
+      const fingerprint = createHash("sha256")
+        .update(JSON.stringify(styleStructure(layer)))
+        .digest("hex");
+      if (fingerprint !== amendment.semanticSha256) fail("reviewed layer structure changed");
+      layer.remove();
+      continue;
+    }
     const matches = [];
     restored.walkRules((rule) => {
       if (origin(rule) === amendment.file && cssText(rule.selector) === cssText(amendment.selector)) matches.push(rule);

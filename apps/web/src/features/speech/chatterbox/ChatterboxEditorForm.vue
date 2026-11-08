@@ -2,106 +2,171 @@
 <template>
   <section class="edge-tts-workbench chatterbox-workbench">
     <div class="edge-tts-editor chatterbox-editor batch-editor">
-      <div class="panel-heading">
-        <div>
-          <h3>参考音色</h3>
-          <p>推荐 10–20 秒、单人、无背景音乐且与目标语言一致的清晰录音。</p>
-        </div>
-        <span>5–30 秒 · 最大 20 MB</span>
-      </div>
-      <div class="voice-source-tabs">
-        <button
-          type="button"
-          :class="{ active: panel.referenceSource === 'upload' }"
-          @click="panel.referenceSource = 'upload'"
-        >
-          <UploadCloud :size="16" />上传新音色
-        </button>
-        <button
-          type="button"
-          :class="{ active: panel.referenceSource === 'saved' }"
-          @click="panel.referenceSource = 'saved'"
-        >
-          <Library :size="16" />永久音色库（{{ panel.savedVoices.length }}）
-        </button>
-      </div>
-      <template v-if="panel.referenceSource === 'upload'">
-        <label class="chatterbox-dropzone" :class="{ 'has-file': panel.referenceFile }">
-          <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.aac" @change="panel.selectReference" />
-          <template v-if="panel.referenceFile">
-            <FileAudio :size="30" /><strong>{{ panel.referenceFile.name }}</strong>
-            <span>{{ panel.formatBytes(panel.referenceFile.size) }} · 点击重新选择</span>
-          </template>
-          <template v-else>
-            <UploadCloud :size="32" /><strong>上传参考音频</strong><span>整个批次共用同一份参考音色</span>
-          </template>
-        </label>
+      <details class="speech-reference-picker" :open="referencePickerOpen" @toggle="syncReferencePickerOpen">
+        <summary>
+          <span class="speech-reference-label">参考音色</span>
+          <span class="speech-reference-current">
+            <button
+              type="button"
+              class="reference-quick-play"
+              :disabled="!referenceAudioUrl"
+              :aria-label="referencePlaying ? '暂停参考音色' : '试听参考音色'"
+              @click.stop.prevent="toggleReferencePreview"
+            ><Pause v-if="referencePlaying" :size="16" fill="currentColor" /><Play v-else :size="16" fill="currentColor" /></button>
+            <AudioLines class="reference-wave-icon" :size="38" aria-hidden="true" />
+            <span class="reference-current-copy">
+              <span class="reference-name-row"><strong>{{
+                panel.referenceSource === "upload"
+                  ? panel.referenceFile?.name || "上传参考音频"
+                  : currentVoice?.name || "选择参考音色"
+              }}</strong><span class="reference-kind">参考音色</span></span>
+              <small>{{ referencePreviewError ? "试听加载失败，请展开后重试" : referenceDurationLabel }}</small>
+            </span>
+            <ChevronDown class="reference-chevron" :size="18" />
+          </span>
+        </summary>
         <audio
-          v-if="panel.referencePreview"
-          class="edge-tts-player"
-          controls
+          ref="quickReferenceAudio"
+          hidden
+          :src="referenceAudioUrl || undefined"
           preload="metadata"
-          :src="panel.referencePreview"
+          @loadedmetadata="referenceDuration = quickReferenceAudio?.duration || 0"
+          @playing="referencePlaying = true"
+          @pause="referencePlaying = false"
+          @ended="referencePlaying = false"
+          @error="referencePlaying = false; referencePreviewError = true"
         />
-        <div v-if="panel.referenceFile" class="save-voice-row">
-          <n-input
-            v-model:value="panel.voiceName"
-            maxlength="100"
-            clearable
-            placeholder="输入音色名称，永久保存后可重复使用"
-          />
-          <n-button
-            :loading="panel.savingVoice"
-            :disabled="!panel.voiceName.trim() || !panel.consentConfirmed"
-            @click="panel.saveCurrentVoice"
-          >
-            <Save :size="16" />永久保存音色
-          </n-button>
-        </div>
-      </template>
-      <div v-else class="saved-voice-list">
-        <article
-          v-for="voice in panel.languageSavedVoices"
-          :key="voice.id"
-          :class="{ selected: panel.selectedVoiceId === voice.id }"
-          @click="panel.selectedVoiceId = voice.id"
-        >
-          <div class="saved-voice-main">
-            <FileAudio :size="20" />
-            <span
-              ><strong>{{ voice.name }}</strong
-              ><small>{{ voice.durationSeconds.toFixed(1) }} 秒 · {{ panel.formatDate(voice.createdAt) }}</small></span
-            >
+        <div class="speech-reference-body">
+          <div class="panel-heading">
+            <div>
+              <h3>参考音色</h3>
+              <p>推荐 10–20 秒、单人、无背景音乐且与目标语言一致的清晰录音。</p>
+            </div>
+            <span>5–30 秒 · 最大 20 MB</span>
           </div>
-          <audio controls preload="metadata" :src="panel.mediaUrl(voice.audioUrl)" @click.stop />
-          <n-button
-            class="saved-voice-select"
-            size="small"
-            :type="panel.selectedVoiceId === voice.id ? 'primary' : 'default'"
-            :secondary="panel.selectedVoiceId !== voice.id"
-            :aria-pressed="panel.selectedVoiceId === voice.id"
-            @click.stop="panel.selectedVoiceId = voice.id"
-          >
-            <Check v-if="panel.selectedVoiceId === voice.id" :size="16" />
-            {{ panel.selectedVoiceId === voice.id ? "已选择" : "选择音色" }}
-          </n-button>
-          <n-button
-            circle
-            quaternary
-            size="small"
-            type="error"
-            title="永久删除该音色"
-            @click.stop="panel.removeSavedVoice(voice.id)"
-          >
-            <Trash2 :size="16" />
-          </n-button>
-        </article>
-        <n-empty v-if="!panel.languageSavedVoices.length" description="当前语言还没有永久保存的参考音色" />
+          <div class="voice-source-tabs">
+            <button
+              type="button"
+              :class="{ active: panel.referenceSource === 'upload' }"
+              @click="panel.referenceSource = 'upload'"
+            >
+              <UploadCloud :size="16" />上传新音色
+            </button>
+            <button
+              type="button"
+              :class="{ active: panel.referenceSource === 'saved' }"
+              @click="panel.referenceSource = 'saved'"
+            >
+              <Library :size="16" />永久音色库（{{ panel.savedVoices.length }}）
+            </button>
+          </div>
+          <template v-if="panel.referenceSource === 'upload'">
+            <label
+              class="chatterbox-dropzone file-upload-area"
+              data-upload-area
+              :class="{ 'has-file': panel.referenceFile }"
+            >
+              <input type="file" accept="audio/*,.wav,.mp3,.m4a,.flac,.ogg,.aac" @change="panel.selectReference" />
+              <template v-if="panel.referenceFile">
+                <FileAudio :size="30" /><strong>{{ panel.referenceFile.name }}</strong>
+                <span>{{ panel.formatBytes(panel.referenceFile.size) }} · 点击重新选择</span>
+              </template>
+              <template v-else>
+                <UploadCloud :size="32" /><strong>上传参考音频</strong><span>整个批次共用同一份参考音色</span>
+              </template>
+            </label>
+            <div v-if="panel.referencePreview" class="speech-reference-audio" @click.stop>
+              <span class="speech-reference-audio-label"><Headphones :size="16" />试听音色</span>
+              <audio
+                class="reference-audio-player"
+                controls
+                preload="metadata"
+                aria-label="试听上传的参考音色"
+                :src="panel.referencePreview"
+              />
+            </div>
+            <div v-if="panel.referenceFile" class="save-voice-row">
+              <n-input
+                v-model:value="panel.voiceName"
+                maxlength="100"
+                clearable
+                placeholder="输入音色名称，永久保存后可重复使用"
+              />
+              <n-button
+                :loading="panel.savingVoice"
+                :disabled="!panel.voiceName.trim() || !panel.consentConfirmed"
+                @click="panel.saveCurrentVoice"
+              >
+                <Save :size="16" />永久保存音色
+              </n-button>
+            </div>
+          </template>
+          <div v-else class="saved-voice-list">
+            <article
+              v-for="voice in panel.languageSavedVoices"
+              :key="voice.id"
+              :class="{ selected: panel.selectedVoiceId === voice.id }"
+              @click="panel.selectedVoiceId = voice.id"
+            >
+              <div class="saved-voice-main">
+                <FileAudio :size="20" />
+                <span
+                  ><strong>{{ voice.name }}</strong
+                  ><small
+                    >{{ voice.durationSeconds.toFixed(1) }} 秒 · {{ panel.formatDate(voice.createdAt) }}</small
+                  ></span
+                >
+              </div>
+              <div class="speech-reference-audio" @click.stop>
+                <span class="speech-reference-audio-label"><Headphones :size="16" />试听音色</span>
+                <audio
+                  class="reference-audio-player"
+                  controls
+                  preload="metadata"
+                  :aria-label="`试听音色 ${voice.name}`"
+                  :src="panel.mediaUrl(voice.audioUrl)"
+                />
+              </div>
+              <n-button
+                class="saved-voice-select"
+                size="small"
+                :type="panel.selectedVoiceId === voice.id ? 'primary' : 'default'"
+                :secondary="panel.selectedVoiceId !== voice.id"
+                :aria-pressed="panel.selectedVoiceId === voice.id"
+                @click.stop="panel.selectedVoiceId = voice.id"
+              >
+                <Check v-if="panel.selectedVoiceId === voice.id" :size="16" />
+                {{ panel.selectedVoiceId === voice.id ? "已选择" : "选择音色" }}
+              </n-button>
+              <n-button
+                circle
+                quaternary
+                size="small"
+                type="error"
+                title="永久删除该音色"
+                @click.stop="panel.removeSavedVoice(voice.id)"
+              >
+                <Trash2 :size="16" />
+              </n-button>
+            </article>
+            <n-empty v-if="!panel.languageSavedVoices.length" description="当前语言还没有永久保存的参考音色" />
+          </div>
+        </div>
+      </details>
+      <div class="speech-batch-name">
+        <label>批量名称</label>
+        <n-input
+          v-model:value="panel.batchName"
+          maxlength="100"
+          clearable
+          placeholder="批次名称（可选）"
+          aria-label="批次名称"
+        />
       </div>
 
       <div class="panel-heading batch-heading">
         <div>
-          <h3>有序文案</h3>
+          <h3>文本分段与翻译</h3>
           <p>每段生成一个独立 MP3；拖动卡片或使用箭头调整总 SRT 顺序。</p>
         </div>
         <span :class="{ 'is-limit': panel.totalCharacters > panel.maxBatchTextLength }">
@@ -111,19 +176,22 @@
       </div>
 
       <div class="batch-toolbar">
-        <n-input v-model:value="panel.batchName" maxlength="100" clearable placeholder="批次名称（可选）" />
-        <n-button secondary @click="panel.openAutoSegment"><WandSparkles :size="16" />智能识别分段</n-button>
-        <n-button secondary @click="panel.splitByBlankLines"><SplitSquareVertical :size="16" />按空行拆分</n-button>
-        <n-button secondary :disabled="panel.segments.length >= panel.maxBatchSegments" @click="panel.addSegment">
+        <n-button size="small" type="primary" @click="panel.openAutoSegment"
+          ><WandSparkles :size="16" />智能识别分段</n-button
+        >
+        <n-button size="small" @click="panel.splitByBlankLines"><SplitSquareVertical :size="16" />按空行拆分</n-button>
+        <n-button size="small" :disabled="panel.segments.length >= panel.maxBatchSegments" @click="panel.addSegment">
           <Plus :size="16" />添加一段
         </n-button>
         <n-button
-          secondary
+          class="batch-clear"
+          size="small"
+          quaternary
           type="error"
           :disabled="panel.creating || !panel.hasBatchDraft"
           @click="panel.clearBatchDraft"
         >
-          <Trash2 :size="16" />清空当前批次内容
+          <Trash2 :size="16" />清空批次
         </n-button>
       </div>
 
@@ -145,23 +213,40 @@
             <GripVertical :size="17" /><strong>{{ String(index + 1).padStart(2, "0") }}</strong>
           </div>
           <div class="segment-fields">
-            <n-input
-              v-model:value="segment.text"
-              type="textarea"
-              :maxlength="panel.maxTextLength"
-              show-count
-              :autosize="{ minRows: 4, maxRows: 10 }"
-              :placeholder="`输入第 ${index + 1} 段 ${panel.languageLabel(panel.language)} 文案…`"
-            />
-            <n-input
-              v-model:value="segment.referenceTranslation"
-              type="textarea"
-              :maxlength="panel.maxReferenceTranslationLength"
-              show-count
-              :autosize="{ minRows: 2, maxRows: 6 }"
-              placeholder="中文翻译（生成单独的中文 SRT，不参与配音）"
-            />
-            <n-input v-model:value="segment.fileName" maxlength="100" clearable placeholder="该段文件名（可选）" />
+            <div class="speech-segment-field">
+              <label>原文 <span>*</span></label>
+              <n-input
+                v-model:value="segment.text"
+                type="textarea"
+                :maxlength="panel.maxTextLength"
+                show-count
+                :autosize="{ minRows: 2, maxRows: 10 }"
+                :aria-label="`第 ${index + 1} 段原文`"
+                :placeholder="`输入第 ${index + 1} 段 ${panel.languageLabel(panel.language)} 文案…`"
+              />
+            </div>
+            <div class="speech-segment-field">
+              <label>中文翻译 <small>（可选）</small></label>
+              <n-input
+                v-model:value="segment.referenceTranslation"
+                type="textarea"
+                :maxlength="panel.maxReferenceTranslationLength"
+                show-count
+                :autosize="{ minRows: 2, maxRows: 6 }"
+                placeholder="中文翻译（生成单独的中文 SRT，不参与配音）"
+                :aria-label="`第 ${index + 1} 段中文翻译`"
+              />
+            </div>
+            <div class="speech-segment-field speech-segment-filename">
+              <label>文件名称 <small>（可选）</small></label
+              ><n-input
+                v-model:value="segment.fileName"
+                maxlength="100"
+                clearable
+                placeholder="该段文件名（可选）"
+                :aria-label="`第 ${index + 1} 段文件名`"
+              />
+            </div>
           </div>
           <div class="segment-actions">
             <n-button
@@ -211,6 +296,7 @@
     </div>
 
     <aside class="edge-tts-controls chatterbox-controls">
+      <h3 class="speech-settings-title">配音配置</h3>
       <div class="control-section">
         <label>目标语言</label>
         <div class="edge-tts-language-grid chatterbox-language-grid">
@@ -377,15 +463,21 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from "vue";
 import DiagnosticErrorLink from "../../../shared/ui/DiagnosticErrorLink.vue";
 import { NButton, NCard, NCheckbox, NEmpty, NInput, NInputNumber, NModal, NSelect, NSlider } from "naive-ui";
 import {
+  AudioLines,
+  ChevronDown,
+  Play,
+  Pause,
   ArrowDown,
   ArrowUp,
   Check,
   Copy,
   FileAudio,
   GripVertical,
+  Headphones,
   Layers3,
   Library,
   Plus,
@@ -399,6 +491,107 @@ import { useChatterboxPanelContext } from "./chatterbox-panel-context";
 import { pasteSpeechText } from "../shared/paste-speech-text";
 
 const panel = useChatterboxPanelContext();
+const referencePickerOpen = ref(panel.referenceSource === "upload" ? !panel.referenceFile : !panel.selectedVoiceId);
+const currentVoice = computed(() => panel.savedVoices.find((voice) => voice.id === panel.selectedVoiceId));
+const referenceAudioUrl = computed(() => panel.referenceSource === "upload"
+  ? panel.referencePreview || ""
+  : currentVoice.value ? panel.mediaUrl(currentVoice.value.audioUrl) : "");
+const quickReferenceAudio = ref<HTMLAudioElement>();
+const referencePlaying = ref(false);
+const referenceDuration = ref(0);
+const referencePreviewError = ref(false);
+const referenceDurationLabel = computed(() => {
+  const duration = referenceDuration.value || (panel.referenceSource === "saved" ? currentVoice.value?.durationSeconds : 0) || 0;
+  if (!duration) return referenceAudioUrl.value ? "点击左侧试听" : "选择或上传参考音色";
+  const seconds = Math.floor(duration);
+  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+});
+watch(referenceAudioUrl, () => {
+  quickReferenceAudio.value?.pause();
+  referencePlaying.value = false;
+  referenceDuration.value = 0;
+  referencePreviewError.value = false;
+});
+async function toggleReferencePreview() {
+  const audio = quickReferenceAudio.value;
+  if (!audio || !referenceAudioUrl.value) return;
+  if (!audio.paused) { audio.pause(); return; }
+  referencePreviewError.value = false;
+  try { await audio.play(); } catch { referencePlaying.value = false; referencePreviewError.value = true; }
+}
+function syncReferencePickerOpen(event: Event) {
+  referencePickerOpen.value = (event.currentTarget as HTMLDetailsElement).open;
+}
 const isMacOSDesktop = Boolean(window.toolboxDesktop) && navigator.platform.toLowerCase().includes("mac");
 if (isMacOSDesktop && panel.device === "cuda") panel.device = "cpu";
 </script>
+
+<style scoped>
+.speech-reference-audio {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.saved-voice-list .speech-reference-audio {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  margin-top: 2px;
+}
+.speech-reference-audio-label {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  color: var(--color-primary-700);
+  font-size: 12px;
+  font-weight: 500;
+}
+.speech-reference-audio .reference-audio-player {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--color-surface-subtle);
+  accent-color: var(--color-primary-600);
+  color-scheme: light;
+}
+.reference-audio-player::-webkit-media-controls-panel {
+  background: var(--color-surface-subtle);
+}
+.reference-audio-player::-webkit-media-controls-play-button {
+  border-radius: 50%;
+  background-color: var(--color-primary-100);
+}
+.reference-audio-player::-webkit-media-controls-current-time-display,
+.reference-audio-player::-webkit-media-controls-time-remaining-display {
+  color: var(--color-text-secondary);
+  text-shadow: none;
+}
+@media (max-width: 640px) {
+  .speech-reference-audio {
+    gap: 6px;
+    padding: 6px;
+  }
+  .speech-reference-audio-label {
+    font-size: 0;
+  }
+}
+
+.reference-quick-play { display: grid; place-items: center; flex: 0 0 30px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; color: white; background: linear-gradient(135deg, #a49aff, var(--color-primary-600)); box-shadow: 0 3px 8px #6554ff24; cursor: pointer; }
+.reference-quick-play:disabled { opacity: .45; cursor: default; }
+.reference-quick-play:focus-visible { outline: 2px solid var(--color-primary-600); outline-offset: 3px; }
+.reference-wave-icon { flex-shrink: 0; color: var(--color-primary-500); }
+.reference-name-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.reference-kind { flex-shrink: 0; padding: 2px 7px; border-radius: 5px; color: var(--color-primary-600); background: var(--color-primary-100); font-size: 10px; line-height: 1.5; }
+.reference-chevron { margin-left: auto; flex-shrink: 0; color: var(--color-text-secondary); transition: transform .15s; }
+.speech-reference-picker[open] .reference-chevron { transform: rotate(180deg); }
+@media (max-width: 600px) { .reference-wave-icon, .reference-kind { display: none; } }
+</style>

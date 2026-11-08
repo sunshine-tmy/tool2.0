@@ -14,6 +14,29 @@
       >每批最多 {{ LOCAL_ARCHIVE_UPLOAD_MAX_FILES }} 个视频；MP4 / MOV / WebM，单个最大 500 MiB、最长 2
       小时，受主机配额限制。原文件不重新编码；部分编码的浏览器播放支持取决于设备。上传需 FFmpeg 媒体运行时。</n-alert
     >
+    <div class="local-upload-surface">
+      <label
+        class="file-upload-area"
+        data-upload-area
+        tabindex="0"
+        :aria-disabled="running || rows.length >= LOCAL_ARCHIVE_UPLOAD_MAX_FILES"
+        @keydown.enter.prevent="!running && rows.length < LOCAL_ARCHIVE_UPLOAD_MAX_FILES && fileInput?.click()"
+        @keydown.space.prevent="!running && rows.length < LOCAL_ARCHIVE_UPLOAD_MAX_FILES && fileInput?.click()"
+      >
+        <UploadCloud :size="28" aria-hidden="true" /><strong>点击选择视频，可多选</strong>
+        <span>MP4 / MOV / WebM · 最多 {{ LOCAL_ARCHIVE_UPLOAD_MAX_FILES }} 个 · 单个最大 500 MiB</span>
+        <input
+          ref="fileInput"
+          type="file"
+          hidden
+          multiple
+          :disabled="running || rows.length >= LOCAL_ARCHIVE_UPLOAD_MAX_FILES"
+          accept=".mp4,.mov,.webm"
+          aria-label="选择本地视频"
+          @change="choose"
+        />
+      </label>
+    </div>
     <div class="upload-actions">
       <n-button :disabled="running || rows.length >= LOCAL_ARCHIVE_UPLOAD_MAX_FILES" @click="fileInput?.click()"
         >选择多个视频</n-button
@@ -29,15 +52,6 @@
         @click="clear"
         >清空上传列表</n-button
       >
-      <input
-        ref="fileInput"
-        type="file"
-        hidden
-        multiple
-        accept=".mp4,.mov,.webm"
-        aria-label="选择本地视频"
-        @change="choose"
-      />
     </div>
     <div class="upload-group">
       <label>归档分组</label>
@@ -124,6 +138,7 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { UploadCloud } from "lucide-vue-next";
 import { computed, markRaw, onScopeDispose, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
 import { NAlert, NButton, NInput, NModal, NPagination, NProgress, NSelect } from "naive-ui";
@@ -411,6 +426,9 @@ onScopeDispose(() => {
 onBeforeRouteLeave(canLeave);
 </script>
 <style scoped>
+.local-upload-surface {
+  padding-top: 16px;
+}
 .upload-actions {
   display: flex;
   flex-wrap: wrap;
@@ -457,7 +475,7 @@ table {
 th,
 td {
   padding: 12px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
 }
@@ -475,7 +493,7 @@ td > span {
 }
 small {
   display: block;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   margin: 6px 0;
 }
 td p {

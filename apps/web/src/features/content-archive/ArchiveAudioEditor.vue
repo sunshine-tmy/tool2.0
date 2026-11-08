@@ -183,7 +183,11 @@
                 v-if="embedded"
                 :to="{
                   path: '/tools/audio-convert',
-                  query: { archiveId: item.id, mediaId, returnTo: conversionReturnTo }
+                  query: {
+                    archiveId: item.id,
+                    mediaId,
+                    returnTo: conversionReturnTo
+                  }
                 }"
                 ><n-button :disabled="busy">OGG / MGG / FLAC 转 MP3</n-button></router-link
               >
@@ -859,7 +863,7 @@ defineExpose({ canLeave, close });
 }
 .editor-hint,
 small {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   line-height: 1.7;
 }
 @media (max-width: 800px) {

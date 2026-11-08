@@ -1,8 +1,18 @@
 <template>
   <div class="batch-editor">
+    <div class="speech-batch-name">
+      <label>批量名称</label>
+      <n-input
+        v-model:value="editor.batchName"
+        maxlength="100"
+        clearable
+        placeholder="批次名称（可选）"
+        aria-label="批次名称"
+      />
+    </div>
     <div class="panel-heading">
       <div>
-        <h3>有序文案</h3>
+        <h3>文本分段与翻译</h3>
         <p>每段生成独立 MP3，中文仅用于字幕与归档，不参与配音。</p>
       </div>
       <span
@@ -11,14 +21,21 @@
       >
     </div>
     <div class="batch-toolbar">
-      <n-input v-model:value="editor.batchName" maxlength="100" clearable placeholder="批次名称（可选）" />
-      <n-button secondary @click="editor.autoVisible = true"><WandSparkles :size="16" />智能识别分段</n-button>
-      <n-button secondary @click="editor.split"><SplitSquareVertical :size="16" />按空行拆分</n-button>
-      <n-button secondary :disabled="editor.segments.length >= maxSegments" @click="editor.add"
+      <n-button size="small" type="primary" @click="editor.autoVisible = true"
+        ><WandSparkles :size="16" />智能识别分段</n-button
+      >
+      <n-button size="small" @click="editor.split"><SplitSquareVertical :size="16" />按空行拆分</n-button>
+      <n-button size="small" :disabled="editor.segments.length >= maxSegments" @click="editor.add"
         ><Plus :size="16" />添加一段</n-button
       >
-      <n-button secondary type="error" :disabled="submitting || !editor.hasDraft" @click="editor.clear"
-        ><Trash2 :size="16" />清空当前批次内容</n-button
+      <n-button
+        class="batch-clear"
+        size="small"
+        quaternary
+        type="error"
+        :disabled="submitting || !editor.hasDraft"
+        @click="editor.clear"
+        ><Trash2 :size="16" />清空批次</n-button
       >
     </div>
     <div class="segment-editor-list">
@@ -39,23 +56,40 @@
           <GripVertical :size="17" /><strong>{{ String(index + 1).padStart(2, "0") }}</strong>
         </div>
         <div class="segment-fields">
-          <n-input
-            v-model:value="item.text"
-            type="textarea"
-            :maxlength="maxCharacters"
-            show-count
-            :autosize="{ minRows: 4, maxRows: 10 }"
-            :placeholder="`第 ${index + 1} 段 ${languageLabel} 文案`"
-          />
-          <n-input
-            v-model:value="item.referenceTranslation"
-            type="textarea"
-            :maxlength="maxTranslation"
-            show-count
-            :autosize="{ minRows: 2, maxRows: 6 }"
-            placeholder="中文翻译（选填，不参与配音）"
-          />
-          <n-input v-model:value="item.fileName" maxlength="100" clearable placeholder="该段文件名（可选）" />
+          <div class="speech-segment-field">
+            <label>原文 <span>*</span></label>
+            <n-input
+              v-model:value="item.text"
+              type="textarea"
+              :maxlength="maxCharacters"
+              show-count
+              :autosize="{ minRows: 2, maxRows: 10 }"
+              :aria-label="`第 ${index + 1} 段原文`"
+              :placeholder="`第 ${index + 1} 段 ${languageLabel} 文案`"
+            />
+          </div>
+          <div class="speech-segment-field">
+            <label>中文翻译 <small>（可选）</small></label>
+            <n-input
+              v-model:value="item.referenceTranslation"
+              type="textarea"
+              :maxlength="maxTranslation"
+              show-count
+              :autosize="{ minRows: 2, maxRows: 6 }"
+              placeholder="中文翻译（选填，不参与配音）"
+              :aria-label="`第 ${index + 1} 段中文翻译`"
+            />
+          </div>
+          <div class="speech-segment-field speech-segment-filename">
+            <label>文件名称 <small>（可选）</small></label
+            ><n-input
+              v-model:value="item.fileName"
+              maxlength="100"
+              clearable
+              placeholder="该段文件名（可选）"
+              :aria-label="`第 ${index + 1} 段文件名`"
+            />
+          </div>
         </div>
         <div class="segment-actions">
           <n-button circle quaternary size="small" title="上移" :disabled="index === 0" @click="editor.move(index, -1)"

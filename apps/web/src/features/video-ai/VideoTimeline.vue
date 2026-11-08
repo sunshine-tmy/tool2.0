@@ -377,4 +377,14 @@ p {
 p {
   margin: var(--space-2) 0 0;
 }
+
+.video-timeline { padding: 10px 0 0; border: 0; border-radius: 0; background: transparent; }
+.timeline-toolbar { gap: 10px; }
+.timeline-toolbar label { display: inline-flex; align-items: center; gap: 5px; }
+.timeline-toolbar input { accent-color: var(--color-primary-600); }
+.timeline-toolbar :deep(.n-button:first-of-type) { margin-left: auto; }
+.timeline-track { border-radius: 6px; background: var(--color-surface-subtle); }
+.timeline-clip { border-color: var(--color-primary-200); border-radius: 6px; background: var(--color-primary-400, #a69aff); color: white; }
+.timeline-clip.selected { border-color: var(--color-primary-600); box-shadow: inset 0 0 0 2px var(--color-surface); background: var(--color-primary-500); }
+.timeline-clip:focus-visible { outline: 2px solid var(--color-primary-600); outline-offset: 2px; }
 </style>

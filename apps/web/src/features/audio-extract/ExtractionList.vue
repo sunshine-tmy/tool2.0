@@ -1,6 +1,6 @@
 <template>
   <div class="results">
-    <article v-for="job in jobs" :key="job.id" class="result">
+    <article v-for="job in jobs" :key="job.id" class="result record-card">
       <n-checkbox
         :checked="selected.includes(job.id)"
         :disabled="job.status !== 'completed' || locked"
@@ -15,9 +15,9 @@
           }}<span v-if="job.format === 'mp3'"> · {{ job.bitrate }} kbps</span>
         </p>
         <n-progress
+          v-if="job.status === 'pending' || job.status === 'running'"
           type="line"
           :percentage="Math.floor(job.progress)"
-          :status="job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'default'"
         />
         <p>
           {{ job.phase }}{{ job.error ? `：${job.error}` : "" }} · {{ new Date(job.createdAt).toLocaleString() }} ·
@@ -80,25 +80,51 @@ watch(
   align-items: flex-start;
   gap: 14px;
   padding: 16px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
   border: 1px solid #e1e8f3;
   border-radius: 10px;
 }
 .body {
   flex: 1;
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 20px;
 }
 .body strong {
   overflow-wrap: anywhere;
+  font-size: 15px;
 }
 .body p {
-  color: #60718d;
+  color: var(--color-text-secondary);
   font-size: 13px;
   overflow-wrap: anywhere;
+  grid-column: 1;
+  margin: 0;
+}
+.body > :deep(.n-progress),
+.body > :deep(.audio-preview) {
+  grid-column: 1 / -1;
 }
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  grid-column: 2;
+  grid-row: 1 / 4;
+  align-self: center;
+  max-width: 360px;
+  justify-content: flex-end;
+}
+@media (max-width: 1000px) {
+  .body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
+    max-width: none;
+  }
 }
 </style>

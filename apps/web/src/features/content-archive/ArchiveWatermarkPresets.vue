@@ -145,7 +145,7 @@ void load();
   padding: 12px;
   border: 1px solid #dbe5f2;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
 }
 .watermark-presets label {
   display: grid;
@@ -157,7 +157,7 @@ void load();
   gap: 8px;
 }
 small {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   line-height: 1.6;
 }
 [role="status"] {

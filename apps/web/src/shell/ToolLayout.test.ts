@@ -58,16 +58,18 @@ async function layout(compact = false, path = "/settings/diagnostics") {
 }
 
 describe("application shell header layout", () => {
-  it("shows the video subtitle entry and navigates to it on desktop", async () => {
-    Object.defineProperty(window, "toolboxDesktop", { configurable: true, value: {} });
+  it("uses homepage navigation instead of keeping a second global sidebar on desktop", async () => {
+    Object.defineProperty(window, "toolboxDesktop", {
+      configurable: true,
+      value: {}
+    });
     const { wrapper, router } = await layout();
     try {
-      const entry = wrapper.get('.sidebar a[href="/tools/video-subtitle"]');
-      expect(entry.text()).toBe("视频去字幕");
+      expect(wrapper.find(".sidebar").exists()).toBe(false);
+      const entry = wrapper.get('.workspace-breadcrumb a[href="/"]');
       await entry.trigger("click");
       await flushPromises();
-      expect(router.currentRoute.value.path).toBe("/tools/video-subtitle");
-      expect(entry.classes()).toContain("is-active");
+      expect(router.currentRoute.value.path).toBe("/");
     } finally {
       wrapper.unmount();
     }
@@ -87,7 +89,10 @@ describe("application shell header layout", () => {
     } finally {
       browser.wrapper.unmount();
     }
-    Object.defineProperty(window, "toolboxDesktop", { configurable: true, value: {} });
+    Object.defineProperty(window, "toolboxDesktop", {
+      configurable: true,
+      value: {}
+    });
     const desktop = await layout();
     try {
       expect(desktop.wrapper.classes()).toContain("has-desktop-titlebar");
@@ -136,13 +141,9 @@ describe("application shell header layout", () => {
       const actions = wrapper.get(".topbar-actions");
       expect(actions.findAll("button")).toHaveLength(3);
       expect(actions.text()).toContain("基础服务正常");
-      expect(wrapper.get(".sidebar-head").find(".sidebar-count").text()).toBe("13");
-      expect(wrapper.get(".sidebar").text()).toContain("开发工具");
-      expect(wrapper.find('a[href="/tools/json-format"]').exists()).toBe(true);
-      expect(wrapper.find('a[href="/tools/base64"]').exists()).toBe(true);
-      expect(wrapper.find('a[href="/tools/url-codec"]').exists()).toBe(true);
-      expect(wrapper.find('a[href="/tools/uuid-generator"]').exists()).toBe(true);
-      expect(wrapper.get(".sidebar-head").find('[aria-label="本地服务与管理员会话"]').exists()).toBe(false);
+      expect(wrapper.find(".sidebar").exists()).toBe(false);
+      expect(wrapper.find('.brand[href="/"]').exists()).toBe(true);
+      expect(wrapper.find('.workspace-breadcrumb a[href="/"]').exists()).toBe(true);
       await actions.get('[aria-label="桌面设置"]').trigger("click");
       await flushPromises();
       expect(router.currentRoute.value.path).toBe("/settings");
@@ -150,14 +151,13 @@ describe("application shell header layout", () => {
       wrapper.unmount();
     }
   });
-  it("retains compact sidebar controls without mixing them with the count badge", async () => {
+  it("keeps homepage and service access on compact layouts without an obsolete drawer", async () => {
     const { wrapper } = await layout(true);
     try {
-      await wrapper.get('[aria-label="打开工具菜单"]').trigger("click");
-      await flushPromises();
-      expect(wrapper.classes()).toContain("sidebar-drawer-open");
-      expect(wrapper.get(".sidebar-head-actions").find('[aria-label="关闭工具菜单"]').exists()).toBe(true);
-      expect(wrapper.get(".sidebar-count").element.children).toHaveLength(0);
+      expect(wrapper.find(".sidebar-toggle").exists()).toBe(false);
+      expect(wrapper.find(".sidebar-backdrop").exists()).toBe(false);
+      expect(wrapper.get('.workspace-breadcrumb a[href="/"]').text()).toContain("返回首页");
+      expect(wrapper.get(".topbar-actions").text()).toContain("基础服务正常");
     } finally {
       wrapper.unmount();
     }

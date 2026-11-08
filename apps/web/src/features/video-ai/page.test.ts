@@ -133,24 +133,16 @@ it("exposes both sequence tiers when the real health protocol says they are avai
     engines: ["delogo", "fast", "balanced", "extreme"].map((provider) => ({ provider, available: true }))
   });
   const w = await setup();
-  for (const label of ["均衡时序修复", "极致光流修复"])
-    expect(
-      w
-        .findAll(".mode-card")
-        .find((item) => item.text() === label)
-        ?.attributes("disabled")
-    ).toBeUndefined();
+  for (const label of ["均衡 · 时序修复", "极致 · 光流修复"]) {
+    const tier = w.get(`.mode-card[aria-label="${label}"]`);
+    expect(tier.attributes("disabled")).toBeUndefined();
+  }
   expect(w.text()).not.toContain("查看视频能力更新");
 });
 it("disables missing engines, keeps the pending task busy and only exposes real completed results", async () => {
   const w = await setup();
   await select(w);
-  expect(
-    w
-      .findAll(".mode-card")
-      .find((item) => item.text() === "均衡时序修复")
-      ?.attributes("disabled")
-  ).toBeDefined();
+  expect(w.get('.mode-card[aria-label="均衡 · 时序修复"]').attributes("disabled")).toBeDefined();
   await button(w, "开始处理").trigger("click");
   await flushPromises();
   expect(mocks.create).toHaveBeenCalledTimes(1);
@@ -223,7 +215,7 @@ it("keeps multiple boxes per time range and submits seconds without assuming a f
   await flushPromises();
   await button(w, "添加区间").trigger("click");
   await flushPromises();
-  expect(timeline().props("ranges")[1]).toEqual({ start: 7, end: 10, rects: [] });
+  expect(timeline().props("ranges")[1]).toEqual({ start: 7, end: 9, rects: [] });
   timeline().vm.$emit(
     "update:ranges",
     timeline()
@@ -267,7 +259,7 @@ it("starts the first manual interval at the playhead and refuses an empty interv
   await flushPromises();
   await button(w, "添加区间").trigger("click");
   await flushPromises();
-  expect(timeline.props("ranges")).toEqual([{ start: 2.5, end: 10, rects: [] }]);
+  expect(timeline.props("ranges")).toEqual([{ start: 2.5, end: 4.5, rects: [] }]);
   timeline.vm.$emit("seek", 10);
   await flushPromises();
   expect(button(w, "添加区间").attributes("disabled")).toBeDefined();

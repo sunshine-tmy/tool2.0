@@ -1,7 +1,7 @@
 <template>
   <section class="archive-groups" aria-label="归档作品分组">
     <div class="archive-group-filter">
-      <span class="archive-group-label">作品分组</span>
+      <span class="archive-group-label"><FolderOpen :size="17" />作品分组</span>
       <n-select
         v-model:value="groupId"
         :options="filterOptions"
@@ -12,10 +12,14 @@
       />
     </div>
     <div class="archive-group-actions">
-      <n-button size="small" :disabled="busy" @click="edit()">新建分组</n-button>
+      <n-button size="small" type="primary" secondary :disabled="busy" @click="edit()">
+        <template #icon><Plus :size="15" /></template>新建分组
+      </n-button>
       <n-popover v-model:show="managementOpen" trigger="click" placement="bottom-end" :disabled="busy">
         <template #trigger>
-          <n-button size="small" :disabled="busy" :aria-expanded="managementOpen">管理分组</n-button>
+          <n-button size="small" quaternary :disabled="busy" :aria-expanded="managementOpen">
+            <template #icon><Settings2 :size="15" /></template>管理分组
+          </n-button>
         </template>
         <div class="archive-group-menu" role="group" aria-label="分组管理操作">
           <n-button size="small" quaternary :disabled="busy || !current" @click="edit(current)">重命名分组</n-button>
@@ -24,8 +28,8 @@
         </div>
       </n-popover>
     </div>
-    <n-button v-if="selectedIds.length" size="small" secondary :disabled="busy" @click="openMove">
-      移动所选 {{ selectedIds.length }}
+    <n-button v-if="selectedIds.length" class="archive-group-move" size="small" type="primary" secondary :disabled="busy" @click="openMove">
+      <template #icon><FolderInput :size="15" /></template>移动所选 {{ selectedIds.length }}
     </n-button>
     <n-modal v-model:show="moving" preset="card" title="移动到分组" style="width: min(420px, calc(100vw - 32px))">
       <p class="archive-move-description">将选中的 {{ selectedIds.length }} 条作品移入：</p>
@@ -64,6 +68,7 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { FolderOpen, FolderInput, Plus, Settings2 } from "lucide-vue-next";
 import { NButton, NInput, NModal, NPopover, NSelect, useMessage } from "naive-ui";
 import type { ArchiveGroup } from "@toolbox/shared/archive";
 import { archiveGroupApi } from "./content-api";
@@ -208,8 +213,11 @@ onMounted(load);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 2px 0;
+  gap: 12px;
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
 }
 .archive-group-filter,
 .archive-group-actions,
@@ -222,13 +230,28 @@ onMounted(load);
   min-width: 0;
 }
 .archive-group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
-  color: #687386;
+  color: var(--color-text);
   font-size: 13px;
+  font-weight: 600;
 }
+.archive-group-label svg { color: var(--color-primary-600); }
+.archive-group-actions { padding-left: 12px; border-left: 1px solid var(--color-border); }
+.archive-group-actions :deep(.n-button) { height: 32px; border-radius: 7px; }
+.archive-group-select :deep(.n-base-selection) { background: var(--color-surface-subtle); }
+.archive-group-move { margin-left: auto; }
 .archive-group-select {
   width: 240px;
   max-width: 100%;
+}
+@media (max-width: 600px) {
+  .archive-groups { padding: 12px; }
+  .archive-group-filter { width: 100%; }
+  .archive-group-select { flex: 1; width: auto; }
+  .archive-group-actions { padding-left: 0; border-left: 0; }
 }
 .archive-group-menu {
   display: grid;

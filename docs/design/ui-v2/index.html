@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>电商工具箱 · UI 设计总览</title>
+    <link rel="stylesheet" href="review.css" />
+    <link rel="stylesheet" href="icon-sizing.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#home">电商工具箱</a>
+      <div class="top-actions">
+        <span class="ready">本地优先</span><button data-demo="局域网入口">局域网</button
+        ><button data-demo="设置入口">设置</button><a href="#icons">图标核对</a><a href="#screens">效果图</a>
+      </div>
+    </header>
+    <div class="review-note">设计样机 · 不连接业务服务，不读取真实记录；以下控件用于查看布局和交互状态。</div>
+    <main id="app"></main>
+    <footer>
+      <button data-demo="能力管理">能力管理</button><button data-demo="数据备份与恢复">数据备份与恢复</button
+      ><button data-demo="启动诊断">启动诊断</button><span>本地优先 · 无需登录</span>
+    </footer>
+    <dialog id="dialog">
+      <button class="dialog-close" id="close-dialog">关闭</button>
+      <h2 id="dialog-title"></h2>
+      <div id="dialog-body"></div>
+    </dialog>
+    <script src="tools.js"></script>
+    <script src="screens.js"></script>
+    <script src="review.js"></script>
+  </body>
+</html>

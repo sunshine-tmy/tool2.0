@@ -1,0 +1,202 @@
+/* 弹窗挂载到页面外，两个配音引擎共用这一套局部视觉规则。 */
+.batch-detail-card.speech-detail-dialog {
+  border: 1px solid var(--color-primary-200);
+  border-radius: 18px;
+  background: var(--color-canvas);
+  box-shadow: 0 20px 64px rgb(48 43 105 / 16%);
+  color: var(--color-text);
+}
+.speech-detail-dialog > .n-card-header {
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.speech-detail-dialog .n-card-header__main {
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.speech-detail-dialog > .n-card__content {
+  padding: 20px 24px 24px;
+}
+.speech-detail-dialog .batch-detail-summary {
+  align-items: center;
+  gap: 10px 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-primary-200);
+  border-radius: 10px;
+  background: var(--color-primary-50);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.speech-detail-dialog .batch-detail-summary > span:first-child {
+  color: var(--color-primary-700);
+  font-weight: 600;
+}
+.speech-detail-dialog .detail-top-actions {
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 16px 0;
+}
+.speech-detail-dialog .detail-top-actions .library-save-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.speech-detail-dialog .n-button {
+  border-radius: 8px;
+  box-shadow: none;
+}
+.speech-detail-dialog :is(.detail-top-actions, .detail-item-actions) .n-button {
+  min-height: 32px;
+  font-size: 12px;
+}
+.speech-detail-dialog :is(.detail-top-actions, .detail-item-actions) .n-button--default-type {
+  background: var(--color-surface);
+  color: var(--color-primary-700);
+  --n-border: 1px solid var(--color-primary-200);
+}
+.speech-detail-dialog .n-button--primary-type:not(.n-button--disabled-type) {
+  font-weight: 600;
+  box-shadow: 0 3px 10px rgb(101 88 255 / 12%);
+}
+.speech-detail-dialog .n-button--error-type {
+  background: transparent;
+  box-shadow: none;
+}
+.speech-detail-dialog .retry-reference {
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 260px) minmax(180px, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--color-primary-200);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.speech-detail-dialog .retry-reference > span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.speech-detail-dialog .retry-reference > .n-button {
+  min-width: 0;
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
+}
+.speech-detail-dialog .retry-reference .n-button__content {
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.speech-detail-dialog .batch-detail-items {
+  gap: 16px;
+}
+.speech-detail-dialog .batch-detail-item {
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.speech-detail-dialog .batch-detail-item > header {
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.speech-detail-dialog .batch-detail-item > header > strong {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.speech-detail-dialog .batch-detail-item .n-tag {
+  flex-shrink: 0;
+  border-radius: 6px;
+  font-size: 11px;
+}
+.speech-detail-dialog .detail-item-form {
+  gap: 12px;
+}
+.speech-detail-dialog .detail-item-form > .n-input {
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+}
+.speech-detail-dialog .detail-item-parameters {
+  gap: 12px 18px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-subtle);
+}
+.speech-detail-dialog .detail-item-parameters label {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  color: var(--color-text-secondary);
+}
+.speech-detail-dialog .detail-item-parameters .n-input-number {
+  width: 100%;
+}
+.speech-detail-dialog .edge-tts-player {
+  display: block;
+  height: 44px;
+  margin: 16px 0 0;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-subtle);
+  accent-color: var(--color-primary-600);
+  color-scheme: light;
+}
+.speech-detail-dialog .edge-tts-player::-webkit-media-controls-panel {
+  background: var(--color-surface-subtle);
+}
+.speech-detail-dialog .edge-tts-player::-webkit-media-controls-play-button {
+  border-radius: 50%;
+  background-color: var(--color-primary-100);
+}
+.speech-detail-dialog .edge-tts-player::-webkit-media-controls-current-time-display,
+.speech-detail-dialog .edge-tts-player::-webkit-media-controls-time-remaining-display {
+  color: var(--color-text-secondary);
+  text-shadow: none;
+}
+.speech-detail-dialog .detail-item-actions {
+  gap: 10px 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top-color: var(--color-border);
+}
+.speech-detail-dialog > .n-card__content > p {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+@media (max-width: 760px) {
+  .speech-detail-dialog > .n-card-header {
+    padding: 18px 16px;
+  }
+  .speech-detail-dialog > .n-card__content {
+    padding: 16px;
+  }
+  .speech-detail-dialog .retry-reference {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .speech-detail-dialog .batch-detail-item {
+    padding: 14px;
+  }
+  .speech-detail-dialog .detail-item-parameters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .speech-detail-dialog .detail-action-group--manage {
+    margin-left: 0;
+  }
+}
+@media (max-width: 420px) {
+  .speech-detail-dialog .detail-item-parameters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

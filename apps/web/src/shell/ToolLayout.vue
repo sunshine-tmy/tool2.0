@@ -1,33 +1,26 @@
 <!-- 中文模块说明：前端应用层，负责 页面布局、共享组件、服务或工具能力 -->
 <template>
-  <main
-    class="workspace"
-    :class="{
-      'sidebar-collapsed': !isCompact && desktopSidebarCollapsed,
-      'sidebar-drawer-open': isCompact && mobileDrawerOpen,
-      'has-desktop-titlebar': isDesktop
-    }"
-  >
-    <div v-if="isDesktop" class="desktop-window-titlebar" aria-hidden="true"><span>电商工具箱</span></div>
+  <main class="workspace ui-v2" :class="{ 'has-desktop-titlebar': isDesktop }">
+    <div v-if="isDesktop" class="desktop-window-titlebar" aria-hidden="true">
+      <span>电商工具箱</span>
+    </div>
     <header ref="topbar" class="topbar">
       <div class="topbar-leading">
         <n-button
-          class="sidebar-toggle"
-          :style="shellIconButtonStyle"
-          circle
+          v-if="currentTool"
+          class="module-sidebar-toggle"
           quaternary
-          :aria-label="sidebarToggleLabel"
-          :aria-expanded="isCompact ? mobileDrawerOpen : !desktopSidebarCollapsed"
-          aria-controls="tool-sidebar"
-          :title="sidebarToggleLabel"
-          @click="toggleSidebar"
-        >
-          <Menu v-if="isCompact || desktopSidebarCollapsed" :size="20" />
-          <PanelLeftClose v-else :size="20" />
-        </n-button>
+          circle
+          :aria-label="sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
+          :title="sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
+          :aria-expanded="!sidebarCollapsed"
+          aria-controls="module-sidebar"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+          ><template #icon><PanelLeft :size="19" /></template
+        ></n-button>
         <router-link class="brand brand-link" to="/">
           <div class="brand-mark">
-            <img class="brand-icon" src="/ecommerce-toolbox-icon-32.png" alt="" draggable="false" />
+            <img class="brand-icon" :src="brandIcon" alt="" draggable="false" />
           </div>
           <div>
             <h1 class="brand-title">电商工具箱</h1>
@@ -36,19 +29,8 @@
         </router-link>
       </div>
 
-      <div class="search-wrap">
-        <n-input
-          ref="searchInput"
-          v-model:value="keyword"
-          clearable
-          aria-label="快捷查找工具"
-          placeholder="快捷查找工具"
-        >
-          <template #prefix>
-            <Search :size="16" />
-          </template>
-          <template #suffix><span class="search-shortcut">/</span></template>
-        </n-input>
+      <div class="topbar-context">
+        <span>{{ currentTool?.title || (route.path === "/" ? "本地素材工作台" : "工作台设置") }}</span>
       </div>
 
       <div class="topbar-actions" role="group" aria-label="应用设置与服务状态">
@@ -96,65 +78,42 @@
       </div>
     </header>
 
-    <section class="shell">
-      <aside
-        id="tool-sidebar"
-        class="sidebar"
-        :inert="sidebarHidden || undefined"
-        :aria-hidden="sidebarHidden || undefined"
-      >
-        <div class="sidebar-head">
-          <p class="sidebar-section-title">工具模块</p>
-          <div class="sidebar-head-actions">
-            <span class="sidebar-count">{{ filteredTools.length }}</span>
-            <n-button
-              v-if="isCompact"
-              circle
-              quaternary
-              size="small"
-              aria-label="关闭工具菜单"
-              title="关闭工具菜单"
-              @click="mobileDrawerOpen = false"
-            >
-              <X :size="18" />
-            </n-button>
-          </div>
-        </div>
-        <div class="category-list">
-          <section v-for="group in filteredToolGroups" :key="group.label" class="sidebar-group">
-            <p class="sidebar-group-label">{{ group.label }}</p>
-            <router-link
-              v-for="tool in group.tools"
-              :key="tool.id"
-              class="category-button category-link"
-              :to="tool.routePath"
-              :class="{ 'is-active': route.path === tool.routePath || route.path.startsWith(`${tool.routePath}/`) }"
-              :title="desktopSidebarCollapsed && !isCompact ? tool.title : undefined"
-              @click="closeMobileDrawer"
-            >
-              <span class="category-main">
-                <component :is="iconByTool[tool.id] ?? Wrench" :size="18" />
-                <span class="category-title">{{ tool.title }}</span>
-              </span>
-              <span v-if="tool.status !== 'ready'" class="category-status" aria-label="规划中" />
-            </router-link>
-          </section>
-          <div v-if="!filteredTools.length" class="sidebar-empty">
-            <SearchX :size="20" />
-            <span>没有匹配的工具</span>
-          </div>
-        </div>
-      </aside>
-
-      <button
-        v-if="isCompact && mobileDrawerOpen"
-        type="button"
-        class="sidebar-backdrop"
-        aria-label="关闭工具菜单"
-        @click="mobileDrawerOpen = false"
+    <section
+      class="shell"
+      :class="{
+        'has-module-sidebar': Boolean(currentTool),
+        'module-sidebar-collapsed': sidebarCollapsed,
+        'has-module-footer': Boolean($slots['module-footer'])
+      }"
+    >
+      <ModuleSidebar
+        v-if="currentTool"
+        :current-tool-id="currentTool.id"
+        :collapsed="sidebarCollapsed"
+        :show-settings="localDiagnosticsAvailable"
       />
-
-      <div class="content">
+      <div
+        class="content"
+        :class="{
+          'home-content': route.path === '/',
+          'compress-content': route.path === '/tools/image-compress'
+        }"
+      >
+        <nav v-if="route.path !== '/'" class="workspace-breadcrumb" aria-label="当前位置">
+          <router-link to="/"><ArrowLeft :size="16" />返回首页</router-link>
+          <span aria-hidden="true">/</span>
+          <router-link v-if="route.path.startsWith('/tools/media-archive/')" to="/tools/media-archive"
+            >多媒体内容归档</router-link
+          >
+          <span v-else>{{
+            currentTool?.title ||
+            (route.path.includes("data-backup")
+              ? "数据备份与恢复"
+              : route.path.includes("diagnostics")
+                ? "启动与环境诊断"
+                : "桌面设置")
+          }}</span>
+        </nav>
         <n-alert
           v-if="
             localDiagnosticsAvailable && diagnosticConnection === 'offline' && route.path !== '/settings/diagnostics'
@@ -166,7 +125,12 @@
           本地服务暂不可用，已加载的内容不会被清除。<n-button
             text
             type="primary"
-            @click="$router.push({ path: '/settings/diagnostics', query: { module: route.path.split('/').pop() } })"
+            @click="
+              $router.push({
+                path: '/settings/diagnostics',
+                query: { module: route.path.split('/').pop() }
+              })
+            "
             >查看诊断</n-button
           >
         </n-alert>
@@ -191,13 +155,19 @@
             <n-button
               size="small"
               secondary
-              @click="$router.push({ path: '/settings/diagnostics', query: { module: route.path.split('/').pop() } })"
+              @click="
+                $router.push({
+                  path: '/settings/diagnostics',
+                  query: { module: route.path.split('/').pop() }
+                })
+              "
               >查看诊断</n-button
             >
           </div>
         </n-alert>
         <slot />
       </div>
+      <div v-if="$slots['module-footer']" class="module-footer"><slot name="module-footer" /></div>
     </section>
 
     <n-drawer v-if="!isDesktop" v-model:show="serviceDrawerOpen" :width="380" placement="right">
@@ -272,21 +242,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from "vue";
+import { computed, defineAsyncComponent, onMounted, provide, ref } from "vue";
 import { useRoute } from "vue-router";
+import brandIcon from "../assets/ui-v2/brand.webp";
+import { toolForPath, toolPresentationKey, workbenchTools } from "../shared/ui/tool/catalog";
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput } from "naive-ui";
-import {
-  ChevronRight,
-  Menu,
-  PanelLeftClose,
-  RefreshCw,
-  Search,
-  SearchX,
-  ServerCog,
-  Settings,
-  X,
-  Wrench
-} from "lucide-vue-next";
+import { ChevronRight, ArrowLeft, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
+import ModuleSidebar from "./ModuleSidebar.vue";
 import { diagnosticConnection, localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { useShellNavigation } from "./useShellNavigation";
 import { useShellServices } from "./useShellServices";
@@ -296,24 +258,16 @@ const DesktopLanAccess = defineAsyncComponent(() => import("../integrations/desk
 const route = useRoute(),
   isDesktop = computed(() => Boolean(window.toolboxDesktop));
 const topbar = ref<HTMLElement>();
+const sidebarCollapsed = ref(false);
 useShellOverlayBoundary(topbar);
-const shellIconButtonStyle = { width: "var(--shell-icon-size, 36px)", height: "var(--shell-icon-size, 36px)" };
-const {
-  keyword,
-  searchInput,
-  isCompact,
-  desktopSidebarCollapsed,
-  mobileDrawerOpen,
-  tools,
-  iconByTool,
-  filteredTools,
-  filteredToolGroups,
-  sidebarToggleLabel,
-  sidebarHidden,
-  toggleSidebar,
-  closeMobileDrawer,
-  startNavigation
-} = useShellNavigation();
+const shellIconButtonStyle = {
+  width: "var(--shell-icon-size, 36px)",
+  height: "var(--shell-icon-size, 36px)"
+};
+const tools = workbenchTools();
+const currentTool = computed(() => toolForPath(route.path));
+provide(toolPresentationKey, currentTool);
+const { iconByTool, startNavigation } = useShellNavigation();
 const {
   serviceStatusLabel,
   serviceDrawerOpen,
@@ -341,13 +295,64 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 仅隐藏常驻说明和环境摘要，保留报错、任务状态及实际操作控件。 */
+.workspace.ui-v2 :deep(.license-note),
+.workspace.ui-v2 :deep(.platform-runtime),
+.workspace.ui-v2 :deep(.rights-alert),
+.workspace.ui-v2 :deep(.edge-tts-privacy),
+.workspace.ui-v2 :deep(.chatterbox-notice),
+.workspace.ui-v2 :deep(.local-processing-note),
+.workspace.ui-v2 :deep(.module-advisory-note) {
+  display: none;
+}
+.ui-v2 .shell.has-module-sidebar {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  overflow: hidden;
+}
+.ui-v2 .shell.has-module-sidebar.module-sidebar-collapsed {
+  grid-template-columns: 68px minmax(0, 1fr);
+}
+.shell.has-module-sidebar > .content {
+  min-width: 0;
+  min-height: 0;
+}
+.ui-v2 .shell.has-module-footer {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.shell.has-module-footer > :deep(.module-sidebar) {
+  grid-column: 1;
+  grid-row: 1 / -1;
+}
+.shell.has-module-footer > .content {
+  grid-column: 2;
+  grid-row: 1;
+}
+.module-footer {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  position: relative;
+  z-index: 10;
+}
+.module-sidebar-toggle {
+  color: var(--color-text-secondary);
+}
+@media (max-width: 900px) {
+  .ui-v2 .shell.has-module-sidebar {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+  .module-sidebar-toggle {
+    display: none;
+  }
+}
 .workspace.has-desktop-titlebar {
-  grid-template-rows: env(titlebar-area-height, 0px) var(--topbar-height) minmax(0, 1fr);
+  grid-template-rows: env(titlebar-area-height, 0px) auto minmax(0, 1fr);
 }
 .desktop-window-titlebar {
   height: env(titlebar-area-height, 0px);
   overflow: hidden;
-  background: #edf3fa;
+  background: var(--color-surface-subtle);
 }
 .desktop-window-titlebar > span {
   display: flex;

@@ -37,26 +37,28 @@
     </div>
     <div class="library-item-wave-toolbar">
       <div class="library-item-wave-settings">
-        <n-popover trigger="click" placement="top" :show-arrow="false">
-          <template #trigger
-            ><n-button text size="small" :aria-label="`${item.title} 音量`" title="音量"
-              ><Volume2 v-if="volume > 0" :size="17" /><VolumeX v-else :size="17" /></n-button
-          ></template>
-          <div class="library-item-wave-volume">
-            <n-button text size="tiny" @click="setVolume(volume > 0 ? 0 : 1)">{{
-              volume > 0 ? "静音" : "取消静音"
-            }}</n-button>
-            <n-slider
-              v-slider-label="{ label: '独立播放音量', text: `${Math.round(volume * 100)}%` }"
-              :value="volume"
-              :min="0"
-              :max="1"
-              :step="0.01"
-              :format-tooltip="(value) => `${Math.round(value * 100)}%`"
-              @update:value="setVolume"
-            />
-          </div>
-        </n-popover>
+        <div class="library-item-wave-volume">
+          <n-button
+            circle
+            quaternary
+            class="library-item-mute"
+            :aria-label="volume === 0 ? '取消静音' : '静音'"
+            :title="volume === 0 ? '取消静音' : '静音'"
+            :aria-pressed="volume === 0"
+            @click="toggleMute"
+          >
+            <Volume2 v-if="volume > 0" :size="21" /><VolumeX v-else :size="21" />
+          </n-button>
+          <n-slider
+            v-slider-label="{ label: '独立播放音量', text: `${Math.round(volume * 100)}%` }"
+            :value="volume"
+            :min="0"
+            :max="1"
+            :step="0.01"
+            :format-tooltip="(value) => `${Math.round(value * 100)}%`"
+            @update:value="setVolume"
+          />
+        </div>
         <n-select
           v-model:value="rate"
           class="library-item-wave-rate"
@@ -70,7 +72,8 @@
       </div>
       <div class="library-item-wave-transport">
         <n-button
-          text
+          circle
+          quaternary
           size="small"
           :disabled="!item.available"
           aria-label="后退 3 秒"
@@ -81,8 +84,8 @@
         <n-button
           class="library-item-play"
           size="small"
-          text
-          color="#7665ff"
+          circle
+          type="primary"
           :disabled="!item.available"
           :loading="phase === 'loading'"
           :aria-label="`${phase === 'playing' ? '暂停' : '播放'} ${item.title}`"
@@ -97,7 +100,8 @@
           <span class="sr-only">{{ phase === "playing" ? "暂停" : phase === "error" ? "重试" : "播放" }}</span>
         </n-button>
         <n-button
-          text
+          circle
+          quaternary
           size="small"
           :disabled="!item.available"
           aria-label="前进 3 秒"
@@ -107,14 +111,29 @@
         /></n-button>
       </div>
       <div class="library-item-wave-actions">
-        <n-button text size="small" :disabled="!started" aria-label="停止" title="停止并回到开头" @click="stop"
+        <n-button
+          circle
+          quaternary
+          size="small"
+          :disabled="!started"
+          aria-label="停止"
+          title="停止并回到开头"
+          @click="stop"
           ><Square :size="14" /><span class="sr-only">停止</span></n-button
         >
-        <n-button text size="small" :disabled="saving" aria-label="重置选区" title="重置选区" @click="resetRange"
+        <n-button
+          circle
+          quaternary
+          size="small"
+          :disabled="saving"
+          aria-label="重置选区"
+          title="重置选区"
+          @click="resetRange"
           ><RotateCcw :size="17"
         /></n-button>
         <n-button
-          text
+          circle
+          quaternary
           size="small"
           :type="trimOpen ? 'primary' : 'default'"
           :disabled="!item.available || saving"
@@ -138,18 +157,21 @@
         >
       </div>
       <p :class="{ 'library-item-play-error': !validRange }">
-        {{ validRange ? `选区 ${formatSeconds(range[1] - range[0])}` : "结束时间需晚于开始时间，选区至少 0.05 秒" }} ·
-        另存同分组 WAV，保留原音频；中外文案需手动校对。
+        {{ validRange ? `选区 ${formatSeconds(range[1] - range[0])}` : "结束时间需晚于开始时间，选区至少 0.05 秒" }}
+        · 另存同分组 WAV，保留原音频；中外文案需手动校对。
       </p>
       <p v-if="saving" role="status">{{ saveStatus }}</p>
-      <p v-if="saveError" class="library-item-play-error" role="alert">{{ saveError }}</p>
+      <p v-if="saveError" class="library-item-play-error" role="alert">
+        {{ saveError }}
+      </p>
     </div>
     <p v-if="phase === 'error'" class="library-item-play-error" role="alert">播放失败，请重试或检查音频文件。</p>
   </div>
 </template>
 <script setup lang="ts">
+import "../../shared/ui/audio/inline-preview.css";
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
-import { NButton, NPopover, NSelect, NSlider } from "naive-ui";
+import { NButton, NSelect, NSlider } from "naive-ui";
 import {
   FastForward,
   Music2,
@@ -187,8 +209,13 @@ const validRange = computed(
 const formatSeconds = (value: number) => `${value.toFixed(2)} 秒`;
 const rate = ref(1),
   volume = ref(1);
+const lastAudibleVolume = ref(1);
+function toggleMute() {
+  setVolume(volume.value > 0 ? 0 : lastAudibleVolume.value);
+}
 const rateOptions = [0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({ label: `${value}x`, value }));
 function setVolume(value: number) {
+  if (volume.value > 0) lastAudibleVolume.value = volume.value;
   volume.value = Math.max(0, Math.min(1, value));
   if (audio.value) audio.value.volume = volume.value;
 }
@@ -353,102 +380,6 @@ onBeforeUnmount(() => {
 });
 </script>
 <style scoped>
-.library-item-player {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  max-width: 100%;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid #ece9f6;
-  border-radius: 8px;
-  background: #fff;
-  box-sizing: border-box;
-}
-.library-item-player.is-open {
-  width: 100%;
-}
-.library-item-wave-heading {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 5px;
-  gap: 8px;
-}
-.library-item-wave-heading > span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #7665ff;
-  background: #f0edff;
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 500;
-}
-.library-item-wave-heading small {
-  font-size: 10px;
-  color: #a7adba;
-}
-.library-item-wave-times {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  color: #9ca3b5;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  margin-top: 1px;
-}
-.library-item-wave-times span:nth-child(2):not(:last-child) {
-  color: #8c80c0;
-  font-size: 10px;
-}
-.library-item-wave-toolbar {
-  width: 100%;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-  color: #9ca3b5;
-}
-.library-item-wave-settings,
-.library-item-wave-transport,
-.library-item-wave-actions {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-.library-item-wave-transport {
-  justify-content: center;
-  gap: 8px;
-}
-.library-item-wave-toolbar :deep(.n-button) {
-  color: #9ca3b5;
-}
-.library-item-wave-toolbar :deep(.library-item-play) {
-  color: #7665ff;
-}
-.library-item-wave-rate {
-  width: 76px;
-}
-.library-item-wave-settings {
-  gap: 4px;
-}
-.library-item-wave-volume {
-  width: 140px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.library-item-wave-volume :deep(.n-slider) {
-  flex: 1;
-  min-width: 0;
-}
 .sr-only {
   position: absolute;
   width: 1px;
@@ -481,7 +412,7 @@ onBeforeUnmount(() => {
 .library-item-trim p {
   margin: 8px 0 0;
   font-size: 11px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .library-item-trim p.library-item-play-error {
   color: #dc2626;

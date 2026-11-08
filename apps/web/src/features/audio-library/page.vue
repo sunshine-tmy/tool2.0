@@ -1,20 +1,13 @@
 <template>
   <ToolLayout>
-    <section class="main-column library-page">
+    <section class="main-column library-page v2-tool-page">
       <ToolPageHeader
         title="音频素材库"
         description="永久保存配音、背景音乐与双语文案，按分组查找，用于播放队列或归档视频配乐。"
         kicker="AUDIO LIBRARY"
-        ><template #actions
-          ><n-button @click="uploadVisible = true">上传音频</n-button
-          ><router-link to="/tools/audio-convert"><n-button>音频转 MP3</n-button></router-link
-          ><n-button tag="a" :href="api.exportUrl()">完整备份</n-button
-          ><n-button :loading="restoring" @click="backupInput?.click()">恢复备份</n-button></template
-        ></ToolPageHeader
-      >
+      />
       <input ref="backupInput" hidden type="file" accept=".zip" @change="restoreBackup" />
-      <AudioLibraryPlayer />
-      <AudioQueuePanel ref="queuePanel" />
+
       <n-alert v-if="error" type="error" closable @close="error = ''"
         >{{ error }} <n-button text @click="load">重试</n-button></n-alert
       >
@@ -22,64 +15,120 @@
         >已移动到目标分组。<n-button text @click="undoMove">撤销移动</n-button></n-alert
       >
       <div class="library-workspace">
-        <aside class="workspace-panel library-sidebar">
-          <div class="library-sidebar-heading">
-            <strong>音频分组</strong><n-button size="tiny" @click="newGroup()">＋新建</n-button>
+        <section class="workspace-panel library-toolbar" aria-label="音频筛选与管理">
+          <div class="library-primary-filters">
+            <n-input v-model:value="keyword" clearable placeholder="搜索音频名称、文案或备注">
+              <template #prefix><Search :size="17" /></template>
+            </n-input>
+            <div class="library-purpose-filter">
+              <span>素材类型</span>
+              <nav class="library-view-strip" aria-label="素材分类">
+                <button
+                  v-for="entry in views.filter((x) => ['all', 'music', 'speech'].includes(x.value))"
+                  :key="entry.value"
+                  class="library-view"
+                  :class="{ active: view === entry.value }"
+                  @click="chooseView(entry.value)"
+                >
+                  {{ entry.value === "all" ? "全部素材" : entry.label }}
+                </button>
+              </nav>
+            </div>
+            <div class="library-group-filter">
+              <span>所属分组</span>
+              <n-select
+                :value="groupId"
+                clearable
+                filterable
+                placeholder="全部分组"
+                :options="groups"
+                @update:value="(value) => selectGroup(value ? [value] : [])"
+              />
+            </div>
+            <n-button type="primary" class="library-upload-button" @click="uploadVisible = true">
+              <template #icon><Upload :size="18" /></template>上传音频
+            </n-button>
           </div>
-          <button
-            v-for="entry in views"
-            :key="entry.value"
-            class="library-view"
-            :class="{ active: view === entry.value && !groupId }"
-            @click="chooseView(entry.value)"
-          >
-            {{ entry.label }}
-          </button>
-          <n-tree
-            :data="tree"
-            :selected-keys="groupId ? [groupId] : []"
-            block-line
-            default-expand-all
-            @update:selected-keys="selectGroup"
-          />
-          <div v-if="groupId" class="library-group-controls">
-            <n-button size="tiny" @click="editGroup">编辑分组</n-button
-            ><n-button size="tiny" type="error" @click="deleteGroup">删除分组</n-button>
-          </div>
-          <div class="library-storage">
-            <strong
-              >{{ formatBytes(data?.usedBytes || 0) }} / {{ formatBytes(data?.maxBytes || 10 * 1024 ** 3) }}</strong
+          <div class="library-management">
+            <n-button
+              :type="groupManagerOpen ? 'primary' : 'default'"
+              :secondary="groupManagerOpen"
+              @click="groupManagerOpen = !groupManagerOpen"
             >
-            <p>已存 {{ data?.totalItems || 0 }} 条 · 永久保留</p>
-            <p>回收站计入占用；清理缓存会保留音频库。</p>
+              <template #icon><FolderOpen :size="17" /></template>管理分组
+            </n-button>
+            <n-button
+              :type="view === 'trash' ? 'primary' : 'default'"
+              @click="chooseView(view === 'trash' ? 'all' : 'trash')"
+            >
+              <template #icon><Trash2 :size="17" /></template>回收站
+            </n-button>
+            <n-button
+              :type="presetsOpen ? 'primary' : 'default'"
+              :secondary="presetsOpen"
+              @click="presetsOpen = !presetsOpen"
+            >
+              <template #icon><SlidersHorizontal :size="17" /></template>播放预设与队列
+            </n-button>
+            <n-popover trigger="click" placement="bottom-start">
+              <template #trigger
+                ><n-button
+                  ><template #icon><ArchiveRestore :size="17" /></template>备份恢复<ChevronDown :size="14" /></n-button
+              ></template>
+              <div class="library-backup-options">
+                <n-button tag="a" :href="api.exportUrl()">导出完整备份</n-button>
+                <n-button :loading="restoring" @click="backupInput?.click()">恢复备份</n-button>
+                <router-link to="/tools/audio-convert"><n-button>音频转 MP3</n-button></router-link>
+              </div>
+            </n-popover>
+            <div class="library-secondary-filters">
+              <n-select :value="view" :options="views" aria-label="更多素材筛选" @update:value="chooseView" />
+              <n-select v-model:value="language" clearable placeholder="全部语言" :options="languageOptions" />
+              <n-select
+                v-model:value="source"
+                clearable
+                placeholder="全部来源"
+                :options="[
+                  { label: '参考音色克隆', value: 'chatterbox' },
+                  { label: '在线自然音色', value: 'edge-tts' },
+                  { label: '本地上传', value: 'upload' },
+                  { label: '裁剪音频', value: 'clip' }
+                ]"
+              />
+              <n-select
+                v-model:value="sort"
+                :options="[
+                  { label: '最新保存', value: 'createdAt' },
+                  { label: '标题', value: 'title' },
+                  { label: '时长', value: 'duration' }
+                ]"
+              />
+              <n-button :loading="loading" @click="load"
+                ><template #icon><RefreshCw :size="16" /></template>刷新</n-button
+              >
+            </div>
           </div>
-        </aside>
-        <section class="workspace-panel library-main">
-          <div class="library-filters">
-            <n-input v-model:value="keyword" clearable placeholder="搜索标题、外语、中文或备注" /><n-select
-              v-model:value="language"
-              clearable
-              placeholder="全部语言"
-              :options="languageOptions"
-            /><n-select
-              v-model:value="source"
-              clearable
-              placeholder="全部来源"
-              :options="[
-                { label: '参考音色克隆', value: 'chatterbox' },
-                { label: '在线自然音色', value: 'edge-tts' },
-                { label: '本地上传', value: 'upload' },
-                { label: '裁剪音频', value: 'clip' }
-              ]"
-            /><n-select
-              v-model:value="sort"
-              :options="[
-                { label: '最新保存', value: 'createdAt' },
-                { label: '标题', value: 'title' },
-                { label: '时长', value: 'duration' }
-              ]"
-            /><n-button :loading="loading" @click="load">刷新</n-button>
+          <div v-show="groupManagerOpen" class="library-group-manager">
+            <header><strong>音频分组</strong><n-button size="small" @click="newGroup()">新建分组</n-button></header>
+            <n-tree
+              :data="tree"
+              :selected-keys="groupId ? [groupId] : []"
+              block-line
+              default-expand-all
+              @update:selected-keys="selectGroup"
+            />
+            <div v-if="groupId" class="library-group-controls">
+              <n-button size="small" @click="editGroup">编辑分组</n-button
+              ><n-button size="small" type="error" secondary @click="deleteGroup">删除分组</n-button>
+            </div>
+            <p class="library-storage">
+              已存 {{ data?.totalItems || 0 }} 条 · {{ formatBytes(data?.usedBytes || 0) }} /
+              {{ formatBytes(data?.maxBytes || 10 * 1024 ** 3) }}
+            </p>
           </div>
+        </section>
+        <div v-show="presetsOpen" class="library-presets"><AudioQueuePanel ref="queuePanel" /></div>
+        <section class="library-main">
           <div class="library-batch">
             <n-checkbox
               :checked="Boolean(data?.items.length && selected.length === data.items.length)"
@@ -115,6 +164,10 @@
               >彻底删除所选</n-button
             >
           </div>
+          <div class="library-list-heading" aria-hidden="true">
+            <span></span><span>音频名称</span><span>时长</span><span>素材类型</span><span>所属分组</span
+            ><span>操作</span>
+          </div>
           <n-spin :show="loading"
             ><div class="library-items" @play.capture="onItemPlay">
               <article
@@ -137,6 +190,9 @@
                   @keydown.enter="openDetail(item)"
                   @keydown.space.prevent="openDetail(item)"
                 >
+                  <span class="library-audio-icon" :class="{ 'is-speech': audioLibraryPurpose(item) === 'speech' }"
+                    ><Mic v-if="audioLibraryPurpose(item) === 'speech'" :size="23" /><Music2 v-else :size="23"
+                  /></span>
                   <header>
                     <strong>{{ item.title }}</strong
                     ><n-tag size="small">{{ languageLabel(item.language) }}</n-tag
@@ -151,22 +207,65 @@
                       >待补全</n-tag
                     >
                   </header>
-                  <p class="library-chinese">{{ item.chineseText || "暂无中文译文" }}</p>
-                  <p class="library-foreign">{{ item.foreignText || "暂无外语文案" }}</p>
                   <footer>
                     {{ formatDuration(item.duration) }} · {{ formatBytes(item.bytes) }} ·
-                    {{ sourceLabel(item.source.kind) }} · {{ formatDate(item.createdAt) }}
+                    {{ sourceLabel(item.source.kind) }} ·
+                    {{ formatDate(item.createdAt) }}
                   </footer>
                 </div>
-                <AudioLibraryItemPlayer v-if="view !== 'trash'" :item="item" @saved="onClipSaved" />
+                <span class="library-duration">{{ formatDuration(item.duration) }}</span>
+                <span class="library-purpose"
+                  ><n-tag size="small" :class="{ 'is-speech': audioLibraryPurpose(item) === 'speech' }">{{
+                    purposeOptions.find((x) => x.value === audioLibraryPurpose(item))?.label || "通用音频"
+                  }}</n-tag></span
+                >
+                <n-button
+                  class="library-row-group"
+                  size="small"
+                  :disabled="view === 'trash'"
+                  @click="openMove([item.id])"
+                  >{{ groups.find((x) => x.value === item.groupId)?.label || "未分组" }}<ChevronDown :size="14"
+                /></n-button>
+                <details
+                  v-if="view !== 'trash'"
+                  :id="`library-preview-${item.id}`"
+                  class="library-item-preview"
+                  :open="previewIds.includes(item.id)"
+                >
+                  <summary><Play :size="14" />试听与裁剪<ChevronDown :size="14" /></summary>
+                  <AudioLibraryItemPlayer :item="item" @saved="onClipSaved" />
+                </details>
                 <div class="library-item-actions">
-                  <template v-if="view !== 'trash'"
-                    ><n-button size="small" :disabled="!item.available" @click="enqueue([item])">＋队列</n-button
-                    ><n-button size="small" @click="openMove([item.id])">移动至</n-button></template
+                  <template v-if="view !== 'trash'">
+                    <n-button
+                      size="small"
+                      class="library-preview-toggle"
+                      :type="previewIds.includes(item.id) ? 'primary' : 'default'"
+                      :secondary="previewIds.includes(item.id)"
+                      :aria-expanded="previewIds.includes(item.id)"
+                      :aria-controls="`library-preview-${item.id}`"
+                      @click="
+                        previewIds = previewIds.includes(item.id)
+                          ? previewIds.filter((id) => id !== item.id)
+                          : [...previewIds, item.id]
+                      "
+                    >
+                      <template #icon><Play :size="14" /></template
+                      >{{ previewIds.includes(item.id) ? "收起试听" : "试听与裁剪" }}
+                    </n-button>
+                    <n-button size="small" :disabled="!item.available" @click="enqueue([item])">＋队列</n-button
+                    ><n-button
+                      tag="a"
+                      size="small"
+                      :disabled="!item.available"
+                      :href="item.available ? resolveBackendUrl(item.audioUrl) : undefined"
+                      :download="item.title"
+                      ><template #icon><Download :size="15" /></template>下载</n-button
+                    ></template
                   ><template v-else
                     ><n-button size="small" type="primary" secondary @click="restoreItem(item)">恢复</n-button
                     ><n-button size="small" type="error" secondary @click="purge(item)">彻底删除</n-button></template
-                  ><n-button size="small" :quaternary="view === 'trash'" @click="openDetail(item)">详情</n-button>
+                  ><n-button size="small" :quaternary="view === 'trash'" @click="openDetail(item)">编辑</n-button>
                 </div>
               </article>
               <n-empty
@@ -281,10 +380,26 @@
           <p class="library-upload-hint">
             仅音频必填，其余信息均选填，可在入库后补充；标题留空使用文件名，语言留空为“未指定”。
           </p>
-          <div class="library-upload-heading">
-            <n-button :disabled="uploading" @click="fileInput?.click()">选择音频（必填，可多选）</n-button
-            ><input ref="fileInput" hidden multiple type="file" accept=".mp3,.wav,.m4a,.flac" @change="selectFiles" />
-          </div>
+          <label
+            class="file-upload-area"
+            data-upload-area
+            tabindex="0"
+            :aria-disabled="uploading"
+            @keydown.enter.prevent="!uploading && fileInput?.click()"
+            @keydown.space.prevent="!uploading && fileInput?.click()"
+          >
+            <Upload :size="28" aria-hidden="true" /><strong>点击选择音频，可多选</strong>
+            <span>MP3 / PCM WAV / AAC M4A / FLAC · 单个最大 100 MiB</span>
+            <input
+              ref="fileInput"
+              hidden
+              multiple
+              type="file"
+              :disabled="uploading"
+              accept=".mp3,.wav,.m4a,.flac"
+              @change="selectFiles"
+            />
+          </label>
           <div class="library-upload-list">
             <section v-for="(entry, index) in uploads" :key="index">
               <strong>{{ entry.file.name }} · {{ formatBytes(entry.file.size) }}</strong>
@@ -344,7 +459,9 @@
                   />
                 </n-form-item>
               </n-form>
-              <p :class="{ 'library-upload-error': entry.failed }">{{ entry.message }}</p>
+              <p :class="{ 'library-upload-error': entry.failed }">
+                {{ entry.message }}
+              </p>
               <n-button v-if="entry.duplicate" size="small" :disabled="uploading" @click="uploadDuplicate(entry)"
                 >仍然另存一条</n-button
               >
@@ -358,6 +475,7 @@
         ></n-modal
       >
     </section>
+    <template #module-footer><AudioLibraryPlayer class="library-bottom-player" /></template>
   </ToolLayout>
 </template>
 <script setup lang="ts">
@@ -365,6 +483,25 @@ import { audioLibraryPurpose } from "@toolbox/shared";
 import { useMessage } from "naive-ui";
 import { ref } from "vue";
 import {
+  Search,
+  Upload,
+  FolderOpen,
+  Trash2,
+  SlidersHorizontal,
+  ArchiveRestore,
+  ChevronDown,
+  RefreshCw,
+  Music2,
+  Mic,
+  Play,
+  Download
+} from "lucide-vue-next";
+import { resolveBackendUrl } from "../../shared/config/runtime";
+const previewIds = ref<string[]>([]);
+const groupManagerOpen = ref(false);
+const presetsOpen = ref(false);
+import {
+  NPopover,
   NButton,
   NAlert,
   NCheckbox,
@@ -478,153 +615,311 @@ async function onClipSaved() {
 </script>
 <style scoped>
 .library-page {
-  grid-column: 1 / -1;
+  grid-column: 1/-1;
   width: 100%;
   max-width: 1600px;
   margin: 0 auto;
+  min-width: 0;
+}
+.library-page :deep(.tool-page-header__title) {
+  color: var(--color-text);
 }
 .library-workspace {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
   gap: 18px;
-  margin-top: 20px;
-}
-.library-sidebar,
-.library-main {
-  margin-top: 0;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
   min-width: 0;
 }
-.library-sidebar-heading {
-  display: flex;
-  justify-content: space-between;
+.library-toolbar {
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.library-primary-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(210px, 0.65fr) auto;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 20px;
+}
+.library-purpose-filter,
+.library-group-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.library-purpose-filter > span,
+.library-group-filter > span {
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.library-group-filter :deep(.n-select) {
+  min-width: 0;
+  flex: 1;
+}
+.library-view-strip {
+  display: flex;
+  padding: 3px;
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
 }
 .library-view {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  padding: 10px 12px;
-  color: #475569;
   cursor: pointer;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 12px;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: 13px;
 }
 .library-view.active {
-  background: #eff6ff;
-  color: #2563eb;
+  color: white;
+  background: var(--color-primary-600);
+  font-weight: 700;
+  box-shadow: 0 2px 6px #6558ff26;
+}
+.library-upload-button {
   font-weight: 600;
 }
+.library-management {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+.library-secondary-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.library-secondary-filters :deep(.n-select) {
+  width: 120px;
+}
+.library-backup-options {
+  display: grid;
+  gap: 8px;
+}
+.library-group-manager {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+.library-group-manager header,
 .library-group-controls {
   display: flex;
-  gap: 8px;
-  margin: 12px 0;
+  align-items: center;
+  gap: 10px;
+}
+.library-group-manager header {
+  justify-content: space-between;
 }
 .library-storage {
-  border-top: 1px solid #e2e8f0;
-  margin-top: 24px;
-  padding-top: 16px;
-  color: #64748b;
   font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 0;
 }
-.library-storage p {
-  margin: 6px 0;
-}
-.library-filters {
-  display: grid;
-  grid-template-columns: minmax(180px, 2fr) repeat(3, minmax(90px, 1fr)) auto;
-  gap: 8px;
+.library-main {
+  min-width: 0;
 }
 .library-batch {
   display: flex;
-  gap: 9px;
   align-items: center;
   flex-wrap: wrap;
-  padding: 16px 0;
-  font-size: 12px;
-  color: #64748b;
+  gap: 12px;
+  padding: 12px 18px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-primary-200);
+  border-radius: 12px;
+  background: linear-gradient(110deg, var(--color-primary-50), #e8e6ff);
+  color: var(--color-primary-800);
+  font-size: 13px;
 }
-.library-items {
-  min-height: 180px;
-}
+.library-list-heading,
 .library-item {
   display: grid;
-  grid-template-columns: 18px minmax(200px, 1fr) minmax(300px, 1.25fr) 104px;
-  gap: 16px;
-  align-items: flex-start;
-  border-top: 1px solid #edf1f7;
-  padding: 18px 0;
+  grid-template-columns: 22px minmax(180px, 1fr) 74px 104px minmax(100px, 140px) 330px;
+  column-gap: 16px;
+  align-items: center;
 }
-.library-item--trash {
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+.library-list-heading {
+  padding: 14px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px 14px 0 0;
+  background: var(--color-surface-subtle);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.library-list-heading > :last-child {
+  text-align: right;
+}
+.library-items {
+  min-height: 160px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 0;
+  border-radius: 0 0 14px 14px;
+  overflow: hidden;
+}
+.library-item {
+  position: relative;
+  padding: 18px 20px;
+  row-gap: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.library-item:last-of-type {
+  border-bottom: 0;
+}
+.library-item:has(> .n-checkbox--checked) {
+  background: var(--color-surface-subtle);
 }
 .library-item-copy {
-  flex: 1;
+  grid-column: 2;
+  grid-row: 1;
+  padding-left: 54px;
+  position: relative;
   min-width: 0;
   cursor: pointer;
 }
+.library-audio-icon {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: white;
+  border-radius: 11px;
+  background: linear-gradient(145deg, #74e4ef, #2d9cf5);
+  box-shadow: 0 3px 8px #2d9cf526;
+}
+.library-audio-icon.is-speech {
+  background: linear-gradient(145deg, #a79bff, #6558ff);
+}
 .library-item-copy header {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.library-item-copy p {
-  margin: 8px 0;
-  white-space: pre-wrap;
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow-wrap: anywhere;
-}
-.library-chinese {
-  color: #172033;
-}
-.library-foreign {
-  color: #64748b;
-  font-size: 13px;
-}
-.library-item-copy footer {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  font-size: 11px;
-  color: #94a3b8;
 }
-.library-item-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
-  padding-left: 8px;
-}
-.library-item-actions > :deep(.n-button) {
+.library-item-copy strong {
+  display: block;
   width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--color-text);
 }
-.library-item--trash .library-item-actions {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  align-self: center;
-  justify-content: flex-end;
+.library-item-copy header :deep(.n-tag:not(.n-tag--error):not(.n-tag--warning)) {
+  display: none;
+}
+.library-item-copy footer {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+}
+.library-duration {
+  grid-column: 3;
+  grid-row: 1;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.library-purpose {
+  grid-column: 4;
+  grid-row: 1;
+}
+.library-purpose :deep(.n-tag) {
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  border-radius: 6px;
+}
+.library-purpose :deep(.is-speech) {
+  color: var(--color-local-700);
+  background: var(--color-local-100);
+}
+.library-row-group {
+  grid-column: 5;
+  grid-row: 1;
+  max-width: 100%;
+}
+.library-row-group :deep(.n-button__content) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   gap: 8px;
 }
-.library-item--trash .library-item-actions > :deep(.n-button) {
-  width: auto;
-  min-width: 60px;
+.library-item-actions {
+  grid-column: 6;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 0;
 }
+.library-item-preview {
+  grid-row: 2;
+  grid-column: 1/-1;
+  min-width: 0;
+}
+.library-item-preview > summary {
+  display: none;
+}
+.library-item-preview:not([open]) {
+  display: none;
+}
+.library-item-actions > :deep(.n-button) {
+  border-radius: 8px;
+  height: 32px;
+  padding: 0 10px;
+}
+.library-item-actions > :deep(.n-button:not(.n-button--primary-type)) {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+}
+
 .library-pagination {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  margin-top: 18px;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.library-bottom-player {
+  position: relative;
+  bottom: auto;
+  z-index: 5;
+  margin: 0;
+  border-color: var(--color-primary-200);
+  background: var(--color-surface);
+  box-shadow: 0 6px 24px #6558ff1a;
+  border-radius: 16px 16px 0 0;
+}
+.library-bottom-player :deep(.library-player-heading strong) {
+  color: var(--color-text);
+}
+.library-bottom-player :deep(.library-player-setting) {
+  border-color: var(--color-border);
+  background: var(--color-surface-subtle);
 }
 .library-dialog {
   width: min(480px, calc(100vw - 32px));
@@ -661,7 +956,7 @@ async function onClipSaved() {
 .library-upload-hint {
   font-size: 12px;
   line-height: 1.7;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .library-upload-meta {
   display: grid;
@@ -682,14 +977,14 @@ async function onClipSaved() {
   padding: 18px 0;
   display: grid;
   gap: 10px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
 }
 .library-upload-error {
   color: #dc2626;
 }
 .library-source {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   overflow-wrap: anywhere;
 }
 .library-recent {
@@ -703,66 +998,109 @@ pre {
   overflow-wrap: anywhere;
   font-size: 12px;
 }
-@media (max-width: 1200px) {
-  .library-filters {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+
+@media (max-width: 1350px) {
+  .library-primary-filters {
+    grid-template-columns: minmax(220px, 1fr) auto;
+    gap: 14px;
   }
-  .library-workspace {
-    grid-template-columns: 190px minmax(0, 1fr);
-  }
-}
-.library-main {
-  container-type: inline-size;
-}
-@container (max-width: 820px) {
-  .library-item {
-    grid-template-columns: 18px minmax(0, 1fr) 104px;
-  }
-  .library-item > .library-item-player {
-    grid-column: 2 / -1;
+  .library-group-filter {
     grid-row: 2;
   }
-  .library-item-actions {
-    grid-column: 3;
-    grid-row: 1;
-  }
-}
-@container (max-width: 460px) {
-  .library-item {
-    grid-template-columns: 18px minmax(0, 1fr);
-  }
-  .library-item-actions {
+  .library-upload-button {
     grid-column: 2;
-    grid-row: 3;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 8px;
-    padding-left: 0;
-  }
-  .library-item-actions > :deep(.n-button) {
-    width: auto;
-    min-width: 76px;
-  }
-  .library-item--trash .library-item-actions {
     grid-row: 2;
-    justify-content: flex-start;
-    padding-left: 0;
+    justify-self: end;
+  }
+  .library-secondary-filters {
+    margin-left: 0;
+  }
+  .library-list-heading,
+  .library-item {
+    grid-template-columns: 22px minmax(160px, 1fr) 64px 90px 110px 330px;
+    column-gap: 12px;
   }
 }
-@media (max-width: 760px) {
-  .library-workspace {
-    grid-template-columns: 1fr;
-  }
-  .library-sidebar {
-    max-height: 300px;
-    overflow: auto;
-  }
-  .library-filters {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .library-storage {
+@media (max-width: 1000px) {
+  .library-list-heading {
     display: none;
+  }
+  .library-items {
+    border-top: 1px solid var(--color-border);
+    border-radius: 14px;
+  }
+  .library-item {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+  .library-item-copy {
+    grid-column: 2;
+  }
+  .library-duration {
+    grid-column: 3;
+  }
+  .library-purpose {
+    grid-column: 2;
+    grid-row: 2;
+    padding-left: 54px;
+  }
+  .library-row-group {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .library-item-actions {
+    grid-column: 2/-1;
+    grid-row: 3;
+    justify-content: flex-start;
+    padding: 0 0 0 54px;
+  }
+  .library-item-preview {
+    grid-row: 4;
+  }
+}
+@media (max-width: 650px) {
+  .library-toolbar {
+    padding: 14px;
+  }
+  .library-primary-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .library-group-filter,
+  .library-upload-button {
+    grid-row: auto;
+    grid-column: auto;
+  }
+  .library-upload-button {
+    justify-self: stretch;
+  }
+  .library-purpose-filter {
+    flex-wrap: wrap;
+  }
+  .library-secondary-filters {
+    width: 100%;
+  }
+  .library-secondary-filters :deep(.n-select) {
+    flex: 1 1 120px;
+  }
+  .library-item {
+    padding: 14px 12px;
+    column-gap: 10px;
+  }
+  .library-item-actions {
+    padding-left: 0;
+  }
+  .library-item-copy {
+    padding-left: 44px;
+  }
+  .library-audio-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .library-purpose {
+    padding-left: 44px;
+  }
+  .library-bottom-player {
+    position: relative;
+    bottom: auto;
   }
 }
 </style>

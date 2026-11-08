@@ -1,30 +1,38 @@
 <template>
   <section v-if="player.current || player.queue.length" class="library-player" aria-label="直播音频播放器">
-    <div class="library-player-heading">
-      <div>
-        <strong
-          >{{ player.preview ? "试听 · " : player.selectionOnly ? "单条播放 · " : ""
-          }}{{ player.current?.title || "播放队列" }}</strong
-        >
-        <p>{{ player.current?.chineseText || player.current?.foreignText || "暂无文案" }}</p>
+    <div class="library-player-bar">
+      <div class="library-player-heading">
+        <img :src="libraryIcon" alt="" class="library-player-art" />
+        <div class="library-player-copy">
+          <strong :title="player.current?.title">{{ player.current?.title || "播放队列" }}</strong>
+          <p>
+            {{ player.preview ? "试听" : player.selectionOnly ? "单条播放" : "播放队列" }} ·
+            {{ player.current ? purposeLabel(player.current) : `${player.queue.length} 条音频` }}
+          </p>
+        </div>
       </div>
-      <n-button
-        v-if="(player.preview || player.selectionOnly) && player.queue.length"
-        size="small"
-        @click="player.resumeQueue()"
-        >{{ player.preview ? "继续原队列" : "继续队列播放" }}</n-button
-      ><n-button size="small" @click="queueOpen = !queueOpen">队列 {{ player.queue.length }}</n-button>
-    </div>
-    <div class="library-player-controls">
       <div class="library-player-transport" role="group" aria-label="播放控制">
-        <n-button aria-label="上一条" size="small" @click="player.step(-1)">上一条</n-button>
-        <n-button type="primary" size="small" @click="player.toggle()">{{
-          ["playing", "loading", "waiting"].includes(player.phase) ? "暂停" : "播放"
-        }}</n-button>
-        <n-button type="error" secondary size="small" @click="player.stop()">停止</n-button>
-        <n-button size="small" @click="player.step(1)">下一条</n-button>
+        <n-button circle class="transport-step" aria-label="上一条" title="上一条" @click="player.step(-1)"
+          ><SkipBack :size="18"
+        /></n-button>
+        <n-button
+          circle
+          type="primary"
+          class="transport-play"
+          :aria-label="['playing', 'loading', 'waiting'].includes(player.phase) ? '暂停' : '播放'"
+          @click="player.toggle()"
+        >
+          <Pause v-if="['playing', 'loading', 'waiting'].includes(player.phase)" :size="23" fill="currentColor" />
+          <Play v-else :size="23" fill="currentColor" />
+        </n-button>
+        <n-button circle class="transport-step" aria-label="下一条" title="下一条" @click="player.step(1)"
+          ><SkipForward :size="18"
+        /></n-button>
       </div>
       <div class="library-player-timeline">
+        <span class="library-player-time"
+          >{{ formatDuration(player.position) }} / {{ formatDuration(player.current?.duration || 0) }}</span
+        >
         <n-slider
           v-slider-label="{ label: '播放进度', text: formatDuration(player.position) }"
           class="library-player-progress"
@@ -36,52 +44,81 @@
           :format-tooltip="formatDuration"
           @update:value="(value) => player.seek(value)"
         />
-        <span class="library-player-time"
-          >{{ formatDuration(player.position) }} / {{ formatDuration(player.current?.duration || 0) }}</span
-        >
       </div>
-      <div class="library-player-settings" role="group" aria-label="播放设置">
-        <div class="library-player-setting library-player-mode" role="group" aria-label="播放方式">
-          <span class="library-player-setting-label"><Repeat2 :size="14" aria-hidden="true" />模式</span>
-          <n-select
-            v-model:value="player.mode"
-            class="library-player-select"
-            size="small"
-            :options="modeOptions"
-            :input-props="{ 'aria-label': '播放方式' }"
-          />
-        </div>
-        <div class="library-player-setting library-player-gap" role="group" aria-label="播放间隔">
-          <span class="library-player-setting-label"><Clock3 :size="14" aria-hidden="true" />间隔</span>
-          <n-input-number
-            class="library-player-gap-input"
-            size="small"
-            :value="player.gap"
-            :min="0"
-            :max="300"
-            :input-props="{ 'aria-label': '播放间隔（秒）' }"
-            @update:value="updateGap"
-          />
-          <span class="library-player-unit">秒</span>
-        </div>
-        <div class="library-player-setting library-player-volume" role="group" aria-label="播放音量">
-          <span class="library-player-setting-label"><Volume2 :size="14" aria-hidden="true" />音量</span>
-          <n-slider
-            v-slider-label="{ label: '音量', text: volumeLabel(player.volume) }"
-            class="library-player-volume-slider"
-            :min="0"
-            :max="1"
-            :step="0.01"
-            :value="player.volume"
-            :format-tooltip="volumeLabel"
-            @update:value="(value) => player.setVolume(value)"
-          />
-          <span class="library-player-volume-value" aria-hidden="true">{{ Math.round(player.volume * 100) }}%</span>
-        </div>
+      <div class="library-player-volume" role="group" aria-label="播放音量">
+        <n-button
+          circle
+          quaternary
+          class="library-mute-button"
+          :aria-label="player.volume === 0 ? '取消静音' : '静音'"
+          :title="player.volume === 0 ? '取消静音' : '静音'"
+          :aria-pressed="player.volume === 0"
+          @click="toggleMute"
+        >
+          <VolumeX v-if="player.volume === 0" :size="21" aria-hidden="true" />
+          <Volume2 v-else :size="21" aria-hidden="true" />
+        </n-button>
+        <n-slider
+          v-slider-label="{ label: '音量', text: volumeLabel(player.volume) }"
+          :min="0"
+          :max="1"
+          :step="0.01"
+          :value="player.volume"
+          :format-tooltip="volumeLabel"
+          @update:value="(value) => player.setVolume(value)"
+        />
+      </div>
+      <div class="library-player-tools">
+        <n-popover trigger="click" placement="top-end">
+          <template #trigger
+            ><n-button circle quaternary aria-label="播放设置" title="播放设置"
+              ><SlidersHorizontal :size="20" /></n-button
+          ></template>
+          <div class="library-playback-options">
+            <strong>播放设置</strong>
+            <label
+              ><span>播放方式</span
+              ><n-select
+                v-model:value="player.mode"
+                size="small"
+                :options="modeOptions"
+                :input-props="{ 'aria-label': '播放方式' }"
+            /></label>
+            <label
+              ><span>播放间隔（秒）</span
+              ><n-input-number
+                size="small"
+                :value="player.gap"
+                :min="0"
+                :max="300"
+                :input-props="{ 'aria-label': '播放间隔（秒）' }"
+                @update:value="updateGap"
+            /></label>
+            <n-button
+              v-if="(player.preview || player.selectionOnly) && player.queue.length"
+              size="small"
+              @click="player.resumeQueue()"
+              >继续原队列</n-button
+            >
+            <n-button size="small" type="error" secondary @click="player.stop()"
+              ><template #icon><Square :size="14" /></template>停止播放</n-button
+            >
+          </div>
+        </n-popover>
+        <n-button
+          circle
+          quaternary
+          :type="queueOpen ? 'primary' : 'default'"
+          :aria-label="`播放队列 ${player.queue.length} 条`"
+          :title="`播放队列 · ${player.queue.length} 条`"
+          @click="queueOpen = !queueOpen"
+          ><ListMusic :size="22"
+        /></n-button>
       </div>
     </div>
     <p v-if="player.phase === 'waiting'" class="library-player-waiting" role="status">
-      <Clock3 :size="14" aria-hidden="true" />{{ Math.ceil(player.remaining) }} 秒后播放下一条
+      <Clock3 :size="14" aria-hidden="true" />{{ Math.ceil(player.remaining) }}
+      秒后播放下一条
     </p>
     <p v-if="player.error" role="alert" class="library-player-error">
       {{ player.error }} <n-button text @click="player.play()">重试</n-button>
@@ -137,9 +174,24 @@
   </section>
 </template>
 <script setup lang="ts">
-import { ref } from "vue";
-import { NButton, NInputNumber, NSelect, NSlider } from "naive-ui";
-import { Clock3, Repeat2, Volume2 } from "lucide-vue-next";
+import { ref, watch } from "vue";
+import { NButton, NInputNumber, NSelect, NSlider, NPopover } from "naive-ui";
+import {
+  Clock3,
+  Volume2,
+  VolumeX,
+  SkipBack,
+  SkipForward,
+  Play,
+  Pause,
+  SlidersHorizontal,
+  ListMusic,
+  Square
+} from "lucide-vue-next";
+import { audioLibraryPurpose, type AudioLibraryItemView } from "@toolbox/shared";
+import libraryIcon from "../../assets/ui-v2/icons/audio-library.webp";
+const purposeLabel = (item: AudioLibraryItemView) =>
+  ({ music: "背景音乐", speech: "配音素材", general: "通用音频" })[audioLibraryPurpose(item)];
 import { audioLibraryPlayer as player } from "./player";
 import { formatDuration } from "./presentation";
 import { vSliderLabel } from "./slider-label";
@@ -149,6 +201,21 @@ const modeOptions = [
   { label: "列表循环", value: "list" },
   { label: "单曲循环", value: "single" }
 ];
+const lastAudibleVolume = ref(player.volume > 0 ? player.volume : 1);
+watch(
+  () => player.volume,
+  (volume) => {
+    if (volume > 0) lastAudibleVolume.value = volume;
+  }
+);
+function toggleMute() {
+  if (player.volume > 0) {
+    lastAudibleVolume.value = player.volume;
+    player.setVolume(0);
+  } else {
+    player.setVolume(lastAudibleVolume.value);
+  }
+}
 const volumeLabel = (value: number) => `${Math.round(value * 100)}%`;
 function updateGap(value: number | null) {
   player.gap = value !== null && Number.isFinite(value) ? Math.max(0, Math.min(300, value)) : 0;
@@ -162,110 +229,129 @@ let dragged = -1;
   margin-top: 16px;
   width: 100%;
   box-sizing: border-box;
-  background: #fff;
-  border: 1px solid #dce5f3;
-  border-radius: 12px;
-  padding: 16px 20px;
-  color: #172033;
+  padding: 16px 22px;
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: linear-gradient(110deg, #fff, var(--color-surface-subtle));
+  box-shadow: 0 4px 20px #6558ff0d;
+}
+.library-player-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) auto minmax(200px, 1.5fr) 150px auto;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
 }
 .library-player-heading {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
-  margin-bottom: 14px;
+  min-width: 0;
+  padding-right: 20px;
+  border-right: 1px solid var(--color-border);
 }
-.library-player-heading > div {
-  flex: 1;
+.library-player-art {
+  width: 54px;
+  height: 54px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.library-player-copy {
   min-width: 0;
 }
-.library-player-heading p {
-  margin: 4px 0 0;
-  color: #64748b;
+.library-player-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+.library-player-copy p {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
-}
-.library-player-controls {
-  display: grid;
-  grid-template-columns: auto minmax(150px, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  font-size: 12px;
-}
-.library-player-transport,
-.library-player-timeline,
-.library-player-settings,
-.library-player-setting,
-.library-player-setting-label {
-  display: flex;
-  align-items: center;
 }
 .library-player-transport {
-  gap: 8px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+.transport-step {
+  width: 36px;
+  height: 36px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-subtle);
+}
+.transport-play {
+  width: 46px;
+  height: 46px;
+  background: linear-gradient(145deg, #9588ff, var(--color-primary-600));
+  box-shadow: 0 4px 10px #6558ff30;
 }
 .library-player-timeline {
-  gap: 12px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
   min-width: 0;
 }
 .library-player-time {
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  color: #64748b;
-}
-.library-player-settings {
-  gap: 8px;
-  min-width: 0;
-}
-.library-player-setting {
-  gap: 8px;
-  min-width: 0;
-  min-height: 36px;
-  box-sizing: border-box;
-  padding: 4px 10px;
-  background: #f6f8fc;
-  border: 1px solid #e5ebf5;
-  border-radius: 8px;
-}
-.library-player-setting-label {
-  gap: 5px;
-  color: #64748b;
-  white-space: nowrap;
-}
-.library-player-select {
-  flex: 1;
-  width: 110px;
-  min-width: 100px;
-}
-.library-player-gap-input {
-  flex: 1;
-  width: 96px;
-  min-width: 80px;
-}
-.library-player-unit {
-  color: #64748b;
-}
-.library-player-volume-slider {
-  width: 76px;
-  min-width: 0;
-}
-.library-player-volume-value {
-  min-width: 32px;
-  text-align: right;
-  color: #475569;
+  font-size: 13px;
+  color: var(--color-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 .library-player-progress {
   flex: 1;
-  width: 100%;
+  min-width: 60px;
+}
+.library-player-volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--color-text-secondary);
   min-width: 0;
+}
+.library-mute-button {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+.library-player-volume :deep(.n-slider) {
+  flex: 1;
+  min-width: 60px;
+}
+.library-player-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--color-text-secondary);
+}
+.library-playback-options {
+  display: grid;
+  gap: 14px;
+  width: 240px;
+  padding: 6px;
+}
+.library-playback-options > strong {
+  color: var(--color-text);
+}
+.library-playback-options label {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 .library-player-waiting {
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 10px 0 0;
-  color: #2563eb;
+  color: var(--color-primary-600);
   font-size: 12px;
 }
 .library-player-error {
@@ -273,8 +359,11 @@ let dragged = -1;
   margin: 8px 0 0;
 }
 .library-queue {
-  position: static;
-  margin-top: 12px;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 20;
+  margin-top: 0;
   width: 100%;
   box-sizing: border-box;
   max-height: 50vh;
@@ -295,7 +384,7 @@ let dragged = -1;
 }
 .library-queue > div {
   align-items: flex-start;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid var(--color-border);
   padding: 10px 0;
 }
 .library-queue-copy {
@@ -321,10 +410,10 @@ let dragged = -1;
   white-space: pre-wrap;
 }
 .library-queue-chinese {
-  color: #172033;
+  color: var(--color-text);
 }
 .library-queue-foreign {
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .library-queue-actions {
   display: flex;
@@ -340,35 +429,53 @@ let dragged = -1;
     width: 100%;
   }
 }
-@container (max-width: 1000px) {
-  .library-player-controls {
-    grid-template-columns: auto minmax(150px, 1fr);
-    gap: 12px;
-  }
-  .library-player-settings {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1.3fr;
-  }
-  .library-player-volume-slider {
-    flex: 1;
-    width: 0;
-  }
-}
-@container (max-width: 580px) {
-  .library-player-controls {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .library-player-settings {
-    grid-template-columns: minmax(0, 1fr);
+@container (max-width: 1100px) {
+  .library-player-bar {
+    grid-template-columns: minmax(150px, 1fr) auto minmax(160px, 1.4fr) auto;
+    gap: 16px;
   }
   .library-player-volume {
-    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-column: 3;
+    justify-self: end;
+    width: 140px;
+  }
+  .library-player-tools {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}
+@container (max-width: 700px) {
+  .library-player-bar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+  }
+  .library-player-heading {
+    grid-column: 1;
+    border: 0;
+    padding: 0;
+  }
+  .library-player-tools {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .library-player-transport {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .library-player-volume {
+    grid-column: 2;
+    grid-row: 2;
+    width: 120px;
+  }
+  .library-player-timeline {
+    grid-column: 1/-1;
+    grid-row: 3;
   }
 }
 @media (max-width: 700px) {
   .library-player {
-    padding: 14px 12px;
+    padding: 14px;
   }
 }
 </style>

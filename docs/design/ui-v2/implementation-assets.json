@@ -1,0 +1,140 @@
+{
+  "date": "2026-11-07",
+  "source": "Independent image_gen PNGs; original design assets preserved. Runtime exports only, no UI screenshots.",
+  "brand": {
+    "original": "docs/design/ui-v2/brand.png",
+    "generation": "exec-5538e1e0-8b46-4598-b89b-bf476656b4cc.png",
+    "prompt": "Single transparent satin 2.5D closed briefcase/toolbox, periwinkle #6558FF, pale lavender highlights and a restrained cyan edge; upper-left lighting, centered single silhouette, no text or surrounding decoration."
+  },
+  "encoding": {
+    "format": "WebP",
+    "quality": 88,
+    "alphaQuality": 100,
+    "iconSize": 128,
+    "brandWidth": 96,
+    "heroWidth": 720
+  },
+  "assets": [
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/audio-convert.webp",
+      "bytes": 5456,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "d344de07007d646ab854f7bee5e369ac493d847909bdce31fef4a80c989dba4d"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/audio-extract.webp",
+      "bytes": 4058,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "807e4bf0e51980b1efb38def8a5e84c285087681e85734c3bcc37ee21e8c8f03"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/audio-library.webp",
+      "bytes": 4810,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "b42e5cdd854f24165cb18a12019b59e51c7e22a09c4f1fabdd35ac9c5853d2bb"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/base64.webp",
+      "bytes": 5178,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "76cf88020c4c12076400cdfdf4e19cab4df89c0c1af012006fafd50920ed62a5"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/content-archive.webp",
+      "bytes": 4798,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "03dd9caa0f8e15cd090fc456571f73d0b7694d41eaee6a15fe826449b6ed4469"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/image-ai.webp",
+      "bytes": 4116,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "4442110765ca2c30981761db3bc901b27e34aebe36b49ac24156813dae141ba4"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/image-compress.webp",
+      "bytes": 4704,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "77ba76c3bb5fd42a4c3f85e2ffa5a4618746e1f4dd423fed84175a848b1f9dd5"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/json-format.webp",
+      "bytes": 5140,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "dfddcf06e2b2f11bc0faaef3e3bf656a05e1021da5792492e7ce8d62a9d75075"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/lan-transfer.webp",
+      "bytes": 4580,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "c82478177957f6a8737291889fb9621223916709f67cd08c8f3db3fef4c43011"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/speech.webp",
+      "bytes": 5034,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "fe65fe068fae8a83caede4644df60db4a3a1172153b947f330eda74e63693d37"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/url-codec.webp",
+      "bytes": 5494,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "a8ca3d7b5388211a0671ac1ce7569deb941f54ac71c05d5c93f9ce51e25069fc"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/uuid-generator.webp",
+      "bytes": 5082,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "9e8629df8695e612228afc340963507481eccea501e994d48d7bdcecb6398446"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/icons/video-ai.webp",
+      "bytes": 4752,
+      "width": 128,
+      "height": 128,
+      "alpha": true,
+      "sha256": "9c6c473f08b362c39d7dc3f6adc225ca3e8bc889bce00446ec09649f998a3907"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/hero.webp",
+      "bytes": 33140,
+      "width": 720,
+      "height": 309,
+      "alpha": true,
+      "sha256": "bd069f03f8df934a3a315ce707fdf651c431fad54c85fa971c99184ee8353e64"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/brand.webp",
+      "bytes": 3642,
+      "width": 96,
+      "height": 87,
+      "alpha": true,
+      "sha256": "6bb9c2d06596a8f53f75338c166f66678a252d0baef9c35e4df1dc0c878453e2"
+    }
+  ],
+  "totalBytes": 99984
+}

@@ -1,68 +1,70 @@
 <!-- 本地处理记录：仅查询已保存的任务，不启动模型或重复处理图片。 -->
 <template>
   <section class="image-history" aria-label="AI 图片处理记录">
-    <div class="history-heading">
-      <div>
-        <h3>处理记录</h3>
-        <p>成功及部分成功的结果、原图与处理参数长期保存在本机，手动删除前不会自动过期。</p>
-        <p>失败且没有结果的临时任务按原保留期清理；此前已被清理的图片无法恢复。</p>
+    <div class="history-toolbar">
+      <div class="history-heading">
+        <div>
+          <h3>处理记录</h3>
+          <p>成功及部分成功的结果、原图与处理参数长期保存在本机，手动删除前不会自动过期。</p>
+          <p>失败且没有结果的临时任务按原保留期清理；此前已被清理的图片无法恢复。</p>
+        </div>
+        <n-button secondary type="primary" :loading="loading" :disabled="deletionBusy" @click="loadHistory"
+          ><template #icon><RefreshCw :size="16" /></template>刷新记录</n-button
+        >
       </div>
-      <n-button secondary :loading="loading" :disabled="deletionBusy" @click="loadHistory"
-        ><template #icon><RefreshCw :size="16" /></template>刷新记录</n-button
-      >
-    </div>
-    <div class="history-filters">
-      <n-input
-        v-model:value="keyword"
-        clearable
-        maxlength="100"
-        placeholder="搜索原文件名或任务编号"
-        aria-label="搜索处理记录"
-        :disabled="deletionBusy"
-        @keyup.enter="applyFilters"
-      />
-      <n-select
-        v-model:value="operation"
-        :options="operationOptions"
-        clearable
-        placeholder="全部处理类型"
-        aria-label="处理类型"
-        :disabled="deletionBusy"
-      />
-      <n-select
-        v-model:value="status"
-        :options="statusOptions"
-        clearable
-        placeholder="全部状态"
-        aria-label="任务状态"
-        :disabled="deletionBusy"
-      />
-      <n-button secondary :disabled="deletionBusy" @click="applyFilters">搜索</n-button>
-    </div>
-    <div class="history-selection">
-      <n-checkbox
-        :checked="allSelected"
-        :indeterminate="partlySelected"
-        :disabled="!selectableIds.length || loading || deletionBusy"
-        aria-label="选择本页可删除记录"
-        @update:checked="selectPage"
-        >全选当前页</n-checkbox
-      >
-      <span>已选 {{ selectedIds.length }} 条；排队和处理中的任务不可选</span>
-      <n-button
-        size="small"
-        secondary
-        type="error"
-        :disabled="!selectedIds.length || loading || deletionBusy"
-        :loading="batchDeleting"
-        @click="removeSelected"
-      >
-        <template #icon><Trash2 :size="14" /></template
-        >{{ batchDeleting ? `删除中 ${batchProcessed}/${batchTotal}` : "删除所选" }}
-      </n-button>
-      <n-button v-if="selectedIds.length" size="small" text :disabled="deletionBusy" @click="selectedIds = []"
-        >取消选择</n-button
-      >
+      <div class="history-filters">
+        <n-input
+          v-model:value="keyword"
+          clearable
+          maxlength="100"
+          placeholder="搜索原文件名或任务编号"
+          aria-label="搜索处理记录"
+          :disabled="deletionBusy"
+          @keyup.enter="applyFilters"
+        />
+        <n-select
+          v-model:value="operation"
+          :options="operationOptions"
+          clearable
+          placeholder="全部处理类型"
+          aria-label="处理类型"
+          :disabled="deletionBusy"
+        />
+        <n-select
+          v-model:value="status"
+          :options="statusOptions"
+          clearable
+          placeholder="全部状态"
+          aria-label="任务状态"
+          :disabled="deletionBusy"
+        />
+        <n-button type="primary" :disabled="deletionBusy" @click="applyFilters">搜索</n-button>
+      </div>
+      <div class="history-selection">
+        <n-checkbox
+          :checked="allSelected"
+          :indeterminate="partlySelected"
+          :disabled="!selectableIds.length || loading || deletionBusy"
+          aria-label="选择本页可删除记录"
+          @update:checked="selectPage"
+          >全选当前页</n-checkbox
+        >
+        <span>已选 {{ selectedIds.length }} 条；排队和处理中的任务不可选</span>
+        <n-button
+          size="small"
+          secondary
+          type="error"
+          :disabled="!selectedIds.length || loading || deletionBusy"
+          :loading="batchDeleting"
+          @click="removeSelected"
+        >
+          <template #icon><Trash2 :size="14" /></template
+          >{{ batchDeleting ? `删除中 ${batchProcessed}/${batchTotal}` : "删除所选" }}
+        </n-button>
+        <n-button v-if="selectedIds.length" size="small" text :disabled="deletionBusy" @click="selectedIds = []"
+          >取消选择</n-button
+        >
+      </div>
     </div>
     <n-alert v-if="batchError" type="warning" :bordered="false">{{ batchError }}</n-alert>
     <n-alert v-if="listError" type="error" :bordered="false">{{ listError }}</n-alert>
@@ -116,14 +118,19 @@
             </p>
           </div>
           <div class="history-actions">
-            <n-button size="small" secondary @click="viewTask(task.id)">查看详情</n-button>
-            <n-button size="small" secondary :disabled="!task.results.length" @click="downloadTask(task)"
+            <n-button size="small" secondary type="primary" @click="viewTask(task.id)">查看详情</n-button>
+            <n-button
+              size="small"
+              quaternary
+              type="primary"
+              :disabled="!task.results.length"
+              @click="downloadTask(task)"
               ><template #icon><Download :size="14" /></template
               >{{ task.results.length > 1 ? "下载 ZIP" : "下载结果" }}</n-button
             >
             <n-button
               size="small"
-              secondary
+              quaternary
               type="error"
               :disabled="isActive(task) || deletionBusy"
               :loading="deletingId === task.id"
@@ -268,6 +275,15 @@ function downloadTask(task: ImageAiTask) {
   display: grid;
   gap: 18px;
 }
+.history-toolbar {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
 .history-heading,
 .history-title,
 .history-actions,
@@ -283,6 +299,14 @@ function downloadTask(task: ImageAiTask) {
   gap: 12px;
   color: var(--color-text-secondary);
   font-size: 13px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+.history-selection > .n-button {
+  margin-left: auto;
+}
+.history-selection > .n-button + .n-button {
+  margin-left: 0;
 }
 .history-heading,
 .history-pagination {
@@ -292,6 +316,12 @@ function downloadTask(task: ImageAiTask) {
 .history-heading h3,
 .history-detail-summary h3 {
   margin: 0 0 6px;
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+.history-heading > .n-button {
+  flex-shrink: 0;
 }
 .history-heading p,
 .history-summary p,
@@ -299,6 +329,7 @@ function downloadTask(task: ImageAiTask) {
   margin: 4px 0;
   color: var(--color-text-secondary);
   font-size: 13px;
+  line-height: 1.7;
 }
 .history-filters {
   display: grid;
@@ -313,22 +344,33 @@ function downloadTask(task: ImageAiTask) {
   display: grid;
   grid-template-columns: 20px 76px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
+  gap: 18px;
+  padding: 20px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+.history-item:hover {
+  border-color: var(--color-primary-200);
 }
 .history-item.is-selected {
-  border-color: var(--color-primary-200);
+  border-color: var(--color-primary-500);
   background: var(--color-primary-50);
+  box-shadow: 0 0 0 1px var(--color-primary-200);
 }
 .history-thumb {
-  height: 68px;
+  height: 76px;
   display: grid;
   place-items: center;
   border-radius: 8px;
   overflow: hidden;
-  background-color: #f1f5f9;
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface-subtle);
+  color: var(--color-primary-500);
 }
 .history-thumb img {
   width: 100%;
@@ -338,32 +380,101 @@ function downloadTask(task: ImageAiTask) {
 .history-summary {
   min-width: 0;
 }
+.history-title {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.history-title > strong {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
+  font-size: 12px;
+  font-weight: 600;
+}
+.history-title :deep(.n-tag) {
+  border-radius: 6px;
+}
 .history-filename {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.history-summary .history-filename {
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.history-summary > p:last-child {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+}
 .history-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 8px;
+}
+.history-actions :deep(.n-button) {
+  height: 34px;
+  border-radius: 8px;
+}
+.history-actions :deep(.n-button--quaternary-type) {
+  background: transparent;
+  box-shadow: none;
 }
 .history-detail-summary {
   margin-bottom: 18px;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-subtle);
   overflow-wrap: anywhere;
 }
 .history-pagination {
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
   color: var(--color-text-secondary);
   font-size: 13px;
+}
+.image-history :deep(.n-empty) {
+  padding: 48px 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
 }
 @media (max-width: 1000px) {
   .history-item {
     grid-template-columns: 20px 76px minmax(0, 1fr);
   }
   .history-actions {
-    grid-column: 1 / -1;
+    grid-column: 3;
+    justify-content: flex-start;
   }
 }
 @media (max-width: 640px) {
+  .history-toolbar {
+    padding: 16px;
+    gap: 16px;
+  }
+  .history-item {
+    grid-template-columns: 18px 60px minmax(0, 1fr);
+    padding: 14px;
+    gap: 12px;
+  }
+  .history-thumb {
+    height: 60px;
+  }
+  .history-actions {
+    grid-column: 2 / -1;
+  }
+  .history-selection > span {
+    flex-basis: 100%;
+    order: 1;
+    font-size: 12px;
+  }
   .history-filters {
     grid-template-columns: 1fr;
   }

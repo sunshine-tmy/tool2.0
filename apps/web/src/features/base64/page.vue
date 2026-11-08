@@ -1,6 +1,6 @@
 <template>
   <ToolLayout
-    ><section class="base64-page">
+    ><section class="base64-page v2-tool-page">
       <ToolPageHeader
         title="Base64 编解码"
         kicker="ENCODING / BASE64"
@@ -8,82 +8,53 @@
       >
         <template #actions><span class="local-badge">仅在本地处理</span></template>
       </ToolPageHeader>
-      <section class="codec-panel" @dragover.prevent @drop.prevent="drop">
-        <div class="toolbar" role="group" aria-label="Base64 处理选项">
-          <n-radio-group v-model:value="direction" aria-label="编解码方向">
-            <n-radio-button value="encode">编码</n-radio-button><n-radio-button value="decode">解码</n-radio-button>
-          </n-radio-group>
-          <n-select
-            v-model:value="alphabet"
-            class="alphabet"
-            aria-label="Base64 类型"
-            :options="[
-              { label: '标准 Base64', value: 'standard' },
-              { label: 'Base64URL（URL 安全）', value: 'url' }
-            ]"
-          />
-          <n-button :loading="importing" @click="fileInput?.click()">导入文件</n-button>
-          <input
-            ref="fileInput"
-            hidden
-            type="file"
-            :accept="direction === 'encode' ? undefined : '.txt,.b64,.base64'"
-            @change="chooseFile"
-          />
-          <n-button type="primary" :disabled="!hasInput || importing" @click="run">{{
-            direction === "encode" ? "开始编码" : "开始解码"
-          }}</n-button>
-          <n-button v-if="busy || importing" @click="cancel">停止处理</n-button>
-          <n-button class="clear" :disabled="!hasInput && !result && !notice && !file && !importing" @click="clear"
-            >清空</n-button
-          >
-        </div>
-        <div class="secondary">
-          <n-radio-group v-if="direction === 'encode'" v-model:value="inputKind" size="small" aria-label="编码输入类型">
-            <n-radio-button value="text">文本</n-radio-button><n-radio-button value="file">文件</n-radio-button>
-          </n-radio-group>
-          <n-checkbox v-if="direction === 'decode'" v-model:checked="ignoreWhitespace"
-            >忽略输入中的空格与换行</n-checkbox
-          >
-          <n-checkbox v-model:checked="automatic" :disabled="activeFile">自动处理小文本</n-checkbox>
-        </div>
-        <p class="privacy">内容不上传、不保存历史，离开或刷新页面后清除。Base64 是编码，不提供加密保护。</p>
-        <n-alert v-if="notice" type="warning" closable @close="notice = ''">{{ notice }}</n-alert>
-        <n-alert
-          v-if="error"
-          :type="error.code === 'limit' || error.code === 'internal' ? 'warning' : 'error'"
-          class="status"
-        >
-          {{ error.message
-          }}<template v-if="!activeFile && ['text', 'base64'].includes(error.code)">
-            · 第 {{ error.line }} 行，第 {{ error.column }} 列
-            <n-button text type="error" @click="locateError">定位错误</n-button>
-          </template>
-        </n-alert>
-        <p v-else class="status" role="status">
-          {{
-            busy
-              ? "正在处理…"
-              : importing
-                ? "正在读取文件…"
-                : !hasInput
-                  ? "请输入内容或导入文件"
-                  : stale
-                    ? "输入或选项已变化，请重新处理"
-                    : result
-                      ? result.kind === "binary"
-                        ? "解码成功，结果为二进制数据，可下载文件"
-                        : "处理完成"
-                      : "等待处理"
-          }}
-        </p>
-        <p class="privacy">
-          {{
-            direction === "encode"
-              ? "编码输入最大 5 MiB，输出最多约 6.67 MiB。"
-              : "解码输入最大 7 MiB，解码结果最大 5 MiB。"
-          }}文件及超过 200 KiB 的文本请手动处理。
-        </p>
+      <section class="developer-workspace codec-panel" @dragover.prevent @drop.prevent="drop">
+        <section class="developer-settings">
+          <h3 class="module-section-title">输入与设置</h3>
+          <div class="toolbar" role="group" aria-label="Base64 处理选项">
+            <n-radio-group v-model:value="direction" aria-label="编解码方向">
+              <n-radio-button value="encode">编码</n-radio-button><n-radio-button value="decode">解码</n-radio-button>
+            </n-radio-group>
+            <n-select
+              v-model:value="alphabet"
+              class="alphabet"
+              aria-label="Base64 类型"
+              :options="[
+                { label: '标准 Base64', value: 'standard' },
+                { label: 'Base64URL（URL 安全）', value: 'url' }
+              ]"
+            />
+            <n-button :loading="importing" @click="fileInput?.click()">导入文件</n-button>
+            <input
+              ref="fileInput"
+              hidden
+              type="file"
+              :accept="direction === 'encode' ? undefined : '.txt,.b64,.base64'"
+              @change="chooseFile"
+            />
+            <n-button type="primary" :disabled="!hasInput || importing" @click="run">{{
+              direction === "encode" ? "开始编码" : "开始解码"
+            }}</n-button>
+            <n-button v-if="busy || importing" @click="cancel">停止处理</n-button>
+            <n-button class="clear" :disabled="!hasInput && !result && !notice && !file && !importing" @click="clear"
+              >清空</n-button
+            >
+          </div>
+          <div class="secondary">
+            <n-radio-group
+              v-if="direction === 'encode'"
+              v-model:value="inputKind"
+              size="small"
+              aria-label="编码输入类型"
+            >
+              <n-radio-button value="text">文本</n-radio-button><n-radio-button value="file">文件</n-radio-button>
+            </n-radio-group>
+            <n-checkbox v-if="direction === 'decode'" v-model:checked="ignoreWhitespace"
+              >忽略输入中的空格与换行</n-checkbox
+            >
+            <n-checkbox v-model:checked="automatic" :disabled="activeFile">自动处理小文本</n-checkbox>
+          </div>
+        </section>
         <div class="editors">
           <section class="editor-pane">
             <label :for="activeFile ? undefined : 'base64-source'">{{
@@ -117,6 +88,10 @@
             <div class="output-heading">
               <label :for="result?.kind === 'binary' ? undefined : 'base64-output'">输出</label
               ><span v-if="stale || (error && result)" class="stale">旧结果，已暂停导出</span>
+              <div class="developer-export-actions">
+                <n-button size="small" :disabled="!canCopy" @click="copy">复制结果</n-button>
+                <n-button size="small" :disabled="!canExport" @click="download">下载结果</n-button>
+              </div>
             </div>
             <div v-if="result?.kind === 'binary'" class="binary-output" role="status">
               <strong>二进制结果 · {{ formatBytesAdaptive(result.outputBytes) }}</strong>
@@ -137,14 +112,56 @@
                   ? `${result.kind === "text" ? resultChars + " 字符 · " : ""}${formatBytesAdaptive(result.outputBytes)}`
                   : "暂无结果"
               }}</small>
-              <n-button size="small" :disabled="!canCopy" @click="copy">复制结果</n-button>
-              <n-button size="small" :disabled="!canExport" @click="download">下载结果</n-button>
             </div>
           </section>
         </div>
-        <n-alert v-if="result && !stale && result.warnings.length" type="warning"
-          ><p v-for="warning in result.warnings" :key="warning">{{ warning }}</p></n-alert
-        >
+        <section class="developer-feedback" aria-label="处理状态">
+          <n-alert v-if="notice" type="warning" closable @close="notice = ''">{{ notice }}</n-alert>
+          <n-alert
+            v-if="error"
+            :type="error.code === 'limit' || error.code === 'internal' ? 'warning' : 'error'"
+            class="status"
+          >
+            {{ error.message
+            }}<template v-if="!activeFile && ['text', 'base64'].includes(error.code)">
+              · 第 {{ error.line }} 行，第 {{ error.column }} 列
+              <n-button text type="error" @click="locateError">定位错误</n-button>
+            </template>
+          </n-alert>
+          <p v-else class="status" role="status">
+            {{
+              busy
+                ? "正在处理…"
+                : importing
+                  ? "正在读取文件…"
+                  : !hasInput
+                    ? "请输入内容或导入文件"
+                    : stale
+                      ? "输入或选项已变化，请重新处理"
+                      : result
+                        ? result.kind === "binary"
+                          ? "解码成功，结果为二进制数据，可下载文件"
+                          : "处理完成"
+                        : "等待处理"
+            }}
+          </p>
+          <n-alert v-if="result && !stale && result.warnings.length" type="warning"
+            ><p v-for="warning in result.warnings" :key="warning">
+              {{ warning }}
+            </p></n-alert
+          >
+        </section>
+        <details class="module-help">
+          <summary>使用说明与处理限制</summary>
+          <p class="privacy">内容不上传、不保存历史，离开或刷新页面后清除。Base64 是编码，不提供加密保护。</p>
+          <p class="privacy">
+            {{
+              direction === "encode"
+                ? "编码输入最大 5 MiB，输出最多约 6.67 MiB。"
+                : "解码输入最大 7 MiB，解码结果最大 5 MiB。"
+            }}文件及超过 200 KiB 的文本请手动处理。
+          </p>
+        </details>
       </section>
     </section></ToolLayout
   >
@@ -264,11 +281,12 @@ function download() {
   min-width: 0;
 }
 .codec-panel {
+  box-shadow: var(--shadow-card);
   min-width: 0;
   padding: 20px;
-  background: var(--card-color, #fff);
-  border: 1px solid var(--border-color, #dce4f1);
-  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
 }
 .toolbar,
 .secondary,
@@ -292,7 +310,7 @@ function download() {
 }
 .privacy,
 small {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   font-size: 12px;
 }
 .status {
@@ -326,13 +344,13 @@ textarea,
 .binary-output {
   box-sizing: border-box;
   width: 100%;
-  min-height: 420px;
-  height: 55vh;
+  min-height: 320px;
+  height: clamp(320px, 40vh, 480px);
   padding: 14px;
-  border: 1px solid #dce4f1;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fafbfd;
-  color: #172033;
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
 }
 textarea {
   display: block;
@@ -347,12 +365,12 @@ textarea {
   overflow-y: auto;
 }
 textarea:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 1px;
 }
 textarea[readonly],
 .binary-output {
-  background: #f5f7fb;
+  background: var(--color-surface-subtle);
 }
 .file-input,
 .binary-output {
@@ -369,7 +387,7 @@ textarea[readonly],
 .local-badge {
   color: #0f766e;
   background: #d9faf2;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   padding: 6px 10px;
   font-size: 12px;
 }
@@ -400,3 +418,5 @@ textarea[readonly],
   }
 }
 </style>
+
+<style src="../../shared/ui/tool/DeveloperWorkspace.css"></style>

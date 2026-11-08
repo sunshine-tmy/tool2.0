@@ -34,7 +34,7 @@ defineProps<{ item: ContentArchiveItem; formatDate: (value: string) => string }>
   padding: 13px 14px;
   border: 1px solid #e7ebf1;
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
 }
 p {
   display: grid;
@@ -42,7 +42,7 @@ p {
   margin: 0;
 }
 span {
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 strong {
@@ -55,7 +55,7 @@ strong {
 }
 a {
   align-self: center;
-  color: #2563eb;
+  color: var(--color-primary-600);
   font-size: 13px;
 }
 </style>

@@ -136,7 +136,7 @@ defineExpose({ seek, pause });
 }
 .sandbox-heading span,
 .watermark-sandbox small {
-  color: #687386;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 .sandbox-frame {
@@ -151,7 +151,7 @@ defineExpose({ seek, pause });
   background-color: white;
   background-image: linear-gradient(#e8edf4 1px, transparent 1px), linear-gradient(90deg, #e8edf4 1px, transparent 1px);
   background-size: 24px 24px;
-  color: #687386;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 .sandbox-caption {

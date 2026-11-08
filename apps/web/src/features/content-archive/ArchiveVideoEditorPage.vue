@@ -1,6 +1,6 @@
 <template>
   <ToolLayout>
-    <section class="archive-video-editor-page">
+    <section class="archive-video-editor-page v2-tool-page">
       <ToolPageHeader
         title="归档视频编辑"
         description="调整配乐与水印，保存为当前归档的最新版本。"

@@ -1,103 +1,139 @@
-<!-- 中文模块说明：前端应用层，负责 页面布局、共享组件、服务或工具能力 -->
 <template>
   <ToolLayout>
-    <section class="main-column tool-home">
-      <div class="home-overview">
-        <div class="home-copy">
-          <span class="eyebrow">本地优先 · 无需登录</span>
-          <h2>今天要处理什么？</h2>
-          <p>从图片、视频、配音到局域网文件流转，选择一个工具即可开始。</p>
-          <div class="home-quick-actions">
-            <router-link to="/tools/image-compress"><ImageDown :size="16" />压缩图片</router-link>
-            <router-link to="/tools/lan-transfer"><FileArchive :size="16" />传输文件</router-link>
-            <router-link to="/tools/edge-tts"><AudioLines :size="16" />生成配音</router-link>
-          </div>
-        </div>
-        <div class="home-focus-card">
-          <span class="home-focus-icon"><ShieldCheck :size="21" /></span>
-          <div>
-            <strong>素材优先保留在本机</strong>
-            <p>基础模块通过本地服务处理，敏感素材无需先上传到第三方工作台。</p>
-          </div>
-          <router-link v-if="lastTool" :to="lastTool.routePath" class="home-continue">
-            <Clock3 :size="15" />继续使用 {{ lastTool.title }}<ArrowRight :size="15" />
+    <section class="workbench-home" aria-label="工具首页">
+      <div class="workbench-hero">
+        <div>
+          <h2>让素材工作，更简单。</h2>
+          <p>图片、视频、音频与开发工具，一站直达。</p>
+          <router-link v-if="lastTool" :to="lastTool.routePath" class="workbench-continue">
+            继续上次使用：{{ lastTool.title }}<ArrowRight :size="16" />
           </router-link>
         </div>
+        <img :src="hero" class="workbench-hero-art" alt="" draggable="false" fetchpriority="high" />
       </div>
-
-      <div class="section-title">
-        <div>
-          <h2>工具工作台</h2>
-          <p>{{ readyTools.length }} 个工具已就绪，选择任务即可开始。</p>
-        </div>
+      <div class="workbench-search">
+        <Search :size="21" aria-hidden="true" />
+        <input
+          ref="search"
+          v-model="keyword"
+          type="search"
+          aria-label="搜索工具"
+          placeholder="搜索工具名称或用途，例如：提取音频、视频去字幕"
+        />
+        <kbd aria-hidden="true">/</kbd>
       </div>
-
-      <div class="tool-grid">
-        <router-link v-for="tool in tools" :key="tool.id" class="tool-card tool-link" :to="tool.routePath">
-          <div class="tool-card-header">
-            <div class="tool-icon">
-              <component :is="iconByTool[tool.id] ?? Wrench" :size="22" />
-            </div>
-            <span class="tool-category">{{ categoryLabel(tool.category) }}</span>
+      <nav class="workbench-categories" aria-label="工具分类">
+        <button type="button" :aria-pressed="category === ''" @click="category = ''">
+          全部工具<span>{{ tools.length }}</span>
+        </button>
+        <button
+          v-for="entry in categories"
+          :key="entry.value"
+          type="button"
+          :aria-pressed="category === entry.value"
+          @click="category = entry.value"
+        >
+          {{ entry.label }}<span>{{ entry.count }}</span>
+        </button>
+      </nav>
+      <div v-if="filtered.length" class="workbench-grid">
+        <router-link
+          v-for="tool in filtered"
+          :key="tool.id"
+          class="workbench-card"
+          :class="{
+            'workbench-card-wide': tool.id === 'lan-transfer' && !category && !keyword.trim()
+          }"
+          :to="tool.routePath"
+        >
+          <img
+            v-if="tool.icon"
+            :src="tool.icon"
+            alt=""
+            class="workbench-card-icon"
+            draggable="false"
+            decoding="async"
+          />
+          <Wrench v-else :size="48" aria-hidden="true" />
+          <div class="workbench-card-copy">
+            <h3>{{ tool.title }}</h3>
+            <p>{{ tool.summary || tool.description }}</p>
+            <span class="workbench-category">{{ categoryLabel(tool.category) }}</span>
           </div>
-          <h3>{{ tool.title }}</h3>
-          <p>{{ tool.description }}</p>
-          <span class="tool-card-action">开始使用 <ArrowRight :size="15" /></span>
+          <ArrowRight class="workbench-card-arrow" :size="18" aria-hidden="true" />
         </router-link>
       </div>
+      <div v-else class="workbench-empty" role="status">
+        <SearchX :size="30" />
+        <h3>没有找到匹配的工具</h3>
+        <p>试试其他关键词，或查看全部工具。</p>
+        <button type="button" @click="reset">清除筛选</button>
+      </div>
+      <footer class="workbench-footer">
+        <div v-if="localDiagnosticsAvailable">
+          <router-link to="/settings"><Layers3 :size="17" />能力管理</router-link>
+          <router-link v-if="isDesktop" to="/settings/data-backup"><Database :size="17" />数据备份与恢复</router-link>
+          <router-link to="/settings/diagnostics"><Activity :size="17" />启动诊断</router-link>
+        </div>
+        <span>本地优先 · 无需登录</span>
+      </footer>
     </section>
   </ToolLayout>
 </template>
-
 <script setup lang="ts">
-import { computed } from "vue";
-import { listTools } from "@toolbox/shared";
-import {
-  ArrowRight,
-  Braces,
-  Binary,
-  AudioLines,
-  Clock3,
-  FileArchive,
-  Fingerprint,
-  ImageDown,
-  LibraryBig,
-  Link,
-  ScanLine,
-  ShieldCheck,
-  Wrench
-} from "lucide-vue-next";
+import { computed, onMounted, onBeforeUnmount, ref } from "vue";
+import type { ToolCategory } from "@toolbox/shared/common";
+import { ArrowRight, Search, SearchX, Layers3, Database, Activity, Wrench } from "lucide-vue-next";
 import ToolLayout from "../shell/ToolLayout.vue";
-
-const tools = listTools();
-const readyTools = computed(() => tools.filter((tool) => tool.status === "ready"));
-const lastTool = computed(() => {
-  const path = typeof window === "undefined" ? "" : localStorage.getItem("toolbox:last-tool");
-  const currentPath = path === "/tools/xhs-archive" ? "/tools/media-archive" : path;
-  return tools.find((tool) => tool.routePath === currentPath);
+import { categoryLabel, toolCategories, toolForPath, workbenchTools } from "../shared/ui/tool/catalog";
+import { localDiagnosticsAvailable } from "../shared/http/diagnostics";
+import { isEditingText, hasOpenModal } from "../shared/ui/tool/keyboard";
+import hero from "../assets/ui-v2/hero.webp";
+const tools = workbenchTools();
+const keyword = ref("");
+const category = ref<ToolCategory | "">("");
+const search = ref<HTMLInputElement>();
+const isDesktop = Boolean(window.toolboxDesktop);
+const categories = toolCategories
+  .map((entry) => ({
+    ...entry,
+    count: tools.filter((tool) => tool.category === entry.value).length
+  }))
+  .filter((entry) => entry.count);
+const filtered = computed(() => {
+  const q = keyword.value.trim().toLocaleLowerCase();
+  return tools.filter(
+    (tool) =>
+      (!category.value || tool.category === category.value) &&
+      `${tool.title} ${tool.description} ${tool.summary} ${tool.keywords}`.toLocaleLowerCase().includes(q)
+  );
 });
-
-const iconByTool: Record<string, unknown> = {
-  "image-compress": ImageDown,
-  "image-ai": ScanLine,
-  "lan-transfer": FileArchive,
-  "edge-tts": AudioLines,
-  "audio-library": AudioLines,
-  "audio-convert": AudioLines,
-  "audio-extract": AudioLines,
-  "xhs-archive": LibraryBig,
-  "json-format": Braces,
-  base64: Binary,
-  "url-codec": Link,
-  "uuid-generator": Fingerprint
-};
-
-function categoryLabel(category: (typeof tools)[number]["category"]) {
-  if (category === "image") return "图片";
-  if (category === "video") return "视频";
-  if (category === "audio") return "音频";
-  if (category === "file") return "文件";
-  if (category === "text") return "开发";
-  return "工具";
+const lastTool = ref<ReturnType<typeof toolForPath>>();
+function reset() {
+  keyword.value = "";
+  category.value = "";
 }
+function focusSearch(event: KeyboardEvent) {
+  if (
+    event.key !== "/" ||
+    event.isComposing ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    isEditingText(event.target) ||
+    hasOpenModal()
+  )
+    return;
+  event.preventDefault();
+  search.value?.focus();
+}
+onMounted(() => {
+  try {
+    lastTool.value = toolForPath(localStorage.getItem("toolbox:last-tool") || "");
+  } catch {
+    /* Storage can be disabled without disabling navigation. */
+  }
+  window.addEventListener("keydown", focusSearch);
+});
+onBeforeUnmount(() => window.removeEventListener("keydown", focusSearch));
 </script>

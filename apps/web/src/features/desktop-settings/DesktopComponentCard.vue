@@ -144,10 +144,12 @@
         }}
       </p>
       <p v-if="job.phase === 'downloading'" class="component-note">
-        {{ formatBytes(job.progress.downloadedBytes) }} / {{ formatBytes(job.progress.totalDownloadBytes) }}
+        {{ formatBytes(job.progress.downloadedBytes) }} /
+        {{ formatBytes(job.progress.totalDownloadBytes) }}
       </p>
       <n-alert v-if="job.errorMessage" type="error" :bordered="false" class="component-message">
-        {{ job.errorMessage }} <span v-if="job.errorCode">({{ job.errorCode }})</span>
+        {{ job.errorMessage }}
+        <span v-if="job.errorCode">({{ job.errorCode }})</span>
       </n-alert>
     </div>
 
@@ -286,7 +288,7 @@ function phaseLabel(phase: ComponentJob["phase"]) {
 .component-purpose,
 .component-note {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -295,12 +297,12 @@ function phaseLabel(phase: ComponentJob["phase"]) {
   justify-content: flex-start;
   flex-wrap: wrap;
   margin-top: 14px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 
 .component-facts a {
-  color: #2563eb;
+  color: var(--color-primary-600);
 }
 
 .offline-import-files code {
@@ -314,7 +316,7 @@ function phaseLabel(phase: ComponentJob["phase"]) {
 }
 
 .offline-import-source a {
-  color: #2563eb;
+  color: var(--color-primary-600);
   overflow-wrap: anywhere;
 }
 

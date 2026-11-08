@@ -1,10 +1,13 @@
 {
   "ignoreBinaries": ["python", "pwsh"],
   "ignoreDependencies": ["electron-builder", "tslib"],
-  "playwright": { "config": ["playwright.config.ts", "playwright.styles.config.ts"] },
+  "playwright": { "config": ["playwright.config.ts", "playwright.styles.config.ts", "playwright.ui-v2.config.ts"] },
   "workspaces": {
     ".": {
       "entry": [
+        "docs/design/ui-v2/review.js",
+        "docs/design/ui-v2/screens.js",
+        "docs/design/ui-v2/tools.js",
         "scripts/smoke-audio-library.mjs",
         "scripts/bootstrap-components.ts",
         "scripts/check-source-native.mjs",

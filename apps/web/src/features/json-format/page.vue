@@ -1,6 +1,6 @@
 <template>
   <ToolLayout
-    ><section class="json-format-page">
+    ><section class="json-format-page v2-tool-page">
       <ToolPageHeader
         title="JSON 格式化"
         kicker="JSON / DATA"
@@ -8,55 +8,35 @@
       >
         <template #actions><span class="local-badge">仅在本地处理</span></template>
       </ToolPageHeader>
-      <section class="json-panel" @dragover.prevent @drop.prevent="drop">
-        <div class="toolbar" role="group" aria-label="JSON 处理操作">
-          <n-button @click="fileInput?.click()">导入文件</n-button>
-          <input ref="fileInput" type="file" hidden accept=".json,.txt" @change="chooseFile" />
-          <label class="indent-control"
-            >缩进
-            <n-select
-              v-model:value="indent"
-              aria-label="JSON 缩进"
-              :options="[
-                { label: '2 空格', value: '2' },
-                { label: '4 空格', value: '4' },
-                { label: 'Tab', value: 'tab' }
-              ]"
-            />
-          </label>
-          <n-button :type="mode === 'format' ? 'primary' : 'default'" :disabled="empty" @click="run('format')"
-            >格式化</n-button
-          >
-          <n-button :type="mode === 'minify' ? 'primary' : 'default'" :disabled="empty" @click="run('minify')"
-            >压缩</n-button
-          >
-          <n-button v-if="busy" @click="cancel">停止处理</n-button>
-          <n-checkbox v-model:checked="automatic">自动处理小文本</n-checkbox>
-          <n-button class="clear" :disabled="empty && !result && !notice" @click="clear">清空</n-button>
-        </div>
-        <p class="privacy">支持拖入 JSON / TXT，最大 5 MiB。内容不上传、不保存历史；离开或刷新页面后清除。</p>
-        <n-alert v-if="notice" type="warning" closable @close="notice = ''">{{ notice }}</n-alert>
-        <n-alert v-if="error" :type="error.code === 'syntax' ? 'error' : 'warning'" class="status">
-          {{ error.message
-          }}<template v-if="error.code === 'syntax'">
-            · 第 {{ error.line }} 行，第 {{ error.column }} 列
-            <n-button text type="error" @click="locateError">定位错误</n-button>
-          </template>
-        </n-alert>
-        <p v-else class="status" role="status">
-          {{
-            busy
-              ? "正在处理…"
-              : empty
-                ? "请输入 JSON，或导入一个文件"
-                : stale
-                  ? "输入或选项已变化，请重新处理"
-                  : result
-                    ? "JSON 校验通过"
-                    : "等待处理"
-          }}
-        </p>
-        <p v-if="sourceBytes > JSON_AUTO_BYTES" class="privacy">当前内容较大，请点击“格式化”或“压缩”手动处理。</p>
+      <section class="developer-workspace json-panel" @dragover.prevent @drop.prevent="drop">
+        <section class="developer-settings">
+          <h3 class="module-section-title">处理设置</h3>
+          <div class="toolbar" role="group" aria-label="JSON 处理操作">
+            <n-button @click="fileInput?.click()">导入文件</n-button>
+            <input ref="fileInput" type="file" hidden accept=".json,.txt" @change="chooseFile" />
+            <label class="indent-control"
+              >缩进
+              <n-select
+                v-model:value="indent"
+                aria-label="JSON 缩进"
+                :options="[
+                  { label: '2 空格', value: '2' },
+                  { label: '4 空格', value: '4' },
+                  { label: 'Tab', value: 'tab' }
+                ]"
+              />
+            </label>
+            <n-button :type="mode === 'format' ? 'primary' : 'default'" :disabled="empty" @click="run('format')"
+              >格式化</n-button
+            >
+            <n-button :type="mode === 'minify' ? 'primary' : 'default'" :disabled="empty" @click="run('minify')"
+              >压缩</n-button
+            >
+            <n-button v-if="busy" @click="cancel">停止处理</n-button>
+            <n-checkbox v-model:checked="automatic">自动处理小文本</n-checkbox>
+            <n-button class="clear" :disabled="empty && !result && !notice" @click="clear">清空</n-button>
+          </div>
+        </section>
         <div class="editors">
           <section class="editor-pane">
             <label for="json-source">JSON 输入</label>
@@ -76,6 +56,10 @@
             <div class="output-heading">
               <label for="json-output">输出</label
               ><span v-if="stale || (error && result)" class="stale">旧结果，已暂停导出</span>
+              <div class="developer-export-actions">
+                <n-button size="small" :disabled="!canExport" @click="copy">复制结果</n-button>
+                <n-button size="small" :disabled="!canExport" @click="download">下载 JSON</n-button>
+              </div>
             </div>
             <textarea
               id="json-output"
@@ -89,19 +73,45 @@
               <small>{{
                 result ? `${result.outputChars} 字符 · ${formatBytesAdaptive(result.outputBytes)}` : "暂无结果"
               }}</small>
-              <n-button size="small" :disabled="!canExport" @click="copy">复制结果</n-button>
-              <n-button size="small" :disabled="!canExport" @click="download">下载 JSON</n-button>
             </div>
           </section>
         </div>
-        <n-alert v-if="result && !stale && result.warningCount" type="warning">
-          <p v-for="warning in result.warnings" :key="warning.offset">
-            第 {{ warning.line }} 行，第 {{ warning.column }} 列：{{ warning.message }}
+        <section class="developer-feedback" aria-label="处理状态">
+          <n-alert v-if="notice" type="warning" closable @close="notice = ''">{{ notice }}</n-alert>
+          <n-alert v-if="error" :type="error.code === 'syntax' ? 'error' : 'warning'" class="status">
+            {{ error.message
+            }}<template v-if="error.code === 'syntax'">
+              · 第 {{ error.line }} 行，第 {{ error.column }} 列
+              <n-button text type="error" @click="locateError">定位错误</n-button>
+            </template>
+          </n-alert>
+          <p v-else class="status" role="status">
+            {{
+              busy
+                ? "正在处理…"
+                : empty
+                  ? "请输入 JSON，或导入一个文件"
+                  : stale
+                    ? "输入或选项已变化，请重新处理"
+                    : result
+                      ? "JSON 校验通过"
+                      : "等待处理"
+            }}
           </p>
-          <p v-if="result.warningCount > result.warnings.length">
-            共 {{ result.warningCount }} 条提示，仅显示前 {{ result.warnings.length }} 条。
-          </p>
-        </n-alert>
+          <n-alert v-if="result && !stale && result.warningCount" type="warning">
+            <p v-for="warning in result.warnings" :key="warning.offset">
+              第 {{ warning.line }} 行，第 {{ warning.column }} 列：{{ warning.message }}
+            </p>
+            <p v-if="result.warningCount > result.warnings.length">
+              共 {{ result.warningCount }} 条提示，仅显示前 {{ result.warnings.length }} 条。
+            </p>
+          </n-alert>
+        </section>
+        <details class="module-help">
+          <summary>使用说明与处理限制</summary>
+          <p class="privacy">支持拖入 JSON / TXT，最大 5 MiB。内容不上传、不保存历史；离开或刷新页面后清除。</p>
+          <p v-if="sourceBytes > JSON_AUTO_BYTES" class="privacy">当前内容较大，请点击“格式化”或“压缩”手动处理。</p>
+        </details>
       </section>
     </section></ToolLayout
   >
@@ -206,11 +216,12 @@ function download() {
   gap: 20px;
 }
 .json-panel {
+  box-shadow: var(--shadow-card);
   min-width: 0;
   padding: 20px;
-  background: var(--card-color, #fff);
-  border: 1px solid var(--border-color, #dce4f1);
-  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
 }
 .toolbar,
 .indent-control,
@@ -232,7 +243,7 @@ function download() {
 }
 .privacy,
 small {
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   font-size: 12px;
 }
 .status {
@@ -265,13 +276,13 @@ textarea {
   box-sizing: border-box;
   display: block;
   width: 100%;
-  min-height: 420px;
-  height: 55vh;
+  min-height: 320px;
+  height: clamp(320px, 40vh, 480px);
   resize: vertical;
   padding: 14px;
-  color: #172033;
-  background: #fafbfd;
-  border: 1px solid #dce4f1;
+  color: var(--color-text);
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font:
     14px/1.65 Consolas,
@@ -279,14 +290,16 @@ textarea {
     monospace;
   tab-size: 4;
   overflow: auto;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: hidden;
 }
 textarea:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 1px;
 }
 textarea[readonly] {
-  background: #f5f7fb;
+  background: var(--color-surface-subtle);
 }
 .output-actions small {
   margin-right: auto;
@@ -295,7 +308,7 @@ textarea[readonly] {
   padding: 6px 10px;
   color: #0f766e;
   background: #d9faf2;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   font-size: 12px;
 }
 .stale {
@@ -323,3 +336,5 @@ textarea[readonly] {
   }
 }
 </style>
+
+<style src="../../shared/ui/tool/DeveloperWorkspace.css"></style>

@@ -1,6 +1,6 @@
 .chatterbox-language-hint {
   margin: 8px 0 0;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.6;
 }
@@ -24,9 +24,9 @@
   cursor: pointer;
 }
 .voice-source-tabs button.active {
-  border-color: #3b82f6;
-  color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--color-primary-500);
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
 }
 .save-voice-row {
   display: grid;
@@ -49,8 +49,8 @@
   cursor: pointer;
 }
 .saved-voice-list article.selected {
-  border-color: #3b82f6;
-  background: #f8fbff;
+  border-color: var(--color-primary-500);
+  background: var(--color-surface-subtle);
   box-shadow: 0 0 0 2px rgb(59 130 246 / 12%);
 }
 .saved-voice-main {
@@ -92,7 +92,7 @@
   padding: 8px 12px;
   border: 1px solid var(--border-color, #dbe3ef);
   border-radius: 10px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--text-primary, #334155);
   cursor: pointer;
   transition:
@@ -104,13 +104,13 @@
   border-color: #93b4ff;
 }
 .chatterbox-device-option.active {
-  border-color: #3b82f6;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border-color: var(--color-primary-500);
+  background: var(--color-primary-50);
+  color: var(--color-primary-700);
   box-shadow: 0 0 0 2px rgb(59 130 246 / 10%);
 }
 .chatterbox-device-option.disabled {
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
   color: #94a3b8;
   cursor: not-allowed;
 }
@@ -138,7 +138,7 @@
 }
 .chatterbox-device-option-copy small {
   overflow: hidden;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   font-size: 11px;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -349,7 +349,7 @@
 }
 .chatterbox-batch-status-badge--default {
   color: #475569;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
   border-color: #cbd5e1;
 }
 :is(.chatterbox-panel, .online-tts-panel) .batch-history-list .history-actions {
@@ -506,5 +506,34 @@
   }
   .saved-voice-select {
     width: 100%;
+  }
+}
+
+/* Module layout follows speech.png; all editor state stays in the existing panel. */
+.ui-v2 .chatterbox-panel > .chatterbox-notice {
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-secondary);
+}
+.ui-v2 .chatterbox-panel .chatterbox-workbench {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+}
+.ui-v2 .chatterbox-panel .chatterbox-editor,
+.ui-v2 .chatterbox-panel .chatterbox-controls {
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  padding: 20px;
+}
+.ui-v2 .chatterbox-panel .chatterbox-block {
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border);
+}
+@media (max-width: 900px) {
+  .ui-v2 .chatterbox-panel .chatterbox-workbench {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

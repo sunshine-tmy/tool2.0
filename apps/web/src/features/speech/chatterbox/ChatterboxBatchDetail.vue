@@ -2,7 +2,7 @@
 <template>
   <n-modal v-model:show="panel.detailVisible">
     <n-card
-      class="batch-detail-card"
+      class="batch-detail-card speech-detail-dialog"
       :title="panel.detailBatch ? panel.batchTitle(panel.detailBatch) : '批次详情'"
       closable
       @close="panel.detailVisible = false"
@@ -152,6 +152,7 @@
 </template>
 
 <script setup lang="ts">
+import "../shared/SpeechBatchDetail.css";
 import type { ComponentPublicInstance } from "vue";
 import { NButton, NCard, NInput, NInputNumber, NModal, NSelect, NTag, NCheckbox } from "naive-ui";
 import { ref, watch } from "vue";
@@ -175,3 +176,4 @@ function setRetryReferenceInput(value: Element | ComponentPublicInstance | null)
   panel.retryReferenceInput = value instanceof HTMLInputElement ? value : undefined;
 }
 </script>
+

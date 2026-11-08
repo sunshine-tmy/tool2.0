@@ -9,3 +9,9 @@
 @import "./tokens.css" layer(tokens);
 @import "./global.css" layer(foundation);
 @import "./redesign.css" layer(components);
+@import "./ui-v2.css" layer(components);
+
+/* Shared upload surfaces also style dialogs teleported outside the app shell. */
+@import "./upload-area.css";
+
+@import "./records.css";

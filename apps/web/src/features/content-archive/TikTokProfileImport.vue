@@ -164,11 +164,15 @@
                     >{{ work.title || work.id }}</a
                   >
                 </td>
-                <td class="profile-nowrap">{{ work.createdAt ? formatArchiveDate(work.createdAt) : "—" }}</td>
+                <td class="profile-nowrap">
+                  {{ work.createdAt ? formatArchiveDate(work.createdAt) : "—" }}
+                </td>
                 <td class="profile-nowrap">
                   {{ work.outcome ? rowLabels[work.outcome.status] : "未选择归档" }}
                 </td>
-                <td class="profile-nowrap">{{ work.outcome ? `${work.outcome.progress}%` : "—" }}</td>
+                <td class="profile-nowrap">
+                  {{ work.outcome ? `${work.outcome.progress}%` : "—" }}
+                </td>
                 <td>
                   <div class="profile-result">
                     <n-button
@@ -576,7 +580,7 @@ onScopeDispose(() => {
 .profile-table th {
   position: sticky;
   top: 0;
-  background: #f5f7fb;
+  background: var(--color-surface-subtle);
   z-index: 1;
   white-space: nowrap;
 }
@@ -617,6 +621,6 @@ onScopeDispose(() => {
   max-width: 100%;
 }
 .profile-table tbody tr:hover {
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
 }
 </style>

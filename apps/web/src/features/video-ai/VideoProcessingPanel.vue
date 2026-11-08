@@ -3,7 +3,7 @@
     <section>
       <div class="section-heading">
         <div>
-          <h2>修复设置</h2>
+          <h2>修复档位</h2>
           <p>选择适合画面的修复方式</p>
         </div>
       </div>
@@ -13,12 +13,12 @@
           :key="option.value"
           type="button"
           class="mode-card"
+          :aria-label="`${option.label} · ${option.short}`"
           :class="{ active: mode === option.value }"
           :disabled="busy || !engineAvailable(option.value)"
           @click="$emit('update:mode', option.value)"
         >
-          <strong>{{ option.label }}</strong>
-          <span>{{ option.short }}</span>
+          <component :is="modeIcons[option.value]" :size="18" aria-hidden="true" /><strong>{{ option.label }}</strong>
         </button>
       </div>
       <div class="mode-detail" :class="{ unavailable: !engineAvailable(mode) }">
@@ -28,6 +28,9 @@
           >前往能力管理</RouterLink
         >
       </div>
+      <p v-if="checking || engineAvailable(mode)" class="engine-status" :class="{ ready: !checking }">
+        <span aria-hidden="true"></span>{{ checking ? "正在准备处理能力…" : "当前能力可用，可立即处理" }}
+      </p>
       <div v-if="!checking && unavailableOptions.length" class="availability-note">
         <span>{{ unavailableOptions.join("；") }}</span>
         <RouterLink to="/settings?component=video-ai-cuda">查看视频能力更新</RouterLink>
@@ -43,14 +46,14 @@
       </div>
       <div class="region-actions">
         <n-button :disabled="!hasFile || busy || checking" :loading="detecting" @click="$emit('detect')"
-          >自动检测字幕</n-button
+          ><template #icon><ScanText :size="16" /></template>自动检测字幕</n-button
         >
         <n-button
           :disabled="!hasFile || busy"
           :type="manualMode ? 'primary' : 'default'"
           @click="$emit('toggle-manual')"
         >
-          {{ manualMode ? "完成框选" : "手动框选" }}
+          <template #icon><Scan :size="16" /></template>{{ manualMode ? "完成框选" : "手动框选" }}
         </n-button>
         <n-button v-if="regionCount" :disabled="busy" @click="$emit('clear-regions')">清除</n-button>
       </div>
@@ -84,14 +87,16 @@
     </div>
 
     <div v-if="task?.status === 'completed' && task.output" class="completed-card">
-      <strong>处理完成</strong>
+      <div class="completed-heading"><CircleCheck :size="19" /><strong>处理完成</strong></div>
       <span>{{ task.output.width }} × {{ task.output.height }} · {{ formatBytes(task.output.bytes) }}</span>
-      <n-button type="primary" tag="a" :href="outputUrl" target="_blank" rel="noopener">下载结果</n-button>
+      <n-button type="primary" tag="a" :href="outputUrl" target="_blank" rel="noopener" block>
+        <template #icon><Download :size="16" /></template>下载处理结果
+      </n-button>
     </div>
 
     <div class="primary-actions">
       <n-button type="primary" size="large" block :disabled="!canSubmit" :loading="submitting" @click="$emit('submit')">
-        开始处理
+        <template #icon><Play :size="18" fill="currentColor" /></template>开始处理
       </n-button>
       <n-button v-if="canCancel" block @click="$emit('cancel')">取消任务</n-button>
     </div>
@@ -99,6 +104,8 @@
 </template>
 
 <script setup lang="ts">
+import { Zap, Rocket, Scale, Gem, ScanText, Scan, Play, CircleCheck, Download } from "lucide-vue-next";
+const modeIcons = { delogo: Zap, fast: Rocket, balanced: Scale, extreme: Gem };
 import { computed } from "vue";
 import { NButton, NProgress } from "naive-ui";
 import { RouterLink } from "vue-router";
@@ -317,4 +324,69 @@ function formatBytes(bytes: number) {
   gap: var(--space-2);
   margin-top: auto;
 }
+
+.processing-panel {
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.mode-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+}
+.mode-card.active {
+  color: var(--color-primary-700);
+  border-color: var(--color-primary-500);
+  background: var(--color-primary-50);
+}
+.mode-detail {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--color-surface-subtle);
+  border-radius: 10px;
+}
+.primary-actions {
+  margin-top: auto;
+  padding-top: 20px;
+}
+
+.processing-panel { gap: 20px; padding: 20px; }
+.section-heading h2 { font-size: 18px; color: var(--color-text); }
+.section-heading p { margin-top: 5px; line-height: 1.6; }
+.mode-grid { gap: 8px; }
+.mode-card { min-height: 46px; color: var(--color-text-secondary); background: var(--color-surface-subtle); border-radius: 8px; transition: background-color .15s, border-color .15s; }
+.mode-card:hover:not(:disabled) { border-color: var(--color-primary-500); background: var(--color-primary-50); }
+.mode-card.active { color: var(--color-primary-600); font-weight: 700; }
+.mode-card strong { font-size: 14px; }
+.mode-detail:not(.unavailable) { padding: 0; background: transparent; }
+.mode-detail:not(.unavailable) > strong { color: var(--color-text-secondary); font-size: 12px; font-weight: 500; }
+.mode-detail p { font-size: 13px; line-height: 1.7; }
+.engine-status { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 12px; color: var(--color-text-secondary); }
+.engine-status > span { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary-500); }
+.engine-status.ready > span { background: var(--color-success); }
+.region-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.region-actions :deep(.n-button) { height: 36px; border-radius: 8px; color: var(--color-primary-600); background: var(--color-primary-50); }
+.region-actions :deep(.n-button--primary-type) { color: white; background: var(--color-primary-600); }
+.primary-actions { margin-top: 12px; padding-top: 12px; }
+.primary-actions :deep(.n-button) { border-radius: 9px; }
+.primary-actions :deep(.n-button--primary-type) { height: 46px; font-size: 16px; font-weight: 600; }
+.completed-card {
+  align-items: stretch;
+  gap: 10px;
+  margin-top: 0;
+  padding: 16px;
+  border: 1px solid var(--color-primary-200);
+  border-radius: 10px;
+  background: var(--color-primary-50);
+}
+.completed-heading { display: flex; align-items: center; gap: 8px; color: var(--color-primary-600); }
+.completed-heading strong { color: var(--color-text); font-size: 14px; }
+.completed-card > span { padding-left: 27px; color: var(--color-text-secondary); font-size: 12px; }
+.completed-card > .n-button { margin-top: 4px; height: 36px; border-radius: 8px; }
 </style>

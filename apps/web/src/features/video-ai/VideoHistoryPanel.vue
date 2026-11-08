@@ -9,7 +9,9 @@
     </div>
 
     <div v-if="!items.length" class="history-empty">暂无处理记录</div>
-    <ul v-else class="history-list">
+    <div v-else class="history-table">
+    <div class="history-table-heading" aria-hidden="true"><span>文件名</span><span>修复档位</span><span>处理时间</span><span>状态</span><span>操作</span></div>
+    <ul class="history-list">
       <li v-for="item in items" :key="item.id" :class="{ selected: selectedId === item.id }">
         <VideoHistoryThumbnail
           :src="item.status === 'completed' && item.output ? `${outputUrl(item.id)}?preview=1` : undefined"
@@ -19,12 +21,11 @@
         <div class="video-history-main">
           <div class="history-title-row">
             <strong class="history-name" :title="item.inputName">{{ item.inputName }}</strong>
-            <span class="status-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
           </div>
           <p class="video-history-meta">
-            <span>{{ modeLabel(item.mode) }}</span>
-            <time :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString() }}</time>
             <span v-if="item.output">{{ item.output.width }}×{{ item.output.height }}</span>
+            <span v-if="item.status === 'completed'">{{ item.inputRetained ? "原片与成品留档" : "成品留档" }}</span>
+            <span v-if="item.manualRanges?.length">{{ item.manualRanges.length }} 个区间</span>
           </p>
           <p v-if="item.status === 'failed'" class="history-failure">
             原始上传副本已清理；如需重试，请重新选择原视频。
@@ -33,6 +34,9 @@
             旧记录未留存原视频，可继续编辑成品
           </p>
         </div>
+        <span class="history-mode">{{ modeLabel(item.mode) }}</span>
+        <time class="history-time" :datetime="item.createdAt">{{ new Date(item.createdAt).toLocaleString() }}</time>
+        <span class="status-pill" :class="item.status">{{ statusLabel(item.status) }}</span>
         <div class="video-history-actions">
           <n-button size="small" @click="$emit('view', item.id)">查看</n-button>
           <n-button
@@ -42,14 +46,14 @@
             secondary
             :disabled="editingDisabled || !item.inputRetained"
             @click="$emit('edit', item.id, 'original')"
-            >编辑原视频</n-button
+            >原片再编辑</n-button
           >
           <n-button
             v-if="item.status === 'completed' && item.output"
             size="small"
             :disabled="editingDisabled"
             @click="$emit('edit', item.id, 'output')"
-            >编辑成品</n-button
+            >结果再编辑</n-button
           >
           <n-button v-if="item.output" size="small" tag="a" :href="outputUrl(item.id)" target="_blank" rel="noopener"
             >下载</n-button
@@ -66,6 +70,7 @@
         </div>
       </li>
     </ul>
+    </div>
 
     <n-pagination
       v-if="total"
@@ -232,4 +237,32 @@ function modeLabel(mode: VideoAiMode) {
     justify-content: flex-start;
   }
 }
+
+.history-panel { padding: 20px; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); box-shadow: var(--shadow-card); }
+.history-header h2 { color: var(--color-text); }
+.history-header p { margin-top: 5px; line-height: 1.6; color: var(--color-text-tertiary); }
+.history-table { min-width: 0; }
+.history-table-heading, .history-list li { display: grid; grid-template-columns: 88px minmax(130px, 1fr) 70px 145px 65px minmax(290px, auto); gap: 12px; align-items: center; }
+.history-table-heading { padding: 10px 12px; border-radius: 7px; background: var(--color-primary-50); color: var(--color-text-secondary); font-size: 12px; }
+.history-table-heading > span:first-child { grid-column: span 2; }
+.history-list { gap: 0; }
+.history-list li { padding: 12px; border: 0; border-bottom: 1px solid var(--color-border); border-radius: 0; background: transparent; }
+.history-list li.selected { background: var(--color-surface-subtle); box-shadow: inset 3px 0 var(--color-primary-500); }
+.history-list li > :deep(.video-history-thumbnail) { width: 88px; height: 52px; border-radius: 6px; }
+.history-name { color: var(--color-text); font-size: 13px; }
+.video-history-meta { gap: 4px 8px; }
+.history-mode, .history-time { font-size: 12px; color: var(--color-text-secondary); }
+.status-pill { justify-self: start; font-size: 11px; }
+.video-history-actions { flex-wrap: wrap; gap: 6px; grid-column: auto; }
+.video-history-actions :deep(.n-button) { padding-inline: 8px; height: 28px; font-size: 12px; border-radius: 6px; }
+.video-history-actions :deep(.n-button:not(.n-button--error-type)) { color: var(--color-primary-600); background: var(--color-surface-subtle); }
+@media (max-width: 1200px) {
+  .history-table-heading { display: none; }
+  .history-list li { grid-template-columns: 88px minmax(0, 1fr) auto; gap: 10px; }
+  .history-mode { grid-column: 2; }
+  .history-time { grid-column: 2; }
+  .status-pill { grid-column: 3; grid-row: 1; }
+  .video-history-actions { grid-column: 2 / -1; justify-content: flex-start; }
+}
+@media (max-width: 600px) { .history-panel { padding: 16px; } .video-history-actions { grid-column: 1 / -1; } }
 </style>

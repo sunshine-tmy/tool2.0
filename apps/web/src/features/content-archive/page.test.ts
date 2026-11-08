@@ -86,7 +86,10 @@ function mountPage() {
             return () => null;
           }
         }),
-        ArchiveTaskPanel: true,
+        ArchiveTaskPanel: defineComponent({
+          extends: ArchiveTaskPanel,
+          template: "<section><slot name='imports' /></section>"
+        }),
         ArchiveBatchImport: true,
         ArchiveLocalVideoUpload: true,
         TikTokProfileImport: defineComponent({

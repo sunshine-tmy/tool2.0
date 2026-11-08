@@ -1,6 +1,6 @@
 <template>
   <ToolLayout>
-    <section class="main-column data-backup-page">
+    <section class="main-column data-backup-page v2-tool-page">
       <ToolPageHeader
         title="数据备份与恢复"
         description="选择业务模块备份到文件，在另一台设备合并或替换恢复。"
@@ -125,7 +125,10 @@
                   :type="preview.mode === 'replace' ? 'warning' : 'info'"
                   >{{ warning }}</n-alert
                 >
-                <p>预检有效至 {{ date(preview.expiresAt) }}。数据或备份文件变化后需重新预检。</p>
+                <p>
+                  预检有效至
+                  {{ date(preview.expiresAt) }}。数据或备份文件变化后需重新预检。
+                </p>
                 <n-button :type="mode === 'replace' ? 'error' : 'primary'" :disabled="busy" @click="restore"
                   >确认{{ mode === "replace" ? "替换" : "合并" }}导入</n-button
                 >
@@ -147,7 +150,9 @@
           >
             <div>
               <strong>{{ point.problem ? "恢复点需要检查" : date(point.createdAt) }}</strong>
-              <p>{{ point.problem || `${point.modules.map(moduleName).join("、")} · ${formatBytes(point.bytes)}` }}</p>
+              <p>
+                {{ point.problem || `${point.modules.map(moduleName).join("、")} · ${formatBytes(point.bytes)}` }}
+              </p>
             </div>
             <n-space
               ><n-button :disabled="busy || Boolean(point.problem)" @click="rollback(point.id)">恢复到此状态</n-button

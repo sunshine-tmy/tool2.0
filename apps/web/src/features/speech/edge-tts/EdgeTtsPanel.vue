@@ -5,6 +5,7 @@
         <OrderedSpeechEditor :submitting="panel.creating" :language-label="panel.languageLabel(panel.language)" />
       </div>
       <aside class="edge-tts-controls">
+        <h3 class="speech-settings-title">配音配置</h3>
         <div class="control-section">
           <label>语言与口音</label>
           <div class="edge-tts-language-grid">
@@ -101,7 +102,7 @@
     <section v-if="panel.current" class="edge-tts-result" :class="`status-${panel.current.status}`">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">LATEST BATCH</p>
+          <p class="eyebrow"><AudioLines :size="14" />最新批次</p>
           <h3>{{ panel.title(panel.current) }}</h3>
           <p>
             {{ panel.statusLabel(panel.current.status) }} · {{ panel.current.completedItems }}/{{
@@ -289,7 +290,7 @@
 import DiagnosticErrorLink from "../../../shared/ui/DiagnosticErrorLink.vue";
 import { provide, reactive, watch } from "vue";
 import { NButton, NCheckbox, NSelect, NSlider, NEmpty, NPagination } from "naive-ui";
-import { UserRound, Check, ListTree, Layers3, RefreshCw, Trash2, X, RotateCcw } from "lucide-vue-next";
+import { AudioLines, UserRound, Check, ListTree, Layers3, RefreshCw, Trash2, X, RotateCcw } from "lucide-vue-next";
 import type { EdgeTtsHealth } from "@toolbox/shared";
 import { useEdgeTtsPanel, onlineLanguages, onlinePresets, batchRunning } from "./useEdgeTtsPanel";
 import { edgeTtsPanelKey } from "./edge-tts-panel-context";

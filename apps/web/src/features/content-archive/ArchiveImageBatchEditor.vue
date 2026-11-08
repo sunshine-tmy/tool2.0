@@ -121,7 +121,10 @@
         <small>右侧可逐条生成完整效果预览，预览不会保存或替换归档。修改参数后需重新预览。</small>
       </section>
       <section class="image-batch-results" aria-label="图文批量处理结果">
-        <p role="status">共 {{ batch.rows.value.length }} 条 · 成功 {{ successCount }} · 失败 {{ failedCount }}</p>
+        <p role="status">
+          共 {{ batch.rows.value.length }} 条 · 成功 {{ successCount }} · 失败
+          {{ failedCount }}
+        </p>
         <article v-for="row in batch.rows.value" :key="row.id" :data-item-id="row.id">
           <strong>{{ row.title }}</strong>
           <small>{{
@@ -192,7 +195,9 @@
       @loadedmetadata="previewLoaded"
       @error="previewFailed"
     />
-    <p role="status">{{ previewRow?.preview?.message ?? "参数已更改，请重新生成预览" }}</p>
+    <p role="status">
+      {{ previewRow?.preview?.message ?? "参数已更改，请重新生成预览" }}
+    </p>
     <p v-if="previewRow?.durationSeconds">本条视频时长 {{ previewRow.durationSeconds.toFixed(2) }} 秒</p>
     <div class="image-batch-actions">
       <n-button
@@ -626,7 +631,7 @@ defineExpose({ show });
   min-width: 0;
 }
 .image-batch-layout small {
-  color: #687386;
+  color: var(--color-text-secondary);
   line-height: 1.7;
 }
 .image-batch-fields {
@@ -643,7 +648,7 @@ defineExpose({ show });
   overflow: auto;
 }
 .image-batch-results article {
-  border: 1px solid #e6eaf0;
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 12px;
   overflow-wrap: anywhere;

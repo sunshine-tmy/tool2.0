@@ -1,138 +1,188 @@
 <!-- 中文模块说明：图片压缩前端模块，负责上传、压缩参数和结果展示 -->
 <template>
-  <ToolLayout>
-    <section class="main-column image-compress-main">
-      <ToolPageHeader
-        title="图片压缩"
-        description="批量压缩商品图、详情页素材和社媒图片，压缩后保留清晰度与下载记录。"
-        kicker="IMAGE OPTIMIZER"
-      >
-        <template #actions>
-          <n-button
-            secondary
-            :loading="downloading"
-            :disabled="!completedItems.length || Boolean(downloadingItemId)"
-            @click="downloadAll"
-          >
-            <template #icon>
-              <Download :size="16" />
-            </template>
-            批量下载
-          </n-button>
-          <n-button secondary :disabled="!items.length || submitting" @click="clearItems">
-            <template #icon>
-              <Trash2 :size="16" />
-            </template>
-            清空
-          </n-button>
-        </template>
-      </ToolPageHeader>
-
-      <section class="workspace-panel image-compress-panel">
-        <label
-          class="dropzone image-compress-dropzone"
-          :class="{ 'is-dragging': isDragging }"
-          @dragenter.prevent="isDragging = true"
-          @dragover.prevent="isDragging = true"
-          @dragleave.prevent="isDragging = false"
-          @drop.prevent="onDrop"
-        >
-          <input hidden multiple type="file" accept="image/jpeg,image/png,image/webp" @change="onFileChange" />
-          <ImageDown :size="30" />
-          <strong>点击或拖拽图片到这里</strong>
-          <span>支持 JPG、PNG、WebP，最多一次选择 10 张</span>
-        </label>
-
-        <div class="image-compress-summary">
-          <div>
-            <span>原始体积</span>
-            <strong>{{ formatBytes(totalOriginalSize) }}</strong>
-          </div>
-          <div>
-            <span>压缩后</span>
-            <strong>{{ completedItems.length ? formatBytes(totalOutputSize) : "--" }}</strong>
-          </div>
-          <div>
-            <span>节省</span>
-            <strong>{{ completedItems.length ? savedPercentLabel(totalOriginalSize, totalOutputSize) : "--" }}</strong>
-          </div>
-        </div>
-
-        <div class="image-result-list">
-          <article v-for="item in items" :key="item.id" class="image-result-row">
-            <div class="image-thumb">
-              <img :src="item.previewUrl" :alt="item.file.name" loading="lazy" decoding="async" />
+  <ToolLayout class="compression-layout">
+    <ToolPageHeader
+      title="图片压缩"
+      description="批量压缩商品图、详情页素材和社媒图片，压缩后保留清晰度与下载记录。"
+      kicker="IMAGE OPTIMIZER"
+    >
+    </ToolPageHeader>
+    <div class="image-compress-workspace">
+      <section class="main-column image-compress-main v2-tool-page">
+        <section class="workspace-panel image-compress-panel">
+          <div class="image-compress-summary">
+            <div>
+              <span>原始总大小</span>
+              <strong>{{ formatBytes(totalOriginalSize) }}</strong>
             </div>
-            <div class="image-result-main">
-              <strong>{{ item.file.name }}</strong>
-              <span>
-                {{ formatBytes(item.file.size) }}
-                <template v-if="item.result">
-                  → {{ formatBytes(item.result.outputSize) }} ·
-                  {{ savedPercentLabel(item.result.originalSize, item.result.outputSize) }}
-                </template>
-              </span>
-              <n-progress
-                type="line"
-                :percentage="item.progress"
-                :status="item.status === 'failed' ? 'error' : item.status === 'done' ? 'success' : 'default'"
-                indicator-placement="inside"
+            <div>
+              <span>压缩后大小</span>
+              <strong>{{ completedItems.length ? formatBytes(totalOutputSize) : "--" }}</strong>
+            </div>
+            <div>
+              <span>节省空间</span>
+              <strong :class="{ 'is-larger': totalOutputSize > totalOriginalSize }">{{
+                completedItems.length ? savedPercentLabel(totalOriginalSize, totalOutputSize) : "--"
+              }}</strong>
+            </div>
+          </div>
+          <div class="image-compress-upload">
+            <label
+              class="dropzone image-compress-dropzone file-upload-area"
+              data-upload-area
+              role="button"
+              tabindex="0"
+              aria-label="添加图片"
+              :class="{ 'is-dragging': isDragging }"
+              @dragenter.prevent="isDragging = true"
+              @dragover.prevent="isDragging = true"
+              @dragleave.prevent="isDragging = false"
+              @drop.prevent="onDrop"
+              @keydown.enter.prevent="fileInput?.click()"
+              @keydown.space.prevent="fileInput?.click()"
+            >
+              <input
+                ref="fileInput"
+                hidden
+                multiple
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                @change="onFileChange"
               />
-              <small v-if="item.error">{{ item.error }}</small>
-            </div>
-            <div class="image-result-meta">
-              <span>{{ item.result ? item.result.outputFormat.toUpperCase() : outputFormat.toUpperCase() }}</span>
-              <span v-if="item.result">{{ item.result.width || "--" }} × {{ item.result.height || "--" }}</span>
-              <span>{{ statusName(item.status) }}</span>
-            </div>
-            <div class="file-actions">
-              <n-button
-                v-if="item.result"
-                secondary
-                size="small"
-                :loading="downloadingItemId === item.id"
-                :disabled="downloading || Boolean(downloadingItemId)"
-                @click="downloadOne(item)"
-              >
-                下载
-              </n-button>
-              <n-button tertiary size="small" type="error" :disabled="submitting" @click="removeItem(item.id)">
-                删除
-              </n-button>
-            </div>
-          </article>
-          <n-empty v-if="!items.length" description="暂无图片" />
-        </div>
+              <UploadCloud :size="32" aria-hidden="true" />
+              <strong>点击上传图片或拖拽文件到此处</strong>
+              <span>支持 JPG、PNG、WebP 格式，最多一次选择 10 张</span>
+            </label>
+          </div>
+
+          <div class="image-result-list">
+            <article v-for="item in items" :key="item.id" class="image-result-row">
+              <div class="image-thumb">
+                <img :src="item.previewUrl" :alt="item.file.name" loading="lazy" decoding="async" />
+              </div>
+              <div class="image-result-main">
+                <div class="image-result-heading">
+                  <strong :title="item.file.name">{{ item.file.name }}</strong>
+                </div>
+                <div class="image-result-details">
+                  <span>原始大小：{{ formatBytes(item.file.size) }}</span>
+                  <template v-if="item.result">
+                    <span>压缩后：{{ formatBytes(item.result.outputSize) }}</span>
+                    <span class="image-format-badge">{{ item.result.outputFormat.toUpperCase() }}</span>
+                    <span>尺寸：{{ item.result.width || "--" }} × {{ item.result.height || "--" }}</span>
+                    <span
+                      class="image-result-savings"
+                      :class="{ 'is-larger': item.result.outputSize > item.result.originalSize }"
+                      >{{ savedPercentLabel(item.result.originalSize, item.result.outputSize) }}</span
+                    >
+                  </template>
+                  <span v-else class="image-format-badge">{{ outputFormat.toUpperCase() }}</span>
+                </div>
+                <n-progress
+                  v-if="item.status === 'processing'"
+                  type="line"
+                  :percentage="item.progress"
+                  :show-indicator="false"
+                />
+                <small v-if="item.error" role="alert">{{ item.error }}</small>
+              </div>
+              <div class="image-result-controls">
+                <span class="image-result-status" :class="item.status"
+                  ><CircleCheck v-if="item.status === 'done'" :size="16" aria-hidden="true" />{{
+                    statusName(item.status)
+                  }}</span
+                >
+                <div class="file-actions">
+                  <n-button
+                    v-if="item.result"
+                    text
+                    type="primary"
+                    size="small"
+                    :loading="downloadingItemId === item.id"
+                    :disabled="downloading || Boolean(downloadingItemId)"
+                    @click="downloadOne(item)"
+                  >
+                    <template #icon><Download :size="16" /></template>
+                    下载
+                  </n-button>
+                  <n-button text size="small" type="error" :disabled="submitting" @click="removeItem(item.id)">
+                    <template #icon><Trash2 :size="15" /></template>
+                    删除
+                  </n-button>
+                </div>
+              </div>
+            </article>
+            <n-empty v-if="!items.length" description="暂无图片" />
+          </div>
+          <footer class="image-compress-downloads">
+            <n-button
+              type="primary"
+              ghost
+              :loading="downloading"
+              :disabled="!completedItems.length || Boolean(downloadingItemId)"
+              @click="downloadAll"
+            >
+              <template #icon>
+                <Download :size="16" />
+              </template>
+              批量下载
+            </n-button>
+            <n-button :disabled="!items.length || submitting" @click="clearItems">
+              <template #icon>
+                <Trash2 :size="16" />
+              </template>
+              清空
+            </n-button>
+          </footer>
+        </section>
       </section>
-    </section>
 
-    <aside class="side-column">
-      <section class="workspace-panel image-compress-settings">
-        <div class="panel-heading">
-          <h3>压缩参数</h3>
-          <n-tag size="small" round>{{ quality }}%</n-tag>
-        </div>
+      <aside class="side-column">
+        <section class="workspace-panel image-compress-settings">
+          <div class="panel-heading">
+            <h3>压缩设置</h3>
+          </div>
 
-        <div class="preset-tabs">
-          <button
-            v-for="preset in presets"
-            :key="preset.value"
-            type="button"
-            :class="{ 'is-active': activePreset === preset.value }"
-            @click="applyPreset(preset.value)"
-          >
-            {{ preset.label }}
-          </button>
-        </div>
-
-        <n-form label-placement="top">
-          <n-form-item label="输出格式">
-            <n-select v-model:value="outputFormat" :options="formatOptions" :disabled="submitting" />
-          </n-form-item>
-          <n-form-item label="图片质量">
+          <div class="compression-setting-field">
+            <h4>压缩预设</h4>
+            <div class="preset-tabs" role="group" aria-label="压缩预设">
+              <button
+                v-for="preset in presets"
+                :key="preset.value"
+                type="button"
+                :class="{ 'is-active': activePreset === preset.value }"
+                :aria-pressed="activePreset === preset.value"
+                @click="applyPreset(preset.value)"
+              >
+                {{ preset.label }}
+              </button>
+            </div>
+          </div>
+          <div class="compression-setting-field">
+            <h4>输出格式</h4>
+            <div class="compression-format-options" role="group" aria-label="输出格式">
+              <button
+                v-for="format in formatOptions"
+                :key="format.value"
+                type="button"
+                :class="{ 'is-active': outputFormat === format.value }"
+                :aria-pressed="outputFormat === format.value"
+                :disabled="submitting"
+                @click="outputFormat = format.value"
+              >
+                {{ format.label }}
+              </button>
+            </div>
+          </div>
+          <div class="compression-setting-field compression-quality">
+            <div class="compression-setting-label">
+              <h4>压缩质量</h4>
+              <n-tag size="small" :bordered="false">{{ quality }}%</n-tag>
+            </div>
             <n-slider v-model:value="quality" :min="30" :max="95" :step="1" :disabled="submitting" />
-          </n-form-item>
-          <n-form-item label="宽度限制">
+          </div>
+          <div class="compression-setting-field">
+            <h4>宽度限制 <span>（可选）</span></h4>
             <n-input-number
               v-model:value="width"
               clearable
@@ -140,37 +190,35 @@
               :max="6000"
               :disabled="submitting"
               placeholder="不填则保持原宽度"
+              :input-props="{ 'aria-label': '宽度限制' }"
             />
-          </n-form-item>
-        </n-form>
+          </div>
 
-        <n-button type="primary" block :loading="submitting" :disabled="!pendingItems.length" @click="compressAll">
-          <template #icon>
-            <UploadCloud :size="16" />
-          </template>
-          开始压缩
-        </n-button>
-      </section>
-    </aside>
+          <n-button
+            class="compression-submit"
+            type="primary"
+            size="large"
+            block
+            :loading="submitting"
+            :disabled="!pendingItems.length"
+            @click="compressAll"
+          >
+            <template #icon>
+              <Play :size="19" fill="currentColor" />
+            </template>
+            开始压缩
+          </n-button>
+        </section>
+      </aside>
+    </div>
   </ToolLayout>
 </template>
 
 <script setup lang="ts">
 import { formatBytesAdaptive as formatBytes } from "../../shared/utils/format-bytes";
 import { computed, onBeforeUnmount, ref } from "vue";
-import {
-  NButton,
-  NEmpty,
-  NForm,
-  NFormItem,
-  NInputNumber,
-  NProgress,
-  NSelect,
-  NSlider,
-  NTag,
-  useMessage
-} from "naive-ui";
-import { Download, ImageDown, Trash2, UploadCloud } from "lucide-vue-next";
+import { NButton, NEmpty, NInputNumber, NProgress, NSlider, NTag, useMessage } from "naive-ui";
+import { CircleCheck, Download, Play, Trash2, UploadCloud } from "lucide-vue-next";
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
@@ -193,6 +241,7 @@ type ImageItem = {
 
 const message = useMessage();
 const items = ref<ImageItem[]>([]);
+const fileInput = ref<HTMLInputElement>();
 const isDragging = ref(false);
 const submitting = ref(false);
 const downloading = ref(false);
@@ -203,10 +252,10 @@ const outputFormat = ref<OutputFormat>("png");
 const activePreset = ref<ImageCompressionPresetValue>("balanced");
 const presets = imageCompressionPresets;
 
-const formatOptions = [
-  { label: "WebP", value: "webp" },
+const formatOptions: Array<{ label: string; value: OutputFormat }> = [
   { label: "JPEG", value: "jpeg" },
-  { label: "PNG", value: "png" }
+  { label: "PNG", value: "png" },
+  { label: "WebP", value: "webp" }
 ];
 
 const pendingItems = computed(() =>
@@ -408,3 +457,361 @@ onBeforeUnmount(() => {
   items.value.forEach((item) => URL.revokeObjectURL(item.previewUrl));
 });
 </script>
+
+<style scoped>
+.compression-layout :deep(.content.compress-content) {
+  grid-template-columns: minmax(0, 1fr);
+  padding-inline: 32px;
+  gap: 16px;
+}
+.compression-layout :deep(.tool-page-header) {
+  min-height: 96px;
+  margin-bottom: 0;
+  padding-inline: 8px;
+  gap: 24px;
+}
+.compression-layout :deep(.tool-page-icon) {
+  width: 96px;
+  height: 96px;
+  flex-basis: 96px;
+}
+.compression-layout :deep(.tool-page-header h2) {
+  font-size: 32px;
+  line-height: 42px;
+}
+.compression-layout :deep(.tool-page-header p) {
+  font-size: 16px;
+  line-height: 24px;
+}
+.image-compress-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 28%);
+  align-items: stretch;
+  gap: 20px;
+  min-width: 0;
+}
+.image-compress-main,
+.side-column {
+  min-width: 0;
+}
+.image-compress-workspace .image-compress-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 640px;
+  padding: 0;
+  overflow: hidden;
+}
+.image-compress-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  min-height: 104px;
+  gap: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.image-compress-summary > div {
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+}
+.image-compress-summary > div + div {
+  border-left: 1px solid var(--color-border);
+}
+.image-compress-summary span {
+  font-size: 14px;
+}
+.image-compress-summary strong {
+  font-size: 28px;
+  line-height: 38px;
+  color: var(--color-text-primary);
+}
+.image-compress-summary > div:nth-child(2) strong {
+  color: var(--color-primary-700);
+}
+.image-compress-summary > div:nth-child(3) strong {
+  color: var(--color-cyan);
+}
+.image-compress-summary strong.is-larger,
+.image-result-savings.is-larger {
+  color: var(--color-error);
+}
+.image-compress-dropzone:focus-visible,
+.preset-tabs button:focus-visible,
+.compression-format-options button:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 3px;
+}
+.image-compress-upload {
+  padding: 20px;
+}
+.image-result-list {
+  gap: 12px;
+  padding: 0 20px 20px;
+}
+.image-result-list > :deep(.n-empty) {
+  padding-block: 16px;
+}
+.image-result-row {
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  min-height: 100px;
+  gap: 16px;
+  padding: 6px;
+  border-radius: 12px;
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+.image-thumb {
+  width: 88px;
+  border: 0;
+  border-radius: 9px;
+}
+.image-result-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.image-result-heading strong {
+  min-width: 0;
+  flex: 1;
+  font-size: 16px;
+  line-height: 24px;
+}
+.image-result-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 12px;
+}
+.image-result-status.done,
+.image-result-savings {
+  color: var(--color-success);
+}
+.image-result-status.failed {
+  color: var(--color-error);
+}
+.image-result-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.image-result-details > span {
+  display: inline;
+  margin: 0;
+  line-height: 20px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.image-result-details > .image-format-badge {
+  padding: 0 6px;
+  color: var(--color-primary-700);
+  background: var(--color-primary-50);
+  border-radius: 5px;
+}
+.image-result-details > .image-result-savings {
+  color: var(--color-success);
+}
+.image-result-details > .is-larger {
+  color: var(--color-error);
+}
+.image-result-main > :deep(.n-progress) {
+  margin-top: 10px;
+}
+.image-result-main > small {
+  margin: 8px 0 0;
+}
+.image-result-row .file-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-left: 14px;
+  border-left: 1px solid var(--color-border);
+}
+.image-result-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+.image-result-controls :deep(.n-button) {
+  background: transparent;
+  box-shadow: none;
+}
+.image-compress-downloads {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: auto;
+  padding: 14px 20px;
+  border-top: 1px solid var(--color-border);
+}
+.image-compress-downloads :deep(.n-button) {
+  min-width: 112px;
+}
+.image-compress-workspace .image-compress-settings {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 640px;
+  padding: 0 24px 24px;
+  background: var(--color-surface);
+}
+.image-compress-settings .panel-heading {
+  min-height: 64px;
+  margin: 0 -24px 20px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+.panel-heading h3 {
+  font-size: 22px;
+  line-height: 30px;
+}
+.compression-setting-field {
+  margin-bottom: 28px;
+}
+.compression-setting-field h4 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  line-height: 24px;
+}
+.compression-setting-field h4 span {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+.preset-tabs,
+.compression-format-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.preset-tabs button,
+.compression-format-options button {
+  min-height: 42px;
+  padding: 8px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font-size: 14px;
+}
+.preset-tabs button.is-active,
+.compression-format-options button.is-active {
+  color: var(--color-primary-700);
+  border-color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  font-weight: 600;
+}
+.compression-format-options button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.compression-setting-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.compression-setting-field :deep(.n-input-number) {
+  width: 100%;
+}
+.compression-submit {
+  margin-top: auto;
+  min-height: 50px;
+  font-size: 17px;
+}
+@media (max-width: 1100px) {
+  .image-result-row {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+  .image-thumb {
+    width: 72px;
+  }
+  .image-result-controls {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  .image-result-row .file-actions {
+    border: 0;
+    padding: 0;
+  }
+}
+@media (max-width: 900px) {
+  .image-compress-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .image-compress-workspace .image-compress-settings {
+    min-height: 0;
+  }
+  .compression-submit {
+    margin-top: 8px;
+  }
+}
+@media (max-width: 560px) {
+  .compression-layout :deep(.content.compress-content) {
+    padding-inline: 16px;
+  }
+  .compression-layout :deep(.tool-page-icon) {
+    width: 56px;
+    height: 56px;
+    flex-basis: 56px;
+  }
+  .compression-layout :deep(.tool-page-header h2) {
+    font-size: 26px;
+    line-height: 34px;
+  }
+  .image-compress-workspace .image-compress-panel {
+    min-height: 0;
+  }
+  .image-compress-summary {
+    min-height: 90px;
+  }
+  .image-compress-summary > div {
+    padding: 8px 4px;
+  }
+  .image-compress-summary strong {
+    font-size: 20px;
+    line-height: 30px;
+  }
+  .image-compress-summary span {
+    font-size: 12px;
+  }
+  .image-compress-upload {
+    padding: 16px;
+  }
+  .image-result-list {
+    padding-inline: 16px;
+  }
+  .image-result-row {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 10px;
+  }
+  .image-thumb {
+    width: 56px;
+  }
+  .image-result-heading {
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .image-result-heading strong {
+    flex-basis: 100%;
+    font-size: 14px;
+  }
+  .image-compress-downloads {
+    padding: 16px;
+  }
+}
+</style>

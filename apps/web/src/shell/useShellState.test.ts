@@ -41,7 +41,9 @@ vi.mock("../shared/http/diagnostics", () => ({
 vi.mock("../integrations/desktop/capabilities", () => ({
   componentApi: { list: mocks.list }
 }));
-vi.mock("../integrations/desktop/capability-readiness", () => ({ getToolComponentReadiness: mocks.readiness }));
+vi.mock("../integrations/desktop/capability-readiness", () => ({
+  getToolComponentReadiness: mocks.readiness
+}));
 const wrappers: Array<{ unmount(): void }> = [];
 function setup<T>(create: () => T) {
   const result = mountComposable(create);
@@ -57,7 +59,11 @@ beforeEach(() => {
   mocks.snapshot.mockResolvedValue({ checks: [] });
   mocks.restore.mockResolvedValue(undefined);
   mocks.list.mockImplementation(async () => []);
-  mocks.readiness.mockReturnValue({ registered: true, missing: [], unresolvedIds: [] });
+  mocks.readiness.mockReturnValue({
+    registered: true,
+    missing: [],
+    unresolvedIds: []
+  });
 });
 afterEach(() => {
   for (const w of wrappers.splice(0)) w.unmount();
@@ -67,56 +73,30 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe("shell state ownership", () => {
-  it("includes every registered tool exactly once in the sidebar, including video subtitle search", () => {
-    const { state } = setup(useShellNavigation);
-    const visibleIds = state.filteredToolGroups.value.flatMap((group) => group.tools.map((tool) => tool.id));
-    expect([...visibleIds].sort()).toEqual(state.tools.map((tool) => tool.id).sort());
-    expect(new Set(visibleIds).size).toBe(visibleIds.length);
-    expect(state.iconByTool["video-subtitle"]).toBeDefined();
-    state.keyword.value = "视频去字幕";
-    expect(state.filteredToolGroups.value).toMatchObject([
-      { label: "视频与文案", tools: [{ id: "video-subtitle", routePath: "/tools/video-subtitle" }] }
-    ]);
-  });
-  it("owns search, responsive navigation, keyboard listeners and stored route without changing tool IDs", async () => {
-    const media = window.matchMedia("(max-width: 900px)");
-    const remove = vi.spyOn(media, "removeEventListener");
-    vi.spyOn(window, "matchMedia").mockReturnValue(media);
+  it("retains runtime IDs and records initial and subsequent tool visits without a second navigation state", async () => {
     const { state, wrapper } = setup(useShellNavigation);
+    expect(state.iconByTool["video-subtitle"]).toBeDefined();
     state.startNavigation();
-    expect(state.tools).toHaveLength(13);
-    state.keyword.value = "图片压缩";
-    expect(state.filteredTools.value.map((x) => x.id)).toEqual(["image-compress"]);
-    state.keyword.value = "URL 编解码";
-    expect(state.filteredTools.value.map((x) => x.id)).toEqual(["url-codec"]);
-    expect(state.filteredToolGroups.value.map((group) => group.label)).toEqual(["开发工具"]);
-    state.keyword.value = "UUID";
-    expect(state.filteredTools.value.map((x) => x.id)).toEqual(["uuid-generator"]);
-    state.keyword.value = "not-found";
-    expect(state.filteredToolGroups.value).toEqual([]);
-    const focus = vi.fn();
-    state.searchInput.value = { focus };
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/" }));
-    expect(focus).toHaveBeenCalledOnce();
-    const input = document.createElement("input");
-    document.body.append(input);
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "/", bubbles: true }));
-    input.remove();
-    expect(focus).toHaveBeenCalledOnce();
-    state.isCompact.value = true;
-    state.toggleSidebar();
-    await nextTick();
-    expect(document.body.classList.contains("sidebar-drawer-active")).toBe(true);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    await nextTick();
-    expect(state.mobileDrawerOpen.value).toBe(false);
+    expect(localStorage.getItem("toolbox:last-tool")).toBe("/tools/image-ai");
     route.path = "/tools/audio-library";
     await nextTick();
     expect(localStorage.getItem("toolbox:last-tool")).toBe("/tools/audio-library");
+    route.path = "/";
+    await nextTick();
+    expect(localStorage.getItem("toolbox:last-tool")).toBe("/tools/audio-library");
     wrapper.unmount();
-    expect(remove).toHaveBeenCalledWith("change", expect.any(Function));
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "/" }));
-    expect(focus).toHaveBeenCalledOnce();
+    route.path = "/tools/base64";
+    await nextTick();
+    expect(localStorage.getItem("toolbox:last-tool")).toBe("/tools/audio-library");
+  });
+  it("does not interrupt navigation when preference storage is unavailable", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new Error("blocked storage");
+    });
+    const { state } = setup(useShellNavigation);
+    expect(() => state.startNavigation()).not.toThrow();
+    route.path = "/tools/base64";
+    await expect(nextTick()).resolves.toBeUndefined();
   });
   it("keeps diagnostic polling owned by the shell and clears its timer on route teardown", async () => {
     vi.useFakeTimers();
@@ -171,11 +151,18 @@ describe("shell state ownership", () => {
   });
   it("keeps capability guidance desktop-only and distinguishes checking, missing, unavailable and ready", async () => {
     expect(setup(useDesktopCapabilityHint).state.desktopCapabilityHint.value).toBeUndefined();
-    Object.defineProperty(window, "toolboxDesktop", { configurable: true, value: {} });
+    Object.defineProperty(window, "toolboxDesktop", {
+      configurable: true,
+      value: {}
+    });
     const { state } = setup(useDesktopCapabilityHint);
     route.path = "/tools/edge-tts";
     expect(state.desktopCapabilityHint.value?.heading).toBe("正在读取能力状态");
-    mocks.readiness.mockReturnValueOnce({ registered: false, missing: [], unresolvedIds: [] });
+    mocks.readiness.mockReturnValueOnce({
+      registered: false,
+      missing: [],
+      unresolvedIds: []
+    });
     await state.loadDesktopComponentStatuses();
     expect(state.desktopCapabilityHint.value?.heading).toBe("尚无已审核安装包");
     mocks.readiness.mockReturnValueOnce({

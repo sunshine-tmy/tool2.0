@@ -1,50 +1,62 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
   <section ref="panel" class="workspace-panel fetch-panel">
-    <div class="input-row">
-      <n-input
-        ref="urlInput"
-        v-model:value="inputUrl"
-        size="large"
-        clearable
-        placeholder="直接按 Ctrl+V / Command+V 粘贴小红书、抖音或 TikTok 作品分享文案"
-        @keyup.enter="submit"
-      />
-      <n-button
-        size="large"
-        type="primary"
-        :loading="submitting || task?.status === 'running' || task?.status === 'pending'"
-        :disabled="!canSubmit"
-        @click="submit"
-      >
-        <template #icon><Archive :size="16" /></template>
-        获取并存档
-      </n-button>
-    </div>
-    <div class="platform-row">
-      <span>来源平台</span>
-      <n-select v-model:value="platform" :options="platformOptions" aria-label="归档来源平台" style="width: 160px" />
-      <span>归档分组</span>
-      <n-select
-        v-model:value="groupId"
-        :options="groupOptions"
-        placeholder="不指定分组"
-        aria-label="链接归档目标分组"
-        title="不指定时，新作品归入未分组，已有作品保留原分组"
-        class="fetch-group-select"
-        clearable
-        filterable
-        :disabled="submitting || activeTask || authWaiting"
-      />
-      <span
-        v-if="inputUrl.trim()"
-        class="platform-hint"
-        :class="{
-          warning: !link.ok || (link.platform === 'douyin' && !douyinAvailable && !douyinCanAutoInstall)
-        }"
-      >
-        {{ linkHint }}
-      </span>
+    <div class="archive-acquire-grid">
+      <div class="archive-link-acquire">
+        <div class="input-row">
+          <n-input
+            ref="urlInput"
+            v-model:value="inputUrl"
+            size="large"
+            clearable
+            placeholder="直接按 Ctrl+V / Command+V 粘贴小红书、抖音或 TikTok 作品分享文案"
+            @keyup.enter="submit"
+          />
+          <n-button
+            size="large"
+            type="primary"
+            :loading="submitting || task?.status === 'running' || task?.status === 'pending'"
+            :disabled="!canSubmit"
+            @click="submit"
+          >
+            <template #icon><Archive :size="16" /></template>
+            获取并存档
+          </n-button>
+        </div>
+        <div class="platform-row">
+          <span>来源平台</span>
+          <n-select
+            v-model:value="platform"
+            :options="platformOptions"
+            aria-label="归档来源平台"
+            style="width: 160px"
+          />
+          <span>归档分组</span>
+          <n-select
+            v-model:value="groupId"
+            :options="groupOptions"
+            placeholder="不指定分组"
+            aria-label="链接归档目标分组"
+            title="不指定时，新作品归入未分组，已有作品保留原分组"
+            class="fetch-group-select"
+            clearable
+            filterable
+            :disabled="submitting || activeTask || authWaiting"
+          />
+          <span
+            v-if="inputUrl.trim()"
+            class="platform-hint"
+            :class="{
+              warning: !link.ok || (link.platform === 'douyin' && !douyinAvailable && !douyinCanAutoInstall)
+            }"
+          >
+            {{ linkHint }}
+          </span>
+        </div>
+      </div>
+      <div v-if="$slots.imports" class="archive-import-options">
+        <span class="module-field-label">批量导入</span><slot name="imports" />
+      </div>
     </div>
 
     <div v-if="task" class="task-progress">
@@ -52,7 +64,10 @@
         <div class="task-status">
           <span
             class="task-status-dot"
-            :class="{ failed: task.status === 'failed', completed: task.status === 'completed' }"
+            :class="{
+              failed: task.status === 'failed',
+              completed: task.status === 'completed'
+            }"
           />
           <div>
             <small>{{ taskStatusLabel }}</small>
@@ -223,7 +238,7 @@ function stageClass(stage: XhsArchiveTaskStage) {
   align-items: center;
   gap: 10px;
   margin-top: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
 }
 .platform-hint.warning {
@@ -246,7 +261,7 @@ function stageClass(stage: XhsArchiveTaskStage) {
   padding: 20px 22px 18px;
   border: 1px solid #e5eaf1;
   border-radius: 16px;
-  background: linear-gradient(145deg, #ffffff 0%, #f7f9fc 100%);
+  background: linear-gradient(145deg, var(--color-surface) 0%, #f7f9fc 100%);
   box-shadow: 0 8px 24px rgba(40, 57, 86, 0.06);
 }
 .task-head {
@@ -280,7 +295,7 @@ function stageClass(stage: XhsArchiveTaskStage) {
   gap: 2px;
 }
 .task-status small {
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -296,9 +311,9 @@ function stageClass(stage: XhsArchiveTaskStage) {
   width: 10px;
   height: 10px;
   flex: 0 0 auto;
-  border: 3px solid #dbeafe;
+  border: 3px solid var(--color-primary-100);
   border-radius: 50%;
-  background: #2563eb;
+  background: var(--color-primary-600);
   box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.08);
 }
 .task-status-dot.completed {
@@ -317,7 +332,7 @@ function stageClass(stage: XhsArchiveTaskStage) {
   color: #516078;
   border: 1px solid #e1e7ef;
   border-radius: 999px;
-  background: #fff;
+  background: var(--color-surface);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -339,7 +354,7 @@ function stageClass(stage: XhsArchiveTaskStage) {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   font-size: 12px;
   text-align: center;
 }
@@ -363,27 +378,27 @@ function stageClass(stage: XhsArchiveTaskStage) {
   place-items: center;
   border: 2px solid #dfe5ed;
   border-radius: 50%;
-  background: #fff;
+  background: var(--color-surface);
   transition: 0.2s ease;
 }
 .stage-label {
   white-space: nowrap;
 }
 .stage-step.active {
-  color: #2563eb;
+  color: var(--color-primary-600);
   font-weight: 600;
 }
 .stage-step.active .stage-marker {
-  color: #fff;
-  border-color: #2563eb;
-  background: #2563eb;
+  color: var(--color-surface);
+  border-color: var(--color-primary-600);
+  background: var(--color-primary-600);
   box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.1);
 }
 .stage-step.complete {
   color: #0f9f7f;
 }
 .stage-step.complete .stage-marker {
-  color: #fff;
+  color: var(--color-surface);
   border-color: #10b981;
   background: #10b981;
 }
@@ -400,7 +415,7 @@ function stageClass(stage: XhsArchiveTaskStage) {
 }
 .task-commit-note {
   margin: -4px 0 12px;
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 @media (max-width: 640px) {
@@ -423,6 +438,47 @@ function stageClass(stage: XhsArchiveTaskStage) {
   }
   .fetch-panel {
     padding: 16px;
+  }
+}
+
+.archive-acquire-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+.archive-link-acquire {
+  min-width: 0;
+}
+.archive-import-options {
+  display: grid;
+  gap: 12px;
+  border-left: 1px solid var(--color-border);
+  padding-left: 24px;
+  min-width: 0;
+}
+.module-field-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.archive-import-options :deep(.archive-entry-toolbar) {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 8px;
+}
+.platform-row {
+  margin-top: 12px;
+  gap: 8px 12px;
+}
+@media (max-width: 1180px) {
+  .archive-acquire-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .archive-import-options {
+    border-left: 0;
+    border-top: 1px solid var(--color-border);
+    padding: 16px 0 0;
   }
 }
 </style>

@@ -1,7 +1,8 @@
 <template>
   <section class="watermark-controls" aria-label="水印设置">
     <button
-      class="watermark-upload"
+      class="watermark-upload file-upload-area"
+      data-upload-area
       type="button"
       :disabled="disabled"
       @click="fileInput?.click()"
@@ -359,7 +360,7 @@ function drop(event: DragEvent) {
   padding: 16px;
   border: 1px dashed var(--border-color, #cbd5e1);
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
   cursor: pointer;
 }
 .watermark-upload:disabled {
@@ -369,7 +370,7 @@ function drop(event: DragEvent) {
 .watermark-upload img {
   max-width: 160px;
   max-height: 72px;
-  background: repeating-conic-gradient(#e2e8f0 0% 25%, white 0% 50%) 50% / 12px 12px;
+  background: repeating-conic-gradient(var(--color-border) 0% 25%, white 0% 50%) 50% / 12px 12px;
 }
 .watermark-fields {
   display: grid;
@@ -395,11 +396,11 @@ function drop(event: DragEvent) {
   border-radius: 8px;
 }
 .watermark-frame.selected {
-  border-color: #2563eb;
+  border-color: var(--color-primary-600);
 }
 small {
   line-height: 1.6;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
 }
 [role="alert"] {
   color: #dc2626;

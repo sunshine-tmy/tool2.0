@@ -17,7 +17,9 @@
       <h3>{{ archiveDisplayTitle(item) }}</h3>
       <template v-if="item.translation">
         <span class="bilingual-label english-label">English</span>
-        <p class="english-title">{{ resolveXhsTranslationField(item.translation.title) || "尚未生成英文翻译" }}</p>
+        <p class="english-title">
+          {{ resolveXhsTranslationField(item.translation.title) || "尚未生成英文翻译" }}
+        </p>
       </template>
     </section>
     <section v-if="body" class="bilingual-body-block">
@@ -30,7 +32,9 @@
       <p class="source-body">{{ body }}</p>
       <div v-if="item.translation?.description" class="english-body">
         <span class="bilingual-label english-label">English</span>
-        <p>{{ resolveXhsTranslationField(item.translation.description) || "尚未生成英文翻译" }}</p>
+        <p>
+          {{ resolveXhsTranslationField(item.translation.description) || "尚未生成英文翻译" }}
+        </p>
       </div>
     </section>
     <section v-if="topics.length" class="bilingual-topics">
@@ -111,7 +115,7 @@ function translationLabel(status: XhsArchiveTranslation["status"]) {
   gap: 8px;
 }
 .bilingual-label {
-  color: #2563eb;
+  color: var(--color-primary-600);
   font-size: 12px;
   font-weight: 700;
 }
@@ -152,7 +156,7 @@ h3 {
   padding: 12px 14px;
   border-left: 3px solid #93c5fd;
   border-radius: 0 10px 10px 0;
-  background: #eff6ff;
+  background: var(--color-primary-50);
   color: #3d5a7f;
 }
 .topic-row {
@@ -162,7 +166,7 @@ h3 {
   align-items: baseline;
 }
 .topic-source {
-  color: #2563eb;
+  color: var(--color-primary-600);
   font-weight: 650;
   overflow-wrap: anywhere;
 }
@@ -175,7 +179,7 @@ h3 {
   padding: 3px 8px;
   border-radius: 999px;
   background: #eef2f7;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 .translation-error {

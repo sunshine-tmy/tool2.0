@@ -1,7 +1,7 @@
 <template>
   <n-modal v-model:show="panel.detailVisible"
     ><n-card
-      class="batch-detail-card"
+      class="batch-detail-card speech-detail-dialog"
       :title="panel.detail ? panel.title(panel.detail) : '在线配音批次'"
       closable
       @close="panel.detailVisible = false"
@@ -126,6 +126,7 @@
   ></n-modal>
 </template>
 <script setup lang="ts">
+import "../shared/SpeechBatchDetail.css";
 import { NModal, NCard, NCheckbox, NInput, NInputNumber, NTag } from "naive-ui";
 import { useEdgeTtsPanelContext } from "./edge-tts-panel-context";
 import { batchRunning } from "./useEdgeTtsPanel";
@@ -135,3 +136,4 @@ import SpeechDetailItemActions from "../shared/SpeechDetailItemActions.vue";
 import { SaveToAudioLibrary } from "../../audio-library/integrations/speech";
 const panel = useEdgeTtsPanelContext();
 </script>
+

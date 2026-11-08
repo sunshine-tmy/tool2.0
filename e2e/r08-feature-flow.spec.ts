@@ -15,7 +15,7 @@ test("R08 lazy feature entries keep SPA navigation and legacy archive URLs", asy
       submissions.push(request.url());
   });
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "今天要处理什么？" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "让素材工作，更简单。" })).toBeVisible();
   await page.evaluate(() => Object.assign(window, { r08NavigationIdentity: "same-app" }));
   for (const [path, heading] of [
     ["/tools/image-compress", "图片压缩"],
@@ -25,10 +25,11 @@ test("R08 lazy feature entries keep SPA navigation and legacy archive URLs", asy
     ["/tools/media-archive", "多媒体内容归档"],
     ["/tools/lan-transfer", "局域网文件传输"]
   ]) {
-    await page.locator(`.sidebar a[href="${path}"]`).click();
+    await page.locator(`.workbench-card[href="${path}"]`).click();
     await expect(page).toHaveURL(new RegExp(`${path}$`));
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     expect(await page.evaluate(() => Reflect.get(window, "r08NavigationIdentity"))).toBe("same-app");
+    await page.getByRole("navigation", { name: "当前位置" }).getByRole("link", { name: "返回首页" }).click();
   }
   await page.getByRole("button", { name: "桌面设置", exact: true }).click();
   await expect(page.getByRole("heading", { name: "桌面设置与数据迁移" })).toBeVisible();

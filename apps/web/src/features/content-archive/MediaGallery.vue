@@ -545,7 +545,7 @@ function changeMedia(direction: -1 | 1) {
   height: 42px;
   place-items: center;
   padding: 0;
-  color: #172033;
+  color: var(--color-text);
   border: 0;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.9);
@@ -557,7 +557,7 @@ function changeMedia(direction: -1 | 1) {
     transform 0.18s ease;
 }
 .media-nav:hover {
-  background: #fff;
+  background: var(--color-surface);
   transform: translateY(-50%) scale(1.06);
 }
 .media-nav:disabled {
@@ -636,7 +636,7 @@ function changeMedia(direction: -1 | 1) {
   width: min(100%, 480px);
 }
 .media-thumbs button.active {
-  border-color: #2563eb;
+  border-color: var(--color-primary-600);
 }
 .media-thumbs img,
 .media-thumbs video {
@@ -652,7 +652,7 @@ function changeMedia(direction: -1 | 1) {
   position: absolute;
   inset: 0;
   gap: 4px;
-  color: #687386;
+  color: var(--color-text-secondary);
   background: #eef2f7;
 }
 .captured-frame-badge,
@@ -662,7 +662,7 @@ function changeMedia(direction: -1 | 1) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--color-surface);
   background: #e85d04;
   box-shadow: 0 2px 8px rgb(0 0 0 / 32%);
   pointer-events: none;
@@ -730,14 +730,14 @@ function changeMedia(direction: -1 | 1) {
   margin-top: 5px;
   margin-left: auto;
   text-align: right;
-  color: #2563eb;
+  color: var(--color-primary-600);
   text-decoration: none;
 }
 .media-empty {
   display: grid;
   min-height: 160px;
   place-items: center;
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   border-radius: 14px;
   background: #f3f5f8;
 }

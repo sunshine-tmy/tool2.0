@@ -1,6 +1,6 @@
 <template>
   <ToolLayout
-    ><section class="extraction-page">
+    ><section class="extraction-page v2-tool-page">
       <ToolPageHeader
         title="音频提取器"
         kicker="AUDIO EXTRACTOR"
@@ -55,11 +55,11 @@
           >
         </article>
       </section>
-      <section class="panel">
-        <div class="actions">
+      <section class="panel record-region">
+        <div class="actions record-heading">
           <strong>提取记录 · 共 {{ total }} 条</strong><n-button size="small" @click="load">刷新</n-button>
         </div>
-        <div class="actions selection">
+        <div class="actions selection record-toolbar">
           <n-checkbox :checked="pageSelected" :disabled="adding" @update:checked="togglePage"
             >全选本页成功结果</n-checkbox
           >
@@ -72,7 +72,9 @@
             >删除所选</n-button
           >
         </div>
-        <p class="hint">成功结果长期保留，存储上限 20 GiB。删除提取结果不会删除原视频或素材库中的独立副本。</p>
+        <p class="hint record-note">
+          成功结果长期保留，存储上限 20 GiB。删除提取结果不会删除原视频或素材库中的独立副本。
+        </p>
         <ExtractionList
           :jobs="jobs"
           :selected="selected"
@@ -82,9 +84,9 @@
           @remove="(id) => remove([id])"
           @library="(id) => openLibrary([id])"
         />
-        <n-pagination v-if="total" v-model:page="page" class="pagination-with-total" :page-size="50" :item-count="total"
-          ><template #prefix>共 {{ total }} 条</template></n-pagination
-        >
+        <footer v-if="total" class="record-pagination">
+          <span>共 {{ total }} 条</span><n-pagination v-model:page="page" :page-size="50" :item-count="total" />
+        </footer>
       </section>
       <n-modal
         v-model:show="libraryOpen"
@@ -96,7 +98,11 @@
         style="width: min(480px, 95vw)"
       >
         <div class="library-form">
-          <p>已选 {{ libraryIds.length }} 条；已有相同音频会复用，原分组和用途保留。单条素材最大 100 MiB。</p>
+          <p>
+            已选
+            {{ libraryIds.length }}
+            条；已有相同音频会复用，原分组和用途保留。单条素材最大 100 MiB。
+          </p>
           <n-select
             v-model:value="groupId"
             :disabled="adding"
@@ -278,10 +284,11 @@ onBeforeRouteLeave(
   min-width: 0;
 }
 .panel {
+  box-shadow: var(--shadow-card);
   padding: 20px;
-  border: 1px solid #dce5f2;
-  border-radius: 12px;
-  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
   min-width: 0;
 }
 .actions {
@@ -295,7 +302,7 @@ onBeforeRouteLeave(
 }
 .hint {
   font-size: 13px;
-  color: #60718d;
+  color: var(--color-text-secondary);
 }
 .queue {
   max-height: 400px;

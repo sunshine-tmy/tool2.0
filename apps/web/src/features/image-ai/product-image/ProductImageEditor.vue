@@ -3,7 +3,9 @@
     <div class="product-editor-heading">
       <div>
         <h3>商品图编辑器</h3>
-        <p>{{ dirty ? "有未保存的修改" : "保存会生成独立留档，不覆盖来源图片" }}</p>
+        <p>
+          {{ dirty ? "有未保存的修改" : "保存会生成独立留档，不覆盖来源图片" }}
+        </p>
       </div>
       <n-button :disabled="busy" @click="leave">返回图片处理</n-button>
     </div>
@@ -97,7 +99,9 @@
                 >{{ item.label }}</n-button
               >
             </div>
-            <p v-if="!source.canRestore" class="product-hint">{{ source.reason }}</p>
+            <p v-if="!source.canRestore" class="product-hint">
+              {{ source.reason }}
+            </p>
             <label>笔刷大小（代理像素）<n-slider v-model:value="brush" :min="4" :max="240" :disabled="busy" /></label>
             <label>笔刷强度<n-slider v-model:value="strength" :min="5" :max="100" :disabled="busy" /></label>
             <div class="product-tools">
@@ -136,8 +140,12 @@
               />
               <button
                 type="button"
-                class="product-background-upload"
-                :class="{ 'has-image': backgroundUrl, 'is-dragging': draggingBackground }"
+                class="product-background-upload file-upload-area"
+                data-upload-area
+                :class="{
+                  'has-image': backgroundUrl,
+                  'is-dragging': draggingBackground
+                }"
                 :disabled="busy"
                 :aria-label="backgroundUrl ? '更换背景图片' : '上传背景图片'"
                 @click="backgroundInput?.click()"
@@ -408,7 +416,7 @@ const {
   flex: none;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface, var(--color-surface));
   cursor: pointer;
 }
 .product-check-swatch span {
@@ -419,10 +427,10 @@ const {
   border-radius: 5px;
 }
 .product-check-swatch:hover:not(:disabled) {
-  border-color: #2563eb;
+  border-color: var(--color-primary-600);
 }
 .product-check-swatch:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 2px;
 }
 .product-check-swatch:disabled {
@@ -451,7 +459,7 @@ const {
   padding: 14px;
   border: 1px dashed #b8c9e8;
   border-radius: 10px;
-  background: var(--color-surface, #fff);
+  background: var(--color-surface, var(--color-surface));
   color: var(--color-text-primary);
   font: inherit;
   text-align: left;
@@ -463,11 +471,11 @@ const {
 }
 .product-background-upload:hover:not(:disabled),
 .product-background-upload.is-dragging {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--color-primary-600);
+  background: var(--color-primary-50);
 }
 .product-background-upload:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 3px;
 }
 .product-background-upload:disabled {
@@ -482,7 +490,7 @@ const {
   height: 44px;
   border-radius: 10px;
   background: #edf4ff;
-  color: #2563eb;
+  color: var(--color-primary-600);
 }
 .product-background-thumbnail {
   width: 56px;
@@ -513,7 +521,7 @@ const {
 }
 .product-upload-action {
   flex: none;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 fieldset {
   display: grid;

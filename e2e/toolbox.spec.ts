@@ -14,7 +14,7 @@ test.describe("toolbox critical workflows", () => {
     await expect((await request.get(`http://127.0.0.1:${apiPort}/health/ready`)).status()).toBe(200);
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "今天要处理什么？" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "让素材工作，更简单。" })).toBeVisible();
     const healthResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === "/api/v1/health" && response.request().method() === "GET"
     );

@@ -28,7 +28,9 @@
         aria-label="搜索水印名称"
         :maxlength="120"
       />
-      <p v-if="!loading && !filtered.length">{{ items.length ? "没有匹配的水印" : "水印库为空，请上传常用水印" }}</p>
+      <p v-if="!loading && !filtered.length">
+        {{ items.length ? "没有匹配的水印" : "水印库为空，请上传常用水印" }}
+      </p>
       <div class="library-grid">
         <article v-for="item in visible" :key="item.id">
           <button
@@ -183,7 +185,7 @@ async function remove(item: ArchiveWatermarkLibraryItem) {
   padding: 12px;
   border: 1px solid #dbe5f2;
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
   min-width: 0;
 }
 .library-actions {
@@ -218,7 +220,7 @@ async function remove(item: ArchiveWatermarkLibraryItem) {
   cursor: pointer;
   border: 1px solid #dbe5f2;
   border-radius: 6px;
-  background: repeating-conic-gradient(#e8edf5 0% 25%, #fff 0% 50%) 0 / 12px 12px;
+  background: repeating-conic-gradient(#e8edf5 0% 25%, var(--color-surface) 0% 50%) 0 / 12px 12px;
 }
 .library-thumbnail:disabled {
   cursor: default;
@@ -232,7 +234,7 @@ async function remove(item: ArchiveWatermarkLibraryItem) {
 small,
 p {
   font-size: 12px;
-  color: var(--text-secondary, #64748b);
+  color: var(--text-secondary, var(--color-text-secondary));
   line-height: 1.6;
   margin: 0;
 }

@@ -1,7 +1,7 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
   <ToolLayout>
-    <section class="main-column xhs-main">
+    <section class="main-column xhs-main v2-tool-page">
       <ToolPageHeader
         title="多媒体内容归档"
         description="归档小红书、抖音、TikTok 内容或批量上传本地视频，支持预览、下载、配乐、水印与视频截帧。"
@@ -35,22 +35,6 @@
         </div>
       </n-alert>
 
-      <div class="archive-entry-toolbar" role="group" aria-label="批量归档入口">
-        <ArchiveLocalVideoUpload :groups="archiveGroups" @finished="localVideosFinished" @open-archive="openDetail" />
-        <ArchiveBatchImport
-          :groups="archiveGroups"
-          @changed="loadArchives"
-          @open-archive="openDetail"
-          @open-profile="profileImport?.show($event)"
-        />
-        <TikTokProfileImport
-          ref="profileImport"
-          :groups="archiveGroups"
-          @changed="loadArchives"
-          @open-archive="openDetail"
-          @retry-single="retryProfileWork"
-        />
-      </div>
       <ArchiveTaskPanel
         ref="fetchPanel"
         v-model:input-url="inputUrl"
@@ -67,7 +51,27 @@
         @submit="startFetch"
         @login="loginAndRetry"
         @cancel="cancelFetch"
-      />
+        ><template #imports
+          ><div class="archive-entry-toolbar" role="group" aria-label="批量归档入口">
+            <ArchiveLocalVideoUpload
+              :groups="archiveGroups"
+              @finished="localVideosFinished"
+              @open-archive="openDetail"
+            />
+            <ArchiveBatchImport
+              :groups="archiveGroups"
+              @changed="loadArchives"
+              @open-archive="openDetail"
+              @open-profile="profileImport?.show($event)"
+            />
+            <TikTokProfileImport
+              ref="profileImport"
+              :groups="archiveGroups"
+              @changed="loadArchives"
+              @open-archive="openDetail"
+              @retry-single="retryProfileWork"
+            /></div></template
+      ></ArchiveTaskPanel>
 
       <XhsResultPanel
         v-if="current"
@@ -807,7 +811,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
-  color: #687386;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 .archive-entry-toolbar {
@@ -820,6 +824,12 @@ onBeforeUnmount(() => {
 }
 .archive-entry-toolbar :deep(.n-button) {
   flex-shrink: 0;
+}
+@media (max-width: 560px) {
+  .archive-entry-toolbar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
 }
 .capability-note {
   margin-top: 0;

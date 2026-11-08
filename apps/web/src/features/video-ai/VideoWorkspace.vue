@@ -63,7 +63,15 @@
           size="small"
           :disabled="(manualRanges?.length || 0) >= 20 || currentTime >= (duration || 0)"
           @click="addRange"
+          title="从指针位置添加 2 秒区间，视频结尾不足 2 秒时自动缩短"
           >添加区间</n-button
+        >
+        <n-button
+          size="small"
+          :disabled="Boolean(splitDisabledReason)"
+          :title="splitDisabledReason || '在当前指针位置将选中区间一分为二，保留两段框选'"
+          @click="splitRange"
+          ><template #icon><Scissors :size="15" /></template>按指针拆分</n-button
         >
       </div>
       <p v-if="currentTime >= (duration || 0)">指针已到视频结尾，请向前移动指针后添加区间。</p>
@@ -112,6 +120,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NButton } from "naive-ui";
+import { Scissors } from "lucide-vue-next";
 import VideoTimeline from "./VideoTimeline.vue";
 import SubtitleRegion from "./SubtitleRegion.vue";
 import type { VideoAiRect, VideoAiSegment, VideoAiTimedRegion } from "@toolbox/shared";
@@ -155,6 +164,17 @@ watch(
   }
 );
 const selectedRange = computed(() => props.manualRanges?.[activeRange.value]);
+const splitDisabledReason = computed(() => {
+  if (!props.editable || !selectedRange.value) return "请先选中需要拆分的区间";
+  const time = currentTime.value;
+  if (!Number.isFinite(time) || time <= selectedRange.value.start || time >= selectedRange.value.end)
+    return "请将指针移到选中区间内部，不能在区间端点拆分";
+  const ranges = props.manualRanges || [];
+  if (ranges.length >= 20) return "最多支持 20 个区间，请先删除不需要的区间";
+  if (ranges.reduce((sum, range) => sum + range.rects.length, 0) + selectedRange.value.rects.length > 20)
+    return "拆分会保留两段框选，超出最多 20 处的限制，请先减少框选";
+  return "";
+});
 const drawingTimeAllowed = computed(
   () =>
     !selectedRange.value ||
@@ -215,7 +235,29 @@ function addRange() {
   if (!Number.isFinite(start) || start >= props.duration) return;
   videoEl.value?.pause();
   activeRange.value = props.manualRanges?.length || 0;
-  emit("update:manual-ranges", [...(props.manualRanges || []), { start, end: props.duration, rects: [] }]);
+  emit("update:manual-ranges", [
+    ...(props.manualRanges || []),
+    { start, end: Math.min(start + 2, props.duration), rects: [] }
+  ]);
+}
+function splitRange() {
+  if (splitDisabledReason.value || !selectedRange.value) return;
+  videoEl.value?.pause();
+  cancelDrag();
+  const index = activeRange.value;
+  const range = selectedRange.value;
+  const time = currentTime.value;
+  const next = [...(props.manualRanges || [])];
+  // 两段的框选独立复制，后续调整任一段不会修改另一段。
+  next.splice(
+    index,
+    1,
+    { ...range, end: time, rects: range.rects.map((rect) => ({ ...rect })) },
+    { ...range, start: time, rects: range.rects.map((rect) => ({ ...rect })) }
+  );
+  selectedRect.value = "";
+  emit("update:manual-ranges", next);
+  activeRange.value = index + 1;
 }
 function selectRange(index: number) {
   activeRange.value = index;
@@ -499,4 +541,13 @@ function rectStyle(rect: VideoAiRect) {
     height: min(55vh, 440px);
   }
 }
+
+.video-stage { height: clamp(300px, 48vh, 500px); border-radius: 10px; }
+.range-editor { margin-top: 14px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: transparent; }
+.range-actions { gap: 8px; margin-bottom: 10px; }
+.range-actions > strong { margin-right: 4px; font-size: 13px; }
+.range-editor p { margin-block: 8px; line-height: 1.6; color: var(--color-text-tertiary); }
+.range-actions :deep(.n-button) { border-radius: 7px; }
+.source-switch { border: 1px solid var(--color-border); }
+@media (max-width: 640px) { .video-stage { height: 340px; } }
 </style>

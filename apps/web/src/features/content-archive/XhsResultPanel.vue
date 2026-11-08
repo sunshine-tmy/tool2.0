@@ -164,7 +164,7 @@ const emit = defineEmits<{
   padding: 13px 14px;
   border: 1px solid #e7ebf1;
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
 }
 .drawer-facts p {
   display: grid;
@@ -172,7 +172,7 @@ const emit = defineEmits<{
   margin: 0;
 }
 .drawer-facts span {
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   font-size: 11px;
 }
 .drawer-facts strong {

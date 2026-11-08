@@ -1,7 +1,7 @@
 <!-- 中文模块说明：局域网传输前端模块，负责文件、图文、分片上传和批量管理 -->
 <template>
   <ToolLayout>
-    <section class="main-column lan-main">
+    <section class="main-column lan-main v2-tool-page">
       <ToolPageHeader
         title="局域网文件传输"
         description="同一局域网内收发文件和图文便签，支持复制、预览、筛选、下载和删除。"
@@ -17,7 +17,7 @@
         </template>
       </ToolPageHeader>
 
-      <section class="workspace-panel lan-panel">
+      <section class="lan-page-workspace">
         <LanSharePanel
           v-model:selected-url="selectedShareUrl"
           v-model:access-pin="accessPin"
@@ -86,6 +86,7 @@
           v-model:sort-order="lanQuery.sortOrder"
           v-model:page="lanPagination.page"
           v-model:page-size="lanPagination.pageSize"
+          class="workspace-panel lan-file-section"
           :can-read-files="canReadFiles"
           :can-manage-files="canManageFiles"
           :files="lanFiles"
@@ -565,3 +566,44 @@ async function copyText(value: string) {
   }
 }
 </script>
+
+<style scoped>
+.lan-page-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  min-width: 0;
+}
+.lan-page-workspace :deep(.lan-share-card) {
+  min-width: 0;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.lan-page-workspace :deep(.share-address) {
+  min-width: 0;
+}
+.lan-page-workspace :deep(.share-address strong) {
+  overflow-wrap: anywhere;
+}
+.lan-page-workspace :deep(.lan-workspace-tabs) {
+  padding: 0;
+  min-width: 0;
+}
+.lan-page-workspace :deep(.lan-file-section) {
+  min-width: 0;
+  margin-top: 0;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.lan-workspace-tabs :deep(.n-tabs-nav) { margin-bottom: 12px; padding-top: 0; }
+.lan-workspace-tabs :deep(.n-tabs-tab) { font-size: 16px; font-weight: 600; }
+.lan-workspace-tabs :deep(.n-tabs-tab--active),
+.lan-workspace-tabs :deep(.n-tabs-tab--active .n-tabs-tab__label) { font-weight: 700; }
+.lan-workspace-tabs :deep(.n-tab-pane) { padding-top: 0; }
+</style>

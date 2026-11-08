@@ -1,0 +1,143 @@
+/* Shared layout for the four local developer tools. Processing remains feature-owned. */
+.ui-v2 .v2-tool-page .developer-workspace {
+  display: grid;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.ui-v2 .v2-tool-page .developer-settings,
+.ui-v2 .v2-tool-page .editor-pane,
+.ui-v2 .v2-tool-page .developer-feedback,
+.ui-v2 .v2-tool-page .module-help {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.ui-v2 .v2-tool-page .developer-settings {
+  padding: 20px;
+}
+.ui-v2 .v2-tool-page .module-section-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+  line-height: 26px;
+}
+.ui-v2 .v2-tool-page .toolbar {
+  gap: 12px;
+}
+.ui-v2 .v2-tool-page .secondary {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+.ui-v2 .v2-tool-page .editors {
+  gap: 16px;
+  margin: 0;
+}
+.ui-v2 .v2-tool-page .editor-pane {
+  gap: 0;
+  padding: 0 16px 12px;
+  overflow: hidden;
+}
+.ui-v2 .v2-tool-page .editor-pane > label,
+.ui-v2 .v2-tool-page .output-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 60px;
+  gap: 10px;
+  margin: 0 -16px 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-subtle);
+  font-size: 16px;
+}
+.ui-v2 .v2-tool-page .developer-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.ui-v2 .uuid-page .developer-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.ui-v2 .v2-tool-page .editor-pane > textarea,
+.ui-v2 .v2-tool-page .editor-pane > .file-input,
+.ui-v2 .v2-tool-page .editor-pane > .binary-output {
+  min-height: 300px;
+  height: clamp(300px, 35vh, 460px);
+  margin: 0;
+  background: var(--color-surface-subtle);
+}
+.ui-v2 .v2-tool-page .editor-pane > small,
+.ui-v2 .v2-tool-page .output-actions {
+  margin-top: 10px;
+}
+.ui-v2 .v2-tool-page .developer-feedback {
+  padding: 12px 16px;
+}
+.ui-v2 .v2-tool-page .developer-feedback .status {
+  margin: 0;
+  min-height: 22px;
+}
+.ui-v2 .v2-tool-page .module-help {
+  padding: 12px 16px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.ui-v2 .v2-tool-page .module-help summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.ui-v2 .v2-tool-page .module-help p {
+  margin: 10px 0 0;
+}
+.ui-v2 .uuid-page .generator-workspace {
+  display: grid;
+  gap: 16px;
+}
+.ui-v2 .uuid-page .generator-settings .option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.ui-v2 .uuid-page .generator-settings .toolbar {
+  gap: 20px;
+  align-items: flex-end;
+}
+.ui-v2 .uuid-page .generator-settings .toolbar > .n-checkbox {
+  align-self: center;
+}
+.ui-v2 .uuid-page .generator-results .result-heading {
+  margin-top: 0;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.ui-v2 .uuid-page .generator-results textarea {
+  height: clamp(260px, 35vh, 440px);
+}
+@media (max-width: 900px) {
+  .ui-v2 .v2-tool-page .editors {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .ui-v2 .v2-tool-page .developer-settings {
+    padding: 16px;
+  }
+  .ui-v2 .v2-tool-page .editor-pane > textarea,
+  .ui-v2 .v2-tool-page .editor-pane > .file-input,
+  .ui-v2 .v2-tool-page .editor-pane > .binary-output {
+    min-height: 240px;
+    height: 32vh;
+  }
+}

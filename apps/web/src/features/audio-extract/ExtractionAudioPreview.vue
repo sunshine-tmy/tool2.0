@@ -1,5 +1,5 @@
 <template>
-  <section class="audio-preview" :aria-label="`${title} 试听`">
+  <section class="audio-preview library-item-player" :aria-label="`${title} 试听`">
     <audio
       ref="audio"
       :src="url"
@@ -12,11 +12,11 @@
       @ended="onPause"
       @error="fail"
     />
-    <header>
-      <span><AudioLines :size="15" />音频波形</span
-      ><small>{{ canShowWaveform ? "点击音轨定位试听" : "拖动进度条定位试听" }}</small>
+    <header class="library-item-wave-heading">
+      <span><Music2 :size="13" />音频波形</span><small>独立播放</small>
     </header>
     <ExtractionAudioWaveform
+      class="library-item-waveform"
       v-if="canShowWaveform"
       :url="url"
       :title="title"
@@ -30,7 +30,10 @@
     />
     <template v-else>
       <n-slider
-        v-slider-label="{ label: '试听播放位置', text: formatAudioDuration(position) }"
+        v-slider-label="{
+          label: '试听播放位置',
+          text: formatAudioDuration(position)
+        }"
         :value="position"
         :min="0"
         :max="length || 1"
@@ -41,43 +44,89 @@
       />
       <p class="hint">长音频或大文件使用进度条试听，无需等待波形生成。</p>
     </template>
-    <div class="times">
+    <div class="library-item-wave-times">
       <span>{{ formatAudioDuration(position) }}</span
       ><span>{{ formatAudioDuration(length) }}</span>
     </div>
-    <div class="controls">
-      <n-button size="small" :type="phase === 'playing' ? 'default' : 'primary'" @click="toggle">
-        <template #icon
-          ><Pause v-if="phase === 'playing' || phase === 'loading'" :size="16" /><Play v-else :size="16"
-        /></template>
-        {{ phase === "playing" ? "暂停" : phase === "loading" ? "取消加载" : phase === "error" ? "重试播放" : "播放" }}
-      </n-button>
-      <n-button size="small" :disabled="!position && phase === 'paused'" @click="restart">回到开头</n-button>
-      <span v-if="phase === 'loading'" class="hint" role="status">正在加载音频…</span>
-      <div class="volume">
-        <n-button text :aria-label="volume ? '静音' : '取消静音'" @click="setVolume(volume ? 0 : 1)">
-          <Volume2 v-if="volume" :size="17" /><VolumeX v-else :size="17" />
-        </n-button>
-        <n-slider
-          v-slider-label="{ label: '试听音量', text: `${Math.round(volume * 100)}%` }"
-          :value="volume"
-          :min="0"
-          :max="1"
-          :step="0.01"
-          :format-tooltip="(value) => `${Math.round(value * 100)}%`"
-          @update:value="setVolume"
+    <div class="library-item-wave-toolbar">
+      <div class="library-item-wave-settings">
+        <div class="library-item-wave-volume">
+          <n-button
+            circle
+            quaternary
+            :aria-label="volume ? '静音' : '取消静音'"
+            :title="volume ? '静音' : '取消静音'"
+            :aria-pressed="volume === 0"
+            @click="setVolume(volume ? 0 : lastAudibleVolume)"
+          >
+            <Volume2 v-if="volume" :size="21" /><VolumeX v-else :size="21" />
+          </n-button>
+          <n-slider
+            v-slider-label="{ label: '试听音量', text: `${Math.round(volume * 100)}%` }"
+            :value="volume"
+            :min="0"
+            :max="1"
+            :step="0.01"
+            :format-tooltip="(value) => `${Math.round(value * 100)}%`"
+            @update:value="setVolume"
+          />
+        </div>
+        <n-select
+          v-model:value="rate"
+          class="library-item-wave-rate"
+          size="small"
+          :bordered="false"
+          :consistent-menu-width="false"
+          :options="rateOptions"
+          :input-props="{ 'aria-label': '独立播放倍速' }"
         />
       </div>
+      <div class="library-item-wave-transport">
+        <n-button circle quaternary aria-label="后退 3 秒" title="后退 3 秒" @click="seek(position - 3)"
+          ><Rewind :size="19" fill="currentColor"
+        /></n-button>
+        <n-button
+          circle
+          type="primary"
+          class="library-item-play"
+          :aria-label="
+            phase === 'playing' ? '暂停' : phase === 'loading' ? '取消加载' : phase === 'error' ? '重试播放' : '播放'
+          "
+          @click="toggle"
+        >
+          <Pause v-if="phase === 'playing' || phase === 'loading'" :size="25" fill="currentColor" /><Play
+            v-else
+            :size="25"
+            fill="currentColor"
+          />
+        </n-button>
+        <n-button circle quaternary aria-label="前进 3 秒" title="前进 3 秒" @click="seek(position + 3)"
+          ><FastForward :size="19" fill="currentColor"
+        /></n-button>
+      </div>
+      <div class="library-item-wave-actions">
+        <n-button
+          circle
+          quaternary
+          :disabled="!position && phase === 'paused'"
+          aria-label="回到开头"
+          title="停止并回到开头"
+          @click="restart"
+          ><RotateCcw :size="17"
+        /></n-button>
+      </div>
     </div>
+    <p v-if="phase === 'loading'" class="hint" role="status">正在加载音频…</p>
     <p v-if="phase === 'error'" class="error" role="alert">
       当前浏览器无法播放此音频，请重试或下载；也可生成 MP3 副本加入素材库。
     </p>
   </section>
 </template>
 <script setup lang="ts">
+import "../../shared/ui/audio/inline-preview.css";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { NButton, NSlider } from "naive-ui";
-import { AudioLines, Pause, Play, Volume2, VolumeX } from "lucide-vue-next";
+import { NButton, NSlider, NSelect } from "naive-ui";
+import { Music2, Pause, Play, Volume2, VolumeX, Rewind, FastForward, RotateCcw } from "lucide-vue-next";
 import { AUDIO_LIBRARY_MAX_FILE_BYTES } from "@toolbox/shared/audio-library";
 import { ExtractionAudioWaveform, formatAudioDuration, vSliderLabel } from "../audio-library/integrations/extraction";
 const props = defineProps<{ url: string; title: string; duration: number; bytes?: number }>();
@@ -125,8 +174,15 @@ function updateTime() {
   const value = audio.value?.currentTime;
   if (value !== undefined && Number.isFinite(value)) position.value = Math.max(0, Math.min(length.value, value));
 }
+const rate = ref(1);
+const rateOptions = [0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({ label: `${value}x`, value }));
+watch(rate, (value) => {
+  if (audio.value) audio.value.playbackRate = value;
+});
+const lastAudibleVolume = ref(1);
 function setVolume(value: number) {
   if (!Number.isFinite(value)) return;
+  if (volume.value > 0) lastAudibleVolume.value = volume.value;
   volume.value = Math.max(0, Math.min(1, value));
   if (audio.value) audio.value.volume = volume.value;
 }
@@ -147,6 +203,7 @@ async function toggle() {
   phase.value = "loading";
   if (element.ended || position.value >= length.value) seek(0);
   element.volume = volume.value;
+  element.playbackRate = rate.value;
   try {
     await element.play();
     if (disposed || version !== generation) {
@@ -173,66 +230,21 @@ onBeforeUnmount(() => {
 </script>
 <style scoped>
 .audio-preview {
-  min-width: 0;
   margin-top: 14px;
-  padding: 14px 16px;
-  background: #fff;
-  border: 1px solid #dfe4f2;
-  border-radius: 10px;
 }
 audio {
   display: none;
 }
-header,
-.times,
-.controls,
-header span,
-.volume {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-header,
-.times {
-  justify-content: space-between;
-}
-header {
-  margin-bottom: 8px;
-  font-weight: 600;
-  font-size: 13px;
-}
-header small,
-.times,
 .hint {
-  color: #60718d;
+  width: 100%;
   font-size: 12px;
-  font-weight: 400;
-}
-.times {
-  margin: 4px 0 12px;
-  font-variant-numeric: tabular-nums;
-}
-.controls {
-  flex-wrap: wrap;
-}
-.volume {
-  width: 130px;
-  margin-left: auto;
-}
-.volume .n-slider {
-  flex: 1;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
 }
 .error {
-  color: #c53030;
-  font-size: 13px;
-}
-@media (max-width: 480px) {
-  header {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .audio-preview {
-    padding: 12px;
-  }
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-error);
 }
 </style>

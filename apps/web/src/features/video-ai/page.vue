@@ -1,6 +1,6 @@
 <template>
   <ToolLayout>
-    <section class="video-ai-page">
+    <section class="video-ai-page v2-tool-page">
       <ToolPageHeader
         title="视频去字幕"
         kicker="VIDEO / SUBTITLE"
@@ -23,68 +23,66 @@
         <RouterLink v-if="!healthRecovering" to="/settings?component=video-ai">前往能力管理</RouterLink>
       </n-alert>
 
-      <section class="workspace-panel editor-panel">
-        <div class="file-toolbar">
-          <n-button type="primary" size="large" :disabled="busy" @click="fileInput?.click()">上传视频</n-button>
-          <div class="file-copy">
-            <strong>{{ inputName || "选择需要去除硬字幕的视频" }}</strong>
-            <span v-if="hasInput">
-              {{
-                formatBytes(
-                  file?.size ??
-                    (editingSource === "original" ? editingTask?.inputBytes : editingTask?.output?.bytes) ??
-                    0
-                )
-              }}<template v-if="mediaMetadata">
-                · {{ mediaMetadata.width }}×{{ mediaMetadata.height }} ·
-                {{ formatDuration(mediaMetadata.duration) }}</template
-              >
-            </span>
-            <span v-else>支持 MP4 / MKV / AVI / MOV / WebM，单个最大 2 GiB</span>
-          </div>
-          <input
-            ref="fileInput"
-            class="file-input"
-            type="file"
-            accept=".mp4,.mkv,.avi,.mov,.webm,video/*"
-            :disabled="busy"
-            @change="onFileChange"
-          />
-        </div>
-
+      <section class="video-editor-workbench">
         <div v-if="editingTask" class="inspection-banner">
           正在编辑{{ editingSource === "original" ? "留档原视频" : "处理后的视频" }}：{{
             editingTask.inputName
           }}。已恢复编辑信息，可调整或清除后重新框选；处理后新增记录，原视频和旧结果均保留。
         </div>
-
         <div v-if="inspectedTask" class="inspection-banner">
           <span>正在查看历史任务：{{ inspectedTask.inputName }}</span>
           <n-button v-if="activeTaskId" text @click="returnToActiveTask">返回当前任务</n-button>
         </div>
-
         <div class="editor-grid">
-          <VideoWorkspace
-            ref="workspace"
-            :key="previewUrl"
-            :src="displayPreviewUrl"
-            :muted="sourceKind === 'original'"
-            :source-kind="sourceKind"
-            :show-source-switch="showSourceSwitch"
-            :manual-mode="manualMode && !inspectedTask"
-            :manual-area="inspectedTask ? inspectedTask.manualArea : draftRect"
-            :segments="displaySegments"
-            :manual-ranges="inspectedTask ? inspectedTask.manualRanges || [] : manualRanges"
-            :duration="displayDuration"
-            :editable="hasInput && !busy && !inspectedTask && sourceKind === 'original'"
-            :width="displayWidth"
-            :height="displayHeight"
-            @update:manual-ranges="manualRanges = $event"
-            @metadata="onMetadata"
-            @update:manual-area="draftRect = $event"
-            @change-source="sourceKind = $event"
-          />
-
+          <section class="workspace-panel video-preview-panel">
+            <div class="file-toolbar">
+              <n-button type="primary" size="large" :disabled="busy" @click="fileInput?.click()"><template #icon><Upload :size="18" /></template>上传视频</n-button>
+              <div class="file-copy">
+                <strong>{{ inputName || "选择需要去除硬字幕的视频" }}</strong>
+                <span v-if="hasInput">
+                  {{
+                    formatBytes(
+                      file?.size ??
+                        (editingSource === "original" ? editingTask?.inputBytes : editingTask?.output?.bytes) ??
+                        0
+                    )
+                  }}<template v-if="mediaMetadata">
+                    · {{ mediaMetadata.width }}×{{ mediaMetadata.height }} ·
+                    {{ formatDuration(mediaMetadata.duration) }}</template
+                  >
+                </span>
+                <span v-else>支持 MP4 / MKV / AVI / MOV / WebM，单个最大 2 GiB</span>
+              </div>
+              <input
+                ref="fileInput"
+                class="file-input"
+                type="file"
+                accept=".mp4,.mkv,.avi,.mov,.webm,video/*"
+                :disabled="busy"
+                @change="onFileChange"
+              />
+            </div>
+            <VideoWorkspace
+              ref="workspace"
+              :key="previewUrl"
+              :src="displayPreviewUrl"
+              :muted="sourceKind === 'original'"
+              :source-kind="sourceKind"
+              :show-source-switch="showSourceSwitch"
+              :manual-mode="manualMode && !inspectedTask"
+              :manual-area="inspectedTask ? inspectedTask.manualArea : draftRect"
+              :segments="displaySegments"
+              :manual-ranges="inspectedTask ? inspectedTask.manualRanges || [] : manualRanges"
+              :duration="displayDuration"
+              :editable="hasInput && !busy && !inspectedTask && sourceKind === 'original'"
+              :width="displayWidth"
+              :height="displayHeight"
+              @update:manual-ranges="manualRanges = $event"
+              @metadata="onMetadata"
+              @update:manual-area="draftRect = $event"
+              @change-source="sourceKind = $event"
+            />
+          </section>
           <VideoProcessingPanel
             v-model:mode="mode"
             :checking="healthRecovering || (healthLoading && !health)"
@@ -138,6 +136,7 @@
 /**
  * 中文模块说明：视频去字幕页面，集中协调文件、任务和历史状态，展示职责由子组件承担。
  */
+import { Upload } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton } from "naive-ui";
 import { RouterLink } from "vue-router";
@@ -798,4 +797,45 @@ function formatBytes(bytes: number) {
     text-align: left;
   }
 }
+
+.video-editor-workbench {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.video-preview-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.video-preview-panel .file-toolbar {
+  padding-bottom: 12px;
+}
+.video-preview-panel .file-copy {
+  align-items: flex-start;
+  text-align: left;
+}
+.editor-grid {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+@media (max-width: 900px) {
+  .editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.video-preview-panel {
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  gap: 14px;
+}
+.video-preview-panel .file-toolbar { border: 0; padding: 0; gap: 16px; }
+.file-toolbar > .n-button { height: 38px; font-size: 14px; border-radius: 8px; }
+.file-copy strong { color: var(--color-text); font-size: 14px; }
+.editor-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, 28%); gap: 16px; }
+@media (max-width: 980px) { .editor-grid { grid-template-columns: minmax(0, 1fr); } }
 </style>

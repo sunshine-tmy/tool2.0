@@ -286,7 +286,7 @@ onBeforeUnmount(() => {
   outline: none;
 }
 .audio-waveform-canvas:focus-visible {
-  outline: 2px solid #7665ff;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -314,23 +314,23 @@ onBeforeUnmount(() => {
   scrollbar-width: thin;
 }
 .audio-waveform-canvas::part(region-handle) {
-  border-color: #7665ff !important;
+  border-color: var(--color-primary-600) !important;
   min-width: 6px;
 }
 .audio-waveform-canvas::part(region-handle):focus-visible {
-  outline: 2px solid #7665ff;
+  outline: 2px solid var(--color-primary-600);
 }
 .is-fixed-range .audio-waveform-canvas :deep(div)::part(region) {
   box-sizing: border-box;
-  border: 2px solid #2563eb;
+  border: 2px solid var(--color-primary-600);
   border-radius: 4px;
-  box-shadow: inset 0 0 0 1px #fff;
+  box-shadow: inset 0 0 0 1px var(--color-surface);
   cursor: grab;
 }
 .is-fixed-range .audio-waveform-canvas :deep(div)::part(region-content) {
   padding: 1px 2px;
-  color: #fff;
-  background: #2563eb;
+  color: var(--color-surface);
+  background: var(--color-primary-600);
   font-size: 10px;
   line-height: 16px;
   font-weight: 700;
@@ -338,7 +338,7 @@ onBeforeUnmount(() => {
   pointer-events: none;
 }
 .is-fixed-range .audio-waveform-help {
-  color: #1d4ed8;
+  color: var(--color-primary-700);
   font-weight: 500;
 }
 </style>

@@ -62,7 +62,7 @@
             </div>
           </li>
         </ol>
-        <n-empty v-else description="队列为空，从下方音频加入，或加载一个预设队列" />
+        <n-empty v-else description="队列为空，从音频列表加入，或加载一个预设队列" />
       </n-tab-pane>
       <n-tab-pane name="presets" :tab="`预设队列（${presets.length}）`">
         <div class="audio-queue-actions">
@@ -332,7 +332,7 @@ async function save() {
 .audio-queue-copy p,
 .audio-queue-actions > span {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary);
   margin: 5px 0;
 }
 .audio-queue-actions {
@@ -353,7 +353,7 @@ async function save() {
   align-items: start;
   gap: 12px;
   padding: 10px 0;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid var(--color-border);
 }
 .audio-queue-number {
   color: #94a3b8;
@@ -394,7 +394,7 @@ async function save() {
   line-height: 1.65;
 }
 .audio-queue-copy .audio-queue-entry-chinese {
-  color: #172033;
+  color: var(--color-text);
 }
 .audio-queue-field-label {
   color: #94a3b8;
@@ -419,7 +419,7 @@ async function save() {
 }
 .audio-preset {
   padding: 14px 0;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid var(--color-border);
 }
 .audio-preset-contents {
   font-size: 13px;
@@ -430,12 +430,12 @@ async function save() {
 }
 .audio-preset-contents > li {
   padding: 8px 0;
-  border-bottom: 1px solid #edf1f7;
+  border-bottom: 1px solid var(--color-border);
   overflow-wrap: anywhere;
 }
 .audio-preset-item-title,
 .audio-preset-chinese {
-  color: #172033;
+  color: var(--color-text);
 }
 .audio-preset-contents p {
   margin: 4px 0;
@@ -444,7 +444,7 @@ async function save() {
 }
 .audio-preset-foreign {
   font-size: 12px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 .audio-preset-dialog {
   width: min(480px, calc(100vw - 32px));

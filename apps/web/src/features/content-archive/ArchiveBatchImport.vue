@@ -168,7 +168,9 @@
               </td>
               <td
                 class="archive-import-nowrap"
-                :class="{ 'archive-import-error': row.status === 'failed' || row.status === 'invalid' }"
+                :class="{
+                  'archive-import-error': row.status === 'failed' || row.status === 'invalid'
+                }"
               >
                 {{ importRowLabels[row.status] }}
               </td>
@@ -302,7 +304,7 @@ function viewArchive(id: string) {
   padding: 14px;
   border: 1px solid #e1e7ef;
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--color-surface-subtle);
 }
 .archive-import-history summary {
   cursor: pointer;
@@ -330,16 +332,16 @@ function viewArchive(id: string) {
   padding: 12px;
   border: 1px solid #e1e7ef;
   border-radius: 8px;
-  background: #fff;
+  background: var(--color-surface);
   text-align: left;
   cursor: pointer;
 }
 .archive-import-history-list button[aria-pressed="true"] {
-  border-color: #2563eb;
-  background: #eff6ff;
+  border-color: var(--color-primary-600);
+  background: var(--color-primary-50);
 }
 .archive-import-history-list button:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--color-primary-600);
   outline-offset: -2px;
 }
 .archive-import-history-list button:disabled {
@@ -348,7 +350,7 @@ function viewArchive(id: string) {
 .archive-import-history-list strong {
   display: block;
   overflow-wrap: anywhere;
-  color: #1e293b;
+  color: var(--color-text);
 }
 .archive-import-history-meta {
   display: flex;
@@ -401,7 +403,7 @@ function viewArchive(id: string) {
 .archive-import-table th {
   position: sticky;
   top: 0;
-  background: #f5f7fb;
+  background: var(--color-surface-subtle);
   z-index: 1;
   white-space: nowrap;
 }

@@ -1,7 +1,7 @@
 <!-- 中文模块说明：桌面前端页面，负责桌面设置和受控的旧版数据迁移入口。 -->
 <template>
   <ToolLayout>
-    <section class="main-column desktop-settings-main">
+    <section class="main-column desktop-settings-main v2-tool-page">
       <ToolPageHeader
         title="桌面设置与数据迁移"
         :description="
@@ -35,7 +35,9 @@
             <n-button secondary @click="$router.push('/settings/data-backup')">打开数据备份</n-button>
           </div>
         </section>
-        <section class="workspace-panel"><DesktopLanAccess mode="panel" /></section>
+        <section class="workspace-panel">
+          <DesktopLanAccess mode="panel" />
+        </section>
         <input
           ref="offlineArchiveInput"
           class="offline-archive-input"
@@ -120,7 +122,9 @@
             <div>
               <p class="setting-copy">完整数据目录</p>
               <n-code :code="settings.dataDirectory" language="text" word-wrap />
-              <p class="setting-copy">{{ settings.dataDirectoryDescription }}</p>
+              <p class="setting-copy">
+                {{ settings.dataDirectoryDescription }}
+              </p>
             </div>
           </div>
         </section>
@@ -227,7 +231,9 @@
             <div>
               <h3>导入旧版数据</h3>
               <p class="panel-description">
-                选择旧版 <code>storage</code> 目录后，应用会停止本地服务、复制到临时区并逐文件校验，再原子切换。
+                选择旧版
+                <code>storage</code>
+                目录后，应用会停止本地服务、复制到临时区并逐文件校验，再原子切换。
               </p>
             </div>
             <n-button type="primary" :loading="migrating" @click="selectLegacyDirectory">选择历史数据目录</n-button>
@@ -369,7 +375,7 @@ onMounted(() => {
 .setting-copy,
 .selected-source {
   margin: 4px 0 0;
-  color: #64748b;
+  color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -400,18 +406,18 @@ onMounted(() => {
 }
 
 .cleanup-option small {
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
 .cleanup-total {
   display: flex;
   justify-content: space-between;
   margin: 16px 0 12px;
-  color: #64748b;
+  color: var(--color-text-secondary);
 }
 
 .cleanup-total strong {
-  color: #243047;
+  color: var(--color-text);
 }
 
 .settings-alert {

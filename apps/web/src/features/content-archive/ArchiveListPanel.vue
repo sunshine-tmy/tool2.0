@@ -329,7 +329,7 @@ function formatDate(value: string | undefined) {
   gap: 10px;
 }
 .filter-scope {
-  color: #687386;
+  color: var(--color-text-secondary);
   font-size: 12px;
   margin: 0;
 }
@@ -377,10 +377,10 @@ function formatDate(value: string | undefined) {
   align-items: center;
   gap: 7px;
   padding: 10px 8px;
-  border: 2px solid #fff;
+  border: 2px solid var(--color-surface);
   border-radius: 8px;
   background: #047857;
-  color: #fff;
+  color: var(--color-surface);
   font-size: 15px;
   font-weight: 700;
   box-shadow: 0 3px 12px #0004;
@@ -402,17 +402,17 @@ function formatDate(value: string | undefined) {
 }
 .archive-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;
   gap: 16px;
 }
 .archive-card {
   position: relative;
   align-self: start;
-  border: 1px solid #e6eaf0;
+  border: 1px solid var(--color-border);
   border-radius: 14px;
   overflow: hidden;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   transition: 0.18s ease;
 }
@@ -426,15 +426,14 @@ function formatDate(value: string | undefined) {
   background: rgba(255, 255, 255, 0.92);
 }
 .archive-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 28px rgba(34, 55, 90, 0.1);
+  border-color: var(--color-primary-200);
+  box-shadow: var(--shadow-card-hover);
 }
 .card-cover {
   position: relative;
   display: grid;
   width: 100%;
-  max-height: 460px;
-  aspect-ratio: 3/4;
+  aspect-ratio: 3 / 4;
   overflow: hidden;
   place-items: center;
   background: #eef2f7;
@@ -460,7 +459,7 @@ function formatDate(value: string | undefined) {
   align-items: center;
   gap: 5px;
   padding: 0 10px;
-  color: #fff;
+  color: var(--color-surface);
   border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: 999px;
   background: rgba(51, 65, 85, 0.9);
@@ -492,13 +491,13 @@ function formatDate(value: string | undefined) {
 }
 .card-copy p {
   margin: 0 0 12px;
-  color: #687386;
+  color: var(--color-text-secondary);
 }
 .card-copy div {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  color: #8a94a6;
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 .archive-panel .n-pagination {
@@ -578,6 +577,11 @@ function formatDate(value: string | undefined) {
   grid-row: 1 / span 5;
   align-self: center;
   margin-top: 0;
+}
+@media (min-width: 901px) and (max-width: 1180px) {
+  .archive-grid:not(.is-list) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 @media (max-width: 900px) {
   .archive-filter-options {
