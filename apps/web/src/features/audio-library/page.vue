@@ -621,9 +621,6 @@ async function onClipSaved() {
   margin: 0 auto;
   min-width: 0;
 }
-.library-page :deep(.tool-page-header__title) {
-  color: var(--color-text);
-}
 .library-workspace {
   display: grid;
   gap: 18px;
@@ -917,10 +914,6 @@ async function onClipSaved() {
 .library-bottom-player :deep(.library-player-heading strong) {
   color: var(--color-text);
 }
-.library-bottom-player :deep(.library-player-setting) {
-  border-color: var(--color-border);
-  background: var(--color-surface-subtle);
-}
 .library-dialog {
   width: min(480px, calc(100vw - 32px));
 }
@@ -948,10 +941,6 @@ async function onClipSaved() {
 }
 .library-dialog :deep(.n-card__content) > * + * {
   margin-top: 12px;
-}
-.library-upload-heading {
-  display: flex;
-  gap: 12px;
 }
 .library-upload-hint {
   font-size: 12px;

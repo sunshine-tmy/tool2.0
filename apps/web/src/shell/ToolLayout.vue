@@ -7,16 +7,16 @@
     <header ref="topbar" class="topbar">
       <div class="topbar-leading">
         <n-button
-          v-if="currentTool"
+          v-if="currentTool || isMobileNavigation"
           class="module-sidebar-toggle"
           quaternary
           circle
-          :aria-label="sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
-          :title="sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
-          :aria-expanded="!sidebarCollapsed"
+          :aria-label="isMobileNavigation ? '打开工具菜单' : sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
+          :title="isMobileNavigation ? '工具菜单' : sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
+          :aria-expanded="isMobileNavigation ? mobileMenuOpen : !sidebarCollapsed"
           aria-controls="module-sidebar"
-          @click="sidebarCollapsed = !sidebarCollapsed"
-          ><template #icon><PanelLeft :size="19" /></template
+          @click="toggleModuleNavigation"
+          ><template #icon><Menu v-if="isMobileNavigation" :size="20" /><PanelLeft v-else :size="19" /></template
         ></n-button>
         <router-link class="brand brand-link" to="/">
           <div class="brand-mark">
@@ -81,13 +81,13 @@
     <section
       class="shell"
       :class="{
-        'has-module-sidebar': Boolean(currentTool),
+        'has-module-sidebar': Boolean(currentTool) && !isMobileNavigation,
         'module-sidebar-collapsed': sidebarCollapsed,
         'has-module-footer': Boolean($slots['module-footer'])
       }"
     >
       <ModuleSidebar
-        v-if="currentTool"
+        v-if="currentTool && !isMobileNavigation"
         :current-tool-id="currentTool.id"
         :collapsed="sidebarCollapsed"
         :show-settings="localDiagnosticsAvailable"
@@ -170,7 +170,19 @@
       <div v-if="$slots['module-footer']" class="module-footer"><slot name="module-footer" /></div>
     </section>
 
-    <n-drawer v-if="!isDesktop" v-model:show="serviceDrawerOpen" :width="380" placement="right">
+    <n-drawer v-if="isMobileNavigation" v-model:show="mobileMenuOpen" width="min(320px, 88vw)" placement="left">
+      <n-drawer-content title="工具菜单" closable :body-content-style="{ padding: '0' }">
+        <div class="mobile-module-navigation" @click="closeMobileNavigation">
+          <ModuleSidebar
+            :current-tool-id="currentTool?.id"
+            :collapsed="false"
+            :show-settings="localDiagnosticsAvailable"
+            mobile
+          />
+        </div>
+      </n-drawer-content>
+    </n-drawer>
+    <n-drawer v-if="!isDesktop" v-model:show="serviceDrawerOpen" width="min(380px, 100vw)" placement="right">
       <n-drawer-content title="本地服务状态" closable>
         <div class="service-summary" :class="{ 'is-offline': apiState === 'offline' }">
           <div class="service-summary-icon">
@@ -242,12 +254,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, provide, ref } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import brandIcon from "../assets/ui-v2/brand.webp";
 import { toolForPath, toolPresentationKey, workbenchTools } from "../shared/ui/tool/catalog";
 import { NAlert, NButton, NDrawer, NDrawerContent, NInput } from "naive-ui";
-import { ChevronRight, ArrowLeft, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
+import { ChevronRight, ArrowLeft, Menu, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
 import ModuleSidebar from "./ModuleSidebar.vue";
 import { diagnosticConnection, localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { useShellNavigation } from "./useShellNavigation";
@@ -259,6 +271,28 @@ const route = useRoute(),
   isDesktop = computed(() => Boolean(window.toolboxDesktop));
 const topbar = ref<HTMLElement>();
 const sidebarCollapsed = ref(false);
+const mobileQuery = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 900px)") : undefined;
+const isMobileNavigation = ref(mobileQuery?.matches ?? false);
+const mobileMenuOpen = ref(false);
+function updateNavigationViewport() {
+  isMobileNavigation.value = mobileQuery?.matches ?? false;
+  mobileMenuOpen.value = false;
+}
+function toggleModuleNavigation() {
+  if (isMobileNavigation.value) mobileMenuOpen.value = !mobileMenuOpen.value;
+  else sidebarCollapsed.value = !sidebarCollapsed.value;
+}
+function closeMobileNavigation(event: MouseEvent) {
+  if (event.target instanceof Element && event.target.closest("a")) mobileMenuOpen.value = false;
+}
+watch(
+  () => route.fullPath,
+  () => {
+    mobileMenuOpen.value = false;
+  }
+);
+onMounted(() => mobileQuery?.addEventListener("change", updateNavigationViewport));
+onBeforeUnmount(() => mobileQuery?.removeEventListener("change", updateNavigationViewport));
 useShellOverlayBoundary(topbar);
 const shellIconButtonStyle = {
   width: "var(--shell-icon-size, 36px)",
@@ -335,6 +369,17 @@ onMounted(() => {
   position: relative;
   z-index: 10;
 }
+.shell:not(.has-module-sidebar) > .content,
+.shell:not(.has-module-sidebar) > .module-footer {
+  grid-column: 1 / -1;
+}
+.ui-v2 .shell.has-module-footer:not(.has-module-sidebar) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.mobile-module-navigation {
+  min-height: 100%;
+}
 .module-sidebar-toggle {
   color: var(--color-text-secondary);
 }
@@ -343,7 +388,7 @@ onMounted(() => {
     grid-template-columns: 68px minmax(0, 1fr);
   }
   .module-sidebar-toggle {
-    display: none;
+    display: inline-flex;
   }
 }
 .workspace.has-desktop-titlebar {

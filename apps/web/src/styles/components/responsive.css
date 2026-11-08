@@ -1,11 +1,6 @@
 @media (max-width: 1180px) {
-  .content,
-  .content-wide {
+  .content {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .tool-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -41,20 +36,8 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .workspace.sidebar-collapsed .sidebar-head,
-  .workspace.sidebar-collapsed .sidebar-group-label,
-  .workspace.sidebar-collapsed .category-title,
-  .workspace.sidebar-collapsed .category-status {
+  .workspace.sidebar-collapsed .sidebar-head {
     display: flex;
-  }
-
-  .workspace.sidebar-collapsed .category-button {
-    justify-content: space-between;
-    padding: 0 var(--space-3);
-  }
-
-  .workspace.sidebar-collapsed .category-main {
-    gap: 10px;
   }
 
   .sidebar,
@@ -64,10 +47,6 @@
 
   .route-loading {
     grid-template-columns: 1fr;
-  }
-
-  .route-loading-sidebar {
-    display: none;
   }
 }
 
@@ -88,15 +67,6 @@
     display: none;
   }
 
-  .search-wrap {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
-  .topbar > .search-wrap {
-    max-width: none;
-  }
-
   .topbar-actions {
     grid-column: 2;
     grid-row: 1;
@@ -107,16 +77,14 @@
   }
 
   .tool-page-header,
-  .section-title,
-  .page-heading {
+  .section-title {
     align-items: stretch;
     flex-direction: column;
     margin-bottom: var(--space-4);
   }
 
   .tool-page-header h2,
-  .section-title h2,
-  .page-heading h2 {
+  .section-title h2 {
     font-size: 22px;
   }
 
@@ -125,39 +93,11 @@
     justify-content: flex-start;
   }
 
-  .home-overview {
-    grid-template-columns: 1fr;
-    padding: var(--space-5);
-  }
-
-  .home-focus-card {
-    display: none;
-  }
-
-  .home-quick-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .home-quick-actions a {
-    justify-content: center;
-    padding: 0 8px;
-  }
-
-  .tool-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .tool-card {
-    min-height: 180px;
-  }
-
   .workspace-panel {
     padding: var(--space-4);
   }
 
   .image-compress-panel,
-  .lan-panel,
   .image-ai-workspace {
     min-height: 0;
   }
@@ -211,9 +151,5 @@
   .brand-mark {
     width: 32px;
     height: 32px;
-  }
-
-  .home-quick-actions {
-    grid-template-columns: 1fr;
   }
 }

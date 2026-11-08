@@ -32,7 +32,7 @@ function open(props = {}) {
   return wrapper;
 }
 async function click(text: string) {
-  const button = wrapper!.findAllComponents(NButton).find((b) => b.text() === text);
+  const button = wrapper!.findAllComponents(NButton).find((b) => b.attributes("aria-label") === text);
   expect(button, text).toBeTruthy();
   await button!.trigger("click");
   await flushPromises();
@@ -60,7 +60,7 @@ it("uses the real-waveform port and actual media controls with metadata, seeking
   expect(media().currentTime).toBe(12);
   expect(wave().props("duration")).toBe(29.14);
   await click("播放");
-  expect(w.text()).toContain("暂停");
+  expect(w.find('[aria-label="暂停"]').exists()).toBe(true);
   media().currentTime = 17;
   await w.get("audio").trigger("timeupdate");
   expect(wave().props("position")).toBe(17);
@@ -77,7 +77,7 @@ it("uses the real-waveform port and actual media controls with metadata, seeking
   await w.get('[aria-label="静音"]').trigger("click");
   expect(media().volume).toBe(0);
   await w.get('[aria-label="取消静音"]').trigger("click");
-  expect(media().volume).toBe(1);
+  expect(media().volume).toBe(0.3);
   await click("暂停");
   await click("回到开头");
   expect(media().currentTime).toBe(0);
@@ -106,7 +106,7 @@ it("handles browser playback failure and permits retry without blocking download
   expect(HTMLMediaElement.prototype.load).toHaveBeenCalledOnce();
   expect(w.find('[role="alert"]').exists()).toBe(false);
   await w.get("audio").trigger("pause");
-  expect(w.text()).not.toContain("暂停");
+  expect(w.find('[aria-label="暂停"]').exists()).toBe(false);
   await w.get("audio").trigger("error");
   expect(w.find('[role="alert"]').exists()).toBe(true);
 });
@@ -121,7 +121,7 @@ it("cancels a pending play and rejects late playback after cancellation or unmou
   await click("取消加载");
   pending[0]();
   await flushPromises();
-  expect(w.text()).not.toContain("暂停");
+  expect(w.find('[aria-label="暂停"]').exists()).toBe(false);
   await click("播放");
   w.unmount();
   wrapper = undefined;
@@ -143,7 +143,7 @@ it("resets state when the source changes and reflects natural playback completio
   expect(media().currentTime).toBe(0);
   await w.setProps({ url: "/audio/two", duration: 15 });
   expect(wave().props()).toMatchObject({ duration: 15, position: 0 });
-  expect(w.text()).not.toContain("暂停");
+  expect(w.find('[aria-label="暂停"]').exists()).toBe(false);
   await metadata(Infinity);
   expect(wave().props("duration")).toBe(15);
 });

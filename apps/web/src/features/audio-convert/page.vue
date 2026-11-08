@@ -220,7 +220,7 @@ import { resolveBackendUrl } from "../../shared/config/runtime";
 import { conversionLibraryApi } from "../audio-library/integrations/conversion";
 import { audioConvertApi as api } from "./api";
 import { useConversion } from "./useConversion";
-import ExtractionAudioPreview from "../audio-extract/ExtractionAudioPreview.vue";
+import { ConversionAudioPreview as ExtractionAudioPreview } from "../audio-extract/integrations/conversion";
 const { files, jobs, page, total, error, bitrate, busy, selected, remaining, choose, start, stopQueue, load } =
   useConversion();
 const playing = ref("");

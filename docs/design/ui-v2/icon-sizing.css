@@ -1,53 +1,6 @@
-/* Normalize apparent solid-icon width; original raster files remain untouched. */
-.icon-frame img[src="icons/image-compress.png"] {
-  width: 78.28px;
-  height: 78.28px;
-}
-.icon-frame img[src="icons/image-ai.png"] {
-  width: 78px;
-  height: 78px;
-}
-.icon-frame img[src="icons/content-archive.png"] {
-  width: 72.46px;
-  height: 72.46px;
-}
-.icon-frame img[src="icons/video-ai.png"] {
-  width: 78.09px;
-  height: 78.09px;
-}
-.icon-frame img[src="icons/speech.png"] {
-  width: 77.45px;
-  height: 77.45px;
-}
-.icon-frame img[src="icons/audio-library.png"] {
-  width: 77.73px;
-  height: 77.73px;
-}
-.icon-frame img[src="icons/audio-extract.png"] {
-  width: 78px;
-  height: 78px;
-}
-.icon-frame img[src="icons/audio-convert.png"] {
-  width: 78px;
-  height: 78px;
-}
-.icon-frame img[src="icons/json-format.png"] {
-  width: 78px;
-  height: 78px;
-}
-.icon-frame img[src="icons/base64.png"] {
-  width: 78.18px;
-  height: 78.18px;
-}
-.icon-frame img[src="icons/url-codec.png"] {
-  width: 78.18px;
-  height: 78.18px;
-}
-.icon-frame img[src="icons/uuid-generator.png"] {
-  width: 80.95px;
-  height: 80.95px;
-}
-.icon-frame img[src="icons/lan-transfer.png"] {
-  width: 78.09px;
-  height: 78.09px;
+/* Light icon family: retain the shared pale tile and equal canvas spacing. */
+.icon-frame img[src^="icons/"] {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
 }

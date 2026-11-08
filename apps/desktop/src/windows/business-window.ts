@@ -22,7 +22,7 @@ export async function createBusinessWindow(context: BusinessWindowOptions) {
     ...(process.platform === "win32"
       ? {
           titleBarStyle: "hidden" as const,
-          titleBarOverlay: { height: 44, color: "#edf3fa", symbolColor: "#243047" }
+          titleBarOverlay: { height: 44, color: "#faf9ff", symbolColor: "#243047" }
         }
       : {}),
     webPreferences: {

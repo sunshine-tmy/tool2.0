@@ -53,16 +53,6 @@
   transform: translateY(-1px);
 }
 
-.form-stack {
-  display: grid;
-  gap: 14px;
-}
-
-.task-list {
-  display: grid;
-  gap: 10px;
-}
-
 .task-row {
   padding: 12px;
   background: #fbfcfe;

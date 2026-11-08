@@ -1,15 +1,3 @@
-.image-ai-title {
-  align-items: flex-end;
-}
-
-.image-ai-title h2 {
-  margin-top: 10px;
-}
-
-.image-ai-title p {
-  max-width: 760px;
-}
-
 .image-ai-health {
   display: flex;
   min-width: 280px;

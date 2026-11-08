@@ -7,10 +7,6 @@
   gap: 20px;
 }
 
-.edge-tts-heading {
-  align-items: flex-start;
-}
-
 .edge-tts-privacy {
   display: flex;
   align-items: center;
@@ -124,10 +120,6 @@
   font-size: 13px;
 }
 
-.chatterbox-copy-heading {
-  margin-top: 24px;
-}
-
 .chatterbox-language-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -179,17 +171,6 @@
 
 .edge-tts-editor .n-input {
   background: #f8fafc;
-}
-
-.edge-tts-editor-footer {
-  display: grid;
-  grid-template-columns: minmax(0, 320px) auto;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 14px;
-  color: #64748b;
-  font-size: 13px;
 }
 
 .edge-tts-controls {
@@ -471,13 +452,6 @@
 
 .chatterbox-panel .edge-tts-history-list article {
   flex-wrap: wrap;
-}
-
-.chatterbox-history-player {
-  flex: 1 0 100%;
-  width: 100%;
-  height: 40px;
-  margin-top: 2px;
 }
 
 .is-limit {

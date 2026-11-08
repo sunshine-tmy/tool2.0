@@ -16,8 +16,8 @@
       <span><Music2 :size="13" />音频波形</span><small>独立播放</small>
     </header>
     <ExtractionAudioWaveform
-      class="library-item-waveform"
       v-if="canShowWaveform"
+      class="library-item-waveform"
       :url="url"
       :title="title"
       :duration="length"

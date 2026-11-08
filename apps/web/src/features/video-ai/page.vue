@@ -36,7 +36,9 @@
         <div class="editor-grid">
           <section class="workspace-panel video-preview-panel">
             <div class="file-toolbar">
-              <n-button type="primary" size="large" :disabled="busy" @click="fileInput?.click()"><template #icon><Upload :size="18" /></template>上传视频</n-button>
+              <n-button type="primary" size="large" :disabled="busy" @click="fileInput?.click()"
+                ><template #icon><Upload :size="18" /></template>上传视频</n-button
+              >
               <div class="file-copy">
                 <strong>{{ inputName || "选择需要去除硬字幕的视频" }}</strong>
                 <span v-if="hasInput">
@@ -728,11 +730,6 @@ function formatBytes(bytes: number) {
 .capability-alert {
   margin: 0;
 }
-.editor-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
 .file-toolbar {
   display: flex;
   align-items: center;
@@ -833,9 +830,27 @@ function formatBytes(bytes: number) {
   box-shadow: var(--shadow-card);
   gap: 14px;
 }
-.video-preview-panel .file-toolbar { border: 0; padding: 0; gap: 16px; }
-.file-toolbar > .n-button { height: 38px; font-size: 14px; border-radius: 8px; }
-.file-copy strong { color: var(--color-text); font-size: 14px; }
-.editor-grid { grid-template-columns: minmax(0, 1fr) minmax(300px, 28%); gap: 16px; }
-@media (max-width: 980px) { .editor-grid { grid-template-columns: minmax(0, 1fr); } }
+.video-preview-panel .file-toolbar {
+  border: 0;
+  padding: 0;
+  gap: 16px;
+}
+.file-toolbar > .n-button {
+  height: 38px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+.file-copy strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+.editor-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 28%);
+  gap: 16px;
+}
+@media (max-width: 980px) {
+  .editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 </style>

@@ -30,10 +30,7 @@
   margin-bottom: 14px;
 }
 
-.image-compress-summary div,
-.analysis-section,
-.video-status-panel,
-.home-metrics div {
+.image-compress-summary div {
   background: #f8fafc;
 }
 
@@ -43,8 +40,7 @@
   border-radius: 8px;
 }
 
-.image-compress-summary span,
-.image-result-meta span {
+.image-compress-summary span {
   display: block;
   color: #64748b;
   font-size: 12px;
@@ -121,10 +117,6 @@
 
 .image-result-main small {
   color: #dc2626;
-}
-
-.image-result-meta {
-  min-width: 0;
 }
 
 .image-compress-settings {

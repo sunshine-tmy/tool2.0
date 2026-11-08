@@ -17,10 +17,6 @@ body {
   overflow-x: hidden;
 }
 
-body.sidebar-drawer-active {
-  overflow: hidden;
-}
-
 body {
   color: #172033;
   background: linear-gradient(180deg, rgba(245, 248, 252, 0.96) 0%, rgba(250, 251, 253, 0.98) 46%), #f6f8fb;

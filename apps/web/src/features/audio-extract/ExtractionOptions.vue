@@ -117,15 +117,6 @@ function choose(e: Event) {
   border-radius: var(--radius-card);
   background: var(--color-surface);
 }
-.extract-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.extract-actions .n-select {
-  width: 210px;
-}
 .extract-drop {
   margin-top: 16px;
   padding: 32px;

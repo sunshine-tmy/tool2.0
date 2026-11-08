@@ -2,7 +2,6 @@
 @import "./components/document.css";
 @import "./components/shell.css";
 @import "./components/controls.css";
-@import "./features/home-components.css";
 @import "./components/services.css";
 @import "./components/image-tools.css";
 @import "../features/lan-transfer/styles/components.css";

@@ -82,7 +82,7 @@ describe("business window boundary", () => {
         if (platform === "win32")
           expect(window.options).toMatchObject({
             titleBarStyle: "hidden",
-            titleBarOverlay: { height: 44, color: "#edf3fa", symbolColor: "#243047" }
+            titleBarOverlay: { height: 44, color: "#faf9ff", symbolColor: "#243047" }
           });
         else {
           expect(window.options).not.toHaveProperty("titleBarStyle");

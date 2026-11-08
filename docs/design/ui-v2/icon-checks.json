@@ -1,119 +1,184 @@
 [
   {
     "id": "image-compress",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 868787,
-    "opaquePixels": 129,
-    "solidBounds": [198, 221, 1045, 1071],
-    "bytes": 891804
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1389106,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4002
   },
   {
     "id": "image-ai",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 869114,
-    "opaquePixels": 134,
-    "solidBounds": [196, 221, 1046, 1072],
-    "bytes": 906900
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1386919,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 3630
   },
   {
     "id": "content-archive",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 765947,
-    "opaquePixels": 978,
-    "solidBounds": [155, 176, 1070, 1110],
-    "bytes": 1067477
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1386165,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4444
   },
   {
     "id": "video-ai",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 303910,
-    "opaquePixels": 232,
-    "solidBounds": [197, 220, 1046, 1071],
-    "bytes": 984990
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1391734,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4156
   },
   {
     "id": "speech",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 826229,
-    "opaquePixels": 144,
-    "solidBounds": [192, 221, 1048, 1071],
-    "bytes": 928089
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1452628,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4430
   },
   {
     "id": "audio-library",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 801620,
-    "opaquePixels": 132,
-    "solidBounds": [195, 219, 1048, 1073],
-    "bytes": 952735
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1380704,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4030
   },
   {
     "id": "audio-extract",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 875147,
-    "opaquePixels": 245,
-    "solidBounds": [197, 225, 1047, 1068],
-    "bytes": 876971
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1456293,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4464
   },
   {
     "id": "audio-convert",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 876764,
-    "opaquePixels": 219,
-    "solidBounds": [196, 221, 1046, 1071],
-    "bytes": 878272
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1441652,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 5086
   },
   {
     "id": "json-format",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 880155,
-    "opaquePixels": 161,
-    "solidBounds": [197, 226, 1047, 1068],
-    "bytes": 831960
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1437979,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4238
   },
   {
     "id": "base64",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 858393,
-    "opaquePixels": 237,
-    "solidBounds": [195, 225, 1043, 1068],
-    "bytes": 913717
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1387443,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 5148
   },
   {
     "id": "url-codec",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 876236,
-    "opaquePixels": 190,
-    "solidBounds": [196, 221, 1044, 1071],
-    "bytes": 880811
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1396823,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4832
   },
   {
     "id": "uuid-generator",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 873529,
-    "opaquePixels": 532,
-    "solidBounds": [208, 226, 1027, 1058],
-    "bytes": 892697
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1385716,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4444
   },
   {
     "id": "lan-transfer",
-    "size": [1254, 1254],
-    "mode": "RGBA",
-    "transparentPixels": 859833,
-    "opaquePixels": 141,
-    "solidBounds": [196, 221, 1045, 1073],
-    "bytes": 890020
+    "size": [
+      1254,
+      1254
+    ],
+    "hasAlpha": false,
+    "bytes": 1376295,
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 4022
   }
 ]

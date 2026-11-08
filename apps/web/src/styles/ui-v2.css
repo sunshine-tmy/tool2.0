@@ -262,11 +262,6 @@ body {
 .ui-v2 .image-compress-summary div {
   border-color: var(--color-border);
 }
-.ui-v2 .history-item-icon,
-.ui-v2 .batch-icon {
-  color: var(--color-primary-600);
-  background: var(--color-primary-50);
-}
 .ui-v2 .history-actions {
   justify-content: flex-start;
 }
@@ -291,7 +286,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  min-height: 160px;
+  min-height: 200px;
   padding: 8px 12px 0;
 }
 .workbench-hero h2 {
@@ -316,10 +311,10 @@ body {
   text-decoration: none;
 }
 .workbench-hero-art {
-  width: 340px;
-  height: 160px;
+  width: 440px;
+  height: 210px;
   object-fit: contain;
-  flex: 0 1 340px;
+  flex: 0 1 440px;
   min-width: 0;
 }
 .workbench-search {
@@ -567,8 +562,9 @@ body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .workbench-hero-art {
-    width: 260px;
-    flex-basis: 260px;
+    width: 300px;
+    height: 160px;
+    flex-basis: 300px;
   }
   .ui-v2 .tool-page-header {
     flex-wrap: wrap;
@@ -715,9 +711,6 @@ body {
 .ui-v2 .edge-tts-editor {
   border-color: var(--color-border);
 }
-.ui-v2 .edge-tts-settings {
-  background: var(--color-surface-subtle);
-}
 .ui-v2 .edge-tts-history-list article {
   border-color: var(--color-border);
   background: var(--color-surface-subtle);
@@ -729,10 +722,6 @@ body {
 }
 .ui-v2 .image-compress-dropzone {
   min-height: 160px;
-}
-.ui-v2 .lan-upload-drop {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-primary-200);
 }
 @media (max-width: 900px) {
   .ui-v2 .edge-tts-workbench {

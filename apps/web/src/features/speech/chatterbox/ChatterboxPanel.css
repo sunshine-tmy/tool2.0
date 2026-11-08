@@ -528,10 +528,6 @@
   background: var(--color-surface);
   padding: 20px;
 }
-.ui-v2 .chatterbox-panel .chatterbox-block {
-  background: var(--color-surface-subtle);
-  border-color: var(--color-border);
-}
 @media (max-width: 900px) {
   .ui-v2 .chatterbox-panel .chatterbox-workbench {
     grid-template-columns: minmax(0, 1fr);

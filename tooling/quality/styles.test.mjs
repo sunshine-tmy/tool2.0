@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -16,32 +17,44 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const parser = cssParser(root);
 const boundary = path.join(root, "apps/web/src");
 
-test("R11 preserves its frozen cascade plus individually reviewed later fixes, without replacing the original hashes", async () => {
-  const contract = JSON.parse(await fs.readFile(path.join(root, "docs/refactoring/r11-style-contracts.json"), "utf8"));
-  const amendments = JSON.parse(
-    await fs.readFile(path.join(root, "docs/refactoring/r11-style-amendments.json"), "utf8")
+test("the cleaned UI v2 cascade preserves its exact structure and immutable historical R11 contract", async () => {
+  const contract = JSON.parse(
+    await fs.readFile(path.join(root, "docs/refactoring/2026-11-08-style-cleanup-contracts.json"), "utf8")
   );
-  assert.equal(amendments.schemaVersion, 1);
-  assert.equal(amendments.baseline, "r11-style-contracts.json");
+  assert.equal(contract.schemaVersion, 1);
+  assert.equal(contract.historicalContract, "r11-style-contracts.json");
+  const historical = await fs.readFile(path.join(root, "docs/refactoring", contract.historicalContract), "utf8");
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(JSON.parse(historical))).digest("hex"),
+    contract.historicalSha256
+  );
   assert.deepEqual(contract.layers, ["tokens", "foundation", "components"]);
   for (const entry of contract.entries) {
     const { semanticSha256, rules, declarations, atRules } = await styleFingerprint(
-      restoreReviewedStyleBaseline(await expandStyles(path.join(root, entry.file), { boundary, parser }), {
-        repositoryRoot: root,
-        entryFile: entry.file,
-        amendments: amendments.amendments
-      })
+      await expandStyles(path.join(root, entry.file), { boundary, parser })
     );
     assert.deepEqual(
       { semanticSha256, rules, declarations, atRules },
       {
-        semanticSha256: entry.expanded.semanticSha256,
-        rules: entry.expanded.rules,
-        declarations: entry.expanded.declarations,
-        atRules: entry.expanded.atRules
+        semanticSha256: entry.semanticSha256,
+        rules: entry.rules,
+        declarations: entry.declarations,
+        atRules: entry.atRules
       },
       entry.file
     );
+  }
+});
+
+test("removed legacy classes have no production template or script consumers", async () => {
+  const { removedClasses } = JSON.parse(
+    await fs.readFile(path.join(root, "docs/refactoring/2026-11-08-style-cleanup-contracts.json"), "utf8")
+  );
+  for (const relative of await fs.readdir(boundary, { recursive: true })) {
+    if (!/\.(?:vue|ts)$/.test(relative) || /\.test\.ts$/.test(relative)) continue;
+    const source = (await fs.readFile(path.join(boundary, relative), "utf8")).replace(/<style[\s\S]*?<\/style>/g, "");
+    for (const name of removedClasses)
+      assert.ok(!source.includes(name), `${relative}: removed class ${name} is in use`);
   }
 });
 

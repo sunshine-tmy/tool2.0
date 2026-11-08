@@ -88,7 +88,7 @@ import ToolLayout from "../shell/ToolLayout.vue";
 import { categoryLabel, toolCategories, toolForPath, workbenchTools } from "../shared/ui/tool/catalog";
 import { localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { isEditingText, hasOpenModal } from "../shared/ui/tool/keyboard";
-import hero from "../assets/ui-v2/hero.webp";
+import hero from "../assets/ui-v2/hero-creative-assistant.webp";
 const tools = workbenchTools();
 const keyword = ref("");
 const category = ref<ToolCategory | "">("");

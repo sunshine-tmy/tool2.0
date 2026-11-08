@@ -62,8 +62,8 @@
           type="primary"
           size="small"
           :disabled="(manualRanges?.length || 0) >= 20 || currentTime >= (duration || 0)"
-          @click="addRange"
           title="从指针位置添加 2 秒区间，视频结尾不足 2 秒时自动缩短"
+          @click="addRange"
           >添加区间</n-button
         >
         <n-button

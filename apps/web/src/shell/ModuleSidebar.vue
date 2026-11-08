@@ -1,5 +1,10 @@
 <template>
-  <aside id="module-sidebar" class="module-sidebar" :class="{ 'is-collapsed': collapsed }" aria-label="模块导航">
+  <aside
+    id="module-sidebar"
+    class="module-sidebar"
+    :class="{ 'is-collapsed': collapsed, 'is-mobile-menu': mobile }"
+    aria-label="模块导航"
+  >
     <div class="module-sidebar-heading">
       <span class="module-sidebar-copy">工具导航</span>
       <span class="module-sidebar-count module-sidebar-copy">{{ tools.length }}</span>
@@ -45,7 +50,7 @@
 import { House, Settings, Wrench } from "lucide-vue-next";
 import { toolCategories, workbenchTools } from "../shared/ui/tool/catalog";
 
-defineProps<{ currentToolId?: string; collapsed: boolean; showSettings: boolean }>();
+defineProps<{ currentToolId?: string; collapsed: boolean; showSettings: boolean; mobile?: boolean }>();
 const tools = workbenchTools();
 const groups = toolCategories
   .map((category) => ({
@@ -195,5 +200,27 @@ const groups = toolCategories
     border-top: 1px solid var(--color-border);
     margin-top: 8px;
   }
+}
+.module-sidebar.is-mobile-menu {
+  height: auto;
+  padding: 14px 12px 20px;
+  border-right: 0;
+}
+.module-sidebar.is-mobile-menu .module-sidebar-copy {
+  display: block;
+}
+.module-sidebar.is-mobile-menu .module-sidebar-heading {
+  display: flex;
+}
+.module-sidebar.is-mobile-menu .module-sidebar-link {
+  justify-content: flex-start;
+  min-height: 48px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.module-sidebar.is-mobile-menu .module-sidebar-group + .module-sidebar-group {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
 }
 </style>

@@ -5,8 +5,7 @@
 }
 
 .tool-page-header,
-.section-title,
-.page-heading {
+.section-title {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -20,8 +19,7 @@
 }
 
 .tool-page-header h2,
-.section-title h2,
-.page-heading h2 {
+.section-title h2 {
   margin: 0;
   color: var(--color-text);
   font-size: 26px;
@@ -31,8 +29,7 @@
 }
 
 .tool-page-header p,
-.section-title p,
-.page-heading p {
+.section-title p {
   max-width: 760px;
   margin: 6px 0 0;
   color: var(--color-text-secondary);
@@ -106,8 +103,6 @@
 .task-row,
 .file-row,
 .image-result-row,
-.analysis-section,
-.video-status-panel,
 .result-gallery-card,
 .lan-note-card {
   background: var(--color-surface-subtle);

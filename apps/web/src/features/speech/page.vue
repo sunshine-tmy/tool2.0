@@ -229,24 +229,9 @@ const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; mes
   color: var(--color-text-secondary);
   font-size: 12px;
 }
-.speech-page :deep(.speech-reference-change) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border: 1px solid var(--color-primary-200);
-  border-radius: 8px;
-  color: var(--color-primary-700);
-  background: var(--color-primary-50);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
+.speech-page :deep(.reference-name-row strong) {
+  min-width: 0;
 }
-.speech-page :deep(.speech-reference-change:hover) { background: var(--color-primary-100); }
-.speech-page :deep(.speech-reference-change:focus-visible) { outline: 2px solid var(--color-primary-500); outline-offset: 3px; }
-.speech-page :deep(.reference-name-row strong) { min-width: 0; }
 .speech-page :deep(.speech-reference-body) {
   margin-top: 14px;
   padding: 16px;
@@ -396,8 +381,12 @@ const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; mes
   color: var(--color-text-secondary);
   background: var(--color-surface-subtle);
 }
-.speech-page :deep(.segment-actions .n-button--error-type) { color: var(--color-error); }
-.speech-page :deep(.segment-editor-card .n-input) { background: var(--color-surface-subtle); }
+.speech-page :deep(.segment-actions .n-button--error-type) {
+  color: var(--color-error);
+}
+.speech-page :deep(.segment-editor-card .n-input) {
+  background: var(--color-surface-subtle);
+}
 .speech-page :deep(.speech-segment-field > label > span) {
   color: var(--color-error);
 }
@@ -724,9 +713,6 @@ const cloneNotice = ref<{ label: string; type: "info" | "error" | "success"; mes
   }
   .speech-page :deep(.speech-reference-label) {
     grid-column: 1 / -1;
-  }
-  .speech-page :deep(.speech-reference-change) {
-    padding-inline: 8px;
   }
   .speech-page :deep(.speech-reference-body) {
     padding: 12px;
