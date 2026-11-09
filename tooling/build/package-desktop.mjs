@@ -122,8 +122,8 @@ export async function run({
         await access(path.join(installerOutput, "EcommerceToolbox-mac-arm64.dmg"));
         console.log(`Apple Silicon internal-test DMG created: ${installerOutput}`);
       } else {
-        await access(path.join(installerOutput, `${appName}Setup.exe`));
-        await access(path.join(installerOutput, `${appName}Setup.exe.blockmap`));
+        await access(path.join(installerOutput, "电商工具箱.exe"));
+        await access(path.join(installerOutput, "电商工具箱.exe.blockmap"));
         if (release.updateFeed) await access(path.join(installerOutput, "latest.yml"));
         console.log(`Windows installer created: ${installerOutput}`);
       }

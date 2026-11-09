@@ -9,7 +9,7 @@
             继续上次使用：{{ lastTool.title }}<ArrowRight :size="16" />
           </router-link>
         </div>
-        <img :src="hero" class="workbench-hero-art" alt="" draggable="false" fetchpriority="high" />
+        <HomeHeroArtwork class="workbench-hero-art" />
       </div>
       <div class="workbench-search">
         <Search :size="21" aria-hidden="true" />
@@ -88,7 +88,7 @@ import ToolLayout from "../shell/ToolLayout.vue";
 import { categoryLabel, toolCategories, toolForPath, workbenchTools } from "../shared/ui/tool/catalog";
 import { localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { isEditingText, hasOpenModal } from "../shared/ui/tool/keyboard";
-import hero from "../assets/ui-v2/hero-creative-assistant.webp";
+import HomeHeroArtwork from "./HomeHeroArtwork.vue";
 const tools = workbenchTools();
 const keyword = ref("");
 const category = ref<ToolCategory | "">("");
@@ -154,23 +154,23 @@ onBeforeUnmount(() => window.removeEventListener("keydown", focusSearch));
   background-image:
     linear-gradient(to right, color-mix(in srgb, var(--color-primary-600) 8%, transparent) 1px, transparent 1px),
     linear-gradient(to bottom, color-mix(in srgb, var(--color-primary-600) 8%, transparent) 1px, transparent 1px),
-    radial-gradient(
-      ellipse at 72% 40%,
-      color-mix(in srgb, var(--color-primary-600) 7%, transparent),
-      transparent 65%
-    ),
-    radial-gradient(
-      ellipse at 55% 65%,
-      color-mix(in srgb, var(--color-cyan) 3%, transparent),
-      transparent 62%
-    );
-  background-size: 28px 28px, 28px 28px, 100% 100%, 100% 100%;
+    radial-gradient(ellipse at 72% 40%, color-mix(in srgb, var(--color-primary-600) 7%, transparent), transparent 65%),
+    radial-gradient(ellipse at 55% 65%, color-mix(in srgb, var(--color-cyan) 3%, transparent), transparent 62%);
+  background-size:
+    28px 28px,
+    28px 28px,
+    100% 100%,
+    100% 100%;
   /* Fade the grid and both glows together before the panel edges. */
   mask-image: radial-gradient(ellipse 60% 72% at 52% 38%, #000 12%, #0009 40%, transparent 78%);
 }
 @media (max-width: 560px) {
   .workbench-hero::before {
-    background-size: 24px 24px, 24px 24px, 100% 100%, 100% 100%;
+    background-size:
+      24px 24px,
+      24px 24px,
+      100% 100%,
+      100% 100%;
     opacity: 0.6;
   }
 }

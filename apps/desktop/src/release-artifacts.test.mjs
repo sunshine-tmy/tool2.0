@@ -16,15 +16,15 @@ describe("NSIS release artifacts", () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-release-artifacts-"));
     const setup = Buffer.from("signed NSIS setup");
     const digest = createHash("sha512").update(setup).digest("base64");
-    await fs.writeFile(path.join(root, "EcommerceToolboxSetup.exe"), setup);
-    await fs.writeFile(path.join(root, "EcommerceToolboxSetup.exe.blockmap"), "{}\n");
+    await fs.writeFile(path.join(root, "电商工具箱.exe"), setup);
+    await fs.writeFile(path.join(root, "电商工具箱.exe.blockmap"), "{}\n");
     await fs.writeFile(
       path.join(root, "latest.yml"),
-      `version: 1.2.3\nfiles:\n  - url: EcommerceToolboxSetup.exe\n    sha512: ${digest}\n`
+      `version: 1.2.3\nfiles:\n  - url: 电商工具箱.exe\n    sha512: ${digest}\n`
     );
     await expect(verifyReleaseArtifacts(root, "1.2.3")).resolves.toBeUndefined();
     await expect(verifyReleaseArtifacts(root, "1.2.4")).rejects.toThrow("version must match");
-    await fs.writeFile(path.join(root, "EcommerceToolboxSetup.exe"), "tampered");
+    await fs.writeFile(path.join(root, "电商工具箱.exe"), "tampered");
     await expect(verifyReleaseArtifacts(root)).rejects.toThrow("Setup SHA-512 mismatch");
   });
 });

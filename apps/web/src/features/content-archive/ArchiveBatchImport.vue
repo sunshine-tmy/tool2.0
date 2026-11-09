@@ -1,5 +1,5 @@
 <template>
-  <n-button size="small" secondary title="通过 Excel / CSV 批量获取作品，每批最多 100 条" @click="model.show"
+  <n-button size="small" type="primary" secondary title="通过 Excel / CSV 批量获取作品，每批最多 100 条" @click="model.show"
     ><template #icon><FileSpreadsheet :size="16" /></template>表格批量归档</n-button
   >
   <n-modal

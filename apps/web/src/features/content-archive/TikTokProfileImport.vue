@@ -1,5 +1,5 @@
 <template>
-  <n-button size="small" secondary title="从 TikTok 用户主页发现公开作品，再确认批量归档" @click="show()"
+  <n-button size="small" type="primary" secondary title="从 TikTok 用户主页发现公开作品，再确认批量归档" @click="show()"
     >TikTok 主页批量归档</n-button
   >
   <n-modal

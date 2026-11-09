@@ -333,7 +333,10 @@ if ($CheckOnly) {
 $LanHost = Find-LanHost
 $ConfiguredDeploymentMode = (Get-RootEnvValue "DEPLOYMENT_MODE").ToLowerInvariant()
 $ConfiguredApiHost = (Get-RootEnvValue "API_HOST").ToLowerInvariant()
-$FrontendBindHost = if (
+$ConfiguredFrontendHost = Get-RootEnvValue "VITE_DEV_HOST"
+$FrontendBindHost = if ($ConfiguredFrontendHost) {
+  $ConfiguredFrontendHost
+} elseif (
   $ConfiguredDeploymentMode -eq "lan" -or
   (-not $ConfiguredDeploymentMode -and $ConfiguredApiHost -in @("0.0.0.0", "::"))
 ) { "0.0.0.0" } else { "127.0.0.1" }

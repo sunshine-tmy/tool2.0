@@ -16,16 +16,16 @@ if (process.argv[1] && publicEntryUrl === pathToFileURL(process.argv[1]).href) {
 
 export async function verifyReleaseArtifacts(directory, expectedVersion) {
   const root = path.resolve(directory);
-  const setupName = "EcommerceToolboxSetup.exe";
-  await access(path.join(root, setupName));
-  await access(path.join(root, `${setupName}.blockmap`));
   const latest = await readFile(path.join(root, "latest.yml"), "utf8");
   const version = latest.match(/^version:\s*(\d+\.\d+\.\d+)\s*$/m)?.[1];
   const url = latest.match(/^\s*(?:-\s*)?url:\s*(\S+)\s*$/m)?.[1];
+  const setupName = decodeURIComponent(url ?? "");
+  assert.ok(["电商工具箱.exe", "EcommerceToolboxSetup.exe"].includes(setupName), "Unexpected installer filename");
+  await access(path.join(root, setupName));
+  await access(path.join(root, `${setupName}.blockmap`));
   const sha512 = latest.match(/^\s*sha512:\s*(\S+)\s*$/m)?.[1];
   assert.ok(version, "latest.yml must declare a stable version");
   if (expectedVersion) assert.equal(version, expectedVersion, "latest.yml version must match the release tag");
-  assert.equal(url, setupName, "latest.yml must point to the signed NSIS setup executable");
   assert.ok(sha512, "latest.yml must contain the setup SHA-512");
   assert.equal(await sha512File(path.join(root, setupName)), sha512, "Setup SHA-512 mismatch");
 }

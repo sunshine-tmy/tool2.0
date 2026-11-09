@@ -199,8 +199,8 @@ test("packager, embedded app metadata and installer share one version; installer
           assert.equal(config.extraMetadata.version, release.version);
           assert.equal(config.buildVersion, release.version);
           if (failInstaller) throw new Error("fixture installer failure");
-          await f.write("out/make/nsis/EcommerceToolboxSetup.exe");
-          await f.write("out/make/nsis/EcommerceToolboxSetup.exe.blockmap");
+          await f.write("out/make/nsis/电商工具箱.exe");
+          await f.write("out/make/nsis/电商工具箱.exe.blockmap");
         }
       };
       if (make) {
@@ -234,8 +234,8 @@ test("signed-release installer configuration keeps its explicit version even whe
       assert.equal(config.extraMetadata.version, "1.2.3");
       assert.equal(config.buildVersion, "1.2.3");
       assert.equal(config.publish[0].url, release.updateFeed);
-      await f.write("out/make/nsis/EcommerceToolboxSetup.exe");
-      await f.write("out/make/nsis/EcommerceToolboxSetup.exe.blockmap");
+      await f.write("out/make/nsis/电商工具箱.exe");
+      await f.write("out/make/nsis/电商工具箱.exe.blockmap");
       await f.write("out/make/nsis/latest.yml", "version: 1.2.3\n");
     }
   });

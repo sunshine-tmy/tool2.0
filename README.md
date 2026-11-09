@@ -51,7 +51,7 @@
 
 | 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                    |
 | ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `EcommerceToolboxSetup.exe`；可选能力在“设置 → 能力管理”中安装  |
+| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `电商工具箱.exe`；可选能力在“设置 → 能力管理”中安装  |
 | Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表全部业务模块可用 |
 | Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                         |
 
@@ -350,7 +350,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1 
 
 这条路径同样面向没有任何开发环境和旧资源的新电脑，**不用先执行源码初始化**。
 
-1. 从 [GitHub Releases](https://github.com/sunshine-tmy/tool2.0/releases) 中下载 Windows 桌面发行版的 `EcommerceToolboxSetup.exe`，不是 GitHub 自动生成的 Source code ZIP，也不是 `.tar.gz` 能力包。若当前没有可用的桌面发行资产，按[桌面构建说明](#构建-windows-桌面安装包)从源码生成测试安装器，不能把源码 ZIP 直接当作安装器。
+1. 从 [GitHub Releases](https://github.com/sunshine-tmy/tool2.0/releases) 中下载 Windows 桌面发行版的 `电商工具箱.exe`，不是 GitHub 自动生成的 Source code ZIP，也不是 `.tar.gz` 能力包。若当前没有可用的桌面发行资产，按[桌面构建说明](#构建-windows-桌面安装包)从源码生成测试安装器，不能把源码 ZIP 直接当作安装器。
 2. 运行安装器，在向导中选择当前用户可写、空间充足的目录。此模式不支持 Program Files 等受保护目录。首次联网安装需要同时保留包下载、临时解压和安装后的空间，以能力卡片提示为准。
 3. 从快捷方式启动，等待顶部显示基础服务正常，再进入“设置 → 能力管理”，按下表依赖顺序安装。为了使用全部业务功能，表中基础能力不能只挑一部分安装。
 
@@ -483,11 +483,14 @@ Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windo
 DEPLOYMENT_MODE=lan
 ADMIN_PIN=请替换为自己的高熵PIN
 API_HOST=127.0.0.1
+VITE_DEV_HOST=0.0.0.0
 CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.100:5173
 LAN_TRANSFER_WEB_PORT=5173
 ```
 
 使用 `start.bat` 时，启动器会根据 `lan` 模式让前端监听局域网；API 和 Worker 可以继续只监听回环，由前端代理转发。使用纯命令行时，分别在两个终端执行 `pnpm dev:api` 和 `pnpm --filter frontend dev:lan`。其他设备访问 `http://<主机局域网IP>:5173`，在页面建立管理员会话后才能使用受保护的写操作；IP 改变时同步更新精确的 `CORS_ORIGINS`。Windows 如提示网络访问权限，仅允许实际需要的可信网络，不关闭防火墙或把 Worker 端口对外开放。
+
+`VITE_DEV_HOST` 可显式覆盖前端监听地址，启动器和 `pnpm dev` 均会读取；留空时启动器沿用部署模式的默认地址。设为 `127.0.0.1` 时仅本机可访问，局域网共享使用 `0.0.0.0` 并配合上述 LAN 管理员会话及精确来源配置。
 
 若 API 改为其他端口，例如 `API_PORT=3200`，需把示例配置中已有的 `VITE_API_PROXY_TARGET` 同步改为 `http://127.0.0.1:3200`，然后重启前后端；不要只改其中一个。自定义前端端口使用 `VITE_DEV_PORT`，同时调整 `CORS_ORIGINS` 与 `LAN_TRANSFER_WEB_PORT`。通常保持 `VITE_API_BASE` 为空，避免局域网浏览器把 `127.0.0.1` 误当作服务主机。
 
@@ -675,7 +678,7 @@ pnpm install --frozen-lockfile
 pnpm desktop:make
 ```
 
-默认产物为 `apps/desktop/out/make/nsis/EcommerceToolboxSetup.exe`。没有设置 Release 签名配置时，此产物是**未签名测试安装包**，不会自动发布到 GitHub Release。安装前仍须确认目标目录可由当前用户写入。
+默认产物为 `apps/desktop/out/make/nsis/电商工具箱.exe`。没有设置 Release 签名配置时，此产物是**未签名测试安装包**，不会自动发布到 GitHub Release。安装前仍须确认目标目录可由当前用户写入。
 
 ### 桌面版本号
 

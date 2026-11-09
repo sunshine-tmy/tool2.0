@@ -101,10 +101,6 @@ async function refreshService() {
 </script>
 
 <style scoped>
-.speech-layout :deep(.content) {
-  max-width: none;
-  padding: 28px 32px 40px;
-}
 .speech-page :deep(.tool-page-header) {
   margin-bottom: 24px;
 }
@@ -715,9 +711,6 @@ async function refreshService() {
   }
 }
 @media (max-width: 640px) {
-  .speech-layout :deep(.content) {
-    padding: 20px 16px 28px;
-  }
   .speech-page :deep(.tool-page-icon) {
     width: 56px;
     height: 56px;

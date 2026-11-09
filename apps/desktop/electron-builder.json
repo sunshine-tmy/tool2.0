@@ -1,6 +1,6 @@
 {
   "appId": "com.ecommercetoolbox.desktop",
-  "productName": "Ecommerce Toolbox",
+  "productName": "电商工具箱",
   "executableName": "EcommerceToolbox",
   "directories": {
     "output": "out/make/nsis"
@@ -8,7 +8,7 @@
   "win": {
     "icon": "assets/ecommerce-toolbox.ico",
     "target": ["nsis"],
-    "artifactName": "EcommerceToolboxSetup.exe"
+    "artifactName": "电商工具箱.exe"
   },
   "nsis": {
     "oneClick": false,

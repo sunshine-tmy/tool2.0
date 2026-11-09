@@ -459,7 +459,23 @@ function stageClass(stage: XhsArchiveTaskStage) {
 }
 .module-field-label {
   font-size: 13px;
-  color: var(--color-text-secondary);
+  font-weight: 600;
+  color: var(--color-text);
+}
+.archive-import-options :deep(.archive-entry-toolbar > .n-button) {
+  color: var(--color-primary-700);
+  background: var(--color-primary-50);
+  border: 1px solid var(--color-primary-200);
+  border-radius: 8px;
+  box-shadow: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.archive-import-options :deep(.archive-entry-toolbar > .n-button:not([disabled]):hover) {
+  background: var(--color-primary-100);
+  border-color: var(--color-primary-500);
+}
+.archive-import-options :deep(.archive-entry-toolbar > .n-button:not([disabled]):active) {
+  background: var(--color-primary-200);
 }
 .archive-import-options :deep(.archive-entry-toolbar) {
   flex-wrap: wrap;

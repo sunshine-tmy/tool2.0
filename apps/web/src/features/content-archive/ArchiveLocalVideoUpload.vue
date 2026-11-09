@@ -1,5 +1,5 @@
 <template>
-  <n-button size="small" secondary title="将本机视频批量加入归档，继续配乐、添加水印或下载" @click="opened = true"
+  <n-button size="small" type="primary" secondary title="将本机视频批量加入归档，继续配乐、添加水印或下载" @click="opened = true"
     >批量上传视频</n-button
   >
   <n-modal

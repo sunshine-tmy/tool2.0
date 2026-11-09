@@ -60,12 +60,12 @@ jobs:
           $source = "apps/desktop/out/make/nsis"
           $release = "desktop-release"
           New-Item -ItemType Directory -Path $release -Force | Out-Null
-          Copy-Item -LiteralPath (Join-Path $source "EcommerceToolboxSetup.exe") -Destination $release
-          Copy-Item -LiteralPath (Join-Path $source "EcommerceToolboxSetup.exe.blockmap") -Destination $release
+          Copy-Item -LiteralPath (Join-Path $source "电商工具箱.exe") -Destination $release
+          Copy-Item -LiteralPath (Join-Path $source "电商工具箱.exe.blockmap") -Destination $release
           Copy-Item -LiteralPath (Join-Path $source "latest.yml") -Destination $release
           Get-ChildItem -LiteralPath $release -File | ForEach-Object {
             $digest = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$digest  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding ASCII
+            "$digest  $($_.Name)" | Set-Content -LiteralPath "$($_.FullName).sha256" -Encoding utf8
           }
       - name: Stage previous stable installer for upgrade acceptance
         id: previous
@@ -84,11 +84,13 @@ jobs:
                 -not $_.draft -and
                   -not $_.prerelease -and
                   $_.tag_name -match '^v\d+\.\d+\.\d+$' -and
-                  $assetNames -contains 'EcommerceToolboxSetup.exe' -and
-                  $assetNames -contains 'EcommerceToolboxSetup.exe.sha256'
+                  (($assetNames -contains '电商工具箱.exe' -and $assetNames -contains '电商工具箱.exe.sha256') -or
+                    ($assetNames -contains 'EcommerceToolboxSetup.exe' -and $assetNames -contains 'EcommerceToolboxSetup.exe.sha256'))
               } |
               ForEach-Object {
-                [pscustomobject]@{ Tag = $_.tag_name; Version = [version]$_.tag_name.Substring(1) }
+                $names = @($_.assets | ForEach-Object { $_.name })
+                $installerName = if ($names -contains '电商工具箱.exe' -and $names -contains '电商工具箱.exe.sha256') { '电商工具箱.exe' } else { 'EcommerceToolboxSetup.exe' }
+                [pscustomobject]@{ Tag = $_.tag_name; Version = [version]$_.tag_name.Substring(1); Installer = $installerName }
               } |
               Where-Object { $_.Version -lt $currentVersion } |
               Sort-Object -Property Version -Descending
@@ -103,15 +105,20 @@ jobs:
 
           $upgradeDirectory = "desktop-upgrade/previous"
           New-Item -ItemType Directory -Path $upgradeDirectory -Force | Out-Null
-          gh release download $previous.Tag --repo $env:GITHUB_REPOSITORY --pattern "EcommerceToolboxSetup.exe" --pattern "EcommerceToolboxSetup.exe.sha256" --dir $upgradeDirectory
+          gh release download $previous.Tag --repo $env:GITHUB_REPOSITORY --pattern $previous.Installer --pattern "$($previous.Installer).sha256" --dir $upgradeDirectory
           if ($LASTEXITCODE -ne 0) { throw "Could not download the previous stable installer from $($previous.Tag)" }
+          # Normalize only the upgrade fixture name; downloaded release assets keep their public names.
+          if ($previous.Installer -ne 'EcommerceToolboxSetup.exe') {
+            Move-Item -LiteralPath (Join-Path $upgradeDirectory $previous.Installer) -Destination (Join-Path $upgradeDirectory 'EcommerceToolboxSetup.exe')
+            Move-Item -LiteralPath (Join-Path $upgradeDirectory "$($previous.Installer).sha256") -Destination (Join-Path $upgradeDirectory 'EcommerceToolboxSetup.exe.sha256')
+          }
           $previousInstaller = Join-Path $upgradeDirectory "EcommerceToolboxSetup.exe"
           $checksumPath = "$previousInstaller.sha256"
           if (-not (Test-Path -LiteralPath $previousInstaller -PathType Leaf) -or -not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
             throw "Previous stable release $($previous.Tag) is missing the installer or its SHA-256 sidecar"
           }
           $line = (Get-Content -LiteralPath $checksumPath -Raw).Trim()
-          if ($line -notmatch '^([0-9a-fA-F]{64})  EcommerceToolboxSetup\.exe$') { throw "Invalid previous installer checksum file: $checksumPath" }
+          if ($line -notmatch '^([0-9a-fA-F]{64})  (?:EcommerceToolboxSetup|电商工具箱)\.exe$') { throw "Invalid previous installer checksum file: $checksumPath" }
           $actual = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "Previous installer SHA-256 mismatch: $previousInstaller" }
           ./scripts/verify-windows-signatures.ps1 -Directory $upgradeDirectory -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
@@ -181,7 +188,7 @@ jobs:
               throw "Previous stable installer artifact is incomplete"
             }
             $line = (Get-Content -LiteralPath $previousChecksumPath -Raw).Trim()
-            if ($line -notmatch '^([0-9a-fA-F]{64})  EcommerceToolboxSetup\.exe$') { throw "Invalid previous installer checksum file" }
+            if ($line -notmatch '^([0-9a-fA-F]{64})  (?:EcommerceToolboxSetup|电商工具箱)\.exe$') { throw "Invalid previous installer checksum file" }
             $actual = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $Matches[1].ToLowerInvariant()) { throw "Previous stable installer SHA-256 mismatch" }
             ./scripts/verify-windows-signatures.ps1 -Directory "previous-stable" -ExpectedSubject $env:WINDOWS_SIGNING_SUBJECT
@@ -191,7 +198,7 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}".Substring(1)
           $acceptanceArguments = @(
-            "-InstallerPath", "desktop-release/EcommerceToolboxSetup.exe",
+            "-InstallerPath", "desktop-release/电商工具箱.exe",
             "-ExpectedVersion", $version,
             "-ExpectedSubject", $env:WINDOWS_SIGNING_SUBJECT,
             "-InstallDirectory", (Join-Path $env:RUNNER_TEMP "Ecommerce Toolbox Acceptance"),
@@ -229,8 +236,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s release/EcommerceToolboxSetup.exe
-          test -s release/EcommerceToolboxSetup.exe.blockmap
+          test -s release/电商工具箱.exe
+          test -s release/电商工具箱.exe.blockmap
           test -s release/latest.yml
           sha256sum -c release/*.sha256
       - name: Create or update signed desktop release

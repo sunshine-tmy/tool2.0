@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reason": "User-authorized unused-code cleanup after UI v2 redesign. Exact current cascade contract replaces live comparison to the retired R11 visual structure; historical R11 evidence remains immutable. 2026-11-08: user-authorized Skill rollout adds adaptive interaction rules and repairs the audio record danger selector; refresh only the current index cascade fingerprint. Historical R11 evidence and gate strictness remain unchanged. Module icon white-canvas compositing is shared across the home, headers, navigation and player; approved raster assets are unchanged.",
+  "reason": "User-authorized unused-code cleanup after UI v2 redesign. Exact current cascade contract replaces live comparison to the retired R11 visual structure; historical R11 evidence remains immutable. 2026-11-08: user-authorized Skill rollout adds adaptive interaction rules and repairs the audio record danger selector; refresh only the current index cascade fingerprint. Historical R11 evidence and gate strictness remain unchanged. Module icon white-canvas compositing is shared across the home, headers, navigation and player; approved raster assets are unchanged. 2026-11-09: user requested full-width pages matching multilingual speech; remove page caps and unify shared content padding without changing internal controls.",
   "historicalContract": "r11-style-contracts.json",
   "historicalSha256": "990cb86f79edbac365f190c54d57eed1350bd06b9a1a561b21e8c72458aff692",
   "layers": [
@@ -93,9 +93,9 @@
     },
     {
       "file": "apps/web/src/styles/index.css",
-      "semanticSha256": "6d886c4e58840a0da77adeff23188bf401bde2b0d20a0a9607022a6449100bd4",
-      "rules": 637,
-      "declarations": 2147,
+      "semanticSha256": "192535a860322e2a2f9a9d25217746462a2f14a08b871242cb4cce59f85a2893",
+      "rules": 636,
+      "declarations": 2145,
       "atRules": 28
     }
   ]

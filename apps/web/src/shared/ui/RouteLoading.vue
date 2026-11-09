@@ -22,7 +22,7 @@
 }
 .route-loading-content {
   width: 100%;
-  max-width: 1536px;
+  max-width: none;
   margin-inline: auto;
 }
 </style>

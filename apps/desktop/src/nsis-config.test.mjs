@@ -10,6 +10,8 @@ test("NSIS installer is assisted and allows a user-selected install directory", 
   const config = JSON.parse(await readFile(path.join(desktopRoot, "electron-builder.json"), "utf8"));
 
   expect(config.win.target).toEqual(["nsis"]);
+  expect(config.productName).toBe("电商工具箱");
+  expect(config.win.artifactName).toBe("电商工具箱.exe");
   expect(config.nsis.oneClick).toBe(false);
   expect(config.nsis.allowToChangeInstallationDirectory).toBe(true);
   expect(config.nsis.perMachine).toBe(false);

@@ -531,13 +531,15 @@ onBeforeUnmount(() => {
 .image-compress-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 28%);
-  align-items: start;
+  align-items: stretch;
   gap: 20px;
   min-width: 0;
 }
 .image-compress-main,
 .side-column {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .image-compress-workspace .image-compress-panel {
   display: flex;
@@ -706,6 +708,7 @@ onBeforeUnmount(() => {
   position: static;
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
   padding: 0 24px 24px;
   background: var(--color-surface);

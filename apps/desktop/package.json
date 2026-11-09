@@ -1,10 +1,10 @@
 {
   "name": "desktop",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.9",
   "author": "Ecommerce Toolbox",
   "type": "module",
-  "productName": "Ecommerce Toolbox",
+  "productName": "电商工具箱",
   "description": "Ecommerce Toolbox desktop application",
   "main": "dist/main.js",
   "dependencies": {

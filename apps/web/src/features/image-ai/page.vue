@@ -397,10 +397,6 @@ function formatBytes(bytes: number) {
   min-width: 0;
   min-height: 0;
 }
-.image-ai-layout :deep(.content) {
-  max-width: none;
-  padding: 28px 32px 40px;
-}
 .image-ai-main :deep(.tool-page-header) {
   margin-bottom: 24px;
 }
@@ -497,9 +493,6 @@ function formatBytes(bytes: number) {
   }
 }
 @media (max-width: 600px) {
-  .image-ai-layout :deep(.content) {
-    padding: 20px 16px 28px;
-  }
   .image-ai-main :deep(.tool-page-icon) {
     width: 56px;
     height: 56px;

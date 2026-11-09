@@ -617,7 +617,7 @@ async function onClipSaved() {
 .library-page {
   grid-column: 1/-1;
   width: 100%;
-  max-width: 1600px;
+  max-width: none;
   margin: 0 auto;
   min-width: 0;
 }

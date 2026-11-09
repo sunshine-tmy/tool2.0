@@ -123,9 +123,9 @@ body {
   align-content: start;
   gap: 24px;
   width: 100%;
-  max-width: calc(var(--content-max-width) + 80px);
+  max-width: none;
   height: 100%;
-  padding: 24px 40px 40px;
+  padding: 28px 32px 40px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -522,18 +522,9 @@ body {
   color: var(--color-primary-700);
   cursor: pointer;
 }
-@media (min-width: 1600px) {
-  .ui-v2 .content {
-    max-width: calc(var(--content-max-width) + 96px);
-    padding-inline: 48px;
-  }
-}
 @media (max-width: 1180px) {
   .workbench-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-  .ui-v2 .content {
-    padding-inline: 24px;
   }
   .ui-v2 .content.compress-content {
     grid-template-columns: minmax(0, 1fr) 300px;
@@ -575,6 +566,11 @@ body {
     justify-content: flex-start;
   }
 }
+@media (max-width: 640px) {
+  .ui-v2 .content {
+    padding: 20px 16px 28px;
+  }
+}
 @media (max-width: 560px) {
   .ui-v2 .tool-page-header {
     display: grid;
@@ -607,7 +603,7 @@ body {
     padding: 0;
   }
   .ui-v2 .content {
-    padding: 20px 16px 32px;
+    padding: 20px 16px 28px;
     gap: 20px;
   }
   .ui-v2 .tool-page-header h2 {
