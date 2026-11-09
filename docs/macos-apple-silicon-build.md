@@ -1,5 +1,7 @@
 # Apple Silicon macOS 内部测试包
 
+> 2026-11-09：后续全功能适配请按[macOS Apple Silicon 执行计划](macos-apple-silicon-implementation-plan.md)推进。新目标为 macOS 14+、M1 16 GB 基线和完整十类 Mac 能力；尚未完成实机验收。下文保留早期内部构建流程，其 macOS 13、八类能力和仅 CPU 范围不代表新的全功能目标。
+
 本文记录 Windows 桌面版向 Apple Silicon macOS 的迁移边界和可重复构建顺序。当前代码包含 macOS 桌面壳、能力包平台隔离和若干 Mac 原生资产准备器；**它尚不等于全部业务模块可用的发布包**。必须先在 Apple Silicon Mac 构建、签名、安装并实测全部必需能力包，再将 Mac feed 嵌入应用。
 
 ## 首版范围

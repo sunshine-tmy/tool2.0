@@ -51,7 +51,7 @@
 
 | 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                    |
 | ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `电商工具箱.exe`；可选能力在“设置 → 能力管理”中安装  |
+| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `电商工具箱.exe`；可选能力在“设置 → 能力管理”中安装             |
 | Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表全部业务模块可用 |
 | Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                         |
 
@@ -713,6 +713,8 @@ pnpm desktop:make
 Windows 安装验收可在准备好安装包的测试机上，按需手动运行 `scripts/accept-windows-desktop-install.ps1`；它支持签名验收和 `-AllowUnsignedTestArtifact` 未签名测试模式，以及 `-TestLegacyMigration` 旧数据迁移验收。普通提交和 Pull Request 不再自动构建安装器或执行安装验收。正式发布走 tag 触发的桌面发行流程，并额外执行签名与干净环境验收。
 
 ## Apple Silicon macOS 内部测试包
+
+后续全功能适配以[macOS Apple Silicon 执行计划](./docs/macos-apple-silicon-implementation-plan.md)为准：目标为 macOS 14+、M1 16 GB 基线、13 个业务模块及十类 Mac 原生能力。文档包含逐项任务、代码入口、依赖顺序和验收要求，供在 Mac 拉取源码后实施；这些目标目前尚未完成实机验收。
 
 当前内部流程面向 Apple Silicon、macOS 13+，通过 GitHub Actions 中的 `macOS Apple Silicon internal desktop build` 手动生成不含 Developer ID 签名/公证的测试 DMG（使用 ad-hoc 签名）。该流程只验证应用壳、桌面资源、类型和桌面单测；它不会自动制作或发布 Python、FFmpeg、AI 模型、浏览器等能力包。Mac 能力目录现为空，因此不能把该 DMG 宣称为“全部业务模块可用”。完整步骤和阶段门禁请按[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)执行。
 
