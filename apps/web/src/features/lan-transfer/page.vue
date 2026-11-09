@@ -164,6 +164,7 @@ import type { LanFileView, LanNoteView } from "./types";
 import { useLanFileBatchActions } from "./useLanFileBatchActions";
 import { useLanShareState } from "./useLanShareState";
 import { useLanUploadQueue } from "./useLanUploadQueue";
+import { startLanListSync } from "./list-sync";
 import {
   getPageSelectionState,
   pruneSelectedIds,
@@ -248,15 +249,26 @@ const { pendingUploads, uploadQueue, isDraggingFiles, clearPendingUploadRecords,
   });
 const lanNotePageIds = computed(() => lanNotes.value.map((note) => note.id));
 const lanNotePageSelection = computed(() => getPageSelectionState(selectedLanNoteIds.value, lanNotePageIds.value));
+let disposed = false;
+let stopListSync: (() => void) | undefined;
+let fileListRequest = 0;
+let noteListRequest = 0;
 
 onMounted(async () => {
   // 页面初始化先读取访问能力和分享地址，再并行加载文件/图文列表，避免访客权限下误显示旧数据。
   document.addEventListener("paste", onLanFilesPaste);
   await refreshLanInfo();
   await Promise.all([refreshLanFiles(), refreshLanNotes()]);
+  if (!disposed) {
+    stopListSync = startLanListSync(() => Promise.all([loadLanFiles(true), loadLanNotes(true)]));
+  }
 });
 
 onUnmounted(() => {
+  disposed = true;
+  fileListRequest++;
+  noteListRequest++;
+  stopListSync?.();
   // 卸载时移除全局粘贴监听并释放图文预览 Blob URL，上传任务本身由队列作用域负责收敛。
   document.removeEventListener("paste", onLanFilesPaste);
   clearNoteImages();
@@ -281,6 +293,11 @@ async function refreshLanTransfer() {
 }
 
 async function refreshLanNotes() {
+  return loadLanNotes();
+}
+
+async function loadLanNotes(silent = false) {
+  const requestId = ++noteListRequest;
   if (!canReadFiles.value) {
     lanNotes.value = [];
     notePagination.total = 0;
@@ -288,6 +305,7 @@ async function refreshLanNotes() {
   }
   try {
     const result = await lanTransferApi.listNotes(notePagination.page, notePagination.pageSize);
+    if (disposed || requestId !== noteListRequest) return;
     lanNotes.value = result.notes;
     notePagination.page = result.pagination.page;
     notePagination.pageSize = result.pagination.pageSize;
@@ -295,7 +313,8 @@ async function refreshLanNotes() {
     notePagination.pageCount = result.pagination.pageCount;
     selectedLanNoteIds.value = pruneSelectedIds(selectedLanNoteIds.value, lanNotePageIds.value);
   } catch (error) {
-    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取图文列表失败"));
+    if (!silent && !disposed && requestId === noteListRequest && !isApiErrorCancelled(error))
+      message.error(formatApiError(error, "获取图文列表失败"));
   }
 }
 
@@ -476,6 +495,11 @@ async function onNotePageChange(page: number) {
 }
 
 async function refreshLanFiles() {
+  return loadLanFiles();
+}
+
+async function loadLanFiles(silent = false) {
+  const requestId = ++fileListRequest;
   if (!canReadFiles.value) {
     lanFiles.value = [];
     lanPagination.total = 0;
@@ -492,6 +516,7 @@ async function refreshLanFiles() {
       page: lanPagination.page,
       pageSize: lanPagination.pageSize
     });
+    if (disposed || requestId !== fileListRequest) return;
     lanFiles.value = result.files;
     lanPagination.page = result.pagination.page;
     lanPagination.pageSize = result.pagination.pageSize;
@@ -499,7 +524,8 @@ async function refreshLanFiles() {
     lanPagination.pageCount = result.pagination.pageCount;
     pruneLanFileSelection();
   } catch (error) {
-    if (!isApiErrorCancelled(error)) message.error(formatApiError(error, "获取文件列表失败"));
+    if (!silent && !disposed && requestId === fileListRequest && !isApiErrorCancelled(error))
+      message.error(formatApiError(error, "获取文件列表失败"));
   }
 }
 
@@ -601,9 +627,19 @@ async function copyText(value: string) {
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
-.lan-workspace-tabs :deep(.n-tabs-nav) { margin-bottom: 12px; padding-top: 0; }
-.lan-workspace-tabs :deep(.n-tabs-tab) { font-size: 16px; font-weight: 600; }
+.lan-workspace-tabs :deep(.n-tabs-nav) {
+  margin-bottom: 12px;
+  padding-top: 0;
+}
+.lan-workspace-tabs :deep(.n-tabs-tab) {
+  font-size: 16px;
+  font-weight: 600;
+}
 .lan-workspace-tabs :deep(.n-tabs-tab--active),
-.lan-workspace-tabs :deep(.n-tabs-tab--active .n-tabs-tab__label) { font-weight: 700; }
-.lan-workspace-tabs :deep(.n-tab-pane) { padding-top: 0; }
+.lan-workspace-tabs :deep(.n-tabs-tab--active .n-tabs-tab__label) {
+  font-weight: 700;
+}
+.lan-workspace-tabs :deep(.n-tab-pane) {
+  padding-top: 0;
+}
 </style>
