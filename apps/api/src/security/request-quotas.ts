@@ -16,7 +16,9 @@ export const REQUEST_QUOTAS = {
   audioExtractLibrary: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
   audioConvertUpload: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
   audioConvertLibrary: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 1 },
-  lanChunk: { rateLimit: { max: 120, timeWindow: minute }, concurrencyLimit: 16 },
+  // 8 MiB chunks need up to about 940 requests/min at 1 Gbit/s; allow headroom
+  // so fast LAN transfers of large files do not fail near the end.
+  lanChunk: { rateLimit: { max: 1200, timeWindow: minute }, concurrencyLimit: 16 },
   batchDownload: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 2 },
   remoteFetch: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 4 },
   // 浏览器会为视频元数据、Range 分片和拖动进度条并发发起多个只读请求，不能复用解析/下载的低额度。

@@ -100,11 +100,28 @@ export function createLanAuditLog(database: ToolboxDatabase) {
 
 export function getLanWebUrls(port: number) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return [];
-  const addresses = Object.values(os.networkInterfaces())
-    .flatMap((items) => items ?? [])
-    .filter((item) => item.family === "IPv4" && !item.internal && isPrivateLanIPv4(item.address))
+  const addresses = Object.entries(os.networkInterfaces())
+    .flatMap(([name, items]) =>
+      (items ?? [])
+        .filter((item) => item.family === "IPv4" && !item.internal && isPrivateLanIPv4(item.address))
+        .map((item) => ({ name, address: item.address }))
+    )
+    .filter(({ name }) => !isVirtualNetworkInterface(name))
+    // Prefer Wi-Fi when several physical adapters are connected, then keep
+    // other usable LAN interfaces as manual alternatives.
+    .sort((left, right) => getNetworkInterfacePriority(left.name) - getNetworkInterfacePriority(right.name))
     .map((item) => item.address);
   return Array.from(new Set(addresses)).map((address) => `http://${address}:${port}/tools/lan-transfer`);
+}
+
+function getNetworkInterfacePriority(name: string) {
+  return /wi[ -]?fi|wlan|wireless/i.test(name) ? 0 : 1;
+}
+
+function isVirtualNetworkInterface(name: string) {
+  return /vmware|vmnet\d*|virtualbox|vbox|hyper[ -]?v|vethernet|wsl|docker\d*|podman\d*|virbr\d*|tailscale|zerotier|wireguard|(?:^|[\s_.-])(?:wg|tun|tap|utun)\d*(?:$|[\s_.-])|hamachi|radmin|loopback|bluetooth/i.test(
+    name
+  );
 }
 
 export function isPrivateLanIPv4(address: string) {

@@ -623,7 +623,7 @@ describe("lan transfer api", () => {
         method: "PUT",
         url: "/api/v1/tools/lan-transfer/uploads/missing_upload/chunks/0",
         payload: undefined,
-        max: 120
+        max: 1200
       },
       {
         method: "POST",

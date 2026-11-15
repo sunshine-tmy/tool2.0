@@ -278,7 +278,8 @@ async function refreshLanInfo() {
   try {
     lanInfo.value = await lanTransferApi.getInfo();
     const currentHost = typeof window === "undefined" ? "" : window.location.hostname;
-    if ((currentHost === "127.0.0.1" || currentHost === "localhost") && lanInfo.value.lanUrls[0]) {
+    const currentHostIsShareable = lanInfo.value.lanUrls.some((url) => new URL(url).hostname === currentHost);
+    if (!currentHostIsShareable && lanInfo.value.lanUrls[0]) {
       selectedShareUrl.value = lanInfo.value.lanUrls[0];
     }
   } catch (error) {
