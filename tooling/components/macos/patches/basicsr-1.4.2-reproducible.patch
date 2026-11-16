@@ -1,0 +1,12 @@
+--- a/setup.py
++++ b/setup.py
+@@ -71,1 +71,3 @@
+-    version_file_str = content.format(time.asctime(), SHORT_VERSION, sha, VERSION_INFO)
++    build_epoch = int(os.environ.get('SOURCE_DATE_EPOCH', '0'))
++    build_time = time.asctime(time.gmtime(build_epoch))
++    version_file_str = content.format(build_time, SHORT_VERSION, sha, VERSION_INFO)
+--- a/basicsr/data/degradations.py
++++ b/basicsr/data/degradations.py
+@@ -5,1 +5,1 @@
+-from torchvision.transforms.functional_tensor import rgb_to_grayscale
++from torchvision.transforms.functional import rgb_to_grayscale

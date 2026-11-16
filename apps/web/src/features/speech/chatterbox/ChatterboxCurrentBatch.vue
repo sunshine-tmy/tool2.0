@@ -66,6 +66,7 @@ const currentPhase = computed(() => {
   if (!batch) return "";
   const index = batch.items.findIndex((item) => item.status === "processing");
   if (index >= 0) {
+    if (batch.items[index].phase) return batch.items[index].phase!;
     const progress = batch.items[index].progress;
     return progress >= 99
       ? "正在整理总音频与字幕"

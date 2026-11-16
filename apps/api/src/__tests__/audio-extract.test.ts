@@ -14,6 +14,9 @@ import { resolveFfmpegTools } from "../core/media/runtime";
 import { runMediaCommand } from "../core/media/process";
 import * as gateway from "../storage/file-commit-gateway";
 const tools = { ffmpeg: process.env.TEST_FFMPEG ?? "ffmpeg", ffprobe: process.env.TEST_FFPROBE ?? "ffprobe" };
+// Some packaged-runtime candidates intentionally omit encoders used only to make test input fixtures.
+const fixtureFfmpeg = process.env.TEST_FIXTURE_FFMPEG ?? tools.ffmpeg;
+const fixtureVorbisEncoder = process.env.TEST_FIXTURE_VORBIS_ENCODER ?? "libvorbis";
 const available = Object.values(tools).every((exe) => spawnSync(exe, ["-version"], { windowsHide: true }).status === 0);
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -43,7 +46,7 @@ async function fixture() {
 }
 async function video(root: string, ext = "mp4", codec = "aac", multi = false, silent = false) {
   const file = path.join(root, `合成 测试-${codec}${multi ? "multi" : ""}${silent ? "silent" : ""}.${ext}`);
-  command(tools.ffmpeg, [
+  command(fixtureFfmpeg, [
     "-v",
     "error",
     "-f",
@@ -58,8 +61,12 @@ async function video(root: string, ext = "mp4", codec = "aac", multi = false, si
     ...(multi ? ["-map", "2:a"] : []),
     "-c:v",
     ext === "webm" ? "libvpx-vp9" : "mpeg4",
-    ...(silent ? [] : ["-c:a", codec, "-metadata:s:a:0", "language=zho"]),
-    ...(codec === "dca" ? ["-strict", "-2", "-ac", "2"] : []),
+    ...(silent
+      ? []
+      : ["-c:a", codec === "libvorbis" ? fixtureVorbisEncoder : codec, "-metadata:s:a:0", "language=zho"]),
+    ...(codec === "dca" || (codec === "libvorbis" && fixtureVorbisEncoder === "vorbis")
+      ? ["-strict", "-2", ...(codec === "dca" || fixtureVorbisEncoder === "vorbis" ? ["-ac", "2"] : [])]
+      : []),
     ...(multi ? ["-metadata:s:a:1", "language=eng", "-disposition:a:0", "0", "-disposition:a:1", "default"] : []),
     "-y",
     file

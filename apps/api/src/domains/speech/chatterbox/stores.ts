@@ -160,6 +160,7 @@ export class ChatterboxBatchStore {
           const batch = JSON.parse(await fsp.readFile(this.paths(entry.name).meta, "utf8")) as ChatterboxBatch;
           if (!isStoredBatch(batch) || batch.id !== entry.name) continue;
           batch.device = normalizeDevice(batch.device);
+          for (const item of batch.items) if (item.device !== undefined) item.device = normalizeDevice(item.device);
           await this.write(batch);
         } catch {
           // Invalid legacy metadata stays untouched for manual recovery.
@@ -172,6 +173,7 @@ export class ChatterboxBatchStore {
       const batch = entity.payload as ChatterboxBatch;
       if (!isStoredBatch(batch)) continue;
       batch.device = normalizeDevice(batch.device);
+      for (const item of batch.items) if (item.device !== undefined) item.device = normalizeDevice(item.device);
       for (const item of batch.items) {
         if (item.status === "queued" || item.status === "processing") {
           item.status = "failed";
@@ -529,7 +531,7 @@ function isStoredBatch(value: unknown): value is ChatterboxBatch {
 }
 
 function normalizeDevice(value: unknown): ChatterboxDevice {
-  return value === "cuda" ? "cuda" : "cpu";
+  return value === "cuda" || value === "mps" ? value : "cpu";
 }
 
 function isStoredVoice(value: unknown): value is StoredVoice {

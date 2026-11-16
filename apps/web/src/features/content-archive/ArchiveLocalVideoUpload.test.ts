@@ -201,14 +201,15 @@ describe("本地视频批量上传队列", () => {
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 1000 条");
     expect(wrapper.text()).not.toContain("video-1.mp4");
     await choose(wrapper, [video("extra.mp4")]);
-    expect(wrapper.text()).toContain("请分批选择");
+    expect(wrapper.get<HTMLInputElement>('input[type="file"]').element.disabled).toBe(true);
+    expect(button(wrapper, "选择多个视频").props("disabled")).toBe(true);
+    expect(wrapper.text()).not.toContain("extra.mp4");
     expect(wrapper.getComponent(NPagination).props("itemCount")).toBe(1000);
     await button(wrapper, "移除此项").trigger("click");
     expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 999 条");
     await button(wrapper, "清空上传列表").trigger("click");
     expect(wrapper.findAll("tbody tr")).toHaveLength(0);
     expect(wrapper.findComponent(NPagination).exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("请分批选择");
   });
   it("700 个文件一次启动后全部按顺序归档，保持单请求在途并只派发一次整轮结束", async () => {
     const wrapper = await setup(),

@@ -26,6 +26,47 @@ describe("Worker protocol schemas", () => {
     ).toBe(true);
   });
 
+  it("accepts MPS capability health and MPS generation responses without changing the protocol version", () => {
+    expect(
+      isChatterboxWorkerHealth({
+        protocolVersion: 1,
+        available: true,
+        packageVersion: "0.1.7",
+        model: "multilingual-v3",
+        modelLoaded: false,
+        cudaRuntimeAvailable: false,
+        cudaAvailable: false,
+        mpsBuilt: true,
+        mpsAvailable: true,
+        supportedDevices: ["cpu", "mps"],
+        device: "mps",
+        gpuName: null,
+        watermarked: true
+      })
+    ).toBe(true);
+    expect(
+      isChatterboxWorkerGenerate({
+        sampleRate: 24_000,
+        samples: 24_000,
+        durationSeconds: 1,
+        chunks: 1,
+        segments: [{ text: "Hello", startSeconds: 0, endSeconds: 1 }],
+        device: "mps",
+        watermarked: true
+      })
+    ).toBe(true);
+    expect(
+      isChatterboxWorkerHealth({
+        protocolVersion: 1,
+        available: true,
+        model: "multilingual-v3",
+        modelLoaded: false,
+        supportedDevices: ["metal"],
+        watermarked: true
+      })
+    ).toBe(false);
+  });
+
   it("accepts a structurally valid image worker health payload", () => {
     expect(
       isImageWorkerHealth({

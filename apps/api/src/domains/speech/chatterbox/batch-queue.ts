@@ -23,6 +23,8 @@ export class ChatterboxBatchQueue {
   private readonly pending: Array<{ batchId: string; itemId: string }> = [];
   private active: { batchId: string; itemId: string } | undefined;
   private activeController: AbortController | undefined;
+  private activeResourceWaiting = false;
+  private cancelActiveWait = false;
   private activeDone: Promise<void> | undefined;
   private stopped = false;
 
@@ -71,6 +73,10 @@ export class ChatterboxBatchQueue {
     for (let index = this.pending.length - 1; index >= 0; index -= 1) {
       if (this.pending[index].batchId === batchId) this.pending.splice(index, 1);
     }
+    if (this.active?.batchId === batchId && this.activeResourceWaiting) {
+      this.cancelActiveWait = true;
+      this.activeController?.abort();
+    }
   }
 
   async close() {
@@ -104,6 +110,8 @@ export class ChatterboxBatchQueue {
       )
       .finally(() => {
         this.activeController = undefined;
+        this.activeResourceWaiting = false;
+        this.cancelActiveWait = false;
         this.activeDone = undefined;
       });
     this.activeDone = done;
@@ -136,14 +144,20 @@ export class ChatterboxBatchQueue {
       const result = await this.options.worker.generate({
         text: item.text,
         language: batch.language,
-        device: batch.device ?? "cpu",
+        device: item.device ?? batch.device ?? "cpu",
         referencePath: batchPaths.reference,
         outputPath: itemPaths.outputWav,
         exaggeration: item.exaggeration ?? batch.exaggeration,
         cfgWeight: item.cfgWeight ?? batch.cfgWeight,
         temperature: item.temperature ?? batch.temperature,
         seed: item.seed ?? batch.seed,
-        signal
+        signal,
+        onWaiting: (waiting) => {
+          this.activeResourceWaiting = waiting;
+          void this.options.store.updateItem(batchId, itemId, {
+            phase: waiting ? "等待其他 AI 任务完成" : undefined
+          });
+        }
       });
       await this.options.store.updateItem(batchId, itemId, { progress: 82 });
       // WAV 转 MP3、时长读取和原子替换按固定顺序执行，失败时保留旧音频并标记可重试。
@@ -188,6 +202,17 @@ export class ChatterboxBatchQueue {
         { deferTerminalStatus: true }
       );
     } catch (error) {
+      if (!this.stopped && this.cancelActiveWait) {
+        await this.options.store.updateItem(
+          batchId,
+          itemId,
+          hadAudio
+            ? { status: "completed", progress: 100, phase: undefined, error: undefined }
+            : { status: "cancelled", progress: 100, phase: undefined, error: undefined },
+          { deferTerminalStatus: true }
+        );
+        return;
+      }
       const reason = this.stopped ? "任务因应用退出中断，请手动重新生成" : readableBatchError(error);
       await this.options.store.updateItem(
         batchId,

@@ -18,12 +18,14 @@ let app: FastifyInstance | undefined;
 let beforeProcess: (() => Promise<void>) | undefined;
 let failProcessAt: number | undefined;
 let processCount = 0;
+let workerInputPaths: string[] = [];
 let fixture: Awaited<ReturnType<typeof createIsolatedAppFixture>>;
 
 beforeEach(async () => {
   beforeProcess = undefined;
   failProcessAt = undefined;
   processCount = 0;
+  workerInputPaths = [];
   fixture = await createIsolatedAppFixture();
   storageRoot = fixture.layout.storageRoot;
   workerServer = createFakeWorker();
@@ -694,6 +696,57 @@ describe("image ai api", () => {
     expect(JSON.stringify(response.json())).not.toContain("recognized text");
   });
 
+  it.each([
+    ["image/png", "png"],
+    ["image/jpeg", "jpg"],
+    ["image/webp", "webp"]
+  ] as const)("stores %s uploads with a worker-readable image extension", async (mimeType, extension) => {
+    app = await startApp();
+    const png = await testImage(80, 60);
+    const image =
+      mimeType === "image/jpeg"
+        ? await sharp(png).jpeg().toBuffer()
+        : mimeType === "image/webp"
+          ? await sharp(png).webp().toBuffer()
+          : png;
+    const suggestions = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/watermark/suggestions",
+      ...multipartPayload([{ field: "file", fileName: `input.${extension}`, mimeType, content: image }])
+    });
+    expect(suggestions.statusCode).toBe(200);
+    expect(path.extname(workerInputPaths.at(-1)!)).toBe(`.${extension}`);
+
+    const taskResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/tasks",
+      ...multipartPayload([{ field: "files", fileName: `input.${extension}`, mimeType, content: image }], {
+        operation: "enhance",
+        scale: "2"
+      })
+    });
+    expect(taskResponse.statusCode).toBe(202);
+    expect((await waitForTask(app, taskResponse.json().data.id)).status).toBe("completed");
+    expect(path.extname(workerInputPaths.at(-1)!)).toBe(`.${extension}`);
+  });
+
+  it("keeps a JPEG background-removal input as an actual normalized PNG for the Worker", async () => {
+    app = await startApp();
+    const jpeg = await sharp(await testImage(80, 60))
+      .jpeg()
+      .toBuffer();
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/image-ai/tasks",
+      ...multipartPayload([{ field: "files", fileName: "product.jpg", mimeType: "image/jpeg", content: jpeg }], {
+        operation: "background_remove"
+      })
+    });
+    expect(response.statusCode).toBe(202);
+    expect((await waitForTask(app, response.json().data.id)).status).toBe("completed");
+    expect(path.extname(workerInputPaths.at(-1)!)).toBe(".png");
+  });
+
   it("queues, persists and serves enhanced PNG results", async () => {
     app = await startApp();
     const image = await testImage(80, 60);
@@ -1003,6 +1056,7 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
       deployment_usage?: string;
     };
     if (request.url === "/watermark/suggestions") {
+      workerInputPaths.push(body.input_path);
       response.end(
         JSON.stringify({
           success: true,
@@ -1030,6 +1084,7 @@ function createFakeWorker(options: { healthDelayMs?: number } = {}) {
     }
 
     if (request.url === "/process") {
+      workerInputPaths.push(body.input_path);
       await beforeProcess?.();
       if (response.destroyed) return;
       processCount += 1;

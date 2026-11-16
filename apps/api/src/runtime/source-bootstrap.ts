@@ -22,10 +22,16 @@ type Manager = Pick<
   ComponentManager,
   "list" | "startInstall" | "getJob" | "resolveInstalledAsset" | "resolveInstalledPython"
 >;
-const anchors: Record<string, string> = {
+const windowsAnchors: Record<string, string> = {
   "python-312": "python/python.exe",
   ffmpeg: "bin/ffmpeg.exe",
   "xhs-browser": "browser/chrome.exe",
+  "douyin-archive": "adapter/manifest.json"
+};
+const macOSAnchors: Record<string, string> = {
+  "python-312": "python/bin/python3.12",
+  ffmpeg: "bin/ffmpeg",
+  "xhs-browser": "browser/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
   "douyin-archive": "adapter/manifest.json"
 };
 const phases: Record<string, string> = {
@@ -56,7 +62,9 @@ export async function prepareSourceComponents(
   report(
     withCuda
       ? "本次准备 CPU 基础能力、参考音色克隆及视频去字幕 GPU 扩展；安装能力包不代表显卡与驱动已通过实际生成验证。"
-      : "本次只准备 CPU 基础能力（含视频去字幕），不安装 GPU 扩展；已有 GPU 能力保留。需 GPU 加速时请准备额外 8 个包，使用 start-gpu.bat 或 start.bat -WithCuda。"
+      : process.platform === "darwin"
+        ? "本次只准备签名的 Apple Silicon 基础能力；所有安装只读取 offline-resources/components 中的本地归档，不自动联网下载。"
+        : "本次只准备 CPU 基础能力（含视频去字幕），不安装 GPU 扩展；已有 GPU 能力保留。需 GPU 加速时请准备额外 8 个包，使用 start-gpu.bat 或 start.bat -WithCuda。"
   );
   for (const [index, id] of ids.entries()) {
     signal.throwIfAborted();
@@ -65,6 +73,7 @@ export async function prepareSourceComponents(
     const prefix = `[${index + 1}/${ids.length}] ${status.displayName}`;
     if (status.installed && status.installedVersion === status.version && status.health === "healthy") {
       // Resolve through the manager: validate signature/current generation and a critical asset or venv.
+      const anchors = process.platform === "darwin" ? macOSAnchors : windowsAnchors;
       if (anchors[id]) await manager.resolveInstalledAsset(id, anchors[id]);
       else await manager.resolveInstalledPython(id);
       report(`${prefix}：已安装，复用（未重新全量校验模型）`);

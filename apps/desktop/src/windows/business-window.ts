@@ -8,7 +8,7 @@ type BusinessWindowOptions = {
   onCreated: (window: BrowserWindow) => void;
   closeStartupMigration: () => void;
   isQuitting: () => boolean;
-  hideToTray: (window: BrowserWindow) => boolean;
+  hideWindow: (window: BrowserWindow) => boolean;
 };
 export async function createBusinessWindow(context: BusinessWindowOptions) {
   const { origin, preload, desktopIconPath } = context;
@@ -48,8 +48,8 @@ export async function createBusinessWindow(context: BusinessWindowOptions) {
   mainWindow.on("close", (event) => {
     if (context.isQuitting()) return;
     event.preventDefault();
-    if (context.hideToTray(mainWindow)) return;
-    // A failed tray must not make the application impossible to restore or exit.
+    if (context.hideWindow(mainWindow)) return;
+    // Windows needs a tray recovery entry; macOS can always restore through its Dock icon.
     app.quit();
   });
   await mainWindow.loadURL(origin);

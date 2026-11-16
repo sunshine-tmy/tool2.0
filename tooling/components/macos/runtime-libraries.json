@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "openblas": {
+    "version": "0.3.34",
+    "platform": "arm64-sonoma",
+    "url": "https://ghcr.io/v2/homebrew/core/openblas/blobs/sha256:ef33d12414f3620418459bbe9899642a0664f7199daca8a3e762ed1423796618",
+    "sha256": "ef33d12414f3620418459bbe9899642a0664f7199daca8a3e762ed1423796618",
+    "license": "BSD-3-Clause"
+  }
+}

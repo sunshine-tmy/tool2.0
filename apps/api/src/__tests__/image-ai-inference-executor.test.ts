@@ -139,7 +139,8 @@ it.each(["enhance", "watermark_remove", "background_remove"] as const)(
       { status: "running", progress: 5, count: 0 },
       { status: "running", progress: 95, count: 1 }
     ]);
-    expect(process).toHaveBeenCalledExactlyOnceWith({
+    expect(process).toHaveBeenCalledOnce();
+    expect(process.mock.calls[0][0]).toMatchObject({
       operation,
       inputPath: record.inputs[0].path,
       outputPath: record.results[0].outputPath,
@@ -147,6 +148,7 @@ it.each(["enhance", "watermark_remove", "background_remove"] as const)(
       scale: 2,
       signal: controller.signal
     });
+    expect(process.mock.calls[0][0].onWaiting).toBeTypeOf("function");
     expect(finish).toHaveBeenCalledExactlyOnceWith(record, { status: "completed", progress: 100 });
     const result = record.results[0],
       png = await sharp(result.outputPath).metadata();

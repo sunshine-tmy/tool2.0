@@ -12,6 +12,7 @@ export const workerSuites = {
     "video-ai-worker-launcher.py",
     "video_ai_sequence.py",
     "video_ai_engine_assets.py",
+    "video_ai_device.py",
     "video_ai_sttn.py",
     "video_ai_propainter.py"
   ],

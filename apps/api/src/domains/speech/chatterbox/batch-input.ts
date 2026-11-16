@@ -120,8 +120,8 @@ export function parseBatchFields(
     );
   }
   if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语");
-  if (fields.device !== undefined && fields.device !== "cpu" && fields.device !== "cuda") {
-    return invalid("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU 或 NVIDIA GPU");
+  if (fields.device !== undefined && fields.device !== "cpu" && fields.device !== "cuda" && fields.device !== "mps") {
+    return invalid("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU、NVIDIA GPU 或 Apple MPS");
   }
   if (!isAuthorization(fields.authorization)) return invalid("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源");
   if (fields.consentConfirmed !== "true")
@@ -156,7 +156,7 @@ export function parseBatchFields(
 }
 
 function parseDevice(value: string | undefined): ChatterboxDevice {
-  return value === "cuda" ? "cuda" : "cpu";
+  return value === "cuda" ? "cuda" : value === "mps" ? "mps" : "cpu";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

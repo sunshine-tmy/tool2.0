@@ -6,12 +6,22 @@ import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   connectProfileProxy,
+  profileBrowserLaunchArgs,
   resolveProfileBrowser
 } from "../domains/content-archive/providers/tiktok/profile-browser";
 import type { ComponentManager } from "../modules/components/component-manager";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((close) => close()));
+});
+it("keeps ordinary macOS Chromium automation signals and preserves existing Windows launch arguments", () => {
+  const networkArgs = ["--disable-quic"];
+  expect(profileBrowserLaunchArgs(networkArgs, "darwin")).toEqual(networkArgs);
+  expect(profileBrowserLaunchArgs(networkArgs, "win32")).toEqual([
+    ...networkArgs,
+    "--disable-blink-features=AutomationControlled"
+  ]);
+  expect(networkArgs).toEqual(["--disable-quic"]);
 });
 async function proxy(status: number) {
   const server = createServer(),
@@ -90,7 +100,7 @@ it("uses the signed macOS launcher descriptor and refuses escaping or malformed 
   const executableAssetPath = "browser/Chromium.app/Contents/MacOS/Chromium";
   const resolveInstalledAsset = vi.fn(async (_id: string, asset: string) => ({
     path: asset.endsWith(".json") ? descriptor : path.join(directory, "Chromium"),
-    manifest: { version: "1.63.0-chromium-1243" }
+    manifest: { version: "1.63.0-chromium-1243-darwin-arm64.1" }
   }));
   const source = { list: async () => [], resolveInstalledAsset } as unknown as Pick<
     ComponentManager,

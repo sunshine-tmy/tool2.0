@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import torch
 from pydantic import ValidationError
@@ -21,6 +21,12 @@ class LanguageTests(unittest.TestCase):
     def test_generation_device_defaults_to_cpu_for_older_clients(self):
         payload = worker.GenerateRequest(text="Hello", language="en", reference_path="unused", output_path="unused")
         self.assertEqual(payload.device, "cpu")
+
+    def test_generation_device_accepts_explicit_mps(self):
+        payload = worker.GenerateRequest(
+            text="Hello", language="en", device="mps", reference_path="unused", output_path="unused"
+        )
+        self.assertEqual(payload.device, "mps")
 
     def test_brazilian_portuguese_reaches_model_as_pt(self):
         from chatterbox.mtl_tts import SUPPORTED_LANGUAGES
@@ -135,6 +141,20 @@ class DesktopModelLoadingTests(unittest.TestCase):
         load_model.assert_called_once_with("cuda")
         self.assertEqual(manager.device, "cuda")
 
+    def test_mps_unload_releases_the_device_cache(self):
+        manager = worker.ModelManager()
+        manager.model = "mps-model"
+        manager.device = "mps"
+        with (
+            patch.object(torch.mps, "synchronize") as synchronize,
+            patch.object(torch.mps, "empty_cache") as empty_cache,
+        ):
+            manager.unload()
+        synchronize.assert_called_once_with()
+        empty_cache.assert_called_once_with()
+        self.assertIsNone(manager.model)
+        self.assertIsNone(manager.device)
+
     def test_explicit_cuda_is_rejected_without_cuda_runtime_or_device(self):
         with (
             patch.object(torch.version, "cuda", None),
@@ -143,6 +163,35 @@ class DesktopModelLoadingTests(unittest.TestCase):
             with self.assertRaises(worker.WorkerFailure) as raised:
                 worker.selected_device("cuda")
         self.assertEqual(raised.exception.code, "CHATTERBOX_CUDA_UNAVAILABLE")
+
+    def test_explicit_mps_is_selected_only_when_backend_is_available(self):
+        with (
+            patch.object(torch.backends.mps, "is_built", return_value=True),
+            patch.object(torch.backends.mps, "is_available", return_value=True),
+            patch.object(torch.version, "cuda", None),
+            patch.object(torch.cuda, "is_available", return_value=False),
+        ):
+            self.assertEqual(worker.selected_device("mps"), "mps")
+
+        for built, available in [(False, False), (True, False)]:
+            with self.subTest(built=built, available=available):
+                with (
+                    patch.object(torch.backends.mps, "is_built", return_value=built),
+                    patch.object(torch.backends.mps, "is_available", return_value=available),
+                ):
+                    with self.assertRaises(worker.WorkerFailure) as raised:
+                        worker.selected_device("mps")
+                self.assertEqual(raised.exception.code, "CHATTERBOX_MPS_UNAVAILABLE")
+
+    def test_auto_device_keeps_cpu_default_when_only_mps_is_available(self):
+        with (
+            patch.object(torch.backends.mps, "is_built", return_value=True),
+            patch.object(torch.backends.mps, "is_available", return_value=True),
+            patch.object(torch.version, "cuda", None),
+            patch.object(torch.cuda, "is_available", return_value=False),
+            patch.object(worker, "DEVICE_SETTING", "auto"),
+        ):
+            self.assertEqual(worker.selected_device(), "cpu")
 
     def test_installer_check_requires_the_complete_local_model_set(self):
         with (
@@ -189,6 +238,26 @@ class DesktopModelLoadingTests(unittest.TestCase):
 
 
 class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unload_cancels_idle_timer_and_confirms_model_release(self):
+        class Manager:
+            def __init__(self):
+                self.lock = worker.asyncio.Lock()
+                self.released = False
+
+            def unload(self):
+                self.released = True
+
+        manager = Manager()
+        with (
+            patch.object(worker, "manager", manager),
+            patch.object(worker, "cancel_idle_unload_timer") as cancel,
+            patch.object(worker.asyncio, "to_thread", new=AsyncMock(side_effect=lambda callback: callback())),
+        ):
+            result = await worker.unload()
+        cancel.assert_called_once()
+        self.assertTrue(manager.released)
+        self.assertEqual(result, {"success": True, "data": {"protocolVersion": 1, "modelLoaded": False, "busy": False}})
+
     async def test_light_check_never_loads_model(self):
         with patch.object(worker.manager, "load") as load:
             result = await worker.diagnostics_light()
@@ -209,6 +278,20 @@ class DiagnosticsTests(unittest.IsolatedAsyncioTestCase):
         async with worker.manager.lock:
             result = await worker.diagnostics_deep()
         self.assertEqual(result["code"], "WORKER_BUSY")
+
+    async def test_health_reports_only_runtime_backends_that_are_available(self):
+        with (
+            patch("torch.cuda.is_available", return_value=False),
+            patch("torch.backends.mps.is_built", return_value=True),
+            patch("torch.backends.mps.is_available", return_value=True),
+            patch.object(worker.importlib.metadata, "version", return_value="0.1.7-test"),
+            patch.object(worker.manager, "device", None),
+            patch.object(worker.manager, "model", None),
+        ):
+            result = await worker.health()
+        self.assertEqual(result["data"]["supportedDevices"], ["cpu", "mps"])
+        self.assertTrue(result["data"]["mpsAvailable"])
+        self.assertNotIn("mpsUnavailableReason", result["data"])
 
 
 if __name__ == "__main__":

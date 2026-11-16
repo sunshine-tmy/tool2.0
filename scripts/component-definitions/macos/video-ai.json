@@ -1,0 +1,28 @@
+{
+  "id": "video-ai",
+  "groupId": "media",
+  "displayName": "视频去字幕（CPU / MPS）",
+  "purpose": "自动检测并修复视频中的硬字幕区域，支持批量任务与手动框选；快速修复和字幕检测运行于 CPU，已验收的 STTN MPS 与 ProPainter Hybrid FP16 共用本能力包。",
+  "dependencyIds": ["python-312", "ffmpeg"],
+  "taskToolIds": ["video-ai"],
+  "installConditions": [
+    "安装与处理全程离线；Worker、基础模型、OCR 和 M01 冻结的 STTN / ProPainter 源码与权重均随包安装。",
+    "STTN MPS 与 ProPainter Hybrid FP16 仅在签名支持定义、资源摘要及运行时设备探针全部匹配时开放。",
+    "ProPainter 源码与权重继续受随包 S-Lab 许可约束，仅限非商业研究用途；个人安装不会改变许可范围。",
+    "磁盘需求以 Mac 能力包 manifest 的下载归档大小和解压预留量为准；视频合成复用共享 FFmpeg 组件。"
+  ],
+  "version": "1.1.0-py312-mps1-darwin-arm64.1",
+  "installedBytes": 6000000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/bin/python3.12",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "MIT components + LicenseRef-S-Lab-1.0 (ProPainter non-commercial research use only)",
+    "url": "https://github.com/sczhou/ProPainter/blob/326782529a63d997cab80ab21439b92ed422b3d3/LICENSE"
+  },
+  "platform": "darwin-arm64"
+}

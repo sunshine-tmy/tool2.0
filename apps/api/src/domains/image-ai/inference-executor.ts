@@ -8,6 +8,7 @@ import { commitStagedFile } from "../../storage/file-commit-gateway";
 import type { StoredImageAiTask } from "./types";
 import type { createImageAiWorkerClient } from "./worker-client";
 import type { createImageAiTaskPersistence } from "./task-persistence";
+import type { ImageWorkerProcess } from "@toolbox/shared";
 
 type InferenceTerminal = Parameters<ReturnType<typeof createImageAiTaskPersistence>["commitTerminal"]>[1];
 
@@ -18,13 +19,23 @@ type InferenceHooks = {
   unique: (values: string[]) => string[];
   processComposition: (task: StoredImageAiTask) => Promise<void>;
   finishInference: (task: StoredImageAiTask, terminal: InferenceTerminal) => void;
+  trackResourceWait?: (taskId: string, controller: AbortController, waiting: boolean) => void;
+  clearResourceWait?: (taskId: string, controller: AbortController) => void;
 };
 
 export function createImageAiInferenceExecutor(
   config: Pick<AppConfig, "imageAiOutputsDir">,
   worker: Pick<ReturnType<typeof createImageAiWorkerClient>, "process">,
   shutdownController: AbortController,
-  { patchTask, persist, unique, processComposition, finishInference }: InferenceHooks,
+  {
+    patchTask,
+    persist,
+    unique,
+    processComposition,
+    finishInference,
+    trackResourceWait,
+    clearResourceWait
+  }: InferenceHooks,
   fileMetadata?: FileMetadataRepository
 ) {
   async function processTask(task: StoredImageAiTask) {
@@ -43,14 +54,29 @@ export function createImageAiInferenceExecutor(
       const outputPath = path.join(outputDir, outputName);
 
       try {
-        const inference = await worker.process({
-          operation: task.operation,
-          inputPath: input.path,
-          outputPath,
-          maskPath: task.maskPath,
-          scale: task.scale,
-          signal: shutdownController.signal
-        });
+        const requestController = new AbortController();
+        const abortForShutdown = () => requestController.abort();
+        shutdownController.signal.addEventListener("abort", abortForShutdown, { once: true });
+        trackResourceWait?.(task.id, requestController, false);
+        let inference: ImageWorkerProcess;
+        try {
+          inference = await worker.process({
+            operation: task.operation,
+            inputPath: input.path,
+            outputPath,
+            maskPath: task.maskPath,
+            scale: task.scale,
+            signal: requestController.signal,
+            onWaiting: (waiting) => {
+              trackResourceWait?.(task.id, requestController, waiting);
+              patchTask(task, { phase: waiting ? "等待其他 AI 任务完成" : "AI 推理中" });
+              void persist(task);
+            }
+          });
+        } finally {
+          shutdownController.signal.removeEventListener("abort", abortForShutdown);
+          clearResourceWait?.(task.id, requestController);
+        }
         await sanitizePng(outputPath);
         const metadata = await sharp(outputPath).metadata();
         if (!metadata.width || !metadata.height) throw new Error("AI 输出图片尺寸无效");
@@ -101,7 +127,7 @@ export function createImageAiInferenceExecutor(
 
     let terminal: InferenceTerminal;
     if (task.cancelRequested) {
-      terminal = { status: "canceled", progress: 100 };
+      terminal = { status: "canceled", progress: 100, phase: "已取消" };
     } else if (failures === task.inputs.length) {
       terminal = {
         status: "failed",

@@ -10,6 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
+import { reSignAndVerifyMacOSAppBundle, verifyStrictCodeSignature } from "./macos-code-signing.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const PLAYWRIGHT_VERSION = "1.63.0";
@@ -47,12 +49,15 @@ export async function prepareXhsBrowserComponent({ archivePath, stagingDirectory
     if (isMacOS) {
       const browserCache = path.join(REPOSITORY_ROOT, ".package", "playwright-browsers-mac-arm64");
       await fs.mkdir(path.dirname(browserCache), { recursive: true });
-      const playwrightCli = path.join(browserPackageRoot, "cli.js");
-      execFileSync(process.execPath, [playwrightCli, "install", "chromium"], {
-        stdio: "inherit",
-        timeout: 30 * 60 * 1000,
-        env: { ...cleanEnvironment(), PLAYWRIGHT_BROWSERS_PATH: browserCache }
-      });
+      const chromiumMarker = path.join(browserCache, `chromium-${CHROMIUM_REVISION}`, "INSTALLATION_COMPLETE");
+      if (!(await pathExists(chromiumMarker))) {
+        const playwrightCli = path.join(browserPackageRoot, "cli.js");
+        execFileSync(process.execPath, [playwrightCli, "install", "chromium", "--no-shell"], {
+          stdio: "inherit",
+          timeout: 30 * 60 * 1000,
+          env: { ...cleanEnvironment(), PLAYWRIGHT_BROWSERS_PATH: browserCache }
+        });
+      }
       const require = createRequire(path.join(REPOSITORY_ROOT, "apps", "api", "package.json"));
       const previousBrowsersPath = process.env.PLAYWRIGHT_BROWSERS_PATH;
       let installedExecutable;
@@ -66,11 +71,31 @@ export async function prepareXhsBrowserComponent({ archivePath, stagingDirectory
       }
       const browserBundle = await findEnclosingApplication(installedExecutable);
       const browserBundleName = path.basename(browserBundle);
+      const linkPolicy = JSON.parse(
+        await fs.readFile(
+          path.join(REPOSITORY_ROOT, "tooling", "components", "macos", "chromium-framework-links.json"),
+          "utf8"
+        )
+      );
+      if (browserBundleName !== path.basename(linkPolicy.bundlePath)) {
+        throw new Error("Playwright Chromium .app 名称与固定 Framework 链接策略不匹配");
+      }
+      await assertChromiumFrameworkLinks(browserBundle, linkPolicy);
       const browserBundleTarget = path.join(target, browserBundleName);
-      await fs.cp(browserBundle, browserBundleTarget, { recursive: true, dereference: true, preserveTimestamps: true });
+      await fs.cp(browserBundle, browserBundleTarget, {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+        preserveTimestamps: true
+      });
       const executableRelativePath = path.relative(browserBundle, installedExecutable).split(path.sep).join("/");
+      await assertChromiumFrameworkLinks(browserBundleTarget, linkPolicy);
+      reSignAndVerifyMacOSAppBundle(browserBundleTarget);
+      await assertChromiumFrameworkLinks(browserBundleTarget, linkPolicy);
+      if (!verifyStrictCodeSignature(browserBundleTarget, { deep: true })) {
+        throw new Error("Chromium .app 在进入最终能力暂存目录后签名校验失败");
+      }
       executable = path.join(browserBundleTarget, ...executableRelativePath.split("/"));
-      await assertNoLinks(browserBundleTarget);
       const executableAssetPath = path.posix.join("browser", browserBundleName, executableRelativePath);
       await fs.writeFile(
         path.join(target, "browser-launcher.json"),
@@ -179,6 +204,50 @@ async function assertNoLinks(root) {
   }
 }
 
+async function assertChromiumFrameworkLinks(bundleRoot, policy) {
+  const expected = new Map(policy.links.map((link) => [link.path.split("/").join(path.sep), link.target]));
+  const actual = new Map();
+  const pending = [bundleRoot];
+  while (pending.length) {
+    const current = pending.pop();
+    if (!current) continue;
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      const fullPath = path.join(current, entry.name);
+      const stat = await fs.lstat(fullPath);
+      if (stat.isSymbolicLink()) {
+        const relative = path.relative(bundleRoot, fullPath);
+        const normalized = relative.split(path.sep).join(path.sep);
+        const target = await fs.readlink(fullPath);
+        if (expected.get(normalized) !== target) {
+          throw new Error(`Chromium framework 包含未允许的链接或链接目标：${normalized}`);
+        }
+        actual.set(normalized, target);
+      } else if (stat.isDirectory()) pending.push(fullPath);
+      else if (!stat.isFile()) throw new Error("Chromium framework 包含特殊文件");
+    }
+  }
+  if (actual.size !== expected.size || [...expected].some(([relative, target]) => actual.get(relative) !== target)) {
+    throw new Error("Chromium framework 必须恰好包含五条固定相对链接");
+  }
+
+  const frameworkRoot = await fs.realpath(path.join(bundleRoot, ...policy.frameworkPath.split("/")));
+  for (const relative of expected.keys()) {
+    const linkPath = path.join(bundleRoot, relative);
+    const resolved = await fs.realpath(linkPath);
+    const within = path.relative(frameworkRoot, resolved);
+    const targetStat = await fs.lstat(resolved);
+    if (
+      !within ||
+      within === ".." ||
+      within.startsWith(".." + path.sep) ||
+      path.isAbsolute(within) ||
+      (!targetStat.isFile() && !targetStat.isDirectory())
+    ) {
+      throw new Error(`Chromium framework 链接目标缺失或越界：${relative}`);
+    }
+  }
+}
+
 async function directoryBytes(root) {
   let bytes = 0;
   const pending = [root];
@@ -187,8 +256,9 @@ async function directoryBytes(root) {
     if (!current) continue;
     for (const entry of await fs.readdir(current, { withFileTypes: true })) {
       const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) pending.push(fullPath);
-      else bytes += (await fs.stat(fullPath)).size;
+      const stat = await fs.lstat(fullPath);
+      if (stat.isDirectory()) pending.push(fullPath);
+      else bytes += stat.size;
     }
   }
   return bytes;
@@ -211,13 +281,14 @@ function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
   }
-  for (let index = 0; index < argv.length; index += 2) values.set(argv[index].slice(2), argv[index + 1]);
+  for (let index = 0; index < args.length; index += 2) values.set(args[index].slice(2), args[index + 1]);
   if (
     [...values.keys()].some((key) => !["archive", "stage"].includes(key)) ||
     !values.has("stage") ||

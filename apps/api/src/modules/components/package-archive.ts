@@ -9,7 +9,7 @@ import type { ComponentPackageManifest, ComponentArchiveAsset } from "./types";
 import { ComponentManagerError } from "./component-error";
 import { safeChildPath, isSafeArchivePath } from "./package-paths";
 import { sha256File } from "./package-hash";
-import { listRegularFiles } from "./package-files";
+import { listInstalledEntries } from "./package-links";
 export async function verifyArchive(archivePath: string, archive: ComponentArchiveAsset) {
   const stat = await fsp.stat(archivePath);
   if (!stat.isFile() || stat.size !== archive.bytes) {
@@ -25,12 +25,12 @@ export async function verifyInstalledFiles(
   platform: ComponentPlatform | undefined,
   signal?: AbortSignal
 ) {
-  const actual = await listRegularFiles(root);
+  const actual = await listInstalledEntries(root, manifest);
   const expected = new Map(manifest.files.map((file) => [file.path, file]));
-  if (actual.length !== expected.size || actual.some((file) => !expected.has(file.path))) {
+  if (actual.files.length !== expected.size || actual.files.some((file) => !expected.has(file.path))) {
     throw new ComponentManagerError("COMPONENT_INSTALL_FAILED", "能力包文件清单校验失败");
   }
-  for (const file of actual) {
+  for (const file of actual.files) {
     signal?.throwIfAborted();
     const expectedFile = expected.get(file.path);
     if (

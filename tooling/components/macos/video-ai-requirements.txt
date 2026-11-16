@@ -1,0 +1,19 @@
+# Runtime/API（与 image-ai 基线保持同一审核版本线）
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+starlette==1.6.0
+Pillow==12.3.0
+numpy==2.3.5
+opencv-python-headless==4.11.0.86
+
+# macOS PyTorch wheels provide CPU and potential MPS execution; MPS remains an
+# M01 model-validation result rather than an assumption from the wheel tag.
+torch==2.6.0
+torchvision==0.21.0
+einops==0.8.1
+scipy==1.17.1
+
+# 字幕区域检测（PP-OCRv5，仅 CPU 推理）
+paddleocr==3.7.0
+paddlepaddle==3.0.0

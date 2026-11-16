@@ -8,11 +8,24 @@ import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { after, describe, it } from "node:test";
-import { buildComponentPackage, canonicalManifest } from "./build-component-package.mjs";
-import { assembleComponentCatalog, writeGeneratedCatalog } from "./assemble-component-catalog.mjs";
+import {
+  buildComponentPackage,
+  canonicalManifest,
+  componentArchiveFileName,
+  componentManifestFileName,
+  componentSbomFileName
+} from "./build-component-package.mjs";
+import {
+  assembleComponentCatalog,
+  assertCompleteMacCatalog,
+  MACOS_COMPONENT_IDS,
+  writeGeneratedCatalog
+} from "./assemble-component-catalog.mjs";
 import { preparePython311Runtime } from "./prepare-python-311-runtime.mjs";
 
 const repositoryRoot = process.cwd();
+const HOST_PLATFORM = process.platform === "darwin" ? "darwin-arm64" : "win32-x64";
+const IS_MACOS = HOST_PLATFORM === "darwin-arm64";
 const require = createRequire(path.join(repositoryRoot, "apps", "api", "package.json"));
 const tar = require("tar");
 const temporaryRoots = [];
@@ -39,6 +52,7 @@ function definition(overrides = {}) {
     dependencyIds: [],
     taskToolIds: ["edge-tts"],
     installConditions: ["生成语音时需要联网"],
+    platform: HOST_PLATFORM,
     version: "1.0.0",
     installedBytes: 4096,
     ...overrides
@@ -56,6 +70,218 @@ after(async () => {
 });
 
 describe("buildComponentPackage", () => {
+  it("defines exactly ten independent Mac packages with a closed Python 3.12 dependency graph", async () => {
+    const definitionsDirectory = path.join(repositoryRoot, "scripts/component-definitions/macos");
+    const definitions = await Promise.all(
+      MACOS_COMPONENT_IDS.map(async (id) =>
+        JSON.parse(await fs.readFile(path.join(definitionsDirectory, `${id}.json`), "utf8"))
+      )
+    );
+    assert.deepEqual(definitions.map((item) => item.id).sort(), [...MACOS_COMPONENT_IDS].sort());
+    for (const item of definitions) {
+      assert.equal(item.platform, "darwin-arm64", item.id);
+      assert.match(item.version, /darwin-arm64/u, item.id);
+      assert.ok(!item.dependencyIds.includes("python-311"), item.id);
+      if (item.pythonEnvironment) {
+        assert.equal(item.pythonEnvironment.pythonComponentId, "python-312", item.id);
+        assert.equal(item.pythonEnvironment.expectedPythonVersion, "3.12", item.id);
+        assert.equal(item.pythonEnvironment.pythonExecutablePath, "python/bin/python3.12", item.id);
+      }
+    }
+    const video = definitions.find((item) => item.id === "video-ai");
+    assert.equal(video.pythonEnvironment.pythonComponentId, "python-312");
+    assert.match(video.license.name, /S-Lab-1\.0/u);
+    assert.match(video.license.name, /non-commercial/u);
+    assert.equal(assertCompleteMacCatalog({ manifests: MACOS_COMPONENT_IDS.map((id) => ({ id })) }), undefined);
+    assert.throws(() => assertCompleteMacCatalog({ manifests: [{ id: "python-311" }] }), /必须恰好包含十项/u);
+  });
+
+  it("keeps Windows asset names unchanged and isolates Mac asset names", () => {
+    assert.equal(componentArchiveFileName("edge-tts", "1.0.0", "win32-x64"), "edge-tts-1.0.0.tar.gz");
+    assert.equal(
+      componentArchiveFileName("edge-tts", "1.0.0", "win32-x64", "voice-model"),
+      "edge-tts-1.0.0-voice-model.tar.gz"
+    );
+    assert.equal(componentManifestFileName("edge-tts", "1.0.0", "win32-x64"), "edge-tts-1.0.0.manifest.json");
+    assert.equal(componentSbomFileName("edge-tts", "1.0.0", "win32-x64"), "edge-tts-1.0.0.spdx.json");
+    assert.equal(componentArchiveFileName("edge-tts", "1.0.0", "darwin-arm64"), "edge-tts-1.0.0-darwin-arm64.tar.gz");
+    assert.equal(
+      componentArchiveFileName("edge-tts", "1.0.0", "darwin-arm64", "voice-model"),
+      "edge-tts-1.0.0-voice-model-darwin-arm64.tar.gz"
+    );
+    assert.equal(
+      componentManifestFileName("edge-tts", "1.0.0", "darwin-arm64"),
+      "edge-tts-1.0.0-darwin-arm64.manifest.json"
+    );
+    assert.equal(
+      componentManifestFileName("edge-tts", "1.0.0", "darwin-arm64", true),
+      "edge-tts-1.0.0-darwin-arm64.review.json"
+    );
+    assert.equal(componentSbomFileName("edge-tts", "1.0.0", "darwin-arm64"), "edge-tts-1.0.0-darwin-arm64.spdx.json");
+  });
+
+  it("refuses cross-platform builds and blocks non-Mac files from Apple Silicon manifests", async () => {
+    const root = await makeRoot();
+    const stage = path.join(root, "stage");
+    await fs.mkdir(stage);
+    await fs.writeFile(path.join(stage, "worker.py"), "fixture");
+    const definitionPath = await writeDefinition(root, definition());
+    const otherPlatform = IS_MACOS ? "win32-x64" : "darwin-arm64";
+    await assert.rejects(
+      buildComponentPackage({
+        definitionPath,
+        stagingDirectory: stage,
+        outputDirectory: path.join(root, "wrong-host"),
+        assetBaseUrl: "https://packages.example.test/",
+        platform: otherPlatform
+      }),
+      /原生构建机/u
+    );
+    if (IS_MACOS) {
+      const invalidPaths = [
+        ["legacy.dll", /Windows 文件/u],
+        ["legacy.exe", /Windows 文件/u],
+        ["wheelhouse/native-win_amd64.whl", /Windows 文件/u],
+        ["Users/build-host/job/worker.py", /构建机绝对路径/u]
+      ];
+      for (const [relativePath, expectedError] of invalidPaths) {
+        const fullPath = path.join(stage, relativePath);
+        await fs.mkdir(path.dirname(fullPath), { recursive: true });
+        await fs.writeFile(fullPath, "not a Mac asset");
+        await assert.rejects(
+          buildComponentPackage({
+            definitionPath,
+            stagingDirectory: stage,
+            outputDirectory: path.join(root, `mac-feed-${path.basename(relativePath)}`),
+            assetBaseUrl: "https://packages.example.test/",
+            reviewOnly: true
+          }),
+          expectedError
+        );
+        await fs.unlink(fullPath);
+      }
+      const pythonStdlibPath = path.join(stage, "python/lib/python3.12/multiprocessing/popen_spawn_win32.py");
+      await fs.mkdir(path.dirname(pythonStdlibPath), { recursive: true });
+      await fs.writeFile(pythonStdlibPath, "# Windows-only stdlib implementation, inert on macOS.\n");
+      const accepted = await buildComponentPackage({
+        definitionPath,
+        stagingDirectory: stage,
+        outputDirectory: path.join(root, "mac-feed-python-stdlib"),
+        assetBaseUrl: "https://packages.example.test/",
+        reviewOnly: true
+      });
+      assert.ok(await fs.stat(accepted.reviewPath));
+
+      const key = await createSigningKey(root);
+      await buildComponentPackage({
+        definitionPath,
+        stagingDirectory: stage,
+        outputDirectory: path.join(root, "mac-feed-python-stdlib-signed"),
+        assetBaseUrl: "https://packages.example.test/",
+        signingKeyPath: key.privateKeyPath
+      });
+      assert.equal(
+        (await assembleComponentCatalog(path.join(root, "mac-feed-python-stdlib-signed"), HOST_PLATFORM)).manifests
+          .length,
+        1
+      );
+    }
+  });
+
+  it("signs the five pinned Chromium framework links separately from the regular-file archive", async () => {
+    if (!IS_MACOS) return;
+    const root = await makeRoot();
+    const stage = path.join(root, "chromium-stage");
+    const appPath = "browser/Google Chrome for Testing.app";
+    const policy = JSON.parse(
+      await fs.readFile(path.join(repositoryRoot, "tooling/components/macos/chromium-framework-links.json"), "utf8")
+    );
+    const framework = path.posix.join(appPath, policy.frameworkPath);
+    const current = policy.links.find((link) => link.path.endsWith("/Versions/Current"))?.target;
+    assert.ok(current);
+    const versionRoot = path.posix.join(framework, "Versions", current);
+    const stagedPaths = [
+      `${versionRoot}/Resources/resource.dat`,
+      `${versionRoot}/Libraries/library.dylib`,
+      `${versionRoot}/Helpers/helper`,
+      `${versionRoot}/Google Chrome for Testing Framework`
+    ];
+    await fs.mkdir(stage, { recursive: true });
+    for (const relativePath of stagedPaths) {
+      const fullPath = path.join(stage, ...relativePath.split("/"));
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.writeFile(fullPath, `fixture:${relativePath}`);
+    }
+    for (const link of policy.links) {
+      const fullPath = path.join(stage, appPath, ...link.path.split("/"));
+      await fs.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.symlink(link.target, fullPath);
+    }
+
+    const key = await createSigningKey(root);
+    const artifact = await buildComponentPackage({
+      definitionPath: path.join(repositoryRoot, "scripts/component-definitions/macos/xhs-browser.json"),
+      stagingDirectory: stage,
+      outputDirectory: path.join(root, "signed-feed"),
+      assetBaseUrl: "https://packages.example.test/components/",
+      signingKeyPath: key.privateKeyPath
+    });
+    const manifest = JSON.parse(await fs.readFile(artifact.manifestPath, "utf8"));
+    const sbom = JSON.parse(await fs.readFile(artifact.sbomPath, "utf8"));
+    assert.equal(manifest.links.length, 5);
+    assert.deepEqual(
+      manifest.links,
+      policy.links
+        .map((link) => ({ path: path.posix.join(appPath, link.path), target: link.target }))
+        .sort((left, right) => left.path.localeCompare(right.path))
+    );
+    assert.equal(
+      crypto.verify(
+        null,
+        Buffer.from(canonicalManifest(manifest)),
+        key.publicKey,
+        Buffer.from(manifest.signature, "base64")
+      ),
+      true
+    );
+    const archiveEntries = [];
+    await tar.t({ file: artifact.archivePath, onReadEntry: (entry) => archiveEntries.push(entry.type) });
+    assert.ok(archiveEntries.length >= stagedPaths.length);
+    assert.ok(archiveEntries.every((type) => type === "File" || type === "Directory"));
+    assert.equal(sbom.files.length, stagedPaths.length + policy.links.length);
+    assert.ok(sbom.files.filter((file) => file.fileTypes?.includes("OTHER")).length === policy.links.length);
+
+    const extraLink = path.join(stage, "unexpected-link");
+    await fs.symlink("outside", extraLink);
+    await assert.rejects(
+      buildComponentPackage({
+        definitionPath: path.join(repositoryRoot, "scripts/component-definitions/macos/xhs-browser.json"),
+        stagingDirectory: stage,
+        outputDirectory: path.join(root, "rejected-feed"),
+        assetBaseUrl: "https://packages.example.test/components/",
+        reviewOnly: true
+      }),
+      /未允许的符号链接/u
+    );
+  });
+
+  it("does not package Mac video engines before their frozen support definition exists", async () => {
+    if (!IS_MACOS) return;
+    const root = await makeRoot();
+    const stage = path.join(root, "video-stage");
+    await fs.mkdir(stage);
+    await assert.rejects(
+      buildComponentPackage({
+        definitionPath: path.join(repositoryRoot, "scripts/component-definitions/macos/video-ai.json"),
+        stagingDirectory: stage,
+        outputDirectory: path.join(root, "video-feed"),
+        assetBaseUrl: "https://packages.example.test/",
+        reviewOnly: true
+      }),
+      /缺少 M01 冻结的 MPS 支持定义/u
+    );
+  });
+
   it("creates non-installable review archives and SBOM without a key, trusted key directory or signed manifest", async () => {
     const root = await makeRoot();
     const stage = path.join(root, "stage");
@@ -111,7 +337,7 @@ describe("buildComponentPackage", () => {
       });
     await fs.writeFile(path.join(root, "base.json"), JSON.stringify(definition({ id: "base" })));
     const old = await build("base");
-    await writeGeneratedCatalog(feed, baseline);
+    await writeTestCatalog(feed, baseline);
     await fs.unlink(old.archivePath);
     await fs.writeFile(
       path.join(root, "extension.json"),
@@ -119,48 +345,50 @@ describe("buildComponentPackage", () => {
     );
     const added = await build("extension");
     await assert.rejects(assembleComponentCatalog(feed), /ENOENT/);
-    assert.equal((await writeGeneratedCatalog(feed, output, "win32-x64", undefined, baseline)).manifestCount, 2);
+    assert.equal((await writeTestCatalog(feed, output, undefined, baseline)).manifestCount, 2);
     const original = await fs.readFile(output, "utf8");
     await fs.appendFile(added.archivePath, "corrupt");
-    await assert.rejects(writeGeneratedCatalog(feed, output, "win32-x64", undefined, baseline), /摘要不匹配/);
+    await assert.rejects(writeTestCatalog(feed, output, undefined, baseline), /摘要不匹配/);
     assert.equal(await fs.readFile(output, "utf8"), original);
     const tamperedBase = (await fs.readFile(baseline, "utf8")).replace(
       '"purpose": "在线自然配音"',
       '"purpose": "changed"'
     );
     await fs.writeFile(path.join(root, "bad-base.ts"), tamperedBase);
-    await assert.rejects(
-      writeGeneratedCatalog(feed, output, "win32-x64", undefined, path.join(root, "bad-base.ts")),
-      /签名无效/
-    );
+    await assert.rejects(writeTestCatalog(feed, output, undefined, path.join(root, "bad-base.ts")), /签名无效/);
     await fs.writeFile(path.join(root, "not-generated.ts"), "process.exit(99)");
-    await assert.rejects(
-      writeGeneratedCatalog(feed, output, "win32-x64", undefined, path.join(root, "not-generated.ts")),
-      /标准生成/
-    );
+    await assert.rejects(writeTestCatalog(feed, output, undefined, path.join(root, "not-generated.ts")), /标准生成/);
   });
   it("the Python 3.12 catalog gate verifies real signatures and preserves output when legacy Python remains", async () => {
     const root = await makeRoot();
     const key = await createSigningKey(root);
     const output = path.join(root, "catalog.ts");
     await fs.writeFile(output, "existing trusted catalog");
-    for (const id of ["python-311", "python-312"]) {
+    for (const id of IS_MACOS ? ["python-312"] : ["python-311", "python-312"]) {
       const stage = path.join(root, `stage-${id}`);
       await fs.mkdir(stage);
       await fs.writeFile(path.join(stage, "runtime.txt"), "signed runtime fixture");
       const feed = path.join(root, `feed-${id}`);
       await buildComponentPackage({
-        definitionPath: await writeDefinition(root, definition({ id, groupId: "shared", taskToolIds: [] })),
+        definitionPath: await writeDefinition(
+          root,
+          definition({
+            id,
+            groupId: "shared",
+            taskToolIds: [],
+            ...(IS_MACOS ? { version: "3.12.14-darwin-arm64.1" } : {})
+          })
+        ),
         stagingDirectory: stage,
         outputDirectory: feed,
         assetBaseUrl: "https://packages.example.test/components/",
         signingKeyPath: key.privateKeyPath
       });
       if (id === "python-311") {
-        await assert.rejects(writeGeneratedCatalog(feed, output, "win32-x64", "3.12"), /旧 python-311/);
+        await assert.rejects(writeTestCatalog(feed, output, "3.12"), /旧 python-311/);
         assert.equal(await fs.readFile(output, "utf8"), "existing trusted catalog");
       } else {
-        const result = await writeGeneratedCatalog(feed, output, "win32-x64", "3.12");
+        const result = await writeTestCatalog(feed, output, "3.12");
         assert.equal(result.manifestCount, 1);
         assert.match(await fs.readFile(output, "utf8"), /python-312/);
       }
@@ -171,7 +399,12 @@ describe("buildComponentPackage", () => {
     const root = await makeRoot();
     const key = await createSigningKey(root);
     const result = await buildComponentPackage({
-      definitionPath: path.join(repositoryRoot, "scripts/component-definitions/douyin-archive.json"),
+      definitionPath: path.join(
+        repositoryRoot,
+        IS_MACOS
+          ? "scripts/component-definitions/macos/douyin-archive.json"
+          : "scripts/component-definitions/douyin-archive.json"
+      ),
       stagingDirectory: path.join(repositoryRoot, "packaging/components/douyin-archive"),
       outputDirectory: path.join(root, "feed"),
       signingKeyPath: key.privateKeyPath,
@@ -228,8 +461,14 @@ describe("buildComponentPackage", () => {
     const first = await buildComponentPackage(options);
     const manifest = JSON.parse(await fs.readFile(first.manifestPath, "utf8"));
     const publicKey = await fs.readFile(first.publicKeyPath, "utf8");
-    assert.equal(manifest.archive.url, "https://packages.example.test/components/edge-tts/1.0.0/edge-tts-1.0.0.tar.gz");
-    assert.equal(manifest.sbom.url, "https://packages.example.test/components/edge-tts/1.0.0/edge-tts-1.0.0.spdx.json");
+    assert.equal(
+      manifest.archive.url,
+      `https://packages.example.test/components/edge-tts/1.0.0/${componentArchiveFileName("edge-tts", "1.0.0", HOST_PLATFORM)}`
+    );
+    assert.equal(
+      manifest.sbom.url,
+      `https://packages.example.test/components/edge-tts/1.0.0/${componentSbomFileName("edge-tts", "1.0.0", HOST_PLATFORM)}`
+    );
     assert.equal(manifest.files.length, 1);
     assert.equal(manifest.files[0].path, "scripts/edge-tts-generate.py");
     assert.equal(
@@ -259,6 +498,9 @@ describe("buildComponentPackage", () => {
 
     const sbom = JSON.parse(await fs.readFile(first.sbomPath, "utf8"));
     assert.equal(sbom.spdxVersion, "SPDX-2.3");
+    assert.equal(sbom.packages[0].name, `edge-tts-${IS_MACOS ? "darwin-arm64" : "windows-x64"}`);
+    assert.equal(first.totalArchiveBytes, first.archiveBytes);
+    assert.equal(first.estimatedInstallPeakBytes, first.totalArchiveBytes + definition().installedBytes);
     assert.equal(sbom.files[0].checksums[0].checksumValue, manifest.files[0].sha256);
     assert.equal(sbom.packages[0].checksums[0].checksumValue, manifest.archive.sha256);
     const catalog = await assembleComponentCatalog(options.outputDirectory);
@@ -269,18 +511,54 @@ describe("buildComponentPackage", () => {
     assert.equal(catalog.trustedPublicKeys[manifest.keyId], publicKey);
     const generatedPath = path.join(root, "catalog.generated.ts");
     await expectGeneratedCatalog(options.outputDirectory, generatedPath);
+    if (IS_MACOS) {
+      await assert.rejects(
+        writeGeneratedCatalog(options.outputDirectory, path.join(root, "incomplete-macos-catalog.ts"), HOST_PLATFORM),
+        /必须恰好包含十项/u
+      );
+    }
 
     const tamperedFeed = path.join(root, "tampered-feed");
     await fs.cp(options.outputDirectory, tamperedFeed, { recursive: true });
-    const tamperedManifestPath = path.join(tamperedFeed, "edge-tts", "1.0.0", "edge-tts-1.0.0.manifest.json");
+    const tamperedManifestPath = path.join(
+      tamperedFeed,
+      "edge-tts",
+      "1.0.0",
+      componentManifestFileName("edge-tts", "1.0.0", HOST_PLATFORM)
+    );
     const tamperedManifest = JSON.parse(await fs.readFile(tamperedManifestPath, "utf8"));
     tamperedManifest.signature = Buffer.from("tampered").toString("base64");
     await fs.writeFile(tamperedManifestPath, JSON.stringify(tamperedManifest));
     await assert.rejects(assembleComponentCatalog(tamperedFeed), /签名无效/);
 
+    if (IS_MACOS) {
+      const unsafeManifestFeed = path.join(root, "unsafe-manifest-feed");
+      await fs.cp(options.outputDirectory, unsafeManifestFeed, { recursive: true });
+      const unsafeManifestPath = path.join(
+        unsafeManifestFeed,
+        "edge-tts",
+        "1.0.0",
+        componentManifestFileName("edge-tts", "1.0.0", HOST_PLATFORM)
+      );
+      const unsafeManifest = JSON.parse(await fs.readFile(unsafeManifestPath, "utf8"));
+      unsafeManifest.files.push({ path: "legacy/worker.exe", bytes: 1, sha256: "a".repeat(64) });
+      unsafeManifest.signature = crypto
+        .sign(
+          null,
+          Buffer.from(canonicalManifest(unsafeManifest)),
+          crypto.createPrivateKey(await fs.readFile(key.privateKeyPath))
+        )
+        .toString("base64");
+      await fs.writeFile(unsafeManifestPath, JSON.stringify(unsafeManifest));
+      await assert.rejects(assembleComponentCatalog(unsafeManifestFeed), /文件清单无效/u);
+    }
+
     const tamperedAssetFeed = path.join(root, "tampered-asset-feed");
     await fs.cp(options.outputDirectory, tamperedAssetFeed, { recursive: true });
-    await fs.appendFile(path.join(tamperedAssetFeed, "edge-tts", "1.0.0", "edge-tts-1.0.0.tar.gz"), "tampered");
+    await fs.appendFile(
+      path.join(tamperedAssetFeed, "edge-tts", "1.0.0", componentArchiveFileName("edge-tts", "1.0.0", HOST_PLATFORM)),
+      "tampered"
+    );
     await assert.rejects(assembleComponentCatalog(tamperedAssetFeed), /摘要不匹配/);
 
     await fs.utimes(workerPath, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
@@ -312,11 +590,11 @@ describe("buildComponentPackage", () => {
     const publicKey = await fs.readFile(artifact.publicKeyPath, "utf8");
     assert.equal(
       manifest.archive.url,
-      "https://github.com/example/toolbox/releases/download/components-v1/edge-tts-1.0.0.tar.gz"
+      `https://github.com/example/toolbox/releases/download/components-v1/${componentArchiveFileName("edge-tts", "1.0.0", HOST_PLATFORM)}`
     );
     assert.equal(
       manifest.sbom.url,
-      "https://github.com/example/toolbox/releases/download/components-v1/edge-tts-1.0.0.spdx.json"
+      `https://github.com/example/toolbox/releases/download/components-v1/${componentSbomFileName("edge-tts", "1.0.0", HOST_PLATFORM)}`
     );
     assert.equal(
       crypto.verify(
@@ -363,7 +641,11 @@ describe("buildComponentPackage", () => {
     assert.equal(signedParts.length, 3);
     assert.deepEqual(
       signedParts.map((part) => path.basename(new URL(part.url).pathname)),
-      ["edge-tts-1.0.0.tar.gz", "edge-tts-1.0.0-voice-model.tar.gz", "edge-tts-1.0.0-decoder-model.tar.gz"]
+      [
+        componentArchiveFileName("edge-tts", "1.0.0", HOST_PLATFORM),
+        componentArchiveFileName("edge-tts", "1.0.0", HOST_PLATFORM, "voice-model"),
+        componentArchiveFileName("edge-tts", "1.0.0", HOST_PLATFORM, "decoder-model")
+      ]
     );
     assert.deepEqual(
       signedParts.flatMap((part) => part.filePaths).sort(),
@@ -371,6 +653,14 @@ describe("buildComponentPackage", () => {
     );
     assert.equal(artifact.archivePaths.length, 3);
     assert.equal(artifact.additionalArchivePaths.length, 2);
+    assert.equal(
+      artifact.totalArchiveBytes,
+      (await Promise.all(artifact.archivePaths.map(async (archivePath) => (await fs.stat(archivePath)).size))).reduce(
+        (total, bytes) => total + bytes,
+        0
+      )
+    );
+    assert.equal(artifact.estimatedInstallPeakBytes, artifact.totalArchiveBytes + definition().installedBytes);
     const catalog = await assembleComponentCatalog(outputDirectory);
     assert.equal(catalog.manifests[0].additionalArchives.length, 2);
 
@@ -455,10 +745,20 @@ describe("buildComponentPackage", () => {
     const stage = path.join(root, "stage");
     await fs.mkdir(path.join(stage, "wheelhouse"), { recursive: true });
     await fs.writeFile(path.join(stage, "worker.py"), "print('worker')\n");
-    await fs.writeFile(path.join(stage, "wheelhouse", "torch-2.6.0+cpu.whl"), "wheel");
+    const torchVersion = IS_MACOS ? "2.6.0" : "2.6.0+cpu";
+    await fs.writeFile(
+      path.join(
+        stage,
+        "wheelhouse",
+        IS_MACOS ? "torch-2.6.0-cp312-cp312-macosx_11_0_arm64.whl" : "torch-2.6.0+cpu.whl"
+      ),
+      "wheel"
+    );
     await fs.writeFile(
       path.join(stage, "requirements.lock"),
-      "torch==2.6.0+cpu \\\n    --hash=sha256:" +
+      "torch==" +
+        torchVersion +
+        " --hash=sha256:" +
         "a".repeat(64) +
         "\neinops==0.8.1 --hash=sha256:" +
         "b".repeat(64) +
@@ -472,14 +772,14 @@ describe("buildComponentPackage", () => {
       definition({
         id: "edge-tts",
         groupId: "media",
-        dependencyIds: ["python-311"],
+        dependencyIds: [IS_MACOS ? "python-312" : "python-311"],
         taskToolIds: ["edge-tts"],
         pythonEnvironment: {
-          pythonComponentId: "python-311",
-          pythonExecutablePath: "python/python.exe",
+          pythonComponentId: IS_MACOS ? "python-312" : "python-311",
+          pythonExecutablePath: IS_MACOS ? "python/bin/python3.12" : "python/python.exe",
           wheelhousePath: "wheelhouse",
           requirementsLockPath: "requirements.lock",
-          expectedPythonVersion: "3.11"
+          expectedPythonVersion: IS_MACOS ? "3.12" : "3.11"
         }
       })
     );
@@ -499,14 +799,14 @@ describe("buildComponentPackage", () => {
       manifest.pythonEnvironment.requirementsLockSha256,
       crypto.createHash("sha256").update(lock).digest("hex")
     );
-    assert.equal(manifest.pythonEnvironment.expectedPythonVersion, "3.11");
-    assert.equal(manifest.pythonEnvironment.pythonComponentId, "python-311");
-    assert.ok(sbom.packages.some((item) => item.name === "torch" && item.versionInfo === "2.6.0+cpu"));
+    assert.equal(manifest.pythonEnvironment.expectedPythonVersion, IS_MACOS ? "3.12" : "3.11");
+    assert.equal(manifest.pythonEnvironment.pythonComponentId, IS_MACOS ? "python-312" : "python-311");
+    assert.ok(sbom.packages.some((item) => item.name === "torch" && item.versionInfo === torchVersion));
     const pythonPackages = sbom.packages.filter((item) => item.SPDXID.startsWith("SPDXRef-Python-"));
     assert.deepEqual(
       pythonPackages.map((item) => [item.name, item.versionInfo]),
       [
-        ["torch", "2.6.0+cpu"],
+        ["torch", torchVersion],
         ["einops", "0.8.1"],
         ["scipy", "1.17.1"]
       ]
@@ -604,8 +904,14 @@ describe("buildComponentPackage", () => {
   });
 });
 
+async function writeTestCatalog(feedDirectory, outputPath, pythonVersion, baseCatalogPath) {
+  return writeGeneratedCatalog(feedDirectory, outputPath, HOST_PLATFORM, pythonVersion, baseCatalogPath, {
+    requireCompleteMacCatalog: false
+  });
+}
+
 async function expectGeneratedCatalog(feedDirectory, outputPath) {
-  const result = await writeGeneratedCatalog(feedDirectory, outputPath);
+  const result = await writeTestCatalog(feedDirectory, outputPath);
   assert.equal(result.manifestCount, 1);
   const source = await fs.readFile(outputPath, "utf8");
   assert.match(source, /\/\/ prettier-ignore/);

@@ -9,6 +9,7 @@ type WorkerErrors = {
   invalid: () => Error;
   aborted: (interrupted: boolean) => Error;
   unavailable: () => Error;
+  connectionRefused?: () => Error;
 };
 
 export async function requestWorkerHttp<T>(options: {
@@ -51,6 +52,7 @@ export async function requestWorkerHttp<T>(options: {
     throw errors.invalid();
   } catch (error) {
     if (errors.owns(error)) throw error;
+    if (errors.connectionRefused && isConnectionRefused(error)) throw errors.connectionRefused();
     if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
       throw errors.aborted(externalSignal?.aborted === true);
     }
@@ -60,6 +62,12 @@ export async function requestWorkerHttp<T>(options: {
     externalSignal?.removeEventListener("abort", abortFromExternal);
     await dispatcher.destroy().catch(() => undefined);
   }
+}
+
+function isConnectionRefused(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  const cause = "cause" in error ? error.cause : undefined;
+  return isRecord(cause) && cause.code === "ECONNREFUSED";
 }
 
 function workerFailure(payload: unknown): WorkerFailure {

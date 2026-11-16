@@ -42,10 +42,13 @@ const mock = vi.hoisted(() => ({
   trayOptions: [] as TrayOptions[],
   trayAttach: vi.fn(),
   trayHide: vi.fn(() => true),
-  trayDispose: vi.fn()
+  trayDispose: vi.fn(),
+  powerMonitorOn: vi.fn(),
+  notifyResume: vi.fn()
 }));
 vi.mock("electron", () => ({
   app: { isPackaged: false, whenReady: mock.ready, getVersion: () => "0.1.0", quit: mock.quit, exit: mock.exit },
+  powerMonitor: { on: mock.powerMonitorOn },
   session: { defaultSession: { resolveProxy: mock.resolveProxy } },
   ipcMain: { handle: mock.register },
   dialog: { showMessageBox: mock.dialog }
@@ -116,6 +119,7 @@ vi.mock("../backend/backend-supervisor", () => ({
     stop = mock.stop;
     inspectShutdown = mock.inspect;
     monitorUnexpectedExit = mock.monitor;
+    notifyResume = mock.notifyResume;
     constructor(options: BackendOptions) {
       mock.events.push("backend-created");
       mock.backendOptions.push(options);
@@ -259,7 +263,19 @@ describe("desktop application assembly", () => {
     expect(mock.backendOptions).toEqual([]);
     expect(mock.menu).not.toHaveBeenCalled();
   });
+  it("restores startup diagnostics from Dock activation after a failed boot", async () => {
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    mock.init.mockImplementationOnce(() => {
+      throw new Error("readonly");
+    });
+    const app = application();
+    await app.boot();
+    expect(mock.show).toHaveBeenCalledOnce();
+    app.focusMainWindow();
+    expect(mock.show).toHaveBeenCalledTimes(2);
+  });
   it("stops when the first-run choice is incomplete and keeps migration critical state visible to quit handling", async () => {
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
     mock.prepare.mockResolvedValueOnce({
       required: true,
       destinationDirectory: "synthetic-data",
@@ -319,11 +335,20 @@ describe("desktop application assembly", () => {
     expect(mock.migrationIpc).not.toHaveBeenCalled();
     expect(mock.entered).toHaveBeenCalledOnce();
   });
+  it("forwards the native macOS wake event to the managed backend", async () => {
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    await application().boot();
+    const resume = mock.powerMonitorOn.mock.calls.find(([event]) => event === "resume")?.[1] as
+      (() => void) | undefined;
+    expect(resume).toBeTypeOf("function");
+    resume?.();
+    expect(mock.notifyResume).toHaveBeenCalledOnce();
+  });
   it("restores a hidden window from tray or second instance and keeps tray exit behind the normal shutdown handshake", async () => {
     const applicationInstance = application();
     await applicationInstance.boot();
-    const windowOptions = mock.window.mock.calls[0][0] as { hideToTray: (window: BrowserWindow) => boolean };
-    expect(windowOptions.hideToTray(frameWindow as unknown as BrowserWindow)).toBe(true);
+    const windowOptions = mock.window.mock.calls[0][0] as { hideWindow: (window: BrowserWindow) => boolean };
+    expect(windowOptions.hideWindow(frameWindow as unknown as BrowserWindow)).toBe(true);
     expect(mock.trayHide).toHaveBeenCalledWith(frameWindow);
     expect(mock.stop).not.toHaveBeenCalled();
     mock.trayOptions[0].showWindow();

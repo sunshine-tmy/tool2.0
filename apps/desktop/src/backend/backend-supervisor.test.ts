@@ -161,3 +161,10 @@ describe("backend supervisor shutdown", () => {
     await supervisor.stop();
   });
 });
+
+it("forwards native wake notifications only to its owned backend process", async () => {
+  const { child, supervisor } = await start();
+  supervisor.notifyResume();
+  expect(child.postMessage).toHaveBeenLastCalledWith({ type: "system-resume" });
+  await supervisor.stop();
+});

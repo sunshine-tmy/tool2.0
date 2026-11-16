@@ -11,6 +11,7 @@ import {
 } from "./component-jobs";
 import { cleanPartialFiles, getAvailableDiskBytes, pathExists } from "./package-files";
 import { inspectArchive, extractArchive, verifyArchive, verifyInstalledFiles, assembleFiles } from "./package-archive";
+import { materializeManifestLinks } from "./package-links";
 import { readCurrent, switchCurrent, restoreCurrent } from "./package-generation";
 import { downloadComponentArchive } from "./package-download";
 import { recoverExportCaches } from "./offline-export-cache";
@@ -959,6 +960,7 @@ export class ComponentManager {
         if (signal.aborted) throw new Error("download cancelled");
         await this.assembleFiles(staging, manifest, signal);
       }
+      await materializeManifestLinks(staging, manifest, this.platform, signal);
       await this.verifyInstalledFiles(staging, manifest);
       await fsp.rename(staging, target);
       targetCreated = true;

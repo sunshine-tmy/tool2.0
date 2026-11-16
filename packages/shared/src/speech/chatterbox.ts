@@ -13,8 +13,9 @@ export const CHATTERBOX_MAX_REFERENCE_SECONDS = 30;
 
 export const CHATTERBOX_LANGUAGES = ["ms", "en", "pt-BR"] as const;
 export type ChatterboxLanguage = (typeof CHATTERBOX_LANGUAGES)[number];
-export const CHATTERBOX_DEVICES = ["cpu", "cuda"] as const;
+export const CHATTERBOX_DEVICES = ["cpu", "cuda", "mps"] as const;
 export type ChatterboxDevice = (typeof CHATTERBOX_DEVICES)[number];
+export const ChatterboxDeviceSchema = Type.Union(CHATTERBOX_DEVICES.map((device) => Type.Literal(device)));
 
 const ChatterboxIdSchema = Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" });
 
@@ -80,9 +81,10 @@ export const ChatterboxTaskSchema = Type.Object(
     engine: Type.Literal("chatterbox-multilingual-v3"),
     status: ChatterboxTaskStatusSchema,
     progress: Type.Number({ minimum: 0, maximum: 100 }),
+    phase: Type.Optional(Type.String()),
     text: Type.String(),
     language: ChatterboxLanguageSchema,
-    device: Type.Optional(Type.Union(CHATTERBOX_DEVICES.map((device) => Type.Literal(device)))),
+    device: Type.Optional(ChatterboxDeviceSchema),
     referenceFileName: Type.String(),
     referenceDurationSeconds: Type.Number({ minimum: 0 }),
     authorization: ChatterboxAuthorizationSchema,
@@ -123,10 +125,14 @@ export const ChatterboxHealthSchema = Type.Object(
     cudaRuntimeAvailable: Type.Optional(Type.Boolean()),
     cudaAvailable: Type.Optional(Type.Boolean()),
     cudaUnavailableReason: Type.Optional(Type.String()),
+    mpsBuilt: Type.Optional(Type.Boolean()),
+    mpsAvailable: Type.Optional(Type.Boolean()),
+    mpsUnavailableReason: Type.Optional(Type.String()),
+    supportedDevices: Type.Optional(Type.Array(ChatterboxDeviceSchema, { minItems: 1, uniqueItems: true })),
     packageVersion: Type.Optional(Type.String()),
     model: Type.Literal("multilingual-v3"),
     modelLoaded: Type.Boolean(),
-    device: Type.Optional(Type.Union([Type.Literal("cuda"), Type.Literal("cpu")])),
+    device: Type.Optional(ChatterboxDeviceSchema),
     gpuName: Type.Optional(Type.String()),
     message: Type.String(),
     reference: Type.Object(
@@ -182,7 +188,10 @@ export const ChatterboxBatchItemSchema = Type.Object(
     fileName: Type.Optional(Type.String()),
     status: ChatterboxTaskStatusSchema,
     progress: Type.Number({ minimum: 0, maximum: 100 }),
+    phase: Type.Optional(Type.String()),
     attempt: Type.Integer({ minimum: 1 }),
+    // Item-level overrides keep a historical batch's original device unchanged during regeneration.
+    device: Type.Optional(ChatterboxDeviceSchema),
     seed: Type.Optional(Type.Integer()),
     exaggeration: Type.Optional(Type.Number()),
     cfgWeight: Type.Optional(Type.Number()),

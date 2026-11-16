@@ -19,7 +19,7 @@ describe("speech domain entry", () => {
   it("preserves task, engine, batch and saved-voice types", () => {
     expectTypeOf<speech.EdgeTtsCreateTaskInput>().toEqualTypeOf<root.EdgeTtsCreateTaskInput>();
     expectTypeOf<speech.EdgeTtsBatchCreate>().toEqualTypeOf<root.EdgeTtsBatchCreate>();
-    expectTypeOf<speech.ChatterboxDevice>().toEqualTypeOf<"cpu" | "cuda">();
+    expectTypeOf<speech.ChatterboxDevice>().toEqualTypeOf<"cpu" | "cuda" | "mps">();
     expectTypeOf<speech.ChatterboxSavedVoice>().toEqualTypeOf<root.ChatterboxSavedVoice>();
   });
   it("does not change language lists or engine-specific limits", () => {

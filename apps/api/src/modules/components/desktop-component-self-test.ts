@@ -9,6 +9,7 @@ import type { VerifiedComponentAsset } from "./types";
 import { videoAiCudaPythonEnvironment } from "./video-ai-python-overlay";
 import {
   hasVideoAiSequenceAssets,
+  macOSVideoAiSequenceEnvironment,
   videoAiSequenceEnvironment,
   verifiedVideoFile,
   validateVideoAiSequenceSupport,
@@ -204,8 +205,17 @@ export function createDesktopComponentSelfTest(
       return;
     }
     if (manifest.id === "video-ai") {
-      if (manifest.files.some((file) => [VIDEO_AI_SEQUENCE_SUPPORT, VIDEO_AI_SEQUENCE_LOADER].includes(file.path)))
+      if (
+        !isMacOS &&
+        manifest.files.some((file) => [VIDEO_AI_SEQUENCE_SUPPORT, VIDEO_AI_SEQUENCE_LOADER].includes(file.path))
+      )
         await validateVideoAiSequenceSupport({ path: pythonPath, generationRoot, manifest });
+      if (isMacOS) {
+        await macOSVideoAiSequenceEnvironment(
+          { path: pythonPath, generationRoot, manifest },
+          { requireBothEngines: true }
+        );
+      }
       if (!resolveMediaAsset) throw new Error("视频去字幕自检需要已安装的共享 FFmpeg");
       environment.VIDEO_AI_FFMPEG = await resolveMediaAsset(`bin/${ffmpegName}`);
       environment.VIDEO_AI_FFPROBE = await resolveMediaAsset(`bin/${ffprobeName}`);
@@ -395,6 +405,9 @@ function cleanEnvironment() {
   ]) {
     delete environment[key];
   }
+  // The signed Python generation is immutable; self-tests must not rewrite its
+  // packaged __pycache__ files while checking the bundled interpreter.
+  environment.PYTHONDONTWRITEBYTECODE = "1";
   return environment;
 }
 

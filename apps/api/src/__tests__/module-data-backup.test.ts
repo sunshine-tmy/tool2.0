@@ -14,7 +14,14 @@ import {
   currentModules,
   type BackupContext
 } from "../system/data-backup/service";
-import { packBundle, readBundle, hashText, safeRelative, enoughSpace } from "../system/data-backup/package-io";
+import {
+  packBundle,
+  readBundle,
+  hashText,
+  safeRelative,
+  enoughSpace,
+  writeBundleMetadata
+} from "../system/data-backup/package-io";
 import type { BackupManifest, ModuleData } from "../system/data-backup/types";
 import { writeDurable, recoverRestores, inspectPackage } from "../system/data-backup/service";
 import { planRestore } from "../system/data-backup/merge";
@@ -590,6 +597,22 @@ it("snapshots without migrating or recovering interrupted tasks and roundtrips a
   );
   expect(restored.modules).toEqual(bundle.modules);
   expect(await fs.readFile(path.join(restored.directory, "objects", hashText("old")), "utf8")).toBe("old");
+});
+it.each([
+  ["case-insensitive", "task_case12", undefined, "outputs/TASK_CASE12.png"],
+  ["Unicode NFC/NFD", "task_unicode12", "outputs/café.png", "outputs/cafe\u0301.png"]
+])("rejects %s duplicate paths in a backup package", async (_label, id, canonicalPath, duplicatePath) => {
+  const source = await fixture();
+  await compress(source.context, id, "same-bytes");
+  const bundle = await snapshot(source.context, { modules: ["image-compress"] }, path.join(source.root, "snapshot"));
+  if (canonicalPath) bundle.modules[0].files[0].path = canonicalPath;
+  bundle.modules[0].files.push({ ...bundle.modules[0].files[0], path: duplicatePath });
+  bundle.manifest = await writeBundleMetadata(bundle.directory, bundle.modules, bundle.manifest.appVersion);
+  const file = path.join(source.root, "duplicate-paths.zip");
+  await packBundle(bundle, file, source.context.signal, source.context.progress);
+  await expect(
+    readBundle(file, path.join(source.root, "extracted"), source.context.signal, source.context.progress)
+  ).rejects.toThrow("模块内文件路径重复");
 });
 it("replaces only the selected module, makes a restore point and preserves unselected records", async () => {
   const source = await fixture(),

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getConfig } from "../config";
 import { createImageAiWorkerClient, ImageAiWorkerError } from "../domains/image-ai/worker-client";
 import { createChatterboxWorkerClient, ChatterboxWorkerError } from "../domains/speech/chatterbox/worker-client";
+import { createVideoAiWorkerClient, VideoAiWorkerError } from "../domains/video-ai/worker-client";
 
 function config() {
   return {
@@ -10,7 +11,9 @@ function config() {
     imageAiWorkerUrl: "http://image.test",
     imageAiWorkerToken: "test-image-token",
     chatterboxWorkerUrl: "http://speech.test",
-    chatterboxWorkerToken: "test-speech-token"
+    chatterboxWorkerToken: "test-speech-token",
+    videoAiWorkerUrl: "http://video.test",
+    videoAiWorkerToken: "test-video-token"
   };
 }
 const generation = {
@@ -152,6 +155,23 @@ describe.each(variants)("$name Worker transport compatibility", (variant) => {
     await vi.advanceTimersByTimeAsync(1);
     expect(await failure).toMatchObject({ code: `${variant.prefix}_WORKER_TIMEOUT` });
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+it("distinguishes confirmed local connection refusal from other Worker failures", async () => {
+  const cause = Object.assign(new Error("refused"), { code: "ECONNREFUSED" });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Promise.reject(new TypeError("fetch failed", { cause })))
+  );
+  await expect(createImageAiWorkerClient(config()).health()).rejects.toMatchObject({
+    code: "WORKER_CONNECTION_REFUSED"
+  });
+  await expect(createChatterboxWorkerClient(config()).health()).rejects.toMatchObject({
+    code: "WORKER_CONNECTION_REFUSED"
+  });
+  await expect(createVideoAiWorkerClient(config()).health()).rejects.toMatchObject({
+    code: "WORKER_CONNECTION_REFUSED"
   });
 });
 

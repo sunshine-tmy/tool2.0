@@ -92,6 +92,16 @@
                     statusName(item.status)
                   }}</span
                 >
+                <n-button
+                  v-if="item.status === 'processing'"
+                  text
+                  size="small"
+                  type="warning"
+                  :aria-label="`取消 ${item.file.name} 的压缩`"
+                  @click="cancelCompression(item.id)"
+                >
+                  取消
+                </n-button>
                 <div class="file-actions">
                   <n-button
                     v-if="item.result"
@@ -271,6 +281,7 @@ type ImageItem = {
 
 const message = useMessage();
 const items = ref<ImageItem[]>([]);
+const activeUploads = new Map<string, AbortController>();
 const fileInput = ref<HTMLInputElement>();
 const isDragging = ref(false);
 const submitting = ref(false);
@@ -341,16 +352,21 @@ async function compressAll() {
     const batch = [...pendingItems.value];
     const settings = { quality: quality.value, outputFormat: outputFormat.value, width: width.value };
     let succeeded = 0;
+    let failed = 0;
     for (const item of batch) {
       if (!items.value.some((current) => current.id === item.id)) continue;
       if (await compressItem(item, settings)) succeeded += 1;
+      else if (item.status === "failed") failed += 1;
     }
-    if (succeeded === batch.length) message.success(`已完成 ${succeeded} 张图片压缩`);
-    else if (succeeded > 0) message.warning(`压缩完成：成功 ${succeeded} 张，失败 ${batch.length - succeeded} 张`);
-    else message.error("图片压缩失败，请检查文件后重试");
+    if (failed === 0 && succeeded === batch.length) message.success(`已完成 ${succeeded} 张图片压缩`);
+    else if (succeeded > 0 || failed > 0) message.warning(`压缩完成：成功 ${succeeded} 张，失败 ${failed} 张`);
   } finally {
     submitting.value = false;
   }
+}
+
+function cancelCompression(id: string) {
+  activeUploads.get(id)?.abort();
 }
 
 async function compressItem(
@@ -361,6 +377,8 @@ async function compressItem(
   item.status = "processing";
   item.progress = 5;
   item.error = undefined;
+  const controller = new AbortController();
+  activeUploads.set(item.id, controller);
 
   const form = new FormData();
   form.append("file", item.file);
@@ -371,20 +389,31 @@ async function compressItem(
   }
 
   try {
-    item.result = await imageCompressApi.upload(form, (event) => {
-      if (event.total) {
-        item.progress = Math.min(90, Math.round((event.loaded / event.total) * 90));
-      }
-    });
+    item.result = await imageCompressApi.upload(
+      form,
+      (event) => {
+        if (event.total) {
+          item.progress = Math.min(90, Math.round((event.loaded / event.total) * 90));
+        }
+      },
+      controller.signal
+    );
     item.status = "done";
     item.progress = 100;
     return true;
   } catch (error) {
-    if (isApiErrorCancelled(error)) return false;
+    if (isApiErrorCancelled(error)) {
+      item.status = "pending";
+      item.progress = 0;
+      item.error = undefined;
+      return false;
+    }
     item.status = "failed";
     item.progress = 100;
     item.error = formatApiError(error, "压缩失败");
     return false;
+  } finally {
+    if (activeUploads.get(item.id) === controller) activeUploads.delete(item.id);
   }
 }
 
@@ -487,6 +516,8 @@ function statusName(status: ImageStatus) {
 
 onBeforeUnmount(() => {
   // 页面离开时清理所有本地预览 URL，避免大图队列长期占用浏览器内存。
+  activeUploads.forEach((controller) => controller.abort());
+  activeUploads.clear();
   items.value.forEach((item) => URL.revokeObjectURL(item.previewUrl));
 });
 </script>

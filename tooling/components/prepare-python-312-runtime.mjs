@@ -22,6 +22,10 @@ export const PYTHON312_ARCHIVES = {
 export const PYTHON312_ARCHIVE_URL = PYTHON312_ARCHIVES["win32-x64"].url;
 export const PYTHON312_ARCHIVE_BYTES = PYTHON312_ARCHIVES["win32-x64"].bytes;
 export const PYTHON312_ARCHIVE_SHA256 = PYTHON312_ARCHIVES["win32-x64"].sha256;
+export const PYTHON312_HELP = `用法：pnpm components:prepare-python-312 -- --archive <固定官方归档> --stage <新暂存目录>
+
+Apple Silicon 固定归档：${PYTHON312_ARCHIVES["darwin-arm64"].url}
+Windows x64 固定归档保持不变；归档大小和 SHA-256 在准备前严格校验。`;
 
 export function preparePython312Runtime({ archivePath, stagingDirectory, platform = hostPlatform() }) {
   const pinned = PYTHON312_ARCHIVES[platform];
@@ -42,12 +46,16 @@ function hostPlatform() {
   throw new Error(`Python 3.12 运行时仅支持 Windows x64 或 Apple Silicon：${process.platform}-${process.arch}`);
 }
 
-function parseArguments(argv) {
+export function parsePython312Arguments(argv) {
+  const args = argv[0] === "--" ? argv.slice(1) : argv;
+  if (args.length === 1 && args[0] === "--help") return { help: true };
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
-    if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
+    if (!key?.startsWith("--") || key === "--help" || !value || value.startsWith("--") || values.has(key.slice(2))) {
+      throw new Error("命令行参数无效");
+    }
     values.set(key.slice(2), value);
   }
   if (values.size !== 2 || !values.has("archive") || !values.has("stage")) {
@@ -59,10 +67,15 @@ function parseArguments(argv) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(publicEntryUrl)) {
   try {
     const platform = hostPlatform();
-    const result = await preparePython312Runtime({ ...parseArguments(process.argv.slice(2)), platform });
-    console.log(`Python 3.12.14 (${platform}) 运行时已校验并准备：${result.stagingDirectory}`);
-    console.log(`解压文件大小：${result.extractedBytes} 字节`);
-    console.log(`固定来源：${PYTHON312_ARCHIVES[platform].url}`);
+    const options = parsePython312Arguments(process.argv.slice(2));
+    if (options.help) {
+      console.log(PYTHON312_HELP);
+    } else {
+      const result = await preparePython312Runtime({ ...options, platform });
+      console.log(`Python 3.12.14 (${platform}) 运行时已校验并准备：${result.stagingDirectory}`);
+      console.log(`解压文件大小：${result.extractedBytes} 字节`);
+      console.log(`固定来源：${PYTHON312_ARCHIVES[platform].url}`);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Python 3.12 运行时准备失败");
     process.exitCode = 1;

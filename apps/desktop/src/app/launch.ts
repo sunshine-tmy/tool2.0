@@ -5,10 +5,13 @@ export function launchDesktopApplication(application: ReturnType<typeof createDe
   app.setAppUserModelId("com.ecommercetoolbox.desktop");
   if (!app.requestSingleInstanceLock()) {
     app.quit();
-  } else {
-    app.on("second-instance", application.focusMainWindow);
-    void application.boot();
+    return;
   }
-  app.on("window-all-closed", () => app.quit());
+  app.on("second-instance", application.focusMainWindow);
+  if (process.platform === "darwin") app.on("activate", application.focusMainWindow);
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
   app.on("before-quit", application.beforeQuit);
+  void application.boot();
 }

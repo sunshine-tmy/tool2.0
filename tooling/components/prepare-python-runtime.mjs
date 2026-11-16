@@ -13,6 +13,14 @@ import { fileURLToPath } from "node:url";
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const require = createRequire(path.join(REPOSITORY_ROOT, "apps", "api", "package.json"));
 const tar = require("tar");
+const WINDOWS_DISTLIB_LAUNCHERS = Object.freeze([
+  "t32.exe",
+  "t64.exe",
+  "t64-arm.exe",
+  "w32.exe",
+  "w64.exe",
+  "w64-arm.exe"
+]);
 
 export async function preparePythonRuntime({
   archivePath,
@@ -78,7 +86,10 @@ export async function preparePythonRuntime({
   let stageCreated = false;
   try {
     await tar.x({ file: archive, cwd: temporary, strict: true, preservePaths: false });
-    if (platform === "darwin-arm64") await materializeMacRuntimeLinks(temporary);
+    if (platform === "darwin-arm64") {
+      await materializeMacRuntimeLinks(temporary);
+      await stripMacPythonWindowsLaunchers(temporary, expectedVersion);
+    }
     await assertNoLinks(temporary);
     const [major, minor] = expectedVersion.split(".");
     const pythonRelativePath =
@@ -120,6 +131,23 @@ export async function preparePythonRuntime({
   } finally {
     await fs.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
   }
+}
+
+/** Python's bundled distlib carries unused Windows script launchers in the Mac runtime archive. */
+export async function stripMacPythonWindowsLaunchers(runtimeRoot, expectedVersion) {
+  if (!/^3\.(11|12)$/.test(expectedVersion)) throw new Error("桌面共享 Python 版本不受支持");
+  const launcherRoot = path.join(
+    runtimeRoot,
+    "python",
+    "lib",
+    `python${expectedVersion}`,
+    "site-packages",
+    "pip",
+    "_vendor",
+    "distlib"
+  );
+  for (const name of WINDOWS_DISTLIB_LAUNCHERS) await fs.rm(path.join(launcherRoot, name), { force: true });
+  return WINDOWS_DISTLIB_LAUNCHERS;
 }
 
 async function materializeMacRuntimeLinks(root) {

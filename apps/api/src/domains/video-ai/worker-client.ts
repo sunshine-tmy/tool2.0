@@ -3,7 +3,9 @@
  */
 import type {
   VideoAiDetection,
+  VideoAiDevice,
   VideoAiEngine,
+  VideoAiExecutionMode,
   VideoAiHealth,
   VideoAiMode,
   VideoAiRect,
@@ -11,6 +13,8 @@ import type {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import { requestWorkerHttp } from "../../core/workers/http-transport";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
+import { requestWorkerLightHealth } from "../../core/workers/light-health";
 
 export class VideoAiWorkerError extends Error {
   code: string;
@@ -44,9 +48,10 @@ type VideoAiProcessInput = {
   segments?: VideoAiSegment[];
   manualArea?: VideoAiRect;
   signal?: AbortSignal;
+  onWaiting?: (waiting: boolean) => void;
 };
 
-export function createVideoAiWorkerClient(config: AppConfig) {
+export function createVideoAiWorkerClient(config: AppConfig, resources?: InferenceResourceCoordinator) {
   return {
     async health(): Promise<VideoAiHealth> {
       const health = await requestWorker<VideoAiHealth>(config, "/health", { method: "GET" }, 15_000, isHealth);
@@ -56,44 +61,73 @@ export function createVideoAiWorkerClient(config: AppConfig) {
       return health;
     },
 
-    async detect(inputPath: string, signal?: AbortSignal): Promise<VideoAiDetection> {
+    lightHealth() {
+      return requestWorkerLightHealth(config.videoAiWorkerUrl, config.videoAiWorkerToken);
+    },
+
+    async unload(): Promise<void> {
+      const result = await requestWorker<WorkerUnloadResult>(
+        config,
+        "/unload",
+        { method: "POST" },
+        15_000,
+        isWorkerUnloadResult
+      );
+      if (result.protocolVersion !== 1 || result.modelLoaded || result.busy) {
+        throw new VideoAiWorkerError("WORKER_UNLOAD_UNCONFIRMED", "视频 Worker 未确认模型已卸载", 502);
+      }
+    },
+
+    async detect(
+      inputPath: string,
+      signal?: AbortSignal,
+      onWaiting?: (waiting: boolean) => void
+    ): Promise<VideoAiDetection> {
       // Detection decodes sampled frames; a 6-hour clip still only samples
       // once per second, so a generous but bounded timeout is enough.
-      return requestWorker<VideoAiDetection>(
-        config,
-        "/subtitle/detect",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ input_path: inputPath }),
-          signal
-        },
-        Math.min(config.videoAiWorkerTimeoutMs, 30 * 60 * 1000),
-        isDetection
+      return coordinate(
+        () =>
+          requestWorker<VideoAiDetection>(
+            config,
+            "/subtitle/detect",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ input_path: inputPath }),
+              signal
+            },
+            Math.min(config.videoAiWorkerTimeoutMs, 30 * 60 * 1000),
+            isDetection
+          ),
+        { signal, onWaiting }
       );
     },
 
     async process(input: VideoAiProcessInput): Promise<VideoAiProcessResult> {
-      const result = await requestWorker<VideoAiProcessResult>(
-        config,
-        "/process",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            operation: "subtitle_remove",
-            input_path: input.inputPath,
-            output_path: input.outputPath,
-            mode: input.mode,
-            manual_area: input.manualArea,
-            segments: input.segments,
-            progress_path: input.progressPath,
-            cancel_flag_path: input.cancelFlagPath
-          }),
-          signal: input.signal
-        },
-        config.videoAiWorkerTimeoutMs,
-        (value): value is VideoAiProcessResult => isProcessResult(value) || isLegacyPassthrough(value)
+      const result = await coordinate(
+        () =>
+          requestWorker<VideoAiProcessResult>(
+            config,
+            "/process",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                operation: "subtitle_remove",
+                input_path: input.inputPath,
+                output_path: input.outputPath,
+                mode: input.mode,
+                manual_area: input.manualArea,
+                segments: input.segments,
+                progress_path: input.progressPath,
+                cancel_flag_path: input.cancelFlagPath
+              }),
+              signal: input.signal
+            },
+            config.videoAiWorkerTimeoutMs,
+            (value): value is VideoAiProcessResult => isProcessResult(value) || isLegacyPassthrough(value)
+          ),
+        { signal: input.signal, onWaiting: input.onWaiting }
       );
       // Published v1 Worker omits dimensions only in its no-subtitle passthrough response.
       // Probe the actual output instead of changing a signed package or fabricating dimensions.
@@ -107,6 +141,24 @@ export function createVideoAiWorkerClient(config: AppConfig) {
       return result;
     }
   };
+
+  function coordinate<T>(
+    work: () => Promise<T>,
+    options: { signal?: AbortSignal; onWaiting?: (waiting: boolean) => void } = {}
+  ) {
+    return resources ? resources.run("video-ai", work, options) : work();
+  }
+}
+
+type WorkerUnloadResult = { protocolVersion: number; modelLoaded: boolean; busy: boolean };
+
+function isWorkerUnloadResult(value: unknown): value is WorkerUnloadResult {
+  return (
+    isRecord(value) &&
+    typeof value.protocolVersion === "number" &&
+    typeof value.modelLoaded === "boolean" &&
+    typeof value.busy === "boolean"
+  );
 }
 
 function requestWorker<T>(
@@ -143,7 +195,9 @@ function requestWorker<T>(
           pathname === "/health"
             ? "无法连接视频处理服务，请检查能力状态和运行诊断"
             : "视频处理连接中断，请检查运行诊断后重试"
-        )
+        ),
+      connectionRefused: () =>
+        new VideoAiWorkerError("WORKER_CONNECTION_REFUSED", "视频 Worker 已退出，正在等待受管恢复", 503)
     }
   });
 }
@@ -208,11 +262,25 @@ function isEngine(value: unknown): value is VideoAiEngine {
     typeof value.provider === "string" &&
     typeof value.license === "string" &&
     typeof value.available === "boolean" &&
-    (typeof value.reason === "string" || value.reason === null)
+    (typeof value.reason === "string" || value.reason === null) &&
+    (value.supportedDevices === undefined ||
+      (Array.isArray(value.supportedDevices) &&
+        value.supportedDevices.length > 0 &&
+        new Set(value.supportedDevices).size === value.supportedDevices.length &&
+        value.supportedDevices.every(isVideoAiDevice))) &&
+    (value.executionMode === undefined || isVideoAiExecutionMode(value.executionMode))
   );
 }
 
-function isHealth(value: unknown): value is VideoAiHealth {
+function isVideoAiDevice(value: unknown): value is VideoAiDevice {
+  return value === "cpu" || value === "cuda" || value === "mps";
+}
+
+function isVideoAiExecutionMode(value: unknown): value is VideoAiExecutionMode {
+  return value === "cpu" || value === "cuda" || value === "mps" || value === "hybrid";
+}
+
+export function isHealth(value: unknown): value is VideoAiHealth {
   return (
     isRecord(value) &&
     typeof value.protocolVersion === "number" &&

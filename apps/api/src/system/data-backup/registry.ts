@@ -9,7 +9,7 @@ import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { StoredEntity } from "../../database/types";
 import { archiveMediaAssets } from "../../domains/content-archive/core/media-assets";
 import { readCatalog, validateAudioLibraryCatalog } from "../../domains/audio-library/catalog";
-import { safeRelative, ownedPath } from "./package-io";
+import { portablePathKey, safeRelative, ownedPath } from "./package-io";
 import type { BackupFile, ModuleData } from "./types";
 
 export const ownership: Record<BackupModuleId, { kinds: string[]; tools: string[] }> = {
@@ -170,7 +170,7 @@ export async function inventory(database: ToolboxDatabase, config: AppConfig, id
       createdAt:
         records.find((r) => r.kind === kind && r.id === entityId)?.createdAt ?? new Date(stat.birthtimeMs).toISOString()
     };
-    const key = relative.toLowerCase();
+    const key = portablePathKey(relative);
     if (byPath.has(key) && byPath.get(key)!.path !== relative) throw new Error("受管文件存在大小写冲突");
     byPath.set(key, file);
   };

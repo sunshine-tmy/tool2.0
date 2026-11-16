@@ -269,4 +269,9 @@ export class BackendSupervisor {
       this.options.onUnexpectedExit?.(`本地服务意外退出（退出码 ${code}）`);
     });
   }
+
+  notifyResume() {
+    if (!this.child || !this.origin || this.stopping) return;
+    this.child.postMessage({ type: "system-resume" });
+  }
 }

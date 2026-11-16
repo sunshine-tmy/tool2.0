@@ -17,6 +17,10 @@ import { DouyinRuntimeManager } from "../domains/content-archive/providers/douyi
 import { TikTokRuntime } from "../domains/content-archive/providers/tiktok/runtime";
 import { DiagnosticsService } from "../modules/diagnostics/service";
 import { TikTokProfileReader } from "../domains/content-archive/providers/tiktok/profile-reader";
+import { createInferenceResourceCoordinator } from "../core/workers/inference-resource-coordinator";
+import { createImageAiWorkerClient } from "../domains/image-ai/worker-client";
+import { createVideoAiWorkerClient } from "../domains/video-ai/worker-client";
+import { createChatterboxWorkerClient } from "../domains/speech/chatterbox/worker-client";
 
 export async function createAppServices(config: AppConfig, remoteAddressResolver?: AddressResolver) {
   const { database } = await openToolboxDatabase(config);
@@ -93,12 +97,39 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
   const xhsRuntime = xhsRuntimeServices.runtime;
   const xhsAuth = xhsRuntimeServices.auth;
   const xhsTranslationRuntime = xhsRuntimeServices.translationRuntime;
+  const imageWorker = createImageAiWorkerClient(config);
+  const videoWorker = createVideoAiWorkerClient(config);
+  const chatterboxWorker = createChatterboxWorkerClient(config);
+  const inferenceResources = createInferenceResourceCoordinator({
+    enabled: config.desktopManagedCapabilities && process.platform === "darwin",
+    workers: {
+      "image-ai": {
+        configured: () => config.imageAiCapabilityReady,
+        health: () => imageWorker.lightHealth(),
+        unload: () => imageWorker.unload(),
+        restart: () => desktopCapabilityRuntime.afterMutation("image-ai", "reinstall")
+      },
+      chatterbox: {
+        configured: () => config.chatterboxCapabilityReady,
+        health: () => chatterboxWorker.lightHealth(),
+        unload: () => chatterboxWorker.unload(),
+        restart: () => desktopCapabilityRuntime.afterMutation("chatterbox", "reinstall")
+      },
+      "video-ai": {
+        configured: () => config.videoAiCapabilityReady,
+        health: () => videoWorker.lightHealth(),
+        unload: () => videoWorker.unload(),
+        restart: () => desktopCapabilityRuntime.afterMutation("video-ai", "reinstall")
+      }
+    }
+  });
   const diagnosticService = new DiagnosticsService(
     config,
     database,
     componentManager,
     (id) => desktopCapabilityRuntime.afterMutation(id, "install"),
-    () => Boolean(xhsAuth.isActive() || douyinRuntime.isActive() || profileReader?.isActive())
+    () => Boolean(xhsAuth.isActive() || douyinRuntime.isActive() || profileReader?.isActive()),
+    inferenceResources
   );
   diagnosticsState.service = diagnosticService;
   return {
@@ -112,6 +143,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
     tiktokRuntime,
     profileReader,
     desktopCapabilityRuntime,
+    inferenceResources,
     xhsRuntime,
     xhsAuth,
     xhsTranslationRuntime,

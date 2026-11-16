@@ -8,9 +8,13 @@ import { httpClient, withApiError } from "../../shared/http/http";
 export type ImageToolResponse = ImageCompressResult;
 
 class ImageCompressApi {
-  async upload(form: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void) {
+  async upload(form: FormData, onUploadProgress?: (event: AxiosProgressEvent) => void, signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.post("/tools/image-compress", ImageCompressResultSchema, form, { onUploadProgress }),
+      () =>
+        httpClient.post("/tools/image-compress", ImageCompressResultSchema, form, {
+          onUploadProgress,
+          ...(signal ? { signal } : {})
+        }),
       "图片压缩失败"
     );
   }

@@ -89,7 +89,10 @@ export class ChatterboxQueue {
         cfgWeight: task.cfgWeight,
         temperature: task.temperature,
         seed: task.seed,
-        signal
+        signal,
+        onWaiting: (waiting) => {
+          void this.options.store.update(id, { phase: waiting ? "等待其他 AI 任务完成" : undefined });
+        }
       });
       await this.options.store.update(id, { progress: 82 });
       await this.options.media.toMp3(paths.outputWav, paths.audio);

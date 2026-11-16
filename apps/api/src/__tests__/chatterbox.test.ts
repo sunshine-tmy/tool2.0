@@ -14,8 +14,9 @@ let fixture: Awaited<ReturnType<typeof createIsolatedAppFixture>>;
 let workerServer: Server | undefined;
 let workerUrl = "";
 let generateRequests: Array<Record<string, unknown>> = [];
-let workerDevice: "cpu" | "cuda" = "cuda";
+let workerDevice: "cpu" | "cuda" | "mps" = "cuda";
 let workerCudaAvailable = true;
+let workerMpsAvailable = false;
 let workerGpuName: string | null = "Test GPU";
 let beforeGenerate: (() => Promise<void>) | undefined;
 let failGeneration = false;
@@ -26,6 +27,7 @@ beforeEach(async () => {
   failGeneration = false;
   workerDevice = "cuda";
   workerCudaAvailable = true;
+  workerMpsAvailable = false;
   workerGpuName = "Test GPU";
   fixture = await createIsolatedAppFixture();
   testRoot = fixture.root;
@@ -43,6 +45,9 @@ beforeEach(async () => {
             modelLoaded: true,
             cudaRuntimeAvailable: workerCudaAvailable,
             cudaAvailable: workerCudaAvailable,
+            mpsBuilt: workerMpsAvailable,
+            mpsAvailable: workerMpsAvailable,
+            ...(workerMpsAvailable ? { supportedDevices: ["cpu", "mps"] } : {}),
             device: workerDevice,
             gpuName: workerGpuName,
             watermarked: true
@@ -55,6 +60,7 @@ beforeEach(async () => {
       const input = JSON.parse((await readRequest(request)) || "{}") as {
         output_path: string;
         text: string;
+        device?: string;
         [key: string]: unknown;
       };
       generateRequests.push(input);
@@ -85,7 +91,7 @@ beforeEach(async () => {
             durationSeconds: 1,
             chunks: segments.length,
             segments,
-            device: "cuda",
+            device: input.device || "cpu",
             watermarked: true
           }
         })
@@ -831,6 +837,159 @@ describe("Chatterbox voice cloning module", () => {
     expect(health.json().data).toMatchObject({ available: true, workerAvailable: true, device: "cpu" });
     expect(health.json().data.gpuName).toBeUndefined();
     expect(health.json().data).toMatchObject({ cudaRuntimeAvailable: false, cudaAvailable: false });
+    expect(health.json().data.supportedDevices).toEqual(["cpu"]);
+    expect(health.json().data.mpsAvailable).toBe(false);
+    await app.close();
+  });
+
+  it("accepts explicitly supported MPS for new tasks and batches, and rejects unknown or unavailable devices", async () => {
+    workerDevice = "mps";
+    workerCudaAvailable = false;
+    workerMpsAvailable = true;
+    const app = await startApp();
+    const health = await app.inject({ method: "GET", url: "/api/v1/tools/edge-tts/chatterbox/health" });
+    expect(health.json().data).toMatchObject({
+      device: "mps",
+      mpsBuilt: true,
+      mpsAvailable: true,
+      supportedDevices: ["cpu", "mps"]
+    });
+
+    const taskRequest = multipartRequest(createPcmWav(6), {
+      text: "MPS task",
+      language: "en",
+      device: "mps",
+      authorization: "self",
+      consentConfirmed: "true",
+      exaggeration: "0.5",
+      cfgWeight: "0.5",
+      temperature: "0.8",
+      seed: "0",
+      includeSubtitles: "false"
+    });
+    const taskResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/edge-tts/chatterbox/tasks",
+      ...taskRequest
+    });
+    expect(taskResponse.statusCode).toBe(202);
+    expect((await waitForTask(app, taskResponse.json().data.id)).device).toBe("mps");
+    expect(generateRequests.at(-1)).toMatchObject({ device: "mps" });
+
+    const batchRequest = multipartRequest(createPcmWav(6), {
+      segments: JSON.stringify([{ text: "MPS batch" }]),
+      language: "en",
+      device: "mps",
+      authorization: "self",
+      consentConfirmed: "true",
+      exaggeration: "0.5",
+      cfgWeight: "0.5",
+      temperature: "0.8",
+      seed: "0",
+      includeSubtitles: "false"
+    });
+    const batchResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/edge-tts/chatterbox/batches",
+      ...batchRequest
+    });
+    expect(batchResponse.statusCode).toBe(202);
+    const batch = await waitForBatch(app, batchResponse.json().data.id);
+    expect(batch.device).toBe("mps");
+    expect(generateRequests.at(-1)).toMatchObject({ device: "mps" });
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/edge-tts/chatterbox/tasks",
+      ...multipartRequest(createPcmWav(6), {
+        text: "Unknown device",
+        language: "en",
+        device: "metal",
+        authorization: "self",
+        consentConfirmed: "true",
+        exaggeration: "0.5",
+        cfgWeight: "0.5",
+        temperature: "0.8",
+        seed: "0",
+        includeSubtitles: "false"
+      })
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.code).toBe("CHATTERBOX_DEVICE_INVALID");
+
+    workerMpsAvailable = false;
+    await app.close();
+    const unavailableApp = await startApp();
+    const unsupported = await unavailableApp.inject({
+      method: "POST",
+      url: "/api/v1/tools/edge-tts/chatterbox/batches",
+      ...multipartRequest(createPcmWav(6), {
+        segments: JSON.stringify([{ text: "Unsupported MPS" }]),
+        language: "en",
+        device: "mps",
+        authorization: "self",
+        consentConfirmed: "true",
+        exaggeration: "0.5",
+        cfgWeight: "0.5",
+        temperature: "0.8",
+        seed: "0",
+        includeSubtitles: "false"
+      })
+    });
+    expect(unsupported.statusCode).toBe(409);
+    expect(unsupported.json().error.code).toBe("CHATTERBOX_MPS_UNAVAILABLE");
+    expect(generateRequests).toHaveLength(2);
+    await unavailableApp.close();
+  });
+
+  it("regenerates a historical CUDA batch on MPS without rewriting the batch device", async () => {
+    const app = await startApp();
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/tools/edge-tts/chatterbox/batches",
+      ...multipartRequest(createPcmWav(6), {
+        segments: JSON.stringify([{ text: "Historical CUDA batch" }]),
+        language: "en",
+        device: "cuda",
+        authorization: "self",
+        consentConfirmed: "true",
+        exaggeration: "0.5",
+        cfgWeight: "0.5",
+        temperature: "0.8",
+        seed: "0",
+        includeSubtitles: "false"
+      })
+    });
+    expect(created.statusCode).toBe(202);
+    const batchId = created.json().data.id as string;
+    const historical = await waitForBatch(app, batchId);
+    expect(historical.device).toBe("cuda");
+
+    workerDevice = "mps";
+    workerCudaAvailable = false;
+    workerMpsAvailable = true;
+    const itemId = historical.items[0].id as string;
+    const regeneration = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}/regenerate`,
+      ...multipartFieldsRequest({ text: "Regenerated on MPS", device: "mps" })
+    });
+    expect(regeneration.statusCode).toBe(202);
+    const updated = await waitForBatch(app, batchId);
+    expect(updated.device).toBe("cuda");
+    expect(updated.items.find((item: { id: string }) => item.id === itemId)).toMatchObject({
+      device: "mps",
+      attempt: 2
+    });
+    expect(generateRequests.at(-1)).toMatchObject({ device: "mps", text: "Regenerated on MPS" });
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: `/api/v1/tools/edge-tts/chatterbox/batches/${batchId}/items/${itemId}/regenerate`,
+      ...multipartFieldsRequest({ text: "Unknown device", device: "metal" })
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().error.code).toBe("CHATTERBOX_DEVICE_INVALID");
     await app.close();
   });
 

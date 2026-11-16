@@ -34,10 +34,12 @@ describe("video AI CUDA Python overlay", () => {
   it("uses the GPU interpreter with CUDA dependencies ahead of the base OCR and service dependencies", async () => {
     const resolveInstalledPython = vi.fn(async (id: string) => (id === "video-ai" ? base : cuda));
     const runtime = await resolveVideoAiWorkerRuntime({ resolveInstalledPython } as unknown as ComponentManager);
+    const expectedCudaSite = await fs.realpath(site(cuda));
+    const expectedBaseSite = await fs.realpath(site(base));
     expect(runtime).toEqual({
       componentId: "video-ai-cuda",
       python: cuda,
-      environment: { PYTHONPATH: [site(cuda), site(base)].join(path.delimiter) }
+      environment: { PYTHONPATH: [expectedCudaSite, expectedBaseSite].join(path.delimiter) }
     });
     expect(resolveInstalledPython.mock.calls.map(([id]) => id)).toEqual(["video-ai", "video-ai-cuda"]);
   });

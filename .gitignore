@@ -76,6 +76,7 @@ storage/quarantine/**
 .runtime/playwright-browsers/
 .runtime/packages/
 .runtime/bootstrap/
+.runtime/macos-source-launcher/
 
 # User-provided startup archives are local resources, never source-control uploads.
 offline-resources/**

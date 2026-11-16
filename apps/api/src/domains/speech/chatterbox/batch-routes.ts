@@ -31,6 +31,7 @@ import { registerChatterboxBatchItemRoutes } from "./batch-item-routes";
 import { ChatterboxBatchStore, ChatterboxVoiceStore } from "./stores";
 import { registerChatterboxVoiceRoutes } from "./voice-routes";
 import type { createChatterboxWorkerClient } from "./worker-client";
+import { chatterboxDeviceUnavailable, supportsChatterboxDevice } from "./device-capabilities";
 
 type WorkerClient = ReturnType<typeof createChatterboxWorkerClient>;
 
@@ -69,7 +70,7 @@ export async function registerChatterboxBatchRoutes(options: {
 
   registerChatterboxVoiceRoutes(app, voiceStore, media);
   registerChatterboxBatchDownloadRoutes({ app, config, store, queue, media });
-  registerChatterboxBatchItemRoutes({ app, config, store, voiceStore, queue, media, queueLoad });
+  registerChatterboxBatchItemRoutes({ app, config, worker, store, voiceStore, queue, media, queueLoad });
 
   app.post(
     "/api/v1/tools/edge-tts/chatterbox/batches",
@@ -90,12 +91,11 @@ export async function registerChatterboxBatchRoutes(options: {
       if (queueLoad() >= config.chatterboxQueueLimit) {
         return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
       }
-      let cudaAvailable = false;
+      let health: Awaited<ReturnType<typeof worker.health>>;
       try {
-        const health = await worker.health();
+        health = await worker.health();
         if (!health.available)
           return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
-        cudaAvailable = health.cudaAvailable === true;
       } catch {
         return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
       }
@@ -106,12 +106,9 @@ export async function registerChatterboxBatchRoutes(options: {
         const uploaded = await receiveBatchMultipart(request.parts(), paths.referenceUpload, false);
         const parsed = parseBatchFields(uploaded.fields, uploaded.referenceFileName);
         if (!parsed.success) throw new BatchInputError(parsed.code, parsed.message, parsed.statusCode);
-        if (parsed.value.device === "cuda" && !cudaAvailable) {
-          throw new BatchInputError(
-            "CHATTERBOX_CUDA_UNAVAILABLE",
-            "当前运行环境没有可用的 CUDA GPU，请改选 CPU 或安装 CUDA 运行环境。",
-            409
-          );
+        if (!supportsChatterboxDevice(health, parsed.value.device)) {
+          const unavailable = chatterboxDeviceUnavailable(parsed.value.device, health);
+          throw new BatchInputError(unavailable.code, unavailable.message, 409);
         }
         if (queueLoad() + parsed.value.segments.length > config.chatterboxQueueLimit) {
           throw new BatchInputError("CHATTERBOX_QUEUE_FULL", "本批次段数超过当前可用队列容量", 429);

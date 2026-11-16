@@ -1,0 +1,6 @@
+# 小红书本地翻译 Worker 的固定 CPU 运行时依赖；锁文件由 uv 生成并含文件哈希。
+ctranslate2==4.8.2
+sentencepiece==0.2.2
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5

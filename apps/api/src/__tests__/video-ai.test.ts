@@ -10,7 +10,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createIsolatedAppFixture } from "./helpers/isolated-app";
 import { isVideoAiModeValue, toPublicTask } from "../domains/video-ai/task-projections";
-import { isDetection, isProcessResult } from "../domains/video-ai/worker-client";
+import { isDetection, isHealth, isProcessResult } from "../domains/video-ai/worker-client";
 import type { StoredVideoAiTask } from "../domains/video-ai/types";
 import * as desktopRuntime from "../runtime/desktop-capability-runtime";
 vi.mock("../domains/video-ai/media", () => ({
@@ -83,6 +83,42 @@ describe("video-ai task projections", () => {
 });
 
 describe("video-ai worker payload validation", () => {
+  const health = {
+    protocolVersion: 1,
+    available: true,
+    device: "cuda",
+    vramTotalMb: 8192,
+    engines: [{ provider: "delogo", license: "Apache-2.0", available: true, reason: null }]
+  };
+
+  it("accepts legacy CPU/CUDA health and new MPS hybrid engine capabilities", () => {
+    expect(isHealth(health)).toBe(true);
+    expect(
+      isHealth({
+        ...health,
+        device: "mps",
+        vramTotalMb: null,
+        engines: [
+          {
+            provider: "extreme",
+            model: "propainter",
+            license: "S-Lab License 1.0",
+            available: true,
+            reason: null,
+            supportedDevices: ["mps"],
+            executionMode: "hybrid"
+          }
+        ]
+      })
+    ).toBe(true);
+  });
+
+  it("rejects invalid engine capability enum values", () => {
+    expect(isHealth({ ...health, engines: [{ ...health.engines[0], supportedDevices: ["metal"] }] })).toBe(false);
+    expect(isHealth({ ...health, engines: [{ ...health.engines[0], executionMode: "auto" }] })).toBe(false);
+    expect(isHealth({ ...health, engines: [{ ...health.engines[0], supportedDevices: [] }] })).toBe(false);
+  });
+
   const detection = {
     width: 1280,
     height: 720,

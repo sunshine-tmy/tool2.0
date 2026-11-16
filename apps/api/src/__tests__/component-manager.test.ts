@@ -16,6 +16,13 @@ import {
   type ComponentPackageManifest
 } from "../modules/components/component-manager";
 import { registerComponentRoutes } from "../modules/components/routes";
+import { verifyManifest } from "../modules/components/manifest";
+import { verifyInstalledFiles } from "../modules/components/package-archive";
+import {
+  expectedMacOSChromiumFrameworkLinks,
+  MACOS_CHROMIUM_FRAMEWORK_PATH,
+  MACOS_CHROMIUM_LINK_VERSION
+} from "../modules/components/chromium-framework-links";
 import { createRemoteFetch } from "../security/remote-fetch";
 
 const keyPair = crypto.generateKeyPairSync("ed25519");
@@ -138,7 +145,7 @@ describe("ComponentManager", () => {
   });
 
   it("keeps retired Python hidden on fresh installations and exposes only safe uninstall for old installations", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-python-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-python-")));
     const root = path.join(temporaryRoot, "packages");
     const manager = new ComponentManager({
       root,
@@ -163,7 +170,7 @@ describe("ComponentManager", () => {
   });
 
   it.each(["old", "corrupt"])("refuses retired runtime deletion with a %s dependent marker", async (kind) => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-dependent-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-dependent-")));
     const root = path.join(temporaryRoot, "packages");
     await seedCurrent(root, "python-311", "3.11.16-20260901");
     await seedCurrent(root, "image-ai", "1.0.0-cpu2");
@@ -180,7 +187,7 @@ describe("ComponentManager", () => {
   });
 
   it("rechecks busy state after the shutdown hook before removing a retired runtime", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-busy-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-busy-")));
     const root = path.join(temporaryRoot, "packages");
     await seedCurrent(root, "python-311", "3.11.16-20260901");
     let busy = false;
@@ -227,7 +234,7 @@ describe("ComponentManager", () => {
   });
 
   it("refuses deletion when the fixed legacy directory is a link to another location", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-link-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-retired-link-")));
     const root = path.join(temporaryRoot, "packages");
     const externalRoot = path.join(temporaryRoot, "outside");
     await seedCurrent(externalRoot, "python-311", "3.11.16-20260901");
@@ -276,6 +283,110 @@ describe("ComponentManager", () => {
 
     await expect(manager.getOfflineImportRequirements("edge-tts")).rejects.toMatchObject({
       code: "COMPONENT_MANIFEST_INVALID"
+    });
+  });
+
+  it("accepts inert Windows-named Python standard-library sources in a signed Mac manifest", async () => {
+    const fixture = await createFixture("1.0.0");
+    const manifest: ComponentPackageManifest = {
+      ...fixture.manifest,
+      version: "1.0.0-darwin-arm64",
+      platform: "darwin-arm64",
+      files: [
+        {
+          path: "python/lib/python3.12/multiprocessing/popen_spawn_win32.py",
+          bytes: 1,
+          sha256: crypto.createHash("sha256").update("x").digest("hex")
+        }
+      ],
+      installedBytes: 1,
+      signature: ""
+    };
+    manifest.signature = crypto
+      .sign(null, Buffer.from(canonicalManifest(manifest)), keyPair.privateKey)
+      .toString("base64");
+    const manager = new ComponentManager({
+      root: path.join(temporaryRoot, "mac-packages"),
+      platform: "darwin-arm64",
+      catalog: { manifests: [manifest], trustedPublicKeys: { "test-ed25519": publicKey } }
+    });
+
+    await expect(manager.list()).resolves.toMatchObject([{ id: "edge-tts", version: "1.0.0-darwin-arm64" }]);
+  });
+
+  it("rejects unsupported Mac package IDs and Python 3.11 dependency metadata", async () => {
+    const fixture = await createFixture("1.0.0");
+    const valid = fixture.manifest;
+    const rejectMacManifest = (overrides: Partial<ComponentPackageManifest>) =>
+      expect(() =>
+        verifyManifest({ ...valid, ...overrides }, "darwin-arm64", Number.MAX_SAFE_INTEGER, {
+          "test-ed25519": publicKey
+        })
+      ).toThrowError(expect.objectContaining({ code: "COMPONENT_MANIFEST_INVALID" }));
+
+    for (const id of ["python-311", "chatterbox-cuda", "video-ai-cuda"]) {
+      rejectMacManifest({ id, moduleId: id });
+    }
+    rejectMacManifest({ dependencyIds: ["python-311"] });
+    rejectMacManifest({
+      pythonEnvironment: {
+        pythonComponentId: "python-311",
+        pythonExecutablePath: "python/bin/python3.11",
+        wheelhousePath: "wheelhouse",
+        requirementsLockPath: "requirements.lock",
+        expectedPythonVersion: "3.11",
+        requirementsLockSha256: "a".repeat(64)
+      }
+    });
+    for (const filePath of [
+      "worker.exe",
+      "runtime.dll",
+      "wheelhouse/native-win_amd64.whl",
+      "Users/build-host/job/worker.py"
+    ]) {
+      rejectMacManifest({
+        files: [...valid.files, { path: filePath, bytes: 1, sha256: "a".repeat(64) }]
+      });
+    }
+  });
+
+  it("installs only the five signed Chromium framework links outside the regular-file archive", async () => {
+    const fixture = await createMacChromiumFixture();
+    const manager = new ComponentManager({
+      root: path.join(temporaryRoot, "mac-packages"),
+      platform: "darwin-arm64",
+      catalog: { manifests: [fixture.manifest], trustedPublicKeys: { "test-ed25519": publicKey } },
+      downloadArchive: async (_manifest, destination) => fs.copyFile(fixture.archivePath, destination)
+    });
+    const entries: Array<{ path: string; type: string }> = [];
+    await tar.t({
+      file: fixture.archivePath,
+      onReadEntry: (entry) => entries.push({ path: entry.path, type: entry.type })
+    });
+    expect(entries.every((entry) => entry.type === "File" || entry.type === "Directory")).toBe(true);
+    expect(entries.some((entry) => fixture.manifest.links?.some((link) => link.path === entry.path))).toBe(false);
+
+    const job = await manager.startInstall("xhs-browser");
+    expect(await waitForJob(manager, job.id)).toMatchObject({ state: "completed" });
+    const installedRoot = (await manager.resolveInstalledAsset("xhs-browser", fixture.manifest.files[0]!.path))
+      .generationRoot;
+    await verifyInstalledFiles(installedRoot, fixture.manifest, "darwin-arm64");
+    for (const link of fixture.manifest.links ?? []) {
+      expect(await fs.readlink(path.join(installedRoot, ...link.path.split("/")))).toBe(link.target);
+    }
+
+    const altered = { ...fixture.manifest, links: [...(fixture.manifest.links ?? [])].reverse() };
+    expect(() =>
+      verifyManifest(altered, "darwin-arm64", Number.MAX_SAFE_INTEGER, { "test-ed25519": publicKey })
+    ).toThrowError(expect.objectContaining({ code: "COMPONENT_MANIFEST_INVALID" }));
+
+    const helpers = fixture.manifest.links?.find((link) => link.path.endsWith("/Helpers"));
+    if (!helpers) throw new Error("fixture is missing the pinned Helpers link");
+    const helpersPath = path.join(installedRoot, ...helpers.path.split("/"));
+    await fs.unlink(helpersPath);
+    await fs.symlink("../../../../../../outside", helpersPath);
+    await expect(verifyInstalledFiles(installedRoot, fixture.manifest, "darwin-arm64")).rejects.toMatchObject({
+      code: "COMPONENT_INSTALL_FAILED"
     });
   });
 
@@ -1425,7 +1536,7 @@ describe("ComponentManager", () => {
 
 describe("component routes", () => {
   it("lists the bundled catalog and never accepts a renderer supplied URL", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-routes-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-routes-")));
     const app = fastify();
     app.addHook("preSerialization", async (request, _reply, payload) => {
       if (typeof payload !== "object" || payload === null) return payload;
@@ -1449,7 +1560,7 @@ describe("component routes", () => {
   });
 
   it("starts and exposes an install job through the management API", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-routes-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-routes-")));
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath);
     const app = fastify();
@@ -1498,7 +1609,7 @@ describe("component routes", () => {
   });
 
   it("accepts offline archives only when explicitly enabled and applies the signed package size limit", async () => {
-    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-offline-route-"));
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-offline-route-")));
     const fixture = await createFixture("1.0.0");
     const manager = createManager(fixture.manifest, fixture.archivePath, async () => {
       throw new Error("offline route must not download");
@@ -1558,7 +1669,8 @@ async function createFixture(
     license?: ComponentPackageManifest["license"] | null;
   } = {}
 ) {
-  if (!temporaryRoot) temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-manager-"));
+  if (!temporaryRoot)
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-manager-")));
   const componentId = overrides.id ?? "edge-tts";
   const source = path.join(temporaryRoot, "source-" + componentId + "-" + version);
   const archivePath = path.join(temporaryRoot, componentId + "-" + version + ".tar.gz");
@@ -1639,6 +1751,72 @@ async function createFixture(
     overrides.signature ??
     crypto.sign(null, Buffer.from(canonicalManifest(provisional)), keyPair.privateKey).toString("base64");
   return { manifest: { ...unsigned, signature } satisfies ComponentPackageManifest, archivePath };
+}
+
+async function createMacChromiumFixture() {
+  if (!temporaryRoot)
+    temporaryRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-component-manager-")));
+  const source = path.join(temporaryRoot, "chromium-source-" + crypto.randomUUID());
+  const archivePath = path.join(temporaryRoot, "xhs-browser-chromium-links.tar.gz");
+  const links = expectedMacOSChromiumFrameworkLinks();
+  const currentVersion = links.find((link) => link.path.endsWith("/Versions/Current"))?.target;
+  if (!currentVersion) throw new Error("fixed Chromium link policy is missing Versions/Current");
+  const versionRoot = path.posix.join(MACOS_CHROMIUM_FRAMEWORK_PATH, "Versions", currentVersion);
+  const relativeFiles = [
+    `${versionRoot}/Resources/resource.dat`,
+    `${versionRoot}/Libraries/library.dylib`,
+    `${versionRoot}/Helpers/helper`,
+    `${versionRoot}/Google Chrome for Testing Framework`
+  ];
+  for (const relativePath of relativeFiles) {
+    const fullPath = path.join(source, ...relativePath.split("/"));
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, `fixture:${relativePath}`);
+  }
+  for (const link of links) {
+    const fullPath = path.join(source, ...link.path.split("/"));
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.symlink(link.target, fullPath);
+  }
+  await tar.c({ gzip: true, file: archivePath, cwd: source }, relativeFiles);
+  const files = await Promise.all(
+    relativeFiles.map(async (relativePath) => {
+      const content = await fs.readFile(path.join(source, ...relativePath.split("/")));
+      return {
+        path: relativePath,
+        bytes: content.byteLength,
+        sha256: crypto.createHash("sha256").update(content).digest("hex")
+      };
+    })
+  );
+  const archive = await fs.readFile(archivePath);
+  const unsigned = {
+    protocolVersion: 1,
+    id: "xhs-browser",
+    moduleId: "xhs-browser",
+    groupId: "archive" as const,
+    displayName: "小红书登录浏览器",
+    purpose: "Mac Chromium framework link installation fixture",
+    dependencyIds: [],
+    taskToolIds: ["xhs-browser"],
+    installConditions: [],
+    version: MACOS_CHROMIUM_LINK_VERSION,
+    platform: "darwin-arm64" as const,
+    archive: {
+      url: "https://packages.example.test/xhs-browser-chromium-links.tar.gz",
+      bytes: archive.byteLength,
+      sha256: crypto.createHash("sha256").update(archive).digest("hex"),
+      format: "tar.gz" as const
+    },
+    installedBytes: files.reduce((total, file) => total + file.bytes, 0),
+    files,
+    links,
+    sbom: { url: "https://packages.example.test/xhs-browser.spdx.json", sha256: "1".repeat(64) },
+    keyId: "test-ed25519",
+    signature: ""
+  } satisfies ComponentPackageManifest;
+  const signature = crypto.sign(null, Buffer.from(canonicalManifest(unsigned)), keyPair.privateKey).toString("base64");
+  return { manifest: { ...unsigned, signature }, archivePath };
 }
 
 function createManager(

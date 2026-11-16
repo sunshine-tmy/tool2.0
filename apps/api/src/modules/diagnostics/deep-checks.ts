@@ -70,10 +70,15 @@ export async function executeDeepCheck(
       (componentId) => service.components.resolveInstalledPython(componentId)
     );
     await service.components.verifyCurrent(id, signal, tester);
-  } else if (target === "image-ai" || target === "chatterbox") {
-    title = target === "image-ai" ? "AI 图片模型加载" : "参考音色克隆模型加载";
+  } else if (target === "image-ai" || target === "chatterbox" || target === "video-ai-sequence") {
+    title =
+      target === "image-ai"
+        ? "AI 图片模型加载"
+        : target === "chatterbox"
+          ? "参考音色克隆模型加载"
+          : "STTN / ProPainter 显式模型深检";
     // 模型加载不可安全中断；取消时保留维护锁直至本次调用结束，不误杀用户 Worker。
-    const result = await service.worker(target, true);
+    const result = await service.worker(target === "video-ai-sequence" ? "video-ai" : target, true, signal);
     if (!result.available)
       throw Object.assign(new Error("模型自检未通过"), {
         code: result.code === "CUDA_OUT_OF_MEMORY" ? result.code : "MODEL_SELF_TEST_FAILED"
@@ -118,6 +123,6 @@ export async function executeDeepCheck(
     message: "本次实际检查已通过",
     impact: "仅反映本次检查结果",
     suggestion: "无需处理",
-    modules: [target === "chatterbox" ? "edge-tts" : target]
+    modules: target === "chatterbox" ? ["edge-tts"] : target === "video-ai-sequence" ? ["video-ai"] : [target]
   };
 }

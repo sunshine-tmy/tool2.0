@@ -1,5 +1,5 @@
 import path from "node:path";
-import { hashText } from "./package-io";
+import { hashText, portablePathKey } from "./package-io";
 import type { BackupMode, BackupModuleId } from "@toolbox/shared/system";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
@@ -383,9 +383,9 @@ export function planRestore(
       if (mode === "merge" && skip.has(key)) continue;
       const relative = mapFilePath(file, module, map),
         entityId = mapped(map, module.id, kind, file.entityId);
-      if (mode === "merge" && target.files.some((f) => f.path.toLowerCase() === relative.toLowerCase()))
+      if (mode === "merge" && target.files.some((f) => portablePathKey(f.path) === portablePathKey(relative)))
         throw new Error("恢复文件与已有素材路径冲突，请使用替换或整理现有素材");
-      const collision = database.listFiles().find((f) => f.relativePath.toLowerCase() === relative.toLowerCase());
+      const collision = database.listFiles().find((f) => portablePathKey(f.relativePath) === portablePathKey(relative));
       if (mode === "merge" && collision && !target.files.some((f) => f.path === collision.relativePath))
         throw new Error("恢复文件与其他模块冲突");
       files.push({ path: relative, source: path.join(bundle.directory, "objects", file.sha256) });

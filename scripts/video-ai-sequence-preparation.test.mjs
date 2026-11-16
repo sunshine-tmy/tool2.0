@@ -96,6 +96,7 @@ test(
       "video_ai_sequence.py",
       "video_ai_sttn.py",
       "video_ai_propainter.py",
+      "video_ai_device.py",
       "video-ai-sequence-support.json"
     ])
       await fs.access(path.join(result.stagingDirectory, "scripts", file));

@@ -17,7 +17,8 @@ export async function run({
   env = process.env,
   targetPlatform = process.platform,
   targetArch = process.arch,
-  installerBuilder
+  installerBuilder,
+  generateMacOSIconFile = generateMacOSIcon
 }) {
   const outputRoot = path.join(desktopRoot, "out");
   const stageRoot = path.join(desktopRoot, ".stage");
@@ -53,19 +54,32 @@ export async function run({
 
     await Promise.all(["backend", "frontend", "scripts", "tooling"].map((name) => access(path.join(stageRoot, name))));
     const desktopIcon = isMacOS
-      ? await generateMacOSIcon(stageRoot)
+      ? await generateMacOSIconFile(stageRoot)
       : path.join(desktopRoot, "assets", "ecommerce-toolbox.ico");
     await access(desktopIcon);
     await rm(outputRoot, { recursive: true, force: true });
 
-    const [packagedApp] = await packager({
+    const [packagedOutput] = await packager({
       dir: desktopRoot,
       out: outputRoot,
       name: appName,
       platform: targetPlatform,
       arch: targetArch,
       icon: desktopIcon,
-      ...(isMacOS ? { osxSign: false, osxNotarize: false } : {}),
+      ...(isMacOS
+        ? {
+            // electron-builder skips signing when it receives --prepackaged, so sign the app in Packager.
+            // Fail the build if ad-hoc signing fails instead of shipping a silently unsigned bundle.
+            osxSign: {
+              identity: "-",
+              identityValidation: false,
+              continueOnError: false,
+              optionsForFile: () => ({ hardenedRuntime: false, timestamp: "none" })
+            },
+            extendInfo: { LSMinimumSystemVersion: "14.0.0" },
+            osxNotarize: false
+          }
+        : {}),
       appVersion: release.version,
       buildVersion: release.version,
       asar: true,
@@ -76,7 +90,10 @@ export async function run({
       // outputRoot was cleared above. Avoid a second recursive deletion inside
       // Electron Packager, which can race with Windows antivirus file scanning.
       overwrite: false,
-      extraResource: ["backend", "frontend", "scripts", "tooling"].map((name) => path.join(stageRoot, name)),
+      extraResource: [
+        ...["backend", "frontend", "scripts", "tooling"].map((name) => path.join(stageRoot, name)),
+        ...(isMacOS ? [path.join(desktopRoot, "assets", "ecommerce-toolbox-icon-24.png")] : [])
+      ],
       afterCopy: [embedReleaseMetadata(release), copyDesktopRuntimeDependencies()],
       ...(cachedElectronZipDirectory
         ? { electronZipDir: cachedElectronZipDirectory }
@@ -87,16 +104,23 @@ export async function run({
             }
           }),
       ignore: [
-        /(^|[\\/])(\.stage|node_modules|out|src|test-results)([\\/]|$)/,
+        /(^|[\\/])(\.electron-cache|\.stage|node_modules|out|src|test-results)([\\/]|$)/,
         /(^|[\\/])\.desktop-(package\.lock|version-.*\.tmp)$/
       ]
     });
 
-    assert.ok(packagedApp, "Electron Packager did not produce an application bundle");
+    assert.ok(packagedOutput, "Electron Packager did not produce an application bundle");
+    // @electron/packager returns the platform output directory. On macOS the
+    // actual application bundle lives one level below that directory.
+    const packagedApp =
+      isMacOS && path.basename(packagedOutput) !== `${appName}.app`
+        ? path.join(packagedOutput, `${appName}.app`)
+        : packagedOutput;
     if (isMacOS) {
       await access(path.join(packagedApp, "Contents", "MacOS", appName));
       await access(path.join(packagedApp, "Contents", "Resources", "backend", "dist", "desktop-entry.js"));
       await access(path.join(packagedApp, "Contents", "Resources", "frontend", "index.html"));
+      await access(path.join(packagedApp, "Contents", "Resources", "ecommerce-toolbox-icon-24.png"));
       await access(path.join(packagedApp, "Contents", "Resources", "app.asar"));
     } else {
       await access(path.join(packagedApp, `${appName}.exe`));
@@ -119,7 +143,7 @@ export async function run({
         if (!isMacOS) await rm(customIncludePath, { force: true });
       }
       if (isMacOS) {
-        await access(path.join(installerOutput, "EcommerceToolbox-mac-arm64.dmg"));
+        await access(path.join(installerOutput, "电商工具箱-mac-arm64.dmg"));
         console.log(`Apple Silicon internal-test DMG created: ${installerOutput}`);
       } else {
         await access(path.join(installerOutput, "电商工具箱.exe"));
@@ -135,6 +159,7 @@ export async function run({
   function readReleaseOptions(version) {
     const isRelease = env.DESKTOP_RELEASE === "1";
     if (!isRelease) return { version, updateFeed: undefined, signing: undefined };
+    if (isMacOS) throw new Error("Mac internal builds do not use Windows release signing or automatic updates");
 
     const updateFeed = requiredUpdateFeed(env.DESKTOP_UPDATE_FEED_URL);
     const certificateFile = env.WINDOWS_CERTIFICATE_FILE?.trim();
@@ -253,7 +278,7 @@ export async function run({
       packagedApp,
       ...(isMacOS ? ["Contents", "Resources", "app-update.yml"] : ["resources", "app-update.yml"])
     );
-    if (!release.updateFeed) {
+    if (isMacOS || !release.updateFeed) {
       await rm(updateConfigPath, { force: true });
       return;
     }
@@ -278,15 +303,23 @@ export async function run({
     config.buildVersion = release.version;
     if (isMacOS) {
       config.directories.output = path.relative(desktopRoot, packageOutput);
-      config.mac = { icon: ".stage/ecommerce-toolbox.icns", target: ["dmg"], identity: "-" };
-      config.artifactName = "EcommerceToolbox-mac-arm64.${ext}";
+      config.mac = {
+        icon: ".stage/ecommerce-toolbox.icns",
+        target: ["dmg"],
+        identity: "-",
+        hardenedRuntime: false,
+        notarize: false,
+        minimumSystemVersion: "14.0.0"
+      };
+      config.artifactName = "电商工具箱-mac-arm64.${ext}";
       config.dmg = {};
       delete config.win;
       delete config.nsis;
+      delete config.publish;
     } else {
       config.nsis = { ...config.nsis, include: "installer-custom.nsh", allowElevation: false };
     }
-    if (release.updateFeed) config.publish = [{ provider: "generic", url: release.updateFeed }];
+    if (release.updateFeed && !isMacOS) config.publish = [{ provider: "generic", url: release.updateFeed }];
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     return { path: configPath, dispose: () => rm(configPath, { force: true }) };
   }

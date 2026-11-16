@@ -162,6 +162,7 @@ export const chatterboxApi = {
       exaggeration?: number;
       cfgWeight?: number;
       temperature?: number;
+      device?: ChatterboxDevice;
       reference?: File;
       voiceId?: string;
     }
@@ -175,6 +176,7 @@ export const chatterboxApi = {
     if (input.exaggeration !== undefined) form.append("exaggeration", String(input.exaggeration));
     if (input.cfgWeight !== undefined) form.append("cfgWeight", String(input.cfgWeight));
     if (input.temperature !== undefined) form.append("temperature", String(input.temperature));
+    if (input.device !== undefined) form.append("device", input.device);
     if (input.reference) form.append("reference", input.reference, input.reference.name);
     if (input.voiceId) form.append("voiceId", input.voiceId);
     return withApiError(

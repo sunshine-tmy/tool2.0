@@ -14,11 +14,15 @@ import importlib.abc
 import importlib.machinery
 import importlib.util
 import json
+import os
+import platform
+import re
 import sys
 from pathlib import Path
 from types import ModuleType
 
 ASSET_SCHEMA_VERSION = 1
+MACOS_SEQUENCE_SUPPORT_PATH = "scripts/video-ai-sequence-support-macos.json"
 _roots: dict[str, Path] = {}
 
 
@@ -94,6 +98,147 @@ def read_bundle(root: Path, *, verify: bool = True) -> dict:
         if file.is_file() and file.relative_to(root).as_posix() not in declared:
             raise ValueError("Undeclared engine content")
     return bundle
+
+
+def validate_macos_sequence_support(root: Path, bundle: dict) -> dict:
+    """Match a signed Mac engine descriptor to its immutable device definition."""
+    if sys.platform != "darwin" or platform.machine() != "arm64":
+        raise ValueError("Mac sequence assets require the darwin-arm64 runtime")
+    package_root_value = os.environ.get("VIDEO_AI_SEQUENCE_PACKAGE_ROOT")
+    support_path_value = os.environ.get("VIDEO_AI_SEQUENCE_SUPPORT_PATH")
+    expected_support_sha = os.environ.get("VIDEO_AI_SEQUENCE_SUPPORT_SHA256", "")
+    if not package_root_value or not support_path_value or len(expected_support_sha) != 64:
+        raise ValueError("Signed Mac sequence support definition is missing")
+    package_root = Path(package_root_value).resolve(strict=True)
+    expected_support = owned_path(package_root, MACOS_SEQUENCE_SUPPORT_PATH)
+    support_path = Path(support_path_value).resolve(strict=True)
+    if support_path != expected_support:
+        raise ValueError("Mac sequence support path is outside the signed video generation")
+    if support_path.stat().st_size > 128 * 1024:
+        raise ValueError("Mac sequence support definition is too large")
+    with support_path.open("rb") as handle:
+        if hashlib.file_digest(handle, "sha256").hexdigest() != expected_support_sha:
+            raise ValueError("Mac sequence support digest mismatch")
+    expected_root = (package_root / "models" / "video-ai" / "engines" / bundle["engine"]).resolve(strict=True)
+    if root.resolve(strict=True) != expected_root:
+        raise ValueError("Mac sequence engine path is outside the signed video generation")
+    definition = json.loads(support_path.read_text(encoding="utf-8"))
+    if (
+        definition.get("assetSchemaVersion") != 1
+        or definition.get("workerFeature") != "sequence-assets-v1"
+        or definition.get("sequenceRuntime") != 1
+        or definition.get("platform") != "darwin-arm64"
+        or definition.get("torchVersion") != "2.6.0"
+        or definition.get("torchvisionVersion") != "0.21.0"
+    ):
+        raise ValueError("Mac sequence definition protocol or runtime version mismatch")
+    entry = definition.get("engines", {}).get(bundle["engine"])
+    expected_mode = "hybrid" if bundle["engine"] == "propainter" else "mps"
+    if (
+        not isinstance(entry, dict)
+        or entry.get("repository") != bundle.get("repository")
+        or entry.get("revision") != bundle.get("revision")
+        or entry.get("license") != bundle.get("license")
+        or entry.get("namespace") != bundle.get("namespace")
+        or entry.get("adapterReady") is not True
+        or bundle.get("adapterReady") is not True
+        or entry.get("supportedDevices") != ["mps"]
+        or entry.get("executionMode") != expected_mode
+    ):
+        raise ValueError("Mac sequence engine is not approved by its signed device definition")
+    source_lock = entry.get("sources")
+    weight_lock = entry.get("weights")
+    files = {item.get("path", "").casefold(): item for item in bundle["files"]}
+    if not isinstance(source_lock, list) or not isinstance(weight_lock, list):
+        raise ValueError("Mac sequence source or weight lock is incomplete")
+    license_lock = [item for item in source_lock if isinstance(item, dict) and item.get("path") == "LICENSE"]
+    source_lock = [item for item in source_lock if isinstance(item, dict) and item.get("path") != "LICENSE"]
+    provenance_path = owned_path(root, "PROVENANCE.json")
+    if provenance_path.stat().st_size > 128 * 1024:
+        raise ValueError("Mac sequence provenance is too large")
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+    source_provenance = provenance.get("sources")
+    weight_provenance = provenance.get("weights")
+    if (
+        len(license_lock) != 1
+        or len(license_lock) + len(source_lock) != len(entry["sources"])
+        or files.get("license", {}).get("role") != "license"
+        or files.get("license", {}).get("sha256") != license_lock[0].get("sha256")
+        or not isinstance(source_provenance, list)
+        or len(source_provenance) != len(source_lock)
+        or not isinstance(weight_provenance, list)
+        or len(weight_provenance) != len(weight_lock)
+    ):
+        raise ValueError("Mac sequence provenance does not match its signed source lock")
+    if len({item["path"] for item in source_lock}) != len(source_lock):
+        raise ValueError("Mac sequence source lock contains duplicate paths")
+    for expected, actual in zip(source_lock, source_provenance, strict=True):
+        if (
+            not isinstance(actual, dict)
+            or not isinstance(expected.get("path"), str)
+            or not isinstance(expected.get("sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", expected.get("sha256", ""))
+            or not isinstance(expected.get("gitBlobSha1"), str)
+            or not re.fullmatch(r"[a-f0-9]{40}", expected.get("gitBlobSha1", ""))
+            or expected["path"] != actual.get("path")
+            or expected["sha256"] != actual.get("originalSha256")
+            or expected["gitBlobSha1"] != actual.get("gitBlobSha1")
+            or not isinstance(actual.get("bundledSha256"), str)
+        ):
+            raise ValueError("Mac sequence source provenance does not match its signed lock")
+        relative = "vendor/" + expected["path"]
+        descriptor_file = files.get(relative.casefold())
+        if (
+            descriptor_file is None
+            or descriptor_file.get("role") != "source"
+            or descriptor_file.get("sha256") != actual["bundledSha256"]
+        ):
+            raise ValueError("Mac sequence source descriptor does not match its signed lock")
+        owned_path(root, relative)
+    expected_sources = {"vendor/" + item["path"] for item in source_lock}
+    for item in bundle["files"]:
+        relative = item["path"]
+        if (
+            item["role"] == "source"
+            and relative not in expected_sources
+            and not (
+                relative == "vendor/__init__.py" or relative.startswith("vendor/") and relative.endswith("/__init__.py")
+            )
+        ):
+            raise ValueError("Mac sequence bundle contains source outside its signed lock")
+    expected_weights = {str(item.get("path")) for item in weight_lock if isinstance(item, dict)}
+    actual_weights = {item["path"] for item in bundle["files"] if item["role"] == "weight"}
+    if actual_weights != expected_weights:
+        raise ValueError("Mac sequence bundle weight set does not match its signed lock")
+    for expected, actual in zip(weight_lock, weight_provenance, strict=True):
+        if (
+            not isinstance(expected, dict)
+            or not isinstance(actual, dict)
+            or expected.get("path") != "weights/" + str(actual.get("name"))
+            or expected.get("bytes") != actual.get("bytes")
+            or expected.get("sha256") != actual.get("sha256")
+            or not isinstance(expected.get("sha256"), str)
+            or not re.fullmatch(r"[a-f0-9]{64}", expected.get("sha256", ""))
+        ):
+            raise ValueError("Mac sequence weight provenance does not match its signed lock")
+        descriptor_file = files.get(str(expected.get("path", "")).casefold())
+        if (
+            descriptor_file is None
+            or descriptor_file.get("role") != "weight"
+            or descriptor_file.get("bytes") != expected.get("bytes")
+            or descriptor_file.get("sha256") != expected.get("sha256")
+            or not isinstance(expected.get("bytes"), int)
+            or expected["bytes"] < 1
+            or expected["bytes"] > 200_000_000
+        ):
+            raise ValueError("Mac sequence weight descriptor does not match its signed lock")
+        owned_path(root, str(expected["path"]))
+    import torch
+    import torchvision
+
+    if torch.__version__ != definition["torchVersion"] or torchvision.__version__ != definition["torchvisionVersion"]:
+        raise ValueError("Mac sequence runtime version does not match its signed device definition")
+    return entry
 
 
 class _SourceLoader(importlib.machinery.SourceFileLoader):

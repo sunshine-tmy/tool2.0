@@ -49,15 +49,15 @@
 
 视频去字幕入口为 `/tools/video-subtitle`，API 为 `/api/v1/tools/video-ai/*`。桌面版在“设置 → 能力管理”按需安装 `video-ai`，NVIDIA 设备可选装 `video-ai-cuda`。旧已发布包提供极速 OpenCV 和快速 Big-LaMa；本地签名试用版 1.1.0 增加 STTN 均衡档与 ProPainter 极致档，需要使用更新后客户端并离线导入新版基础包及 GPU 扩展，见[本地安装说明](docs/video-ai-local-installation.md)。支持自动检测、手动框选、取消、分页历史、预览下载与模块数据备份；成功后原视频、成品及区间框选信息长期留档，可选择原视频或成品二次编辑，详见[留档与二次编辑](docs/video-ai-records.md)。原始上传文件不改动，旧版本已清理的上传副本无法恢复。人工画质和用户桌面实装仍需验收；S06 / S07 历史证据见[时序引擎交付说明](docs/video-ai-sequence-release.md)，原安装问题见[交接文档](docs/video-ai-release-handover.md)。开发时可用已有 Python 3.12 环境启动 `pnpm dev:video-ai`，需按方案配置本地模型及 FFmpeg，运行时不自动下载。
 
-| 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                    |
-| ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `电商工具箱.exe`；可选能力在“设置 → 能力管理”中安装             |
-| Apple Silicon macOS 内部测试 | M 系列 Mac 上验证桌面壳与 Mac 原生能力包    | `~/Library/Application Support/EcommerceToolboxData/` | 通过 GitHub Actions 手动构建内部 DMG；未生成并签名 Mac 能力包前，不代表全部业务模块可用 |
-| Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                         |
+| 使用方式                     | 适用场景                                    | 数据位置                                              | 说明                                                                                   |
+| ---------------------------- | ------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Windows 桌面安装版           | 日常使用，不需要 Node.js 或 Python 开发环境 | 安装向导所选目录下的 `data/`                          | 从 GitHub Releases 获取 `电商工具箱.exe`；可选能力在“设置 → 能力管理”中安装            |
+| Apple Silicon macOS 内部测试 | M 系列 Mac 上验证源码桌面与 Mac 原生能力包  | `~/Library/Application Support/EcommerceToolboxData/` | 当前有十项签名 manifest；正式 Release 的十个 manifest 待替换，DMG 与干净安装验收未完成 |
+| Web/开发版                   | 开发、调试或在可信局域网内共享工具          | 默认仓库根目录的 `storage/`                           | 使用 `start.bat` 或 `pnpm dev` 启动；可选 Worker 与模型按需配置                        |
 
 桌面版安装、数据迁移、能力离线导入与导出、升级和卸载说明见[桌面应用使用帮助](./docs/desktop-application-help.md)。已安装能力可在设置中导出为 `.toolbox-capabilities.zip`（自动包含共享依赖），在相同平台和能力目录版本的客户端中离线导入。桌面安装器是交互式安装程序，不是免安装便携版；安装时可选择目录，但应选择当前 Windows 用户有写入权限的位置。
 
-Apple Silicon macOS 首版边界、DMG 构建、原生能力包准备顺序及实机验收门槛见[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)。当前 Mac 能力目录在经过签名与实机验收前保持为空。
+Apple Silicon macOS 的目标、源码启动、十项原生能力目录、DMG 门槛和实机验收状态见[macOS 内部开发与验收指南](./docs/macos-apple-silicon-build.md)。当前 Mac 目录并非空目录；其源码清单和本机安装已通过验证，但 Release 中十个正式 manifest 仍待替换，不能据此宣称安装版或全功能验收完成。
 
 ## 技术架构
 
@@ -714,9 +714,11 @@ Windows 安装验收可在准备好安装包的测试机上，按需手动运行
 
 ## Apple Silicon macOS 内部测试包
 
-后续全功能适配以[macOS Apple Silicon 执行计划](./docs/macos-apple-silicon-implementation-plan.md)为准：目标为 macOS 14+、M1 16 GB 基线、13 个业务模块及十类 Mac 原生能力。文档包含逐项任务、代码入口、依赖顺序和验收要求，供在 Mac 拉取源码后实施；这些目标目前尚未完成实机验收。
+Apple Silicon 的完整目标和验收边界见[macOS 全功能适配计划](./docs/macos-apple-silicon-implementation-plan.md)：目标为 macOS 14+、M1 16 GB 验收基线、13 个业务模块及十类 Mac 原生能力。目标系统版本仍待干净设备验收，当前状态以[执行台账](./docs/macos-execution-status.md)为准。
 
-当前内部流程面向 Apple Silicon、macOS 13+，通过 GitHub Actions 中的 `macOS Apple Silicon internal desktop build` 手动生成不含 Developer ID 签名/公证的测试 DMG（使用 ad-hoc 签名）。该流程只验证应用壳、桌面资源、类型和桌面单测；它不会自动制作或发布 Python、FFmpeg、AI 模型、浏览器等能力包。Mac 能力目录现为空，因此不能把该 DMG 宣称为“全部业务模块可用”。完整步骤和阶段门禁请按[macOS 迁移与内部测试指南](./docs/macos-apple-silicon-build.md)执行。
+**当前状态（2026-11-14）：** Mac 专属目录已有十项签名 manifest；本机十项能力均完成离线安装和生产自检。源码桌面的冷启动、热启动复用和停止已通过。尚未完成的事项包括：既有 `mac能力包` Release 中十个正式 manifest 的替换、M06/M07 原生界面与设备验收、M08-02 Windows 备份导入、真实 DMG 和干净环境安装。TikTok 主页列表用例 F07-05 按用户要求暂缓，仍属未验收。当前不能据此宣称 Mac 全功能或完成版本安装验收。
+
+GitHub Actions 中的 `macOS Apple Silicon internal desktop build` 是手动流程；它不准备或发布 Python、FFmpeg、模型、浏览器等能力资产，也不代替本地安装和设备验收。DMG 尚未制作；完整步骤和阶段门禁见[macOS 内部开发与验收指南](./docs/macos-apple-silicon-build.md)。
 
 ## 生产构建与部署
 

@@ -84,7 +84,6 @@ describe("chatterbox api", () => {
     expect(form.get("referenceRetained")).toBe("true");
     expect(form.get("language")).toBe(language);
     expect(form.get("device")).toBe("cuda");
-    expect(form.get("device")).toBe("cuda");
   });
 
   it("reuses a permanent voice and sends per-item regeneration parameters", async () => {
@@ -115,6 +114,7 @@ describe("chatterbox api", () => {
       exaggeration: 0.9,
       cfgWeight: 0.7,
       temperature: 0.4,
+      device: "mps",
       voiceId: "voice-1"
     });
     [, , form] = httpMock.post.mock.calls[1] as [string, unknown, FormData];
@@ -122,6 +122,7 @@ describe("chatterbox api", () => {
     expect(form.get("referenceTranslation")).toBe("重新生成的参考翻译。");
     expect(form.get("cfgWeight")).toBe("0.7");
     expect(form.get("temperature")).toBe("0.4");
+    expect(form.get("device")).toBe("mps");
     expect(form.get("voiceId")).toBe("voice-1");
   });
 

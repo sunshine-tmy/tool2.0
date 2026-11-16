@@ -3,6 +3,7 @@
  */
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+import { ChatterboxDeviceSchema } from "../speech/chatterbox";
 
 export const WORKER_PROTOCOL_VERSION = 1 as const;
 
@@ -68,7 +69,11 @@ export const ChatterboxWorkerHealthSchema = Type.Object({
   cudaRuntimeAvailable: Type.Optional(Type.Boolean()),
   cudaAvailable: Type.Optional(Type.Boolean()),
   cudaUnavailableReason: Type.Optional(Type.String()),
-  device: Type.Optional(Type.Union([Type.Literal("cuda"), Type.Literal("cpu")])),
+  mpsBuilt: Type.Optional(Type.Boolean()),
+  mpsAvailable: Type.Optional(Type.Boolean()),
+  mpsUnavailableReason: Type.Optional(Type.String()),
+  supportedDevices: Type.Optional(Type.Array(ChatterboxDeviceSchema, { minItems: 1, uniqueItems: true })),
+  device: Type.Optional(ChatterboxDeviceSchema),
   // CPU workers serialize Python None as JSON null; accept that protocol value.
   gpuName: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   message: Type.Optional(Type.String()),
@@ -87,7 +92,7 @@ export const ChatterboxWorkerGenerateSchema = Type.Object({
       endSeconds: NonNegativeNumber
     })
   ),
-  device: Type.Union([Type.Literal("cpu"), Type.Literal("cuda")]),
+  device: ChatterboxDeviceSchema,
   watermarked: Type.Literal(true)
 });
 

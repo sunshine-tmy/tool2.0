@@ -15,6 +15,7 @@ import { DiagnosticJournal } from "@toolbox/runtime-core";
 import { terminateChildProcess } from "../lifecycle/child-process";
 import { videoAiCudaPythonEnvironment } from "../modules/components/video-ai-python-overlay";
 import {
+  macOSVideoAiSequenceEnvironment,
   videoAiSequenceEnvironment,
   validateVideoAiSequenceSupport,
   VIDEO_AI_SEQUENCE_SUPPORT
@@ -467,6 +468,27 @@ export async function resolveChatterboxWorkerRuntime(components: ComponentManage
 export async function resolveVideoAiWorkerRuntime(components: ComponentManager) {
   const base = await optionalPython(components, "video-ai");
   if (!base) return undefined;
+  if (base.manifest.platform === "darwin-arm64") {
+    try {
+      return {
+        componentId: "video-ai",
+        python: base,
+        environment: await macOSVideoAiSequenceEnvironment(base)
+      };
+    } catch (error) {
+      console.warn(
+        `Mac 视频时序资源未通过签名准入，保留基础档位：${error instanceof Error ? error.message : "资源定义无效"}`
+      );
+      return {
+        componentId: "video-ai",
+        python: base,
+        environment: {
+          VIDEO_AI_STTN_SEQUENCE_REASON: "Mac 视频时序资源定义不完整或签名摘要不匹配",
+          VIDEO_AI_PROPAINTER_SEQUENCE_REASON: "Mac 视频时序资源定义不完整或签名摘要不匹配"
+        }
+      };
+    }
+  }
   if (base.manifest.files?.some((file) => file.path === VIDEO_AI_SEQUENCE_SUPPORT))
     await validateVideoAiSequenceSupport(base);
   const cpu = { componentId: "video-ai", python: base, environment: {} as Record<string, string> };
@@ -550,8 +572,14 @@ async function startWorker(options: {
     "PYTHONPATH",
     "PYTHONHOME",
     "HF_TOKEN",
+    "VIDEO_AI_SEQUENCE_PACKAGE_ROOT",
+    "VIDEO_AI_SEQUENCE_SUPPORT_PATH",
+    "VIDEO_AI_SEQUENCE_SUPPORT_SHA256",
+    "VIDEO_AI_SEQUENCE_DEVICE",
     "VIDEO_AI_STTN_ENGINE_ROOT",
-    "VIDEO_AI_PROPAINTER_ENGINE_ROOT"
+    "VIDEO_AI_PROPAINTER_ENGINE_ROOT",
+    "VIDEO_AI_STTN_SEQUENCE_REASON",
+    "VIDEO_AI_PROPAINTER_SEQUENCE_REASON"
   ])
     delete environment[key];
   Object.assign(environment, options.environment, {

@@ -331,44 +331,19 @@
         <label>本批次运行设备</label>
         <div class="chatterbox-device-options" role="radiogroup" aria-label="本批次运行设备">
           <label
-            v-if="!isMacOSDesktop"
+            v-for="option in panel.deviceOptions"
+            :key="option.value"
             class="chatterbox-device-option"
-            :class="{ active: panel.device === 'cuda', disabled: !panel.cudaAvailable }"
-            :title="
-              panel.cudaAvailable
-                ? panel.health?.gpuName || 'CUDA 加速'
-                : panel.health?.cudaUnavailableReason || 'CUDA 加速组件未就绪'
-            "
+            :class="{ active: panel.device === option.value }"
           >
-            <input
-              v-model="panel.device"
-              type="radio"
-              name="chatterbox-device"
-              value="cuda"
-              :disabled="!panel.cudaAvailable"
-            />
+            <input v-model="panel.device" type="radio" name="chatterbox-device" :value="option.value" />
             <span class="chatterbox-device-option-copy">
-              <strong>GPU</strong>
-              <small>{{ panel.cudaAvailable ? panel.health?.gpuName || "CUDA 加速" : "CUDA 未就绪" }}</small>
-            </span>
-          </label>
-          <label class="chatterbox-device-option" :class="{ active: panel.device === 'cpu' }">
-            <input v-model="panel.device" type="radio" name="chatterbox-device" value="cpu" />
-            <span class="chatterbox-device-option-copy">
-              <strong>CPU</strong>
-              <small>兼容优先</small>
+              <strong>{{ option.label }}</strong>
+              <small>{{ option.description }}</small>
             </span>
           </label>
         </div>
-        <p class="chatterbox-device-hint">
-          {{
-            isMacOSDesktop
-              ? "此版本的 macOS 桌面端使用 Chatterbox CPU 推理。"
-              : panel.cudaAvailable
-                ? "GPU 使用 CUDA 加速；显存不足时本批次会报错，不会暗中切回 CPU。"
-                : panel.health?.cudaUnavailableReason || "正在检测 GPU 与 CUDA 运行环境。"
-          }}
-        </p>
+        <p class="chatterbox-device-hint">{{ panel.deviceHint }}</p>
       </div>
 
       <div class="control-section">
@@ -566,8 +541,6 @@ async function toggleReferencePreview() {
 function syncReferencePickerOpen(event: Event) {
   referencePickerOpen.value = (event.currentTarget as HTMLDetailsElement).open;
 }
-const isMacOSDesktop = Boolean(window.toolboxDesktop) && navigator.platform.toLowerCase().includes("mac");
-if (isMacOSDesktop && panel.device === "cuda") panel.device = "cpu";
 </script>
 
 <style scoped>

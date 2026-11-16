@@ -21,15 +21,22 @@ import { toPublicTask } from "./task-projections";
 import type { StoredVideoAiTask } from "./types";
 import { probeVideo } from "./media";
 import { VIDEO_AI_MAX_STORAGE_BYTES } from "@toolbox/shared";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
 
 const PROGRESS_POLL_MS = 500;
 const PROGRESS_PERSIST_MS = 2000;
 
-export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDatabase, taskStore: TaskStore) {
-  const worker = createVideoAiWorkerClient(config);
+export function createVideoAiTaskManager(
+  config: AppConfig,
+  database: ToolboxDatabase,
+  taskStore: TaskStore,
+  resources?: InferenceResourceCoordinator
+) {
+  const worker = createVideoAiWorkerClient(config, resources);
   const tasks = new Map<string, StoredVideoAiTask>();
   const queue: string[] = [];
   const removals = new Map<string, Promise<boolean>>();
+  const resourceWaits = new Map<string, { controller: AbortController; waiting: boolean }>();
   const shutdown = new AbortController();
   let processing = false;
   let reservations = 0;
@@ -224,6 +231,8 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
       // The worker polls the flag between frame chunks, so cancellation stops at
       // the next chunk boundary instead of leaving a partial output behind.
       task.cancelRequested = true;
+      const resourceWait = resourceWaits.get(taskId);
+      if (resourceWait?.waiting) resourceWait.controller.abort();
       if (task.cancelFlagPath) await fs.writeFile(task.cancelFlagPath, "1").catch(() => undefined);
       patchTask(task, { warnings: unique([...task.warnings, "已请求取消，将在当前分块处理完成后停止"]) });
       await persist(task);
@@ -357,16 +366,31 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
       await persist(task);
       const explicit = task.manualArea ? undefined : task.segments.length ? task.segments : undefined;
       const metadata = await probeVideo(config, task.inputPath, shutdown.signal);
-      const result = await worker.process({
-        mode: task.mode,
-        inputPath: task.inputPath,
-        outputPath,
-        progressPath,
-        cancelFlagPath,
-        segments: explicit,
-        manualArea: task.manualArea,
-        signal: shutdown.signal
-      });
+      const requestController = new AbortController();
+      const abortForShutdown = () => requestController.abort();
+      shutdown.signal.addEventListener("abort", abortForShutdown, { once: true });
+      resourceWaits.set(task.id, { controller: requestController, waiting: false });
+      let result: Awaited<ReturnType<typeof worker.process>>;
+      try {
+        result = await worker.process({
+          mode: task.mode,
+          inputPath: task.inputPath,
+          outputPath,
+          progressPath,
+          cancelFlagPath,
+          segments: explicit,
+          manualArea: task.manualArea,
+          signal: requestController.signal,
+          onWaiting: (waiting) => {
+            resourceWaits.set(task.id, { controller: requestController, waiting });
+            patchTask(task, { phase: waiting ? "等待其他 AI 任务完成" : "loading" });
+            void persist(task);
+          }
+        });
+      } finally {
+        shutdown.signal.removeEventListener("abort", abortForShutdown);
+        if (resourceWaits.get(task.id)?.controller === requestController) resourceWaits.delete(task.id);
+      }
       if (task.cancelRequested) throw new VideoAiWorkerError("TASK_CANCELLED", "任务已取消");
       const stat = await fs.stat(outputPath);
       if (
@@ -462,7 +486,7 @@ export function createVideoAiTaskManager(config: AppConfig, database: ToolboxDat
     remove,
     cleanupExpired,
     worker,
-    detect: (inputPath: string) => worker.detect(inputPath, shutdown.signal)
+    detect: (inputPath: string, signal?: AbortSignal) => worker.detect(inputPath, signal ?? shutdown.signal)
   };
 }
 

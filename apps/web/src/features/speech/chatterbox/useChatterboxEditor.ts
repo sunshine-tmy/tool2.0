@@ -18,6 +18,11 @@ import {
 } from "@toolbox/shared";
 import { createLocalId } from "../../../shared/utils/local-id";
 import { parseChatterboxSegments } from "../shared/chatterbox-segment-parser";
+import {
+  chatterboxDeviceOptions,
+  getSupportedChatterboxDevices,
+  selectSupportedChatterboxDevice
+} from "./device-options";
 
 type EditorSegment = { id: string; text: string; referenceTranslation: string; fileName: string };
 type ItemDraft = {
@@ -89,8 +94,8 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   watch(health, (value) => {
     if (initialDeviceResolved || !value?.available) return;
     initialDeviceResolved = true;
-    // 首次就绪时优先 GPU；无 CUDA 时使用 CPU，后续状态刷新不覆盖用户选择。
-    if (device.value === "cuda" && value.cudaAvailable !== true) device.value = "cpu";
+    // 首次就绪时按服务声明的组合选择；后续健康刷新不覆盖用户选择。
+    device.value = selectSupportedChatterboxDevice(value, device.value);
   });
 
   // 统一在 composable 计算表单约束，页面按钮只依赖 canCreate，避免出现校验分支不一致。
@@ -106,7 +111,15 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
       Boolean(batchName.value.trim() || autoSegmentText.value.trim()) ||
       segments.value.some((item) => item.text.trim() || item.referenceTranslation.trim() || item.fileName.trim())
   );
-  const cudaAvailable = computed(() => health.value?.cudaAvailable === true);
+  const deviceOptions = computed(() => chatterboxDeviceOptions(health.value));
+  const supportedDevices = computed(() => getSupportedChatterboxDevices(health.value));
+  const cudaAvailable = computed(() => supportedDevices.value.includes("cuda"));
+  const deviceHint = computed(() => {
+    if (!health.value?.available) return "等待本机服务报告已验证的运行设备。";
+    if (device.value === "mps") return "使用 Apple MPS；推理失败会显示错误，不会自动切换到 CPU。";
+    if (device.value === "cuda") return "使用 CUDA；显存不足时本批次会报错，不会自动切回 CPU。";
+    return "使用 CPU 运行本批次。";
+  });
   const languageSavedVoices = computed(() => savedVoices.value.filter((voice) => voice.language === language.value));
   const hasSelectedReference = computed(() =>
     referenceSource.value === "upload"
@@ -116,7 +129,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const canCreate = computed(() =>
     Boolean(
       health.value?.available &&
-      (device.value === "cpu" || cudaAvailable.value) &&
+      supportedDevices.value.includes(device.value) &&
       hasSelectedReference.value &&
       consentConfirmed.value &&
       segments.value.length > 0 &&
@@ -318,6 +331,9 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
     language,
     device,
     cudaAvailable,
+    deviceOptions,
+    deviceHint,
+    selectSupportedDevice: (preferred?: ChatterboxDevice) => selectSupportedChatterboxDevice(health.value, preferred),
     authorization,
     consentConfirmed,
     exaggeration,

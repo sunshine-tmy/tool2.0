@@ -8,6 +8,7 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const MODEL_REVISION = "cf109095479db38d6df799875e34039d4938aaa6";
@@ -48,7 +49,7 @@ export async function prepareXhsTranslationComponent({
   const lockSource = path.resolve(
     lockFilePath ??
       (process.platform === "darwin"
-        ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "xhs-translation.lock.txt")
+        ? path.join(REPOSITORY_ROOT, "tooling", "components", "macos", "locks", "xhs-translation.lock.txt")
         : path.join(REPOSITORY_ROOT, "scripts", "xhs-translation.lock.txt"))
   );
   await fs.access(lockSource);
@@ -143,22 +144,29 @@ function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
-  if (values.size !== 3 || !values.has("python") || !values.has("model") || !values.has("stage")) {
+  if (
+    [...values.keys()].some((key) => !["python", "model", "stage", "lock"].includes(key)) ||
+    !values.has("python") ||
+    !values.has("model") ||
+    !values.has("stage")
+  ) {
     throw new Error(
-      "用法：pnpm components:prepare-xhs-translation -- --python <Python 3.12 python.exe> --model <固定模型目录> --stage <新暂存目录>"
+      "用法：pnpm components:prepare-xhs-translation -- --python <Python 3.12 路径> --model <固定模型目录> --stage <新暂存目录> [--lock <平台专用哈希锁>]"
     );
   }
   return {
     pythonExecutablePath: values.get("python"),
     modelDirectory: values.get("model"),
-    stagingDirectory: values.get("stage")
+    stagingDirectory: values.get("stage"),
+    ...(values.has("lock") ? { lockFilePath: values.get("lock") } : {})
   };
 }
 

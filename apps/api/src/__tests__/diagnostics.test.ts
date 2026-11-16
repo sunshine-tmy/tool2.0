@@ -145,6 +145,38 @@ describe("diagnostics safety and state", () => {
       { code: "INVALID_TARGET" }
     );
   });
+  it("offers the video model deep check only for an installed video capability", async () => {
+    const missing = await fixture(true);
+    await expect(
+      missing.service.start({ depth: "deep", targets: ["video-ai-sequence"], confirmed: true })
+    ).rejects.toMatchObject({ code: "INVALID_TARGET" });
+
+    const installed = await fixture(true);
+    installed.components.list.mockResolvedValue([
+      {
+        id: "video-ai",
+        installed: true,
+        displayName: "视频去字幕",
+        taskToolIds: ["video-ai"],
+        purpose: "视频处理"
+      }
+    ] as never);
+    const run = await installed.service.start({
+      depth: "deep",
+      targets: ["video-ai-sequence"],
+      confirmed: true
+    });
+    await vi.waitFor(() => expect(installed.service.get(run.id).state).toBe("completed"));
+    expect(installed.service.get(run.id).checks[0]).toMatchObject({
+      id: "video-ai-sequence",
+      status: "ok",
+      modules: ["video-ai"]
+    });
+    const workerCall = vi.mocked(fetch).mock.calls[0];
+    expect(new URL(String(workerCall[0])).pathname).toBe("/diagnostics/deep");
+    expect(workerCall[1]).toMatchObject({ method: "POST" });
+    expect(installed.service.gate.locked).toBe(false);
+  });
   it("holds the exclusive lock while a cancelled model call reaches a safe boundary", async () => {
     const { service } = await fixture();
     let done!: (value: Response) => void;

@@ -153,7 +153,16 @@ async function packagingFixture(t) {
   await write(".electron-cache/electron-v44.4.3-win32-x64.zip");
   await write("assets/ecommerce-toolbox.ico");
   await write("installer-custom.nsh", "  ; @@GENERATED_PROGRAM_FILE_REMOVALS@@");
-  await write("electron-builder.json", JSON.stringify({ directories: {}, nsis: {} }));
+  await write(
+    "electron-builder.json",
+    JSON.stringify({
+      productName: "电商工具箱",
+      executableName: "EcommerceToolbox",
+      directories: {},
+      win: {},
+      nsis: {}
+    })
+  );
   const packager = async (options) => {
     assert.equal(options.appVersion, options.buildVersion);
     assert.ok(options.ignore.some((rule) => rule.test("/.desktop-package.lock")));
@@ -240,4 +249,67 @@ test("signed-release installer configuration keeps its explicit version even whe
     }
   });
   assert.equal((await f.read()).version, "0.1.9");
+});
+
+test("macOS internal DMG pins Apple Silicon settings and cannot publish updater metadata", async (t) => {
+  const f = await packagingFixture(t);
+  await f.write(".electron-cache/electron-v44.4.3-darwin-arm64.zip");
+  await f.write(".stage/ecommerce-toolbox.icns");
+  const app = path.join(f.desktopRoot, "out", "EcommerceToolbox-darwin-arm64", "EcommerceToolbox.app");
+  const packager = async (options) => {
+    assert.equal(options.platform, "darwin");
+    assert.equal(options.arch, "arm64");
+    assert.equal(options.osxSign.identity, "-");
+    assert.equal(options.osxSign.identityValidation, false);
+    assert.equal(options.osxSign.continueOnError, false);
+    assert.deepEqual(options.osxSign.optionsForFile("app"), { hardenedRuntime: false, timestamp: "none" });
+    assert.deepEqual(options.extendInfo, { LSMinimumSystemVersion: "14.0.0" });
+    assert.equal(options.osxNotarize, false);
+    for (const relative of [
+      "Contents/MacOS/EcommerceToolbox",
+      "Contents/Resources/backend/dist/desktop-entry.js",
+      "Contents/Resources/frontend/index.html",
+      "Contents/Resources/app.asar"
+    ]) {
+      await f.write(path.relative(f.desktopRoot, path.join(app, relative)));
+    }
+    return [path.dirname(app)];
+  };
+  await run({
+    packager,
+    desktopRoot: f.desktopRoot,
+    targetPlatform: "darwin",
+    targetArch: "arm64",
+    args: ["--make", "--keep-version"],
+    env: {},
+    generateMacOSIconFile: async (stageRoot) => path.join(stageRoot, "ecommerce-toolbox.icns"),
+    installerBuilder: async (_app, release, configPath, macOS) => {
+      assert.equal(macOS, true);
+      assert.equal(release.updateFeed, undefined);
+      const config = JSON.parse(await readFile(configPath, "utf8"));
+      assert.equal(config.productName, "电商工具箱");
+      assert.equal(config.executableName, "EcommerceToolbox");
+      assert.equal(config.artifactName, "电商工具箱-mac-arm64.${ext}");
+      assert.equal(config.directories.output, "out/mac-arm64");
+      assert.deepEqual(config.mac.target, ["dmg"]);
+      assert.equal(config.mac.minimumSystemVersion, "14.0.0");
+      assert.equal(config.mac.identity, "-");
+      assert.equal(config.mac.hardenedRuntime, false);
+      assert.equal(config.mac.notarize, false);
+      assert.equal(config.win, undefined);
+      assert.equal(config.nsis, undefined);
+      assert.equal(config.publish, undefined);
+      await f.write("out/mac-arm64/电商工具箱-mac-arm64.dmg");
+    }
+  });
+  await assert.rejects(
+    run({
+      packager,
+      desktopRoot: f.desktopRoot,
+      targetPlatform: "darwin",
+      targetArch: "arm64",
+      env: { DESKTOP_RELEASE: "1", DESKTOP_VERSION: "1.0.0" }
+    }),
+    /Mac internal builds do not use Windows release signing or automatic updates/
+  );
 });

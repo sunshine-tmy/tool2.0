@@ -16,6 +16,8 @@ import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import crypto from "node:crypto";
 import { requestWorkerHttp } from "../../core/workers/http-transport";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
+import { requestWorkerLightHealth } from "../../core/workers/light-health";
 
 export class ImageAiWorkerError extends Error {
   code: string;
@@ -29,7 +31,7 @@ export class ImageAiWorkerError extends Error {
   }
 }
 
-export function createImageAiWorkerClient(config: AppConfig) {
+export function createImageAiWorkerClient(config: AppConfig, resources?: InferenceResourceCoordinator) {
   let verifiedWeightStamp = "";
   async function legacyBirefnetWeightReady() {
     const asset = config.imageAiBirefnetAsset;
@@ -87,17 +89,36 @@ export function createImageAiWorkerClient(config: AppConfig) {
       return health;
     },
 
-    async suggestions(inputPath: string): Promise<ImageWorkerSuggestion> {
-      return requestWorker<ImageWorkerSuggestion>(
+    lightHealth() {
+      return requestWorkerLightHealth(config.imageAiWorkerUrl, config.imageAiWorkerToken);
+    },
+
+    async unload(): Promise<void> {
+      const result = await requestWorker<WorkerUnloadResult>(
         config,
-        "/watermark/suggestions",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ input_path: inputPath })
-        },
-        config.imageAiWorkerTimeoutMs,
-        isImageWorkerSuggestion
+        "/unload",
+        { method: "POST" },
+        15_000,
+        isWorkerUnloadResult
+      );
+      if (result.protocolVersion !== WORKER_PROTOCOL_VERSION || result.modelLoaded || result.busy) {
+        throw new ImageAiWorkerError("WORKER_UNLOAD_UNCONFIRMED", "AI 图片 Worker 未确认模型已卸载", 502);
+      }
+    },
+
+    async suggestions(inputPath: string): Promise<ImageWorkerSuggestion> {
+      return coordinate(() =>
+        requestWorker<ImageWorkerSuggestion>(
+          config,
+          "/watermark/suggestions",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ input_path: inputPath })
+          },
+          config.imageAiWorkerTimeoutMs,
+          isImageWorkerSuggestion
+        )
       );
     },
 
@@ -108,28 +129,55 @@ export function createImageAiWorkerClient(config: AppConfig) {
       maskPath?: string;
       scale?: 2 | 4;
       signal?: AbortSignal;
+      onWaiting?: (waiting: boolean) => void;
     }): Promise<ImageWorkerProcess> {
-      return requestWorker<ImageWorkerProcess>(
-        config,
-        "/process",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            operation: input.operation,
-            input_path: input.inputPath,
-            output_path: input.outputPath,
-            mask_path: input.maskPath,
-            scale: input.scale,
-            deployment_usage: config.deploymentUsage
-          }),
-          signal: input.signal
-        },
-        config.imageAiWorkerTimeoutMs,
-        isImageWorkerProcess
+      return coordinate(
+        () =>
+          requestWorker<ImageWorkerProcess>(
+            config,
+            "/process",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                operation: input.operation,
+                input_path: input.inputPath,
+                output_path: input.outputPath,
+                mask_path: input.maskPath,
+                scale: input.scale,
+                deployment_usage: config.deploymentUsage
+              }),
+              signal: input.signal
+            },
+            config.imageAiWorkerTimeoutMs,
+            isImageWorkerProcess
+          ),
+        { signal: input.signal, onWaiting: input.onWaiting }
       );
     }
   };
+
+  function coordinate<T>(
+    work: () => Promise<T>,
+    options: { signal?: AbortSignal; onWaiting?: (waiting: boolean) => void } = {}
+  ) {
+    return resources ? resources.run("image-ai", work, options) : work();
+  }
+}
+
+type WorkerUnloadResult = { protocolVersion: number; modelLoaded: boolean; busy: boolean };
+
+function isWorkerUnloadResult(value: unknown): value is WorkerUnloadResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "protocolVersion" in value &&
+    typeof value.protocolVersion === "number" &&
+    "modelLoaded" in value &&
+    typeof value.modelLoaded === "boolean" &&
+    "busy" in value &&
+    typeof value.busy === "boolean"
+  );
 }
 
 function requestWorker<T>(
@@ -161,7 +209,9 @@ function requestWorker<T>(
           interrupted ? "AI 任务因服务关闭而中断，请手动重试" : "AI 推理超时，请缩小图片或稍后重试"
         ),
       unavailable: () =>
-        new ImageAiWorkerError("IMAGE_AI_WORKER_UNAVAILABLE", "AI 推理服务未启动，请先启动本地 image-ai worker")
+        new ImageAiWorkerError("IMAGE_AI_WORKER_UNAVAILABLE", "AI 推理服务未启动，请先启动本地 image-ai worker"),
+      connectionRefused: () =>
+        new ImageAiWorkerError("WORKER_CONNECTION_REFUSED", "AI 图片 Worker 已退出，正在等待受管恢复", 503)
     }
   });
 }

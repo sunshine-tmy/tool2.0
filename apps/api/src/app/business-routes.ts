@@ -28,13 +28,21 @@ export async function registerBusinessRoutes(app: FastifyInstance, config: AppCo
     xhsRuntime,
     xhsAuth,
     xhsTranslationRuntime,
-    componentManager
+    componentManager,
+    inferenceResources
   } = services;
   registerImageCompressRoutes(app, config, taskStore, fileMetadata);
-  await registerImageAiRoutes(app, config, database, taskStore, fileMetadata);
-  await registerVideoAiRoutes(app, config, database, taskStore);
+  await registerImageAiRoutes(app, config, database, taskStore, fileMetadata, inferenceResources);
+  await registerVideoAiRoutes(app, config, database, taskStore, inferenceResources);
   const edgeTtsBatches = await registerEdgeTtsRoutes({ app, config, database, taskStore, fileMetadata });
-  const chatterboxArchive = await registerChatterboxRoutes(app, config, database, taskStore, fileMetadata);
+  const chatterboxArchive = await registerChatterboxRoutes(
+    app,
+    config,
+    database,
+    taskStore,
+    fileMetadata,
+    inferenceResources
+  );
   const audioLibrary = await registerAudioLibraryRoutes(
     app,
     config,

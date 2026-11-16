@@ -59,8 +59,13 @@ describe("source bootstrap", () => {
     await prepareSourceComponents(manager, (value) => messages.push(value));
     expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual(sourceComponentIds);
     expect(messages.some((message) => message.includes("归档 10/10 字节"))).toBe(true);
-    expect(messages[0]).toContain("不安装 GPU 扩展");
-    expect(messages[0]).toContain("start-gpu.bat");
+    if (process.platform === "darwin") {
+      expect(messages[0]).toContain("只准备签名的 Apple Silicon 基础能力");
+      expect(messages[0]).toContain("不自动联网下载");
+    } else {
+      expect(messages[0]).toContain("不安装 GPU 扩展");
+      expect(messages[0]).toContain("start-gpu.bat");
+    }
   });
 
   it("adds only the GPU extension when CPU packages are already healthy", async () => {
@@ -140,7 +145,10 @@ describe("source bootstrap", () => {
     const { manager, spies } = fixture(["python-312", "ffmpeg", "edge-tts"]);
     await prepareSourceComponents(manager, () => undefined);
     expect(spies.startInstall.mock.calls.map(([id]) => id)).toEqual(sourceComponentIds.slice(3));
-    expect(spies.resolveInstalledAsset).toHaveBeenCalledWith("ffmpeg", "bin/ffmpeg.exe");
+    expect(spies.resolveInstalledAsset).toHaveBeenCalledWith(
+      "ffmpeg",
+      process.platform === "darwin" ? "bin/ffmpeg" : "bin/ffmpeg.exe"
+    );
     expect(spies.resolveInstalledPython).toHaveBeenCalledWith("edge-tts");
   });
 

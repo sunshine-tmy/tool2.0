@@ -9,12 +9,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const SCRIPT_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "image-ai-worker.py");
 const LOCK_SOURCE =
   process.platform === "darwin"
-    ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "image-ai.lock.txt")
+    ? path.join(REPOSITORY_ROOT, "tooling", "components", "macos", "locks", "image-ai.lock.txt")
     : path.join(REPOSITORY_ROOT, "scripts", "image-ai.lock.txt");
 const DEFAULT_ASSET_CACHE = path.join(REPOSITORY_ROOT, ".package", "image-ai-source-assets");
 const PYTORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu";
@@ -105,9 +106,13 @@ export function validateImageAiCpuLock(lockText, platform = process.platform) {
 export function omitImageAiSourceDistributions(lockText, sources = IMAGE_AI_SOURCE_DISTRIBUTIONS) {
   const lines = lockText.split(/\r?\n/);
   const omittedBlocks = [];
+  const sourceDistributions = [];
   for (const source of sources) {
     const start = lines.findIndex((line) => line.startsWith(source.packageName + "==" + source.version + " "));
-    if (start < 0) throw new Error(source.packageName + "==" + source.version + " 不在哈希锁文件中");
+    // Mac locks may use a newer wheel release of an otherwise source-built
+    // Windows dependency. Only omit and bundle a source archive when this exact
+    // package version appears in the active platform lock.
+    if (start < 0) continue;
     let end = start + 1;
     while (end < lines.length && !/^[A-Za-z0-9][A-Za-z0-9_.+-]*==/.test(lines[end])) end++;
     const block = lines.slice(start, end).join("\n");
@@ -115,9 +120,10 @@ export function omitImageAiSourceDistributions(lockText, sources = IMAGE_AI_SOUR
       throw new Error(source.packageName + " 源码分发包摘要与哈希锁文件不匹配");
     }
     omittedBlocks.push(block);
+    sourceDistributions.push(source);
     lines.splice(start, end - start);
   }
-  return { downloadLockText: lines.join("\n"), omittedBlocks };
+  return { downloadLockText: lines.join("\n"), omittedBlocks, sourceDistributions };
 }
 
 export async function verifyImageAiAssets(assetCacheDirectory, assets = IMAGE_AI_MODEL_ASSETS) {
@@ -170,13 +176,13 @@ export async function prepareImageAiComponent({
 
   const lockText = await fs.readFile(lockFilePath, "utf8");
   validateImageAiCpuLock(lockText);
-  const { downloadLockText } = omitImageAiSourceDistributions(lockText);
+  const { downloadLockText, sourceDistributions } = omitImageAiSourceDistributions(lockText);
   await ensureImageAiAssets({ assetCacheDirectory, assets, runCommand });
   const verifiedAssets = await verifyImageAiAssets(assetCacheDirectory, assets);
   // 少量源码归档先下载并缓存，避免最后一个网络请求失败后丢弃整个大型 wheelhouse。
   const sourceCache = path.join(path.resolve(assetCacheDirectory), "python-sources");
   await fs.mkdir(sourceCache, { recursive: true });
-  for (const sourceDistribution of IMAGE_AI_SOURCE_DISTRIBUTIONS) {
+  for (const sourceDistribution of sourceDistributions) {
     const sourcePath = path.join(sourceCache, sourceDistribution.fileName);
     if (!(await pathExists(sourcePath))) {
       await downloadPinnedFile(sourceDistribution.url, sourcePath, sourceDistribution.sha256, runCommand);
@@ -231,7 +237,7 @@ export async function prepareImageAiComponent({
       }
     );
     await fs.rm(downloadLock);
-    for (const sourceDistribution of IMAGE_AI_SOURCE_DISTRIBUTIONS) {
+    for (const sourceDistribution of sourceDistributions) {
       const sourceDestination = path.join(wheelhouse, sourceDistribution.fileName);
       await fs.copyFile(
         path.join(sourceCache, sourceDistribution.fileName),
@@ -338,25 +344,27 @@ function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
   const required = ["python", "stage"];
   if (
     required.some((key) => !values.has(key)) ||
-    [...values.keys()].some((key) => ![...required, "asset-cache"].includes(key))
+    [...values.keys()].some((key) => ![...required, "asset-cache", "lock"].includes(key))
   ) {
     throw new Error(
-      "用法：pnpm components:prepare-image-ai -- --python <Python 3.12 python.exe> --stage <新暂存目录> [--asset-cache <模型缓存目录>]"
+      "用法：pnpm components:prepare-image-ai -- --python <Python 3.12 路径> --stage <新暂存目录> [--asset-cache <模型缓存目录>] [--lock <平台专用哈希锁>]"
     );
   }
   return {
     pythonExecutablePath: values.get("python"),
     stagingDirectory: values.get("stage"),
+    ...(values.has("lock") ? { lockFilePath: values.get("lock") } : {}),
     ...(values.has("asset-cache") ? { assetCacheDirectory: values.get("asset-cache") } : {})
   };
 }

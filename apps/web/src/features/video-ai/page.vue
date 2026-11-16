@@ -91,6 +91,7 @@
             :mode-options="modeOptions"
             :available-modes="availableModes"
             :unavailable-reasons="unavailableReasons"
+            :engine-capabilities="engineCapabilities"
             :has-file="hasInput && !inspectedTask"
             :busy="busy"
             :submitting="submitting"
@@ -142,7 +143,7 @@ import { Upload } from "lucide-vue-next";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NAlert, NButton } from "naive-ui";
 import { RouterLink } from "vue-router";
-import type { VideoAiMode, VideoAiRect, VideoAiSegment, VideoAiTask } from "@toolbox/shared";
+import type { VideoAiEngine, VideoAiMode, VideoAiRect, VideoAiSegment, VideoAiTask } from "@toolbox/shared";
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ServiceStatusPopover from "../../shared/ui/tool/ServiceStatusPopover.vue";
@@ -286,6 +287,12 @@ const unavailableReasons = computed(
       ])
     ) as Partial<Record<VideoAiMode, string>>
 );
+const engineCapabilities = computed(
+  () =>
+    Object.fromEntries((health.value?.engines ?? []).map((engine) => [engine.provider, engine])) as Partial<
+      Record<VideoAiMode, VideoAiEngine>
+    >
+);
 const canSubmit = computed(
   () =>
     hasInput.value &&
@@ -320,6 +327,7 @@ const phaseLabel = computed(() => {
   const phase = !inspectedTask.value && currentLiveTask.value?.status === "pending" ? "queued" : task?.phase;
   const labels: Record<string, string> = {
     queued: "排队中",
+    "等待其他 AI 任务完成": "等待其他 AI 任务完成",
     detecting: "检测字幕区域",
     loading: "正在加载修复模型",
     "estimating-flow": "估计连续帧光流",
@@ -384,7 +392,8 @@ watch(
 watch(historyPage, () => void refreshHistory());
 
 function engineAvailable(value: VideoAiMode) {
-  return !!health.value?.engines.find((engine) => engine.provider === value)?.available;
+  const engine = health.value?.engines.find((entry) => entry.provider === value);
+  return engine?.available === true && (engine.supportedDevices === undefined || engine.supportedDevices.length > 0);
 }
 
 function onFileChange(event: Event) {

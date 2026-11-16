@@ -4,6 +4,7 @@ import { defineComponent } from "vue";
 import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { NButton, NProgress, NSlider } from "naive-ui";
 import Page from "./page.vue";
+import { ApiRequestError } from "../../shared/http/http";
 const mocks = vi.hoisted(() => ({
   upload: vi.fn(),
   downloadAll: vi.fn(),
@@ -121,6 +122,35 @@ it("retains the failed row and permits retry without losing its local preview", 
   expect(wrapper.get(".image-result-status.done").text()).toBe("已完成");
   expect(wrapper.findAll(".image-result-row")).toHaveLength(1);
   expect(mocks.revoke).not.toHaveBeenCalled();
+});
+it("cancels the active upload without marking it failed and keeps it retryable", async () => {
+  await add(["cancel.png"]);
+  let signal: AbortSignal | undefined;
+  mocks.upload
+    .mockImplementationOnce((_form: FormData, _progress: unknown, uploadSignal: AbortSignal) => {
+      signal = uploadSignal;
+      return new Promise((_resolve, reject) => {
+        uploadSignal.addEventListener("abort", () =>
+          reject(new ApiRequestError("请求已取消", { code: "REQUEST_ABORTED" }))
+        );
+      });
+    })
+    .mockResolvedValueOnce(result("cancel.png", 500));
+
+  await button("开始压缩").trigger("click");
+  expect(wrapper.get(".image-result-status.processing").text()).toBe("压缩中");
+  await wrapper.get('[aria-label="取消 cancel.png 的压缩"]').trigger("click");
+  await flushPromises();
+
+  expect(signal?.aborted).toBe(true);
+  expect(wrapper.get(".image-result-status.pending").text()).toBe("待压缩");
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  expect(mocks.error).not.toHaveBeenCalled();
+  expect(button("开始压缩").attributes("disabled")).toBeUndefined();
+
+  await button("开始压缩").trigger("click");
+  await flushPromises();
+  expect(wrapper.get(".image-result-status.done").text()).toBe("已完成");
 });
 it("names the actual quality slider and keeps numeric editing synchronized with submitted quality", async () => {
   const slider = () => wrapper.getComponent(NSlider);

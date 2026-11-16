@@ -7,12 +7,17 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const WORKER_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "edge-tts-generate.py");
-const LOCK_SOURCE = platformLock("edge-tts");
+const LOCK_SOURCE = path.join(REPOSITORY_ROOT, "tooling", "components", "macos", "locks", "edge-tts.lock.txt");
 
-export async function prepareEdgeTtsComponent({ pythonExecutablePath, stagingDirectory, lockFilePath = LOCK_SOURCE }) {
+export async function prepareEdgeTtsComponent({
+  pythonExecutablePath,
+  stagingDirectory,
+  lockFilePath = process.platform === "darwin" ? LOCK_SOURCE : platformLock("edge-tts")
+}) {
   const python = path.resolve(pythonExecutablePath);
   const stage = path.resolve(stagingDirectory);
   const version = execFileSync(
@@ -84,9 +89,7 @@ function cleanPythonEnvironment() {
 }
 
 function platformLock(name) {
-  return process.platform === "darwin"
-    ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", `${name}.lock.txt`)
-    : path.join(REPOSITORY_ROOT, "scripts", `${name}.lock.txt`);
+  return path.join(REPOSITORY_ROOT, "scripts", `${name}.lock.txt`);
 }
 
 function pathExists(candidate) {
@@ -100,19 +103,28 @@ function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
-  if (values.size !== 2 || !values.has("python") || !values.has("stage")) {
+  if (
+    [...values.keys()].some((key) => !["python", "stage", "lock"].includes(key)) ||
+    !values.has("python") ||
+    !values.has("stage")
+  ) {
     throw new Error(
-      "用法：node scripts/prepare-edge-tts-component.mjs --python <Python 3.12 python.exe> --stage <新暂存目录>"
+      "用法：node scripts/prepare-edge-tts-component.mjs --python <Python 3.12 路径> --stage <新暂存目录> [--lock <平台专用哈希锁>]"
     );
   }
-  return { pythonExecutablePath: values.get("python"), stagingDirectory: values.get("stage") };
+  return {
+    pythonExecutablePath: values.get("python"),
+    stagingDirectory: values.get("stage"),
+    ...(values.has("lock") ? { lockFilePath: values.get("lock") } : {})
+  };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(publicEntryUrl)) {

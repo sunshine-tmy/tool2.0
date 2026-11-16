@@ -35,6 +35,12 @@ describe("Chatterbox editor actions", () => {
       language: "ms",
       device: "cpu",
       cudaAvailable: true,
+      deviceOptions: [
+        { value: "cpu", label: "CPU", description: "兼容优先" },
+        { value: "cuda", label: "NVIDIA GPU", description: "Test GPU" },
+        { value: "mps", label: "Apple MPS", description: "Apple Metal 加速" }
+      ],
+      deviceHint: "使用服务报告的设备",
       exaggeration: 0.5,
       cfgWeight: 0.5,
       temperature: 0.8,
@@ -132,6 +138,8 @@ describe("Chatterbox editor actions", () => {
       expect(panel.device).toBe("cuda");
       await wrapper.get('input[value="cpu"]').setValue();
       expect(panel.device).toBe("cpu");
+      await wrapper.get('input[value="mps"]').setValue();
+      expect(panel.device).toBe("mps");
       await wrapper.get(".chatterbox-dropzone input").trigger("change");
       expect(panel.selectReference).toHaveBeenCalledOnce();
       await wrapper.get(".segment-order").trigger("dragstart");
@@ -193,6 +201,11 @@ describe("Chatterbox editor actions", () => {
       maxBatchTextLength: 10000,
       language: "ms",
       device: "cpu",
+      deviceOptions: [
+        { value: "cpu", label: "CPU", description: "兼容优先" },
+        { value: "cuda", label: "NVIDIA GPU", description: "CUDA 加速" }
+      ],
+      deviceHint: "使用服务报告的设备",
       exaggeration: 0.5,
       cfgWeight: 0.5,
       temperature: 0.8,
@@ -209,8 +222,8 @@ describe("Chatterbox editor actions", () => {
       global: { renderStubDefaultSlot: true, provide: { [chatterboxPanelKey as symbol]: panel } }
     });
     expect(wrapper.findAll('input[name="chatterbox-device"]').map((input) => input.attributes("value"))).toEqual([
-      "cuda",
-      "cpu"
+      "cpu",
+      "cuda"
     ]);
     const enqueue = wrapper.findAllComponents(NButton).find((button) => button.text().includes("到生成队列"))!;
     const clear = wrapper.findAllComponents(NButton).find((button) => button.text().includes("清空批次"))!;

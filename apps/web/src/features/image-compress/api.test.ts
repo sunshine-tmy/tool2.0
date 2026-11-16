@@ -22,13 +22,15 @@ describe("image compression api", () => {
     httpMock.getBlob.mockResolvedValue({ blob: new Blob() });
     const form = new FormData();
     const progress = vi.fn();
+    const signal = new AbortController().signal;
 
-    await imageCompressApi.upload(form, progress);
+    await imageCompressApi.upload(form, progress, signal);
     await imageCompressApi.downloadAll([{ taskId: "task-1", fileName: "result.webp" }]);
     await imageCompressApi.downloadOne("task-1.webp");
 
     expect(httpMock.post).toHaveBeenCalledWith("/tools/image-compress", ImageCompressResultSchema, form, {
-      onUploadProgress: progress
+      onUploadProgress: progress,
+      signal
     });
     expect(httpMock.postBlob).toHaveBeenCalledWith("/tools/image-compress/download.zip", {
       files: [{ taskId: "task-1", fileName: "result.webp" }]

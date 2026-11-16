@@ -48,7 +48,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: EcommerceToolbox-mac-arm64-internal
-          path: apps/desktop/out/mac-arm64/EcommerceToolbox-mac-arm64.dmg
+          name: 电商工具箱-mac-arm64-internal
+          path: apps/desktop/out/mac-arm64/电商工具箱-mac-arm64.dmg
           if-no-files-found: error
           retention-days: 14

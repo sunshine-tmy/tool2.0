@@ -66,6 +66,7 @@ os.environ.setdefault("PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT", "False")
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from video_ai_device import VideoAiDeviceError, clear_device_cache, execution_mode, mps_backend_available, select_device
 from video_ai_sequence import FramePacket, SequenceWindow, WindowConfig, run_sequence
 
 
@@ -752,23 +753,77 @@ class ModelManager:
         try:
             import torch
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-        except ImportError:
+            clear_device_cache(torch)
+        except (ImportError, RuntimeError):
             pass
+
+    def unload(self) -> None:
+        sequence = self.sequence_engine
+        self.sequence_engine = None
+        if sequence is not None and callable(getattr(sequence, "close", None)):
+            sequence.close()
+        self.unload_gpu()
+        import gc
+
+        gc.collect()
 
     def device(self) -> str:
         configured = os.getenv("VIDEO_AI_DEVICE", "auto").strip().lower()
-        if configured == "cpu":
-            return "cpu"
         try:
             import torch
+        except ImportError as exc:
+            if configured in {"auto", "cpu"}:
+                return "cpu"
+            raise WorkerFailure("VIDEO_AI_RUNTIME_UNAVAILABLE", "当前视频能力未安装 PyTorch 运行时") from exc
+        try:
+            return select_device(torch, configured, platform_name=sys.platform)
+        except VideoAiDeviceError as exc:
+            raise WorkerFailure(exc.code, str(exc)) from exc
 
-            if configured == "cuda" and not torch.cuda.is_available():
-                raise WorkerFailure("VIDEO_AI_CUDA_UNAVAILABLE", "当前设备没有可用的 CUDA 运行时")
-            return "cuda" if configured == "cuda" or torch.cuda.is_available() else "cpu"
+    def sequence_device(self) -> str:
+        configured = os.getenv("VIDEO_AI_SEQUENCE_DEVICE", os.getenv("VIDEO_AI_DEVICE", "auto")).strip().lower()
+        try:
+            import torch
+        except ImportError as exc:
+            raise WorkerFailure("VIDEO_AI_RUNTIME_UNAVAILABLE", "当前视频能力未安装 PyTorch 运行时") from exc
+        try:
+            device = select_device(torch, configured, platform_name=sys.platform, prefer_mps=True)
+        except VideoAiDeviceError as exc:
+            raise WorkerFailure(exc.code, str(exc)) from exc
+        if device == "cpu":
+            raise WorkerFailure(
+                "VIDEO_AI_SEQUENCE_DEVICE_UNSUPPORTED",
+                "STTN 与 ProPainter 仅开放已验证的 CUDA 或 Apple MPS 设备；CPU 可改用快速档",
+                409,
+            )
+        return device
+
+    def sequence_devices(self) -> list[str]:
+        """Return verified sequence backends available to this Worker process."""
+        try:
+            import torch
         except ImportError:
-            return "cpu"
+            return []
+        devices = []
+        if torch.cuda.is_available():
+            devices.append("cuda")
+        if mps_backend_available(torch):
+            # Device selection rejects globally enabled MPS fallback.
+            try:
+                select_device(torch, "mps", platform_name=sys.platform)
+            except VideoAiDeviceError:
+                pass
+            else:
+                if torch.__version__ == "2.6.0":
+                    devices.append("mps")
+        return devices
+
+    def sequence_mode(self, name: str) -> str | None:
+        try:
+            device = self.sequence_device()
+        except WorkerFailure:
+            return None
+        return execution_mode(name, device)
 
     def vram_total_mb(self) -> int | None:
         try:
@@ -850,15 +905,33 @@ class ModelManager:
                 ) from exc
             if bundle["engine"] != name or bundle.get("adapterReady") is not True:
                 raise WorkerFailure(f"{name.upper()}_UNAVAILABLE", f"{name} 时序资源尚未完成推理验收，当前档位保持关闭")
+            if sys.platform == "darwin":
+                from video_ai_engine_assets import validate_macos_sequence_support
+
+                try:
+                    definition = validate_macos_sequence_support(root, bundle)
+                except Exception as exc:
+                    raise WorkerFailure(
+                        f"{name.upper()}_UNAVAILABLE", f"{name} Mac 资源定义或设备探针校验失败：{safe_error(exc)}"
+                    ) from exc
+                if "mps" not in definition["supportedDevices"]:
+                    raise WorkerFailure(f"{name.upper()}_UNAVAILABLE", f"{name} 当前没有已验证的 MPS 支持定义")
+            device = self.sequence_device()
             if name == "sttn":
                 from video_ai_sttn import SttnAdapter
 
                 self.unload_gpu()
-                return SttnAdapter(root, device=self.device())
+                return SttnAdapter(root, device=device)
             from video_ai_propainter import ProPainterAdapter
 
             self.unload_gpu()
-            return ProPainterAdapter(root, device=self.device())
+            return ProPainterAdapter(root, device=device)
+        if sys.platform == "darwin":
+            reason = os.getenv(
+                f"VIDEO_AI_{name.upper()}_SEQUENCE_REASON",
+                "Mac 视频包未包含已验签并通过设备探针的时序资源定义",
+            )
+            raise WorkerFailure(f"{name.upper()}_UNAVAILABLE", reason)
         engine_dir = MODELS_ROOT / "engines" / name
         module_path = engine_dir / "engine.py"
         if not module_path.is_file():
@@ -1053,7 +1126,9 @@ def run_subtitle_removal(
         intermediate.unlink(missing_ok=True)
         if isinstance(exc, RuntimeError) and "out of memory" in str(exc).lower():
             manager.unload_gpu()
-            raise WorkerFailure("CUDA_OUT_OF_MEMORY", "显存不足；本次任务已停止，未自动切换引擎或降低分辨率") from exc
+            backend = "MPS" if "mps" in str(exc).lower() else "CUDA"
+            code = "VIDEO_AI_MPS_OUT_OF_MEMORY" if backend == "MPS" else "CUDA_OUT_OF_MEMORY"
+            raise WorkerFailure(code, f"{backend} 内存不足；本次任务已停止，未自动切换设备、引擎或降低分辨率") from exc
         from video_ai_propainter import ProPainterFailure
         from video_ai_sttn import SttnFailure
 
@@ -1255,19 +1330,66 @@ def engine_health() -> list[dict[str, Any]]:
 
             try:
                 bundle = read_bundle(Path(configured), verify=False)
-                available = (
-                    bundle["engine"] == name and bundle.get("adapterReady") is True and manager.device() == "cuda"
+                definition = None
+                if sys.platform == "darwin":
+                    from video_ai_engine_assets import validate_macos_sequence_support
+
+                    definition = validate_macos_sequence_support(Path(configured), bundle)
+                supported_devices = manager.sequence_devices()
+                if definition is not None:
+                    supported_devices = [
+                        device for device in definition["supportedDevices"] if device in supported_devices
+                    ]
+                try:
+                    selected_device = manager.sequence_device()
+                except WorkerFailure:
+                    selected_device = None
+                released = bundle["engine"] == name and bundle.get("adapterReady") is True
+                available = released and selected_device in supported_devices
+                reason = (
+                    None
+                    if available
+                    else (
+                        "时序适配器尚未完成验收，当前档位保持关闭"
+                        if not released
+                        else "当前 Apple MPS 设备探针未通过"
+                        if definition is not None and selected_device is None
+                        else "当前设备或运行时不在此时序引擎的已验证支持范围内"
+                    )
                 )
-                reason = None if available else "时序适配器尚未完成验收，当前档位保持关闭"
             except Exception as exc:
-                available, reason = False, f"时序资源不可用：{safe_error(exc)}"
+                available, reason, supported_devices, selected_device = (
+                    False,
+                    f"时序资源不可用：{safe_error(exc)}",
+                    [],
+                    None,
+                )
+            entry = {
+                "provider": tier,
+                "model": name,
+                "available": available,
+                "reason": reason,
+                "license": "MIT" if name == "sttn" else "S-Lab License 1.0 (non-commercial)",
+            }
+            if supported_devices:
+                entry["supportedDevices"] = supported_devices
+            if selected_device is not None:
+                entry["executionMode"] = (
+                    definition["executionMode"] if definition is not None else execution_mode(name, selected_device)
+                )
+            entries.append(entry)
+            continue
+        if sys.platform == "darwin":
             entries.append(
                 {
                     "provider": tier,
                     "model": name,
-                    "available": available,
-                    "reason": reason,
                     "license": "MIT" if name == "sttn" else "S-Lab License 1.0 (non-commercial)",
+                    "available": False,
+                    "reason": os.getenv(
+                        f"VIDEO_AI_{name.upper()}_SEQUENCE_REASON",
+                        "Mac 视频包未包含已验签并通过设备探针的时序资源定义",
+                    ),
                 }
             )
             continue
@@ -1316,6 +1438,79 @@ async def diagnostics_light() -> dict[str, Any]:
         "busy": manager.lock.locked(),
         **({"cudaAvailable": cuda} if cuda is not None else {}),
     }
+
+
+def deep_check_sequence_engines() -> dict[str, Any]:
+    """Explicitly load each released adapter and run one bounded synthetic frame."""
+    import numpy as np
+
+    try:
+        device = manager.sequence_device()
+    except Exception as exc:
+        reason = safe_error(exc)
+        return {
+            "protocolVersion": 1,
+            "available": False,
+            "engines": [{"engine": name, "available": False, "reason": reason} for name in ("sttn", "propainter")],
+        }
+    results: list[dict[str, Any]] = []
+    for name, engine_type in (("sttn", SttnEngine), ("propainter", ProPainterEngine)):
+        engine = None
+        result: dict[str, Any] = {"engine": name, "available": False, "device": device}
+        try:
+            engine = engine_type(manager)
+            info = VideoInfo(width=432, height=240, fps=24.0, frame_count=3, has_audio=False, duration=3 / 24)
+            engine.prepare_sequence(info, lambda: None)
+            image = np.zeros((info.height, info.width, 3), dtype=np.uint8)
+            mask = np.zeros((info.height, info.width), dtype=np.uint8)
+            mask[100:116, 190:210] = 255
+            packets = tuple(FramePacket(index=index, image=image.copy(), mask=mask.copy()) for index in range(3))
+            window = SequenceWindow(
+                local=packets,
+                center_offset=1,
+                center_count=1,
+                references=(),
+                scene=0,
+                first=True,
+                last=True,
+            )
+            output = engine.repair_window(window, lambda: None)
+            if len(output) != 1 or output[0].shape != image.shape or not np.isfinite(output[0]).all():
+                raise WorkerFailure("ENGINE_FAILED", f"{name} 深检输出帧尺寸或数值无效")
+            if not np.array_equal(output[0][mask == 0], image[mask == 0]):
+                raise WorkerFailure("ENGINE_FAILED", f"{name} 深检改动了 mask 以外的像素")
+            result.update({"available": True, "executionMode": execution_mode(name, device)})
+        except Exception as exc:
+            result["reason"] = safe_error(exc)
+        finally:
+            try:
+                if engine is not None:
+                    engine.close()
+            except Exception as exc:
+                result["available"] = False
+                result["reason"] = safe_error(exc)
+        results.append(result)
+    return {
+        "protocolVersion": 1,
+        "available": bool(results) and all(item["available"] for item in results),
+        "engines": results,
+    }
+
+
+@app.post("/diagnostics/deep")
+async def diagnostics_deep() -> dict[str, Any]:
+    if manager.lock.locked():
+        return {"protocolVersion": 1, "available": False, "code": "WORKER_BUSY"}
+    async with manager.lock:
+        result = await asyncio.to_thread(deep_check_sequence_engines)
+    return result
+
+
+@app.post("/unload")
+async def unload() -> dict[str, Any]:
+    async with manager.lock:
+        await asyncio.to_thread(manager.unload)
+    return {"success": True, "data": {"protocolVersion": 1, "modelLoaded": False, "busy": False}}
 
 
 def trusted_path(value: str | None, must_exist: bool) -> Path:

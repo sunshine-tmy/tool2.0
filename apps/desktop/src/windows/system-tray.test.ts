@@ -5,6 +5,7 @@ import { createSystemTray } from "./system-tray";
 
 const mock = vi.hoisted(() => ({
   icon: vi.fn(),
+  setTemplateImage: vi.fn(),
   buildMenu: vi.fn(),
   create: vi.fn(),
   trays: [] as Array<
@@ -40,13 +41,20 @@ vi.mock("electron", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mock.trays.length = 0;
-  mock.icon.mockReturnValue({ isEmpty: () => false });
+  mock.icon.mockReturnValue({ isEmpty: () => false, setTemplateImage: mock.setTemplateImage });
   mock.create.mockImplementation(() => undefined);
   mock.buildMenu.mockImplementation((template) => template);
 });
 afterEach(() => vi.restoreAllMocks());
 function windowFixture() {
-  return Object.assign(new EventEmitter(), { isDestroyed: vi.fn(() => false), hide: vi.fn() });
+  let visible = true;
+  return Object.assign(new EventEmitter(), {
+    isDestroyed: vi.fn(() => false),
+    isVisible: vi.fn(() => visible),
+    hide: vi.fn(() => {
+      visible = false;
+    })
+  });
 }
 function setup(platform: NodeJS.Platform = "win32", iconPath: string | undefined = "fixed.ico") {
   const showWindow = vi.fn(),
@@ -116,8 +124,38 @@ it("does not hide windows during shutdown, after disposal or if the tray/window 
   expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);
   expect(window.hide).not.toHaveBeenCalled();
 });
-it.each(["darwin", "linux"] as const)("preserves native minimize behavior on %s", (platform) => {
-  const { window, controller } = setup(platform);
+it("provides a monochrome macOS status item that toggles the window and offers menu actions", () => {
+  const { controller, window, showWindow, quit } = setup("darwin", "template.png");
+  const tray = mock.trays[0];
+  expect(mock.setTemplateImage).toHaveBeenCalledExactlyOnceWith(true);
+  expect(tray.setToolTip).toHaveBeenCalledWith("电商工具箱 · 后台运行");
+  tray.emit("click");
+  expect(window.hide).toHaveBeenCalledOnce();
+  tray.emit("click");
+  expect(showWindow).toHaveBeenCalledOnce();
+  tray.emit("double-click");
+  expect(showWindow).toHaveBeenCalledTimes(2);
+  const menu = mock.buildMenu.mock.calls[0][0] as MenuItemConstructorOptions[];
+  expect(menu.map((item) => item.label)).toEqual(["显示主窗口", "隐藏主窗口", undefined, "退出电商工具箱"]);
+  Reflect.apply(menu[0].click!, undefined, []);
+  expect(showWindow).toHaveBeenCalledTimes(3);
+  Reflect.apply(menu[1].click!, undefined, []);
+  expect(window.hide).toHaveBeenCalledTimes(2);
+  Reflect.apply(menu[3].click!, undefined, []);
+  expect(quit).toHaveBeenCalledOnce();
+  controller.dispose();
+});
+it("keeps a Dock recovery path when the macOS status item cannot be created", () => {
+  vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  mock.icon.mockReturnValue({ isEmpty: () => true, setTemplateImage: mock.setTemplateImage });
+  const { controller, window } = setup("darwin", "missing-template.png");
+  expect(mock.create).not.toHaveBeenCalled();
+  expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(true);
+  expect(window.hide).toHaveBeenCalledOnce();
+  controller.dispose();
+});
+it("preserves native minimize behavior on Linux", () => {
+  const { window, controller } = setup("linux");
   window.emit("minimize");
   expect(window.hide).not.toHaveBeenCalled();
   expect(controller.hideWindow(window as unknown as BrowserWindow)).toBe(false);

@@ -130,7 +130,11 @@ it("explains each unavailable sequence tier and links to the GPU capability upda
 it("exposes both sequence tiers when the real health protocol says they are available", async () => {
   mocks.health.mockResolvedValue({
     available: true,
-    engines: ["delogo", "fast", "balanced", "extreme"].map((provider) => ({ provider, available: true }))
+    engines: ["delogo", "fast", "balanced", "extreme"].map((provider) => ({
+      provider,
+      available: true,
+      ...(provider === "balanced" ? { supportedDevices: ["mps"], executionMode: "hybrid" } : {})
+    }))
   });
   const w = await setup();
   for (const label of ["均衡 · 时序修复", "极致 · 光流修复"]) {
@@ -138,6 +142,8 @@ it("exposes both sequence tiers when the real health protocol says they are avai
     expect(tier.attributes("disabled")).toBeUndefined();
   }
   expect(w.text()).not.toContain("查看视频能力更新");
+  await w.get('.mode-card[aria-label="均衡 · 时序修复"]').trigger("click");
+  expect(w.text()).toContain("已验证执行方式：Apple MPS + CPU 混合（支持：Apple MPS）");
 });
 it("disables missing engines, keeps the pending task busy and only exposes real completed results", async () => {
   const w = await setup();
@@ -335,7 +341,7 @@ it("re-edits a saved result and restores its saved time ranges and boxes", async
   mocks.history.mockResolvedValue({ items: [saved], total: 1 });
   mocks.get.mockResolvedValue(saved);
   const w = await setup();
-  await button(w, "编辑成品").trigger("click");
+  await button(w, "结果再编辑").trigger("click");
   await flushPromises();
   const workspace = w.findComponent(VideoWorkspace);
   expect(workspace.props()).toMatchObject({
@@ -358,7 +364,7 @@ it("re-edits a saved result and restores its saved time ranges and boxes", async
     expect.objectContaining({ sourceTaskId: saved.id, file: undefined, manualRanges: ranges }),
     expect.anything()
   );
-  expect(button(w, "编辑成品").attributes("disabled")).toBeDefined();
+  expect(button(w, "结果再编辑").attributes("disabled")).toBeDefined();
   expect(mocks.remove).not.toHaveBeenCalled();
 });
 
@@ -381,7 +387,7 @@ it("edits the retained original, restores multi-box intervals and submits the se
   w.findComponent(VideoWorkspace).vm.$emit("change-source", "original");
   await flushPromises();
   expect(w.findComponent(VideoWorkspace).props("src")).toBe("/input/video_task1?preview=1");
-  await button(w, "编辑原视频").trigger("click");
+  await button(w, "原片再编辑").trigger("click");
   await flushPromises();
   const workspace = w.findComponent(VideoWorkspace);
   expect(workspace.props()).toMatchObject({
@@ -414,12 +420,12 @@ it("restores frame-based or whole-video boxes and disables originals unavailable
   mocks.history.mockResolvedValue({ items: [saved], total: 1 });
   mocks.get.mockResolvedValue(saved);
   const w = await setup();
-  expect(button(w, "编辑原视频").attributes("disabled")).toBeDefined();
-  await button(w, "编辑成品").trigger("click");
+  expect(button(w, "原片再编辑").attributes("disabled")).toBeDefined();
+  await button(w, "结果再编辑").trigger("click");
   await flushPromises();
   expect(w.findComponent(VideoWorkspace).props("manualRanges")).toEqual([{ start: 0.2, end: 0.8, rects: [rect] }]);
   mocks.get.mockResolvedValue({ ...saved, manualArea: rect });
-  await button(w, "编辑成品").trigger("click");
+  await button(w, "结果再编辑").trigger("click");
   await flushPromises();
   expect(w.findComponent(VideoWorkspace).props("manualRanges")).toEqual([{ start: 0, end: 1, rects: [rect] }]);
 });
@@ -430,7 +436,7 @@ it("detects a saved result and replaces the editing source when a new file is se
   mocks.get.mockResolvedValue(saved);
   mocks.detect.mockResolvedValue({ segments: [], warnings: [], frameCount: 10, width: 64, height: 48 });
   const w = await setup();
-  await button(w, "编辑成品").trigger("click");
+  await button(w, "结果再编辑").trigger("click");
   await flushPromises();
   await button(w, "自动检测字幕").trigger("click");
   await flushPromises();
@@ -450,10 +456,10 @@ it("detects a saved result and replaces the editing source when a new file is se
 it("keeps the current upload when re-editing fails and only offers editing for completed outputs", async () => {
   mocks.history.mockResolvedValue({ items: [task("failed"), { ...task("completed"), id: "saved_result" }], total: 2 });
   const w = await setup();
-  expect(w.findAll("button").filter((b) => b.text() === "编辑成品")).toHaveLength(1);
+  expect(w.findAll("button").filter((b) => b.text() === "结果再编辑")).toHaveLength(1);
   await select(w);
   mocks.get.mockRejectedValueOnce(new Error("该视频已被删除"));
-  await button(w, "编辑成品").trigger("click");
+  await button(w, "结果再编辑").trigger("click");
   await flushPromises();
   expect(w.text()).toContain("该视频已被删除");
   expect(w.findComponent(VideoWorkspace).props("src")).toBe("blob:video");
@@ -472,7 +478,7 @@ it("ignores a late edit response after another history record was opened", async
       })
   );
   const w = await setup();
-  await button(w, "编辑成品").trigger("click");
+  await button(w, "结果再编辑").trigger("click");
   mocks.get.mockResolvedValueOnce(second);
   await w
     .findAll("button")

@@ -36,7 +36,10 @@ describe("existing platform menu policy", () => {
           { role: "selectAll" }
         ]
       },
-      { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] }
+      {
+        label: "Window",
+        submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }, { type: "separator" }, { role: "front" }]
+      }
     ]);
     expect(mock.set).toHaveBeenCalledWith(mock.build.mock.results[0].value);
   });

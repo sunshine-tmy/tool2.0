@@ -20,10 +20,12 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Protocol
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from video_ai_device import VideoAiDeviceError, execution_mode, select_device
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -42,6 +44,10 @@ SPEC.loader.exec_module(launcher)
 worker = launcher.load_worker(WORKER_PATH)
 
 WIDTH, HEIGHT, FPS, FRAMES = 64, 48, 10, 30
+
+
+def worker_platform(name: str):
+    return patch.object(worker, "sys", SimpleNamespace(platform=name, modules=sys.modules))
 
 
 # The signed Worker has a hyphenated filename and is loaded dynamically. Test
@@ -92,6 +98,41 @@ class FakeDetector:
     def detect_frame(self, frame_bgr, frame_index: int) -> DetectionsPort:
         boxes = self.boxes_by_frame.get(frame_index, [])
         return worker.FrameDetections(frame_index=frame_index, boxes=boxes, scores=[0.9] * len(boxes))
+
+
+class VideoAiDeviceTests(unittest.TestCase):
+    @staticmethod
+    def fake_torch(*, cuda=False, mps=False):
+        return SimpleNamespace(
+            cuda=SimpleNamespace(is_available=lambda: cuda),
+            backends=SimpleNamespace(mps=SimpleNamespace(is_built=lambda: mps, is_available=lambda: mps)),
+        )
+
+    def test_auto_prefers_native_mps_only_for_sequence_tier_on_macos(self):
+        torch = self.fake_torch(cuda=True, mps=True)
+        self.assertEqual(select_device(torch, "auto", platform_name="darwin", prefer_mps=True), "mps")
+        self.assertEqual(select_device(torch, "auto", platform_name="win32", prefer_mps=True), "cuda")
+        self.assertEqual(select_device(torch, "auto", platform_name="darwin"), "cuda")
+
+    def test_explicit_device_is_strict_and_mps_fallback_is_rejected(self):
+        torch = self.fake_torch(mps=True)
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(select_device(torch, "mps", platform_name="darwin"), "mps")
+            with self.assertRaises(VideoAiDeviceError) as raised:
+                select_device(self.fake_torch(), "mps", platform_name="darwin")
+            self.assertEqual(raised.exception.code, "VIDEO_AI_MPS_UNAVAILABLE")
+        with patch.dict(os.environ, {"PYTORCH_ENABLE_MPS_FALLBACK": "1"}):
+            with self.assertRaises(VideoAiDeviceError) as raised:
+                select_device(torch, "auto", platform_name="darwin", prefer_mps=True)
+            self.assertEqual(raised.exception.code, "VIDEO_AI_MPS_FALLBACK_ENABLED")
+        with self.assertRaises(VideoAiDeviceError) as raised:
+            select_device(torch, "unknown", platform_name="darwin")
+        self.assertEqual(raised.exception.code, "VIDEO_AI_DEVICE_INVALID")
+
+    def test_execution_mode_reports_hybrid_only_for_mps_propainter(self):
+        self.assertEqual(execution_mode("sttn", "mps"), "mps")
+        self.assertEqual(execution_mode("propainter", "mps"), "hybrid")
+        self.assertEqual(execution_mode("propainter", "cuda"), "cuda")
 
 
 class TrustedPathTests(unittest.TestCase):
@@ -297,7 +338,10 @@ class SequenceEngineLoadingTests(unittest.TestCase):
                 "def create_engine(**kwargs):\n    return object()\n", encoding="utf-8"
             )
             manager = worker.ModelManager()
-            with patch.object(worker, "MODELS_ROOT", Path(temp_dir)):
+            with (
+                patch.object(worker, "MODELS_ROOT", Path(temp_dir)),
+                worker_platform("win32"),
+            ):
                 with self.assertRaises(worker.WorkerFailure) as raised:
                     manager.get_sequence_engine("sttn")
                 self.assertEqual(raised.exception.code, "STTN_WEIGHTS_MISSING")
@@ -380,7 +424,11 @@ def main():
             )
             self.assertEqual(
                 json.loads(result.stdout),
-                {"argv": [str(entry), "--check", "--port", "3199"], "root": str(entry.parent), "retry": True},
+                {
+                    "argv": [str(entry.resolve()), "--check", "--port", "3199"],
+                    "root": str(entry.parent.resolve()),
+                    "retry": True,
+                },
             )
             self.assertEqual(entry.read_text(encoding="utf-8"), source)
             self.assertFalse((entry.parent / "__pycache__").exists())
@@ -674,6 +722,28 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(self.input_path.read_bytes()).hexdigest(), digest)
         self.assertFalse(self.output_path.with_name("output.video-only.tmp.mp4").exists())
 
+    def test_mps_oom_uses_explicit_error_code_without_retrying_another_backend(self):
+        make_video(self.input_path)
+        failed = SyntheticSequenceEngine()
+
+        def fail_mps(window, check):
+            raise RuntimeError("MPS backend out of memory")
+
+        with (
+            patch.object(failed, "repair_window", fail_mps),
+            patch.object(worker, "build_engine", return_value=failed) as build,
+            patch.object(worker.manager, "unload_gpu") as unload,
+        ):
+            with self.assertRaises(worker.WorkerFailure) as raised:
+                worker.run_subtitle_removal(
+                    self.input_path, self.output_path, mode="balanced", manual_area=(0, 0, 10, 10)
+                )
+            self.assertEqual(raised.exception.code, "VIDEO_AI_MPS_OUT_OF_MEMORY")
+            self.assertEqual(build.call_count, 1)
+            unload.assert_called_once()
+        self.assertEqual(failed.closed, 1)
+        self.assertFalse(self.output_path.exists())
+
     def test_sequence_cancel_after_inference_never_muxes_a_success_file(self):
         make_video(self.input_path)
         engine = SyntheticSequenceEngine()
@@ -723,6 +793,7 @@ class PipelineTests(unittest.TestCase):
 
     def test_staged_sequence_resources_remain_disabled_until_adapter_acceptance(self):
         with (
+            worker_platform("win32"),
             patch.dict(worker.os.environ, {"VIDEO_AI_STTN_ENGINE_ROOT": str(self.root)}),
             patch("video_ai_engine_assets.read_bundle", return_value={"engine": "sttn", "adapterReady": False}),
         ):
@@ -732,13 +803,104 @@ class PipelineTests(unittest.TestCase):
             health = {entry["provider"]: entry for entry in worker.engine_health()}
             self.assertFalse(health["balanced"]["available"])
 
+    def test_macos_sequence_engine_never_falls_back_to_legacy_models_root(self):
+        legacy_root = self.root / "models"
+        engine_root = legacy_root / "engines" / "sttn"
+        (engine_root / "weights").mkdir(parents=True)
+        (engine_root / "engine.py").write_text("def create_engine(*args, **kwargs): pass\n")
+        (engine_root / "weights" / "sttn.pth").write_bytes(b"legacy fixture")
+        with (
+            patch.object(worker, "MODELS_ROOT", legacy_root),
+            worker_platform("darwin"),
+            patch.dict(worker.os.environ, {}, clear=True),
+        ):
+            with self.assertRaises(worker.WorkerFailure) as raised:
+                worker.ModelManager().get_sequence_engine("sttn")
+        self.assertEqual(raised.exception.code, "STTN_UNAVAILABLE")
+
+    def test_macos_engine_load_requires_signed_definition_and_mps_device(self):
+        adapter = SyntheticSequenceEngine()
+        manager = worker.ModelManager()
+        with (
+            worker_platform("darwin"),
+            patch.dict(
+                worker.os.environ,
+                {
+                    "VIDEO_AI_STTN_ENGINE_ROOT": str(self.root / "sttn"),
+                    "VIDEO_AI_SEQUENCE_PACKAGE_ROOT": str(self.root),
+                    "VIDEO_AI_SEQUENCE_SUPPORT_PATH": str(self.root / "support.json"),
+                    "VIDEO_AI_SEQUENCE_SUPPORT_SHA256": "a" * 64,
+                },
+            ),
+            patch("video_ai_engine_assets.read_bundle", return_value={"engine": "sttn", "adapterReady": True}),
+            patch(
+                "video_ai_engine_assets.validate_macos_sequence_support",
+                return_value={"supportedDevices": ["mps"], "executionMode": "mps"},
+            ),
+            patch.object(manager, "sequence_device", return_value="mps"),
+            patch.object(manager, "unload_gpu"),
+            patch("video_ai_sttn.SttnAdapter", return_value=adapter) as factory,
+        ):
+            self.assertIs(manager.get_sequence_engine("sttn"), adapter)
+        factory.assert_called_once_with(self.root / "sttn", device="mps")
+
+    def test_released_sequence_health_reports_device_and_execution_mode(self):
+        with (
+            patch.dict(
+                worker.os.environ,
+                {
+                    "VIDEO_AI_STTN_ENGINE_ROOT": str(self.root / "sttn"),
+                    "VIDEO_AI_PROPAINTER_ENGINE_ROOT": str(self.root / "propainter"),
+                },
+            ),
+            patch(
+                "video_ai_engine_assets.read_bundle",
+                side_effect=lambda root, verify=False: {"engine": Path(root).name, "adapterReady": True},
+            ),
+            patch.object(worker.manager, "sequence_devices", return_value=["mps"]),
+            patch.object(worker.manager, "sequence_device", return_value="mps"),
+            patch(
+                "video_ai_engine_assets.validate_macos_sequence_support",
+                side_effect=lambda _root, bundle: {
+                    "supportedDevices": ["mps"],
+                    "executionMode": "hybrid" if bundle["engine"] == "propainter" else "mps",
+                },
+            ),
+        ):
+            health = {entry["provider"]: entry for entry in worker.engine_health()}
+        self.assertTrue(health["balanced"]["available"])
+        self.assertEqual(health["balanced"]["supportedDevices"], ["mps"])
+        self.assertEqual(health["balanced"]["executionMode"], "mps")
+        self.assertTrue(health["extreme"]["available"])
+        self.assertEqual(health["extreme"]["executionMode"], "hybrid")
+
+    def test_macos_sequence_health_does_not_advertise_a_device_outside_signed_support(self):
+        with (
+            patch.dict(worker.os.environ, {"VIDEO_AI_STTN_ENGINE_ROOT": str(self.root / "sttn")}),
+            patch(
+                "video_ai_engine_assets.read_bundle",
+                return_value={"engine": "sttn", "adapterReady": True},
+            ),
+            patch(
+                "video_ai_engine_assets.validate_macos_sequence_support",
+                return_value={"supportedDevices": ["mps"], "executionMode": "mps"},
+            ),
+            patch.object(worker.manager, "sequence_devices", return_value=["cuda"]),
+            patch.object(worker.manager, "sequence_device", return_value="cuda"),
+        ):
+            with worker_platform("darwin"):
+                health = {entry["provider"]: entry for entry in worker.engine_health()}
+        self.assertFalse(health["balanced"]["available"])
+        self.assertNotIn("cuda", health["balanced"].get("supportedDevices", []))
+
     def test_new_sequence_adapter_resolves_its_gpu_root_and_closes_once(self):
         adapter = SyntheticSequenceEngine()
         with (
+            worker_platform("win32"),
             patch.dict(worker.os.environ, {"VIDEO_AI_STTN_ENGINE_ROOT": str(self.root)}),
             patch("video_ai_engine_assets.read_bundle", return_value={"engine": "sttn", "adapterReady": True}),
             patch("video_ai_sttn.SttnAdapter", return_value=adapter) as factory,
-            patch.object(worker.ModelManager, "device", return_value="cuda"),
+            patch.object(worker.ModelManager, "sequence_device", return_value="cuda"),
         ):
             engine = worker.SttnEngine(worker.ModelManager())
             engine.prepare_sequence(worker.VideoInfo(WIDTH, HEIGHT, FPS, FRAMES, False, 3), lambda: None)
@@ -751,6 +913,7 @@ class PipelineTests(unittest.TestCase):
         from video_ai_propainter import ProPainterFailure
 
         with (
+            worker_platform("win32"),
             patch.dict(worker.os.environ, {"VIDEO_AI_PROPAINTER_ENGINE_ROOT": str(self.root)}),
             patch("video_ai_engine_assets.read_bundle", return_value={"engine": "propainter", "adapterReady": False}),
         ):
@@ -799,10 +962,11 @@ class PipelineTests(unittest.TestCase):
             return update(reporter, stage, processed, **kwargs)
 
         with (
+            worker_platform("win32"),
             patch.dict(worker.os.environ, {"VIDEO_AI_PROPAINTER_ENGINE_ROOT": str(self.root)}),
             patch("video_ai_engine_assets.read_bundle", return_value={"engine": "propainter", "adapterReady": True}),
             patch("video_ai_propainter.ProPainterAdapter", return_value=adapter) as factory,
-            patch.object(worker.ModelManager, "device", return_value="cuda"),
+            patch.object(worker.ModelManager, "sequence_device", return_value="cuda"),
             patch.object(worker, "build_engine", return_value=engine),
             patch.object(worker.ProgressReporter, "update", progress),
         ):
@@ -960,6 +1124,24 @@ class PipelineTests(unittest.TestCase):
 
 
 class HealthTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unload_uses_the_worker_lock_and_confirms_model_release(self):
+        class Manager:
+            def __init__(self):
+                self.lock = worker.asyncio.Lock()
+                self.released = False
+
+            def unload(self):
+                self.released = True
+
+        manager = Manager()
+        with (
+            patch.object(worker, "manager", manager),
+            patch.object(worker.asyncio, "to_thread", new=AsyncMock(side_effect=lambda callback: callback())),
+        ):
+            result = await worker.unload()
+        self.assertTrue(manager.released)
+        self.assertEqual(result, {"success": True, "data": {"protocolVersion": 1, "modelLoaded": False, "busy": False}})
+
     async def test_light_diagnostics_tracks_sequence_networks_without_loading_or_clearing_other_models(self):
         from types import SimpleNamespace
 
@@ -976,6 +1158,24 @@ class HealthTests(unittest.IsolatedAsyncioTestCase):
             original = manager.gpu_model
             await worker.diagnostics_light()
             self.assertIs(manager.gpu_model, original)
+
+    async def test_sequence_deep_diagnostics_returns_the_worker_protocol_at_top_level(self):
+        result = {"protocolVersion": 1, "available": False, "engines": []}
+        with patch.object(worker, "deep_check_sequence_engines", return_value=result):
+            response = await worker.diagnostics_deep()
+        self.assertEqual(response, result)
+
+    async def test_sequence_deep_check_reports_device_probe_failure_without_loading_models(self):
+        with patch.object(
+            worker.manager,
+            "sequence_device",
+            side_effect=worker.WorkerFailure("VIDEO_AI_SEQUENCE_DEVICE_UNSUPPORTED", "MPS unavailable"),
+        ):
+            result = worker.deep_check_sequence_engines()
+        self.assertFalse(result["available"])
+        self.assertEqual(result["protocolVersion"], 1)
+        self.assertEqual([item["engine"] for item in result["engines"]], ["sttn", "propainter"])
+        self.assertTrue(all(item["reason"] == "MPS unavailable" for item in result["engines"]))
 
     async def test_closing_an_old_engine_does_not_clear_a_new_sequence_diagnostic_owner(self):
         from types import SimpleNamespace

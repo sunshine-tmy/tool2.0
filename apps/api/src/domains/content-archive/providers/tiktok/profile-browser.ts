@@ -37,6 +37,10 @@ export function connectProfileProxy(proxy: string, address: ResolvedAddress, sig
   });
 }
 
+export function profileBrowserLaunchArgs(networkArgs: string[], platform = process.platform) {
+  return platform === "darwin" ? [...networkArgs] : [...networkArgs, "--disable-blink-features=AutomationControlled"];
+}
+
 export async function resolveProfileBrowser(
   components: Pick<ComponentManager, "resolveInstalledAsset" | "list">,
   platform = process.platform
@@ -64,7 +68,11 @@ export async function resolveProfileBrowser(
       asset = value.executableAssetPath;
     } else if (platform !== "win32") throw new Error("BROWSER_PLATFORM_UNSUPPORTED");
     const browser = await components.resolveInstalledAsset("xhs-browser", asset);
-    if (browser.manifest.version !== "1.63.0-chromium-1243") throw new Error("BROWSER_VERSION_UNSUPPORTED");
+    if (
+      browser.manifest.version !== "1.63.0-chromium-1243" &&
+      !/^1\.63\.0-chromium-1243-darwin-arm64\.\d+$/.test(browser.manifest.version)
+    )
+      throw new Error("BROWSER_VERSION_UNSUPPORTED");
     return browser.path;
   } catch (error) {
     if (error instanceof ArchiveTaskError) throw error;
@@ -113,8 +121,7 @@ export async function openProfileBrowser(options: {
       executablePath: options.executablePath,
       headless: options.headless ?? false,
       proxy: network.proxy,
-      // Match the installed Playwright interactive-browser entry; keep the public-IP tunnel and manual verification.
-      args: [...network.args, "--disable-blink-features=AutomationControlled"]
+      args: profileBrowserLaunchArgs(network.args)
     });
     const context = await browser.newContext({ acceptDownloads: false, serviceWorkers: "block" });
     if (options.signal.aborted) {

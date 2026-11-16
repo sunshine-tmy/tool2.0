@@ -37,14 +37,16 @@ import { VideoAiWorkerError } from "./worker-client";
 import { probeVideo } from "./media";
 import { sendFileRange } from "../../core/media/file-range";
 import { desktopCapabilitiesPreparing } from "../../runtime/desktop-capability-runtime";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
 
 export async function registerVideoAiRoutes(
   app: FastifyInstance,
   config: AppConfig,
   database: ToolboxDatabase,
-  taskStore: TaskStore
+  taskStore: TaskStore,
+  resources?: InferenceResourceCoordinator
 ) {
-  const manager = createVideoAiTaskManager(config, database, taskStore);
+  const manager = createVideoAiTaskManager(config, database, taskStore, resources);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());
 

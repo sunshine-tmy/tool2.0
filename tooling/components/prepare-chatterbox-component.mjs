@@ -9,11 +9,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const LOCK_SOURCE =
   process.platform === "darwin"
-    ? path.join(REPOSITORY_ROOT, ".package", "macos-locks", "chatterbox.lock.txt")
+    ? path.join(REPOSITORY_ROOT, "tooling", "components", "macos", "locks", "chatterbox.lock.txt")
     : path.join(REPOSITORY_ROOT, "scripts", "chatterbox.lock.txt");
 const DEFAULT_WHEELHOUSE = path.join(
   REPOSITORY_ROOT,
@@ -307,23 +308,25 @@ async function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
   const required = ["python", "stage"];
-  const allowed = [...required, "wheelhouse", "model-snapshot", "source-vendor"];
+  const allowed = [...required, "wheelhouse", "model-snapshot", "source-vendor", "lock"];
   if (required.some((key) => !values.has(key)) || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(
-      "用法：pnpm components:prepare-chatterbox -- --python <Python 3.12 python.exe> --stage <新暂存目录> [--wheelhouse <已校验 wheelhouse>] [--model-snapshot <固定 revision 模型目录>] [--source-vendor <固定提交的纯 Python vendor>]"
+      "用法：pnpm components:prepare-chatterbox -- --python <Python 3.12 路径> --stage <新暂存目录> [--wheelhouse <已校验 wheelhouse>] [--model-snapshot <固定 revision 模型目录>] [--source-vendor <固定提交的纯 Python vendor>] [--lock <平台专用哈希锁>]"
     );
   }
   return {
     pythonExecutablePath: values.get("python"),
     stagingDirectory: values.get("stage"),
+    ...(values.has("lock") ? { lockFilePath: values.get("lock") } : {}),
     ...(values.has("wheelhouse") ? { wheelhouseDirectory: values.get("wheelhouse") } : {}),
     ...(values.has("source-vendor") ? { sourceVendorDirectory: values.get("source-vendor") } : {}),
     ...(values.has("model-snapshot") ? { modelSnapshotDirectory: values.get("model-snapshot") } : {})

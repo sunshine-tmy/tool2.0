@@ -2,7 +2,6 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import crypto from "node:crypto";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
@@ -48,19 +47,18 @@ export async function saveCapabilityExport(
     await response.body?.cancel();
     throw new Error(`能力包导出失败（HTTP ${response.status}），请确认已安装能力及依赖均与当前目录版本一致`);
   }
-  const temporary = path.join(
-    path.dirname(destination),
-    `.${path.basename(destination)}.${crypto.randomUUID()}.partial`
-  );
-  let created = false,
-    bytes = 0;
+  let temporaryDirectory: string | undefined;
+  let bytes = 0;
   try {
     const space = await fsp.statfs(path.dirname(destination));
     if (Number(space.bavail) * Number(space.bsize) < limit + 32 * 1024 * 1024)
       throw new Error("目标磁盘剩余空间不足，尚未覆盖目标文件");
+    // Keep the incomplete export private in its own directory. A dot-prefixed
+    // file can retain macOS's hidden flag after being renamed to its final name.
+    temporaryDirectory = await fsp.mkdtemp(path.join(path.dirname(destination), ".capability-export-"));
+    const temporary = path.join(temporaryDirectory, "capability.zip");
     const handle = await fsp.open(temporary, "wx", 0o600);
     await handle.close();
-    created = true;
     const meter = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         bytes += chunk.length;
@@ -85,6 +83,6 @@ export async function saveCapabilityExport(
     return { fileName: path.basename(destination), bytes };
   } finally {
     await response.body.cancel().catch(() => undefined);
-    if (created) await fsp.rm(temporary, { force: true }).catch(() => undefined);
+    if (temporaryDirectory) await fsp.rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined);
   }
 }

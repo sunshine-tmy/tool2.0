@@ -11,9 +11,17 @@ import { createSourceOfflineInstaller } from "../../apps/api/src/runtime/source-
 
 if (process.argv.slice(2).some((arg) => arg !== "--with-cuda") || process.argv.length > 3)
   throw new Error("初始化入口只接受可选的 --with-cuda 参数");
-if (process.platform !== "win32" || process.arch !== "x64") throw new Error("一键初始化仅支持 Windows x64");
+const supportedHost =
+  (process.platform === "win32" && process.arch === "x64") ||
+  (process.platform === "darwin" && process.arch === "arm64");
+if (!supportedHost) throw new Error("源码能力初始化仅支持 Windows x64 和 Apple Silicon macOS");
+if (process.platform === "darwin" && process.argv.includes("--with-cuda"))
+  throw new Error("Apple Silicon 不提供 CUDA 能力包");
 const config = getSourceConfig();
-if (!config.desktopManagedCapabilities) throw new Error("请通过 start.bat 运行受管源码初始化");
+if (!config.desktopManagedCapabilities)
+  throw new Error(
+    process.platform === "darwin" ? "请通过 start.command 运行受管源码初始化" : "请通过 start.bat 运行受管源码初始化"
+  );
 // Never modify packages under a running API (including queued tasks/playback with unknown state).
 const requireFrontend = createRequire(path.join(config.runtime.appRoot, "apps/web/package.json"));
 const vite = await import(pathToFileURL(requireFrontend.resolve("vite")).href);

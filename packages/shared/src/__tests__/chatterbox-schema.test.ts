@@ -35,6 +35,7 @@ describe("chatterbox response schemas", () => {
       status: "completed",
       progress: 100,
       attempt: 1,
+      device: "mps",
       characterCount: 15,
       audioBytes: 2048,
       audioDurationSeconds: 1.8,
@@ -74,6 +75,8 @@ describe("chatterbox response schemas", () => {
       archiveUrl: "/archive.zip"
     };
     expect(Value.Check(ChatterboxBatchSchema, batch)).toBe(true);
+    expect(Value.Check(ChatterboxBatchSchema, { ...batch, device: "mps" })).toBe(true);
+    expect(Value.Check(ChatterboxBatchSchema, { ...batch, items: [{ ...item, device: "metal" }] })).toBe(false);
     expect(Value.Check(ChatterboxBatchSchema, { ...batch, device: "metal" })).toBe(false);
     expect(Value.Check(ChatterboxBatchSchema, { ...batch, status: "unknown" })).toBe(false);
 

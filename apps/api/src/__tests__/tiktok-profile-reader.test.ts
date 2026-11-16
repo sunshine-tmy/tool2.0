@@ -242,7 +242,7 @@ it("ignores a late old-document response after refresh and preserves discovered 
   expect(updates).toBe(2);
   expect(browser.eventNames()).toEqual([]);
 });
-it.each(["http", "invalid", "network"] as const)(
+it.each(["http", "denied", "invalid", "network"] as const)(
   "reports a %s list failure without claiming that login is required",
   async (kind) => {
     const controller = new AbortController();
@@ -250,7 +250,12 @@ it.each(["http", "invalid", "network"] as const)(
       state(),
       kind === "network"
         ? undefined
-        : { ...api({}), ...(kind === "http" ? { status: () => 503 } : { body: async () => Buffer.from("not json") }) }
+        : {
+            ...api({}),
+            ...(kind === "http" || kind === "denied"
+              ? { status: () => (kind === "denied" ? 403 : 503) }
+              : { body: async () => Buffer.from("not json") })
+          }
     );
     if (kind === "network")
       browser.goto.mockImplementationOnce(async () => {
@@ -267,7 +272,13 @@ it.each(["http", "invalid", "network"] as const)(
         (snapshot) => {
           expect(snapshot).toMatchObject({ complete: false, waitingUser: true });
           expect(snapshot.message).toContain(
-            kind === "http" ? "HTTP 503" : kind === "invalid" ? "无法解析" : "网络请求未完成"
+            kind === "http"
+              ? "HTTP 503"
+              : kind === "denied"
+                ? "HTTP 403"
+                : kind === "invalid"
+                  ? "无法解析"
+                  : "网络请求未完成"
           );
           expect(snapshot.message).not.toContain("检查登录");
           controller.abort();

@@ -19,6 +19,7 @@ const item = {
   chineseText: "欢迎光临",
   foreignText: "Selamat datang",
   audioUrl: "/audio/one",
+  source: { kind: "upload" },
   available: true
 } as AudioLibraryItemView;
 const storageKey = `toolbox-audio-player:${apiBaseUrl}`;
@@ -76,7 +77,7 @@ describe("音频播放引擎与模块控件分离", () => {
     expect(pause).not.toHaveBeenCalled();
     controls = mount(AudioLibraryPlayer);
     expect(controls.text()).toContain("开场话术");
-    expect(controls.text()).toContain("暂停");
+    expect(controls.findAll('[aria-label="暂停"]')).toHaveLength(1);
     expect(document.body.classList.contains("audio-player-visible")).toBe(false);
   });
   it("重启恢复队列顺序、重复项及设置，但不自动出声", async () => {

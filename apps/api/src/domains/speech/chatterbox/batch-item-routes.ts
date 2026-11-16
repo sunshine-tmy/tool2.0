@@ -5,6 +5,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import {
+  type ChatterboxDevice,
   ApiFailureSchema,
   ChatterboxBatchIdParamsSchema,
   ChatterboxBatchItemRemovalSchema,
@@ -28,17 +29,22 @@ import { receiveBatchMultipart } from "./batch-input";
 import type { ChatterboxBatchQueue, ChatterboxMediaTools } from "./batch-queue";
 import { BatchInputError, mapBatchError } from "./errors";
 import { ChatterboxBatchStore, ChatterboxVoiceStore } from "./stores";
+import type { createChatterboxWorkerClient } from "./worker-client";
+import { chatterboxDeviceUnavailable, supportsChatterboxDevice } from "./device-capabilities";
+
+type WorkerClient = ReturnType<typeof createChatterboxWorkerClient>;
 
 export function registerChatterboxBatchItemRoutes(options: {
   app: FastifyInstance;
   config: AppConfig;
+  worker: WorkerClient;
   store: ChatterboxBatchStore;
   voiceStore: ChatterboxVoiceStore;
   queue: ChatterboxBatchQueue;
   media: ChatterboxMediaTools;
   queueLoad: () => number;
 }) {
-  const { app, config, store, voiceStore, queue, media, queueLoad } = options;
+  const { app, config, worker, store, voiceStore, queue, media, queueLoad } = options;
 
   app.post(
     "/api/v1/tools/edge-tts/chatterbox/batches/:batchId/items/:itemId/regenerate",
@@ -69,6 +75,20 @@ export function registerChatterboxBatchItemRoutes(options: {
           throw new BatchInputError("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试", 429);
         }
         const uploaded = await receiveBatchMultipart(request.parts(), `${paths.referenceUpload}.retry`, false);
+        const requestedDevice = uploaded.fields.device;
+        if (requestedDevice !== undefined && !isChatterboxDevice(requestedDevice)) {
+          throw new BatchInputError("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU、NVIDIA GPU 或 Apple MPS", 400);
+        }
+        const device = requestedDevice === undefined ? batch.device || "cpu" : requestedDevice;
+        if (requestedDevice !== undefined) {
+          const health = await worker.health();
+          if (!health.available)
+            throw new BatchInputError("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪", 409);
+          if (!supportsChatterboxDevice(health, device)) {
+            const unavailable = chatterboxDeviceUnavailable(device, health);
+            throw new BatchInputError(unavailable.code, unavailable.message, 409);
+          }
+        }
         const text = (uploaded.fields.text || item.text).trim();
         if (!text || text.length > CHATTERBOX_MAX_TEXT_LENGTH) {
           throw new BatchInputError(
@@ -155,6 +175,7 @@ export function registerChatterboxBatchItemRoutes(options: {
           cfgWeight,
           temperature,
           characterCount: text.length,
+          device,
           status: "queued",
           progress: 0,
           attempt: item.attempt + 1,
@@ -311,6 +332,10 @@ export function registerChatterboxBatchItemRoutes(options: {
       return ok({ removed: true });
     }
   );
+}
+
+function isChatterboxDevice(value: string): value is ChatterboxDevice {
+  return value === "cpu" || value === "cuda" || value === "mps";
 }
 
 function boundedNumber(value: string | undefined, minimum: number, maximum: number) {

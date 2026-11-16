@@ -1,0 +1,16 @@
+{
+  "id": "ffmpeg",
+  "groupId": "shared",
+  "displayName": "FFmpeg（共享媒体运行时）",
+  "purpose": "为视频解析和参考音色能力提供平台对应的 FFmpeg、FFprobe 及必需运行时库。",
+  "dependencyIds": [],
+  "taskToolIds": [],
+  "installConditions": ["安装使用媒体处理的能力时需要；安装后可由多个能力共享。"],
+  "version": "8.1.2-darwin-arm64.1",
+  "installedBytes": 300000000,
+  "license": {
+    "name": "GPL-3.0",
+    "url": "https://www.gnu.org/licenses/gpl-3.0.html"
+  },
+  "platform": "darwin-arm64"
+}

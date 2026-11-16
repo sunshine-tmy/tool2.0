@@ -161,6 +161,57 @@ describe.skipIf(!available)("真实 FFmpeg 合成视频水印回归（不使用�
       red: reds.reduce((a, b) => a + b, 0) / reds.length
     };
   }
+  async function inspect(file: string) {
+    return JSON.parse(
+      await runMediaProcess(
+        tools.ffprobe,
+        [
+          "-v",
+          "error",
+          "-count_frames",
+          "-show_entries",
+          "stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,nb_read_frames,duration:format=duration",
+          "-of",
+          "json",
+          file
+        ],
+        new AbortController().signal
+      )
+    ) as {
+      streams: Array<{
+        codec_type: string;
+        codec_name?: string;
+        width?: number;
+        height?: number;
+        pix_fmt?: string;
+        avg_frame_rate?: string;
+        nb_read_frames?: string;
+        duration?: string;
+      }>;
+      format: { duration: string };
+    };
+  }
+  async function videoPts(file: string) {
+    const result = JSON.parse(
+      await runMediaProcess(
+        tools.ffprobe,
+        [
+          "-v",
+          "error",
+          "-select_streams",
+          "v:0",
+          "-show_frames",
+          "-show_entries",
+          "frame=best_effort_timestamp_time",
+          "-of",
+          "json",
+          file
+        ],
+        new AbortController().signal
+      )
+    ) as { frames: Array<{ best_effort_timestamp_time: string }> };
+    return result.frames.map((frame) => Number(frame.best_effort_timestamp_time));
+  }
   it("uses the exact source ending for automatic timing without accepting a rounded end beyond it", async () => {
     const settings = defaultArchiveWatermarkSettings();
     settings.opacity = 100;
@@ -317,6 +368,19 @@ describe.skipIf(!available)("真实 FFmpeg 合成视频水印回归（不使用�
         [result.width, result.height],
         JSON.stringify({ input: await probe(input), output: await probe(output) })
       ).toEqual(variant === "rotated" ? [96, 128] : [128, 96]);
+      const outputInfo = await inspect(output);
+      const videoStream = outputInfo.streams.find((stream) => stream.codec_type === "video")!;
+      const audioStream = outputInfo.streams.find((stream) => stream.codec_type === "audio")!;
+      expect(videoStream).toMatchObject({ codec_name: "h264", pix_fmt: "yuv420p", avg_frame_rate: "10/1" });
+      expect(Number(videoStream.nb_read_frames)).toBe(30);
+      expect(Math.abs(Number(videoStream.duration) - Number(audioStream.duration))).toBeLessThan(0.1);
+      const pts = await videoPts(output);
+      expect(pts).toHaveLength(30);
+      expect(pts[0]).toBeCloseTo(0, 3);
+      for (let index = 1; index < pts.length; index++) {
+        expect(pts[index]).toBeGreaterThan(pts[index - 1]);
+        expect(pts[index] - pts[index - 1]).toBeCloseTo(0.1, 3);
+      }
       expect((await bounds(output, 1)).count).toBeGreaterThan(0);
       if (variant === "rotated") {
         const unchanged = await renderArchiveVideo({
@@ -332,4 +396,63 @@ describe.skipIf(!available)("真实 FFmpeg 合成视频水印回归（不使用�
       }
     }
   });
+  it("拒绝损坏媒体且不生成成品", async () => {
+    const invalid = path.join(root, "损坏视频.mp4"),
+      output = path.join(root, "损坏视频-不应生成.mp4");
+    await fs.writeFile(invalid, "not a media container");
+    await expect(
+      renderArchiveVideo({
+        tools,
+        source: invalid,
+        output,
+        settings: defaultArchiveAudioSettings(),
+        signal: new AbortController().signal,
+        maxBytes: 10 * 1024 * 1024,
+        onProgress: () => undefined
+      })
+    ).rejects.toMatchObject({ code: "ARCHIVE_EDIT_RENDER_FAILED" });
+    await expect(fs.stat(output)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("取消运行中的 FFmpeg 子进程并等待其退出", async () => {
+    const controller = new AbortController();
+    let receivedProgress = false;
+    const work = runMediaProcess(
+      tools.ffmpeg,
+      [
+        "-hide_banner",
+        "-v",
+        "error",
+        "-nostdin",
+        "-re",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=320x240:rate=25",
+        "-t",
+        "30",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-progress",
+        "pipe:1",
+        "-nostats",
+        "-f",
+        "null",
+        "-"
+      ],
+      controller.signal,
+      {
+        timeoutMs: 10_000,
+        onOutput: (chunk) => {
+          if (!receivedProgress && chunk.includes("out_time_us=")) {
+            receivedProgress = true;
+            controller.abort();
+          }
+        }
+      }
+    );
+    await expect(work).rejects.toMatchObject({ code: "ARCHIVE_EDIT_CANCELLED" });
+    expect(receivedProgress).toBe(true);
+  }, 15000);
 });

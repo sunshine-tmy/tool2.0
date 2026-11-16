@@ -233,6 +233,11 @@ const deepTargets = computed(() => [
   { value: "image-ai", label: "AI 图片：实际加载本地模型（占用内存 / GPU）" },
   { value: "chatterbox", label: "参考音色克隆：实际加载本地模型（占用内存 / GPU）" },
   { value: "edge-tts", label: "在线自然音色：固定英文短句真实合成（需要联网）" },
+  ...((run.value?.checks ?? []).some(
+    (check) => check.componentId === "video-ai" && check.status !== "not-installed" && check.status !== "checking"
+  )
+    ? [{ value: "video-ai-sequence", label: "STTN / ProPainter：加载已验收模型并运行单帧探针（占用内存 / GPU）" }]
+    : []),
   ...(run.value?.checks ?? [])
     .filter(
       (c) => c.componentId && c.action === "components" && c.status !== "not-installed" && c.status !== "checking"

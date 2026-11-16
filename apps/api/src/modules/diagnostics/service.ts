@@ -13,6 +13,7 @@ import { executeDeepCheck } from "./deep-checks";
 import { diagnosticError } from "./errors";
 import application from "../../../../../package.json";
 import { desktopCapabilitiesPreparing } from "../../runtime/desktop-capability-runtime";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
 
 export class DiagnosticsService {
   readonly gate = new MaintenanceGate();
@@ -26,7 +27,8 @@ export class DiagnosticsService {
     readonly database: ToolboxDatabase,
     readonly components: ComponentManager,
     private readonly restart: (id: string) => Promise<void>,
-    private readonly extraBusy: () => boolean = () => false
+    private readonly extraBusy: () => boolean = () => false,
+    private readonly inferenceResources?: InferenceResourceCoordinator
   ) {}
 
   setPlayback(clientId: string, active: boolean) {
@@ -60,8 +62,20 @@ export class DiagnosticsService {
         .some((entry) => ["pending", "running", "queued", "processing", "uploading"].includes(entry.status ?? ""))
     );
   }
-  async worker(id: "image-ai" | "chatterbox", deep = false) {
-    const url = new URL(id === "image-ai" ? this.config.imageAiWorkerUrl : this.config.chatterboxWorkerUrl);
+  async worker(id: "image-ai" | "chatterbox" | "video-ai", deep = false, signal?: AbortSignal) {
+    const workerUrl =
+      id === "image-ai"
+        ? this.config.imageAiWorkerUrl
+        : id === "chatterbox"
+          ? this.config.chatterboxWorkerUrl
+          : this.config.videoAiWorkerUrl;
+    const workerToken =
+      id === "image-ai"
+        ? this.config.imageAiWorkerToken
+        : id === "chatterbox"
+          ? this.config.chatterboxWorkerToken
+          : this.config.videoAiWorkerToken;
+    const url = new URL(workerUrl);
     if (
       url.protocol !== "http:" ||
       !["127.0.0.1", "[::1]", "localhost"].includes(url.hostname) ||
@@ -72,48 +86,57 @@ export class DiagnosticsService {
     url.pathname = deep ? "/diagnostics/deep" : "/diagnostics/light";
     url.search = "";
     url.hash = "";
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: deep ? "POST" : "GET",
-        redirect: "error",
-        headers: {
-          ...workerAuthHeaders(id === "image-ai" ? this.config.imageAiWorkerToken : this.config.chatterboxWorkerToken),
-          "x-toolbox-diagnostic": "1"
-        },
-        signal: AbortSignal.timeout(deep ? 300_000 : 2500)
-      });
-    } catch (error) {
-      // HTTP 超时不代表模型线程停止。继续持有维护锁，直到 Worker 确认空闲或已退出。
-      if (deep)
-        while (!this.closed) {
-          try {
-            const probe = await this.worker(id);
-            if (probe.busy === false) break;
-          } catch (probeError) {
-            if (diagnosticFailure(probeError).code === "CONNECTION_REFUSED") break;
+    const check = async () => {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: deep ? "POST" : "GET",
+          redirect: "error",
+          headers: {
+            ...workerAuthHeaders(workerToken),
+            "x-toolbox-diagnostic": "1"
+          },
+          signal: signal
+            ? AbortSignal.any([signal, AbortSignal.timeout(deep ? 300_000 : 2500)])
+            : AbortSignal.timeout(deep ? 300_000 : 2500)
+        });
+      } catch (error) {
+        // HTTP timeout/cancel does not stop a model thread; hold the lease until idle or process exit is confirmed.
+        if (deep)
+          while (!this.closed) {
+            try {
+              const probe = await this.worker(id);
+              if (probe.busy === false) break;
+            } catch (probeError) {
+              if (diagnosticFailure(probeError).code === "CONNECTION_REFUSED") break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      throw error;
-    }
-    if (!response.ok)
-      throw diagnosticError(
-        response.status === 404 ? "WORKER_DIAGNOSTICS_UNSUPPORTED" : "WORKER_CHECK_FAILED",
-        "子服务未提供兼容的诊断结果",
-        422
-      );
-    const value = (await response.json()) as {
-      protocolVersion?: number;
-      available?: boolean;
-      modelLoaded?: boolean;
-      cudaAvailable?: boolean;
-      code?: string;
-      busy?: boolean;
+        throw error;
+      }
+      if (!response.ok)
+        throw diagnosticError(
+          response.status === 404 ? "WORKER_DIAGNOSTICS_UNSUPPORTED" : "WORKER_CHECK_FAILED",
+          "子服务未提供兼容的诊断结果",
+          422
+        );
+      const value = (await response.json()) as {
+        protocolVersion?: number;
+        available?: boolean;
+        modelLoaded?: boolean;
+        cudaAvailable?: boolean;
+        code?: string;
+        busy?: boolean;
+      };
+      if (value.protocolVersion !== 1 || typeof value.available !== "boolean")
+        throw diagnosticError("WORKER_PROTOCOL_MISMATCH", "子服务诊断协议不兼容", 422);
+      return value;
     };
-    if (value.protocolVersion !== 1 || typeof value.available !== "boolean")
-      throw diagnosticError("WORKER_PROTOCOL_MISMATCH", "子服务诊断协议不兼容", 422);
-    return value;
+    return deep && this.inferenceResources ? this.inferenceResources.run(id, check, { signal }) : check();
+  }
+
+  onSystemResume() {
+    return this.inferenceResources?.notifyResume() ?? Promise.resolve();
   }
   snapshot() {
     if (this.snapshotCache && Date.now() - Date.parse(this.snapshotCache.finishedAt!) < 5000)
@@ -377,11 +400,15 @@ export class DiagnosticsService {
     }
     if (!input.confirmed || !input.targets?.length)
       throw diagnosticError("CONFIRMATION_REQUIRED", "请选择检查项并确认资源及联网影响", 422);
+    const installedComponents = await this.components.list();
     const allowed = new Set([
       "image-ai",
       "chatterbox",
       "edge-tts",
-      ...(await this.components.list()).map((c) => `integrity-${c.id}`)
+      ...(installedComponents.some((component) => component.id === "video-ai" && component.installed)
+        ? ["video-ai-sequence"]
+        : []),
+      ...installedComponents.map((c) => `integrity-${c.id}`)
     ]);
     if (input.targets.some((id) => !allowed.has(id))) throw diagnosticError("INVALID_TARGET", "不支持的诊断项目", 422);
     const run = this.newRun("deep");

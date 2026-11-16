@@ -17,19 +17,22 @@ import type { StoredInput, StoredImageAiTask } from "./types";
 import { toPublicTask, toUnifiedTask } from "./task-projections";
 import { createImageAiTaskPersistence } from "./task-persistence";
 import { createImageAiInferenceExecutor } from "./inference-executor";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
 export type { StoredInput, StoredImageAiTask } from "./types";
 
 export function createImageAiTaskManager(
   config: AppConfig,
   database: ToolboxDatabase,
   taskStore: TaskStore,
-  fileMetadata?: FileMetadataRepository
+  fileMetadata?: FileMetadataRepository,
+  resources?: InferenceResourceCoordinator
 ) {
-  const worker = createImageAiWorkerClient(config);
+  const worker = createImageAiWorkerClient(config, resources);
   const tasks = new Map<string, StoredImageAiTask>();
   const queue: string[] = [];
   const removals = new Map<string, Promise<boolean>>();
   const sourceLeases = new Map<string, number>();
+  const resourceWaits = new Map<string, { controller: AbortController; waiting: boolean }>();
   let processing = false;
   let reservations = 0;
   let cleanupTimer: NodeJS.Timeout | undefined;
@@ -62,7 +65,19 @@ export function createImageAiTaskManager(
     config,
     worker,
     shutdownController,
-    { patchTask, persist, unique, processComposition, finishInference },
+    {
+      patchTask,
+      persist,
+      unique,
+      processComposition,
+      finishInference,
+      trackResourceWait(taskId, controller, waiting) {
+        resourceWaits.set(taskId, { controller, waiting });
+      },
+      clearResourceWait(taskId, controller) {
+        if (resourceWaits.get(taskId)?.controller === controller) resourceWaits.delete(taskId);
+      }
+    },
     fileMetadata
   );
 
@@ -269,6 +284,8 @@ export function createImageAiTaskManager(
       await persist(task);
     } else if (task.status === "running") {
       task.cancelRequested = true;
+      const resourceWait = resourceWaits.get(taskId);
+      if (resourceWait?.waiting) resourceWait.controller.abort();
       task.warnings = unique([...task.warnings, "已请求取消，将在当前图片处理完成后停止"]);
       touch(task);
       await persist(task);

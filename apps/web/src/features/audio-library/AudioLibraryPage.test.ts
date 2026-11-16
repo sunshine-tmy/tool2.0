@@ -41,10 +41,13 @@ beforeEach(() => {
         available: true,
         chineseText: "中文",
         foreignText: "Text",
+        audioUrl: `/api/v1/files/${id}.wav`,
         duration: 5,
         bytes: 100,
         createdAt: "2026-10-19T00:00:00.000Z",
         source: { kind: "upload" },
+        mimeType: "audio/wav",
+        fileName: `${id}.wav`,
         deletedAt: view === "trash" ? "2026-10-19T00:00:00.000Z" : undefined
       })),
     groups: [],
@@ -69,10 +72,10 @@ async function mountTrash() {
     }
   });
   await flushPromises();
-  await wrapper
-    .findAll(".library-view")
+  wrapper
+    .findAllComponents(NButton)
     .find((entry) => entry.text() === "回收站")!
-    .trigger("click");
+    .vm.$emit("click");
   await flushPromises();
   return wrapper;
 }
@@ -110,7 +113,7 @@ describe("Audio library recycle bin actions", () => {
     expect(mocks.trash).toHaveBeenCalledWith(["one", "two"], true);
     await wrapper
       .findAll(".library-view")
-      .find((entry) => entry.text() === "全部音频")!
+      .find((entry) => entry.text() === "全部素材")!
       .trigger("click");
     await flushPromises();
     expect(wrapper.get(".library-batch").text()).not.toContain("彻底删除所选");
@@ -165,24 +168,24 @@ describe("Audio library recycle bin actions", () => {
     });
     await flushPromises();
     expect(wrapper.get(".library-item").classes()).not.toContain("library-item--trash");
-    await wrapper
-      .findAll(".library-view")
+    wrapper
+      .findAllComponents(NButton)
       .find((entry) => entry.text() === "回收站")!
-      .trigger("click");
+      .vm.$emit("click");
     await flushPromises();
     const row = wrapper.get(".library-item--trash");
     expect(row.findComponent({ name: "AudioLibraryItemPlayer" }).exists()).toBe(false);
     const buttons: VueWrapper[] = row.findAllComponents(NButton);
-    expect(buttons.map((button) => button.text())).toEqual(["恢复", "彻底删除", "详情"]);
-    expect(buttons[0].props()).toMatchObject({ size: "small", secondary: true, type: "primary" });
-    expect(buttons[1].props()).toMatchObject({ size: "small", secondary: true, type: "error" });
-    expect(buttons[2].props()).toMatchObject({ quaternary: true });
+    expect(buttons.map((button) => button.text())).toEqual(["未分组", "恢复", "彻底删除", "编辑"]);
+    expect(buttons[1].props()).toMatchObject({ size: "small", secondary: true, type: "primary" });
+    expect(buttons[2].props()).toMatchObject({ size: "small", secondary: true, type: "error" });
+    expect(buttons[3].props()).toMatchObject({ quaternary: true });
 
-    buttons[1].vm.$emit("click");
+    buttons[2].vm.$emit("click");
     await flushPromises();
     expect(mocks.confirm).toHaveBeenCalledWith(expect.stringContaining("无法撤销"), { title: "彻底删除" });
     expect(mocks.purge).not.toHaveBeenCalled();
-    buttons[0].vm.$emit("click");
+    buttons[1].vm.$emit("click");
     await flushPromises();
     expect(mocks.trash).toHaveBeenCalledWith(["one"], true);
     wrapper.unmount();

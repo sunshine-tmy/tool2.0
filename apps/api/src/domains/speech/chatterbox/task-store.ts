@@ -111,7 +111,9 @@ export class ChatterboxTaskStore {
 
   async update(
     id: string,
-    patch: Partial<Pick<ChatterboxTask, "status" | "progress" | "audioBytes" | "audioDurationSeconds" | "error">>
+    patch: Partial<
+      Pick<ChatterboxTask, "status" | "progress" | "phase" | "audioBytes" | "audioDurationSeconds" | "error">
+    >
   ) {
     const current = this.tasks.get(id);
     if (!current) return undefined;
@@ -230,7 +232,7 @@ function isStoredTask(value: unknown): value is ChatterboxTask {
 }
 
 function normalizeDevice(value: unknown): ChatterboxDevice {
-  return value === "cuda" ? "cuda" : "cpu";
+  return value === "cuda" || value === "mps" ? value : "cpu";
 }
 
 function isTaskStatus(value: unknown): value is ChatterboxTaskStatus {

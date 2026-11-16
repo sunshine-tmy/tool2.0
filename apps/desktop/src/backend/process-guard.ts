@@ -6,6 +6,128 @@ export interface ProcessGuard {
   close(): Promise<{ forced: boolean }>;
 }
 
+/**
+ * A detached macOS watcher continuously records only the utility process and its descendants.
+ * It survives a forced Electron exit; on EOF it signals only PID/start-time pairs
+ * that were observed under the owned root. It opens no listener or user data file.
+ */
+const macOSGuardScript = String.raw`
+set -e
+root_pid="$1"
+temp_root="$TMPDIR"
+if [ -z "$temp_root" ]; then temp_root=/tmp; fi
+state_dir=$(/usr/bin/mktemp -d "$temp_root/toolbox-process-guard.XXXXXX")
+scanner_pid=""
+known="$state_dir/known"
+snapshot="$state_dir/snapshot"
+cleanup() {
+  if [ -n "$scanner_pid" ]; then
+    /bin/kill "$scanner_pid" 2>/dev/null || true
+    wait "$scanner_pid" 2>/dev/null || true
+  fi
+  /bin/rm -rf "$state_dir"
+}
+trap cleanup EXIT
+: > "$known"
+
+scan() {
+  LC_ALL=C /bin/ps -axo pid= -o ppid= -o lstart= -o comm= |
+    /usr/bin/awk '{ pid=$1; ppid=$2; started=$3 " " $4 " " $5 " " $6 " " $7; comm=$8; if (pid ~ /^[0-9]+$/) print pid "|" ppid "|" started "|" comm }' > "$snapshot"
+}
+lookup_signature() {
+  /usr/bin/awk -F '|' -v wanted="$1" '$1 == wanted { print $3 "|" $4; exit }' "$snapshot"
+}
+refresh() {
+  scan
+  next_snapshot="$state_dir/next-known"
+  /usr/bin/awk -F '|' '
+    NR == FNR { known[$1] = $2 "|" $3; next }
+    { ppid[$1] = $2; current[$1] = $3 "|" $4 }
+    END {
+      changed = 1
+      while (changed) {
+        changed = 0
+        for (pid in ppid) {
+          parent = ppid[pid]
+          if ((parent in known) && (parent in current) && known[parent] == current[parent] && current[pid] != known[pid]) {
+            known[pid] = current[pid]
+            changed = 1
+          }
+        }
+      }
+      for (pid in known) print pid "|" known[pid]
+    }
+  ' "$known" "$snapshot" > "$next_snapshot"
+  /bin/mv "$next_snapshot" "$known"
+}
+has_live_known() {
+  while IFS='|' read -r pid started comm; do
+    [ -n "$pid" ] || continue
+    current=$(lookup_signature "$pid")
+    if [ "$current" = "$started|$comm" ]; then return 0; fi
+  done < "$known"
+  return 1
+}
+signal_known() {
+  signal="$1"
+  while IFS='|' read -r pid started comm; do
+    [ -n "$pid" ] || continue
+    current=$(lookup_signature "$pid")
+    if [ "$current" = "$started|$comm" ]; then /bin/kill "-$signal" "$pid" 2>/dev/null || true; fi
+  done < "$known"
+}
+
+scan
+root_signature=$(lookup_signature "$root_pid")
+if [ -z "$root_signature" ]; then exit 2; fi
+root_started=$(printf '%s\n' "$root_signature" | /usr/bin/cut -d '|' -f 1)
+root_comm=$(printf '%s\n' "$root_signature" | /usr/bin/cut -d '|' -f 2-)
+printf '%s|%s|%s\n' "$root_pid" "$root_started" "$root_comm" > "$known"
+printf 'READY\n'
+refresh_loop() {
+  while :; do
+    refresh
+    /bin/sleep 0.25
+  done
+}
+refresh_loop &
+scanner_pid=$!
+while IFS= read -r command; do
+  if [ "$command" = close ]; then break; fi
+done
+/bin/kill "$scanner_pid" 2>/dev/null || true
+wait "$scanner_pid" 2>/dev/null || true
+scanner_pid=""
+
+forced=0
+refresh
+if has_live_known; then
+  forced=1
+  signal_known TERM
+  attempt=0
+  while [ "$attempt" -lt 50 ] && has_live_known; do
+    /bin/sleep 0.1
+    refresh
+    attempt=$((attempt + 1))
+  done
+fi
+if has_live_known; then
+  signal_known KILL
+  attempt=0
+  while [ "$attempt" -lt 80 ] && has_live_known; do
+    /bin/sleep 0.1
+    refresh
+    attempt=$((attempt + 1))
+  done
+fi
+if has_live_known; then exit 3; fi
+if [ "$forced" -eq 1 ]; then
+  printf 'STOPPED_FORCED\n'
+else
+  printf 'STOPPED\n'
+fi
+`;
+
 export function windowsGuardScript(pid: number) {
   if (!Number.isSafeInteger(pid) || pid < 1) throw new Error("无效的后端进程标识");
   return `
@@ -70,6 +192,15 @@ try {
 }
 
 export async function guardBackendProcess(pid: number): Promise<ProcessGuard | undefined> {
+  if (process.platform === "darwin") {
+    const child = spawn("/bin/bash", ["-c", macOSGuardScript, "toolbox-process-guard", String(pid)], {
+      detached: true,
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    child.unref();
+    return waitForGuard(child);
+  }
   if (process.platform !== "win32") return undefined;
   const executable = path.join(
     process.env.SystemRoot || "C:\\Windows",

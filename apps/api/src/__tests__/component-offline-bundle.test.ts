@@ -103,7 +103,7 @@ async function fixture(platform: "win32-x64" | "darwin-arm64" = "win32-x64") {
     });
   }
   const base = await make("python-312", {
-    "bin/python": "signed-python",
+    [platform === "darwin-arm64" ? "python/bin/python3.12" : "bin/python"]: "signed-python",
     LICENSE: "python-license",
     "lib/cache.py": "signed-source",
     "lib/__pycache__/cache.cpython-312.pyc": "signed-bytecode"
@@ -143,7 +143,7 @@ async function fixture(platform: "win32-x64" | "darwin-arm64" = "win32-x64") {
   engine.assembledFiles = [{ path: "model.bin", bytes: 16, sha256: hash("part-onepart-two"), parts }];
   engine.pythonEnvironment = {
     pythonComponentId: base.id,
-    pythonExecutablePath: "bin/python",
+    pythonExecutablePath: platform === "darwin-arm64" ? "python/bin/python3.12" : "bin/python",
     wheelhousePath: "wheelhouse",
     requirementsLockPath: "requirements.lock",
     requirementsLockSha256: hash("signed-lock"),
@@ -190,7 +190,9 @@ it.each(["win32-x64", "darwin-arm64"] as const)(
   async (platform) => {
     const f = await fixture(platform);
     const entries = await readArchiveZip(await fs.readFile(f.file));
-    expect([...entries.keys()]).toContain("packages/python-312/bin/python");
+    expect([...entries.keys()]).toContain(
+      `packages/python-312/${platform === "darwin-arm64" ? "python/bin/python3.12" : "bin/python"}`
+    );
     expect([...entries.keys()]).toContain("packages/edge-tts/model.bin");
     expect([...entries.keys()].some((name) => name.includes("venv"))).toBe(false);
     const offline = vi.fn(async () => {
@@ -211,6 +213,40 @@ it.each(["win32-x64", "darwin-arm64"] as const)(
     );
   }
 );
+
+it.each([
+  ["win32-x64", "darwin-arm64"],
+  ["darwin-arm64", "win32-x64"]
+] as const)("拒绝 %s 的离线包导入到 %s，且不联网、不创建安装代", async (sourcePlatform, targetPlatform) => {
+  const source = await fixture(sourcePlatform);
+  const targetManifests = source.manifests.map((manifest) =>
+    sign({
+      ...structuredClone(manifest),
+      platform: targetPlatform,
+      ...(targetPlatform === "darwin-arm64" && manifest.pythonEnvironment
+        ? { pythonEnvironment: { ...manifest.pythonEnvironment, pythonExecutablePath: "python/bin/python3.12" } }
+        : {}),
+      signature: ""
+    })
+  );
+  const targetRoot = path.join(root, "cross-platform-target");
+  const offline = vi.fn(async () => {
+    throw new Error("network must not run");
+  });
+  const target = new ComponentManager({
+    root: targetRoot,
+    platform: targetPlatform,
+    catalog: { manifests: targetManifests, trustedPublicKeys: source.catalog.trustedPublicKeys },
+    downloadArchive: offline
+  });
+
+  await expect(target.startOfflineBundleImport("edge-tts", upload(source.file))).rejects.toMatchObject({
+    code: "COMPONENT_IMPORT_INVALID"
+  });
+  expect(offline).not.toHaveBeenCalled();
+  expect(target.hasActiveJobs()).toBe(false);
+  await expect(fs.access(path.join(targetRoot, "edge-tts/current.json"))).rejects.toBeDefined();
+});
 
 async function mutated(
   f: Awaited<ReturnType<typeof fixture>>,

@@ -154,10 +154,81 @@ class ProPainterTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, code)
                 load.assert_not_called()
 
+    def test_mps_runtime_rejects_fallback_and_wrong_torchvision_before_vendor_import(self):
+        for enabled, torch_version, torchvision_version, expected in (
+            ("1", "2.6.0", "0.21.0", "VIDEO_AI_MPS_FALLBACK_ENABLED"),
+            ("0", "2.6.1", "0.21.0", "PROPAINTER_UNAVAILABLE"),
+            ("0", "2.6.0", "0.21.1", "PROPAINTER_UNAVAILABLE"),
+        ):
+            torch = SimpleNamespace(
+                __version__=torch_version,
+                cuda=SimpleNamespace(is_available=lambda: False),
+                backends=SimpleNamespace(mps=SimpleNamespace(is_built=lambda: True, is_available=lambda: True)),
+            )
+            with (
+                self.subTest(expected=expected, torch=torch_version, torchvision=torchvision_version),
+                patch.dict("sys.modules", {"torch": torch, "torchvision": SimpleNamespace(__version__=torchvision_version)}),
+                patch.dict("os.environ", {"PYTORCH_ENABLE_MPS_FALLBACK": enabled}),
+                patch("video_ai_propainter.read_bundle", return_value={"engine": "propainter"}),
+                patch("video_ai_propainter.load_vendor_module") as load,
+            ):
+                with self.assertRaises(ProPainterFailure) as raised:
+                    ProPainterAdapter(Path("unused"), device="mps").prepare(noop)
+                self.assertEqual(raised.exception.code, expected)
+                load.assert_not_called()
+
+    def test_mps_cpu_islands_are_explicit_and_return_to_original_device_and_dtype(self):
+        class Tensor:
+            def __init__(self, device, dtype):
+                self.device = SimpleNamespace(type=getattr(device, "type", device))
+                self.dtype = dtype
+                self.shape = (1,)
+
+            def to(self, *, device, dtype):
+                return Tensor(device, dtype)
+
+            def contiguous(self):
+                return self
+
+            def numel(self):
+                return 1
+
+            def element_size(self):
+                return 4
+
+        seen = []
+
+        def deform(input, offset, weight, bias=None, stride=1, padding=0, dilation=1, mask=None):
+            seen.append((input.device.type, input.dtype, offset.device.type, offset.dtype))
+            return Tensor(input.device.type, input.dtype)
+
+        def fold(input, *args, **kwargs):
+            seen.append((input.device.type, input.dtype))
+            return Tensor(input.device.type, input.dtype)
+
+        torch = SimpleNamespace(
+            float32="fp32",
+            nn=SimpleNamespace(functional=SimpleNamespace(fold=fold)),
+            mps=SimpleNamespace(synchronize=lambda: None, driver_allocated_memory=lambda: 0),
+        )
+        torchvision = SimpleNamespace(ops=SimpleNamespace(deform_conv2d=deform))
+        adapter = ProPainterAdapter(Path("unused"), device="mps")
+        adapter.torch, adapter._torchvision = torch, torchvision
+        adapter._install_explicit_cpu_islands()
+        mps_input = Tensor("mps", "fp16")
+        output = torchvision.ops.deform_conv2d(mps_input, mps_input, mps_input)
+        folded = torch.nn.functional.fold(mps_input)
+        self.assertEqual(seen, [("cpu", "fp32", "cpu", "fp32"), ("cpu", "fp32")])
+        self.assertEqual((output.device.type, output.dtype), ("mps", "fp16"))
+        self.assertEqual((folded.device.type, folded.dtype), ("mps", "fp16"))
+        adapter.close()
+        self.assertIs(torchvision.ops.deform_conv2d, deform)
+        self.assertIs(torch.nn.functional.fold, fold)
+
     def test_close_releases_all_three_networks_and_is_idempotent(self):
         adapter = ProPainterAdapter(Path("unused"))
         empty = Mock()
-        adapter.torch = SimpleNamespace(cuda=SimpleNamespace(empty_cache=empty))
+        adapter.torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: True, empty_cache=empty))
         adapter.model = adapter.flow = adapter.raft = object()
         adapter.owns_cuda = True
         callback = Mock()

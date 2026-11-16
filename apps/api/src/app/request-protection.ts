@@ -18,6 +18,7 @@ export function registerRequestProtection(
       ...(blocked ? { reason: "能力安装、更新或环境维护正在执行，请完成后再退出" } : {})
     };
   });
+  shutdown.bindResume(() => diagnosticService.onSystemResume());
   // 写请求从进入到响应结束均受保护；诊断自身的白名单操作由独占锁保护。
   app.addHook("onRequest", async (request) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) shutdown.enter(request);

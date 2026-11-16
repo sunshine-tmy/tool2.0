@@ -76,7 +76,7 @@ class WorkerFailure(RuntimeError):
 class GenerateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     language: Literal["ms", "en", "pt-BR"]
-    device: Literal["cpu", "cuda"] = "cpu"
+    device: Literal["cpu", "cuda", "mps"] = "cpu"
     reference_path: str
     output_path: str
     exaggeration: float = Field(default=0.5, ge=0.25, le=1.5)
@@ -102,6 +102,16 @@ def selected_device(requested: str | None = None) -> str:
     preference = (requested or DEVICE_SETTING).strip().lower()
     if preference == "cpu":
         return "cpu"
+    mps_built = torch.backends.mps.is_built()
+    mps_available = mps_built and torch.backends.mps.is_available()
+    if preference == "mps":
+        if not mps_available:
+            raise WorkerFailure(
+                "CHATTERBOX_MPS_UNAVAILABLE",
+                "所选 Apple GPU 不可用：需要支持 MPS 的 macOS 和 PyTorch 运行环境。",
+                409,
+            )
+        return "mps"
     cuda_available = torch.version.cuda is not None and torch.cuda.is_available()
     if preference == "cuda":
         if not cuda_available:
@@ -269,9 +279,12 @@ class ModelManager:
                 "device": self.device,
                 "watermarked": True,
             }
-        except torch.cuda.OutOfMemoryError as exc:
-            torch.cuda.empty_cache()
-            raise WorkerFailure("CHATTERBOX_OUT_OF_MEMORY", "GPU 显存不足，请缩短文本后重试", 507) from exc
+        except torch.OutOfMemoryError as exc:
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            elif self.device == "mps":
+                torch.mps.empty_cache()
+            raise WorkerFailure("CHATTERBOX_OUT_OF_MEMORY", "GPU 或统一内存不足，请缩短文本后重试", 507) from exc
         except WorkerFailure:
             raise
         except Exception as exc:
@@ -281,6 +294,7 @@ class ModelManager:
     def unload(self) -> None:
         if self.model is None:
             return
+        device = self.device
         self.model = None
         self.device = None
         import gc
@@ -288,8 +302,11 @@ class ModelManager:
         import torch
 
         gc.collect()
-        if torch.cuda.is_available():
+        if device == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif device == "mps":
+            torch.mps.synchronize()
+            torch.mps.empty_cache()
 
 
 def load_safetensors_incrementally(checkpoint: Path, device: str) -> dict[str, Any]:
@@ -492,7 +509,19 @@ async def health() -> dict[str, Any]:
         version = importlib.metadata.version("chatterbox-tts")
         cuda_runtime_available = torch.version.cuda is not None
         cuda_available = cuda_runtime_available and torch.cuda.is_available()
-        device = manager.device or ("cpu" if DEVICE_SETTING == "cpu" or not cuda_available else "cuda")
+        mps_built = torch.backends.mps.is_built()
+        mps_available = mps_built and torch.backends.mps.is_available()
+        supported_devices = ["cpu"]
+        if cuda_available:
+            supported_devices.append("cuda")
+        if mps_available:
+            supported_devices.append("mps")
+        if manager.device is not None:
+            device = manager.device
+        elif DEVICE_SETTING in {"cpu", "cuda", "mps"}:
+            device = DEVICE_SETTING
+        else:
+            device = "cuda" if cuda_available else "cpu"
         gpu_name = torch.cuda.get_device_name(0) if cuda_available else None
         return {
             "success": True,
@@ -504,6 +533,20 @@ async def health() -> dict[str, Any]:
                 "modelLoaded": manager.model is not None,
                 "cudaRuntimeAvailable": cuda_runtime_available,
                 "cudaAvailable": cuda_available,
+                "mpsBuilt": mps_built,
+                "mpsAvailable": mps_available,
+                **(
+                    {}
+                    if mps_available
+                    else {
+                        "mpsUnavailableReason": (
+                            "当前 PyTorch 构建不包含 MPS 支持。"
+                            if not mps_built
+                            else "当前设备未检测到可用的 MPS 后端。"
+                        )
+                    }
+                ),
+                "supportedDevices": supported_devices,
                 **(
                     {}
                     if cuda_available
@@ -543,17 +586,27 @@ async def generate(payload: GenerateRequest) -> dict[str, Any]:
     return {"success": True, "data": result}
 
 
+@app.post("/unload")
+async def unload() -> dict[str, Any]:
+    cancel_idle_unload_timer()
+    async with manager.lock:
+        await asyncio.to_thread(manager.unload)
+    return {"success": True, "data": {"protocolVersion": 1, "modelLoaded": False, "busy": False}}
+
+
 @app.get("/diagnostics/light")
 async def diagnostics_light() -> dict[str, Any]:
     # 不检查权重摘要、不加载模型；CUDA 状态仅在 torch 已被现有流程导入后读取。
     torch = sys.modules.get("torch")
     cuda = bool(torch.cuda.is_available()) if torch is not None else None
+    mps = bool(torch.backends.mps.is_built() and torch.backends.mps.is_available()) if torch is not None else None
     return {
         "protocolVersion": 1,
         "available": importlib.util.find_spec("chatterbox") is not None,
         "modelLoaded": manager.model is not None,
         "busy": manager.lock.locked(),
         **({"cudaAvailable": cuda} if cuda is not None else {}),
+        **({"mpsAvailable": mps} if mps is not None else {}),
     }
 
 

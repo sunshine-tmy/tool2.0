@@ -12,6 +12,8 @@ import {
 } from "@toolbox/shared";
 import type { AppConfig } from "../../../config";
 import { requestWorkerHttp } from "../../../core/workers/http-transport";
+import type { InferenceResourceCoordinator } from "../../../core/workers/inference-resource-types";
+import { requestWorkerLightHealth } from "../../../core/workers/light-health";
 
 let generationTail: Promise<void> = Promise.resolve();
 
@@ -26,7 +28,7 @@ export class ChatterboxWorkerError extends Error {
   }
 }
 
-export function createChatterboxWorkerClient(config: AppConfig) {
+export function createChatterboxWorkerClient(config: AppConfig, resources?: InferenceResourceCoordinator) {
   return {
     async health() {
       const health = await requestWorker<ChatterboxWorkerHealth>(
@@ -42,6 +44,23 @@ export function createChatterboxWorkerClient(config: AppConfig) {
       return health;
     },
 
+    lightHealth() {
+      return requestWorkerLightHealth(config.chatterboxWorkerUrl, config.chatterboxWorkerToken);
+    },
+
+    async unload(): Promise<void> {
+      const result = await requestWorker<WorkerUnloadResult>(
+        config,
+        "/unload",
+        { method: "POST" },
+        15_000,
+        isWorkerUnloadResult
+      );
+      if (result.protocolVersion !== WORKER_PROTOCOL_VERSION || result.modelLoaded || result.busy) {
+        throw new ChatterboxWorkerError("WORKER_UNLOAD_UNCONFIRMED", "Chatterbox Worker 未确认模型已卸载", 502);
+      }
+    },
+
     generate(input: {
       text: string;
       language: ChatterboxLanguage;
@@ -53,36 +72,52 @@ export function createChatterboxWorkerClient(config: AppConfig) {
       temperature: number;
       seed: number;
       signal?: AbortSignal;
+      onWaiting?: (waiting: boolean) => void;
     }) {
-      return serializeGeneration(() => {
-        if (input.signal?.aborted) {
-          throw new ChatterboxWorkerError("CHATTERBOX_TASK_CANCELLED", "声音克隆任务已取消");
-        }
-        return requestWorker<ChatterboxWorkerGenerate>(
-          config,
-          "/generate",
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              text: input.text,
-              language: input.language,
-              device: input.device,
-              reference_path: input.referencePath,
-              output_path: input.outputPath,
-              exaggeration: input.exaggeration,
-              cfg_weight: input.cfgWeight,
-              temperature: input.temperature,
-              seed: input.seed
-            }),
-            signal: input.signal
-          },
-          config.chatterboxWorkerTimeoutMs,
-          isChatterboxWorkerGenerate
-        );
-      });
+      const work = () =>
+        serializeGeneration(() => {
+          if (input.signal?.aborted) {
+            throw new ChatterboxWorkerError("CHATTERBOX_TASK_CANCELLED", "声音克隆任务已取消");
+          }
+          return requestWorker<ChatterboxWorkerGenerate>(
+            config,
+            "/generate",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                text: input.text,
+                language: input.language,
+                device: input.device,
+                reference_path: input.referencePath,
+                output_path: input.outputPath,
+                exaggeration: input.exaggeration,
+                cfg_weight: input.cfgWeight,
+                temperature: input.temperature,
+                seed: input.seed
+              }),
+              signal: input.signal
+            },
+            config.chatterboxWorkerTimeoutMs,
+            isChatterboxWorkerGenerate
+          );
+        });
+      return resources
+        ? resources.run("chatterbox", work, { signal: input.signal, onWaiting: input.onWaiting })
+        : work();
     }
   };
+}
+
+type WorkerUnloadResult = { protocolVersion: number; modelLoaded: boolean; busy: boolean };
+
+function isWorkerUnloadResult(value: unknown): value is WorkerUnloadResult {
+  return (
+    isRecord(value) &&
+    typeof value.protocolVersion === "number" &&
+    typeof value.modelLoaded === "boolean" &&
+    typeof value.busy === "boolean"
+  );
 }
 
 function serializeGeneration<T>(work: () => Promise<T>) {
@@ -123,7 +158,13 @@ function requestWorker<T>(
           interrupted ? "CHATTERBOX_TASK_CANCELLED" : "CHATTERBOX_WORKER_TIMEOUT",
           interrupted ? "声音克隆任务已取消" : "声音克隆超时，请缩短文本后重试"
         ),
-      unavailable: () => new ChatterboxWorkerError("CHATTERBOX_WORKER_UNAVAILABLE", "Chatterbox Worker 未启动")
+      unavailable: () => new ChatterboxWorkerError("CHATTERBOX_WORKER_UNAVAILABLE", "Chatterbox Worker 未启动"),
+      connectionRefused: () =>
+        new ChatterboxWorkerError("WORKER_CONNECTION_REFUSED", "Chatterbox Worker 已退出，正在等待受管恢复")
     }
   });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

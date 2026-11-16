@@ -328,6 +328,13 @@ class ModelManager:
         except ImportError:
             pass
 
+    def unload(self) -> None:
+        self.unload_gpu()
+        self.ocr = None
+        import gc
+
+        gc.collect()
+
     def device(self) -> str:
         configured_device = os.getenv("IMAGE_AI_DEVICE", "auto").strip().lower()
         if configured_device == "cpu":
@@ -534,12 +541,15 @@ _SHA256_CACHE: dict[tuple[str, ...], str | None] = {}
 
 
 def install_basicsr_torchvision_compat() -> None:
-    """Restore the one legacy torchvision symbol imported by BasicSR 1.4.2.
+    """Restore legacy import shims required by BasicSR 1.4.2 under pinned dependencies.
 
     torchvision removed its private functional_tensor module, while the public
     rgb_to_grayscale function remains API-compatible. Registering this narrow shim
     avoids downgrading the shared CUDA runtime used by the other local models.
+    Importing pinned setuptools first also exposes its distutils compatibility
+    shim, which BasicSR 1.4.2 imports directly on Python 3.12.
     """
+    __import__("setuptools")
     module_name = "torchvision.transforms.functional_tensor"
     if module_name in sys.modules:
         return
@@ -632,7 +642,7 @@ async def diagnostics_light() -> dict[str, Any]:
     return {
         "protocolVersion": 1,
         "available": importlib.util.find_spec("torch") is not None,
-        "modelLoaded": manager.gpu_model is not None,
+        "modelLoaded": manager.gpu_model is not None or manager.ocr is not None,
         "busy": manager.lock.locked(),
         **({"cudaAvailable": cuda} if cuda is not None else {}),
     }
@@ -652,6 +662,13 @@ async def diagnostics_deep() -> dict[str, Any]:
             cause = error.__cause__ or error
             code = "CUDA_OUT_OF_MEMORY" if type(cause).__name__ == "OutOfMemoryError" else "MODEL_LOAD_FAILED"
             return {"protocolVersion": 1, "available": False, "code": code}
+
+
+@app.post("/unload")
+async def unload() -> dict[str, Any]:
+    async with manager.lock:
+        await asyncio.to_thread(manager.unload)
+    return {"success": True, "data": {"protocolVersion": 1, "modelLoaded": False, "busy": False}}
 
 
 @app.post("/watermark/suggestions")

@@ -1,5 +1,34 @@
 # Windows 能力包准备与发布
 
+## Apple Silicon 组件定义与准备
+
+Mac 版本定义独立保存在 `scripts/component-definitions/macos/`，目录严格覆盖十项：`python-312`、`ffmpeg`、`edge-tts`、`chatterbox`、`image-ai`、`xhs-browser`、`xhs-archive`、`xhs-translation`、`douyin-archive` 和 `video-ai`。每个定义都使用 `darwin-arm64` 版本号；Python 能力共享独立安装的 Python 3.12 运行时，每个 Python 能力仍在安装目标创建自己的 venv。Mac 锁文件位于版本控制目录 `tooling/components/macos/locks/`，由 `pnpm components:lock-macos-dependencies` 生成。
+
+在原生 Apple Silicon 主机上准备 Mac 版本：
+
+```sh
+pnpm components:prepare-python-312 -- --archive .package/python-312-macos.tar.gz --stage .package/stage/python-312
+pnpm components:prepare-ffmpeg -- --stage .package/stage/ffmpeg
+pnpm components:prepare-edge-tts -- --python .package/stage/python-312/python/bin/python3.12 --stage .package/stage/edge-tts
+pnpm components:prepare-macos-ai-environments -- --python .package/stage/python-312/python/bin/python3.12 --uv <固定 uv 可执行文件> --output .package/macos-ai-environments
+pnpm components:prepare-xhs-archive -- --python .package/stage/python-312/python/bin/python3.12 --archive .package/xhs-downloader-fixed.zip --stage .package/stage/xhs-archive
+pnpm components:prepare-xhs-translation -- --python .package/stage/python-312/python/bin/python3.12 --model <固定 OPUS-MT 模型目录> --stage .package/stage/xhs-translation
+pnpm components:prepare-xhs-browser -- --stage /tmp/toolbox-xhs-browser-stage-new
+pnpm components:prepare-douyin-archive -- --stage .package/stage/douyin-archive
+```
+
+Mac Chromium 暂存目录应放在不由 iCloud/其他 File Provider 管理的本地路径（例如 `/tmp` 下的全新目录，每次使用不同路径）。部分 File Provider 会在 `.app` 目录上重新添加 `com.apple.FinderInfo`，macOS `codesign` 会拒绝这种最终布局；准备器会在最终暂存路径保留固定 Framework 内链、深度重签并启动检查。包归档仍只含普通文件，五条 Framework 内链由 Ed25519 manifest 签名并在安装时按白名单重建。
+
+图片 AI、Chatterbox 和视频 AI 的 macOS 锁及离线 wheelhouse 必须用固定的 uv/Python 工具链准备。`video-ai` 还必须显式提供已验收的 STTN、ProPainter 资源目录；准备器会校验 M01 冻结的支持定义、源码/许可来源和逐权重摘要。缺少任一资源或验收门未通过时，不会产生可激活的高级模型定义。Mac 打包器会拒绝 Windows wheel、`.exe`、DLL、构建机路径、错误 Python 版本及跨平台构建；Mac 归档、清单、审阅报告和 SPDX 文件名均带 `-darwin-arm64` 后缀。Windows 文件名保持既有格式。
+
+视频包的完整准备命令还需要提供经过固定版本和摘要校验的离线 wheelhouse 及两个 M01 bundle：
+
+```sh
+pnpm components:prepare-video-ai -- --python .package/stage/python-312/python/bin/python3.12 --stage .package/stage/video-ai --wheelhouse <Mac 视频 wheelhouse> --sttn-assets <已验收 STTN bundle> --propainter-assets <已验收 ProPainter bundle>
+```
+
+Mac 组件定义只用于原生 Mac 能力包。审阅阶段可使用 `pnpm components:package -- --definition <Mac 定义> --stage <对应暂存目录> --output .package/component-feed --review-only`，生成不可安装的候选归档和 SBOM；没有提供受保护的正式私钥时，不得将其称为已签名或交付包。Mac 目录生成器要求完整十项及闭合依赖图，不接受部分目录或手工构造的非空目录。抖音包仅复制已审核的匿名适配器描述，并依赖现有 Chromium 能力，不复制解析代码或浏览器。
+
 ## Python 3.12 统一构建
 
 新构建的在线配音、图片 AI、音色克隆 CPU/GPU、归档与翻译全部依赖 `python-312`，各能力仍使用独立 venv。

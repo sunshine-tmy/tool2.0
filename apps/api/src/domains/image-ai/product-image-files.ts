@@ -12,7 +12,27 @@ export async function ownedImageFile(root: string, taskId: string, file: string)
   const relative = path.relative(taskRoot, resolved);
   if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))
     throw validationError("INVALID_SOURCE", "来源文件不在受控目录");
-  const parts = path.relative(base, path.resolve(file)).split(path.sep);
+  // Compare the original root/file spellings first, then inspect each child from the canonical root.
+  // On macOS, /var (including os.tmpdir()) aliases /private/var; comparing a real path with
+  // path.resolve() otherwise mistakes that system alias for a user supplied symlink.
+  let lexicalRelative = path.relative(path.resolve(root), path.resolve(file));
+  if (
+    !lexicalRelative ||
+    lexicalRelative === ".." ||
+    lexicalRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(lexicalRelative)
+  ) {
+    // Callers can hold the canonical /private/var spelling while the configured root uses /var.
+    lexicalRelative = path.relative(base, resolved);
+  }
+  if (
+    !lexicalRelative ||
+    lexicalRelative === ".." ||
+    lexicalRelative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(lexicalRelative)
+  )
+    throw validationError("INVALID_SOURCE", "来源文件不在受控目录");
+  const parts = lexicalRelative.split(path.sep);
   let current = base;
   for (const part of parts) {
     current = path.join(current, part);

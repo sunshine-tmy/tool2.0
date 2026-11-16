@@ -5,9 +5,16 @@ export class DesktopShutdown {
   private closing = false;
   private requests = new Set<object | string>();
   private inspectResources: () => ShutdownInspection = () => ({ busy: false, blocked: false });
+  private recoverAfterResume: () => Promise<void> = async () => undefined;
 
   bind(inspect: () => ShutdownInspection) {
     this.inspectResources = inspect;
+  }
+  bindResume(recover: () => Promise<void>) {
+    this.recoverAfterResume = recover;
+  }
+  async resume() {
+    if (!this.closing) await this.recoverAfterResume();
   }
   get prepared() {
     return this.closing;

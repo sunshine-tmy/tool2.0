@@ -7,6 +7,7 @@ import { chatterboxApi } from "./chatterbox-api";
 import type { ChatterboxEditorState } from "./useChatterboxEditor";
 import { ApiRequestError, formatApiError, isApiErrorCancelled } from "../../../shared/http/http";
 import { useSpeechBatchSelection } from "../shared/useSpeechBatchSelection";
+import { selectSupportedChatterboxDevice } from "./device-options";
 
 type BatchMessage = {
   success: (message: string) => void;
@@ -294,6 +295,7 @@ export function useChatterboxBatches(options: {
           exaggeration: draft.exaggeration,
           cfgWeight: draft.cfgWeight,
           temperature: draft.temperature,
+          device: editor.device.value,
           reference: editor.retryReference.value,
           voiceId: editor.retryReference.value ? undefined : editor.retryVoiceId.value || undefined
         })
@@ -401,8 +403,8 @@ export function useChatterboxBatches(options: {
         .map((item) => editor.newEditorSegment(item.text, item.fileName || "", item.referenceTranslation || ""));
       editor.batchName.value = batch.name || "";
       editor.language.value = batch.language;
-      editor.device.value =
-        batch.device === "cuda" && editor.health.value?.cudaAvailable !== true ? "cpu" : batch.device || "cpu";
+      // Keep the stored batch untouched; only the new editor draft follows current Worker capabilities.
+      editor.device.value = selectSupportedChatterboxDevice(editor.health.value, batch.device);
       editor.authorization.value = batch.authorization;
       editor.consentConfirmed.value = false;
       editor.exaggeration.value = batch.exaggeration;
@@ -429,6 +431,7 @@ export function useChatterboxBatches(options: {
       const task = await chatterboxApi.task(id);
       editor.segments.value = [editor.newEditorSegment(task.text, task.fileName || "")];
       editor.language.value = task.language;
+      editor.device.value = selectSupportedChatterboxDevice(editor.health.value, task.device);
       editor.authorization.value = task.authorization;
       editor.exaggeration.value = task.exaggeration;
       editor.cfgWeight.value = task.cfgWeight;

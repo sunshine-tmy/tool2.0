@@ -143,6 +143,10 @@ class SttnSpatialTests(unittest.TestCase):
             class cuda:
                 calls = 0
 
+                @staticmethod
+                def is_available():
+                    return True
+
                 @classmethod
                 def empty_cache(cls):
                     cls.calls += 1
@@ -153,6 +157,63 @@ class SttnSpatialTests(unittest.TestCase):
         adapter.close()
         self.assertIsNone(adapter.model)
         self.assertEqual(Torch.cuda.calls, 1)
+
+    def test_mps_runtime_rejects_cpu_fallback_before_vendor_import(self):
+        torch = SimpleNamespace(
+            __version__="2.6.0",
+            cuda=SimpleNamespace(is_available=lambda: False),
+            backends=SimpleNamespace(mps=SimpleNamespace(is_built=lambda: True, is_available=lambda: True)),
+        )
+        with (
+            patch.dict("sys.modules", {"torch": torch}),
+            patch.dict("os.environ", {"PYTORCH_ENABLE_MPS_FALLBACK": "1"}),
+            patch("video_ai_sttn.read_bundle", return_value={"engine": "sttn"}),
+            patch("video_ai_sttn.load_vendor_module") as load,
+        ):
+            with self.assertRaises(SttnFailure) as raised:
+                SttnAdapter(Path("unused"), device="mps").prepare(noop)
+            self.assertEqual(raised.exception.code, "VIDEO_AI_MPS_FALLBACK_ENABLED")
+            load.assert_not_called()
+
+    def test_close_synchronizes_and_clears_only_owned_mps_model(self):
+        class Torch:
+            class cuda:
+                @staticmethod
+                def is_available():
+                    return False
+
+            class backends:
+                class mps:
+                    @staticmethod
+                    def is_built():
+                        return True
+
+                    @staticmethod
+                    def is_available():
+                        return True
+
+            class mps:
+                synchronized = 0
+                cleared = 0
+
+                @classmethod
+                def synchronize(cls):
+                    cls.synchronized += 1
+
+                @classmethod
+                def empty_cache(cls):
+                    cls.cleared += 1
+
+                @classmethod
+                def driver_allocated_memory(cls):
+                    return 0
+
+        adapter = FakeAdapter()
+        adapter.torch, adapter.owns_mps = Torch, True
+        adapter.close()
+        adapter.close()
+        self.assertEqual(Torch.mps.synchronized, 1)
+        self.assertEqual(Torch.mps.cleared, 1)
 
     def test_oversized_temporal_window_is_rejected_before_tensor_allocation(self):
         current = window(32, 24)

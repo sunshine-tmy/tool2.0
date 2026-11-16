@@ -97,6 +97,12 @@ export function safeRelative(value: string) {
     throw new Error("备份含不安全文件路径");
   return value;
 }
+
+/** Treat case and canonically equivalent Unicode paths as the same portable file path. */
+export function portablePathKey(value: string) {
+  return value.normalize("NFD").toLowerCase().normalize("NFD");
+}
+
 export async function ownedPath(root: string, relative: string, allowMissing = false) {
   safeRelative(relative);
   let current = path.resolve(root);
@@ -276,7 +282,7 @@ export async function readBundle(
         try {
           safeRelative(entry.fileName);
           if (
-            folded.has(entry.fileName.toLowerCase()) ||
+            folded.has(portablePathKey(entry.fileName)) ||
             result.size >= 200000 ||
             ((entry.externalFileAttributes >>> 16) & 0xf000) === 0xa000 ||
             entry.generalPurposeBitFlag & 1 ||
@@ -284,7 +290,7 @@ export async function readBundle(
             entry.uncompressedSize < 0
           )
             throw new Error("备份含重复、加密、链接或超限条目");
-          folded.add(entry.fileName.toLowerCase());
+          folded.add(portablePathKey(entry.fileName));
           result.set(entry.fileName, entry);
           zip.readEntry();
         } catch (error) {
@@ -345,8 +351,9 @@ export async function readBundle(
       const paths = new Set<string>();
       for (const file of files) {
         safeRelative(file.path);
-        if (paths.has(file.path.toLowerCase())) throw new Error("模块内文件路径重复");
-        paths.add(file.path.toLowerCase());
+        const key = portablePathKey(file.path);
+        if (paths.has(key)) throw new Error("模块内文件路径重复");
+        paths.add(key);
         if (objects.has(file.sha256) && objects.get(file.sha256) !== file.bytes) throw new Error("备份对象大小冲突");
         objects.set(file.sha256, file.bytes);
       }

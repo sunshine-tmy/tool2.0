@@ -40,7 +40,7 @@ it("opens an ephemeral isolated context, blocks off-site navigation/downloads an
     expect.objectContaining({
       headless: false,
       proxy: { server: "http://127.0.0.1:12345" },
-      args: ["--disable-quic", "--disable-blink-features=AutomationControlled"]
+      args: ["--disable-quic"]
     })
   );
   expect(value.networkArgs).toEqual(["--disable-quic"]);

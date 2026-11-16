@@ -43,9 +43,15 @@ import type { TaskStore } from "../../../tasks/task-store";
 import { registerChatterboxBatchRoutes } from "./batch-routes";
 import { ChatterboxInputError, ChatterboxMediaTools, type ChatterboxUploadErrorStatus } from "./media-tools";
 import { repairLegacySubtitle } from "./subtitle";
+import {
+  chatterboxDeviceUnavailable,
+  supportedChatterboxDevices,
+  supportsChatterboxDevice
+} from "./device-capabilities";
 import { ChatterboxQueue } from "./task-queue";
 import { ChatterboxTaskStore, type ChatterboxCreateInput } from "./task-store";
 import { createChatterboxWorkerClient } from "./worker-client";
+import type { InferenceResourceCoordinator } from "../../../core/workers/inference-resource-types";
 import { commitStagedFile, createStagingPath } from "../../../storage/file-commit-gateway";
 
 const HEALTH_CACHE_MS = 10_000;
@@ -55,10 +61,11 @@ export async function registerChatterboxRoutes(
   config: AppConfig,
   database: ToolboxDatabase,
   taskStore: TaskStore,
-  fileMetadata?: FileMetadataRepository
+  fileMetadata?: FileMetadataRepository,
+  resources?: InferenceResourceCoordinator
 ) {
   const store = new ChatterboxTaskStore(config.chatterboxTasksDir, database, taskStore, fileMetadata);
-  const worker = createChatterboxWorkerClient(config);
+  const worker = createChatterboxWorkerClient(config, resources);
   const media = new ChatterboxMediaTools(config);
   await store.initialize();
   await store.cleanupExpired();
@@ -126,23 +133,34 @@ export async function registerChatterboxRoutes(
         active: legacyStats.active + batchStats.active,
         queued: legacyStats.queued + batchStats.queued
       };
+      const supportedDevices = status?.available === true ? supportedChatterboxDevices(status) : undefined;
       const data: ChatterboxHealth = {
         protocolVersion: status?.protocolVersion ?? 1,
         available: status?.available === true,
         workerAvailable: status?.available === true,
-        cudaRuntimeAvailable: status?.cudaRuntimeAvailable === true,
-        cudaAvailable: status?.cudaAvailable === true,
-        cudaUnavailableReason:
-          status?.cudaAvailable === true
-            ? undefined
-            : status?.cudaUnavailableReason ||
-              (status?.available !== true
-                ? "请先启动 Chatterbox Worker。"
-                : config.desktopManagedCapabilities
-                  ? "当前桌面安装使用 CPU 运行组件；CUDA 加速组件尚未安装。"
-                  : status.cudaRuntimeAvailable === false
-                    ? "当前 Worker 使用 CPU 运行环境，不支持 CUDA。"
-                    : "未检测到可用的 NVIDIA GPU 或 CUDA 驱动。"),
+        cudaRuntimeAvailable: status?.cudaRuntimeAvailable === true || supportedDevices?.includes("cuda") === true,
+        cudaAvailable: supportedDevices?.includes("cuda") === true,
+        cudaUnavailableReason: supportedDevices?.includes("cuda")
+          ? undefined
+          : status?.cudaUnavailableReason ||
+            (status?.available !== true
+              ? "请先启动 Chatterbox Worker。"
+              : config.desktopManagedCapabilities
+                ? "当前桌面安装使用 CPU 运行组件；CUDA 加速组件尚未安装。"
+                : status.cudaRuntimeAvailable === false
+                  ? "当前 Worker 使用 CPU 运行环境，不支持 CUDA。"
+                  : "未检测到可用的 NVIDIA GPU 或 CUDA 驱动。"),
+        mpsBuilt: status?.mpsBuilt === true || supportedDevices?.includes("mps") === true,
+        mpsAvailable: supportedDevices?.includes("mps") === true,
+        mpsUnavailableReason: supportedDevices?.includes("mps")
+          ? undefined
+          : status?.mpsUnavailableReason ||
+            (status?.available !== true
+              ? "请先启动 Chatterbox Worker。"
+              : config.desktopManagedCapabilities
+                ? "当前桌面安装未提供已验证的 MPS 推理环境。"
+                : "当前 Worker 未报告可用的 MPS 运行环境。"),
+        supportedDevices,
         packageVersion: status?.packageVersion,
         model: "multilingual-v3",
         modelLoaded: status?.modelLoaded === true,
@@ -196,13 +214,12 @@ export async function registerChatterboxRoutes(
       ) {
         return reply.code(429).send(fail("CHATTERBOX_QUEUE_FULL", "声音克隆队列已满，请稍后重试"));
       }
-      let cudaAvailable = false;
+      let health: Awaited<ReturnType<typeof worker.health>>;
       try {
-        const health = await workerHealth();
+        health = await workerHealth();
         if (!health.available) {
           return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 尚未就绪"));
         }
-        cudaAvailable = health.cudaAvailable === true;
       } catch {
         return reply.code(409).send(fail("CHATTERBOX_NOT_AVAILABLE", "Chatterbox Worker 未启动"));
       }
@@ -217,18 +234,16 @@ export async function registerChatterboxRoutes(
           await fsp.rm(paths.dir, { recursive: true, force: true });
           return reply.code(parsed.statusCode).send(fail(parsed.code, parsed.message));
         }
-        if (parsed.value.device === "cuda" && !cudaAvailable) {
+        const device = parsed.value.device ?? "cpu";
+        if (!supportsChatterboxDevice(health, device)) {
           await fsp.rm(paths.dir, { recursive: true, force: true });
-          return reply
-            .code(409)
-            .send(
-              fail("CHATTERBOX_CUDA_UNAVAILABLE", "当前运行环境没有可用的 CUDA GPU，请改选 CPU 或安装 CUDA 运行环境。")
-            );
+          const unavailable = chatterboxDeviceUnavailable(device, health);
+          return reply.code(409).send(fail(unavailable.code, unavailable.message));
         }
         const duration = await media.normalizeReference(paths.referenceUpload, paths.reference);
         const task = await store.create(
           taskId,
-          { ...parsed.value, referenceDurationSeconds: duration },
+          { ...parsed.value, device, referenceDurationSeconds: duration },
           config.chatterboxRetentionDays
         );
         queue.enqueue(task.id);
@@ -386,7 +401,7 @@ function parseFields(
   }
   if (!isLanguage(fields.language)) return invalid("CHATTERBOX_LANGUAGE_INVALID", "仅支持马来语、英语或巴西葡萄牙语");
   if (fields.device !== undefined && !isDevice(fields.device)) {
-    return invalid("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU 或 NVIDIA GPU");
+    return invalid("CHATTERBOX_DEVICE_INVALID", "生成设备只能选择 CPU、NVIDIA GPU 或 Apple MPS");
   }
   if (!isAuthorization(fields.authorization)) return invalid("CHATTERBOX_AUTHORIZATION_REQUIRED", "请选择声音授权来源");
   if (fields.consentConfirmed !== "true") {
@@ -404,7 +419,7 @@ function parseFields(
     value: {
       text,
       language: fields.language,
-      device: fields.device === "cuda" ? "cuda" : "cpu",
+      device: fields.device === "cuda" ? "cuda" : fields.device === "mps" ? "mps" : "cpu",
       referenceFileName,
       authorization: fields.authorization,
       consentConfirmed: true,
@@ -477,7 +492,7 @@ function isLanguage(value: unknown): value is ChatterboxLanguage {
 }
 
 function isDevice(value: string): value is ChatterboxDevice {
-  return value === "cpu" || value === "cuda";
+  return value === "cpu" || value === "cuda" || value === "mps";
 }
 
 function isAuthorization(value: unknown): value is ChatterboxVoiceAuthorization {

@@ -2,6 +2,7 @@ import type { Readable } from "node:stream";
 import type { ComponentJob, ComponentPlatform } from "@toolbox/shared";
 import type { PythonEnvironmentBuildOptions, PythonRuntimeVersion } from "./python-environment";
 export type ComponentManifestFile = { path: string; bytes: number; sha256: string; executable?: boolean };
+export type ComponentManifestLink = { path: string; target: string };
 
 export type ComponentArchiveAsset = {
   url: string;
@@ -42,6 +43,8 @@ export type ComponentPackageManifest = {
   assembledFiles?: ComponentAssembledFile[];
   installedBytes: number;
   files: ComponentManifestFile[];
+  /** Signed non-archive links; only the pinned macOS Chromium framework layout is accepted. */
+  links?: ComponentManifestLink[];
   pythonEnvironment?: {
     /** Set when the interpreter belongs to a separately installed signed dependency. */
     pythonComponentId?: string;

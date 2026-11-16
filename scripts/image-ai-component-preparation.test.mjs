@@ -82,6 +82,22 @@ test("image AI dependency lock accepts only the CPU PyTorch and ONNX runtime bas
     downloadLock.omittedBlocks[1],
     /sha256:4f2a4d39e4ea601b9ab42b2db08b5918a9538c168cff1c6895ae26646f3d73b1/
   );
+  const macLock = await fs.readFile(
+    path.join(SCRIPT_DIRECTORY, "../tooling/components/macos/locks/image-ai.lock.txt"),
+    "utf8"
+  );
+  const macDownloadLock = omitImageAiSourceDistributions(macLock);
+  assert.equal(macDownloadLock.omittedBlocks.length, 1, "Mac builds only the source distribution pinned by its lock");
+  assert.deepEqual(
+    macDownloadLock.sourceDistributions.map((source) => source.packageName),
+    ["basicsr"]
+  );
+  assert.match(
+    macDownloadLock.downloadLockText,
+    /^filterpy==2\.0\.0 \\$/m,
+    "the locked Mac filterpy wheel stays in the wheelhouse lock"
+  );
+  assert.doesNotMatch(macDownloadLock.downloadLockText, /^filterpy==1\.4\.5 \\$/m);
   validateImageAiCpuLock(
     "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n"
   );
@@ -105,16 +121,25 @@ test("image AI dependency lock accepts only the CPU PyTorch and ONNX runtime bas
     /兼容 NumPy 2 的 pandas/
   );
   assert.throws(
-    () => validateImageAiCpuLock("torch==2.6.0\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n"),
+    () =>
+      validateImageAiCpuLock(
+        "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\n",
+        "win32"
+      ),
     /CPU 版 PyTorch/
   );
   assert.throws(
-    () => validateImageAiCpuLock("torch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime-gpu==1.30.0\n"),
+    () =>
+      validateImageAiCpuLock(
+        "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime-gpu==1.30.0\n"
+      ),
     /CPU 版 ONNX Runtime/
   );
   assert.throws(
     () =>
-      validateImageAiCpuLock("torch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\nnvidia-cublas==1.0\n"),
+      validateImageAiCpuLock(
+        "numpy==2.3.5\npandas==2.2.3\ntorch==2.6.0+cpu\ntorchvision==0.21.0+cpu\nonnxruntime==1.30.0\nnvidia-cublas==1.0\n"
+      ),
     /NVIDIA\/CUDA/
   );
 });

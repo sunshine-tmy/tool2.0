@@ -5,7 +5,9 @@ import { ComponentManagerError } from "./component-error";
 import { COMPONENT_PROTOCOL_VERSION, COMPONENT_ID, SAFE_VERSION, SHA256 } from "./package-constants";
 import { isSafeRelativePath } from "./package-paths";
 import { verifyManifestSignature } from "./manifest-signature";
+import { hasExactMacOSChromiumFrameworkLinks, resolveMacOSChromiumLinkPath } from "./chromium-framework-links";
 const MAX_MANIFEST_FILES = 100_000;
+const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda"]);
 export function componentArchiveAssets(manifest: ComponentPackageManifest) {
   return [manifest.archive, ...(manifest.additionalArchives ?? [])];
 }
@@ -82,7 +84,7 @@ export function verifyManifest(
     !["shared", "media", "audio", "image", "archive", "translation"].includes(manifest.groupId) ||
     !SAFE_VERSION.test(manifest.version) ||
     manifest.platform !== platform ||
-    (platform === "darwin-arm64" && manifest.id === "chatterbox-cuda") ||
+    (platform === "darwin-arm64" && FORBIDDEN_MACOS_COMPONENT_IDS.has(manifest.id)) ||
     !manifest.displayName.trim() ||
     !manifest.purpose.trim() ||
     (manifest.license !== undefined &&
@@ -103,10 +105,13 @@ export function verifyManifest(
     !Array.isArray(manifest.files) ||
     !manifest.files.length ||
     manifest.files.length > MAX_MANIFEST_FILES ||
+    (manifest.links !== undefined && (!Array.isArray(manifest.links) || manifest.links.length > 16)) ||
+    !hasExactMacOSChromiumFrameworkLinks(manifest.id, manifest.version, platform, manifest.links) ||
     !Array.isArray(manifest.dependencyIds) ||
     !Array.isArray(manifest.taskToolIds) ||
     !Array.isArray(manifest.installConditions) ||
     manifest.dependencyIds.some((dependencyId) => !COMPONENT_ID.test(dependencyId)) ||
+    (platform === "darwin-arm64" && manifest.dependencyIds.includes("python-311")) ||
     manifest.taskToolIds.some((toolId) => !COMPONENT_ID.test(toolId)) ||
     manifest.installConditions.some(
       (condition) => typeof condition !== "string" || !condition.trim() || condition.length > 300
@@ -115,6 +120,11 @@ export function verifyManifest(
       (!manifest.pythonEnvironment ||
         !SHA256.test(manifest.pythonEnvironment.requirementsLockSha256) ||
         !["3.11", "3.12"].includes(manifest.pythonEnvironment.expectedPythonVersion) ||
+        (platform === "darwin-arm64" &&
+          (manifest.pythonEnvironment.expectedPythonVersion !== "3.12" ||
+            manifest.pythonEnvironment.pythonComponentId !== "python-312" ||
+            !manifest.dependencyIds.includes("python-312") ||
+            manifest.pythonEnvironment.pythonExecutablePath !== "python/bin/python3.12")) ||
         !isSafeRelativePath(manifest.pythonEnvironment.pythonExecutablePath) ||
         !isSafeRelativePath(manifest.pythonEnvironment.wheelhousePath) ||
         !isSafeRelativePath(manifest.pythonEnvironment.requirementsLockPath) ||
@@ -136,6 +146,7 @@ export function verifyManifest(
   for (const file of manifest.files) {
     if (
       !isSafeRelativePath(file.path) ||
+      (platform === "darwin-arm64" && !isSafeMacManifestPath(file.path)) ||
       !Number.isSafeInteger(file.bytes) ||
       file.bytes < 0 ||
       !SHA256.test(file.sha256) ||
@@ -145,6 +156,22 @@ export function verifyManifest(
       throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包文件清单不符合安全约束");
     }
     names.add(file.path);
+  }
+  const linkNames = new Set<string>();
+  for (const link of manifest.links ?? []) {
+    const resolvedTarget = link && typeof link.path === "string" ? resolveMacOSChromiumLinkPath(link.path) : undefined;
+    if (
+      !link ||
+      !isSafeRelativePath(link.path) ||
+      !isSafeRelativePath(link.target) ||
+      !resolvedTarget ||
+      linkNames.has(link.path) ||
+      [...names].some((name) => pathsOverlap(name, link.path)) ||
+      [...linkNames].some((name) => pathsOverlap(name, link.path))
+    ) {
+      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包链接清单不符合安全约束");
+    }
+    linkNames.add(link.path);
   }
   const assemblyTargets = new Set<string>();
   const assemblyParts = new Set<string>();
@@ -219,4 +246,16 @@ export function verifyManifest(
   if (!publicKey || !verifyManifestSignature(manifest, publicKey)) {
     throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力包签名校验失败");
   }
+}
+
+function pathsOverlap(left: string, right: string) {
+  return left === right || left.startsWith(right + "/") || right.startsWith(left + "/");
+}
+
+function isSafeMacManifestPath(filePath: string) {
+  return (
+    !/\.(?:exe|dll)$/iu.test(filePath) &&
+    !(filePath.toLowerCase().endsWith(".whl") && /(?:^|[-_.])win(?:32|_amd64|_arm64)(?:[-_.]|$)/u.test(filePath)) &&
+    !/(?:^|\/)(?:Users|DLC|opt\/homebrew|usr\/local\/opt)(?:\/|$)/u.test(filePath)
+  );
 }

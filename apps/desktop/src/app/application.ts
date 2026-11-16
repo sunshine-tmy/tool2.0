@@ -5,7 +5,7 @@ import { createBusinessWindow } from "../windows/business-window";
 import { createSystemTray } from "../windows/system-tray";
 import { createStartupMigrationFlow } from "./startup-migration-flow";
 import { registerDesktopIpc } from "../ipc/register-desktop-ipc";
-import { app, type BrowserWindow, ipcMain, session } from "electron";
+import { app, powerMonitor, type BrowserWindow, ipcMain, session } from "electron";
 import { BackendSupervisor } from "../backend/backend-supervisor";
 import { componentProxyUrlFromResolution } from "../backend/system-proxy";
 import { recoverDesktopDataMigrations, type DesktopDataMigrationOptions } from "../data/desktop-data-migration";
@@ -19,12 +19,13 @@ import { configureApplicationMenu } from "./application-menu";
 type DesktopApplicationOptions = {
   preloadPath: string;
   desktopIconPath?: string;
+  systemTrayIconPath?: string;
   installRoot: string;
   dataRoot: string;
   legacyDataRoot: string;
 };
 export function createDesktopApplication(options: DesktopApplicationOptions) {
-  const { preloadPath, desktopIconPath, installRoot, dataRoot, legacyDataRoot } = options;
+  const { preloadPath, desktopIconPath, systemTrayIconPath, installRoot, dataRoot, legacyDataRoot } = options;
   let mainWindow: BrowserWindow | undefined;
   let backend: BackendSupervisor | undefined;
   let backendOrigin: string | undefined;
@@ -35,10 +36,11 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
   let audioPlaybackActive = false;
   let startupDiagnostics: StartupDiagnostics | undefined;
   let desktopIpcRegistered = false;
+  let resumeMonitorRegistered = false;
   let versionIpcRegistered = false;
   let dataBackup: DesktopDataBackup | undefined;
   const systemTray = createSystemTray({
-    iconPath: desktopIconPath,
+    iconPath: systemTrayIconPath ?? desktopIconPath,
     platform: process.platform,
     isQuitting: () => quitting,
     showWindow: focusMainWindow,
@@ -201,6 +203,10 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
       }
       backendOrigin = await backend.start();
       backend.monitorUnexpectedExit();
+      if (process.platform === "darwin" && !resumeMonitorRegistered) {
+        powerMonitor.on("resume", () => backend?.notifyResume());
+        resumeMonitorRegistered = true;
+      }
       startupDiagnostics.stage("window");
       await createBusinessWindow({
         origin: backendOrigin,
@@ -213,7 +219,7 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
         },
         closeStartupMigration: startupMigration.closeForMainWindow,
         isQuitting: () => quitting,
-        hideToTray: systemTray.hideWindow
+        hideWindow: systemTray.hideWindow
       });
       startupDiagnostics.ready();
       updater = createDesktopUpdater({
@@ -245,7 +251,13 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
     checkForUpdates: async () => ({ enabled: false, checking: false })
   };
   function focusMainWindow() {
-    if (!mainWindow || mainWindow.isDestroyed() || quitting) return;
+    if (quitting) return;
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      // A user can close the startup diagnostics window after a failed boot.
+      // The Dock's activate event must reopen it rather than leave an invisible process.
+      startupDiagnostics?.show();
+      return;
+    }
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();

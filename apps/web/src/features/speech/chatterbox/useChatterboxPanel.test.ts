@@ -294,6 +294,26 @@ describe("useChatterboxPanel", () => {
     wrapper.unmount();
   });
 
+  it("keeps historical CUDA metadata while preparing a new batch on the currently supported MPS device", async () => {
+    const { panel, wrapper } = await mountPanel();
+    const source = batch();
+    source.device = "cuda";
+    mocks.api.batch.mockResolvedValue(source);
+    panel.health.value = {
+      ...health(),
+      device: "mps",
+      cudaAvailable: false,
+      mpsAvailable: true,
+      supportedDevices: ["cpu", "mps"]
+    };
+    const original = JSON.stringify(source);
+    await panel.reuseBatch(source.id);
+    expect(panel.device.value).toBe("mps");
+    expect(source.device).toBe("cuda");
+    expect(JSON.stringify(source)).toBe(original);
+    wrapper.unmount();
+  });
+
   it("preserves the existing clone draft when replacement is cancelled or loading fails", async () => {
     const { panel, wrapper } = await mountPanel();
     panel.segments.value[0].text = "Keep this draft";
@@ -665,8 +685,15 @@ describe("useChatterboxPanel", () => {
     await panel.openBatch("batch-1");
     expect(panel.detailVisible.value).toBe(true);
     panel.retryReference.value = reference;
+    panel.device.value = "mps";
+    panel.health.value = {
+      ...health(),
+      device: "mps",
+      mpsAvailable: true,
+      supportedDevices: ["cpu", "mps"]
+    };
     await panel.regenerateItem("item-1");
-    expect(mocks.api.regenerate).toHaveBeenCalled();
+    expect(mocks.api.regenerate).toHaveBeenCalledWith("batch-1", "item-1", expect.objectContaining({ device: "mps" }));
     await panel.moveDetailItem(0, 1);
     expect(mocks.api.reorder).toHaveBeenCalledWith("batch-1", ["item-2", "item-1"]);
     await panel.removeBatchItem("item-1");

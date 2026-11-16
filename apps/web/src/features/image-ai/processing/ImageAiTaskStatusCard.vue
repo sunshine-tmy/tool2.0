@@ -11,6 +11,7 @@
       :status="props.task.status === 'failed' ? 'error' : props.task.status === 'completed' ? 'success' : 'default'"
     />
     <p v-if="props.task.operation === 'product_image'" role="status">{{ props.task.phase || "等待保存" }}</p>
+    <p v-else-if="props.task.phase" role="status">{{ props.task.phase }}</p>
     <p v-if="props.task.error" class="status-error">{{ props.task.error }}</p>
     <p v-for="warning in props.task.warnings.slice(-3)" :key="warning" class="status-hint">{{ warning }}</p>
     <n-button v-if="isRunning && !props.readOnly" block size="small" secondary type="error" @click="emit('cancel')">

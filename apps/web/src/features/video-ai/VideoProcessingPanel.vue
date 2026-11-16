@@ -109,7 +109,7 @@ const modeIcons = { delogo: Zap, fast: Rocket, balanced: Scale, extreme: Gem };
 import { computed } from "vue";
 import { NButton, NProgress } from "naive-ui";
 import { RouterLink } from "vue-router";
-import type { VideoAiMode, VideoAiTask } from "@toolbox/shared";
+import type { VideoAiEngine, VideoAiMode, VideoAiTask } from "@toolbox/shared";
 
 export interface VideoModeOption {
   value: VideoAiMode;
@@ -124,6 +124,7 @@ const props = defineProps<{
   modeOptions: VideoModeOption[];
   availableModes: VideoAiMode[];
   unavailableReasons: Partial<Record<VideoAiMode, string>>;
+  engineCapabilities?: Partial<Record<VideoAiMode, VideoAiEngine>>;
   hasFile: boolean;
   busy: boolean;
   submitting: boolean;
@@ -155,7 +156,11 @@ const activeOption = computed(() => props.modeOptions.find((option) => option.va
 const activeHint = computed(() => {
   if (props.checking) return "处理服务正在准备，将自动更新状态。可先上传视频，服务就绪后即可检测和处理。";
   const reason = !engineAvailable(props.mode) ? props.unavailableReasons[props.mode] : "";
-  return `${activeOption.value?.hint || ""}${reason ? ` 当前不可用：${reason}` : ""}`;
+  const engine = props.engineCapabilities?.[props.mode];
+  const execution = engine?.executionMode ? executionModeLabel(engine.executionMode) : "";
+  const devices = engine?.supportedDevices?.map(deviceLabel).join("、");
+  const capability = execution ? ` 已验证执行方式：${execution}${devices ? `（支持：${devices}）` : ""}。` : "";
+  return `${activeOption.value?.hint || ""}${capability}${reason ? ` 当前不可用：${reason}` : ""}`;
 });
 const unavailableOptions = computed(() =>
   props.modeOptions
@@ -181,6 +186,18 @@ const errorAdvice = computed(() => {
 
 function engineAvailable(value: VideoAiMode) {
   return props.availableModes.includes(value);
+}
+function deviceLabel(device: "cpu" | "cuda" | "mps") {
+  return device === "cuda" ? "NVIDIA CUDA" : device === "mps" ? "Apple MPS" : "CPU";
+}
+function executionModeLabel(mode: "cpu" | "cuda" | "mps" | "hybrid") {
+  return mode === "cuda"
+    ? "NVIDIA CUDA"
+    : mode === "mps"
+      ? "Apple MPS"
+      : mode === "hybrid"
+        ? "Apple MPS + CPU 混合"
+        : "CPU";
 }
 function formatBytes(bytes: number) {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
@@ -356,26 +373,98 @@ function formatBytes(bytes: number) {
   padding-top: 20px;
 }
 
-.processing-panel { gap: 20px; padding: 20px; }
-.section-heading h2 { font-size: 18px; color: var(--color-text); }
-.section-heading p { margin-top: 5px; line-height: 1.6; }
-.mode-grid { gap: 8px; }
-.mode-card { min-height: 46px; color: var(--color-text-secondary); background: var(--color-surface-subtle); border-radius: 8px; transition: background-color .15s, border-color .15s; }
-.mode-card:hover:not(:disabled) { border-color: var(--color-primary-500); background: var(--color-primary-50); }
-.mode-card.active { color: var(--color-primary-600); font-weight: 700; }
-.mode-card strong { font-size: 14px; }
-.mode-detail:not(.unavailable) { padding: 0; background: transparent; }
-.mode-detail:not(.unavailable) > strong { color: var(--color-text-secondary); font-size: 12px; font-weight: 500; }
-.mode-detail p { font-size: 13px; line-height: 1.7; }
-.engine-status { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 12px; color: var(--color-text-secondary); }
-.engine-status > span { width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary-500); }
-.engine-status.ready > span { background: var(--color-success); }
-.region-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.region-actions :deep(.n-button) { height: 36px; border-radius: 8px; color: var(--color-primary-600); background: var(--color-primary-50); }
-.region-actions :deep(.n-button--primary-type) { color: white; background: var(--color-primary-600); }
-.primary-actions { margin-top: 12px; padding-top: 12px; }
-.primary-actions :deep(.n-button) { border-radius: 9px; }
-.primary-actions :deep(.n-button--primary-type) { height: 46px; font-size: 16px; font-weight: 600; }
+.processing-panel {
+  gap: 20px;
+  padding: 20px;
+}
+.section-heading h2 {
+  font-size: 18px;
+  color: var(--color-text);
+}
+.section-heading p {
+  margin-top: 5px;
+  line-height: 1.6;
+}
+.mode-grid {
+  gap: 8px;
+}
+.mode-card {
+  min-height: 46px;
+  color: var(--color-text-secondary);
+  background: var(--color-surface-subtle);
+  border-radius: 8px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s;
+}
+.mode-card:hover:not(:disabled) {
+  border-color: var(--color-primary-500);
+  background: var(--color-primary-50);
+}
+.mode-card.active {
+  color: var(--color-primary-600);
+  font-weight: 700;
+}
+.mode-card strong {
+  font-size: 14px;
+}
+.mode-detail:not(.unavailable) {
+  padding: 0;
+  background: transparent;
+}
+.mode-detail:not(.unavailable) > strong {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.mode-detail p {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.engine-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.engine-status > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary-500);
+}
+.engine-status.ready > span {
+  background: var(--color-success);
+}
+.region-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.region-actions :deep(.n-button) {
+  height: 36px;
+  border-radius: 8px;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+}
+.region-actions :deep(.n-button--primary-type) {
+  color: white;
+  background: var(--color-primary-600);
+}
+.primary-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.primary-actions :deep(.n-button) {
+  border-radius: 9px;
+}
+.primary-actions :deep(.n-button--primary-type) {
+  height: 46px;
+  font-size: 16px;
+  font-weight: 600;
+}
 .completed-card {
   align-items: stretch;
   gap: 10px;
@@ -385,8 +474,24 @@ function formatBytes(bytes: number) {
   border-radius: 10px;
   background: var(--color-primary-50);
 }
-.completed-heading { display: flex; align-items: center; gap: 8px; color: var(--color-primary-600); }
-.completed-heading strong { color: var(--color-text); font-size: 14px; }
-.completed-card > span { padding-left: 27px; color: var(--color-text-secondary); font-size: 12px; }
-.completed-card > .n-button { margin-top: 4px; height: 36px; border-radius: 8px; }
+.completed-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-primary-600);
+}
+.completed-heading strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+.completed-card > span {
+  padding-left: 27px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.completed-card > .n-button {
+  margin-top: 4px;
+  height: 36px;
+  border-radius: 8px;
+}
 </style>

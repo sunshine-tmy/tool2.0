@@ -9,14 +9,33 @@ import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { canonicalManifest } from "./build-component-package.mjs";
+import {
+  canonicalManifest,
+  componentArchiveFileName,
+  componentManifestFileName,
+  componentSbomFileName
+} from "./build-component-package.mjs";
 import { assertUnifiedPythonCatalog } from "./worker-python-policy.mjs";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(publicEntryUrl));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIRECTORY, "..");
 const SHA256 = /^[a-f0-9]{64}$/;
 const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const MACOS_COMPONENT_IDS = Object.freeze([
+  "python-312",
+  "ffmpeg",
+  "edge-tts",
+  "chatterbox",
+  "image-ai",
+  "xhs-browser",
+  "xhs-archive",
+  "xhs-translation",
+  "douyin-archive",
+  "video-ai"
+]);
+const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda"]);
 
 export async function assembleComponentCatalog(feedDirectory, platform = componentPlatformForBuildHost(), baseCatalog) {
   if (platform !== "win32-x64" && platform !== "darwin-arm64") throw new Error("目标平台无效");
@@ -41,6 +60,9 @@ export async function assembleComponentCatalog(feedDirectory, platform = compone
   for (const manifestPath of manifestPaths) {
     const manifest = await readJson(manifestPath);
     validateCatalogManifest(manifest, platform);
+    if (path.basename(manifestPath) !== componentManifestFileName(manifest.id, manifest.version, platform)) {
+      throw new Error(`能力包 ${manifest.id} 的 manifest 文件名未隔离目标平台`);
+    }
     if (seenIds.has(manifest.id)) throw new Error(`能力目录包含重复 id：${manifest.id}`);
     seenIds.add(manifest.id);
 
@@ -64,17 +86,28 @@ export async function assembleComponentCatalog(feedDirectory, platform = compone
         manifest.archive,
         manifestDirectory,
         "能力归档",
-        `${manifest.id}-${manifest.version}.tar.gz`
+        componentArchiveFileName(manifest.id, manifest.version, platform)
       );
       for (const archive of manifest.additionalArchives ?? []) {
         const filename = path.basename(new URL(archive.url).pathname);
-        await verifyLocalAsset(archive, manifestDirectory, "能力分片归档", filename);
+        await verifyLocalAsset(
+          archive,
+          manifestDirectory,
+          "能力分片归档",
+          filename,
+          componentArchiveFileName(
+            manifest.id,
+            manifest.version,
+            platform,
+            archiveGroupName(archive, manifest, platform)
+          )
+        );
       }
       await verifyLocalAsset(
         manifest.sbom,
         manifestDirectory,
         "SPDX SBOM",
-        `${manifest.id}-${manifest.version}.spdx.json`
+        componentSbomFileName(manifest.id, manifest.version, platform)
       );
     }
     trustedPublicKeys[manifest.keyId] = publicKeyPem;
@@ -116,11 +149,13 @@ export async function writeGeneratedCatalog(
   outputPath,
   platform = componentPlatformForBuildHost(),
   pythonVersion,
-  baseCatalogPath
+  baseCatalogPath,
+  { requireCompleteMacCatalog = platform === "darwin-arm64" } = {}
 ) {
   if (pythonVersion !== undefined && pythonVersion !== "3.12") throw new Error("统一目录只支持 Python 3.12");
   const baseCatalog = baseCatalogPath ? await readGeneratedCatalog(baseCatalogPath) : undefined;
   const catalog = await assembleComponentCatalog(feedDirectory, platform, baseCatalog);
+  if (platform === "darwin-arm64" && requireCompleteMacCatalog) assertCompleteMacCatalog(catalog);
   if (pythonVersion === "3.12") assertUnifiedPythonCatalog(catalog);
   const resolvedOutput = path.resolve(
     outputPath ??
@@ -148,6 +183,18 @@ export async function writeGeneratedCatalog(
     await fs.rm(temporaryPath, { force: true });
   }
   return { outputPath: resolvedOutput, manifestCount: catalog.manifests.length };
+}
+
+export function assertCompleteMacCatalog(catalog) {
+  const actual = catalog.manifests.map((manifest) => manifest.id).sort();
+  const expected = [...MACOS_COMPONENT_IDS].sort();
+  if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) {
+    const missing = expected.filter((id) => !actual.includes(id));
+    const unsupported = actual.filter((id) => !expected.includes(id));
+    throw new Error(
+      `Mac 能力目录必须恰好包含十项；缺少：${missing.join(", ") || "无"}；不支持：${unsupported.join(", ") || "无"}`
+    );
+  }
 }
 
 /** Parse generated JSON only. Never execute a baseline TS/JS file supplied by CLI. */
@@ -185,12 +232,18 @@ async function findManifests(feedRoot) {
   return manifests.sort((left, right) => left.localeCompare(right));
 }
 
-async function verifyLocalAsset(reference, directory, label, expectedFilename) {
+async function verifyLocalAsset(reference, directory, label, expectedFilename, requiredFilename = expectedFilename) {
   if (!reference || typeof reference.url !== "string" || !isHttpsUrl(reference.url) || !SHA256.test(reference.sha256)) {
     throw new Error(`${label}链接或摘要无效`);
   }
   const filename = path.basename(new URL(reference.url).pathname);
-  if (!filename || filename === "." || filename === ".." || filename !== expectedFilename) {
+  if (
+    !filename ||
+    filename === "." ||
+    filename === ".." ||
+    filename !== expectedFilename ||
+    filename !== requiredFilename
+  ) {
     throw new Error(`${label}文件名无效`);
   }
   const assetPath = path.join(directory, filename);
@@ -228,8 +281,8 @@ function validateCatalogManifest(manifest, platform) {
   ) {
     throw new Error("能力目录中存在格式无效的 manifest");
   }
-  if (platform === "darwin-arm64" && manifest.id === "chatterbox-cuda") {
-    throw new Error("Apple Silicon 首版能力目录不能包含 CUDA 版 Chatterbox");
+  if (platform === "darwin-arm64" && FORBIDDEN_MACOS_COMPONENT_IDS.has(manifest.id)) {
+    throw new Error(`Apple Silicon 能力目录不支持 ${manifest.id}`);
   }
   if (
     !manifest.archive ||
@@ -243,12 +296,34 @@ function validateCatalogManifest(manifest, platform) {
   ) {
     throw new Error(`能力包 ${manifest.id} 缺少归档、SBOM 或依赖信息`);
   }
+  if (platform === "darwin-arm64" && manifest.dependencyIds.includes("python-311")) {
+    throw new Error(`Apple Silicon 能力 ${manifest.id} 不能依赖 Python 3.11`);
+  }
+  if (
+    platform === "darwin-arm64" &&
+    manifest.pythonEnvironment !== undefined &&
+    (manifest.pythonEnvironment?.expectedPythonVersion !== "3.12" ||
+      manifest.pythonEnvironment?.pythonComponentId !== "python-312" ||
+      !manifest.dependencyIds.includes("python-312") ||
+      manifest.pythonEnvironment?.pythonExecutablePath !== "python/bin/python3.12")
+  ) {
+    throw new Error(`Apple Silicon 能力 ${manifest.id} 必须使用共享 Python 3.12 运行时`);
+  }
+  if (
+    path.posix.basename(new URL(manifest.archive.url).pathname) !==
+      componentArchiveFileName(manifest.id, manifest.version, platform) ||
+    path.posix.basename(new URL(manifest.sbom.url).pathname) !==
+      componentSbomFileName(manifest.id, manifest.version, platform)
+  ) {
+    throw new Error(`能力包 ${manifest.id} 的归档或 SBOM 文件名未隔离目标平台`);
+  }
   if (
     manifest.files.some(
       (file) =>
         !file ||
         typeof file.path !== "string" ||
         !isSafeRelativePath(file.path) ||
+        (platform === "darwin-arm64" && !isSafeMacFilePath(file.path)) ||
         !Number.isSafeInteger(file.bytes) ||
         file.bytes < 0 ||
         !SHA256.test(file.sha256) ||
@@ -270,13 +345,16 @@ function validateCatalogManifest(manifest, platform) {
     if (!isValidArchive(archive) || !Array.isArray(archive.filePaths) || !archive.filePaths.length) {
       throw new Error(`能力包 ${manifest.id} 的归档分片格式无效`);
     }
-    const filename = path.basename(new URL(archive.url).pathname);
+    const filename = path.posix.basename(new URL(archive.url).pathname);
     const prefix = `${manifest.id}-${manifest.version}-`;
-    const suffix =
-      filename.startsWith(prefix) && filename.endsWith(".tar.gz")
-        ? filename.slice(prefix.length, -".tar.gz".length)
-        : "";
-    if (!suffix || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(suffix)) {
+    const suffix = platform === "darwin-arm64" ? "-darwin-arm64.tar.gz" : ".tar.gz";
+    const groupName =
+      filename.startsWith(prefix) && filename.endsWith(suffix) ? filename.slice(prefix.length, -suffix.length) : "";
+    if (
+      !groupName ||
+      !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(groupName) ||
+      filename !== componentArchiveFileName(manifest.id, manifest.version, platform, groupName)
+    ) {
       throw new Error(`能力包 ${manifest.id} 的归档分片文件名无效`);
     }
   }
@@ -357,6 +435,14 @@ function validateCatalogManifest(manifest, platform) {
   }
 }
 
+function isSafeMacFilePath(filePath) {
+  return (
+    !/\.(?:exe|dll)$/iu.test(filePath) &&
+    !(filePath.toLowerCase().endsWith(".whl") && /(?:^|[-_.])win(?:32|_amd64|_arm64)(?:[-_.]|$)/u.test(filePath)) &&
+    !/(?:^|\/)(?:Users|DLC|opt\/homebrew|usr\/local\/opt)(?:\/|$)/u.test(filePath)
+  );
+}
+
 function isValidArchive(archive) {
   return Boolean(
     archive &&
@@ -367,6 +453,13 @@ function isValidArchive(archive) {
     archive.format === "tar.gz" &&
     SHA256.test(archive.sha256)
   );
+}
+
+function archiveGroupName(archive, manifest, platform) {
+  const filename = path.posix.basename(new URL(archive.url).pathname);
+  const prefix = `${manifest.id}-${manifest.version}-`;
+  const suffix = platform === "darwin-arm64" ? "-darwin-arm64.tar.gz" : ".tar.gz";
+  return filename.startsWith(prefix) && filename.endsWith(suffix) ? filename.slice(prefix.length, -suffix.length) : "";
 }
 
 function isSafeRelativePath(value) {
@@ -421,7 +514,7 @@ async function readJson(filePath) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(publicEntryUrl)) {
   try {
-    const args = process.argv.slice(2);
+    const args = stripPnpmSeparator(process.argv.slice(2));
     const values = new Map();
     if (args.length % 2 !== 0)
       throw new Error(

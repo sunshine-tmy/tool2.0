@@ -1,0 +1,41 @@
+{
+  "id": "chatterbox",
+  "groupId": "audio",
+  "displayName": "参考音色克隆（CPU / MPS）",
+  "purpose": "使用固定 Chatterbox Multilingual V3 模型；CPU 与已验证的 Apple Silicon MPS 均可运行。",
+  "dependencyIds": ["ffmpeg", "python-312"],
+  "taskToolIds": ["chatterbox"],
+  "installConditions": [
+    "首次安装需下载固定模型与 Apple Silicon Python 3.12 wheel，实际归档和解压空间以 Mac 能力包清单为准。",
+    "MPS 仅在模型探针通过时开放；选择 MPS 后失败会返回错误，不静默切换 CPU。",
+    "固定源码提交、Mac 哈希锁定依赖与模型均随包安装，生成时无需联网。"
+  ],
+  "version": "1.0.0-py312-mps1-darwin-arm64.1",
+  "installedBytes": 6000000000,
+  "additionalArchives": [
+    {
+      "name": "model-t3",
+      "paths": ["models/chatterbox/t3_mtl23ls_v3.safetensors"]
+    },
+    {
+      "name": "model-s3gen",
+      "paths": [
+        "models/chatterbox/s3gen.pt",
+        "models/chatterbox/ve.pt",
+        "models/chatterbox/grapheme_mtl_merged_expanded_v1.json"
+      ]
+    }
+  ],
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/bin/python3.12",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  },
+  "license": {
+    "name": "MIT",
+    "url": "https://opensource.org/license/mit/"
+  },
+  "platform": "darwin-arm64"
+}

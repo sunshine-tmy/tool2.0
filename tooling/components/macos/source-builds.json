@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "basicsr": {
+    "version": "1.4.2",
+    "url": "https://files.pythonhosted.org/packages/86/41/00a6b000f222f0fa4c6d9e1d6dcc9811a374cabb8abb9d408b77de39648c/basicsr-1.4.2.tar.gz",
+    "sha256": "b89b595a87ef964cda9913b4d99380ddb6554c965577c0c10cb7b78e31301e87",
+    "patchPath": "tooling/components/macos/patches/basicsr-1.4.2-reproducible.patch",
+    "patchSha256": "c0754385fe7b45c37bb04984a920bdd901bab4effae11ee0ec805ce6a8bede4e"
+  },
+  "antlr4-python3-runtime": {
+    "version": "4.9.3",
+    "url": "https://files.pythonhosted.org/packages/3e/38/7859ff46355f76f8d19459005ca000b6e7012f2f1ca597746cbcd1fbfe5e/antlr4-python3-runtime-4.9.3.tar.gz",
+    "sha256": "f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b",
+    "buildRequirements": ["setuptools"]
+  }
+}

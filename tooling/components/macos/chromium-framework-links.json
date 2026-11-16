@@ -1,0 +1,29 @@
+{
+  "componentId": "xhs-browser",
+  "version": "1.63.0-chromium-1243-darwin-arm64.1",
+  "platform": "darwin-arm64",
+  "bundlePath": "browser/Google Chrome for Testing.app",
+  "frameworkPath": "Contents/Frameworks/Google Chrome for Testing Framework.framework",
+  "links": [
+    {
+      "path": "Contents/Frameworks/Google Chrome for Testing Framework.framework/Resources",
+      "target": "Versions/Current/Resources"
+    },
+    {
+      "path": "Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current",
+      "target": "153.0.8010.12"
+    },
+    {
+      "path": "Contents/Frameworks/Google Chrome for Testing Framework.framework/Libraries",
+      "target": "Versions/Current/Libraries"
+    },
+    {
+      "path": "Contents/Frameworks/Google Chrome for Testing Framework.framework/Google Chrome for Testing Framework",
+      "target": "Versions/Current/Google Chrome for Testing Framework"
+    },
+    {
+      "path": "Contents/Frameworks/Google Chrome for Testing Framework.framework/Helpers",
+      "target": "Versions/Current/Helpers"
+    }
+  ]
+}

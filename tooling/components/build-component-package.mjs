@@ -11,6 +11,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const SCRIPT_DIRECTORY = path.dirname(fileURLToPath(publicEntryUrl));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIRECTORY, "..");
@@ -20,6 +21,22 @@ const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_GITHUB_RELEASE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 const GROUP_IDS = new Set(["shared", "media", "audio", "image", "archive", "translation"]);
+const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda"]);
+const MACOS_VIDEO_SUPPORT_PATH = "scripts/video-ai-sequence-support-macos.json";
+const MACOS_VIDEO_SUPPORT_SOURCE = path.join(
+  REPOSITORY_ROOT,
+  "tooling",
+  "components",
+  "macos",
+  "video-ai-sequence-support.json"
+);
+const MACOS_CHROMIUM_LINK_POLICY_PATH = path.join(
+  REPOSITORY_ROOT,
+  "tooling",
+  "components",
+  "macos",
+  "chromium-framework-links.json"
+);
 
 export async function buildComponentPackage(options) {
   const reviewOnly = options.reviewOnly === true;
@@ -30,14 +47,26 @@ export async function buildComponentPackage(options) {
   if (platform !== componentPlatformForBuildHost()) {
     throw new Error("能力包必须在对应目标平台与架构的原生构建机上制作");
   }
-  if (platform === "darwin-arm64" && definition.id === "chatterbox-cuda") {
-    throw new Error("Apple Silicon 首版仅支持 Chatterbox CPU 能力包");
+  if (platform === "darwin-arm64" && FORBIDDEN_MACOS_COMPONENT_IDS.has(definition.id)) {
+    throw new Error(`Apple Silicon 能力目录不支持 ${definition.id}`);
+  }
+  if (platform === "darwin-arm64" && definition.dependencyIds?.includes("python-311")) {
+    throw new Error("Apple Silicon 能力不能依赖 Python 3.11");
+  }
+  if (definition.platform !== undefined && definition.platform !== platform) {
+    throw new Error(`能力定义平台 ${definition.platform} 与构建平台 ${platform} 不匹配`);
+  }
+  if (platform === "darwin-arm64" && definition.platform !== "darwin-arm64") {
+    throw new Error("Apple Silicon 能力必须使用独立的 darwin-arm64 版本定义");
   }
   if (platform === "darwin-arm64" && definition.pythonEnvironment) {
     const pythonVersion = definition.pythonEnvironment.expectedPythonVersion;
     definition.pythonEnvironment.pythonExecutablePath = `python/bin/python${pythonVersion}`;
   }
   const stageRoot = await fs.realpath(options.stagingDirectory);
+  if (platform === "darwin-arm64" && definition.id === "video-ai") {
+    await assertMacOSVideoAiStage(stageRoot, definition);
+  }
   const outputPath = path.resolve(options.outputDirectory);
   const assetUrl = createAssetUrlResolver(options);
   validateDefinition(definition);
@@ -62,10 +91,19 @@ export async function buildComponentPackage(options) {
     throw new Error("签名私钥不能位于能力目录中");
   }
 
-  const stagedFiles = await scanFiles(stageRoot);
+  const chromiumLinkPolicy =
+    platform === "darwin-arm64" && definition.id === "xhs-browser"
+      ? await readJson(MACOS_CHROMIUM_LINK_POLICY_PATH, "Chromium framework 链接策略")
+      : undefined;
+  if (chromiumLinkPolicy && definition.version !== chromiumLinkPolicy.version) {
+    throw new Error("Mac Chromium Framework 链接策略只适用于固定的 xhs-browser 版本");
+  }
+  const { files: stagedFiles, links: stagedLinks } = await scanFiles(stageRoot, chromiumLinkPolicy);
+  if (platform === "darwin-arm64") assertMacOSFileClosure(stagedFiles);
   if (!stagedFiles.length) throw new Error("能力目录为空，拒绝生成空能力包");
   const { files, assembledFiles } = await resolveAssembledFiles(definition.assembledFiles, stageRoot, stagedFiles);
   const payloadBytes = files.reduce((total, file) => total + file.bytes, 0);
+  assertSafeByteCount(payloadBytes, "能力载荷大小");
   if (definition.installedBytes < payloadBytes) {
     throw new Error(`installedBytes (${definition.installedBytes}) 小于解压资产大小 (${payloadBytes})`);
   }
@@ -107,7 +145,7 @@ export async function buildComponentPackage(options) {
   try {
     const builtArchives = [];
     for (const group of archiveGroups) {
-      const archiveName = `${definition.id}-${definition.version}${group.name ? `-${group.name}` : ""}.tar.gz`;
+      const archiveName = componentArchiveFileName(definition.id, definition.version, platform, group.name);
       const archivePath = path.join(stagingOutput, archiveName);
       const gzipLevel = group.files.some((file) => /\.whl\.part-\d{4}$/i.test(file.path)) ? 1 : 9;
       await tar.c(
@@ -139,17 +177,31 @@ export async function buildComponentPackage(options) {
       });
     }
     const mainArchive = builtArchives[0];
+    const totalArchiveBytes = builtArchives.reduce(
+      (total, archive) => addSafeBytes(total, archive.asset.bytes, "归档总大小"),
+      0
+    );
+    const estimatedInstallPeakBytes = addSafeBytes(totalArchiveBytes, definition.installedBytes, "下载与安装空间预留");
     const archiveName = path.basename(mainArchive.path);
     const archiveUrl = mainArchive.asset.url;
     const archiveSha256 = mainArchive.asset.sha256;
     const additionalArchives = builtArchives.slice(1).map(({ asset }) => asset);
-    const sbomName = `${definition.id}-${definition.version}.spdx.json`;
-    const manifestName = `${definition.id}-${definition.version}.${reviewOnly ? "review" : "manifest"}.json`;
+    const sbomName = componentSbomFileName(definition.id, definition.version, platform);
+    const manifestName = componentManifestFileName(definition.id, definition.version, platform, reviewOnly);
     const sbomUrl = assetUrl(sbomName, definition);
     const lockText = pythonEnvironment
       ? await fs.readFile(path.join(stageRoot, ...pythonEnvironment.requirementsLockPath.split("/")), "utf8")
       : "";
-    const sbom = createSpdxSbom({ definition, files, archiveUrl, archiveSha256, lockText });
+    const manifestLinks = stagedLinks;
+    const sbom = createSpdxSbom({
+      definition,
+      files,
+      links: manifestLinks,
+      archiveUrl,
+      archiveSha256,
+      lockText,
+      platform
+    });
     const sbomText = JSON.stringify(sbom, null, 2) + "\n";
     const sbomPath = path.join(stagingOutput, sbomName);
     await fs.writeFile(sbomPath, sbomText, { flag: "wx" });
@@ -176,6 +228,7 @@ export async function buildComponentPackage(options) {
         sha256,
         ...(executable ? { executable: true } : {})
       })),
+      ...(manifestLinks.length ? { links: manifestLinks } : {}),
       ...(pythonEnvironment ? { pythonEnvironment } : {}),
       ...(definition.license ? { license: definition.license } : {}),
       sbom: { url: sbomUrl, sha256: sha256Text(sbomText) },
@@ -230,6 +283,8 @@ export async function buildComponentPackage(options) {
         : { manifestPath: path.join(artifactDirectory, manifestName), publicKeyPath, keyId }),
       sbomPath: path.join(artifactDirectory, sbomName),
       archiveBytes: mainArchive.asset.bytes,
+      totalArchiveBytes,
+      estimatedInstallPeakBytes,
       archivePaths: builtArchives.map(({ path: filePath }) => path.join(artifactDirectory, path.basename(filePath))),
       additionalArchivePaths: builtArchives
         .slice(1)
@@ -345,6 +400,7 @@ function validateDefinition(value) {
     if (
       !environment ||
       !["3.11", "3.12"].includes(environment.expectedPythonVersion) ||
+      (value.platform === "darwin-arm64" && environment.expectedPythonVersion !== "3.12") ||
       (environment.pythonComponentId !== undefined &&
         (typeof environment.pythonComponentId !== "string" ||
           !COMPONENT_ID.test(environment.pythonComponentId) ||
@@ -448,8 +504,17 @@ async function resolveStagedAsset(stageRoot, relativePath, label) {
   return resolved;
 }
 
-async function scanFiles(root) {
+async function scanFiles(root, linkPolicy) {
   const files = [];
+  const links = [];
+  const expectedLinks = linkPolicy
+    ? new Map(
+        linkPolicy.links.map((link) => [
+          path.posix.join(linkPolicy.bundlePath, link.path.split(path.sep).join("/")),
+          link
+        ])
+      )
+    : new Map();
   async function visit(directory, relativeDirectory) {
     for (const entry of (await fs.readdir(directory, { withFileTypes: true })).sort((left, right) =>
       left.name.localeCompare(right.name)
@@ -458,8 +523,14 @@ async function scanFiles(root) {
       if (!isSafeRelativePath(relative)) throw new Error(`能力目录包含不安全路径：${relative}`);
       const fullPath = path.join(directory, entry.name);
       const stat = await fs.lstat(fullPath);
-      if (stat.isSymbolicLink()) throw new Error(`能力目录不允许包含符号链接：${relative}`);
-      if (stat.isDirectory()) await visit(fullPath, relative);
+      if (stat.isSymbolicLink()) {
+        const expected = expectedLinks.get(relative);
+        const target = await fs.readlink(fullPath);
+        if (!expected || target !== expected.target) {
+          throw new Error(`能力目录包含未允许的符号链接：${relative}`);
+        }
+        links.push({ path: relative, target });
+      } else if (stat.isDirectory()) await visit(fullPath, relative);
       else if (stat.isFile())
         files.push({
           path: relative,
@@ -472,10 +543,38 @@ async function scanFiles(root) {
     }
   }
   await visit(root, "");
-  return files.sort((left, right) => left.path.localeCompare(right.path));
+  if (
+    links.length !== expectedLinks.size ||
+    [...expectedLinks.keys()].some((filePath) => !links.some((link) => link.path === filePath))
+  ) {
+    throw new Error("固定 Chromium Framework 的五条内部链接不完整");
+  }
+  if (links.length) {
+    const frameworkPath = path.join(root, ...linkPolicy.bundlePath.split("/"), ...linkPolicy.frameworkPath.split("/"));
+    const frameworkRealPath = await fs.realpath(frameworkPath);
+    for (const link of links) {
+      const fullPath = path.join(root, ...link.path.split("/"));
+      const resolvedTarget = await fs.realpath(fullPath);
+      const relativeTarget = path.relative(frameworkRealPath, resolvedTarget);
+      const targetStat = await fs.lstat(resolvedTarget);
+      if (
+        !relativeTarget ||
+        relativeTarget === ".." ||
+        relativeTarget.startsWith(".." + path.sep) ||
+        path.isAbsolute(relativeTarget) ||
+        (!targetStat.isFile() && !targetStat.isDirectory())
+      ) {
+        throw new Error(`Chromium Framework 链接目标缺失或越界：${link.path}`);
+      }
+    }
+  }
+  return {
+    files: files.sort((left, right) => left.path.localeCompare(right.path)),
+    links: links.sort((left, right) => left.path.localeCompare(right.path))
+  };
 }
 
-function createSpdxSbom({ definition, files, archiveUrl, archiveSha256, lockText }) {
+function createSpdxSbom({ definition, files, links, archiveUrl, archiveSha256, lockText, platform }) {
   const timestamp = Number(process.env.SOURCE_DATE_EPOCH ?? "0");
   if (!Number.isSafeInteger(timestamp) || timestamp < 0 || timestamp > 8_640_000_000_000) {
     throw new Error("SOURCE_DATE_EPOCH 必须是有效的非负时间戳");
@@ -490,6 +589,19 @@ function createSpdxSbom({ definition, files, archiveUrl, archiveSha256, lockText
     licenseInfoInFiles: ["NOASSERTION"],
     copyrightText: "NOASSERTION"
   }));
+  for (const link of links) {
+    const targetSha256 = crypto.createHash("sha256").update(link.target, "utf8").digest("hex");
+    spdxFiles.push({
+      fileName: `./${link.path}`,
+      SPDXID: `SPDXRef-File-${spdxFiles.length + 1}`,
+      fileTypes: ["OTHER"],
+      checksums: [{ algorithm: "SHA256", checksumValue: targetSha256 }],
+      licenseConcluded: "NOASSERTION",
+      licenseInfoInFiles: ["NOASSERTION"],
+      fileComment: `Symbolic link target text SHA-256; target is signed in the component manifest: ${link.target}`,
+      copyrightText: "NOASSERTION"
+    });
+  }
   const sbomPackages = [];
   const relationships = spdxFiles.map((file) => ({
     spdxElementId: rootPackageId,
@@ -528,7 +640,7 @@ function createSpdxSbom({ definition, files, archiveUrl, archiveSha256, lockText
     creationInfo: { creators: ["Tool: Toolbox Component Packager"], created },
     packages: [
       {
-        name: `${definition.id}-windows-x64`,
+        name: `${definition.id}-${platform === "darwin-arm64" ? "darwin-arm64" : "windows-x64"}`,
         SPDXID: rootPackageId,
         versionInfo: definition.version,
         downloadLocation: archiveUrl,
@@ -547,6 +659,111 @@ function createSpdxSbom({ definition, files, archiveUrl, archiveSha256, lockText
       ...relationships
     ]
   };
+}
+
+export function componentArchiveFileName(componentId, version, platform, groupName) {
+  const group = groupName ? `-${groupName}` : "";
+  const suffix = platform === "darwin-arm64" ? "-darwin-arm64" : "";
+  return `${componentId}-${version}${group}${suffix}.tar.gz`;
+}
+
+export function componentManifestFileName(componentId, version, platform, reviewOnly = false) {
+  const suffix = platform === "darwin-arm64" ? "-darwin-arm64" : "";
+  return `${componentId}-${version}${suffix}.${reviewOnly ? "review" : "manifest"}.json`;
+}
+
+export function componentSbomFileName(componentId, version, platform) {
+  const suffix = platform === "darwin-arm64" ? "-darwin-arm64" : "";
+  return `${componentId}-${version}${suffix}.spdx.json`;
+}
+
+function assertMacOSFileClosure(files) {
+  for (const file of files) {
+    const lowerPath = file.path.toLowerCase();
+    const isWindowsWheel =
+      lowerPath.endsWith(".whl") && /(?:^|[-_.])win(?:32|_amd64|_arm64)(?:[-_.]|$)/u.test(lowerPath);
+    if (/\.(?:exe|dll)$/u.test(lowerPath) || isWindowsWheel) {
+      throw new Error(`macOS 能力目录包含 Windows 文件或 wheel：${file.path}`);
+    }
+    if (/[A-Za-z]:[\\/]|(?:^|[\\/])(?:Users|DLC|opt\/homebrew|usr\/local\/opt)(?:[\\/]|$)/u.test(file.path)) {
+      throw new Error(`macOS 能力目录包含构建机绝对路径：${file.path}`);
+    }
+  }
+}
+
+async function assertMacOSVideoAiStage(stageRoot, definition) {
+  const pythonEnvironment = definition.pythonEnvironment;
+  if (
+    definition.version.includes("darwin-arm64") !== true ||
+    pythonEnvironment?.expectedPythonVersion !== "3.12" ||
+    pythonEnvironment?.pythonComponentId !== "python-312"
+  ) {
+    throw new Error("Mac 视频包必须使用独立版本定义和共享 Python 3.12 runtime");
+  }
+  const supportPath = path.join(stageRoot, ...MACOS_VIDEO_SUPPORT_PATH.split("/"));
+  const supportBytes = await fs.readFile(supportPath).catch(() => undefined);
+  if (!supportBytes) throw new Error("Mac 视频包缺少 M01 冻结的 MPS 支持定义");
+  const [expectedBytes, supportStat] = await Promise.all([
+    fs.readFile(MACOS_VIDEO_SUPPORT_SOURCE),
+    fs.lstat(supportPath)
+  ]);
+  if (
+    supportStat.isSymbolicLink() ||
+    supportBytes.length !== expectedBytes.length ||
+    crypto.createHash("sha256").update(supportBytes).digest("hex") !==
+      crypto.createHash("sha256").update(expectedBytes).digest("hex")
+  ) {
+    throw new Error("Mac 视频支持定义必须与仓库中已冻结的 M01/M04 版本逐字节相同");
+  }
+  const support = JSON.parse(supportBytes.toString("utf8"));
+  if (
+    support.platform !== "darwin-arm64" ||
+    support.assetSchemaVersion !== 1 ||
+    support.workerFeature !== "sequence-assets-v1" ||
+    support.sequenceRuntime !== 1 ||
+    support.torchVersion !== "2.6.0" ||
+    support.torchvisionVersion !== "0.21.0"
+  ) {
+    throw new Error("Mac 视频支持定义的平台、协议或运行时版本不匹配");
+  }
+  for (const engine of ["sttn", "propainter"]) {
+    const entry = support.engines?.[engine];
+    if (
+      !entry ||
+      entry.adapterReady !== true ||
+      !Array.isArray(entry.supportedDevices) ||
+      entry.supportedDevices.length !== 1 ||
+      entry.supportedDevices[0] !== "mps"
+    ) {
+      throw new Error(`Mac 视频 ${engine} 尚未通过模型验收，不能生成可安装版本`);
+    }
+    const bundlePath = path.join(stageRoot, "models", "video-ai", "engines", engine, "sequence-bundle.json");
+    const bundleStat = await fs.lstat(bundlePath).catch(() => undefined);
+    if (!bundleStat?.isFile() || bundleStat.isSymbolicLink()) {
+      throw new Error(`Mac 视频包缺少已验收的 ${engine} bundle`);
+    }
+    const bundle = JSON.parse(await fs.readFile(bundlePath, "utf8"));
+    if (
+      bundle.adapterReady !== true ||
+      bundle.engine !== engine ||
+      bundle.repository !== entry.repository ||
+      bundle.revision !== entry.revision ||
+      bundle.license !== entry.license ||
+      bundle.namespace !== entry.namespace
+    ) {
+      throw new Error(`Mac 视频 ${engine} bundle 不匹配已验收的 MPS 定义`);
+    }
+  }
+}
+
+function assertSafeByteCount(value, label) {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label}超出安全整数范围`);
+}
+
+function addSafeBytes(left, right, label) {
+  const result = left + right;
+  assertSafeByteCount(result, label);
+  return result;
 }
 
 function parseBaseUrl(value) {
@@ -686,10 +903,11 @@ function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }

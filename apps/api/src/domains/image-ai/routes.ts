@@ -46,6 +46,7 @@ import { createImageAiTaskManager, type StoredInput } from "./task-manager";
 import { createImageAiWorkerClient, ImageAiWorkerError } from "./worker-client";
 import { registerProductImageRoutes } from "./product-image-routes";
 import { validateProductAsset } from "./product-image-files";
+import type { InferenceResourceCoordinator } from "../../core/workers/inference-resource-types";
 
 type UploadedPart = {
   path: string;
@@ -60,10 +61,11 @@ export async function registerImageAiRoutes(
   config: AppConfig,
   database: ToolboxDatabase,
   taskStore: TaskStore,
-  fileMetadata?: FileMetadataRepository
+  fileMetadata?: FileMetadataRepository,
+  resources?: InferenceResourceCoordinator
 ) {
-  const manager = createImageAiTaskManager(config, database, taskStore, fileMetadata);
-  const worker = createImageAiWorkerClient(config);
+  const manager = createImageAiTaskManager(config, database, taskStore, fileMetadata, resources);
+  const worker = createImageAiWorkerClient(config, resources);
   await manager.initialize();
   app.addHook("onClose", async () => manager.close());
   registerProductImageRoutes(app, config, manager);
@@ -191,7 +193,11 @@ export async function registerImageAiRoutes(
       try {
         const file = await request.file();
         if (!file) return reply.code(400).send(fail("FILE_REQUIRED", "请选择一张图片"));
-        const stored = await storeStream(file.file, path.join(tempDir, "input.bin"), IMAGE_AI_MAX_FILE_BYTES);
+        const stored = await storeStream(
+          file.file,
+          path.join(tempDir, `input${imageExtensionForMime(file.mimetype)}`),
+          IMAGE_AI_MAX_FILE_BYTES
+        );
         await validateUploadedImage({
           filePath: stored.path,
           originalName: path.basename(file.filename || "image"),
@@ -249,7 +255,10 @@ export async function registerImageAiRoutes(
           }
           const isMask = part.fieldname === "mask";
           const limit = isMask ? IMAGE_AI_MAX_MASK_BYTES : IMAGE_AI_MAX_FILE_BYTES;
-          const destination = path.join(inputDir, isMask ? "mask.png" : `input-${fileIndex++}.bin`);
+          const destination = path.join(
+            inputDir,
+            isMask ? "mask.png" : `input-${fileIndex++}${imageExtensionForMime(part.mimetype)}`
+          );
           const stored = await storeStream(part.file, destination, limit);
           uploaded.push({
             ...stored,
@@ -283,14 +292,14 @@ export async function registerImageAiRoutes(
           if (operation === "enhance") validateEnhanceOutput(metadata.width, metadata.height, scale);
           if (operation === "background_remove") {
             await validateProductAsset(part.path);
-            const canonical = `${part.path}.png`;
+            const canonical = `${part.path}.normalized.png`;
             await sharp(part.path, { limitInputPixels: 40000000 })
               .autoOrient()
               .toColourspace("srgb")
               .png()
               .toFile(canonical);
             await fs.rm(part.path);
-            await fs.rename(canonical, part.path);
+            part.path = canonical;
             const normalized = await sharp(part.path).metadata();
             metadata.width = normalized.width!;
             metadata.height = normalized.height!;
@@ -460,6 +469,19 @@ async function storeStream(stream: NodeJS.ReadableStream, destination: string, l
   }
   await handle.close();
   return { path: destination, size };
+}
+
+function imageExtensionForMime(mimetype: string) {
+  switch (mimetype) {
+    case "image/jpeg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/webp":
+      return ".webp";
+    default:
+      return ".bin";
+  }
 }
 
 function sendRouteError(

@@ -80,6 +80,7 @@ describe("desktop component self-test", () => {
     const baseSite = path.join(baseRoot, "venv", "Lib", "site-packages");
     await fs.mkdir(cudaSite, { recursive: true });
     await fs.mkdir(baseSite, { recursive: true });
+    const expectedPythonPath = [await fs.realpath(cudaSite), await fs.realpath(baseSite)].join(path.delimiter);
     const resolve = vi.fn(async () => ({
       path: path.join(baseRoot, "venv", "Scripts", "python.exe"),
       generationRoot: baseRoot,
@@ -87,7 +88,7 @@ describe("desktop component self-test", () => {
     }));
     const run = vi.fn(
       async (_executable: string, _args: string[], _cwd: string, environment: Record<string, string>) => {
-        if (environment.PYTHONPATH !== [cudaSite, baseSite].join(path.delimiter))
+        if (environment.PYTHONPATH !== expectedPythonPath)
           throw new Error("ModuleNotFoundError: No module named 'cv2'");
         return '{"available":true,"cudaAvailable":false}';
       }
@@ -175,11 +176,30 @@ describe("desktop component self-test", () => {
       temporaryRoot,
       expect.objectContaining({
         PYTHONNOUSERSITE: "1",
+        PYTHONDONTWRITEBYTECODE: "1",
         HF_HUB_OFFLINE: "1",
         TRANSFORMERS_OFFLINE: "1"
       })
     );
     expect((runProcess.mock.calls[0]?.[3] as Record<string, string>).PYTHONPATH).toBeUndefined();
+  });
+
+  it("prevents Python version self-tests from writing into the signed runtime generation", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    await writeExecutableAsset("python/bin/python3.12");
+    const runProcess = vi.fn(async () => "3.12\n");
+
+    await createDesktopComponentSelfTest(runProcess)(
+      manifest("python-312", ["python/bin/python3.12"], "3.12", "darwin-arm64"),
+      temporaryRoot
+    );
+
+    expect(runProcess).toHaveBeenCalledWith(
+      path.join(temporaryRoot, "python", "bin", "python3.12"),
+      ["-c", expect.stringContaining("sys.version_info")],
+      temporaryRoot,
+      expect.objectContaining({ PYTHONDONTWRITEBYTECODE: "1" })
+    );
   });
 
   it("rejects an image package that omits one of its fixed CPU models before launching the worker", async () => {
@@ -424,13 +444,17 @@ function manifest(
     id,
     moduleId: id,
     platform,
-    pythonEnvironment: {
-      pythonExecutablePath: "python/python.exe",
-      wheelhousePath: "wheelhouse",
-      requirementsLockPath: "requirements.lock",
-      requirementsLockSha256: "0".repeat(64),
-      expectedPythonVersion
-    },
+    ...(id === "ffmpeg" || id === "xhs-browser" || id === "python-312"
+      ? {}
+      : {
+          pythonEnvironment: {
+            pythonExecutablePath: "python/python.exe",
+            wheelhousePath: "wheelhouse",
+            requirementsLockPath: "requirements.lock",
+            requirementsLockSha256: "0".repeat(64),
+            expectedPythonVersion
+          }
+        }),
     files: files.map((filePath) => ({ path: filePath, bytes: 1, sha256: "0".repeat(64) }))
   } as unknown as ComponentPackageManifest;
 }

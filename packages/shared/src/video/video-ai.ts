@@ -12,6 +12,14 @@ export const VideoAiModeSchema = Type.Union([
   Type.Literal("delogo")
 ]);
 
+export const VideoAiDeviceSchema = Type.Union([Type.Literal("cpu"), Type.Literal("cuda"), Type.Literal("mps")]);
+export const VideoAiExecutionModeSchema = Type.Union([
+  Type.Literal("cpu"),
+  Type.Literal("cuda"),
+  Type.Literal("mps"),
+  Type.Literal("hybrid")
+]);
+
 export const VideoAiTaskStatusSchema = Type.Union([
   Type.Literal("pending"),
   Type.Literal("running"),
@@ -153,7 +161,9 @@ export const VideoAiEngineSchema = Type.Object(
     model: Type.Optional(Type.String()),
     license: Type.String(),
     available: Type.Boolean(),
-    reason: Type.Union([Type.String(), Type.Null()])
+    reason: Type.Union([Type.String(), Type.Null()]),
+    supportedDevices: Type.Optional(Type.Array(VideoAiDeviceSchema, { minItems: 1, uniqueItems: true })),
+    executionMode: Type.Optional(VideoAiExecutionModeSchema)
   },
   { additionalProperties: false }
 );
@@ -183,6 +193,8 @@ export function isVideoAiMode(value: unknown): value is VideoAiMode {
 }
 
 export type VideoAiMode = Static<typeof VideoAiModeSchema>;
+export type VideoAiDevice = Static<typeof VideoAiDeviceSchema>;
+export type VideoAiExecutionMode = Static<typeof VideoAiExecutionModeSchema>;
 export type VideoAiTaskStatus = Static<typeof VideoAiTaskStatusSchema>;
 export type VideoAiRect = Static<typeof VideoAiRectSchema>;
 export type VideoAiSegment = Static<typeof VideoAiSegmentSchema>;

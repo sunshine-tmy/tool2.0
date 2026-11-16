@@ -47,7 +47,7 @@ afterEach(() => vi.restoreAllMocks());
 async function setup(trayAvailable = true) {
   let main: BrowserWindow | undefined,
     quitting = false;
-  const hideToTray = vi.fn(() => trayAvailable);
+  const hideWindow = vi.fn(() => trayAvailable);
   await createBusinessWindow({
     origin: "http://127.0.0.1:43210",
     preload: "fixed-preload.cjs",
@@ -61,11 +61,11 @@ async function setup(trayAvailable = true) {
       mock.events.push("close-startup");
     },
     isQuitting: () => quitting,
-    hideToTray
+    hideWindow
   });
   return {
     window: mock.windows[0],
-    hideToTray,
+    hideWindow,
     setQuitting: () => {
       quitting = true;
     }
@@ -126,7 +126,7 @@ describe("business window boundary", () => {
     expect(mock.external).toHaveBeenCalledWith("https://example.test");
   });
   it("keeps internal navigation and routes untrusted navigation/close through fixed policies", async () => {
-    const { window, setQuitting, hideToTray } = await setup(),
+    const { window, setQuitting, hideWindow } = await setup(),
       preventDefault = vi.fn();
     window.emit("will-navigate", { preventDefault }, "http://127.0.0.1:43210/tools/image-ai");
     expect(preventDefault).not.toHaveBeenCalled();
@@ -136,19 +136,19 @@ describe("business window boundary", () => {
     const close = vi.fn();
     window.emit("close", { preventDefault: close });
     expect(close).toHaveBeenCalledOnce();
-    expect(hideToTray).toHaveBeenCalledExactlyOnceWith(window);
+    expect(hideWindow).toHaveBeenCalledExactlyOnceWith(window);
     expect(mock.quit).not.toHaveBeenCalled();
     setQuitting();
     window.emit("close", { preventDefault: close });
     expect(close).toHaveBeenCalledOnce();
-    expect(hideToTray).toHaveBeenCalledOnce();
+    expect(hideWindow).toHaveBeenCalledOnce();
   });
   it("keeps a safe quit fallback when the tray cannot provide a recovery entry", async () => {
-    const { window, hideToTray } = await setup(false);
+    const { window, hideWindow } = await setup(false);
     const preventDefault = vi.fn();
     window.emit("close", { preventDefault });
     expect(preventDefault).toHaveBeenCalledOnce();
-    expect(hideToTray).toHaveBeenCalledOnce();
+    expect(hideWindow).toHaveBeenCalledOnce();
     expect(mock.quit).toHaveBeenCalledOnce();
   });
 });

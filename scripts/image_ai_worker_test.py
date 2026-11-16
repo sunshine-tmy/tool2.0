@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import cv2
 import numpy as np
@@ -16,6 +16,26 @@ SPEC = importlib.util.spec_from_file_location("image_ai_worker", WORKER_PATH)
 assert SPEC and SPEC.loader
 worker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(worker)
+
+
+class ResourceUnloadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_unload_uses_the_worker_lock_and_confirms_all_image_models_are_released(self):
+        class Manager:
+            def __init__(self):
+                self.lock = worker.asyncio.Lock()
+                self.released = False
+
+            def unload(self):
+                self.released = True
+
+        manager = Manager()
+        with (
+            patch.object(worker, "manager", manager),
+            patch.object(worker.asyncio, "to_thread", new=AsyncMock(side_effect=lambda callback: callback())),
+        ):
+            result = await worker.unload()
+        self.assertTrue(manager.released)
+        self.assertEqual(result, {"success": True, "data": {"protocolVersion": 1, "modelLoaded": False, "busy": False}})
 
 
 class TrustedPathTests(unittest.TestCase):

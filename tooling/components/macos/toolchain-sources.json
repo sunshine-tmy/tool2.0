@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "python": {
+    "version": "3.12.14",
+    "platform": "darwin-arm64",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20260924/cpython-3.12.14%2B20260924-aarch64-apple-darwin-install_only_stripped.tar.gz",
+    "bytes": 25017789,
+    "sha256": "c2edb321cd32ec2b170df208db0446dccc4398db602ca27cf2079098fb1f7d9d"
+  },
+  "uv": {
+    "version": "0.13.7",
+    "platform": "aarch64-apple-darwin",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-apple-darwin.tar.gz",
+    "sha256": "81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731"
+  }
+}

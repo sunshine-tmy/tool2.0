@@ -73,6 +73,12 @@ try {
     );
 
   parentPort.on("message", (event) => {
+    if (event.data?.type === "system-resume") {
+      void backend.shutdown.resume().catch((error) => {
+        console.warn("Unable to verify local AI workers after system resume", error);
+      });
+      return;
+    }
     if (event.data?.type === "shutdown-inspect" && typeof event.data.id === "number") {
       parentPort.postMessage({ type: "shutdown-inspection", id: event.data.id, state: backend.shutdown.inspect() });
       return;

@@ -72,6 +72,7 @@
                 >{{ panel.taskStatusLabel(item.status) }}
               </n-tag>
             </header>
+            <small v-if="item.phase" role="status">{{ item.phase }}</small>
             <div class="detail-item-form">
               <n-input
                 v-model:value="panel.itemDrafts[item.id].text"
@@ -176,4 +177,3 @@ function setRetryReferenceInput(value: Element | ComponentPublicInstance | null)
   panel.retryReferenceInput = value instanceof HTMLInputElement ? value : undefined;
 }
 </script>
-

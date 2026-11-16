@@ -9,13 +9,33 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertWorkerPythonVersion, assertWorkerWheelPython } from "./worker-python-policy.mjs";
+import { stripPnpmSeparator } from "./cli-arguments.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(publicEntryUrl)), "..");
 const SCRIPT_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "video-ai-worker.py");
-const LOCK_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "video-ai.lock.txt");
+const DEVICE_POLICY_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "video_ai_device.py");
+const LOCK_SOURCE =
+  process.platform === "darwin"
+    ? path.join(REPOSITORY_ROOT, "tooling", "components", "macos", "locks", "video-ai.lock.txt")
+    : path.join(REPOSITORY_ROOT, "scripts", "video-ai.lock.txt");
 const DEFAULT_ASSET_CACHE = path.join(REPOSITORY_ROOT, ".package", "video-ai-source-assets");
 const DOWNLOADER_SOURCE = path.join(REPOSITORY_ROOT, "scripts", "download-fixed-model-file.mjs");
 const PYTORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu";
+const MACOS_SUPPORT_SOURCE = path.join(
+  REPOSITORY_ROOT,
+  "tooling",
+  "components",
+  "macos",
+  "video-ai-sequence-support.json"
+);
+const MACOS_SUPPORT_RELATIVE = "scripts/video-ai-sequence-support-macos.json";
+const MACOS_DEFINITION_SOURCE = path.join(
+  REPOSITORY_ROOT,
+  "scripts",
+  "component-definitions",
+  "macos",
+  "video-ai.json"
+);
 
 /**
  * Model weights shipped in the base capability. LaMa and PP-OCRv5 reuse the
@@ -56,11 +76,20 @@ export const VIDEO_AI_ENGINE_DIRECTORIES = {
   propainter: path.join("models", "video-ai", "engines", "propainter")
 };
 
-export function validateVideoAiCpuLock(lockText) {
-  if (!/^torch==2\.6\.0\+cpu\s*\\?\s*$/m.test(lockText)) {
-    throw new Error("视频去字幕锁文件必须固定 CPU 版 PyTorch 2.6.0");
+export function validateVideoAiCpuLock(lockText, platform = process.platform) {
+  const isMacOS = platform === "darwin" || platform === "darwin-arm64";
+  const torchPattern = isMacOS ? /^torch==2\.6\.0\s*\\?\s*$/m : /^torch==2\.6\.0\+cpu\s*\\?\s*$/m;
+  const torchvisionPattern = isMacOS ? /^torchvision==0\.21\.0\s*\\?\s*$/m : /^torchvision==0\.21\.0\+cpu\s*\\?\s*$/m;
+  if (!torchPattern.test(lockText) || !torchvisionPattern.test(lockText)) {
+    throw new Error(
+      isMacOS
+        ? "Mac 视频去字幕锁文件必须固定原生 PyTorch 2.6.0 与 TorchVision 0.21.0"
+        : "视频去字幕锁文件必须固定 CPU 版 PyTorch 2.6.0 与 TorchVision 0.21.0"
+    );
   }
-  if (/^nvidia[-_\w]*==/m.test(lockText)) throw new Error("视频去字幕基础包锁文件不能包含 NVIDIA/CUDA 运行时");
+  if (/^nvidia[-_\w]*==|^torch(?:vision|audio)?==[^\n]*\+cu\d+/imu.test(lockText)) {
+    throw new Error("视频去字幕基础包锁文件不能包含 NVIDIA/CUDA 运行时");
+  }
   if (!/^opencv-python-headless==[\d.]+\s*\\?\s*$/m.test(lockText)) {
     throw new Error("视频去字幕锁文件必须固定 opencv-python-headless");
   }
@@ -114,6 +143,218 @@ export async function stageEngineDirectory(sourceDirectory, destinationDirectory
   return files;
 }
 
+export async function copyMacSequenceBundle({ sourceDirectory, destinationDirectory, engine }) {
+  const source = path.resolve(sourceDirectory);
+  const destination = path.resolve(destinationDirectory);
+  if (!Object.hasOwn(VIDEO_AI_ENGINE_DIRECTORIES, engine)) throw new Error("未知 Mac 视频引擎：" + engine);
+  const sourceStat = await fs.lstat(source);
+  if (!sourceStat.isDirectory() || sourceStat.isSymbolicLink()) throw new Error("Mac 视频 bundle 根目录无效");
+  const descriptorPath = path.join(source, "sequence-bundle.json");
+  const provenancePath = path.join(source, "PROVENANCE.json");
+  const descriptor = JSON.parse(await fs.readFile(descriptorPath, "utf8"));
+  const provenance = JSON.parse(await fs.readFile(provenancePath, "utf8"));
+  const support = JSON.parse(await fs.readFile(MACOS_SUPPORT_SOURCE, "utf8"));
+  const expected = support.engines?.[engine];
+  if (
+    support.platform !== "darwin-arm64" ||
+    !expected ||
+    expected.adapterReady !== true ||
+    !Array.isArray(expected.supportedDevices) ||
+    expected.supportedDevices.length !== 1 ||
+    expected.supportedDevices[0] !== "mps" ||
+    descriptor.assetSchemaVersion !== 1 ||
+    descriptor.engine !== engine ||
+    descriptor.repository !== expected.repository ||
+    descriptor.revision !== expected.revision ||
+    descriptor.license !== expected.license ||
+    descriptor.namespace !== expected.namespace ||
+    descriptor.adapterReady !== true ||
+    !Array.isArray(descriptor.files) ||
+    !Array.isArray(expected.sources) ||
+    !Array.isArray(expected.weights)
+  ) {
+    throw new Error(`Mac ${engine} bundle 尚未通过已冻结的 MPS 验收定义`);
+  }
+  if (
+    provenance.repository !== expected.repository ||
+    provenance.revision !== expected.revision ||
+    provenance.license !== expected.license ||
+    !Array.isArray(provenance.sources) ||
+    !Array.isArray(provenance.weights)
+  ) {
+    throw new Error(`Mac ${engine} bundle provenance 与冻结来源不匹配`);
+  }
+
+  const fileEntries = new Map();
+  for (const file of descriptor.files) {
+    if (
+      !file ||
+      typeof file.path !== "string" ||
+      !isSafeBundleRelativePath(file.path) ||
+      !Number.isSafeInteger(file.bytes) ||
+      file.bytes < 1 ||
+      !/^[a-f0-9]{64}$/u.test(file.sha256) ||
+      !["source", "weight", "license", "provenance"].includes(file.role) ||
+      fileEntries.has(file.path.toLowerCase())
+    ) {
+      throw new Error(`Mac ${engine} bundle descriptor 文件清单无效`);
+    }
+    fileEntries.set(file.path.toLowerCase(), file);
+  }
+  const expectedWeights = new Map(expected.weights.map((weight) => [weight.path, weight]));
+  const actualWeights = descriptor.files
+    .filter((file) => file.role === "weight")
+    .map((file) => file.path)
+    .sort();
+  if (
+    actualWeights.length !== expectedWeights.size ||
+    actualWeights.some((relative, index) => relative !== [...expectedWeights.keys()].sort()[index])
+  ) {
+    throw new Error(`Mac ${engine} bundle 权重集合与冻结清单不匹配`);
+  }
+  const provenanceSources = new Map(provenance.sources.map((source) => [source.path, source]));
+  const lockedSources = new Map(
+    expected.sources.filter((source) => source.path !== "LICENSE").map((source) => [source.path, source])
+  );
+  if (provenanceSources.size !== lockedSources.size) throw new Error(`Mac ${engine} bundle 源码 provenance 不完整`);
+  for (const [relative, locked] of lockedSources) {
+    const actual = provenanceSources.get(relative);
+    if (
+      !actual ||
+      actual.gitBlobSha1 !== locked.gitBlobSha1 ||
+      actual.originalSha256 !== locked.sha256 ||
+      !/^[a-f0-9]{64}$/u.test(actual.bundledSha256)
+    ) {
+      throw new Error(`Mac ${engine} bundle 源码 provenance 与固定 revision 不匹配：${relative}`);
+    }
+    const bundled = fileEntries.get(`vendor/${relative}`.toLowerCase());
+    if (!bundled || bundled.role !== "source" || bundled.sha256 !== actual.bundledSha256) {
+      throw new Error(`Mac ${engine} bundle 不包含固定来源源码：${relative}`);
+    }
+  }
+  const license = expected.sources.find((source) => source.path === "LICENSE");
+  const licenseFile = fileEntries.get("license");
+  if (!license || !licenseFile || licenseFile.role !== "license" || licenseFile.sha256 !== license.sha256) {
+    throw new Error(`Mac ${engine} bundle 许可证与冻结清单不匹配`);
+  }
+  for (const [relative, locked] of expectedWeights) {
+    const descriptorFile = fileEntries.get(relative.toLowerCase());
+    const weightName = relative.slice("weights/".length);
+    const provenanceWeight = provenance.weights.find((weight) => weight.name === weightName);
+    if (
+      !descriptorFile ||
+      descriptorFile.role !== "weight" ||
+      descriptorFile.bytes !== locked.bytes ||
+      descriptorFile.sha256 !== locked.sha256 ||
+      !provenanceWeight ||
+      provenanceWeight.bytes !== locked.bytes ||
+      provenanceWeight.sha256 !== locked.sha256
+    ) {
+      throw new Error(`Mac ${engine} bundle 权重与冻结摘要不匹配：${relative}`);
+    }
+  }
+  for (const required of engine === "sttn"
+    ? ["vendor/__init__.py", "vendor/model/sttn.py"]
+    : [
+        "vendor/__init__.py",
+        "vendor/RAFT/raft.py",
+        "vendor/model/propainter.py",
+        "vendor/model/recurrent_flow_completion.py"
+      ]) {
+    const file = fileEntries.get(required.toLowerCase());
+    if (!file || file.role !== "source") throw new Error(`Mac ${engine} bundle 缺少必要源码：${required}`);
+  }
+  if (!fileEntries.has("provenance.json")) throw new Error(`Mac ${engine} bundle 缺少 provenance`);
+
+  const actualFiles = await listRegularFiles(source);
+  const allowedFiles = new Set([...descriptor.files.map((file) => file.path), "sequence-bundle.json"]);
+  if (actualFiles.length !== allowedFiles.size || actualFiles.some((relative) => !allowedFiles.has(relative))) {
+    throw new Error(`Mac ${engine} bundle 有未声明或缺失文件`);
+  }
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  await fs.mkdir(destination, { recursive: false });
+  const copied = [];
+  for (const file of descriptor.files) {
+    const sourcePath = await resolveRegularFile(source, file.path);
+    const bytes = await fs.readFile(sourcePath);
+    if (bytes.length !== file.bytes || crypto.createHash("sha256").update(bytes).digest("hex") !== file.sha256) {
+      throw new Error(`Mac ${engine} bundle 文件摘要或大小不匹配：${file.path}`);
+    }
+    const target = path.join(destination, ...file.path.split("/"));
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, bytes, { flag: "wx" });
+    copied.push({ path: file.path, bytes: file.bytes, sha256: file.sha256, role: file.role });
+  }
+  const descriptorBytes = await fs.readFile(descriptorPath);
+  await fs.writeFile(path.join(destination, "sequence-bundle.json"), descriptorBytes, { flag: "wx" });
+  copied.push({
+    path: "sequence-bundle.json",
+    bytes: descriptorBytes.length,
+    sha256: crypto.createHash("sha256").update(descriptorBytes).digest("hex"),
+    role: "descriptor"
+  });
+  return copied;
+}
+
+async function listRegularFiles(root) {
+  const results = [];
+  const visit = async (directory, prefix = "") => {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const fullPath = path.join(directory, entry.name);
+      const stat = await fs.lstat(fullPath);
+      if (stat.isSymbolicLink()) throw new Error("Mac 视频 bundle 不允许链接");
+      if (entry.isDirectory()) await visit(fullPath, relative);
+      else if (entry.isFile()) results.push(relative);
+      else throw new Error("Mac 视频 bundle 包含特殊文件");
+    }
+  };
+  await visit(root);
+  return results;
+}
+
+async function resolveRegularFile(root, relative) {
+  if (!isSafeBundleRelativePath(relative)) throw new Error("Mac 视频 bundle 路径无效");
+  let current = root;
+  for (const segment of relative.split("/")) {
+    current = path.join(current, segment);
+    const stat = await fs.lstat(current);
+    if (stat.isSymbolicLink()) throw new Error("Mac 视频 bundle 不允许链接");
+  }
+  const stat = await fs.stat(current);
+  if (!stat.isFile()) throw new Error("Mac 视频 bundle 文件类型无效");
+  return current;
+}
+
+function isSafeBundleRelativePath(relative) {
+  return (
+    typeof relative === "string" &&
+    relative.length > 0 &&
+    !relative.includes("\\") &&
+    !path.posix.isAbsolute(relative) &&
+    path.posix.normalize(relative) === relative &&
+    !relative.split("/").some((segment) => !segment || segment === "." || segment === ".." || segment.includes(":"))
+  );
+}
+
+export function assertMacOSWheelName(filename) {
+  if (!filename.toLowerCase().endsWith(".whl")) throw new Error(`Mac 视频 wheel 不是 wheel 文件：${filename}`);
+  const platformTag = filename.slice(0, -4).split("-").at(-1);
+  if (!platformTag || platformTag.startsWith("win_") || platformTag === "win32") {
+    throw new Error(`Mac 视频 wheelhouse 包含 Windows wheel：${filename}`);
+  }
+  if (platformTag === "any") return;
+  const tags = platformTag.split(".");
+  const macTags = tags.filter((tag) => /^macosx_\d+_\d+_(?:arm64|universal2)$/u.test(tag));
+  if (!macTags.length) throw new Error(`Mac 视频 wheel 缺少 arm64/universal2 平台标签：${filename}`);
+  for (const tag of macTags) {
+    const match = /^macosx_(\d+)_(\d+)_/u.exec(tag);
+    if (!match || Number(match[1]) > 14 || (Number(match[1]) === 14 && Number(match[2]) > 0)) {
+      throw new Error(`Mac 视频 wheel 要求高于最低支持 macOS 14：${filename}`);
+    }
+  }
+}
+
 export async function prepareVideoAiComponent({
   pythonExecutablePath,
   stagingDirectory,
@@ -126,11 +367,17 @@ export async function prepareVideoAiComponent({
   runCommand = execFileSync,
   assets = VIDEO_AI_MODEL_ASSETS
 }) {
-  if (!(process.platform === "win32" && process.arch === "x64")) {
-    throw new Error("视频去字幕能力包仅支持 Windows x64 构建环境（CUDA 推理目标）");
-  }
+  const isMacOS = process.platform === "darwin" && process.arch === "arm64";
+  const isWindows = process.platform === "win32" && process.arch === "x64";
+  if (!isMacOS && !isWindows) throw new Error("视频去字幕能力包仅支持 Windows x64 或 Apple Silicon 原生构建环境");
   if (!sequenceSupport)
     throw new Error("新版 Worker 需要完整时序运行时与新版本定义；旧 1.0.0 签名包请直接复用，不原位重建");
+  if (isMacOS) {
+    if (!wheelhouseDirectory) throw new Error("Mac 视频能力必须从经验证的离线 wheelhouse 制作");
+    if (!engineDirectories.sttn || !engineDirectories.propainter) {
+      throw new Error("Mac 视频能力必须包含已验收的 STTN 与 ProPainter bundle");
+    }
+  }
   const python = path.resolve(pythonExecutablePath);
   const stage = path.resolve(stagingDirectory);
   const version = runCommand(
@@ -148,7 +395,7 @@ export async function prepareVideoAiComponent({
   if (await pathExists(stage)) throw new Error("视频去字幕暂存目录已存在，拒绝覆盖");
 
   const lockText = await fs.readFile(lockFilePath, "utf8");
-  validateVideoAiCpuLock(lockText);
+  validateVideoAiCpuLock(lockText, isMacOS ? "darwin-arm64" : "win32-x64");
   await ensureVideoAiAssets({ assetCacheDirectory, assets, runCommand });
   const verifiedAssets = await verifyVideoAiAssets(assetCacheDirectory, assets);
 
@@ -161,6 +408,7 @@ export async function prepareVideoAiComponent({
     await Promise.all([fs.mkdir(wheelhouse), fs.mkdir(scripts)]);
     await Promise.all([
       fs.copyFile(SCRIPT_SOURCE, path.join(scripts, "video-ai-worker.py")),
+      fs.copyFile(DEVICE_POLICY_SOURCE, path.join(scripts, "video_ai_device.py")),
       fs.writeFile(path.join(stage, "requirements.lock"), lockText, { flag: "wx" })
     ]);
     if (sequenceSupport) {
@@ -168,14 +416,26 @@ export async function prepareVideoAiComponent({
         "video_ai_engine_assets.py",
         "video_ai_sequence.py",
         "video_ai_sttn.py",
-        "video_ai_propainter.py",
-        "video-ai-sequence-support.json"
+        "video_ai_propainter.py"
       ])
         await fs.copyFile(
           path.join(REPOSITORY_ROOT, "scripts", filename),
           path.join(scripts, filename),
           fsConstants.COPYFILE_EXCL
         );
+      if (isMacOS) {
+        await fs.copyFile(
+          MACOS_SUPPORT_SOURCE,
+          path.join(stage, ...MACOS_SUPPORT_RELATIVE.split("/")),
+          fsConstants.COPYFILE_EXCL
+        );
+      } else {
+        await fs.copyFile(
+          path.join(REPOSITORY_ROOT, "scripts", "video-ai-sequence-support.json"),
+          path.join(scripts, "video-ai-sequence-support.json"),
+          fsConstants.COPYFILE_EXCL
+        );
+      }
     }
     for (const asset of verifiedAssets) {
       const destination = path.join(stage, ...asset.relativePath.split("/"));
@@ -190,8 +450,10 @@ export async function prepareVideoAiComponent({
     for (const [tier, sourceDirectory] of Object.entries(engineDirectories)) {
       const relative = VIDEO_AI_ENGINE_DIRECTORIES[tier];
       if (!relative) throw new Error("未知引擎档位：" + tier);
-      const files = await stageEngineDirectory(sourceDirectory, path.join(stage, ...relative.split("/")));
-      provenance.engines[tier] = files;
+      const destination = path.join(stage, ...relative.split("/"));
+      provenance.engines[tier] = isMacOS
+        ? await copyMacSequenceBundle({ sourceDirectory, destinationDirectory: destination, engine: tier })
+        : await stageEngineDirectory(sourceDirectory, destination);
     }
     await fs.writeFile(path.join(stage, "PROVENANCE.json"), JSON.stringify(provenance, null, 2), { flag: "wx" });
 
@@ -225,17 +487,26 @@ export async function prepareVideoAiComponent({
     if (!wheels.length || wheels.some((entry) => !entry.isFile() || !entry.name.toLowerCase().endsWith(".whl"))) {
       throw new Error("视频去字幕离线包必须只包含通过哈希锁校验的 Python wheel");
     }
-    for (const entry of wheels) assertWorkerWheelPython(entry.name);
+    for (const entry of wheels) {
+      assertWorkerWheelPython(entry.name);
+      if (isMacOS) assertMacOSWheelName(entry.name);
+    }
     const modelBytes = verifiedAssets.reduce((total, asset) => total + asset.bytes, 0);
     let definitionOutput;
     if (sequenceSupport) {
       const definition = JSON.parse(
         await fs.readFile(
-          path.join(REPOSITORY_ROOT, "scripts", "component-definitions", "video-ai-sequence.json"),
+          isMacOS
+            ? MACOS_DEFINITION_SOURCE
+            : path.join(REPOSITORY_ROOT, "scripts", "component-definitions", "video-ai-sequence.json"),
           "utf8"
         )
       );
-      if (definition.id !== "video-ai" || definition.version === "1.0.0-py312-cpu1")
+      if (
+        definition.id !== "video-ai" ||
+        definition.version === "1.0.0-py312-cpu1" ||
+        (isMacOS && (definition.platform !== "darwin-arm64" || !definition.version.includes("darwin-arm64")))
+      )
         throw new Error("时序基础包必须使用新的能力版本");
       definitionOutput = path.resolve(
         generatedDefinitionPath ?? path.join(path.dirname(stage), "video-ai-sequence-definition.generated.json")
@@ -244,6 +515,7 @@ export async function prepareVideoAiComponent({
     }
     return {
       stagingDirectory: stage,
+      platform: isMacOS ? "darwin-arm64" : "win32-x64",
       ...(definitionOutput ? { generatedDefinitionPath: definitionOutput } : {}),
       wheelCount: wheels.length,
       modelBytes,
@@ -320,36 +592,40 @@ function pathExists(candidate) {
 }
 
 function parseArguments(argv) {
+  const args = stripPnpmSeparator(argv);
   const values = new Map();
   const allowed = [
     "python",
     "stage",
     "asset-cache",
     "wheelhouse",
+    "lock",
     "sttn-assets",
     "propainter-assets",
     "sequence-support",
     "definition-output"
   ];
-  for (let index = 0; index < argv.length; index += 2) {
-    const key = argv[index];
-    const value = argv[index + 1];
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index];
+    const value = args[index + 1];
     if (!key?.startsWith("--") || !value || values.has(key.slice(2))) throw new Error("命令行参数无效");
     values.set(key.slice(2), value);
   }
   const required = ["python", "stage"];
+  if (process.platform === "darwin") required.push("wheelhouse", "sttn-assets", "propainter-assets");
   if (values.has("sequence-support") && values.get("sequence-support") !== "true")
     throw new Error("--sequence-support 只接受 true");
   if (required.some((key) => !values.has(key)) || [...values.keys()].some((key) => !allowed.includes(key))) {
     throw new Error(
-      "用法：pnpm components:prepare-video-ai -- --python <Python 3.12 python.exe> --stage <新暂存目录> " +
-        "[--asset-cache <模型缓存目录>] [--wheelhouse <已有离线wheel目录>] [--sttn-assets <STTN 引擎目录>] [--propainter-assets <ProPainter 引擎目录>] " +
-        "[--sequence-support true] [--definition-output <新版本定义输出>]"
+      "用法：pnpm components:prepare-video-ai -- --python <Python 3.12 路径> --stage <新暂存目录> " +
+        "[--lock <平台专用哈希锁>] [--asset-cache <模型缓存目录>] [--wheelhouse <已校验离线wheel目录>] [--sttn-assets <STTN bundle>] [--propainter-assets <ProPainter bundle>] " +
+        "[--sequence-support true] [--definition-output <新版本定义输出>]。macOS 还必须提供锁定的 MPS bundle 与 wheelhouse。"
     );
   }
   return {
     pythonExecutablePath: values.get("python"),
     stagingDirectory: values.get("stage"),
+    ...(values.has("lock") ? { lockFilePath: values.get("lock") } : {}),
     ...(values.has("wheelhouse") ? { wheelhouseDirectory: values.get("wheelhouse") } : {}),
     sequenceSupport: true,
     ...(values.has("definition-output") ? { generatedDefinitionPath: values.get("definition-output") } : {}),
@@ -365,7 +641,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(publicEnt
   try {
     const result = await prepareVideoAiComponent(parseArguments(process.argv.slice(2)));
     console.log("视频去字幕暂存目录已准备：" + result.stagingDirectory);
-    console.log("wheelhouse：" + result.wheelCount + " 个经过 CPU 锁文件摘要校验的 wheel");
+    console.log("wheelhouse：" + result.wheelCount + " 个经过哈希锁和平台标签校验的 wheel");
     console.log("固定模型：" + result.modelBytes + " bytes");
     if (result.generatedDefinitionPath) console.log("新版本定义：" + result.generatedDefinitionPath);
     console.log(

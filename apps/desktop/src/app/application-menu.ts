@@ -16,7 +16,10 @@ export function configureApplicationMenu() {
             { role: "selectAll" }
           ]
         },
-        { label: "Window", submenu: [{ role: "minimize" }, { role: "zoom" }, { type: "separator" }, { role: "front" }] }
+        {
+          label: "Window",
+          submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "close" }, { type: "separator" }, { role: "front" }]
+        }
       ])
     );
   } else {
