@@ -1,4 +1,4 @@
-/** Spreadsheet endpoints retain existing LAN administrator/CSRF hooks and never write the uploaded workbook. */
+/** Spreadsheet endpoints never write the uploaded workbook. */
 import path from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { Value } from "@sinclair/typebox/value";

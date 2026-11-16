@@ -38,10 +38,6 @@ export function createLanAccessController(config: AppConfig) {
   }
 
   function can(request: FastifyRequest, action: LanAccessAction) {
-    // In LAN deployment the global administrator hook has already authorized
-    // every management route before this controller runs. Avoid requiring a
-    // second LAN PIN while keeping guest modes limited to transfer operations.
-    if (action === "manage" && config.deploymentMode === "lan") return true;
     if (!config.lanTransferPin || isAuthenticated(request)) return true;
     if (action === "manage") return false;
     if (config.lanTransferGuestMode === "full") return true;

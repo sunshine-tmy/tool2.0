@@ -1,4 +1,4 @@
-/** 中性归档 JSON 契约复用同一存储与任务服务；LAN 管理权限、CSRF、限流由全局安全层统一执行。 */
+/** 中性归档 JSON 契约复用同一存储与任务服务；来源检查和限流由全局安全层执行。 */
 import type { FastifyInstance } from "fastify";
 import { Value } from "@sinclair/typebox/value";
 import {

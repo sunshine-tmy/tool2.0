@@ -1,7 +1,7 @@
 /**
  * 中文模块说明：测试 apps/web/src/shared/http/http.test.ts 中的稳定行为、边界条件和回归场景
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Type } from "@sinclair/typebox";
 import {
   ApiRequestError,
@@ -9,11 +9,8 @@ import {
   describeApiError,
   formatApiError,
   normalizeApiError,
-  setAdminCsrfToken,
   withApiError
 } from "./http";
-
-afterEach(() => setAdminCsrfToken(undefined));
 
 describe("api error wrapper", () => {
   it("returns successful results unchanged", async () => {
@@ -54,27 +51,6 @@ describe("api error wrapper", () => {
     expect(error).toBeInstanceOf(ApiRequestError);
     expect(error.message).toBe("请求失败");
     expect(error.code).toBe("REQUEST_FAILED");
-  });
-
-  it("adds the administrator CSRF token only to state-changing requests", async () => {
-    // GET 不携带 CSRF，写请求必须携带当前管理员会话 token，避免回归为全局注入或漏注入。
-    const instance = {
-      get: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null, requestId: "req-get" } }),
-      post: vi.fn().mockResolvedValue({ data: { success: true, message: "ok", data: null, requestId: "req-post" } })
-    };
-    const client = createHttpClient(instance as never);
-    setAdminCsrfToken("csrf-token");
-    const emptySchema = Type.Null();
-
-    await client.get("/health", emptySchema);
-    await client.post("/maintenance/cleanup", emptySchema, { ids: [] });
-
-    expect(instance.get).toHaveBeenCalledWith("/health", undefined);
-    expect(instance.post).toHaveBeenCalledWith(
-      "/maintenance/cleanup",
-      { ids: [] },
-      expect.objectContaining({ headers: expect.objectContaining({ "x-csrf-token": "csrf-token" }) })
-    );
   });
 
   it("fetches a download blob and preserves its content disposition", async () => {

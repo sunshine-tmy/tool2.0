@@ -391,7 +391,6 @@ describe("多媒体归档 API 与兼容性", () => {
   });
   it("LAN 写操作要求管理员会话及精确 Origin/CSRF，不为新路由放开访客权限", async () => {
     config.deploymentMode = "lan";
-    config.adminPin = "2468";
     config.corsOrigins = ["http://localhost:5173"];
     const app = await appWith();
     const boundary = "----archive-guest-frame";

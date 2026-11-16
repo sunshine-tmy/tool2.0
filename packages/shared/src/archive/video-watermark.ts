@@ -82,12 +82,13 @@ export const defaultArchiveWatermarkSettings = (): ArchiveWatermarkSettings => (
   startSeconds: 0,
   endSeconds: null,
   motion: {
-    type: "fixed",
+    type: "bounce",
     from: { x: 0.97, y: 0.03 },
     to: { x: 0.03, y: 0.97 },
-    periodSeconds: 10,
-    directionX: -1,
+    periodSeconds: 40,
+    directionX: 1,
     directionY: 1,
+    bounceStyle: "polygon",
     keyframes: []
   }
 });

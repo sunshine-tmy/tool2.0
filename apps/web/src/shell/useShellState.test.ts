@@ -28,11 +28,7 @@ vi.mock("../shared/http/http", () => ({
   formatApiError: () => "会话失败",
   isApiErrorCancelled: () => false
 }));
-vi.mock("../shared/http/admin-session", () => ({
-  restoreAdminSession: mocks.restore,
-  authenticateAdmin: mocks.authenticate,
-  signOutAdmin: mocks.signOut
-}));
+
 vi.mock("../shared/http/diagnostics", () => ({
   diagnosticConnection: ref("online"),
   localDiagnosticsAvailable: true,
@@ -110,28 +106,6 @@ describe("shell state ownership", () => {
     wrapper.unmount();
     await vi.advanceTimersByTimeAsync(30000);
     expect(mocks.snapshot).toHaveBeenCalledTimes(2);
-  });
-  it("restores LAN admin only once, validates explicit login and preserves sign-out errors", async () => {
-    const { state } = setup(useShellServices);
-    state.openServiceDrawer();
-    await flushPromises();
-    await state.loadServiceStatus();
-    expect(mocks.restore).toHaveBeenCalledOnce();
-    expect(state.adminAuthenticated.value).toBe(true);
-    expect(state.apiState.value).toBe("online");
-    state.adminPin.value = "12";
-    await state.loginAdmin();
-    expect(mocks.authenticate).not.toHaveBeenCalled();
-    state.adminPin.value = "1234";
-    await state.loginAdmin();
-    expect(mocks.authenticate).toHaveBeenCalledWith("1234");
-    expect(state.adminPin.value).toBe("");
-    mocks.signOut.mockRejectedValueOnce(new Error("offline"));
-    await state.logoutAdmin();
-    expect(state.adminError.value).toBe("会话失败");
-    expect(state.adminAuthenticated.value).toBe(true);
-    await state.logoutAdmin();
-    expect(state.adminAuthenticated.value).toBe(false);
   });
   it("keeps service errors local and maps shared diagnostic states without suppressing page use", async () => {
     const { state } = setup(useShellServices);

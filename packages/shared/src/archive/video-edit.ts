@@ -3,6 +3,15 @@ import { Type, type Static } from "@sinclair/typebox";
 import { ArchiveWatermarkInputSchema, ArchiveWatermarkSettingsSchema } from "./video-watermark";
 const strict = { additionalProperties: false } as const;
 const Id = Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" });
+/** 新图集至少播放 15 秒，且每一轮都完整播放所有图片。 */
+export function archiveSlideshowCycles(imageCount: number, secondsPerImage: number) {
+  if (imageCount <= 0 || !Number.isFinite(secondsPerImage) || secondsPerImage <= 0) return 0;
+  return Math.max(1, Math.ceil(15 / (imageCount * secondsPerImage)));
+}
+export function archiveSlideshowDuration(imageCount: number, secondsPerImage: number) {
+  const cycles = archiveSlideshowCycles(imageCount, secondsPerImage);
+  return cycles ? imageCount * secondsPerImage * cycles : 0;
+}
 export const ArchiveEditFileSchema = Type.Object(
   {
     fileName: Type.String({ minLength: 1, maxLength: 255 }),

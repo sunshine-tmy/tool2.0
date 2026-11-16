@@ -117,7 +117,9 @@
             {{ frameMessage || frameHint }}
           </small>
         </div>
-        <a :href="mediaUrl(media.downloadUrl)">下载当前媒体</a>
+        <n-button tag="a" :href="mediaUrl(media.downloadUrl)" size="small" secondary>
+          <template #icon><Download :size="15" /></template>下载当前媒体
+        </n-button>
         <n-button v-if="isVideoMedia(media)" size="small" @click="openAudioEditor">编辑配乐</n-button>
         <n-button v-if="isVideoMedia(media)" size="small" @click="openWatermarkEditor">{{
           media.audioEdit?.watermark ? "编辑水印" : "添加水印"
@@ -140,15 +142,24 @@
       <small v-if="frameMessage && !isVideoMedia(media)" class="frame-feedback" role="status">{{ frameMessage }}</small>
     </template>
     <section v-for="audio in soundtracks" :key="audio.id" class="archive-soundtrack" aria-label="原作品配乐">
-      <strong>{{ audio.title || "原作品配乐" }}</strong>
-      <audio
+      <div class="soundtrack-heading">
+        <span class="soundtrack-icon"><Music2 :size="17" aria-hidden="true" /></span>
+        <div class="soundtrack-title">
+          <span>原作品配乐</span>
+          <strong :title="audio.title || '原作品配乐'">{{ audio.title || "原作品配乐" }}</strong>
+        </div>
+        <n-button tag="a" :href="mediaUrl(audio.downloadUrl)" size="small" secondary aria-label="下载原配乐">
+          <template #icon><Download :size="15" /></template>下载
+        </n-button>
+      </div>
+      <ArchiveAudioPreview
         ref="soundtrackPlayers"
-        :src="mediaUrl(audio.previewUrl)"
-        controls
-        preload="none"
-        @play="onSoundtrackPlay"
+        :url="mediaUrl(audio.previewUrl)"
+        :title="audio.title || '原作品配乐'"
+        :duration="(audio.durationMs || 0) / 1000"
+        :bytes="audio.size"
+        @play="onSoundtrackPlay(audio.id)"
       />
-      <a :href="mediaUrl(audio.downloadUrl)">下载原配乐</a>
     </section>
     <p v-for="warning in showWarnings ? item.warnings : []" :key="warning" class="frame-feedback" role="status">
       {{ warning }}
@@ -166,13 +177,14 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onScopeDispose, ref, watch } from "vue";
 import { NButton, NImage } from "naive-ui";
-import { Camera, ChevronLeft, ChevronRight, Play, Trash2 } from "lucide-vue-next";
+import { Camera, ChevronLeft, ChevronRight, Download, Music2, Play, Trash2 } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
 import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import { contentArchiveApi } from "./content-api";
+import { ArchiveAudioPreview } from "../audio-extract/integrations/archive";
 
 const props = withDefaults(
   defineProps<{
@@ -221,13 +233,15 @@ const confirm = useConfirmDialog();
 let itemGeneration = 0;
 const media = computed(() => visualMedia.value[selected.value] ?? visualMedia.value[0]);
 const videoElement = ref<HTMLVideoElement>();
-const soundtrackPlayers = ref<HTMLAudioElement[]>([]);
-function pauseSoundtracks(except?: HTMLAudioElement) {
-  for (const player of soundtrackPlayers.value) if (player !== except) player.pause();
+const soundtrackPlayers = ref<Array<InstanceType<typeof ArchiveAudioPreview>>>([]);
+function pauseSoundtracks(exceptId?: string) {
+  soundtrackPlayers.value.forEach((player, index) => {
+    if (soundtracks.value[index]?.id !== exceptId) player.pause();
+  });
 }
-function onSoundtrackPlay(event: Event) {
+function onSoundtrackPlay(id: string) {
   videoElement.value?.pause();
-  pauseSoundtracks(event.currentTarget as HTMLAudioElement);
+  pauseSoundtracks(id);
 }
 onScopeDispose(() => pauseSoundtracks());
 const videoPaused = ref(true);
@@ -501,24 +515,79 @@ function changeMedia(direction: -1 | 1) {
 }
 .archive-soundtrack {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: min(100%, 520px);
   min-width: 0;
-  padding: 12px;
+  padding: 14px;
   box-sizing: border-box;
-  border: 1px solid var(--border-color, #dce4f0);
-  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-subtle);
 }
-.archive-soundtrack strong {
-  overflow-wrap: anywhere;
+.is-compact .archive-soundtrack {
+  width: min(100%, 480px);
 }
-.archive-soundtrack audio {
-  grid-column: 1 / -1;
-  grid-row: 2;
+.soundtrack-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.soundtrack-icon {
+  display: grid;
+  flex: 0 0 36px;
+  height: 36px;
+  place-items: center;
+  color: var(--color-primary-600);
+  border-radius: 9px;
+  background: var(--color-primary-100, #f0edff);
+}
+.soundtrack-title {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.soundtrack-title span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.soundtrack-title strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.archive-soundtrack :deep(.audio-preview) {
   width: 100%;
   min-width: 0;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.archive-soundtrack :deep(.library-item-wave-toolbar) {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+}
+.archive-soundtrack :deep(.library-item-wave-settings),
+.archive-soundtrack :deep(.library-item-wave-transport) {
+  grid-column: auto;
+}
+.archive-soundtrack :deep(.library-item-wave-settings) {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.archive-soundtrack :deep(.library-item-wave-volume) {
+  flex: 1 1 96px;
+  max-width: 128px;
+  min-width: 64px;
+  gap: 4px;
+}
+.archive-soundtrack :deep(.library-item-wave-rate) {
+  flex: 0 0 62px;
+  width: 62px;
 }
 .media-stage {
   --media-padding: 12px;
@@ -705,8 +774,8 @@ function changeMedia(direction: -1 | 1) {
   display: flex;
   width: min(100%, 520px);
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .frame-feedback {
@@ -720,18 +789,11 @@ function changeMedia(direction: -1 | 1) {
   display: grid;
   justify-items: start;
   gap: 5px;
+  margin-right: auto;
 }
 .frame-capture-actions small {
   color: #758096;
   line-height: 1.4;
-}
-.media-actions > a {
-  flex: 0 0 auto;
-  margin-top: 5px;
-  margin-left: auto;
-  text-align: right;
-  color: var(--color-primary-600);
-  text-decoration: none;
 }
 .media-empty {
   display: grid;
@@ -753,6 +815,16 @@ function changeMedia(direction: -1 | 1) {
     width: min(100%, 400px);
     height: auto;
   }
+  .media-thumbs,
+  .media-actions,
+  .archive-soundtrack {
+    width: min(100%, 420px);
+  }
+  .is-compact .media-thumbs,
+  .is-compact .media-actions,
+  .is-compact .archive-soundtrack {
+    width: min(100%, 400px);
+  }
   .media-nav {
     width: 36px;
     height: 36px;
@@ -762,6 +834,17 @@ function changeMedia(direction: -1 | 1) {
   }
   .media-nav-next {
     right: 8px;
+  }
+}
+@media (max-width: 360px) {
+  .archive-soundtrack :deep(.library-item-wave-toolbar) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .archive-soundtrack :deep(.library-item-wave-settings) {
+    grid-column: 1 / -1;
+  }
+  .archive-soundtrack :deep(.library-item-wave-transport) {
+    justify-content: flex-start;
   }
 }
 </style>

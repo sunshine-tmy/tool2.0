@@ -1,5 +1,7 @@
 /** Domain assembly keeps the original service ownership and Fastify registration/close order. */
 import type { FastifyInstance } from "fastify";
+import fsp from "node:fs/promises";
+import { nanoid } from "nanoid";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { FileMetadataRepository } from "../../database/file-metadata";
@@ -29,6 +31,7 @@ import { ArchiveVideoEditService } from "./video-edit/service";
 import { registerVideoEditRoutes } from "./video-edit/routes";
 import { VideoEditError, runMediaProcess } from "./video-edit/renderer";
 import { LocalVideoArchiveUploads, registerLocalVideoUploadRoutes } from "./core/local-upload";
+import { ArchiveDownloadGateway } from "./core/download-gateway";
 
 export async function registerXhsArchiveRoutes(options: {
   app: FastifyInstance;
@@ -142,7 +145,33 @@ export async function registerXhsArchiveRoutes(options: {
     { onError: () => app.log.error("TIKTOK_PROFILE_STORAGE_FAILED") }
   );
   profiles.initialize();
-  registerTikTokProfileRoutes(app, profiles);
+  const soundtrackDownload = new ArchiveDownloadGateway(
+    config,
+    remoteFetch,
+    options.tiktokRuntime ? { tiktok: options.tiktokRuntime.remoteFetch } : undefined
+  );
+  registerTikTokProfileRoutes(app, profiles, async (work) => {
+    const item = await store.content.findBySource("tiktok", work.id);
+    if (!item || item.type !== "image") return "skipped";
+    if (item.media.some((media) => media.kind === "audio")) return "exists";
+    if (!options.tiktokRuntime) throw new ArchiveTaskError("TIKTOK_RUNTIME_STOPPED", "TikTok 获取服务不可用", 503);
+    const signal = AbortSignal.timeout(120_000);
+    const source = await options.tiktokRuntime.extract(work.url, signal);
+    if (source.platform !== "tiktok" || source.contentId !== item.contentId || source.type !== "image")
+      throw new ArchiveTaskError("TIKTOK_IDENTITY_MISMATCH", "作品信息已变更，请重新检查", 409);
+    const audio = source.media.find((media) => media.kind === "audio");
+    if (!audio) return "unavailable";
+    const staging = await store.content.createStaging(nanoid(12));
+    try {
+      const media = await soundtrackDownload.download(audio, "tiktok", staging, item.id, signal);
+      signal.throwIfAborted();
+      return (await store.content.appendMissingSoundtrack(item.id, item.contentId, media, staging))
+        ? "added"
+        : "exists";
+    } finally {
+      await fsp.rm(staging, { recursive: true, force: true });
+    }
+  });
   registerArchiveGroupRoutes(app, store.content.groups);
   registerContentArchiveRoutes(app, store.content, service.content);
   registerArchiveTranslationRoutes(app, store.content, translation, "media-archive");

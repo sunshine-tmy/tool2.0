@@ -5,7 +5,7 @@
 一个本地优先、免账号登录的电商素材处理工作台，提供 Windows 桌面安装版、Apple Silicon macOS 内部测试包和 Web/开发版。项目以 pnpm workspace 管理 Vue 前端、Fastify API、共享 TypeScript 契约和可选 Python AI Worker，适合个人电脑或可信局域网部署。
 
 > [!WARNING]
-> 本项目包含文件上传、下载、删除和高计算量 AI 接口。`local` 模式默认只监听 `127.0.0.1`；`lan` 模式必须配置 `ADMIN_PIN`，管理写操作使用 HttpOnly 会话 Cookie、CSRF Header 和精确 Origin 校验，访客传输权限仍由 guest mode 控制。不要把 API 或 AI Worker 直接暴露到公网。
+> LAN 模式向可信局域网开放业务操作，访问者可以修改或删除数据。不要把 API 或 AI Worker 直接暴露到公网。
 
 ## 目录
 
@@ -432,8 +432,7 @@ Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windo
 | --------------------------------------- | ----------------------- | ---------------------------------------------------- |
 | `API_HOST`                              | `127.0.0.1`             | API 监听地址；仅在明确需要直连 API 时改为 `0.0.0.0`  |
 | `API_PORT`                              | `3100`                  | API 端口，启动时校验范围                             |
-| `DEPLOYMENT_MODE`                       | `local`                 | `local` 仅本机；`lan` 面向可信局域网并强制管理员 PIN |
-| `ADMIN_PIN`                             | 空                      | `lan` 模式必填；用于建立浏览器管理员会话             |
+| `DEPLOYMENT_MODE`                       | `local`                 | `local` 仅本机；`lan` 面向可信局域网                 |
 | `VITE_API_BASE`                         | 空                      | 空值使用同源 `/api`；分离部署时填写完整 API 地址     |
 | `VITE_API_PROXY_TARGET`                 | `http://127.0.0.1:3100` | Vite 开发/预览代理目标                               |
 | `CORS_ORIGINS`                          | localhost/127.0.0.1     | 允许直连 API 的精确浏览器 Origin，逗号分隔           |
@@ -473,7 +472,7 @@ Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windo
 
 完整变量及注释见 [.env.example](./.env.example)。所有整数配置都会在 API 启动时校验，非法值会直接终止启动，避免带错误配置运行。
 
-局域网部署必须设置 `DEPLOYMENT_MODE=lan` 和 `ADMIN_PIN`，否则 API 拒绝启动。`LAN_TRANSFER_PIN` 与 `LAN_TRANSFER_GUEST_MODE` 只控制访客文件传输能力；删除、清理、AI、翻译、配音、归档和配置写操作始终要求管理员会话。
+局域网部署使用 `DEPLOYMENT_MODE=lan`。业务写操作无需管理员会话；`LAN_TRANSFER_PIN` 与 `LAN_TRANSFER_GUEST_MODE` 独立控制文件传输权限。
 
 ### 开发版局域网与自定义端口配置
 
@@ -481,20 +480,19 @@ Web/开发版复制 `.env.example` 为 `.env`。下表列出常用变量；Windo
 
 ```dotenv
 DEPLOYMENT_MODE=lan
-ADMIN_PIN=请替换为自己的高熵PIN
 API_HOST=127.0.0.1
 VITE_DEV_HOST=0.0.0.0
 CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173,http://192.168.1.100:5173
 LAN_TRANSFER_WEB_PORT=5173
 ```
 
-使用 `start.bat` 时，启动器会根据 `lan` 模式让前端监听局域网；API 和 Worker 可以继续只监听回环，由前端代理转发。使用纯命令行时，分别在两个终端执行 `pnpm dev:api` 和 `pnpm --filter frontend dev:lan`。其他设备访问 `http://<主机局域网IP>:5173`，在页面建立管理员会话后才能使用受保护的写操作；IP 改变时同步更新精确的 `CORS_ORIGINS`。Windows 如提示网络访问权限，仅允许实际需要的可信网络，不关闭防火墙或把 Worker 端口对外开放。
+使用 `start.bat` 时，启动器会根据 `lan` 模式让前端监听局域网；API 和 Worker 可以继续只监听回环，由前端代理转发。使用纯命令行时，分别在两个终端执行 `pnpm dev:api` 和 `pnpm --filter frontend dev:lan`。其他设备访问 `http://<主机局域网IP>:5173`，可直接使用业务操作；IP 改变时同步更新精确的 `CORS_ORIGINS`。Windows 如提示网络访问权限，仅允许实际需要的可信网络，不关闭防火墙或把 Worker 端口对外开放。
 
-`VITE_DEV_HOST` 可显式覆盖前端监听地址，启动器和 `pnpm dev` 均会读取；留空时启动器沿用部署模式的默认地址。设为 `127.0.0.1` 时仅本机可访问，局域网共享使用 `0.0.0.0` 并配合上述 LAN 管理员会话及精确来源配置。
+`VITE_DEV_HOST` 可显式覆盖前端监听地址，启动器和 `pnpm dev` 均会读取；留空时启动器沿用部署模式的默认地址。设为 `127.0.0.1` 时仅本机可访问，局域网共享使用 `0.0.0.0` 并配置精确来源。
 
 若 API 改为其他端口，例如 `API_PORT=3200`，需把示例配置中已有的 `VITE_API_PROXY_TARGET` 同步改为 `http://127.0.0.1:3200`，然后重启前后端；不要只改其中一个。自定义前端端口使用 `VITE_DEV_PORT`，同时调整 `CORS_ORIGINS` 与 `LAN_TRANSFER_WEB_PORT`。通常保持 `VITE_API_BASE` 为空，避免局域网浏览器把 `127.0.0.1` 误当作服务主机。
 
-诊断详情和深度检查限本机使用，请在服务主机通过 `http://127.0.0.1:5173/settings/diagnostics` 打开；从局域网 IP 访问被拒绝不是缺少 Python 或管理员 PIN。
+诊断详情和深度检查限本机使用，请在服务主机通过 `http://127.0.0.1:5173/settings/diagnostics` 打开；从局域网 IP 访问被拒绝不是缺少 Python。
 
 局域网传输仅保留浏览器原生的图片、视频和 PDF 预览。Word、Excel、PowerPoint、音频、文本和其他文件仍可上传、筛选与下载，但不再启动额外转换服务。
 
@@ -600,7 +598,7 @@ pnpm dev:ai
 | 直播音频库     | 上传音频，将一条生成结果加入音频库，测试分组、单独/队列播放及下载 | 两种来源均可保存和播放；测试前确认音量适当、没有其他播放冲突       |
 | 小红书归档     | 获取一条有权保存的作品，按需完成本人登录，生成英文并下载 ZIP      | 中文、媒体和英文均可查看；仅中文成功不算翻译通过                   |
 | 抖音归档       | 获取一条匿名可访问的公开作品，预览媒体并对视频暂停截帧、导出 ZIP  | 媒体、截帧和导出可用；图文作品不要求视频截帧                       |
-| 局域网文件传输 | 在另一台可信设备打开共享地址，上传并下载测试文件                  | 跨设备传输成功、下载内容正确；源码 LAN 模式按权限建立管理员会话    |
+| 局域网文件传输 | 在另一台可信设备打开共享地址，上传并下载测试文件                  | 跨设备传输成功、下载内容正确；使用可信局域网    |
 | 重启后的持久化 | 正常停止并重新启动当前运行方式，查看测试音频库与存档              | 已保存内容仍存在，已安装环境可继续使用，不重复执行全量安装         |
 
 局域网共享地址：桌面版从顶部网络入口或设置中复制；源码版按[局域网配置](#开发版局域网与自定义端口配置)设置并启动。没有第二台设备时只能将跨设备项标记为“未验证”，不要记为通过。只测试本机上传也不能验证路由器隔离或防火墙是否放行。

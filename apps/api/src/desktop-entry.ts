@@ -29,7 +29,7 @@ try {
   parentPort.postMessage({ type: "stage", stage: "config" });
   const layout = readRuntimeLayout(process.env.TOOLBOX_RUNTIME_LAYOUT);
   Object.assign(process.env, workerSessionEnvironment(await createDesktopWorkerSession()));
-  // 桌面内部服务只监听 loopback；局域网由受限网关提供，不继承开发部署的管理员会话模式。
+  // 桌面内部服务只监听 loopback；局域网由受限网关提供。
   const config = getConfig({
     layout,
     dotenvPath: false,

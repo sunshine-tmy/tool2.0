@@ -1,6 +1,7 @@
 /** 批量图文编辑复用单条视频编辑协议；同一组原图优先更新已有图集视频。 */
 import {
   defaultArchiveAudioSettings,
+  archiveSlideshowDuration,
   watermarkTimingError,
   type ArchiveVideoEditInput,
   type ArchiveWatermarkSettings,
@@ -46,7 +47,9 @@ export function imageBatchInput(
   mode: "save" | "preview" = "save"
 ) {
   const { images, media, existing } = imageBatchTarget(item);
-  const duration = existing ? (media.durationMs ?? 0) / 1000 : images.length * recipe.secondsPerImage;
+  const duration = existing
+    ? (media.durationMs ?? 0) / 1000
+    : archiveSlideshowDuration(images.length, recipe.secondsPerImage);
   const input: ArchiveVideoEditInput = {
     mode,
     ...(mode === "preview" ? { previewFullLength: true, previewStartSeconds: 0 } : {}),

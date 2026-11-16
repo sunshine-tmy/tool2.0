@@ -6,7 +6,7 @@
     preset="card"
     title="编辑英文翻译"
     content-scrollable
-    style="width: min(680px, calc(100vw - 32px)); max-height: min(820px, calc(100dvh - 32px))"
+    style="width: min(680px, calc(100vw - 32px))"
     @update:show="onShowChange"
   >
     <n-form label-placement="top">

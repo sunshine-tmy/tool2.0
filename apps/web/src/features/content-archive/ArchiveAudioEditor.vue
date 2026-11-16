@@ -22,6 +22,7 @@
       <div class="editor-layout">
         <section class="editor-preview">
           <ArchiveWatermarkPreview
+            :class="{ 'video-stage': !isImage || previewIsDraft }"
             :video="video"
             :active="
               panel === 'watermark' &&
@@ -78,7 +79,7 @@
                 ]"
             /></label>
           </div>
-          <p v-if="isImage" class="editor-hint">按原图顺序生成附加视频，原图不会被替换；生成后可在视频中继续换配乐。</p>
+          <p v-if="isImage" class="editor-hint">按原图顺序生成附加视频，不足 15 秒时循环至完整一轮结束；原图不会被替换。</p>
           <p>
             {{
               previewIsDraft
@@ -301,6 +302,7 @@ import {
 } from "naive-ui";
 import {
   defaultArchiveAudioSettings,
+  archiveSlideshowDuration,
   watermarkTimingError,
   type ArchiveVideoEditInput,
   type ArchiveVideoEditJob,
@@ -360,8 +362,10 @@ const secondsPerImage = ref(3),
   aspect = ref<"portrait" | "landscape" | "square">("portrait");
 const editDuration = computed(() =>
   isImage.value
-    ? props.item.media.filter((entry) => entry.kind === "image" && !entry.frameSourceMediaId).length *
-      secondsPerImage.value
+    ? archiveSlideshowDuration(
+        props.item.media.filter((entry) => entry.kind === "image" && !entry.frameSourceMediaId).length,
+        secondsPerImage.value
+      )
     : videoDuration.value
 );
 const settings = reactive(defaultArchiveAudioSettings());
@@ -798,8 +802,6 @@ defineExpose({ canLeave, close });
 <style scoped>
 .audio-editor {
   width: min(1120px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  overflow-y: auto;
 }
 .audio-editor.is-embedded {
   width: 100%;
@@ -807,7 +809,7 @@ defineExpose({ canLeave, close });
 }
 .editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 26vw, 560px);
   gap: 24px;
   margin: 16px 0;
 }
@@ -815,12 +817,19 @@ defineExpose({ canLeave, close });
 .editor-controls {
   min-width: 0;
 }
+.editor-preview :deep(.video-stage) {
+  background: #101418;
+  border-radius: 10px;
+}
 .editor-preview :deep(video) {
-  width: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
   max-height: 56vh;
   background: #101418;
   border-radius: 10px;
   display: block;
+  margin: 0 auto;
   object-fit: contain;
 }
 .slideshow-image {

@@ -53,8 +53,8 @@
           :style="shellIconButtonStyle"
           quaternary
           circle
-          aria-label="本地服务与管理员会话"
-          title="本地服务与管理员会话"
+          aria-label="本地服务状态"
+          title="本地服务状态"
           @click="openServiceDrawer"
           ><template #icon><ServerCog :size="18" /></template
         ></n-button>
@@ -199,34 +199,6 @@
             </p>
           </div>
         </div>
-        <section v-if="deploymentMode === 'lan'" class="admin-session-section">
-          <div class="admin-session-heading">
-            <div>
-              <strong>局域网管理员</strong>
-              <small>{{
-                adminAuthenticated ? "当前浏览器已获得管理写权限" : "删除、AI、翻译和配置操作需要管理员 PIN"
-              }}</small>
-            </div>
-            <n-button v-if="adminAuthenticated" text size="small" :loading="adminLoading" @click="logoutAdmin">
-              退出
-            </n-button>
-          </div>
-          <div v-if="!adminAuthenticated" class="admin-session-form">
-            <n-input
-              v-model:value="adminPin"
-              type="password"
-              show-password-on="mousedown"
-              autocomplete="current-password"
-              placeholder="输入 ADMIN_PIN"
-              :disabled="adminLoading"
-              @keyup.enter="loginAdmin"
-            />
-            <n-button type="primary" :loading="adminLoading" :disabled="adminPin.length < 4" @click="loginAdmin">
-              解锁管理操作
-            </n-button>
-          </div>
-          <n-alert v-if="adminError" type="error" :bordered="false">{{ adminError }}</n-alert>
-        </section>
         <div class="service-list">
           <div v-for="tool in tools" :key="tool.id" class="service-row">
             <span class="service-row-icon"><component :is="iconByTool[tool.id] ?? Wrench" :size="17" /></span>
@@ -258,7 +230,7 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, re
 import { useRoute } from "vue-router";
 import brandIcon from "../assets/ui-v2/brand.webp";
 import { toolForPath, toolPresentationKey, workbenchTools } from "../shared/ui/tool/catalog";
-import { NAlert, NButton, NDrawer, NDrawerContent, NInput } from "naive-ui";
+import { NButton, NDrawer, NDrawerContent } from "naive-ui";
 import { ChevronRight, ArrowLeft, Menu, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
 import ModuleSidebar from "./ModuleSidebar.vue";
 import { diagnosticConnection, localDiagnosticsAvailable } from "../shared/http/diagnostics";
@@ -307,15 +279,8 @@ const {
   serviceDrawerOpen,
   apiState,
   serviceCheckedAt,
-  deploymentMode,
-  adminAuthenticated,
-  adminPin,
-  adminLoading,
-  adminError,
   openServiceDrawer,
   loadServiceStatus,
-  loginAdmin,
-  logoutAdmin,
   startDiagnostics
 } = useShellServices();
 const { desktopCapabilityHint, loadDesktopComponentStatuses } = useDesktopCapabilityHint();
@@ -417,33 +382,6 @@ onMounted(() => {
 .shell-notice {
   grid-column: 1 / -1;
   align-self: start;
-}
-.admin-session-section {
-  display: grid;
-  gap: 12px;
-  margin: 18px 0 4px;
-  padding: 14px;
-  border: 1px solid var(--border-subtle, #e7ebf1);
-  border-radius: 10px;
-  background: #f8fafc;
-}
-.admin-session-heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-}
-.admin-session-heading > div {
-  display: grid;
-  gap: 3px;
-}
-.admin-session-heading small {
-  color: #657085;
-  line-height: 1.4;
-}
-.admin-session-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
 }
 .desktop-capability-hint {
   width: min(100%, 1280px);

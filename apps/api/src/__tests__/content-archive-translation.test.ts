@@ -495,7 +495,6 @@ describe("双平台共用翻译契约", () => {
   it("LAN 翻译与编辑需要管理员和 CSRF，访客不能管理", async () => {
     const item = await seed();
     config.deploymentMode = "lan";
-    config.adminPin = "123456";
     config.corsOrigins = ["http://127.0.0.1:5173"];
     const app = await appWith(),
       url = `${base}/items/${item.id}/translation`;

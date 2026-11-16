@@ -4,7 +4,6 @@ export type ConfigContext = Pick<
   | "runtime"
   | "desktopManagedCapabilities"
   | "deploymentMode"
-  | "adminPin"
   | "storageRoot"
   | "imageAiDir"
   | "videoAiDir"

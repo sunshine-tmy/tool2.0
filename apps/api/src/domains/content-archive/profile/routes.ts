@@ -19,18 +19,32 @@ import {
 } from "@toolbox/shared";
 import type { TikTokProfileService } from "./service";
 import { ArchiveTaskError } from "../core/provider";
+import { ContentArchiveStoreError } from "../core/store";
 import { archiveImportCsv } from "../batch/spreadsheet";
 import { REQUEST_QUOTAS } from "../../../security/request-quotas";
 
-export function registerTikTokProfileRoutes(app: FastifyInstance, service: TikTokProfileService) {
+export function registerTikTokProfileRoutes(
+  app: FastifyInstance,
+  service: TikTokProfileService,
+  supplement?: (work: { id: string; url: string }) => Promise<string>
+) {
   const base = "/api/v1/tools/media-archive/tiktok-profiles";
-  const errors = { 400: ApiFailureSchema, 404: ApiFailureSchema, 409: ApiFailureSchema, 429: ApiFailureSchema };
+  const errors = {
+    400: ApiFailureSchema,
+    404: ApiFailureSchema,
+    409: ApiFailureSchema,
+    413: ApiFailureSchema,
+    429: ApiFailureSchema,
+    503: ApiFailureSchema,
+    507: ApiFailureSchema
+  };
   const handle = async (reply: FastifyReply, run: () => unknown | Promise<unknown>) => {
     try {
       const value = await run();
       return value === undefined ? reply.code(404).send(fail("TIKTOK_PROFILE_NOT_FOUND", "主页任务不存在")) : ok(value);
     } catch (error) {
-      if (error instanceof ArchiveTaskError) return reply.code(error.statusCode).send(fail(error.code, error.message));
+      if (error instanceof ArchiveTaskError || error instanceof ContentArchiveStoreError)
+        return reply.code(error.statusCode).send(fail(error.code, error.message));
       throw error;
     }
   };
@@ -74,6 +88,38 @@ export function registerTikTokProfileRoutes(app: FastifyInstance, service: TikTo
       }
     },
     (request, reply) => handle(reply, () => service.page(request.params.id, request.query.page))
+  );
+  app.post<{ Params: { id: string; workId: string } }>(
+    `${base}/:id/works/:workId/soundtrack`,
+    {
+      config: { rateLimit: { max: 1200, timeWindow: "1 minute" }, concurrencyLimit: 2 },
+      schema: {
+        params: Type.Object(
+          { id: Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" }), workId: Type.String({ pattern: "^[0-9]{5,24}$" }) },
+          { additionalProperties: false }
+        ),
+        response: {
+          200: apiSuccessSchema(
+            Type.Object({
+              status: Type.Union([
+                Type.Literal("added"),
+                Type.Literal("exists"),
+                Type.Literal("unavailable"),
+                Type.Literal("skipped")
+              ])
+            })
+          ),
+          ...errors
+        }
+      }
+    },
+    (request, reply) =>
+      handle(reply, async () => {
+        const work = service.results(request.params.id).find((entry) => entry.id === request.params.workId);
+        if (!work) throw new ArchiveTaskError("TIKTOK_PROFILE_WORK_NOT_FOUND", "主页作品不存在", 404);
+        if (!supplement) throw new ArchiveTaskError("TIKTOK_RUNTIME_STOPPED", "TikTok 获取服务不可用", 503);
+        return { status: await supplement(work) };
+      })
   );
   app.post<{ Params: { id: string }; Body: TikTokProfileStart }>(
     `${base}/:id/archive`,

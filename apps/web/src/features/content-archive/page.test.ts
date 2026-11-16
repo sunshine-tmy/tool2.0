@@ -79,7 +79,10 @@ function mountPage() {
         ToolPageHeader: true,
         NAlert: defineComponent({ template: "<div><slot /><slot name='header'/></div>" }),
         NButton: true,
-        ArchiveListPanel: true,
+        ArchiveListPanel: defineComponent({
+          extends: ArchiveListPanel,
+          template: "<section><slot name='groups' /></section>"
+        }),
         ArchiveImageBatchEditor: defineComponent({
           setup(_props, { expose }) {
             expose({ show: mocks.imageBatchShow });

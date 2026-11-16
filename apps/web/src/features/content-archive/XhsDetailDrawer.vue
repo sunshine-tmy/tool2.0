@@ -7,12 +7,10 @@
     class="archive-detail-modal"
     :style="{
       width: typeof props.width === 'number' ? `${props.width}px` : props.width,
-      maxWidth: 'calc(100vw - 32px)',
-      maxHeight: 'calc(100dvh - 48px)'
+      maxWidth: 'calc(100vw - 32px)'
     }"
     :bordered="false"
     :segmented="{ content: true, footer: true }"
-    :content-style="{ minHeight: '0', overflowY: 'auto', overflowX: 'hidden' }"
     transform-origin="center"
     aria-label="存档详情"
     @update:show="emit('update:open', $event)"

@@ -29,7 +29,6 @@ async function setup(lan = false) {
   config.desktopManagedCapabilities = true;
   if (lan) {
     config.deploymentMode = "lan";
-    config.adminPin = "2468";
     config.corsOrigins = ["http://localhost:5173"];
   }
   const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: "red" } })

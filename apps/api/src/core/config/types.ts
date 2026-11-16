@@ -9,7 +9,6 @@ export type AppConfig = {
   imageAiBirefnetAsset?: { path: string; bytes: number; sha256: string; version: string };
   chatterboxCapabilityReady: boolean;
   deploymentMode: "local" | "lan";
-  adminPin?: string;
   host: string;
   port: number;
   corsOrigins: string[];

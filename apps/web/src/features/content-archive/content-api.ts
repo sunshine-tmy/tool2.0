@@ -1,4 +1,5 @@
 /** 中性归档客户端：双平台消费同一共享契约；旧命名仅保留在小红书登录入口。 */
+import { Type } from "@sinclair/typebox";
 import {
   ContentArchiveItemSchema,
   LocalArchiveUploadResultSchema,
@@ -62,6 +63,24 @@ const itemPath = (id: string) => `${base}/items/${encodeURIComponent(id)}`;
 const importBase = `${base}/import`;
 const profileBase = `${base}/tiktok-profiles`;
 export const tiktokProfileApi = {
+  supplementSoundtrack: (id: string, workId: string, signal?: AbortSignal) =>
+    withApiError(
+      () =>
+        httpClient.post(
+          `${profileBase}/${encodeURIComponent(id)}/works/${encodeURIComponent(workId)}/soundtrack`,
+          Type.Object({
+            status: Type.Union([
+              Type.Literal("added"),
+              Type.Literal("exists"),
+              Type.Literal("unavailable"),
+              Type.Literal("skipped")
+            ])
+          }),
+          undefined,
+          { signal, timeout: 150000 }
+        ),
+      "补充音轨失败"
+    ),
   list: (signal?: AbortSignal) =>
     withApiError(() => httpClient.get(profileBase, TikTokProfileListSchema, { signal }), "读取主页任务失败"),
   get: (id: string, signal?: AbortSignal) =>

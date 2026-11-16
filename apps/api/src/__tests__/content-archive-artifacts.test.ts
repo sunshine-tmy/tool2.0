@@ -395,7 +395,6 @@ describe("双平台截帧与导出 API", () => {
   it("LAN 访客不能截图管理，管理员仍需 CSRF 与精确 Origin", async () => {
     const item = await seed();
     config.deploymentMode = "lan";
-    config.adminPin = "123456";
     config.corsOrigins = ["http://127.0.0.1:5173"];
     const app = await appWith();
     expect((await capture(app, item)).statusCode).toBe(401);

@@ -7,7 +7,7 @@
     preset="card"
     title="表格批量归档"
     class="archive-import-dialog"
-    style="width: min(1320px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto"
+    style="width: min(1320px, calc(100vw - 32px))"
   >
     <n-alert type="info" :bordered="false"
       >支持 .xlsx / .csv，最大 2 MiB、每批 100 条。Excel

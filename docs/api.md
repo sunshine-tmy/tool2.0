@@ -11,12 +11,8 @@
 - `GET /api/v1/tasks`：最近任务，SQLite 默认最多保留 1000 条。
 - `GET /api/v1/tasks/:taskId`：读取一个任务。
 - `GET /api/v1/tasks/:taskId/events`：SSE 任务进度；断线后客户端回退轮询。
-- `POST /api/v1/session`：`lan` 模式用 `{ pin }` 建立 HttpOnly 管理员会话并取得 CSRF token。
-- `GET /api/v1/session`：通过现有 Cookie 恢复 CSRF token。
-- `DELETE /api/v1/session`：退出管理员会话。
 - `GET /api/v1/files/:fileName`：流式下载 `storage/outputs` 内的处理结果。
 
-`POST /api/v1/session` 在 `DEPLOYMENT_MODE=lan` 下建立全局管理员会话。后续管理写请求必须携带 HttpOnly、SameSite=Strict 的 `toolbox_admin` Cookie、`X-CSRF-Token` 和 `CORS_ORIGINS` 中的精确 `Origin`；`DELETE /api/v1/session` 退出。局域网文件传输的 `/tools/lan-transfer/access` 使用独立的可选 `LAN_TRANSFER_PIN`，只解锁访客上传/读取权限，不授予管理写权限。
 
 耗时创建接口统一返回 HTTP `202` 和 `data.taskId`；使用 `/api/v1/tasks/:taskId` 查询或 `/api/v1/tasks/:taskId/events` 订阅 SSE。所有 JSON 响应都会经过共享 TypeBox Schema 校验；错误至少包含稳定 `error.code`、可读 `message` 和 `requestId`。
 
@@ -210,7 +206,7 @@
 - `PATCH /items/:id/translation`：JSON `{ sourceHash, title: { edited }, description?: { edited }, topics: [{ topicId, edited }] }`。事务内核对当前原文及 ready 状态，原文变化或译文未就绪返回 409，未知/重复话题返回 400；机器译文保持独立。
 - `POST /items/:id/translation/reset`：移除人工编辑、保留机器译文，不把过期/进行中的译文强制标为 ready。
 
-成功/失败统一使用标准响应封装及 requestId；Schema 拒绝 Cookie、认证信息及未声明输入。LAN 写操作要求管理员会话、精确 Origin/CSRF，不对访客开放。抖音与 TikTok 翻译保留完整原文，不套用小红书清洗；刷新/删除/新任务会阻止旧任务迟到覆盖。旧小红书接口共用实现但只暴露小红书 ID，其他平台任务/记录通过旧入口查询为 404。TikTok 获取失败使用 `TIKTOK_*` 错误码；媒体、存储和取消仍使用既有 `ARCHIVE_*` 错误码，不返回 CDN 签名地址或代理凭据。
+成功/失败统一使用标准响应封装及 requestId；Schema 拒绝 Cookie、认证信息及未声明输入。LAN 业务写操作无需管理员会话；带 Origin 的请求须匹配允许来源。抖音与 TikTok 翻译保留完整原文，不套用小红书清洗；刷新/删除/新任务会阻止旧任务迟到覆盖。旧小红书接口共用实现但只暴露小红书 ID，其他平台任务/记录通过旧入口查询为 404。TikTok 获取失败使用 `TIKTOK_*` 错误码；媒体、存储和取消仍使用既有 `ARCHIVE_*` 错误码，不返回 CDN 签名地址或代理凭据。
 
 ## 小红书内容归档（兼容接口）
 

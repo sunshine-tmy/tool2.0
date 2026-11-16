@@ -56,7 +56,6 @@ it("keeps relative overrides rooted in configRoot and LAN/worker normalization",
   expect(value).toMatchObject({
     host: "0.0.0.0",
     port: 3201,
-    adminPin: "test-pin",
     lanTransferGuestMode: "upload-only",
     imageAiWorkerUrl: "http://localhost:3211"
   });

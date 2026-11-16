@@ -6,10 +6,10 @@ import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import { type FastifyInstance } from "fastify";
 import { type AppConfig } from "../config";
-import { registerAdminSecurity } from "../security/admin-session";
+import { fail } from "@toolbox/shared/common";
 import { registerConcurrencyQuotas } from "../security/request-quotas";
 import type { ToolboxDatabase } from "../database/toolbox-database";
-export async function registerBasePlugins(app: FastifyInstance, config: AppConfig, database: ToolboxDatabase) {
+export async function registerBasePlugins(app: FastifyInstance, config: AppConfig, _database: ToolboxDatabase) {
   // 基础插件集中在应用装配层注册，领域路由只关心业务，不重复配置跨域、Cookie、限流和 multipart。
   await app.register(cookie);
   await app.register(rateLimit, {
@@ -43,7 +43,7 @@ export async function registerBasePlugins(app: FastifyInstance, config: AppConfi
       callback(null, !origin || config.corsOrigins.includes(origin));
     },
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Range", "X-Lan-Transfer-Pin", "X-CSRF-Token", "X-Request-Id"],
+    allowedHeaders: ["Content-Type", "Authorization", "Range", "X-Lan-Transfer-Pin", "X-Request-Id"],
     exposedHeaders: ["Content-Disposition", "Content-Length", "Content-Range", "Accept-Ranges", "X-Request-Id"],
     credentials: true
   });
@@ -54,5 +54,11 @@ export async function registerBasePlugins(app: FastifyInstance, config: AppConfi
     },
     throwFileSizeLimit: false
   });
-  await registerAdminSecurity(app, config, database);
+  // Preserve origin checks for browser writes without requiring an admin session.
+  app.addHook("preHandler", async (request, reply) => {
+    const origin = request.headers.origin;
+    if (config.deploymentMode === "lan" && !["GET", "HEAD", "OPTIONS"].includes(request.method) && origin && !config.corsOrigins.includes(origin)) {
+      return reply.code(403).send(fail("ORIGIN_NOT_ALLOWED", "请求来源未获允许"));
+    }
+  });
 }

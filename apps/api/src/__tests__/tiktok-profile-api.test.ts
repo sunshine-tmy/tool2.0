@@ -33,7 +33,6 @@ async function setup(lan = false) {
   config.desktopManagedCapabilities = true;
   if (lan) {
     config.deploymentMode = "lan";
-    config.adminPin = "2468";
     config.corsOrigins = ["http://localhost:5173"];
   }
   vi.spyOn(TikTokProfileReader.prototype, "read").mockResolvedValue(discovery);

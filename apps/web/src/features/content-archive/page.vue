@@ -92,12 +92,6 @@
         @edit-audio="openVideoEditor(current, $event, 'audio')"
         @copy="copyContent"
       />
-      <ArchiveGroups
-        v-model:group-id="groupFilter"
-        :selected-ids="selectedArchiveIds"
-        @changed="loadArchives"
-        @loaded="archiveGroups = $event"
-      />
       <ArchiveListPanel
         v-model:keyword="keyword"
         v-model:type-filter="typeFilter"
@@ -121,7 +115,16 @@
         @toggle-select-all="toggleSelectAllArchives"
         @page-change="loadArchives"
         @edit-images="editSelectedImages"
-      />
+      >
+        <template #groups>
+          <ArchiveGroups
+            v-model:group-id="groupFilter"
+            :selected-ids="selectedArchiveIds"
+            @changed="loadArchives"
+            @loaded="archiveGroups = $event"
+          />
+        </template>
+      </ArchiveListPanel>
       <ArchiveImageBatchEditor
         ref="imageBatchEditor"
         @updated="collection.updateItem"

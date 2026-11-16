@@ -6,7 +6,6 @@
         v-model:value="groupId"
         :options="filterOptions"
         filterable
-        size="small"
         aria-label="归档分组筛选"
         class="archive-group-select"
       />
@@ -214,10 +213,6 @@ onMounted(load);
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 14px 18px;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  background: var(--color-surface);
 }
 .archive-group-filter,
 .archive-group-actions,
@@ -248,7 +243,6 @@ onMounted(load);
   max-width: 100%;
 }
 @container tool-content (max-width: 600px) {
-  .archive-groups { padding: 12px; }
   .archive-group-filter { width: 100%; }
   .archive-group-select { flex: 1; width: auto; }
   .archive-group-actions { padding-left: 0; border-left: 0; }

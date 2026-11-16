@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import type { ArchiveVideoEditInput } from "@toolbox/shared";
+import { archiveSlideshowCycles, archiveSlideshowDuration, type ArchiveVideoEditInput } from "@toolbox/shared";
 import { runMediaProcess, VideoEditError, type MediaTools } from "./renderer";
 export async function renderSlideshow(options: {
   tools: MediaTools;
@@ -17,6 +17,7 @@ export async function renderSlideshow(options: {
   const dimensions = { portrait: [720, 1280], landscape: [1280, 720], square: [1080, 1080] } as const;
   const [width, height] = dimensions[options.settings.aspect];
   const lines = ["ffconcat version 1.0"];
+  const names: string[] = [];
   for (const [index, file] of options.images.entries()) {
     options.signal.throwIfAborted();
     const metadata = await sharp(file, { limitInputPixels: 40_000_000, failOn: "warning" }).metadata();
@@ -29,10 +30,18 @@ export async function renderSlideshow(options: {
       .flatten({ background: "#ffffff" })
       .jpeg({ quality: 92 })
       .toFile(path.join(options.directory, name));
-    lines.push(`file '${name}'`, `duration ${options.settings.secondsPerImage}`);
+    names.push(name);
     options.onProgress(((index + 1) / options.images.length) * 25);
   }
-  lines.push(`file 'slide-${String(options.images.length - 1).padStart(3, "0")}.jpg'`);
+  const duration = archiveSlideshowDuration(names.length, options.settings.secondsPerImage);
+  if (!duration) throw new VideoEditError("ARCHIVE_EDIT_SLIDESHOW_INVALID", "图集不能为空");
+  const cycles = archiveSlideshowCycles(names.length, options.settings.secondsPerImage);
+  for (let cycle = 0; cycle < cycles; cycle++) {
+    for (const name of names) {
+      lines.push(`file '${name}'`, `duration ${options.settings.secondsPerImage}`);
+    }
+  }
+  lines.push(`file '${names[names.length - 1]}'`);
   const list = path.join(options.directory, "slides.ffconcat");
   await fs.writeFile(list, lines.join("\n"), { flag: "wx" });
   await runMediaProcess(
@@ -54,7 +63,7 @@ export async function renderSlideshow(options: {
       "-vf",
       "fps=25,format=yuv420p",
       "-t",
-      String(options.images.length * options.settings.secondsPerImage),
+      String(duration),
       "-an",
       "-c:v",
       "libx264",

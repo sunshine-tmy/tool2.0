@@ -55,14 +55,6 @@ const api = axios.create({
   timeout: 120000,
   withCredentials: true
 });
-let adminCsrfToken: string | undefined;
-
-// 写请求统一从当前管理员会话注入 CSRF Header；Cookie 由浏览器以 HttpOnly 方式维护。
-
-export function setAdminCsrfToken(token: string | undefined) {
-  adminCsrfToken = token;
-}
-
 export async function withApiError<T>(operation: () => Promise<T>, fallbackMessage = "请求失败") {
   try {
     return await operation();
@@ -127,12 +119,12 @@ export function createHttpClient(instance: AxiosInstance = api) {
       data?: unknown,
       config?: AxiosRequestConfig
     ): Promise<Static<T>> {
-      const response = await instance.post<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
+      const response = await instance.post<unknown, AxiosResponse<unknown>>(url, data, config);
       return unwrapResponse(response.data, schema, response.status);
     },
 
     async postBlob(url: string, data?: unknown, config?: AxiosRequestConfig) {
-      const response = await instance.post<Blob>(url, data, withWriteSecurity({ ...config, responseType: "blob" }));
+      const response = await instance.post<Blob>(url, data, { ...config, responseType: "blob" });
       return {
         blob: response.data,
         contentDisposition: response.headers["content-disposition"] as string | undefined
@@ -145,7 +137,7 @@ export function createHttpClient(instance: AxiosInstance = api) {
       data?: unknown,
       config?: AxiosRequestConfig
     ): Promise<Static<T>> {
-      const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
+      const response = await instance.put<unknown, AxiosResponse<unknown>>(url, data, config);
       return unwrapResponse(response.data, schema, response.status);
     },
 
@@ -155,29 +147,18 @@ export function createHttpClient(instance: AxiosInstance = api) {
       data?: unknown,
       config?: AxiosRequestConfig
     ): Promise<Static<T>> {
-      const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, withWriteSecurity(config));
+      const response = await instance.patch<unknown, AxiosResponse<unknown>>(url, data, config);
       return unwrapResponse(response.data, schema, response.status);
     },
 
     async delete<T extends TSchema>(url: string, schema: T, config?: AxiosRequestConfig): Promise<Static<T>> {
-      const response = await instance.delete<unknown, AxiosResponse<unknown>>(url, withWriteSecurity(config));
+      const response = await instance.delete<unknown, AxiosResponse<unknown>>(url, config);
       return unwrapResponse(response.data, schema, response.status);
     }
   };
 }
 
 export const httpClient = createHttpClient();
-
-function withWriteSecurity(config?: AxiosRequestConfig): AxiosRequestConfig {
-  if (!adminCsrfToken) return config ?? {};
-  return {
-    ...config,
-    headers: {
-      ...config?.headers,
-      "x-csrf-token": adminCsrfToken
-    }
-  };
-}
 
 function unwrapResponse<T extends TSchema>(data: unknown, schema: T, status?: number): Static<T> {
   // 先识别后端统一错误信封，再验证成功信封和业务 data，禁止调用方直接消费未经校验的 JSON。

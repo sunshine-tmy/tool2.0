@@ -130,6 +130,7 @@ import { Music2, Pause, Play, Volume2, VolumeX, Rewind, FastForward, RotateCcw }
 import { AUDIO_LIBRARY_MAX_FILE_BYTES } from "@toolbox/shared/audio-library";
 import { ExtractionAudioWaveform, formatAudioDuration, vSliderLabel } from "../audio-library/integrations/extraction";
 const props = defineProps<{ url: string; title: string; duration: number; bytes?: number }>();
+const emit = defineEmits<{ play: [] }>();
 const audio = ref<HTMLAudioElement>(),
   position = ref(0),
   loadedDuration = ref(0),
@@ -201,6 +202,7 @@ async function toggle() {
     version = ++generation;
   if (phase.value === "error") element.load();
   phase.value = "loading";
+  emit("play");
   if (element.ended || position.value >= length.value) seek(0);
   element.volume = volume.value;
   element.playbackRate = rate.value;
@@ -227,6 +229,7 @@ onBeforeUnmount(() => {
   audio.value?.removeAttribute("src");
   audio.value?.load();
 });
+defineExpose({ pause });
 </script>
 <style scoped>
 .audio-preview {

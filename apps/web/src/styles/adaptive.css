@@ -1,4 +1,36 @@
 /* Shared interaction rules. Feature-owned grids retain their own breakpoints. */
+/* Naive UI teleports centered dialogs to the body. Keep their chrome visible
+   while the middle content scrolls, accounting for the desktop title bar. */
+.n-modal-body-wrapper .n-modal {
+  box-sizing: border-box;
+  max-height: min(85dvh, max(0px, calc(100dvh - var(--shell-overlay-top, 0px) - 32px))) !important;
+}
+.n-modal-body-wrapper .n-modal.n-card,
+.n-modal-body-wrapper .n-modal.n-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden !important;
+}
+.n-modal-body-wrapper .n-modal.n-card > :is(.n-card-header, .n-card__footer, .n-card__action),
+.n-modal-body-wrapper .n-modal.n-dialog > :is(.n-dialog__title, .n-dialog__action, .n-dialog-icon-container) {
+  flex: 0 0 auto;
+}
+.n-modal-body-wrapper .n-modal.n-card > .n-card-content,
+.n-modal-body-wrapper .n-modal.n-dialog > .n-dialog__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.n-modal-body-wrapper .n-modal.n-card > .n-card__content-scrollbar {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.n-modal-body-wrapper .n-modal:not(.n-card):not(.n-dialog) {
+  overflow-y: auto;
+}
+
 /* Approved module rasters contain a white exterior canvas. Blend that canvas
    into the light theme without clipping the lavender tile or regenerating art. */
 .ui-v2 :is(.tool-page-icon, .workbench-card-icon, .module-sidebar-icon img, .library-player-art) {

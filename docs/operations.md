@@ -15,11 +15,10 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-局域网模式必须显式配置管理员 PIN；启动时缺少 PIN 会直接失败：
+局域网模式可按需启用：
 
 ```dotenv
 DEPLOYMENT_MODE=lan
-ADMIN_PIN=请替换为高熵本地 PIN
 ```
 
 三个健康端点用途不同：
@@ -32,27 +31,9 @@ ADMIN_PIN=请替换为高熵本地 PIN
 
 反向代理或进程守护应使用 `/health/live` 作为存活探针、`/health/ready` 作为就绪探针；就绪失败时不要自动删除 storage 或数据库。
 
-## 2. 权限与会话
+## 2. 局域网访问
 
-`local` 模式为本机可信环境，管理员钩子不阻挡写请求；仍建议只监听回环地址。`lan` 模式下所有非安全方法默认要求管理员会话，只有明确标记为访客传输的路由例外。
-
-| 能力                               | local | lan 访客                                                | lan 管理员 |
-| ---------------------------------- | ----- | ------------------------------------------------------- | ---------- |
-| 健康、工具、任务和历史读取         | 允许  | 允许                                                    | 允许       |
-| 普通文件上传、分片上传、图文上传   | 允许  | 由 `LAN_TRANSFER_GUEST_MODE` 的 `upload-only/full` 决定 | 允许       |
-| 文件/图文预览、下载、批量下载      | 允许  | 由 `download-only/full` 决定                            | 允许       |
-| 删除文件、删除图文、批量删除       | 允许  | 拒绝                                                    | 允许       |
-| 延期、过期清理、维护清理           | 允许  | 拒绝                                                    | 允许       |
-| AI、翻译、配音、归档、配置类写操作 | 允许  | 拒绝                                                    | 允许       |
-
-全局管理员会话流程：
-
-1. `POST /api/v1/session` 提交 `{ "pin": "..." }`。
-2. 服务返回短期 CSRF token，并设置 HttpOnly、SameSite=Strict 的 `toolbox_admin` Cookie。
-3. 后续写请求必须同时发送该 Cookie、`X-CSRF-Token` 和精确的 `Origin`；Origin 必须在 `CORS_ORIGINS` 中。
-4. `DELETE /api/v1/session` 退出并清除 Cookie；会话默认 12 小时过期。
-
-局域网文件传输的 `POST /api/v1/tools/lan-transfer/access` 使用独立的可选 `LAN_TRANSFER_PIN`，只解锁访客传输能力，不授予删除、清理、延期或其他管理员权限。`LAN_TRANSFER_GUEST_MODE=disabled` 时未认证设备不具备传输能力。PIN、Cookie、Authorization、CSRF token、文本内容和本地路径不会写入结构化日志。
+`lan` 模式的业务操作无需管理员会话。可访问服务的局域网设备可以修改和删除业务数据，应仅在可信网络中使用。带 Origin 的浏览器写请求仍须匹配 `CORS_ORIGINS`。文件传输可通过 `LAN_TRANSFER_PIN` 和 `LAN_TRANSFER_GUEST_MODE` 单独限制访问。
 
 ## 3. 限流与并发
 
@@ -162,7 +143,6 @@ pwsh ./scripts/package-standalone.ps1 -Platform macos
 | 现象                              | 首先检查                                                                                        |
 | --------------------------------- | ----------------------------------------------------------------------------------------------- |
 | 浏览器全部接口 404                | 前端 `VITE_API_BASE` 是否误指向旧 `/api`；开发环境应使用 Vite `/api` 代理，正式接口为 `/api/v1` |
-| `401 ADMIN_SESSION_REQUIRED`      | `lan` 模式是否已登录全局 `ADMIN_PIN` 会话                                                       |
 | `403 CSRF_VALIDATION_FAILED`      | 写请求是否同时带当前 `X-CSRF-Token` 和 `CORS_ORIGINS` 中的精确 `Origin`                         |
 | `429`                             | 查看稳定错误码和 `details.limit`，等待窗口后重试，不要并发重放                                  |
 | `503 NOT_READY`                   | 检查 `storage/toolbox.db`、必需目录权限和磁盘空间；不要删除数据库                               |

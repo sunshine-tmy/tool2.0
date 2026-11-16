@@ -33,7 +33,7 @@
           /></label>
           <label>新视频画幅<n-select v-model:value="aspect" :options="aspectOptions" :disabled="locked" /></label>
         </div>
-        <small>上述设置只用于首次生成图集视频；已有视频保留原时长和画幅。</small>
+        <small>新图集视频不足 15 秒时按原图顺序循环至完整一轮结束；已有视频保留原时长和画幅。</small>
         <n-checkbox :checked="addOther" :disabled="locked || loading" @update:checked="toggleOther">
           {{ kind === "watermark" ? "同时添加背景音乐" : "同时添加水印" }}
         </n-checkbox>
@@ -244,6 +244,7 @@ import {
 } from "naive-ui";
 import {
   defaultArchiveWatermarkSettings,
+  archiveSlideshowDuration,
   type ContentArchiveItem,
   type ContentArchiveListItem,
   type ArchiveWatermarkLibraryItem
@@ -322,7 +323,9 @@ const locked = computed(() => started.value || batch.running.value || previewBus
 const referenceDuration = computed(() => {
   if (!reference.value) return 0;
   const { media, images, existing } = imageBatchTarget(reference.value);
-  return existing ? (media.durationMs ?? 0) / 1000 : images.length * (secondsPerImage.value ?? 0);
+  return existing
+    ? (media.durationMs ?? 0) / 1000
+    : archiveSlideshowDuration(images.length, secondsPerImage.value ?? 0);
 });
 const watermarkSandbox = ref<InstanceType<typeof ArchiveWatermarkSandbox>>(),
   watermarkTime = ref(0);

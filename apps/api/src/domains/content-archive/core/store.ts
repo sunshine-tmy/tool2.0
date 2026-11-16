@@ -2,6 +2,7 @@
  * 多媒体归档共享存储：平台身份隔离，媒体目录和物理表保持不变，旧接口通过过滤视图访问。
  */
 import fsp from "node:fs/promises";
+import { constants } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { nanoid } from "nanoid";
@@ -316,6 +317,67 @@ export class ContentArchiveStore {
         });
         this.items.set(item.id, cloneItem(nextItem)!);
         return cloneItem(nextItem)!;
+      })
+    );
+  }
+
+  async appendMissingSoundtrack(
+    itemId: string,
+    contentId: string,
+    media: ContentArchiveMedia,
+    stagingDirectory: string
+  ) {
+    await this.initialize();
+    return this.withStorageMutation(() =>
+      this.withItemMutation(itemId, async () => {
+        const current = this.items.get(itemId);
+        if (!current || current.platform !== "tiktok" || current.type !== "image" || current.contentId !== contentId)
+          throw new ContentArchiveStoreError("ARCHIVE_SOUNDTRACK_SOURCE_CHANGED", 409, "归档已变更，请重新尝试");
+        if (current.media.some((entry) => entry.kind === "audio")) return false;
+        if (media.kind !== "audio" || path.basename(media.fileName) !== media.fileName)
+          throw new Error("ARCHIVE_MEDIA_PATH_INVALID");
+        await assertArchiveStaging(stagingDirectory, this.config.xhsArchiveStagingDir);
+        const usedBytes = [...this.items.values()].reduce((sum, item) => sum + item.totalBytes, 0);
+        if (usedBytes + media.size > this.config.xhsArchiveMaxStorageBytes)
+          throw new ContentArchiveStoreError("XHS_STORAGE_QUOTA_EXCEEDED", 413, "存档空间不足，请先释放空间");
+        const directory = path.join(this.config.xhsArchiveItemsDir, safeId(itemId));
+        const target = path.join(directory, media.fileName);
+        const next = {
+          ...current,
+          media: [...current.media, media],
+          totalBytes: current.totalBytes + media.size,
+          updatedAt: new Date().toISOString()
+        };
+        let moved = false;
+        try {
+          await fsp.copyFile(path.join(stagingDirectory, media.fileName), target, constants.COPYFILE_EXCL);
+          moved = true;
+          const file = await fsp.open(target, "r+");
+          try {
+            await file.sync();
+          } finally {
+            await file.close();
+          }
+          const metadata = await this.fileMetadata.inspect({
+            entityKind: "xhs-media",
+            entityId: media.id,
+            filePath: target,
+            mediaType: media.mimeType,
+            owner: "local"
+          });
+          await replaceArchiveManifest(directory, next, async (manifest) => {
+            const manifestMetadata = await this.inspectManifest(itemId, manifest);
+            await this.persistItem(next, () => {
+              this.database.upsertFile(metadata);
+              this.database.upsertFile(manifestMetadata);
+            });
+          });
+          this.items.set(itemId, cloneItem(next)!);
+          return true;
+        } catch (error) {
+          if (moved) await fsp.rm(target, { force: true }).catch(() => undefined);
+          throw error;
+        }
       })
     );
   }

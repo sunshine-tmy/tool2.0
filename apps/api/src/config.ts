@@ -35,16 +35,11 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
   );
   const configuredUsage = getEnv("DEPLOYMENT_USAGE", fileEnv, environment)?.trim();
   const deploymentMode = readDeploymentMode(getEnv("DEPLOYMENT_MODE", fileEnv, environment));
-  const adminPin = getEnv("ADMIN_PIN", fileEnv, environment)?.trim() || undefined;
-  if (deploymentMode === "lan" && !adminPin) {
-    throw new Error("ADMIN_PIN is required when DEPLOYMENT_MODE=lan");
-  }
 
   const context = {
     runtime,
     desktopManagedCapabilities,
     deploymentMode,
-    adminPin,
     storageRoot,
     imageAiDir,
     videoAiDir,

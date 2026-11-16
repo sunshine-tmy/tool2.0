@@ -1,6 +1,7 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
   <section class="workspace-panel archive-panel">
+    <div v-if="$slots.groups" class="archive-groups-row"><slot name="groups" /></div>
     <div class="archive-toolbar" role="search" aria-label="搜索归档内容">
       <n-input
         v-model:value="keyword"
@@ -314,6 +315,9 @@ function formatDate(value: string | undefined) {
 .archive-panel {
   padding: 22px;
 }
+.archive-groups-row {
+  margin-bottom: 16px;
+}
 .archive-toolbar {
   display: flex;
   align-items: center;
@@ -402,7 +406,7 @@ function formatDate(value: string | undefined) {
 }
 .archive-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: start;
   gap: 16px;
 }
@@ -577,6 +581,11 @@ function formatDate(value: string | undefined) {
   grid-row: 1 / span 5;
   align-self: center;
   margin-top: 0;
+}
+@container tool-content (min-width: 1181px) and (max-width: 1600px) {
+  .archive-grid:not(.is-list) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 @container tool-content (min-width: 901px) and (max-width: 1180px) {
   .archive-grid:not(.is-list) {

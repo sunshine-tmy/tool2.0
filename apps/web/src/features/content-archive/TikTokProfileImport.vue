@@ -6,7 +6,7 @@
     v-model:show="open"
     preset="card"
     title="TikTok 主页批量归档"
-    style="width: min(1320px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto"
+    style="width: min(1320px, calc(100vw - 32px))"
   >
     <n-alert type="info" :bordered="false"
       >读取时会打开运行服务电脑上的独立 TikTok
@@ -62,7 +62,8 @@
           {{ job.pendingCount }} · 已创建 {{ job.batchCount }} 批</span
         >
       </n-alert>
-      <div class="profile-toolbar">
+      <div class="profile-toolbar profile-task-actions" role="group" aria-label="主页任务操作">
+        <strong>主页任务</strong>
         <n-button
           v-if="isActive"
           :disabled="busy || job.phase === 'stopping'"
@@ -81,39 +82,86 @@
         <n-button tag="a" :href="tiktokProfileResultsUrl(job.id)">导出作品与结果 CSV</n-button>
         <n-button v-if="!isActive" type="error" secondary :disabled="busy" @click="remove">删除主页任务记录</n-button>
       </div>
-      <div v-if="!isActive && job.discoveredCount" class="profile-toolbar">
-        <n-select
-          v-model:value="selection"
-          :options="selectionOptions"
-          aria-label="主页作品归档范围"
-          class="profile-select"
-        />
-        <span v-if="selection === 'selected'">已选择 {{ selectedIds.length }} 条（跨页保留）</span>
-        <n-select
-          v-model:value="existing"
-          :options="existingOptions"
-          aria-label="主页已有作品处理方式"
-          class="profile-select"
-        />
-        <n-select
-          v-model:value="groupId"
-          clearable
-          :options="groupOptions"
-          placeholder="成功结果分组（可选）"
-          aria-label="主页归档目标分组"
-          class="profile-select"
-        />
-        <n-checkbox v-if="!job.complete" v-model:checked="allowPartial"
-          >确认仅归档当前已发现的作品，列表尚未确认完整</n-checkbox
-        >
-        <n-button
-          type="primary"
-          :loading="busy"
-          :disabled="busy || (!job.complete && !allowPartial) || (selection === 'selected' && !selectedIds.length)"
-          @click="archive"
-          >确认并开始主页归档</n-button
-        >
-      </div>
+      <section v-if="!isActive && job.discoveredCount" class="profile-operations" aria-label="作品批量操作">
+        <div class="profile-operation-scope">
+          <div>
+            <strong>作品范围</strong>
+            <p>以下归档和补充音轨操作使用同一范围。</p>
+          </div>
+          <n-select
+            v-model:value="selection"
+            :disabled="busy"
+            :options="selectionOptions"
+            aria-label="作品操作范围"
+            class="profile-select"
+          />
+          <span v-if="selection === 'selected'">已选择 {{ selectedIds.length }} 条（跨页保留）</span>
+        </div>
+        <div class="profile-operation-grid">
+          <section class="profile-operation" aria-label="归档作品">
+            <div class="profile-operation-heading">
+              <strong>归档作品</strong>
+              <p>下载所选范围内的作品，并按设置处理已有归档。</p>
+            </div>
+            <div class="profile-operation-fields">
+              <label
+                >已有作品处理方式
+                <n-select
+                  v-model:value="existing"
+                  :disabled="busy"
+                  :options="existingOptions"
+                  aria-label="主页已有作品处理方式"
+                />
+              </label>
+              <label
+                >成功结果分组（可选）
+                <n-select
+                  v-model:value="groupId"
+                  :disabled="busy"
+                  clearable
+                  :options="groupOptions"
+                  placeholder="不指定分组"
+                  aria-label="主页归档目标分组"
+                />
+              </label>
+            </div>
+            <n-checkbox v-if="!job.complete" v-model:checked="allowPartial" :disabled="busy"
+              >确认仅归档当前已发现的作品，列表尚未确认完整</n-checkbox
+            >
+            <n-button
+              type="primary"
+              :loading="archiveStarting"
+              :disabled="busy || (!job.complete && !allowPartial) || (selection === 'selected' && !selectedIds.length)"
+              @click="archive"
+              >确认并开始主页归档</n-button
+            >
+          </section>
+          <section class="profile-operation" aria-label="补充图文音轨">
+            <div class="profile-operation-heading">
+              <strong>补充图文音轨</strong>
+              <p>只为范围内已归档且缺少音轨的 TikTok 图文补充原音轨。</p>
+            </div>
+            <div class="profile-operation-buttons">
+              <n-button
+                secondary
+                :loading="supplementRunning"
+                :disabled="busy || (selection === 'selected' && !selectedIds.length)"
+                @click="supplementSoundtracks"
+                >补充缺失图文音轨</n-button
+              >
+              <n-button v-if="supplementRunning" :disabled="supplementStop" @click="supplementStop = true">{{
+                supplementStop ? "正在停止" : "停止后续补充"
+              }}</n-button>
+            </div>
+            <p v-if="supplementSummary" class="profile-operation-status" role="status">{{ supplementSummary }}</p>
+            <p v-if="supplementRunning">请保持此窗口打开；停止后会完成当前作品，再停止后续补充。</p>
+            <details v-if="supplementErrors.length">
+              <summary>查看失败作品（{{ supplementErrors.length }}）</summary>
+              <p v-for="entry in supplementErrors" :key="entry.id">{{ entry.id }}：{{ entry.message }}</p>
+            </details>
+          </section>
+        </div>
+      </section>
       <p>失败作品可逐条重试；点击作品标题可填入主页面“获取并存档”，成功后自动同步结果。</p>
       <n-spin :show="loading"
         ><div v-if="works.items.length" class="profile-table">
@@ -131,7 +179,7 @@
                 <th>
                   <n-checkbox
                     :checked="allSelected"
-                    :disabled="isActive"
+                    :disabled="isActive || busy"
                     aria-label="选择本页主页作品"
                     @update:checked="selectPage"
                   />
@@ -148,7 +196,7 @@
                 <td>
                   <n-checkbox
                     :checked="selectedIds.includes(work.id)"
-                    :disabled="isActive"
+                    :disabled="isActive || busy"
                     :aria-label="`选择作品 ${work.id}`"
                     @update:checked="toggle(work.id, $event)"
                   />
@@ -248,6 +296,11 @@ const selectedIds = ref<string[]>([]),
   existing = ref<"skip" | "refresh">("skip"),
   groupId = ref<string | null>(null),
   allowPartial = ref(false);
+const archiveStarting = ref(false),
+  supplementRunning = ref(false),
+  supplementStop = ref(false),
+  supplementSummary = ref("");
+const supplementErrors = ref<Array<{ id: string; message: string }>>([]);
 let generation = 0,
   historyGeneration = 0,
   timer: ReturnType<typeof setTimeout> | undefined,
@@ -309,8 +362,8 @@ const allSelected = computed(
   () => works.value.items.length > 0 && works.value.items.every((work) => selectedIds.value.includes(work.id))
 );
 const selectionOptions = [
-  { label: "归档全部已发现作品", value: "all" },
-  { label: "仅归档勾选作品", value: "selected" }
+  { label: "全部已发现作品", value: "all" },
+  { label: "仅勾选作品", value: "selected" }
 ];
 const existingOptions = [
   { label: "跳过已归档作品（默认）", value: "skip" },
@@ -445,21 +498,69 @@ async function create() {
   await run(() => tiktokProfileApi.create(value.url, scope.signal));
 }
 async function archive() {
-  if (!job.value) return;
+  if (!job.value || busy.value) return;
   const id = job.value.id;
-  await run(() =>
-    tiktokProfileApi.archive(
-      id,
-      {
-        selection: selection.value,
-        ...(selection.value === "selected" ? { itemIds: [...selectedIds.value] } : {}),
-        existing: existing.value,
-        ...(groupId.value ? { groupId: groupId.value } : {}),
-        allowPartial: allowPartial.value
-      },
-      scope.signal
-    )
-  );
+  archiveStarting.value = true;
+  try {
+    await run(() =>
+      tiktokProfileApi.archive(
+        id,
+        {
+          selection: selection.value,
+          ...(selection.value === "selected" ? { itemIds: [...selectedIds.value] } : {}),
+          existing: existing.value,
+          ...(groupId.value ? { groupId: groupId.value } : {}),
+          allowPartial: allowPartial.value
+        },
+        scope.signal
+      )
+    );
+  } finally {
+    archiveStarting.value = false;
+  }
+}
+async function supplementSoundtracks() {
+  if (!job.value || busy.value || isActive.value) return;
+  const id = job.value.id;
+  busy.value = true;
+  supplementRunning.value = true;
+  supplementStop.value = false;
+  supplementErrors.value = [];
+  supplementSummary.value = "正在读取作品列表…";
+  const counts = { added: 0, exists: 0, unavailable: 0, skipped: 0, failed: 0, done: 0 };
+  try {
+    const ids: string[] = [];
+    if (selection.value === "selected") ids.push(...selectedIds.value);
+    else {
+      for (let index = 1; index <= Math.max(1, Math.ceil(job.value.discoveredCount / 50)); index++) {
+        if (supplementStop.value || scope.aborted) break;
+        const result = await tiktokProfileApi.works(id, index, scope.signal);
+        ids.push(...result.items.map((work) => work.id));
+      }
+    }
+    for (const workId of ids) {
+      if (supplementStop.value || scope.aborted) break;
+      try {
+        const result = await tiktokProfileApi.supplementSoundtrack(id, workId, scope.signal);
+        counts[result.status]++;
+      } catch (error) {
+        if (scope.aborted) break;
+        counts.failed++;
+        supplementErrors.value.push({ id: workId, message: formatApiError(error, "补充失败") });
+      }
+      counts.done++;
+      supplementSummary.value = `已处理 ${counts.done}/${ids.length} · 新增 ${counts.added} · 已有 ${counts.exists} · 无可用音轨 ${counts.unavailable} · 不适用 ${counts.skipped} · 失败 ${counts.failed}`;
+    }
+    if (supplementStop.value) supplementSummary.value += " · 已停止";
+    if (counts.added) emit("changed");
+  } catch (error) {
+    report(error);
+    supplementSummary.value = "读取作品列表失败，请重试";
+  } finally {
+    supplementRunning.value = false;
+    busy.value = false;
+    if (!scope.aborted && open.value) await refresh();
+  }
 }
 async function remove() {
   const id = job.value?.id;
@@ -517,6 +618,7 @@ function viewArchive(id: string) {
 }
 watch(open, (value) => {
   if (!value) {
+    supplementStop.value = true;
     invalidate();
     loading.value = false;
   } else schedule();
@@ -555,6 +657,78 @@ onScopeDispose(() => {
 .profile-select {
   width: 260px;
   max-width: 100%;
+}
+.profile-task-actions strong {
+  margin-right: 4px;
+}
+.profile-operations {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-subtle);
+}
+.profile-operation-scope,
+.profile-operation-buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+.profile-operation-scope p,
+.profile-operation p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.profile-operation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.profile-operation {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.profile-operation-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  gap: 10px;
+}
+.profile-operation-fields label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+}
+.profile-operation .profile-operation-status {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 900px) {
+  .profile-operation-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .profile-operation-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile-operation-scope .profile-select {
+    width: 100%;
+  }
 }
 .profile-table {
   overflow: auto;
