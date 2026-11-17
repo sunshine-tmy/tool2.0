@@ -3,7 +3,6 @@
     <div class="history-header">
       <div>
         <h2>处理记录</h2>
-        <p>共 {{ total }} 条，成功后原视频、成品及编辑信息长期留档，手动删除</p>
       </div>
       <n-button :loading="loading" @click="$emit('refresh')">刷新</n-button>
     </div>

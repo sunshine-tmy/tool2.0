@@ -432,6 +432,7 @@ async function detectSubtitle() {
     if (!mediaMetadata.value && duration > 0)
       mediaMetadata.value = { width: detection.width, height: detection.height, duration };
     detectedSegments.value = [];
+    workspace.value?.clearUndoHistory();
     manualRanges.value = ranges;
     draftRect.value = undefined;
     manualMode.value = false;
@@ -465,7 +466,8 @@ function toggleManualMode() {
 }
 
 function clearRegions() {
-  manualRanges.value = [];
+  if (workspace.value) workspace.value.replaceRanges([]);
+  else manualRanges.value = [];
   draftRect.value = undefined;
   detectedSegments.value = [];
   manualMode.value = false;
@@ -613,6 +615,7 @@ async function editTask(id: string, version: "original" | "output" = "output") {
           : (task.output.durationMs ?? 0)) / 1000
     };
     mode.value = engineAvailable(task.mode) ? task.mode : (availableModes.value[0] ?? "delogo");
+    workspace.value?.clearUndoHistory();
     manualRanges.value =
       task.manualRanges?.map((range) => ({ ...range, rects: range.rects.map((rect) => ({ ...rect })) })) ?? [];
     if (!manualRanges.value.length && task.manualArea) {
@@ -659,6 +662,7 @@ function outputUrlOf(id: string) {
 function resetSelection() {
   editorRequest++;
   editingTask.value = undefined;
+  workspace.value?.clearUndoHistory();
   manualRanges.value = [];
   if (previewUrl.value?.startsWith("blob:")) URL.revokeObjectURL(previewUrl.value);
   previewUrl.value = undefined;

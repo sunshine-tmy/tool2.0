@@ -119,7 +119,6 @@
           ><n-button type="error" :disabled="!selected.length || adding" @click="removeSelected">删除所选</n-button>
         </div>
         <n-alert v-if="libraryReport" :type="libraryFailed ? 'warning' : 'success'">{{ libraryReport }}</n-alert>
-        <p class="record-note">转换存储上限 10 GiB。删除转换结果不会删除已经加入素材库的独立副本。</p>
         <article v-for="job in jobs" :key="job.id" class="conversion-job record-card">
           <n-checkbox
             :checked="selected.includes(job.id)"
@@ -580,6 +579,9 @@ onBeforeRouteLeave(
   padding-bottom: 16px;
   border-bottom: 1px solid var(--color-border);
   gap: 12px;
+}
+.conversion-page .record-region .conversion-history-toolbar {
+  padding-bottom: 16px;
 }
 .conversion-history-toolbar > strong {
   font-size: 18px;

@@ -285,7 +285,7 @@ describe("useChatterboxPanel", () => {
     expect(panel.batchName.value).toBe(source.name);
     expect(panel.seed.value).toBe(42);
     expect(panel.device.value).toBe("cuda");
-    expect(panel.consentConfirmed.value).toBe(false);
+    expect(panel.consentConfirmed.value).toBe(true);
     expect(panel.referenceFile.value).toMatchObject({ name: "selected.wav", size: selectedReference.size });
     expect(panel.currentBatch.value.id).toBe("running-other");
     expect(JSON.stringify(source)).toBe(original);

@@ -77,7 +77,7 @@ export function useChatterboxEditor(options: { message: EditorMessage; confirmAc
   const language = ref<ChatterboxLanguage>("ms");
   const device = ref<ChatterboxDevice>("cuda");
   const authorization = ref<ChatterboxVoiceAuthorization>("self");
-  const consentConfirmed = ref(false);
+  const consentConfirmed = ref(true);
   const exaggeration = ref(0.5);
   const cfgWeight = ref(0.5);
   const temperature = ref(0.8);

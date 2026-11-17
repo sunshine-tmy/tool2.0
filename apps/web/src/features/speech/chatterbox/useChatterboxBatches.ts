@@ -52,6 +52,7 @@ export function useChatterboxBatches(options: {
   let disposed = false;
   let mutationVersion = 0;
   let pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let historyPollTimer: ReturnType<typeof setTimeout> | undefined;
   let pendingRefresh: { id: string; notify: boolean } | undefined;
   let refreshPromise: Promise<void> | undefined;
   let refreshController: AbortController | undefined;
@@ -105,6 +106,7 @@ export function useChatterboxBatches(options: {
     pendingRefresh = undefined;
     refreshController?.abort();
     if (pollTimer) clearTimeout(pollTimer);
+    if (historyPollTimer) clearTimeout(historyPollTimer);
   });
 
   function schedulePoll() {
@@ -173,9 +175,22 @@ export function useChatterboxBatches(options: {
     }
   }
 
+  function scheduleHistoryPoll() {
+    if (historyPollTimer) clearTimeout(historyPollTimer);
+    historyPollTimer = undefined;
+    if (disposed || !batchHistory.value.batches.some((batch) => batch.status === "queued" || batch.status === "processing")) return;
+    historyPollTimer = setTimeout(() => void fetchBatches(true), 3000);
+  }
+
   async function loadBatches() {
+    await fetchBatches(false);
+  }
+
+  async function fetchBatches(silent: boolean) {
+    if (historyPollTimer) clearTimeout(historyPollTimer);
+    historyPollTimer = undefined;
     const requestId = ++batchesRequestId;
-    loadingBatches.value = true;
+    if (!silent) loadingBatches.value = true;
     try {
       // 列表刷新使用共享 API 和 Schema 解码，取消请求不显示为业务错误。
       const result = await chatterboxApi.batches(batchPage.value, 10);
@@ -186,9 +201,12 @@ export function useChatterboxBatches(options: {
     } catch (error) {
       if (disposed || requestId !== batchesRequestId) return;
       batchPage.value = batchHistory.value.pagination.page;
-      if (!isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次记录读取失败");
+      if (!silent && !isApiErrorCancelled(error)) errorMessage.value = formatApiError(error, "批次记录读取失败");
     } finally {
-      if (!disposed && requestId === batchesRequestId) loadingBatches.value = false;
+      if (!disposed && requestId === batchesRequestId) {
+        loadingBatches.value = false;
+        scheduleHistoryPoll();
+      }
     }
   }
   async function changeBatchPage(page: number) {
@@ -406,7 +424,7 @@ export function useChatterboxBatches(options: {
       // Keep the stored batch untouched; only the new editor draft follows current Worker capabilities.
       editor.device.value = selectSupportedChatterboxDevice(editor.health.value, batch.device);
       editor.authorization.value = batch.authorization;
-      editor.consentConfirmed.value = false;
+      editor.consentConfirmed.value = true;
       editor.exaggeration.value = batch.exaggeration;
       editor.cfgWeight.value = batch.cfgWeight;
       editor.temperature.value = batch.temperature;
@@ -419,7 +437,7 @@ export function useChatterboxBatches(options: {
       document
         .querySelector<HTMLElement>(".chatterbox-panel .batch-editor")
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      options.message.success("文案和设置已重新填入，请确认参考音色与授权后生成；原批次不变");
+      options.message.success("文案和设置已重新填入，请确认参考音色后生成；原批次不变");
     } catch (error) {
       if (!disposed) notifyError(options.message, error, "重新填入批次失败");
     } finally {

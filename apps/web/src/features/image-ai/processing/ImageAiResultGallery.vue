@@ -4,7 +4,6 @@
     <div class="panel-heading">
       <div>
         <h3>处理结果</h3>
-        <p>{{ props.task.results.length }} 张结果已留档；可在“处理记录”中回看、下载，手动删除前长期保留。</p>
       </div>
       <n-button v-if="props.task.results.length > 1" type="primary" secondary @click="downloadAll">
         <template #icon><Download :size="15" /></template>下载 ZIP

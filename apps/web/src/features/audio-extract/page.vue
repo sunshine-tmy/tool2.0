@@ -72,9 +72,6 @@
             >删除所选</n-button
           >
         </div>
-        <p class="hint record-note">
-          成功结果长期保留，存储上限 20 GiB。删除提取结果不会删除原视频或素材库中的独立副本。
-        </p>
         <ExtractionList
           :jobs="jobs"
           :selected="selected"
@@ -299,6 +296,9 @@ onBeforeRouteLeave(
 }
 .selection {
   margin: 16px 0;
+}
+.extraction-page .record-region .record-toolbar {
+  padding-bottom: 16px;
 }
 .hint {
   font-size: 13px;

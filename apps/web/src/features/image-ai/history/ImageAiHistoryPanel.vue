@@ -5,8 +5,6 @@
       <div class="history-heading">
         <div>
           <h3>处理记录</h3>
-          <p>成功及部分成功的结果、原图与处理参数长期保存在本机，手动删除前不会自动过期。</p>
-          <p>失败且没有结果的临时任务按原保留期清理；此前已被清理的图片无法恢复。</p>
         </div>
         <n-button secondary type="primary" :loading="loading" :disabled="deletionBusy" @click="loadHistory"
           ><template #icon><RefreshCw :size="16" /></template>刷新记录</n-button

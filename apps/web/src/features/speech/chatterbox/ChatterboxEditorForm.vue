@@ -129,16 +129,17 @@
                   ></span
                 >
               </div>
-              <div class="speech-reference-audio" @click.stop>
-                <span class="speech-reference-audio-label"><Headphones :size="16" />试听音色</span>
-                <audio
-                  class="reference-audio-player"
-                  controls
-                  preload="metadata"
-                  :aria-label="`试听音色 ${voice.name}`"
-                  :src="panel.mediaUrl(voice.audioUrl)"
-                />
-              </div>
+              <div class="saved-voice-actions">
+              <n-button
+                class="saved-voice-default"
+                size="small"
+                :type="panel.defaultVoices?.[voice.language] === voice.id ? 'primary' : 'default'"
+                :secondary="panel.defaultVoices?.[voice.language] === voice.id"
+                :aria-pressed="panel.defaultVoices?.[voice.language] === voice.id"
+                @click.stop="panel.setDefaultVoice(voice)"
+              >
+                {{ panel.defaultVoices?.[voice.language] === voice.id ? "取消默认" : "设为默认" }}
+              </n-button>
               <n-button
                 class="saved-voice-select"
                 size="small"
@@ -160,6 +161,17 @@
               >
                 <Trash2 :size="16" />
               </n-button>
+              </div>
+              <div class="speech-reference-audio" @click.stop>
+                <span class="speech-reference-audio-label"><Headphones :size="16" />试听音色</span>
+                <audio
+                  class="reference-audio-player"
+                  controls
+                  preload="metadata"
+                  :aria-label="`试听音色 ${voice.name}`"
+                  :src="panel.mediaUrl(voice.audioUrl)"
+                />
+              </div>
             </article>
             <n-empty v-if="!panel.languageSavedVoices.length" description="当前语言还没有永久保存的参考音色" />
           </div>
@@ -414,11 +426,6 @@
         <template #icon><Layers3 :size="18" /></template>
         {{ panel.creating ? "正在加入队列…" : `添加 ${panel.validSegmentCount} 个音频到生成队列` }}
       </n-button>
-      <p class="chatterbox-hint">任务按入队顺序依次生成；执行期间可继续编辑并添加新批次，不影响已提交的内容。</p>
-      <p class="chatterbox-hint">
-        参考音色随批次保留
-        {{ panel.health?.retentionDays || 3 }} 天，批次结束后可直接重新生成；也可在详情中手动删除参考音色。
-      </p>
       <p v-if="!panel.health?.available" class="edge-tts-error">
         克隆服务正在准备或启动失败。首次一键启动会自动安装环境和下载模型；请保持启动窗口开启并查看其中的错误提示。
       </p>
@@ -559,6 +566,12 @@ function syncReferencePickerOpen(event: Event) {
   grid-column: 1 / -1;
   grid-row: 2;
   margin-top: 2px;
+}
+.saved-voice-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .speech-reference-audio-label {
   display: inline-flex;

@@ -11,14 +11,10 @@
         @keyup.enter="$emit('applyFilters')"
       />
       <n-select v-model:value="category" clearable :options="categoryOptions" placeholder="文件类型" />
-      <details class="lan-more-filters"><summary>更多筛选</summary><div class="lan-filter-options">
-      <n-input v-model:value="extension" clearable placeholder="扩展名，例如 pdf" />
-      <n-select v-model:value="sortBy" :options="sortOptions" />
-      <n-select v-model:value="sortOrder" :options="sortOrderOptions" />
+      <n-select v-model:value="sortBy" :options="sortOptions" aria-label="排序方式" />
+      <n-select v-model:value="sortOrder" :options="sortOrderOptions" aria-label="排序顺序" />
       <n-button type="primary" @click="$emit('applyFilters')">筛选</n-button>
       <n-button secondary @click="$emit('resetFilters')">重置</n-button>
-
-      </div></details>
     </div>
     </header>
 
@@ -162,7 +158,6 @@ const emit = defineEmits<{
 
 const keyword = defineModel<string>("keyword", { required: true });
 const category = defineModel<LanFileCategory | undefined>("category", { required: true });
-const extension = defineModel<string>("extension", { required: true });
 const sortBy = defineModel<LanFileSortBy>("sortBy", { required: true });
 const sortOrder = defineModel<LanFileSortOrder>("sortOrder", { required: true });
 const page = defineModel<number>("page", { required: true });
@@ -219,9 +214,6 @@ function remainingTime(value: string) {
 .lan-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0; border: 0; background: transparent; }
 .lan-filters > .n-input { width: 280px; }
 .lan-filters > .n-select { width: 150px; }
-.lan-more-filters { position: relative; color: var(--color-text-secondary); font-size: 13px; }
-.lan-more-filters summary { padding: 8px; cursor: pointer; }
-.lan-filter-options { position: absolute; right: 0; top: 100%; z-index: 5; display: grid; gap: 12px; width: 260px; padding: 16px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-card); }
 .batch-toolbar { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 16px; padding: 14px 0; margin: 0; border: 0; background: transparent; }
 .batch-actions { display: flex; gap: 10px; }
 .lan-selection-count { color: var(--color-text-secondary); font-size: 13px; }

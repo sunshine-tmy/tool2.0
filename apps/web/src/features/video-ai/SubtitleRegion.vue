@@ -10,9 +10,9 @@
     @focus="$emit('select')"
     @pointerdown.stop="begin($event, 'move')"
     @pointermove.stop="move"
-    @pointerup.stop="finish"
+    @pointerup.stop="finish()"
     @pointercancel.stop="cancel"
-    @lostpointercapture="finish"
+    @lostpointercapture="finish()"
     @keydown="keydown"
   >
     <span class="region-number">{{ label }}</span>
@@ -41,7 +41,13 @@ const props = defineProps<{
   surfaceWidth: number;
   surfaceHeight: number;
 }>();
-const emit = defineEmits<{ select: []; update: [rect: VideoAiRect]; remove: [] }>();
+const emit = defineEmits<{
+  select: [];
+  update: [rect: VideoAiRect];
+  remove: [];
+  "edit-start": [];
+  "edit-end": [cancelled: boolean];
+}>();
 const handles = ["n", "ne", "e", "se", "s", "sw", "w", "nw"] as const;
 const element = ref<HTMLElement>();
 const style = computed(() => ({
@@ -75,6 +81,7 @@ function begin(event: PointerEvent, kind: "move" | (typeof handles)[number]) {
     width: props.surfaceWidth,
     height: props.surfaceHeight
   };
+  emit("edit-start");
   element.value.setPointerCapture(event.pointerId);
   event.preventDefault();
 }
@@ -103,14 +110,15 @@ function move(event: PointerEvent) {
   if (drag.kind.includes("s")) bottom = clamp(bottom + dy, top + minHeight, 1);
   emit("update", { x: left, y: top, width: right - left, height: bottom - top });
 }
-function finish() {
+function finish(cancelled = false) {
   const id = drag?.pointer;
+  if (drag) emit("edit-end", cancelled);
   drag = undefined;
   if (id !== undefined && element.value?.hasPointerCapture(id)) element.value.releasePointerCapture(id);
 }
 function cancel() {
   if (drag && props.editable) emit("update", drag.rect);
-  finish();
+  finish(true);
 }
 function keydown(event: KeyboardEvent) {
   if (

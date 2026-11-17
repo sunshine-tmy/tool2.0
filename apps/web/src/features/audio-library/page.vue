@@ -20,43 +20,11 @@
             <n-input v-model:value="keyword" clearable placeholder="搜索音频名称、文案或备注">
               <template #prefix><Search :size="17" /></template>
             </n-input>
-            <div class="library-purpose-filter">
-              <span>素材类型</span>
-              <nav class="library-view-strip" aria-label="素材分类">
-                <button
-                  v-for="entry in views.filter((x) => ['all', 'music', 'speech'].includes(x.value))"
-                  :key="entry.value"
-                  class="library-view"
-                  :class="{ active: view === entry.value }"
-                  @click="chooseView(entry.value)"
-                >
-                  {{ entry.value === "all" ? "全部素材" : entry.label }}
-                </button>
-              </nav>
-            </div>
-            <div class="library-group-filter">
-              <span>所属分组</span>
-              <n-select
-                :value="groupId"
-                clearable
-                filterable
-                placeholder="全部分组"
-                :options="groups"
-                @update:value="(value) => selectGroup(value ? [value] : [])"
-              />
-            </div>
             <n-button type="primary" class="library-upload-button" @click="uploadVisible = true">
               <template #icon><Upload :size="18" /></template>上传音频
             </n-button>
           </div>
           <div class="library-management">
-            <n-button
-              :type="groupManagerOpen ? 'primary' : 'default'"
-              :secondary="groupManagerOpen"
-              @click="groupManagerOpen = !groupManagerOpen"
-            >
-              <template #icon><FolderOpen :size="17" /></template>管理分组
-            </n-button>
             <n-button
               :type="view === 'trash' ? 'primary' : 'default'"
               @click="chooseView(view === 'trash' ? 'all' : 'trash')"
@@ -108,176 +76,214 @@
               >
             </div>
           </div>
-          <div v-show="groupManagerOpen" class="library-group-manager">
-            <header><strong>音频分组</strong><n-button size="small" @click="newGroup()">新建分组</n-button></header>
+        </section>
+        <div v-show="presetsOpen" class="library-presets"><AudioQueuePanel ref="queuePanel" /></div>
+        <div class="library-content">
+          <aside class="library-group-manager" aria-label="素材类型与音频分组">
+            <div class="library-purpose-filter">
+              <span>素材类型</span>
+              <nav class="library-view-strip" aria-label="素材分类">
+                <button
+                  v-for="entry in views.filter((x) => ['all', 'music', 'speech'].includes(x.value))"
+                  :key="entry.value"
+                  class="library-view"
+                  :class="{ active: view === entry.value }"
+                  :aria-pressed="view === entry.value"
+                  @click="chooseView(entry.value)"
+                >
+                  {{ entry.value === "all" ? "全部素材" : entry.label }}
+                </button>
+              </nav>
+            </div>
+            <header>
+              <strong>音频分组</strong>
+              <div class="library-group-header-actions">
+                <n-button v-if="groupId" text size="small" @click="selectGroup([])">查看全部</n-button>
+                <n-button size="small" @click="newGroup()">新建分组</n-button>
+              </div>
+            </header>
             <n-tree
+              class="library-group-tree"
               :data="tree"
               :selected-keys="groupId ? [groupId] : []"
+              :indent="16"
+              :node-props="groupNodeProps"
               block-line
               default-expand-all
+              show-line
+              ellipsis
               @update:selected-keys="selectGroup"
             />
+            <n-dropdown
+              trigger="manual"
+              placement="bottom-start"
+              :show="groupMenu.show"
+              :x="groupMenu.x"
+              :y="groupMenu.y"
+              :options="groupMenuOptions"
+              @select="handleGroupMenuSelect"
+              @clickoutside="groupMenu.show = false"
+            />
             <div v-if="groupId" class="library-group-controls">
-              <n-button size="small" @click="editGroup">编辑分组</n-button
-              ><n-button size="small" type="error" secondary @click="deleteGroup">删除分组</n-button>
+              <n-button size="small" @click="editGroup()">编辑分组</n-button
+              ><n-button size="small" type="error" secondary @click="deleteGroup()">删除分组</n-button>
             </div>
             <p class="library-storage">
               已存 {{ data?.totalItems || 0 }} 条 · {{ formatBytes(data?.usedBytes || 0) }} /
               {{ formatBytes(data?.maxBytes || 10 * 1024 ** 3) }}
             </p>
-          </div>
-        </section>
-        <div v-show="presetsOpen" class="library-presets"><AudioQueuePanel ref="queuePanel" /></div>
-        <section class="library-main">
-          <div class="library-batch">
-            <n-checkbox
-              :checked="Boolean(data?.items.length && selected.length === data.items.length)"
-              :indeterminate="Boolean(selected.length && selected.length !== data?.items.length)"
-              @update:checked="selectAll"
-              >全选本页</n-checkbox
-            ><span>{{ selected.length }} 条已选</span
-            ><n-button size="small" :disabled="!selected.length" @click="openMove(selected)">移动至</n-button
-            ><n-button v-if="view !== 'trash'" size="small" :disabled="!selected.length" @click="enqueueSelected"
-              >加入队列</n-button
-            ><n-button
-              v-if="view !== 'trash'"
-              tag="a"
-              size="small"
-              :disabled="!selected.length"
-              :href="selected.length ? api.exportUrl(selected) : undefined"
-              >导出所选</n-button
-            ><n-button
-              size="small"
-              :type="view === 'trash' ? 'primary' : 'error'"
-              :secondary="view === 'trash'"
-              :disabled="!selected.length || busy || purgingSelected || loading"
-              @click="trashSelected"
-              >{{ view === "trash" ? "恢复所选" : "移入回收站" }}</n-button
-            ><n-button
-              v-if="view === 'trash'"
-              size="small"
-              type="error"
-              secondary
-              :loading="purgingSelected"
-              :disabled="!selected.length || busy || purgingSelected || loading"
-              @click="purgeSelected"
-              >彻底删除所选</n-button
-            >
-          </div>
-          <div class="library-list-heading" aria-hidden="true">
-            <span></span><span>音频名称</span><span>时长</span><span>素材类型</span><span>所属分组</span
-            ><span>操作</span>
-          </div>
-          <n-spin :show="loading"
-            ><div class="library-items" @play.capture="onItemPlay">
-              <article
-                v-for="item in data?.items || []"
-                :key="item.id"
-                class="library-item"
-                :class="{ 'library-item--trash': view === 'trash' }"
+          </aside>
+          <section class="library-main">
+            <div class="library-batch">
+              <n-checkbox
+                :checked="Boolean(data?.items.length && selected.length === data.items.length)"
+                :indeterminate="Boolean(selected.length && selected.length !== data?.items.length)"
+                @update:checked="selectAll"
+                >全选本页</n-checkbox
+              ><span>{{ selected.length }} 条已选</span
+              ><n-button size="small" :disabled="!selected.length" @click="openMove(selected)">移动至</n-button
+              ><n-button v-if="view !== 'trash'" size="small" :disabled="!selected.length" @click="enqueueSelected"
+                >加入队列</n-button
+              ><n-button
+                v-if="view !== 'trash'"
+                tag="a"
+                size="small"
+                :disabled="!selected.length"
+                :href="selected.length ? api.exportUrl(selected) : undefined"
+                >导出所选</n-button
+              ><n-button
+                size="small"
+                :type="view === 'trash' ? 'primary' : 'error'"
+                :secondary="view === 'trash'"
+                :disabled="!selected.length || busy || purgingSelected || loading"
+                @click="trashSelected"
+                >{{ view === "trash" ? "恢复所选" : "移入回收站" }}</n-button
+              ><n-button
+                v-if="view === 'trash'"
+                size="small"
+                type="error"
+                secondary
+                :loading="purgingSelected"
+                :disabled="!selected.length || busy || purgingSelected || loading"
+                @click="purgeSelected"
+                >彻底删除所选</n-button
               >
-                <n-checkbox
-                  :checked="selected.includes(item.id)"
-                  :aria-label="`选择 ${item.title}`"
-                  @update:checked="(checked) => toggleItem(item.id, checked)"
-                />
-                <div
-                  class="library-item-copy"
-                  role="button"
-                  tabindex="0"
-                  :aria-label="`查看 ${item.title} 详情`"
-                  @click="openDetail(item)"
-                  @keydown.enter="openDetail(item)"
-                  @keydown.space.prevent="openDetail(item)"
+            </div>
+            <div class="library-list-heading" aria-hidden="true">
+              <span></span><span>音频名称</span><span>时长</span><span>素材类型</span><span>所属分组</span
+              ><span>操作</span>
+            </div>
+            <n-spin :show="loading"
+              ><div class="library-items" :class="{ 'library-items--empty': !data?.items.length }" @play.capture="onItemPlay">
+                <article
+                  v-for="item in data?.items || []"
+                  :key="item.id"
+                  class="library-item"
+                  :class="{ 'library-item--trash': view === 'trash' }"
                 >
-                  <span class="library-audio-icon" :class="{ 'is-speech': audioLibraryPurpose(item) === 'speech' }"
-                    ><Mic v-if="audioLibraryPurpose(item) === 'speech'" :size="23" /><Music2 v-else :size="23"
-                  /></span>
-                  <header>
-                    <strong>{{ item.title }}</strong
-                    ><n-tag size="small">{{ languageLabel(item.language) }}</n-tag
-                    ><n-tag v-if="!item.available" size="small" type="error">音频不可用</n-tag
-                    ><n-tag v-if="audioLibraryPurpose(item) === 'music'" size="small">背景音乐</n-tag
-                    ><n-tag
-                      v-if="
-                        audioLibraryPurpose(item) !== 'music' && (!item.foreignText.trim() || !item.chineseText.trim())
-                      "
-                      size="small"
-                      type="warning"
-                      >待补全</n-tag
-                    >
-                  </header>
-                  <footer>
-                    {{ formatDuration(item.duration) }} · {{ formatBytes(item.bytes) }} ·
-                    {{ sourceLabel(item.source.kind) }} ·
-                    {{ formatDate(item.createdAt) }}
-                  </footer>
-                </div>
-                <span class="library-duration">{{ formatDuration(item.duration) }}</span>
-                <span class="library-purpose"
-                  ><n-tag size="small" :class="{ 'is-speech': audioLibraryPurpose(item) === 'speech' }">{{
-                    purposeOptions.find((x) => x.value === audioLibraryPurpose(item))?.label || "通用音频"
-                  }}</n-tag></span
-                >
-                <n-button
-                  class="library-row-group"
-                  size="small"
-                  :disabled="view === 'trash'"
-                  @click="openMove([item.id])"
-                  >{{ groups.find((x) => x.value === item.groupId)?.label || "未分组" }}<ChevronDown :size="14"
-                /></n-button>
-                <details
-                  v-if="view !== 'trash'"
-                  :id="`library-preview-${item.id}`"
-                  class="library-item-preview"
-                  :open="previewIds.includes(item.id)"
-                >
-                  <summary><Play :size="14" />试听与裁剪<ChevronDown :size="14" /></summary>
-                  <AudioLibraryItemPlayer :item="item" @saved="onClipSaved" />
-                </details>
-                <div class="library-item-actions">
-                  <template v-if="view !== 'trash'">
-                    <n-button
-                      size="small"
-                      class="library-preview-toggle"
-                      :type="previewIds.includes(item.id) ? 'primary' : 'default'"
-                      :secondary="previewIds.includes(item.id)"
-                      :aria-expanded="previewIds.includes(item.id)"
-                      :aria-controls="`library-preview-${item.id}`"
-                      @click="
-                        previewIds = previewIds.includes(item.id)
-                          ? previewIds.filter((id) => id !== item.id)
-                          : [...previewIds, item.id]
-                      "
-                    >
-                      <template #icon><Play :size="14" /></template
-                      >{{ previewIds.includes(item.id) ? "收起试听" : "试听与裁剪" }}
-                    </n-button>
-                    <n-button size="small" :disabled="!item.available" @click="enqueue([item])">＋队列</n-button
-                    ><n-button
-                      tag="a"
-                      size="small"
-                      :disabled="!item.available"
-                      :href="item.available ? resolveBackendUrl(item.audioUrl) : undefined"
-                      :download="item.title"
-                      ><template #icon><Download :size="15" /></template>下载</n-button
-                    ></template
-                  ><template v-else
-                    ><n-button size="small" type="primary" secondary @click="restoreItem(item)">恢复</n-button
-                    ><n-button size="small" type="error" secondary @click="purge(item)">彻底删除</n-button></template
-                  ><n-button size="small" :quaternary="view === 'trash'" @click="openDetail(item)">编辑</n-button>
-                </div>
-              </article>
-              <n-empty
-                v-if="!data?.items.length && !loading"
-                description="暂无音频，可从参考音色克隆结果加入，或上传本地成品"
-              /></div
-          ></n-spin>
-          <div v-if="data?.total" class="library-pagination">
-            <span>共 {{ data.total }} 条</span
-            ><n-pagination v-model:page="page" :page-size="20" :item-count="data.total" />
-          </div>
-        </section>
+                  <n-checkbox
+                    :checked="selected.includes(item.id)"
+                    :aria-label="`选择 ${item.title}`"
+                    @update:checked="(checked) => toggleItem(item.id, checked)"
+                  />
+                  <div
+                    class="library-item-copy"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="`查看 ${item.title} 详情`"
+                    @click="openDetail(item)"
+                    @keydown.enter="openDetail(item)"
+                    @keydown.space.prevent="openDetail(item)"
+                  >
+                    <span class="library-audio-icon" :class="{ 'is-speech': audioLibraryPurpose(item) === 'speech' }"
+                      ><Mic v-if="audioLibraryPurpose(item) === 'speech'" :size="23" /><Music2 v-else :size="23"
+                    /></span>
+                    <header>
+                      <strong>{{ item.title }}</strong
+                      ><n-tag size="small">{{ languageLabel(item.language) }}</n-tag
+                      ><n-tag v-if="!item.available" size="small" type="error">音频不可用</n-tag
+                      ><n-tag v-if="audioLibraryPurpose(item) === 'music'" size="small">背景音乐</n-tag
+                      ><n-tag
+                        v-if="
+                          audioLibraryPurpose(item) !== 'music' && (!item.foreignText.trim() || !item.chineseText.trim())
+                        "
+                        size="small"
+                        type="warning"
+                        >待补全</n-tag
+                      >
+                    </header>
+                    <footer>
+                      {{ formatDuration(item.duration) }} · {{ formatBytes(item.bytes) }} ·
+                      {{ sourceLabel(item.source.kind) }} ·
+                      {{ formatDate(item.createdAt) }}
+                    </footer>
+                  </div>
+                  <span class="library-duration">{{ formatDuration(item.duration) }}</span>
+                  <span class="library-purpose"
+                    ><n-tag size="small" :class="{ 'is-speech': audioLibraryPurpose(item) === 'speech' }">{{
+                      purposeOptions.find((x) => x.value === audioLibraryPurpose(item))?.label || "通用音频"
+                    }}</n-tag></span
+                  >
+                  <n-button
+                    class="library-row-group"
+                    size="small"
+                    :disabled="view === 'trash'"
+                    @click="openMove([item.id])"
+                    >{{ groups.find((x) => x.value === item.groupId)?.label || "未分组" }}<ChevronDown :size="14"
+                  /></n-button>
+                  <details
+                    v-if="view !== 'trash'"
+                    :id="`library-preview-${item.id}`"
+                    class="library-item-preview"
+                    :open="previewIds.includes(item.id)"
+                  >
+                    <summary><Play :size="14" />试听与裁剪<ChevronDown :size="14" /></summary>
+                    <AudioLibraryItemPlayer :item="item" @saved="onClipSaved" />
+                  </details>
+                  <div class="library-item-actions">
+                    <template v-if="view !== 'trash'">
+                      <n-button
+                        size="small"
+                        class="library-preview-toggle"
+                        :type="previewIds.includes(item.id) ? 'primary' : 'default'"
+                        :secondary="previewIds.includes(item.id)"
+                        :aria-expanded="previewIds.includes(item.id)"
+                        :aria-controls="`library-preview-${item.id}`"
+                        @click="
+                          previewIds = previewIds.includes(item.id)
+                            ? previewIds.filter((id) => id !== item.id)
+                            : [...previewIds, item.id]
+                        "
+                      >
+                        <template #icon><Play :size="14" /></template
+                        >{{ previewIds.includes(item.id) ? "收起试听" : "试听与裁剪" }}
+                      </n-button>
+                      <n-button size="small" :disabled="!item.available" @click="enqueue([item])">＋队列</n-button
+                      ><n-button
+                        tag="a"
+                        size="small"
+                        :disabled="!item.available"
+                        :href="item.available ? resolveBackendUrl(item.audioUrl) : undefined"
+                        :download="item.title"
+                        ><template #icon><Download :size="15" /></template>下载</n-button
+                      ></template
+                    ><template v-else
+                      ><n-button size="small" type="primary" secondary @click="restoreItem(item)">恢复</n-button
+                      ><n-button size="small" type="error" secondary @click="purge(item)">彻底删除</n-button></template
+                    ><n-button size="small" :quaternary="view === 'trash'" @click="openDetail(item)">编辑</n-button>
+                  </div>
+                </article>
+                <n-empty
+                  v-if="!data?.items.length && !loading"
+                  description="暂无音频，可从参考音色克隆结果加入，或上传本地成品"
+                /></div
+            ></n-spin>
+            <div v-if="data?.total" class="library-pagination">
+              <span>共 {{ data.total }} 条</span
+              ><n-pagination v-model:page="page" :page-size="20" :item-count="data.total" />
+            </div>
+          </section>
+        </div>
       </div>
       <n-drawer v-model:show="detailVisible" width="min(560px, 100vw)"
         ><n-drawer-content title="音频详情" closable
@@ -338,7 +344,7 @@
       <n-modal v-model:show="moveVisible"
         ><n-card title="移动至分组" class="library-dialog" closable @close="moveVisible = false"
           ><p>{{ moveIds.length }} 条音频，只调整分类，不复制文件。</p>
-          <div class="library-recent">
+          <div v-if="recentOptions.length" class="library-recent">
             <span>最近使用：</span
             ><n-button
               v-for="recent in recentOptions"
@@ -348,7 +354,10 @@
               >{{ recent.label }}</n-button
             >
           </div>
-          <n-select v-model:value="moveTarget" clearable filterable placeholder="未分组" :options="groups" /><template
+          <n-form-item label="目标分组">
+            <AudioGroupSelect v-model:value="moveTarget" :options="groups" root-label="未分组" placeholder="搜索分组名称或路径" />
+          </n-form-item>
+          <p class="library-group-target">可输入名称或路径搜索。移动到：{{ groups.find((group) => group.value === moveTarget)?.label || "未分组" }}</p><template
             #footer
             ><n-button type="primary" :loading="busy" @click="moveItems">确认移动</n-button></template
           ></n-card
@@ -361,14 +370,14 @@
           closable
           @close="groupVisible = false"
           ><n-form label-placement="top"
-            ><n-form-item label="分组名称"><n-input v-model:value="groupDraft.name" maxlength="60" /></n-form-item
-            ><n-form-item label="父分组（最多三级）"
-              ><n-select
+            ><n-form-item label="分组名称"><n-input v-model:value="groupDraft.name" maxlength="60" placeholder="输入分组名称" /></n-form-item
+            ><n-form-item label="上级分组"
+              ><AudioGroupSelect
                 v-model:value="groupDraft.parentId"
-                clearable
-                filterable
-                :options="groups.filter((x) => x.value !== groupDraft.id)"
-                placeholder="顶级分组" /></n-form-item></n-form
+                :options="parentOptions"
+                root-label="无上级（顶级分组）"
+                placeholder="搜索上级分组名称或路径" /></n-form-item>
+            <p class="library-group-target">可输入名称或路径搜索上级分组。分组位置：{{ groups.find((group) => group.value === groupDraft.parentId)?.label || "顶级分组" }} / {{ groupDraft.name.trim() || "新分组" }}（最多三级）</p></n-form
           ><template #footer
             ><n-button type="primary" :loading="busy" @click="saveGroup">保存分组</n-button></template
           ></n-card
@@ -480,12 +489,11 @@
 </template>
 <script setup lang="ts">
 import { audioLibraryPurpose } from "@toolbox/shared";
-import { useMessage } from "naive-ui";
-import { ref } from "vue";
+import { useMessage, type TreeOption } from "naive-ui";
+import { nextTick, reactive, ref } from "vue";
 import {
   Search,
   Upload,
-  FolderOpen,
   Trash2,
   SlidersHorizontal,
   ArchiveRestore,
@@ -498,10 +506,10 @@ import {
 } from "lucide-vue-next";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 const previewIds = ref<string[]>([]);
-const groupManagerOpen = ref(false);
 const presetsOpen = ref(false);
 import {
   NPopover,
+  NDropdown,
   NButton,
   NAlert,
   NCheckbox,
@@ -531,6 +539,7 @@ import { formatBytes, formatDuration, formatDate, languageLabel, sourceLabel } f
 import { useAudioLibraryCollection } from "./useAudioLibraryCollection";
 import { useAudioLibraryItems } from "./useAudioLibraryItems";
 import { useAudioLibraryGroups } from "./useAudioLibraryGroups";
+import AudioGroupSelect from "./AudioGroupSelect.vue";
 import { useAudioLibraryTransfers } from "./useAudioLibraryTransfers";
 const queuePanel = ref<InstanceType<typeof AudioQueuePanel>>();
 const collection = useAudioLibraryCollection();
@@ -590,11 +599,38 @@ const {
   undoMove,
   groupVisible,
   groupDraft,
+  parentOptions,
   newGroup,
   editGroup,
   saveGroup,
   deleteGroup
 } = useAudioLibraryGroups(collection, run);
+const groupMenu = reactive({ show: false, x: 0, y: 0, id: "" });
+const groupMenuOptions = [
+  { label: "新建子分组", key: "create" },
+  { label: "重命名", key: "rename" },
+  { label: "删除分组", key: "delete" }
+];
+function groupNodeProps({ option }: { option: TreeOption }) {
+  return {
+    onContextmenu(event: MouseEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      groupMenu.show = false;
+      groupMenu.id = String(option.key);
+      groupMenu.x = event.clientX;
+      groupMenu.y = event.clientY;
+      void nextTick(() => { groupMenu.show = true; });
+    }
+  };
+}
+function handleGroupMenuSelect(key: string) {
+  const id = groupMenu.id;
+  groupMenu.show = false;
+  if (key === "create") newGroup(id);
+  else if (key === "rename") editGroup(id);
+  else if (key === "delete") void deleteGroup(id);
+}
 const {
   uploadVisible,
   fileInput,
@@ -635,40 +671,31 @@ async function onClipSaved() {
 }
 .library-primary-filters {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(210px, 0.65fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 20px;
 }
-.library-purpose-filter,
-.library-group-filter {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.library-purpose-filter > span,
-.library-group-filter > span {
+.library-purpose-filter > span {
   white-space: nowrap;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-text);
 }
-.library-group-filter :deep(.n-select) {
-  min-width: 0;
-  flex: 1;
-}
 .library-view-strip {
   display: flex;
+  width: 100%;
   padding: 3px;
   background: var(--color-primary-50);
   border: 1px solid var(--color-border);
   border-radius: 9px;
 }
 .library-view {
+  flex: 1 1 0;
+  min-width: 0;
   cursor: pointer;
   border: 0;
   border-radius: 6px;
-  padding: 7px 12px;
+  padding: 7px 4px;
   white-space: nowrap;
   background: transparent;
   color: var(--color-text-secondary);
@@ -698,18 +725,31 @@ async function onClipSaved() {
   margin-left: auto;
 }
 .library-secondary-filters :deep(.n-select) {
-  width: 120px;
+  width: 160px;
 }
 .library-backup-options {
   display: grid;
   gap: 8px;
 }
+.library-content {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
 .library-group-manager {
-  margin-top: 16px;
+  min-width: 0;
   padding: 16px;
   background: var(--color-surface-subtle);
   border: 1px solid var(--color-border);
   border-radius: 10px;
+}
+.library-purpose-filter {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--color-border);
 }
 .library-group-manager header,
 .library-group-controls {
@@ -719,8 +759,42 @@ async function onClipSaved() {
 }
 .library-group-manager header {
   justify-content: space-between;
+  margin-bottom: 14px;
+}
+.library-group-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.library-group-tree {
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+.library-group-tree :deep(.n-tree-node) {
+  min-height: 34px;
+  align-items: center;
+  border-radius: 7px;
+}
+.library-group-tree :deep(.n-tree-node--selected) {
+  background: var(--color-primary-50);
+}
+.library-group-tree :deep(.n-tree-node--selected .n-tree-node-content) {
+  color: var(--color-primary-600);
+  font-weight: 600;
+}
+.library-group-tree :deep(.n-tree-node-content) {
+  min-width: 0;
+  flex: 1;
+}
+.library-group-controls {
+  flex-wrap: wrap;
+  margin-top: 12px;
 }
 .library-storage {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
   font-size: 12px;
   color: var(--color-text-secondary);
   margin-bottom: 0;
@@ -761,12 +835,16 @@ async function onClipSaved() {
   text-align: right;
 }
 .library-items {
-  min-height: 160px;
+  min-height: 480px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-top: 0;
   border-radius: 0 0 14px 14px;
   overflow: hidden;
+}
+.library-items--empty {
+  display: grid;
+  place-items: center;
 }
 .library-item {
   position: relative;
@@ -982,6 +1060,11 @@ async function onClipSaved() {
   flex-wrap: wrap;
   margin-bottom: 12px;
 }
+.library-group-target {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
 pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -993,12 +1076,8 @@ pre {
     grid-template-columns: minmax(220px, 1fr) auto;
     gap: 14px;
   }
-  .library-group-filter {
-    grid-row: 2;
-  }
   .library-upload-button {
     grid-column: 2;
-    grid-row: 2;
     justify-self: end;
   }
   .library-secondary-filters {
@@ -1010,7 +1089,7 @@ pre {
     column-gap: 12px;
   }
 }
-@container tool-content (max-width: 1000px) {
+@container tool-content (max-width: 1250px) {
   .library-list-heading {
     display: none;
   }
@@ -1046,6 +1125,11 @@ pre {
     grid-row: 4;
   }
 }
+@container tool-content (max-width: 800px) {
+  .library-content {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @container tool-content (max-width: 650px) {
   .library-toolbar {
     padding: 14px;
@@ -1053,7 +1137,6 @@ pre {
   .library-primary-filters {
     grid-template-columns: minmax(0, 1fr);
   }
-  .library-group-filter,
   .library-upload-button {
     grid-row: auto;
     grid-column: auto;
@@ -1061,14 +1144,11 @@ pre {
   .library-upload-button {
     justify-self: stretch;
   }
-  .library-purpose-filter {
-    flex-wrap: wrap;
-  }
   .library-secondary-filters {
     width: 100%;
   }
   .library-secondary-filters :deep(.n-select) {
-    flex: 1 1 120px;
+    flex: 1 1 160px;
   }
   .library-item {
     padding: 14px 12px;

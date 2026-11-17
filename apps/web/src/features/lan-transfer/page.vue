@@ -81,7 +81,6 @@
           v-show="activeLanTab === 'files'"
           v-model:keyword="lanQuery.keyword"
           v-model:category="lanQuery.category"
-          v-model:extension="lanQuery.extension"
           v-model:sort-by="lanQuery.sortBy"
           v-model:sort-order="lanQuery.sortOrder"
           v-model:page="lanPagination.page"
@@ -189,7 +188,6 @@ const notePagination = reactive({ page: 1, pageSize: 20, total: 0, pageCount: 1 
 const lanQuery = reactive({
   keyword: "",
   category: undefined as LanFileCategory | undefined,
-  extension: "",
   sortBy: "createdAt" as LanFileSortBy,
   sortOrder: "desc" as LanFileSortOrder
 });
@@ -511,7 +509,6 @@ async function loadLanFiles(silent = false) {
     const result = await lanTransferApi.listFiles({
       keyword: lanQuery.keyword,
       category: lanQuery.category,
-      extension: lanQuery.extension,
       sortBy: lanQuery.sortBy,
       sortOrder: lanQuery.sortOrder,
       page: lanPagination.page,
@@ -538,7 +535,6 @@ async function applyLanFilters() {
 async function resetLanFilters() {
   lanQuery.keyword = "";
   lanQuery.category = undefined;
-  lanQuery.extension = "";
   lanQuery.sortBy = "createdAt";
   lanQuery.sortOrder = "desc";
   await applyLanFilters();

@@ -15,7 +15,7 @@
         @pointermove="move"
         @pointerup="finish"
         @pointercancel="cancel"
-        @lostpointercapture="releaseDrag"
+        @lostpointercapture="releaseDrag()"
       >
         <div class="timeline-ruler">
           <span v-for="index in 11" :key="index" :style="{ left: `${(index - 1) * 10}%` }"
@@ -80,10 +80,6 @@
         </div>
       </div>
     </div>
-    <p>
-      拖动标尺或指针定位视频画面；拖动片段移动区间，拉动两端调整长度。Ctrl／Command＋滚轮缩放时间线。靠近边界时自动对齐，按住
-      Alt 可临时关闭吸附。选中区间后按 Backspace／Delete 删除区间及其框选。
-    </p>
   </section>
 </template>
 <script setup lang="ts">
@@ -102,6 +98,8 @@ const emit = defineEmits<{
   seek: [time: number];
   select: [index: number];
   remove: [index: number];
+  "edit-start": [];
+  "edit-end": [cancelled: boolean];
 }>();
 const track = ref<HTMLElement>();
 const scrollViewport = ref<HTMLElement>();
@@ -173,6 +171,7 @@ function begin(event: PointerEvent, operation: "seek" | "move" | "start" | "end"
     pointerId: event.pointerId,
     moved: false
   };
+  if (operation !== "seek") emit("edit-start");
   track.value.setPointerCapture(event.pointerId);
   if (index >= 0) {
     emit("select", index);
@@ -209,8 +208,9 @@ function move(event: PointerEvent) {
     drag.initial.map((value, index) => (index === drag!.index ? range : value))
   );
 }
-function releaseDrag() {
+function releaseDrag(cancelled = false) {
   const pointer = drag?.pointerId;
+  if (drag && drag.operation !== "seek") emit("edit-end", cancelled);
   drag = undefined;
   if (pointer !== undefined && track.value?.hasPointerCapture(pointer)) track.value.releasePointerCapture(pointer);
 }
@@ -258,7 +258,7 @@ function cancel() {
     emit("update:ranges", drag.initial);
     if (drag.operation === "seek") seek(drag.time);
   }
-  releaseDrag();
+  releaseDrag(true);
 }
 function nudge(index: number, operation: "start" | "end" | "move", delta: number) {
   emit(
@@ -378,13 +378,43 @@ p {
   margin: var(--space-2) 0 0;
 }
 
-.video-timeline { padding: 10px 0 0; border: 0; border-radius: 0; background: transparent; }
-.timeline-toolbar { gap: 10px; }
-.timeline-toolbar label { display: inline-flex; align-items: center; gap: 5px; }
-.timeline-toolbar input { accent-color: var(--color-primary-600); }
-.timeline-toolbar :deep(.n-button:first-of-type) { margin-left: auto; }
-.timeline-track { border-radius: 6px; background: var(--color-surface-subtle); }
-.timeline-clip { border-color: var(--color-primary-200); border-radius: 6px; background: var(--color-primary-400, #a69aff); color: white; }
-.timeline-clip.selected { border-color: var(--color-primary-600); box-shadow: inset 0 0 0 2px var(--color-surface); background: var(--color-primary-500); }
-.timeline-clip:focus-visible { outline: 2px solid var(--color-primary-600); outline-offset: 2px; }
+.video-timeline {
+  padding: 10px 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.timeline-toolbar {
+  gap: 10px;
+}
+.timeline-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.timeline-toolbar input {
+  accent-color: var(--color-primary-600);
+}
+.timeline-toolbar :deep(.n-button:first-of-type) {
+  margin-left: auto;
+}
+.timeline-track {
+  border-radius: 6px;
+  background: var(--color-surface-subtle);
+}
+.timeline-clip {
+  border-color: var(--color-primary-200);
+  border-radius: 6px;
+  background: var(--color-primary-400, #a69aff);
+  color: white;
+}
+.timeline-clip.selected {
+  border-color: var(--color-primary-600);
+  box-shadow: inset 0 0 0 2px var(--color-surface);
+  background: var(--color-primary-500);
+}
+.timeline-clip:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}
 </style>

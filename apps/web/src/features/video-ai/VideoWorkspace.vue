@@ -13,6 +13,8 @@
           @loadedmetadata="onLoadedMetadata"
           @timeupdate="currentTime = videoEl?.currentTime || 0"
           @play="trackFrames"
+          @pause="onVideoPaused"
+          @ended="onVideoPaused"
         />
         <div
           v-if="manualMode && drawingTimeAllowed"
@@ -37,6 +39,8 @@
           @select="selectRect(item.rangeIndex, item.rectIndex)"
           @update="updateRect(item.rangeIndex, item.rectIndex, $event)"
           @remove="deleteRect(item.rangeIndex, item.rectIndex)"
+          @edit-start="beginEditGesture"
+          @edit-end="endEditGesture"
         />
         <template v-if="!manualMode && !manualRanges?.length">
           <div
@@ -59,6 +63,13 @@
       <div class="range-actions">
         <strong>字幕区间</strong>
         <n-button
+          size="small"
+          :disabled="!undoHistory.length"
+          title="撤回上一步（Ctrl+Z / Command+Z）"
+          @click="undoEdit"
+          >撤回</n-button
+        >
+        <n-button
           type="primary"
           size="small"
           :disabled="(manualRanges?.length || 0) >= 20 || currentTime >= (duration || 0)"
@@ -73,6 +84,13 @@
           @click="splitRange"
           ><template #icon><Scissors :size="15" /></template>按指针拆分</n-button
         >
+        <template v-if="selectedRange">
+          <n-button size="small" @click="selectRange(activeRange)">定位区间开始</n-button>
+          <n-button size="small" @click="removeRange()">删除区间</n-button>
+          <n-button v-for="(_, index) in selectedRange.rects" :key="index" size="small" @click="removeRect(index)"
+            >删除框 {{ index + 1 }}</n-button
+          >
+        </template>
       </div>
       <p v-if="currentTime >= (duration || 0)">指针已到视频结尾，请向前移动指针后添加区间。</p>
       <VideoTimeline
@@ -80,28 +98,13 @@
         :duration="duration || 0"
         :current-time="currentTime"
         :active-index="activeRange"
-        @update:ranges="$emit('update:manual-ranges', $event)"
+        @update:ranges="commitRanges"
+        @edit-start="beginEditGesture"
+        @edit-end="endEditGesture"
         @seek="seekVideo"
         @select="activeRange = $event"
         @remove="removeRange"
       />
-      <template v-if="selectedRange">
-        <p>
-          {{ selectedRange.start.toFixed(2) }} – {{ selectedRange.end.toFixed(2) }} 秒 ·
-          拖动两端调整区间，拖动中间移动区间
-        </p>
-        <div class="range-actions">
-          <n-button size="small" @click="selectRange(activeRange)">定位区间开始</n-button>
-          <n-button size="small" @click="removeRange()">删除区间</n-button>
-          <n-button v-for="(_, index) in selectedRange.rects" :key="index" size="small" @click="removeRect(index)"
-            >删除框 {{ index + 1 }}</n-button
-          >
-        </div>
-        <p>
-          在右侧开启手动框选，可连续添加多个框；选中框可拖动位置或拉动控制点调整宽高，Backspace／Delete 删除。最多共 20
-          处。
-        </p>
-      </template>
     </div>
 
     <div v-if="showSourceSwitch" class="source-switch" aria-label="预览来源">
@@ -112,7 +115,6 @@
         处理结果
       </button>
     </div>
-    <p v-if="manualMode" class="workspace-tip">请在实际视频画面内拖动框选字幕区域，完成后点击右侧“完成框选”。</p>
     <p v-if="manualMode && !drawingTimeAllowed" class="workspace-tip">指针不在当前区间内，请移回区间内再框选。</p>
   </section>
 </template>
@@ -150,6 +152,49 @@ const emit = defineEmits<{
 const activeRange = ref(0);
 const currentTime = ref(0);
 const selectedRect = ref("");
+type UndoSnapshot = { ranges: VideoAiTimedRegion[]; time: number; activeRange: number };
+const undoHistory = ref<UndoSnapshot[]>([]);
+let editGesture: { initial: UndoSnapshot; recorded: boolean } | undefined;
+function copyRanges(ranges: VideoAiTimedRegion[]) {
+  return ranges.map((range) => ({ ...range, rects: range.rects.map((rect) => ({ ...rect })) }));
+}
+function snapshotEdit(): UndoSnapshot {
+  return { ranges: copyRanges(props.manualRanges ?? []), time: currentTime.value, activeRange: activeRange.value };
+}
+function beginEditGesture() {
+  editGesture = { initial: snapshotEdit(), recorded: false };
+}
+function endEditGesture(cancelled: boolean) {
+  if (cancelled && editGesture?.recorded) undoHistory.value.pop();
+  editGesture = undefined;
+}
+function commitRanges(next: VideoAiTimedRegion[]) {
+  const current = props.manualRanges ?? [];
+  if (JSON.stringify(next) === JSON.stringify(current)) return;
+  if (!editGesture || !editGesture.recorded) {
+    const initial = editGesture?.initial ?? snapshotEdit();
+    if (JSON.stringify(next) !== JSON.stringify(initial.ranges)) {
+      undoHistory.value.push(initial);
+      if (undoHistory.value.length > 50) undoHistory.value.shift();
+      if (editGesture) editGesture.recorded = true;
+    }
+  }
+  emit("update:manual-ranges", next);
+}
+function clearUndoHistory() {
+  undoHistory.value = [];
+  editGesture = undefined;
+}
+function undoEdit() {
+  if (!props.editable || editGesture) return;
+  const previous = undoHistory.value.pop();
+  if (!previous) return;
+  selectedRect.value = "";
+  activeRange.value = Math.min(previous.activeRange, Math.max(0, previous.ranges.length - 1));
+  emit("update:manual-area", undefined);
+  emit("update:manual-ranges", copyRanges(previous.ranges));
+  seekVideo(Math.max(0, Math.min(props.duration ?? previous.time, previous.time)));
+}
 watch(activeRange, () => {
   if (!selectedRect.value.startsWith(`${activeRange.value}-`)) selectedRect.value = "";
 });
@@ -161,6 +206,7 @@ watch(
   () => props.src,
   () => {
     selectedRect.value = "";
+    currentTime.value = 0;
   }
 );
 const selectedRange = computed(() => props.manualRanges?.[activeRange.value]);
@@ -197,8 +243,7 @@ watch(drawingTimeAllowed, (allowed) => {
 });
 function updateRect(rangeIndex: number, rectIndex: number, rect: VideoAiRect) {
   if (!props.editable) return;
-  emit(
-    "update:manual-ranges",
+  commitRanges(
     (props.manualRanges || []).map((range, index) =>
       index === rangeIndex
         ? { ...range, rects: range.rects.map((value, index) => (index === rectIndex ? rect : value)) }
@@ -209,8 +254,7 @@ function updateRect(rangeIndex: number, rectIndex: number, rect: VideoAiRect) {
 function deleteRect(rangeIndex: number, rectIndex: number) {
   if (!props.editable) return;
   selectedRect.value = "";
-  emit(
-    "update:manual-ranges",
+  commitRanges(
     (props.manualRanges || []).map((range, index) =>
       index === rangeIndex ? { ...range, rects: range.rects.filter((_, index) => index !== rectIndex) } : range
     )
@@ -235,10 +279,7 @@ function addRange() {
   if (!Number.isFinite(start) || start >= props.duration) return;
   videoEl.value?.pause();
   activeRange.value = props.manualRanges?.length || 0;
-  emit("update:manual-ranges", [
-    ...(props.manualRanges || []),
-    { start, end: Math.min(start + 2, props.duration), rects: [] }
-  ]);
+  commitRanges([...(props.manualRanges || []), { start, end: Math.min(start + 2, props.duration), rects: [] }]);
 }
 function splitRange() {
   if (splitDisabledReason.value || !selectedRange.value) return;
@@ -256,7 +297,7 @@ function splitRange() {
     { ...range, start: time, rects: range.rects.map((rect) => ({ ...rect })) }
   );
   selectedRect.value = "";
-  emit("update:manual-ranges", next);
+  commitRanges(next);
   activeRange.value = index + 1;
 }
 function selectRange(index: number) {
@@ -267,7 +308,7 @@ function selectRange(index: number) {
     currentTime.value = props.manualRanges[index].start;
   }
 }
-defineExpose({ revealRange: selectRange });
+defineExpose({ revealRange: selectRange, clearUndoHistory, replaceRanges: commitRanges });
 function seekVideo(time: number) {
   currentTime.value = time;
   if (videoEl.value) {
@@ -278,10 +319,7 @@ function seekVideo(time: number) {
 function removeRange(index = activeRange.value) {
   if (!props.editable || !props.manualRanges?.[index]) return;
   selectedRect.value = "";
-  emit(
-    "update:manual-ranges",
-    props.manualRanges.filter((_, rangeIndex) => rangeIndex !== index)
-  );
+  commitRanges(props.manualRanges.filter((_, rangeIndex) => rangeIndex !== index));
 }
 function removeRect(rectIndex: number) {
   deleteRect(activeRange.value, rectIndex);
@@ -317,6 +355,8 @@ const surfaceStyle = computed(() => ({
 }));
 
 onMounted(() => {
+  window.addEventListener("keydown", onPlaybackKeydown);
+  window.addEventListener("keydown", onUndoKeydown);
   resizeObserver = new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
     if (rect) stageSize.value = { width: rect.width, height: rect.height };
@@ -339,7 +379,67 @@ function trackFrames() {
   };
   frameCallback = video.requestVideoFrameCallback(update);
 }
+function onVideoPaused() {
+  stopTrackingFrames();
+  if (videoEl.value) currentTime.value = videoEl.value.currentTime;
+}
+function onPlaybackKeydown(event: KeyboardEvent) {
+  if (event.code !== "Space" && event.key !== " ") return;
+  if (
+    event.defaultPrevented ||
+    event.repeat ||
+    event.isComposing ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.shiftKey
+  )
+    return;
+  const video = videoEl.value;
+  if (!props.src || !video || document.querySelector('.n-modal[aria-modal="true"], .n-drawer[aria-modal="true"]'))
+    return;
+  const target = event.target;
+  if (target instanceof Element) {
+    const control = target.closest(
+      'input, textarea, select, button, a[href], [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], [role="slider"]'
+    );
+    if (control && !control.matches('.timeline-playhead [role="slider"]')) return;
+  }
+  event.preventDefault();
+  if (video.paused) void video.play().catch(() => undefined);
+  else video.pause();
+}
+function onUndoKeydown(event: KeyboardEvent) {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.repeat ||
+    event.altKey ||
+    event.shiftKey ||
+    event.ctrlKey === event.metaKey ||
+    event.key.toLowerCase() !== "z"
+  )
+    return;
+  if (
+    !props.editable ||
+    !undoHistory.value.length ||
+    editGesture ||
+    document.querySelector('.n-modal[aria-modal="true"], .n-drawer[aria-modal="true"]')
+  )
+    return;
+  if (
+    event.target instanceof Element &&
+    event.target.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'
+    )
+  )
+    return;
+  event.preventDefault();
+  undoEdit();
+}
 onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onPlaybackKeydown);
+  window.removeEventListener("keydown", onUndoKeydown);
   resizeObserver?.disconnect();
   stopTrackingFrames();
 });
@@ -396,8 +496,7 @@ function onPointerUp() {
   if (props.manualArea && props.manualArea.width >= 0.01 && props.manualArea.height >= 0.01 && selectedRange.value) {
     const total = (props.manualRanges || []).reduce((sum, range) => sum + range.rects.length, 0);
     if (total < 20)
-      emit(
-        "update:manual-ranges",
+      commitRanges(
         (props.manualRanges || []).map((range, index) =>
           index === activeRange.value ? { ...range, rects: [...range.rects, { ...props.manualArea! }] } : range
         )
@@ -542,12 +641,40 @@ function rectStyle(rect: VideoAiRect) {
   }
 }
 
-.video-stage { height: clamp(300px, 48vh, 500px); border-radius: 10px; }
-.range-editor { margin-top: 14px; padding: 12px 0 0; border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: transparent; }
-.range-actions { gap: 8px; margin-bottom: 10px; }
-.range-actions > strong { margin-right: 4px; font-size: 13px; }
-.range-editor p { margin-block: 8px; line-height: 1.6; color: var(--color-text-tertiary); }
-.range-actions :deep(.n-button) { border-radius: 7px; }
-.source-switch { border: 1px solid var(--color-border); }
-@media (max-width: 640px) { .video-stage { height: 340px; } }
+.video-stage {
+  height: clamp(300px, 48vh, 500px);
+  border-radius: 10px;
+}
+.range-editor {
+  margin-top: 14px;
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+}
+.range-actions {
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.range-actions > strong {
+  margin-right: 4px;
+  font-size: 13px;
+}
+.range-editor p {
+  margin-block: 8px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+.range-actions :deep(.n-button) {
+  border-radius: 7px;
+}
+.source-switch {
+  border: 1px solid var(--color-border);
+}
+@media (max-width: 640px) {
+  .video-stage {
+    height: 340px;
+  }
+}
 </style>

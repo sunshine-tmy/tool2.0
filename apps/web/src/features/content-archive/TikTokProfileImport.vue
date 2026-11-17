@@ -54,12 +54,12 @@
           >@{{ job.username }} · {{ phases[job.phase] }} ·
           {{ job.complete ? "列表已确认完整" : "列表未确认完整" }}</strong
         >
-        <p>{{ job.message }}</p>
-        <span
+        <p v-if="job.message !== '本次所选作品已处理完毕；失败项可手动重试' || job.failedCount" class="profile-status-message">{{ job.message }}</p>
+        <div class="profile-status-counts"
           >已发现 {{ job.discoveredCount }} 条<span v-if="job.declaredCount !== undefined"
             >，主页统计 {{ job.declaredCount }} 条</span
           >。已归档 {{ job.archivedCount }} · 失败 {{ job.failedCount }} · 跳过/取消 {{ job.skippedCount }} · 待处理
-          {{ job.pendingCount }} · 已创建 {{ job.batchCount }} 批</span
+          {{ job.pendingCount }}<span v-if="job.batchCount >= 900"> · 已创建 {{ job.batchCount }}/1000 批</span></div
         >
       </n-alert>
       <div class="profile-toolbar profile-task-actions" role="group" aria-label="主页任务操作">
@@ -629,6 +629,11 @@ onScopeDispose(() => {
 });
 </script>
 <style scoped>
+.profile-status-message,
+.profile-status-counts {
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
 .profile-toolbar {
   display: flex;
   align-items: center;

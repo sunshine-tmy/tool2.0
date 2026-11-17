@@ -23,13 +23,13 @@ export function formatBytes(bytes: number) {
   return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(2)} GiB` : `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
 }
 export function groupOptions(groups: import("@toolbox/shared/audio-library").AudioLibraryGroup[]) {
-  const result: Array<{ label: string; value: string }> = [];
+  const result: Array<{ label: string; value: string; name: string; parentId: string | null }> = [];
   const visit = (parentId: string | null, path: string[]) => {
     for (const group of groups
       .filter((x) => x.parentId === parentId)
       .sort((a, b) => a.name.localeCompare(b.name, "zh-CN"))) {
       const names = [...path, group.name];
-      result.push({ label: names.join(" / "), value: group.id });
+      result.push({ label: names.join(" / "), value: group.id, name: group.name, parentId: group.parentId });
       if (names.length < 3) visit(group.id, names);
     }
   };
