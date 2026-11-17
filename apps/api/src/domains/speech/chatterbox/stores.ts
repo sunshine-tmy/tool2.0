@@ -98,8 +98,32 @@ export class ChatterboxVoiceStore {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  defaults() {
+    const defaults: Record<string, string> = {};
+    for (const entity of this.database.list("chatterbox-default-voice")) {
+      const voice = this.voices.get(String(entity.payload));
+      if (voice && voice.language === entity.id) defaults[entity.id] = voice.id;
+    }
+    return defaults;
+  }
+
+  setDefault(language: string, voiceId: string | null) {
+    if (voiceId === null) {
+      this.database.remove("chatterbox-default-voice", language);
+      return true;
+    }
+    const voice = this.voices.get(voiceId);
+    if (!voice || voice.language !== language) return false;
+    const now = new Date().toISOString();
+    this.database.upsert({ id: language, kind: "chatterbox-default-voice", payload: voiceId, createdAt: now, updatedAt: now });
+    return true;
+  }
+
   async remove(id: string) {
     if (!isSafeId(id)) return false;
+    for (const [language, voiceId] of Object.entries(this.defaults())) {
+      if (voiceId === id) this.database.remove("chatterbox-default-voice", language);
+    }
     this.voices.delete(id);
     this.database.remove("chatterbox-voice", id);
     this.fileMetadata?.removeForEntity("chatterbox-voice", id);

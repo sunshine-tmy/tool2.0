@@ -19,7 +19,6 @@ type VoiceMessage = {
 type ConfirmAction = (message: string, options: { title: string }) => Promise<boolean>;
 const HEALTH_RETRY_INTERVAL_MS = 5_000;
 const HEALTH_REFRESH_INTERVAL_MS = 12_000;
-const DEFAULT_VOICES_KEY = "chatterbox-default-voices";
 
 type VoiceState = {
   health: Ref<ChatterboxHealth | undefined>;
@@ -40,34 +39,23 @@ type VoiceState = {
 };
 
 export function useChatterboxVoices(state: VoiceState) {
-  const defaultVoices = ref<Record<string, string>>(readDefaultVoices());
-  function readDefaultVoices(): Record<string, string> {
+  const defaultVoices = ref<Record<string, string>>({});
+  const savingDefaultVoice = ref(false);
+  const defaultVoicesLoading = ref(true);
+  async function setDefaultVoice(voice: ChatterboxSavedVoice) {
+    if (savingDefaultVoice.value) return;
+    const nextId = defaultVoices.value[voice.language] === voice.id ? null : voice.id;
+    savingDefaultVoice.value = true;
     try {
-      const stored: unknown = JSON.parse(localStorage.getItem(DEFAULT_VOICES_KEY) || "{}");
-      if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
-      return Object.fromEntries(Object.entries(stored).filter(([, id]) => typeof id === "string"));
-    } catch {
-      return {};
+      const result = await chatterboxApi.setDefaultVoice(voice.language, nextId);
+      if (disposed) return;
+      defaultVoices.value = result.defaults;
+      state.message.success(nextId ? "已设为该语言的默认音色" : "已取消默认音色");
+    } catch (error) {
+      if (!disposed && !isApiErrorCancelled(error)) state.message.error(formatApiError(error, "保存默认音色失败"));
+    } finally {
+      savingDefaultVoice.value = false;
     }
-  }
-  function storeDefaultVoices(value: Record<string, string>) {
-    try {
-      localStorage.setItem(DEFAULT_VOICES_KEY, JSON.stringify(value));
-      defaultVoices.value = value;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  function setDefaultVoice(voice: ChatterboxSavedVoice) {
-    const next = { ...defaultVoices.value };
-    if (next[voice.language] === voice.id) delete next[voice.language];
-    else next[voice.language] = voice.id;
-    if (!storeDefaultVoices(next)) {
-      state.message.error("无法保存默认音色设置");
-      return;
-    }
-    state.message.success(next[voice.language] ? "已设为该语言的默认音色" : "已取消默认音色");
   }
   function preferredVoiceId() {
     const preferred = defaultVoices.value[state.language.value];
@@ -91,15 +79,13 @@ export function useChatterboxVoices(state: VoiceState) {
   });
 
   async function loadSavedVoices() {
+    defaultVoicesLoading.value = true;
     try {
       // 服务端是音色事实源；若当前文件不存在则默认切换到同语言的第一条永久音色。
-      state.savedVoices.value = (await chatterboxApi.voices()).voices;
-      const validDefaults = Object.fromEntries(
-        Object.entries(defaultVoices.value).filter(([language, id]) =>
-          state.savedVoices.value.some((voice) => voice.id === id && voice.language === language)
-        )
-      );
-      if (Object.keys(validDefaults).length !== Object.keys(defaultVoices.value).length) storeDefaultVoices(validDefaults);
+      const [voices, preferences] = await Promise.all([chatterboxApi.voices(), chatterboxApi.defaultVoices()]);
+      if (disposed) return;
+      state.savedVoices.value = voices.voices;
+      defaultVoices.value = preferences.defaults;
       if (
         state.selectedVoiceId.value &&
         !state.savedVoices.value.some((voice) => voice.id === state.selectedVoiceId.value)
@@ -112,6 +98,8 @@ export function useChatterboxVoices(state: VoiceState) {
       }
     } catch (error) {
       if (!isApiErrorCancelled(error)) state.errorMessage.value = formatApiError(error, "永久参考音色读取失败");
+    } finally {
+      defaultVoicesLoading.value = false;
     }
   }
 
@@ -145,8 +133,6 @@ export function useChatterboxVoices(state: VoiceState) {
     try {
       // 删除永久音色不会影响已生成音频；若正在使用则同步清空编辑器和重生成选择。
       await chatterboxApi.removeVoice(voiceId);
-      const remainingDefaults = Object.fromEntries(Object.entries(defaultVoices.value).filter(([, id]) => id !== voiceId));
-      if (Object.keys(remainingDefaults).length !== Object.keys(defaultVoices.value).length) storeDefaultVoices(remainingDefaults);
       if (state.selectedVoiceId.value === voiceId) state.selectedVoiceId.value = "";
       if (state.retryVoiceId.value === voiceId) state.retryVoiceId.value = "";
       await loadSavedVoices();
@@ -178,5 +164,5 @@ export function useChatterboxVoices(state: VoiceState) {
     }
   }
 
-  return { defaultVoices, setDefaultVoice, loadHealth, loadSavedVoices, saveCurrentVoice, removeSavedVoice };
+  return { defaultVoices, defaultVoicesLoading, savingDefaultVoice, setDefaultVoice, loadHealth, loadSavedVoices, saveCurrentVoice, removeSavedVoice };
 }

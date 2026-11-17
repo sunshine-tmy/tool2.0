@@ -83,6 +83,11 @@
       <n-button v-else block type="primary" @click="props.downloadWatermarkResult">
         <template #icon><Download :size="16" /></template>下载 PNG
       </n-button>
+      <ImageAiContinueMenu
+        v-if="props.watermarkResultUrl && props.activeTask?.results[0]"
+        :disabled="props.isBusy"
+        @select="(target) => emit('continue', props.activeTask!.results[0], target)"
+      />
       <n-button v-if="props.watermarkResultUrl" block secondary @click="props.resetWatermarkResult"
         >重新编辑蒙版</n-button
       >
@@ -105,6 +110,7 @@ import type { ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbo
 import BeforeAfterCompare from "./BeforeAfterCompare.vue";
 import ImageAiTaskStatusCard from "./ImageAiTaskStatusCard.vue";
 import MaskEditor from "./MaskEditor.vue";
+import ImageAiContinueMenu from "./ImageAiContinueMenu.vue";
 
 type MaskEditorExposed = {
   applySuggestions: (suggestions: WatermarkSuggestion[]) => void;
@@ -129,6 +135,9 @@ const props = defineProps<{
   cancelActiveTask: () => void | Promise<void>;
   formatBytes: (bytes: number) => string;
   onDimensions: (value: { width: number; height: number }) => void;
+}>();
+const emit = defineEmits<{
+  continue: [result: ImageAiTask["results"][number], target: "watermark" | "enhance" | "cutout"];
 }>();
 
 const maskEditor = ref<MaskEditorExposed>();

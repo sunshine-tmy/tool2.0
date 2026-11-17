@@ -59,9 +59,9 @@
         tabindex="0"
         :aria-label="`预览 ${item.file.name}`"
         :aria-pressed="selectedIndex === index"
-        @click="selectedIndex = index"
-        @keydown.enter.self.prevent="selectedIndex = index"
-        @keydown.space.self.prevent="selectedIndex = index"
+        @click="selectPreview(index)"
+        @keydown.enter.self.prevent="selectPreview(index)"
+        @keydown.space.self.prevent="selectPreview(index)"
       >
         <img :src="item.url" :alt="item.file.name" />
         <div>
@@ -99,7 +99,7 @@ const props = defineProps<{
   validateFile: (file: File) => boolean;
   formatBytes: (bytes: number) => string;
 }>();
-const emit = defineEmits<{ change: [files: File[]] }>();
+const emit = defineEmits<{ change: [files: File[]]; "select-preview": [index: number] }>();
 const fileInput = ref<HTMLInputElement>();
 const selectedIndex = ref(0);
 
@@ -109,8 +109,13 @@ watch(
   () => props.files,
   () => {
     selectedIndex.value = 0;
+    emit("select-preview", 0);
   }
 );
+function selectPreview(index: number) {
+  selectedIndex.value = index;
+  emit("select-preview", index);
+}
 watch(previews, (_next, previous) => previous?.forEach((item) => URL.revokeObjectURL(item.url)));
 onBeforeUnmount(() => previews.value.forEach((item) => URL.revokeObjectURL(item.url)));
 

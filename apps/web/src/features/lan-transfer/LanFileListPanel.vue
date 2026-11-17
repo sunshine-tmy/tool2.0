@@ -211,7 +211,7 @@ function remainingTime(value: string) {
 <style scoped>
 .lan-list-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--color-border); }
 .lan-list-heading h3 { margin: 0; font-size: 18px; color: var(--color-text); }
-.lan-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0; border: 0; background: transparent; }
+.lan-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 0; border: 0; background: transparent; }
 .lan-filters > .n-input { width: 280px; }
 .lan-filters > .n-select { width: 150px; }
 .batch-toolbar { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 16px; padding: 14px 0; margin: 0; border: 0; background: transparent; }

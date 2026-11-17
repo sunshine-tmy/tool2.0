@@ -33,9 +33,18 @@
           :result-id="editTarget.resultId"
           @close="editTarget = undefined"
           @saved="historyVersion++"
+          @continue="continueWithResult"
         />
-        <n-tabs v-else v-model:value="activeTab" type="line" animated>
-          <n-tab-pane name="watermark" tab="去水印">
+        <div v-else class="image-editor-workspace">
+          <nav class="image-tool-rail" aria-label="图片处理工具">
+            <button v-for="tool in imageTools" :key="tool.id" type="button" :class="{ active: activeTab === tool.id }"
+              :aria-current="activeTab === tool.id ? 'page' : undefined" @click="selectTool(tool.id)">
+              <component :is="tool.icon" :size="20" aria-hidden="true" />
+              <span>{{ tool.label }}</span>
+            </button>
+          </nav>
+          <div class="image-tool-content">
+          <section v-show="activeTab === 'watermark'">
             <ImageAiWatermarkPanel
               :watermark-file="watermarkFile"
               :watermark-preview-url="watermarkPreviewUrl"
@@ -54,9 +63,10 @@
               :cancel-active-task="cancelActiveTask"
               :format-bytes="formatBytes"
               :on-dimensions="setWatermarkDimensions"
+              @continue="continueWithResult"
             />
-          </n-tab-pane>
-          <n-tab-pane name="enhance" tab="变清晰">
+          </section>
+          <section v-show="activeTab === 'enhance'">
             <ImageAiOperationPanel
               v-model:files="enhanceFiles"
               operation="enhance"
@@ -73,9 +83,11 @@
               :cancel-active-task="cancelActiveTask"
               @update:scale="enhanceScale = $event"
               @edit="openEditor"
+              @continue="continueWithResult"
+              @select-preview="enhancePreviewIndex = $event"
             />
-          </n-tab-pane>
-          <n-tab-pane name="cutout" tab="抠图">
+          </section>
+          <section v-show="activeTab === 'cutout'">
             <ImageAiOperationPanel
               v-model:files="cutoutFiles"
               operation="background_remove"
@@ -91,12 +103,15 @@
               :submit-batch="submitBatch"
               :cancel-active-task="cancelActiveTask"
               @edit="openEditor"
+              @continue="continueWithResult"
+              @select-preview="cutoutPreviewIndex = $event"
             />
-          </n-tab-pane>
-          <n-tab-pane name="history" tab="处理记录">
-            <ImageAiHistoryPanel :refresh-version="historyVersion" @deleted="onHistoryDeleted" @edit="openEditor" />
-          </n-tab-pane>
-        </n-tabs>
+          </section>
+          <section v-show="activeTab === 'history'">
+            <ImageAiHistoryPanel :refresh-version="historyVersion" @deleted="onHistoryDeleted" @edit="openEditor" @continue="continueWithResult" />
+          </section>
+          </div>
+        </div>
       </section>
     </section>
   </ToolLayout>
@@ -105,8 +120,8 @@
 <script setup lang="ts">
 import DiagnosticErrorLink from "../../shared/ui/DiagnosticErrorLink.vue";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { NTabPane, NTabs, useMessage } from "naive-ui";
-import { Info } from "lucide-vue-next";
+import { useMessage } from "naive-ui";
+import { Eraser, History, Info, Scan, Sparkles } from "lucide-vue-next";
 import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 
 import ToolLayout from "../../shell/ToolLayout.vue";
@@ -116,6 +131,7 @@ import ImageAiOperationPanel from "./processing/ImageAiOperationPanel.vue";
 import ImageAiWatermarkPanel from "./processing/ImageAiWatermarkPanel.vue";
 import ImageAiHistoryPanel from "./history/ImageAiHistoryPanel.vue";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
+import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import { useTaskEvents } from "../../shared/composables/useTaskEvents";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { imageAiApi } from "./api";
@@ -128,6 +144,13 @@ function openEditor(taskId: string, resultId: string) {
   editTarget.value = { taskId, resultId };
 }
 const activeTab = ref<"watermark" | "enhance" | "cutout" | "history">("watermark");
+type ImageTool = "watermark" | "enhance" | "cutout" | "history";
+const imageTools: Array<{ id: ImageTool; label: string; icon: typeof Eraser }> = [
+  { id: "watermark", label: "去水印", icon: Eraser },
+  { id: "enhance", label: "变清晰", icon: Sparkles },
+  { id: "cutout", label: "抠图", icon: Scan },
+  { id: "history", label: "处理记录", icon: History }
+];
 const historyVersion = ref(0);
 const health = ref<ImageAiHealth>();
 const loadingHealth = ref(false);
@@ -138,6 +161,8 @@ const watermarkDimensions = ref<{ width: number; height: number }>();
 const suggesting = ref(false);
 const enhanceFiles = ref<File[]>([]);
 const cutoutFiles = ref<File[]>([]);
+const enhancePreviewIndex = ref(0);
+const cutoutPreviewIndex = ref(0);
 const activeTaskFiles = ref<File[]>([]);
 const enhanceScale = ref<2 | 4>(2);
 const activeTask = ref<ImageAiTask>();
@@ -149,6 +174,86 @@ const streamedTaskId = computed(() =>
   activeTask.value && ["pending", "running"].includes(activeTask.value.status) ? activeTask.value.id : undefined
 );
 const requestScope = useRequestScope();
+const confirm = useConfirmDialog();
+let continuing = false;
+const transferredFile = ref<File>();
+function setWatermarkFile(file: File) {
+  revokeWatermarkUrl();
+  watermarkFile.value = file;
+  watermarkPreviewUrl.value = URL.createObjectURL(file);
+  watermarkResultUrl.value = "";
+  watermarkDimensions.value = undefined;
+}
+async function selectTool(target: ImageTool) {
+  if (target === activeTab.value) return;
+  if (continuing) return;
+  if (target !== "history" && activeTab.value !== "history") {
+    const operation = activeTab.value === "watermark" ? "watermark_remove" :
+      activeTab.value === "enhance" ? "enhance" : "background_remove";
+    const task = activeTask.value;
+    if (task?.operation === operation && !isBusy.value && (task.status === "completed" || task.results.length)) {
+      const index = activeTab.value === "watermark" ? 0 :
+        activeTab.value === "enhance" ? enhancePreviewIndex.value : cutoutPreviewIndex.value;
+      const result = task.results.find((item) => item.id === `${task.id}-${index + 1}`);
+      if (!result) {
+        message.warning(task.results.length ? "当前选中的图片没有处理结果，请选择已完成的图片" : "处理结果仍在读取，请稍后重试");
+        return;
+      }
+      await continueWithResult(result, target);
+      return;
+    }
+  }
+  if (!isBusy.value && target !== "history" && activeTab.value !== "history") {
+    const current = activeTab.value === "watermark" ? watermarkFile.value
+      : activeTab.value === "enhance" ? (enhanceFiles.value.length === 1 ? enhanceFiles.value[0] : undefined)
+      : (cutoutFiles.value.length === 1 ? cutoutFiles.value[0] : undefined);
+    if (current) {
+      const destinationFiles = target === "watermark" ? (watermarkFile.value ? [watermarkFile.value] : []) :
+        target === "enhance" ? enhanceFiles.value : cutoutFiles.value;
+      if (current === transferredFile.value && (destinationFiles.length !== 1 || destinationFiles[0] !== current)) {
+        if (destinationFiles.length && !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" }))) return;
+        if (target === "watermark") setWatermarkFile(current);
+        else if (target === "enhance") enhanceFiles.value = [current];
+        else cutoutFiles.value = [current];
+      } else {
+        if (target === "watermark" && !watermarkFile.value) setWatermarkFile(current);
+        else if (target === "enhance" && !enhanceFiles.value.length) enhanceFiles.value = [current];
+        else if (target === "cutout" && !cutoutFiles.value.length) cutoutFiles.value = [current];
+      }
+    }
+  }
+  activeTab.value = target;
+}
+async function continueWithResult(result: ImageAiTask["results"][number], target: Exclude<ImageTool, "history">) {
+  if (continuing || isBusy.value) {
+    message.warning("请等待当前处理结束后再继续处理图片");
+    return;
+  }
+  const existing = target === "watermark" ? Boolean(watermarkFile.value) :
+    target === "enhance" ? Boolean(enhanceFiles.value.length) : Boolean(cutoutFiles.value.length);
+  continuing = true;
+  try {
+    if (existing && !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" }))) return;
+    const response = await fetch(absoluteImageAiUrl(result.downloadUrl), { credentials: "include", signal: requestScope.signal });
+    if (!response.ok) throw new Error("无法读取处理结果，请确认记录仍然存在");
+    const blob = await response.blob();
+    const file = new File([blob], result.outputName, { type: blob.type.split(";")[0] || "image/png" });
+    if (!validateClientFile(file)) return;
+    transferredFile.value = file;
+    if (target === "watermark") setWatermarkFile(file);
+    else if (target === "enhance") enhanceFiles.value = [file];
+    else cutoutFiles.value = [file];
+    activeTask.value = undefined;
+    activeTaskFiles.value = [];
+    editTarget.value = undefined;
+    activeTab.value = target;
+    message.success("已载入处理结果，可继续编辑");
+  } catch (error) {
+    if (!requestScope.aborted) message.error(error instanceof Error ? error.message : "读取处理结果失败");
+  } finally {
+    continuing = false;
+  }
+}
 const taskEvents = useTaskEvents(streamedTaskId, { signal: requestScope.signal });
 watch(
   () => activeTask.value && `${activeTask.value.id}:${activeTask.value.status}`,
@@ -241,10 +346,7 @@ function selectWatermark(event: Event) {
   (event.target as HTMLInputElement).value = "";
   if (!file || !validateClientFile(file)) return;
   // 新文件替换旧预览并清空上一次结果，确保结果不会误对应到当前图片。
-  revokeWatermarkUrl();
-  watermarkFile.value = file;
-  watermarkPreviewUrl.value = URL.createObjectURL(file);
-  watermarkResultUrl.value = "";
+  setWatermarkFile(file);
   activeTask.value = undefined;
 }
 
@@ -427,22 +529,46 @@ function formatBytes(bytes: number) {
   margin-top: 3px;
   color: var(--color-text-tertiary);
 }
-.image-ai-workspace :deep(.n-tabs-nav) {
-  max-width: none;
-  margin-bottom: 20px;
+.image-editor-workspace {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
 }
-.image-ai-workspace :deep(.n-tabs-tab) {
-  padding: 14px 20px;
-  font-size: 17px;
-  font-weight: 600;
+.image-tool-rail {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
 }
-.image-ai-workspace :deep(.n-tabs-tab.n-tabs-tab--active),
-.image-ai-workspace :deep(.n-tabs-tab.n-tabs-tab--active .n-tabs-tab__label) {
-  font-weight: 700;
+.image-tool-rail button {
+  display: flex;
+  min-height: 68px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
 }
-.image-ai-workspace :deep(.n-tab-pane) {
-  padding-top: 0;
+.image-tool-rail button:hover,
+.image-tool-rail button.active {
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
 }
+.image-tool-rail button:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}
+.image-tool-content { min-width: 0; }
 .image-ai-workspace :deep(.image-ai-tab-grid) {
   align-items: stretch;
   gap: 20px;
@@ -485,6 +611,10 @@ function formatBytes(bytes: number) {
   overflow-wrap: anywhere;
 }
 @container tool-content (max-width: 900px) {
+  .image-editor-workspace { grid-template-columns: minmax(0, 1fr); }
+  .image-tool-rail { display: flex; flex-wrap: wrap; }
+  .image-tool-rail button { min-height: 44px; flex-direction: row; padding: 0 12px; }
+
   .image-ai-workspace :deep(.image-ai-tab-grid) {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -499,10 +629,6 @@ function formatBytes(bytes: number) {
   }
   .image-ai-main :deep(.tool-page-header h2) {
     font-size: 26px;
-  }
-  .image-ai-workspace :deep(.n-tabs-tab) {
-    padding: 12px 8px;
-    font-size: 14px;
   }
   .image-ai-workspace :deep(.image-ai-stage) {
     padding: 16px;

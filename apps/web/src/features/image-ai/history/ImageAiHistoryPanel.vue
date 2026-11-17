@@ -184,6 +184,7 @@
               :checkerboard="selectedTask.operation === 'background_remove'"
               persisted-sources
               @edit="editResult"
+              @continue="continueResult"
             />
             <n-empty v-else description="该任务没有可预览或下载的处理结果。" />
           </template>
@@ -225,7 +226,11 @@ import {
 import { useImageAiHistory } from "./useImageAiHistory";
 import { useImageAiHistoryDetail } from "./useImageAiHistoryDetail";
 const props = defineProps<{ refreshVersion: number }>();
-const emit = defineEmits<{ deleted: [id: string]; edit: [taskId: string, resultId: string] }>();
+const emit = defineEmits<{
+  deleted: [id: string];
+  edit: [taskId: string, resultId: string];
+  continue: [result: ImageAiTask["results"][number], target: "watermark" | "enhance" | "cutout"];
+}>();
 const { detailOpen, loadingDetail, detailError, selectedTask, viewTask, closeRemoved } = useImageAiHistoryDetail();
 const {
   items,
@@ -259,6 +264,10 @@ const emptyFiles: File[] = [];
 function editResult(taskId: string, resultId: string) {
   detailOpen.value = false;
   emit("edit", taskId, resultId);
+}
+function continueResult(result: ImageAiTask["results"][number], target: "watermark" | "enhance" | "cutout") {
+  detailOpen.value = false;
+  emit("continue", result, target);
 }
 
 function downloadTask(task: ImageAiTask) {

@@ -133,6 +133,7 @@
               <n-button
                 class="saved-voice-default"
                 size="small"
+                :disabled="panel.defaultVoicesLoading || panel.savingDefaultVoice"
                 :type="panel.defaultVoices?.[voice.language] === voice.id ? 'primary' : 'default'"
                 :secondary="panel.defaultVoices?.[voice.language] === voice.id"
                 :aria-pressed="panel.defaultVoices?.[voice.language] === voice.id"

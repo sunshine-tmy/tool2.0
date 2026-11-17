@@ -179,6 +179,14 @@ export const ChatterboxSavedVoiceListSchema = Type.Object(
   { voices: Type.Array(ChatterboxSavedVoiceSchema) },
   { additionalProperties: false }
 );
+export const ChatterboxDefaultVoicesSchema = Type.Object(
+  { defaults: Type.Record(Type.String(), ChatterboxIdSchema) },
+  { additionalProperties: false }
+);
+export const ChatterboxDefaultVoiceInputSchema = Type.Object(
+  { language: ChatterboxLanguageSchema, voiceId: Type.Union([ChatterboxIdSchema, Type.Null()]) },
+  { additionalProperties: false }
+);
 export const ChatterboxBatchItemSchema = Type.Object(
   {
     id: ChatterboxIdSchema,

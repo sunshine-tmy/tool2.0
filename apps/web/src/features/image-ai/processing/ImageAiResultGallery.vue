@@ -25,6 +25,7 @@
         </div>
         <span class="result-completed"><CircleCheck :size="17" />已完成</span>
         <div class="result-gallery-actions">
+          <ImageAiContinueMenu @select="(target) => emit('continue', result, target)" />
           <n-button size="small" type="primary" quaternary @click="downloadResult(result.downloadUrl)">
             <template #icon><Download :size="14" /></template>下载
           </n-button>
@@ -48,6 +49,7 @@ import { NButton } from "naive-ui";
 import { CircleCheck, Download } from "lucide-vue-next";
 import type { ImageAiTask } from "@toolbox/shared";
 import BeforeAfterCompare from "./BeforeAfterCompare.vue";
+import ImageAiContinueMenu from "./ImageAiContinueMenu.vue";
 import { absoluteImageAiUrl, resultDownloadUrl, triggerImageAiDownload } from "../media-links";
 
 const props = defineProps<{
@@ -56,7 +58,10 @@ const props = defineProps<{
   checkerboard?: boolean;
   persistedSources?: boolean;
 }>();
-const emit = defineEmits<{ edit: [taskId: string, resultId: string] }>();
+const emit = defineEmits<{
+  edit: [taskId: string, resultId: string];
+  continue: [result: ImageAiTask["results"][number], target: "watermark" | "enhance" | "cutout"];
+}>();
 const sourceUrls = ref<string[]>([]);
 
 function refreshSourceUrls(files: File[]) {

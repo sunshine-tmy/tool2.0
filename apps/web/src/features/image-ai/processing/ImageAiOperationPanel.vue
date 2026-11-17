@@ -15,6 +15,7 @@
         :validate-file="props.validateFile"
         :format-bytes="props.formatBytes"
         @change="emit('update:files', $event)"
+        @select-preview="emit('select-preview', $event)"
       />
       <aside class="image-ai-controls">
         <h3 class="operation-title">{{ props.operation === "enhance" ? "变清晰设置" : "抠图设置" }}</h3>
@@ -88,6 +89,7 @@
       :source-files="props.activeTaskFiles"
       :checkerboard="props.operation === 'background_remove'"
       @edit="(taskId, resultId) => emit('edit', taskId, resultId)"
+      @continue="(result, target) => emit('continue', result, target)"
     />
   </div>
 </template>
@@ -124,6 +126,8 @@ const emit = defineEmits<{
   "update:files": [files: File[]];
   "update:scale": [scale: 2 | 4];
   edit: [taskId: string, resultId: string];
+  continue: [result: ImageAiTask["results"][number], target: "watermark" | "enhance" | "cutout"];
+  "select-preview": [index: number];
 }>();
 const resultTask = computed(() => (props.activeTask?.operation === props.operation ? props.activeTask : undefined));
 const previewBackground = ref<"transparent" | "light" | "dark">("transparent");

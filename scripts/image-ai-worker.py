@@ -800,7 +800,8 @@ def run_background_removal(input_path: Path, output_path: Path, deployment_usage
             warnings.append(f"BRIA 不可用，已回退 BiRefNet：{safe_error(exc)}")
             manager.unload_gpu()
 
-    run_birefnet(input_path, output_path)
+    if run_birefnet(input_path, output_path):
+        warnings.append("图片尺寸较大，已使用低内存抠图模式，输出尺寸保持不变")
     return {"provider": "birefnet-general", "model": "BiRefNet-general", "warnings": warnings}
 
 
@@ -819,15 +820,26 @@ def run_bria(input_path: Path, output_path: Path) -> None:
         image.save(output_path, format="PNG", optimize=True)
 
 
-def run_birefnet(input_path: Path, output_path: Path) -> None:
+def run_birefnet(input_path: Path, output_path: Path) -> bool:
     try:
         from rembg import remove
     except ImportError as exc:
         raise WorkerFailure("BIREFNET_UNAVAILABLE", "未安装 rembg") from exc
     session = manager.get_birefnet()
     with Image.open(input_path) as source:
-        result = remove(source.convert("RGB"), session=session, alpha_matting=True)
+        # Alpha matting constructs large float64 matrices proportional to image area.
+        # Keep full-resolution output while avoiding those allocations for large inputs.
+        low_memory = source.width * source.height > 4_000_000
+        image = source.convert("RGB")
+        try:
+            result = remove(image, session=session, alpha_matting=not low_memory)
+        except MemoryError:
+            if low_memory:
+                raise
+            low_memory = True
+            result = remove(image, session=session, alpha_matting=False)
         result.save(output_path, format="PNG", optimize=True)
+        return low_memory
 
 
 def normalized_polygon(polygon: Any, score: float, width: int, height: int) -> dict[str, Any]:

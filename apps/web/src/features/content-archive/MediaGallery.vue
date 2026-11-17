@@ -152,14 +152,17 @@
           <template #icon><Download :size="15" /></template>下载
         </n-button>
       </div>
-      <ArchiveAudioPreview
-        ref="soundtrackPlayers"
-        :url="mediaUrl(audio.previewUrl)"
-        :title="audio.title || '原作品配乐'"
-        :duration="(audio.durationMs || 0) / 1000"
-        :bytes="audio.size"
-        @play="onSoundtrackPlay(audio.id)"
-      />
+      <div class="soundtrack-player">
+        <span><Headphones :size="16" aria-hidden="true" />试听配乐</span>
+        <audio
+          ref="soundtrackPlayers"
+          controls
+          preload="metadata"
+          :aria-label="`试听配乐 ${audio.title || '原作品配乐'}`"
+          :src="mediaUrl(audio.previewUrl)"
+          @play="onSoundtrackPlay(audio.id)"
+        />
+      </div>
     </section>
     <p v-for="warning in showWarnings ? item.warnings : []" :key="warning" class="frame-feedback" role="status">
       {{ warning }}
@@ -177,14 +180,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onScopeDispose, ref, watch } from "vue";
 import { NButton, NImage } from "naive-ui";
-import { Camera, ChevronLeft, ChevronRight, Download, Music2, Play, Trash2 } from "lucide-vue-next";
+import { Camera, ChevronLeft, ChevronRight, Download, Headphones, Music2, Play, Trash2 } from "lucide-vue-next";
 import type { ContentArchiveItem } from "@toolbox/shared";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { useRequestScope } from "../../shared/composables/useRequestScope";
 import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import { contentArchiveApi } from "./content-api";
-import { ArchiveAudioPreview } from "../audio-extract/integrations/archive";
 
 const props = withDefaults(
   defineProps<{
@@ -233,7 +235,7 @@ const confirm = useConfirmDialog();
 let itemGeneration = 0;
 const media = computed(() => visualMedia.value[selected.value] ?? visualMedia.value[0]);
 const videoElement = ref<HTMLVideoElement>();
-const soundtrackPlayers = ref<Array<InstanceType<typeof ArchiveAudioPreview>>>([]);
+const soundtrackPlayers = ref<HTMLAudioElement[]>([]);
 function pauseSoundtracks(exceptId?: string) {
   soundtrackPlayers.value.forEach((player, index) => {
     if (soundtracks.value[index]?.id !== exceptId) player.pause();
@@ -559,35 +561,47 @@ function changeMedia(direction: -1 | 1) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.archive-soundtrack :deep(.audio-preview) {
-  width: 100%;
+.soundtrack-player {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
-  margin-top: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
 }
-.archive-soundtrack :deep(.library-item-wave-toolbar) {
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+.soundtrack-player > span {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
   gap: 6px;
+  color: var(--color-primary-700);
+  font-size: 12px;
+  font-weight: 500;
 }
-.archive-soundtrack :deep(.library-item-wave-settings),
-.archive-soundtrack :deep(.library-item-wave-transport) {
-  grid-column: auto;
+.soundtrack-player audio {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  background: var(--color-surface-subtle);
+  accent-color: var(--color-primary-600);
+  color-scheme: light;
 }
-.archive-soundtrack :deep(.library-item-wave-settings) {
-  flex-wrap: nowrap;
-  gap: 4px;
+.soundtrack-player audio::-webkit-media-controls-panel {
+  background: var(--color-surface-subtle);
 }
-.archive-soundtrack :deep(.library-item-wave-volume) {
-  flex: 1 1 96px;
-  max-width: 128px;
-  min-width: 64px;
-  gap: 4px;
+.soundtrack-player audio::-webkit-media-controls-play-button {
+  border-radius: 50%;
+  background-color: var(--color-primary-100);
 }
-.archive-soundtrack :deep(.library-item-wave-rate) {
-  flex: 0 0 62px;
-  width: 62px;
+.soundtrack-player audio::-webkit-media-controls-current-time-display,
+.soundtrack-player audio::-webkit-media-controls-time-remaining-display {
+  color: var(--color-text-secondary);
+  text-shadow: none;
 }
 .media-stage {
   --media-padding: 12px;
@@ -837,14 +851,7 @@ function changeMedia(direction: -1 | 1) {
   }
 }
 @media (max-width: 360px) {
-  .archive-soundtrack :deep(.library-item-wave-toolbar) {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .archive-soundtrack :deep(.library-item-wave-settings) {
-    grid-column: 1 / -1;
-  }
-  .archive-soundtrack :deep(.library-item-wave-transport) {
-    justify-content: flex-start;
-  }
+  .soundtrack-player { gap: 6px; padding: 6px; }
+  .soundtrack-player > span { font-size: 0; }
 }
 </style>

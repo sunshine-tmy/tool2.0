@@ -10,6 +10,7 @@ import {
   ChatterboxLanguage,
   ChatterboxRemovalSchema,
   ChatterboxSavedVoiceListSchema,
+  ChatterboxDefaultVoicesSchema,
   ChatterboxSavedVoiceSchema,
   ChatterboxSubtitleMode,
   ChatterboxTaskListSchema,
@@ -103,6 +104,13 @@ export const chatterboxApi = {
       () => httpClient.get("/tools/edge-tts/chatterbox/voices", ChatterboxSavedVoiceListSchema),
       "读取永久参考音色失败"
     );
+  },
+
+  defaultVoices() {
+    return withApiError(() => httpClient.get("/tools/edge-tts/chatterbox/default-voices", ChatterboxDefaultVoicesSchema), "读取默认音色失败");
+  },
+  setDefaultVoice(language: ChatterboxLanguage, voiceId: string | null) {
+    return withApiError(() => httpClient.put("/tools/edge-tts/chatterbox/default-voices", ChatterboxDefaultVoicesSchema, { language, voiceId }), "保存默认音色失败");
   },
 
   saveVoice(input: {

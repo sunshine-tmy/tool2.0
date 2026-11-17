@@ -273,7 +273,8 @@
       <n-button :disabled="busy || !source" @click="reset">重置编辑</n-button>
       <n-button type="primary" :loading="busy" :disabled="!ready || !source || busy" @click="save">保存并留档</n-button>
       <template v-if="savedTask?.results[0]"
-        ><n-select v-model:value="downloadFormat" :options="formatOptions" aria-label="下载格式" /><n-button
+        ><ImageAiContinueMenu :disabled="busy || dirty" @select="(target) => emit('continue', savedTask!.results[0], target)" />
+        <n-select v-model:value="downloadFormat" :options="formatOptions" aria-label="下载格式" /><n-button
           :disabled="busy"
           @click="download"
           >下载已保存结果</n-button
@@ -291,8 +292,13 @@ import type { ImageAiTask } from "@toolbox/shared";
 import ProductImageCanvas from "./ProductImageCanvas.vue";
 import { tools, backgroundOptions, alignOptions, presets, formatOptions } from "./options";
 import { useProductImageEditor } from "./useProductImageEditor";
+  import ImageAiContinueMenu from "../processing/ImageAiContinueMenu.vue";
 const props = defineProps<{ taskId: string; resultId: string }>();
-const emit = defineEmits<{ close: []; saved: [task: ImageAiTask] }>();
+const emit = defineEmits<{
+  (event: "close"): void;
+  (event: "saved", task: ImageAiTask): void;
+  (event: "continue", result: ImageAiTask["results"][number], target: "watermark" | "enhance" | "cutout"): void;
+}>();
 const {
   source,
   recipe,

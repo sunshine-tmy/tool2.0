@@ -9,6 +9,8 @@ import {
   ApiFailureSchema,
   CHATTERBOX_LANGUAGES,
   ChatterboxRemovalSchema,
+  ChatterboxDefaultVoicesSchema,
+  ChatterboxDefaultVoiceInputSchema,
   ChatterboxSavedVoiceListSchema,
   ChatterboxSavedVoiceSchema,
   ChatterboxVoiceIdParamsSchema,
@@ -33,6 +35,21 @@ export function registerChatterboxVoiceRoutes(
   voiceStore: ChatterboxVoiceStore,
   media: ChatterboxMediaTools
 ) {
+  app.get(
+    "/api/v1/tools/edge-tts/chatterbox/default-voices",
+    { schema: { response: { 200: apiSuccessSchema(ChatterboxDefaultVoicesSchema) } } },
+    async () => ok({ defaults: voiceStore.defaults() })
+  );
+  app.put<{ Body: { language: ChatterboxLanguage; voiceId: string | null } }>(
+    "/api/v1/tools/edge-tts/chatterbox/default-voices",
+    { schema: { body: ChatterboxDefaultVoiceInputSchema, response: { 200: apiSuccessSchema(ChatterboxDefaultVoicesSchema), 404: ApiFailureSchema } } },
+    async (request, reply) => {
+      if (!voiceStore.setDefault(request.body.language, request.body.voiceId)) {
+        return reply.code(404).send(fail("CHATTERBOX_VOICE_NOT_FOUND", "所选参考音色不存在或语言不匹配"));
+      }
+      return ok({ defaults: voiceStore.defaults() });
+    }
+  );
   app.get(
     "/api/v1/tools/edge-tts/chatterbox/voices",
     { schema: { response: { 200: apiSuccessSchema(ChatterboxSavedVoiceListSchema) } } },
