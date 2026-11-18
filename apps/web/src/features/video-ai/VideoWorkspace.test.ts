@@ -50,10 +50,7 @@ it("splits only the selected range, independently copies every box and keeps the
   timeline.vm.$emit("select", 1);
   timeline.vm.$emit("seek", 7);
   await flushPromises();
-  await w
-    .findAll("button")
-    .find((button) => button.text() === "按指针拆分")!
-    .trigger("click");
+  await w.get('button[aria-label="按指针拆分"]').trigger("click");
   await flushPromises();
   const next = timeline.props("ranges");
   expect(next).toEqual([ranges[0], { ...ranges[1], end: 7 }, { ...ranges[1], start: 7 }]);
@@ -78,7 +75,7 @@ it("rejects cuts outside the selected range, at its endpoints or beyond existing
     }
   });
   wrappers.push(w);
-  const split = () => w.findAll("button").find((button) => button.text() === "按指针拆分")!;
+  const split = () => w.get('button[aria-label="按指针拆分"]');
   for (const time of [0, 2, 4, 9]) {
     w.findComponent(VideoTimeline).vm.$emit("seek", time);
     await flushPromises();

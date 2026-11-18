@@ -3,6 +3,20 @@ import { Type, type Static } from "@sinclair/typebox";
 import { ArchiveWatermarkInputSchema, ArchiveWatermarkSettingsSchema } from "./video-watermark";
 const strict = { additionalProperties: false } as const;
 const Id = Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" });
+const ArchiveSlideshowAspectSchema = Type.Union([
+  Type.Literal("portrait"),
+  Type.Literal("portrait_3_4"),
+  Type.Literal("landscape"),
+  Type.Literal("square")
+]);
+export type ArchiveSlideshowAspect = Static<typeof ArchiveSlideshowAspectSchema>;
+export const ARCHIVE_SLIDESHOW_DIMENSIONS = {
+  portrait: [720, 1280],
+  portrait_3_4: [720, 960],
+  landscape: [1280, 720],
+  square: [1080, 1080]
+} as const satisfies Record<ArchiveSlideshowAspect, readonly [number, number]>;
+
 /** 新图集至少播放 15 秒，且每一轮都完整播放所有图片。 */
 export function archiveSlideshowCycles(imageCount: number, secondsPerImage: number) {
   if (imageCount <= 0 || !Number.isFinite(secondsPerImage) || secondsPerImage <= 0) return 0;
@@ -91,7 +105,7 @@ export const ArchiveVideoEditInputSchema = Type.Object(
             maxItems: 100
           }),
           secondsPerImage: Type.Number({ minimum: 0.5, maximum: 30 }),
-          aspect: Type.Union([Type.Literal("portrait"), Type.Literal("landscape"), Type.Literal("square")])
+          aspect: ArchiveSlideshowAspectSchema
         },
         strict
       )

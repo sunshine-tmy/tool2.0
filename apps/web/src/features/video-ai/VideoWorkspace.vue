@@ -11,7 +11,8 @@
           :muted="muted"
           preload="metadata"
           @loadedmetadata="onLoadedMetadata"
-          @timeupdate="currentTime = videoEl?.currentTime || 0"
+          @timeupdate="onVideoTimeUpdate"
+          @seeking="onVideoSeeking"
           @play="trackFrames"
           @pause="onVideoPaused"
           @ended="onVideoPaused"
@@ -72,25 +73,25 @@
         <n-button
           type="primary"
           size="small"
-          :disabled="(manualRanges?.length || 0) >= 20 || currentTime >= (duration || 0)"
+          :disabled="currentTime >= (duration || 0)"
           title="从指针位置添加 2 秒区间，视频结尾不足 2 秒时自动缩短"
           @click="addRange"
           >添加区间</n-button
         >
-        <n-button
-          size="small"
-          :disabled="Boolean(splitDisabledReason)"
-          :title="splitDisabledReason || '在当前指针位置将选中区间一分为二，保留两段框选'"
-          @click="splitRange"
-          ><template #icon><Scissors :size="15" /></template>按指针拆分</n-button
-        >
-        <template v-if="selectedRange">
-          <n-button size="small" @click="selectRange(activeRange)">定位区间开始</n-button>
-          <n-button size="small" @click="removeRange()">删除区间</n-button>
-          <n-button v-for="(_, index) in selectedRange.rects" :key="index" size="small" @click="removeRect(index)"
-            >删除框 {{ index + 1 }}</n-button
+        <span v-for="action in rangeActions" :key="action.label" class="range-icon-action" :title="action.tooltip">
+          <n-button
+            class="range-icon-button"
+            size="small"
+            quaternary
+            :type="action.danger ? 'error' : 'default'"
+            :disabled="action.disabled"
+            :aria-label="action.label"
+            @click="action.run"
           >
-        </template>
+            <template #icon><component :is="action.icon" :size="16" aria-hidden="true" /></template>
+            <span v-if="action.count" class="range-icon-number" aria-hidden="true">{{ action.count }}</span>
+          </n-button>
+        </span>
       </div>
       <p v-if="currentTime >= (duration || 0)">指针已到视频结尾，请向前移动指针后添加区间。</p>
       <VideoTimeline
@@ -98,12 +99,17 @@
         :duration="duration || 0"
         :current-time="currentTime"
         :active-index="activeRange"
+        :selected-indices="boxedRanges"
         @update:ranges="commitRanges"
         @edit-start="beginEditGesture"
         @edit-end="endEditGesture"
         @seek="seekVideo"
-        @select="activeRange = $event"
+        @seek-start="scrubbing = true"
+        @seek-end="finishSeeking"
+        @select="selectActiveRange"
+        @box-select="selectBoxedRanges"
         @remove="removeRange"
+        @remove-selected="removeSelectedRanges"
       />
     </div>
 
@@ -115,14 +121,14 @@
         处理结果
       </button>
     </div>
-    <p v-if="manualMode && !drawingTimeAllowed" class="workspace-tip">指针不在当前区间内，请移回区间内再框选。</p>
+    <p v-if="manualMode && selectedRange && !drawingTimeAllowed" class="workspace-tip">指针不在当前区间内，请移回区间内再框选。</p>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NButton } from "naive-ui";
-import { Scissors } from "lucide-vue-next";
+import { PanelLeftClose, PanelRightClose, SquareX, TableColumnsSplit, Trash2 } from "lucide-vue-next";
 import VideoTimeline from "./VideoTimeline.vue";
 import SubtitleRegion from "./SubtitleRegion.vue";
 import type { VideoAiRect, VideoAiSegment, VideoAiTimedRegion } from "@toolbox/shared";
@@ -138,6 +144,7 @@ const props = defineProps<{
   width?: number;
   height?: number;
   duration?: number;
+  fps?: number;
   editable?: boolean;
   manualRanges?: VideoAiTimedRegion[];
 }>();
@@ -150,16 +157,22 @@ const emit = defineEmits<{
 }>();
 
 const activeRange = ref(0);
+const boxedRanges = ref<number[]>([]);
 const currentTime = ref(0);
 const selectedRect = ref("");
-type UndoSnapshot = { ranges: VideoAiTimedRegion[]; time: number; activeRange: number };
+type UndoSnapshot = { ranges: VideoAiTimedRegion[]; time: number; activeRange: number; boxedRanges: number[] };
 const undoHistory = ref<UndoSnapshot[]>([]);
 let editGesture: { initial: UndoSnapshot; recorded: boolean } | undefined;
 function copyRanges(ranges: VideoAiTimedRegion[]) {
   return ranges.map((range) => ({ ...range, rects: range.rects.map((rect) => ({ ...rect })) }));
 }
 function snapshotEdit(): UndoSnapshot {
-  return { ranges: copyRanges(props.manualRanges ?? []), time: currentTime.value, activeRange: activeRange.value };
+  return {
+    ranges: copyRanges(props.manualRanges ?? []),
+    time: currentTime.value,
+    activeRange: activeRange.value,
+    boxedRanges: [...boxedRanges.value]
+  };
 }
 function beginEditGesture() {
   editGesture = { initial: snapshotEdit(), recorded: false };
@@ -183,6 +196,7 @@ function commitRanges(next: VideoAiTimedRegion[]) {
 }
 function clearUndoHistory() {
   undoHistory.value = [];
+  boxedRanges.value = [];
   editGesture = undefined;
 }
 function undoEdit() {
@@ -191,6 +205,7 @@ function undoEdit() {
   if (!previous) return;
   selectedRect.value = "";
   activeRange.value = Math.min(previous.activeRange, Math.max(0, previous.ranges.length - 1));
+  boxedRanges.value = previous.boxedRanges;
   emit("update:manual-area", undefined);
   emit("update:manual-ranges", copyRanges(previous.ranges));
   seekVideo(Math.max(0, Math.min(props.duration ?? previous.time, previous.time)));
@@ -199,7 +214,7 @@ watch(activeRange, () => {
   if (!selectedRect.value.startsWith(`${activeRange.value}-`)) selectedRect.value = "";
 });
 function selectRect(rangeIndex: number, rectIndex: number) {
-  activeRange.value = rangeIndex;
+  selectActiveRange(rangeIndex);
   selectedRect.value = `${rangeIndex}-${rectIndex}`;
 }
 watch(
@@ -209,22 +224,94 @@ watch(
     currentTime.value = 0;
   }
 );
-const selectedRange = computed(() => props.manualRanges?.[activeRange.value]);
+function selectActiveRange(index: number) {
+  activeRange.value = index;
+  boxedRanges.value = [];
+}
+function selectBoxedRanges(indices: number[]) {
+  selectedRect.value = "";
+  activeRange.value = indices[0] ?? -1;
+  boxedRanges.value = indices.length > 1 ? indices : [];
+}
+const selectedRange = computed(() => boxedRanges.value.length > 1 ? undefined : props.manualRanges?.[activeRange.value]);
+const canTrimRange = computed(() => Boolean(
+  props.editable && selectedRange.value && Number.isFinite(currentTime.value) &&
+  currentTime.value > selectedRange.value.start && currentTime.value < selectedRange.value.end
+));
 const splitDisabledReason = computed(() => {
   if (!props.editable || !selectedRange.value) return "请先选中需要拆分的区间";
   const time = currentTime.value;
   if (!Number.isFinite(time) || time <= selectedRange.value.start || time >= selectedRange.value.end)
     return "请将指针移到选中区间内部，不能在区间端点拆分";
-  const ranges = props.manualRanges || [];
-  if (ranges.length >= 20) return "最多支持 20 个区间，请先删除不需要的区间";
-  if (ranges.reduce((sum, range) => sum + range.rects.length, 0) + selectedRange.value.rects.length > 20)
-    return "拆分会保留两段框选，超出最多 20 处的限制，请先减少框选";
   return "";
+});
+type RangeAction = {
+  label: string;
+  tooltip: string;
+  icon: typeof Trash2;
+  run: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  count?: number;
+};
+const rangeActions = computed<RangeAction[]>(() => {
+  const actions: RangeAction[] = [
+    {
+      label: "按指针拆分",
+      tooltip: `按指针拆分 · ${splitDisabledReason.value || "将选中区间一分为二，两段均保留字幕框"}`,
+      icon: TableColumnsSplit,
+      run: splitRange,
+      disabled: Boolean(splitDisabledReason.value)
+    }
+  ];
+  if (boxedRanges.value.length > 1) {
+    const count = boxedRanges.value.length;
+    actions.push({
+      label: `删除选中区间（${count}）`,
+      tooltip: `删除 ${count} 个选中区间`,
+      icon: Trash2,
+      run: removeSelectedRanges,
+      danger: true,
+      count
+    });
+    return actions;
+  }
+  const range = selectedRange.value;
+  if (!range) return actions;
+  const trimHint = "请将指针移到选中区间内部";
+  actions.push(
+    {
+      label: "向左裁剪",
+      tooltip: `向左裁剪 · ${canTrimRange.value ? "删除指针左侧，保留右侧" : trimHint}`,
+      icon: PanelLeftClose,
+      run: () => trimRange("left"),
+      disabled: !canTrimRange.value
+    },
+    {
+      label: "向右裁剪",
+      tooltip: `向右裁剪 · ${canTrimRange.value ? "删除指针右侧，保留左侧" : trimHint}`,
+      icon: PanelRightClose,
+      run: () => trimRange("right"),
+      disabled: !canTrimRange.value
+    },
+    { label: "删除区间", tooltip: "删除当前区间及其字幕框", icon: Trash2, run: () => removeRange(), danger: true }
+  );
+  range.rects.forEach((_, index) => {
+    actions.push({
+      label: `删除框 ${index + 1}`,
+      tooltip: `删除当前区间的字幕框 ${index + 1}`,
+      icon: SquareX,
+      run: () => removeRect(index),
+      count: range.rects.length > 1 ? index + 1 : undefined
+    });
+  });
+  return actions;
 });
 const drawingTimeAllowed = computed(
   () =>
-    !selectedRange.value ||
-    (currentTime.value >= selectedRange.value.start && currentTime.value < selectedRange.value.end)
+    boxedRanges.value.length <= 1 &&
+    (!selectedRange.value ||
+      (currentTime.value >= selectedRange.value.start && currentTime.value < selectedRange.value.end))
 );
 const visibleManualRects = computed(() =>
   props.sourceKind === "result"
@@ -271,15 +358,17 @@ watch(
   () => props.manualRanges?.length,
   (length) => {
     activeRange.value = Math.min(activeRange.value, Math.max(0, (length || 0) - 1));
+    boxedRanges.value = boxedRanges.value.filter((index) => index < (length ?? 0));
   }
 );
 function addRange() {
-  if (!props.editable || !props.duration || (props.manualRanges?.length || 0) >= 20) return;
+  if (!props.editable || !props.duration) return;
   const start = Math.max(0, currentTime.value);
   if (!Number.isFinite(start) || start >= props.duration) return;
   videoEl.value?.pause();
-  activeRange.value = props.manualRanges?.length || 0;
+  const index = props.manualRanges?.length || 0;
   commitRanges([...(props.manualRanges || []), { start, end: Math.min(start + 2, props.duration), rects: [] }]);
+  selectActiveRange(index);
 }
 function splitRange() {
   if (splitDisabledReason.value || !selectedRange.value) return;
@@ -300,26 +389,74 @@ function splitRange() {
   commitRanges(next);
   activeRange.value = index + 1;
 }
-function selectRange(index: number) {
-  activeRange.value = index;
-  if (videoEl.value && props.manualRanges?.[index]) {
-    videoEl.value.pause();
-    videoEl.value.currentTime = props.manualRanges[index].start;
-    currentTime.value = props.manualRanges[index].start;
-  }
+function trimRange(side: "left" | "right") {
+  if (!canTrimRange.value || !selectedRange.value) return;
+  videoEl.value?.pause();
+  cancelDrag();
+  const time = currentTime.value;
+  commitRanges((props.manualRanges || []).map((range, index) =>
+    index === activeRange.value ? { ...range, ...(side === "left" ? { start: time } : { end: time }) } : range
+  ));
 }
-defineExpose({ revealRange: selectRange, clearUndoHistory, replaceRanges: commitRanges });
+function revealRange(index: number) {
+  selectActiveRange(index);
+  const range = props.manualRanges?.[index];
+  if (videoEl.value && range) seekVideo(range.start);
+}
+defineExpose({ revealRange, clearUndoHistory, replaceRanges: commitRanges });
+const scrubbing = ref(false);
+let seekFrame: number | undefined;
+let pendingSeek: number | undefined;
+let steppedFrame: { index: number; fps: number; previewTime: number } | undefined;
+function flushSeek() {
+  seekFrame = undefined;
+  if (pendingSeek === undefined || !videoEl.value) return;
+  videoEl.value.currentTime = pendingSeek;
+  pendingSeek = undefined;
+}
 function seekVideo(time: number) {
+  steppedFrame = undefined;
   currentTime.value = time;
-  if (videoEl.value) {
-    videoEl.value.pause();
-    videoEl.value.currentTime = time;
+  queueVideoSeek(time);
+}
+function queueVideoSeek(time: number) {
+  const video = videoEl.value;
+  if (!video) return;
+  pendingSeek = time;
+  if (!video.paused) video.pause();
+  if (seekFrame === undefined) seekFrame = requestAnimationFrame(flushSeek);
+}
+function finishSeeking() {
+  if (seekFrame !== undefined) cancelAnimationFrame(seekFrame);
+  flushSeek();
+  scrubbing.value = false;
+}
+function onVideoTimeUpdate() {
+  if (!steppedFrame && !scrubbing.value && pendingSeek === undefined && videoEl.value)
+    currentTime.value = videoEl.value.currentTime;
+}
+function onVideoSeeking() {
+  // A seek from the native player starts a new position for the next frame step.
+  if (steppedFrame && pendingSeek === undefined && videoEl.value) {
+    const { fps, previewTime } = steppedFrame;
+    if (Math.abs(videoEl.value.currentTime - previewTime) >= 0.25 / fps) steppedFrame = undefined;
   }
+  onVideoTimeUpdate();
+}
+function removeRanges(indices: number[]) {
+  if (!props.editable || editGesture || !props.manualRanges?.length) return;
+  const selected = new Set(indices);
+  const remaining = props.manualRanges.filter((_, index) => !selected.has(index));
+  if (remaining.length === props.manualRanges.length) return;
+  selectedRect.value = "";
+  commitRanges(remaining);
+  selectActiveRange(indices.length > 1 ? -1 : Math.min(indices[0], Math.max(0, remaining.length - 1)));
 }
 function removeRange(index = activeRange.value) {
-  if (!props.editable || !props.manualRanges?.[index]) return;
-  selectedRect.value = "";
-  commitRanges(props.manualRanges.filter((_, rangeIndex) => rangeIndex !== index));
+  removeRanges([index]);
+}
+function removeSelectedRanges() {
+  removeRanges(boxedRanges.value);
 }
 function removeRect(rectIndex: number) {
   deleteRect(activeRange.value, rectIndex);
@@ -356,6 +493,7 @@ const surfaceStyle = computed(() => ({
 
 onMounted(() => {
   window.addEventListener("keydown", onPlaybackKeydown);
+  window.addEventListener("keydown", onFrameKeydown, true);
   window.addEventListener("keydown", onUndoKeydown);
   resizeObserver = new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
@@ -372,16 +510,19 @@ function stopTrackingFrames() {
 function trackFrames() {
   stopTrackingFrames();
   const video = videoEl.value;
-  if (!video?.requestVideoFrameCallback) return;
+  if (!video || video.paused) return;
+  steppedFrame = undefined;
+  if (!video.requestVideoFrameCallback) return;
   const update = (_now: number, metadata: { mediaTime: number }) => {
+    if (video.paused || video !== videoEl.value) return;
     currentTime.value = metadata.mediaTime;
-    if (!video.paused) frameCallback = video.requestVideoFrameCallback(update);
+    frameCallback = video.requestVideoFrameCallback(update);
   };
   frameCallback = video.requestVideoFrameCallback(update);
 }
 function onVideoPaused() {
   stopTrackingFrames();
-  if (videoEl.value) currentTime.value = videoEl.value.currentTime;
+  onVideoTimeUpdate();
 }
 function onPlaybackKeydown(event: KeyboardEvent) {
   if (event.code !== "Space" && event.key !== " ") return;
@@ -408,6 +549,40 @@ function onPlaybackKeydown(event: KeyboardEvent) {
   event.preventDefault();
   if (video.paused) void video.play().catch(() => undefined);
   else video.pause();
+}
+function onFrameKeydown(event: KeyboardEvent) {
+  const direction = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+  if (
+    !direction ||
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event.shiftKey
+  )
+    return;
+  if (!props.src || !props.editable || scrubbing.value || editGesture) return;
+  if (document.querySelector('.n-modal[aria-modal="true"], .n-drawer[aria-modal="true"]')) return;
+  const target = event.target;
+  if (target instanceof Element) {
+    const control = target.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"], button'
+    );
+    if (control && !control.matches(".timeline-playhead button, .clip-label")) return;
+  }
+  event.preventDefault();
+  const { fps, duration } = props;
+  if (!fps || !Number.isFinite(fps) || fps <= 0 || !duration || !Number.isFinite(duration) || duration <= 0) return;
+  const currentFrame = steppedFrame?.fps === fps ? steppedFrame.index : Math.floor(currentTime.value * fps + 1e-6);
+  const lastFrame = Math.max(0, Math.ceil(duration * fps - 1e-6) - 1);
+  const index = Math.max(0, Math.min(lastFrame, currentFrame + direction));
+  const startTime = index / fps;
+  // Keep the pointer on the edit boundary and decode inside the frame, away from rounding at its edges.
+  const previewTime = (startTime + Math.min(duration, (index + 1) / fps)) / 2;
+  steppedFrame = { index, fps, previewTime };
+  currentTime.value = startTime;
+  queueVideoSeek(previewTime);
 }
 function onUndoKeydown(event: KeyboardEvent) {
   if (
@@ -438,17 +613,26 @@ function onUndoKeydown(event: KeyboardEvent) {
   undoEdit();
 }
 onBeforeUnmount(() => {
+  if (seekFrame !== undefined) cancelAnimationFrame(seekFrame);
   window.removeEventListener("keydown", onPlaybackKeydown);
+  window.removeEventListener("keydown", onFrameKeydown, true);
   window.removeEventListener("keydown", onUndoKeydown);
   resizeObserver?.disconnect();
   stopTrackingFrames();
 });
 
+watch([() => props.width, () => props.height], ([width, height]) => {
+  if (width && height) intrinsic.value = { width, height };
+});
 watch(
-  () => [props.width, props.height, props.src] as const,
-  async ([width, height]) => {
+  () => props.src,
+  async () => {
     stopTrackingFrames();
-    if (width && height) intrinsic.value = { width, height };
+    if (seekFrame !== undefined) cancelAnimationFrame(seekFrame);
+    seekFrame = undefined;
+    pendingSeek = undefined;
+    steppedFrame = undefined;
+    scrubbing.value = false;
     await nextTick();
     videoEl.value?.load();
   }
@@ -465,7 +649,7 @@ let dragStart: { x: number; y: number } | undefined;
 
 function onPointerDown(event: PointerEvent) {
   if (!drawingTimeAllowed.value) return;
-  if ((props.manualRanges || []).reduce((sum, range) => sum + range.rects.length, 0) >= 20) return;
+  if ((selectedRange.value?.rects.length || 0) >= 20) return;
   if (!selectedRange.value && props.duration) addRange();
   const target = event.currentTarget as HTMLElement;
   target.setPointerCapture(event.pointerId);
@@ -668,6 +852,20 @@ function rectStyle(rect: VideoAiRect) {
 }
 .range-actions :deep(.n-button) {
   border-radius: 7px;
+}
+.range-icon-action {
+  display: inline-flex;
+}
+.range-icon-action :deep(.range-icon-button) {
+  min-width: 30px;
+  padding-inline: 5px;
+}
+.range-icon-action :deep(.range-icon-button:disabled) {
+  pointer-events: none;
+}
+.range-icon-number {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 .source-switch {
   border: 1px solid var(--color-border);

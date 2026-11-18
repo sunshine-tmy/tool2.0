@@ -2,7 +2,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
-import { archiveSlideshowCycles, archiveSlideshowDuration, type ArchiveVideoEditInput } from "@toolbox/shared";
+import {
+  ARCHIVE_SLIDESHOW_DIMENSIONS,
+  archiveSlideshowCycles,
+  archiveSlideshowDuration,
+  type ArchiveVideoEditInput
+} from "@toolbox/shared";
 import { runMediaProcess, VideoEditError, type MediaTools } from "./renderer";
 export async function renderSlideshow(options: {
   tools: MediaTools;
@@ -14,8 +19,7 @@ export async function renderSlideshow(options: {
   maxBytes: number;
   onProgress: (value: number) => void;
 }) {
-  const dimensions = { portrait: [720, 1280], landscape: [1280, 720], square: [1080, 1080] } as const;
-  const [width, height] = dimensions[options.settings.aspect];
+  const [width, height] = ARCHIVE_SLIDESHOW_DIMENSIONS[options.settings.aspect];
   const lines = ["ffconcat version 1.0"];
   const names: string[] = [];
   for (const [index, file] of options.images.entries()) {

@@ -74,6 +74,7 @@
                 :disabled="busy"
                 :options="[
                   { label: '竖版 720 × 1280', value: 'portrait' },
+                  { label: '竖版 3:4（720 × 960）', value: 'portrait_3_4' },
                   { label: '横版 1280 × 720', value: 'landscape' },
                   { label: '方形 1080 × 1080', value: 'square' }
                 ]"
@@ -304,6 +305,7 @@ import {
   defaultArchiveAudioSettings,
   archiveSlideshowDuration,
   watermarkTimingError,
+  type ArchiveSlideshowAspect,
   type ArchiveVideoEditInput,
   type ArchiveVideoEditJob,
   type AudioLibraryItemView,
@@ -359,7 +361,7 @@ const watermarkValidation = computed(() =>
 );
 const isImage = computed(() => current.value?.kind === "image");
 const secondsPerImage = ref(3),
-  aspect = ref<"portrait" | "landscape" | "square">("portrait");
+  aspect = ref<ArchiveSlideshowAspect>("portrait");
 const editDuration = computed(() =>
   isImage.value
     ? archiveSlideshowDuration(

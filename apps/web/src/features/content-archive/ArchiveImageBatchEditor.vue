@@ -243,6 +243,7 @@ import {
   NSlider
 } from "naive-ui";
 import {
+  ARCHIVE_SLIDESHOW_DIMENSIONS,
   defaultArchiveWatermarkSettings,
   archiveSlideshowDuration,
   type ContentArchiveItem,
@@ -333,11 +334,8 @@ const virtualSize = computed(() => {
   const media = reference.value ? imageBatchTarget(reference.value) : undefined;
   if (media?.existing && media.media.width && media.media.height)
     return { width: media.media.width, height: media.media.height };
-  return aspect.value === "portrait"
-    ? { width: 720, height: 1280 }
-    : aspect.value === "landscape"
-      ? { width: 1280, height: 720 }
-      : { width: 1080, height: 1080 };
+  const [width, height] = ARCHIVE_SLIDESHOW_DIMENSIONS[aspect.value];
+  return { width, height };
 });
 function moveWatermark(point: { x: number; y: number }) {
   if (locked.value || loading.value) return;
@@ -361,6 +359,7 @@ const readyToStart = computed(
 );
 const aspectOptions = [
   { label: "竖版 720 × 1280", value: "portrait" },
+  { label: "竖版 3:4（720 × 960）", value: "portrait_3_4" },
   { label: "横版 1280 × 720", value: "landscape" },
   { label: "方形 1080 × 1080", value: "square" }
 ];

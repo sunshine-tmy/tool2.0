@@ -53,6 +53,7 @@ export const VideoAiTimedRegionSchema = Type.Object(
   {
     start: Type.Number({ minimum: 0 }),
     end: Type.Number({ minimum: 0 }),
+    lane: Type.Optional(Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER })),
     rects: Type.Array(VideoAiRectSchema, { minItems: 1, maxItems: 20 })
   },
   { additionalProperties: false }
@@ -116,7 +117,7 @@ export const VideoAiTaskSchema = Type.Object(
     inputName: Type.String({ minLength: 1 }),
     inputBytes: Type.Integer({ minimum: 0 }),
     segments: Type.Array(VideoAiSegmentSchema),
-    manualRanges: Type.Optional(Type.Array(VideoAiTimedRegionSchema, { maxItems: 20 })),
+    manualRanges: Type.Optional(Type.Array(VideoAiTimedRegionSchema)),
     manualArea: Type.Optional(VideoAiRectSchema),
     inputMetadata: Type.Optional(VideoAiInputMetadataSchema),
     inputRetained: Type.Optional(Type.Boolean()),

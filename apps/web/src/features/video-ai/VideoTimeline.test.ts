@@ -18,7 +18,7 @@ function setup() {
   const element = track.element as HTMLElement;
   element.setPointerCapture = vi.fn();
   element.hasPointerCapture = vi.fn(() => false);
-  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({ left: 100, width: 1000 } as DOMRect);
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({ left: 100, top: 0, width: 1000 } as DOMRect);
   return { w, track };
 }
 it.each(["Backspace", "Delete"])("deletes only the focused interval with %s", async (key) => {
@@ -105,13 +105,20 @@ it("resizes clips to neighbours, preserves unrelated ranges and restores state o
   expect(w.emitted("seek")).toBeUndefined();
   expect(w.emitted("update:ranges")?.at(-1)).toEqual([ranges]);
 });
-it("moves the interval as one clip with snapping, and keyboard trimming remains possible", async () => {
+it("previews movement on both axes and commits the indicated lane and snapped time on release", async () => {
   const { w, track } = setup();
-  await w.findAll(".timeline-clip")[0].trigger("pointerdown", { button: 0, clientX: 300, pointerId: 1 });
-  await track.trigger("pointermove", { clientX: 497, pointerId: 1 });
+  const clip = w.findAll(".timeline-clip")[0];
+  await clip.trigger("pointerdown", { button: 0, clientX: 300, clientY: 50, pointerId: 1 });
+  await track.trigger("pointermove", { clientX: 497, clientY: 94, pointerId: 1 });
+  expect(clip.attributes("style")).toContain("translate(200px, 44px)");
+  expect(w.get(".timeline-snap-guide").attributes("style")).toContain("left: 60%");
+  expect(w.get(".timeline-drop-line").attributes("style")).toContain("top: 97px");
+  expect(w.emitted("update:ranges")).toBeUndefined();
+  await track.trigger("pointerup", { pointerId: 1, clientX: 497, clientY: 94 });
   const value = w.emitted("update:ranges")?.at(-1)?.[0] as typeof ranges;
-  expect(value[0]).toEqual({ ...ranges[0], start: 3, end: 6 });
-  await track.trigger("pointerup", { pointerId: 1, clientX: 497 });
+  expect(value[0]).toEqual({ ...ranges[0], start: 3, end: 6, lane: 1 });
+  expect(w.find(".timeline-drop-line").exists()).toBe(false);
+  expect(w.find(".timeline-snap-guide").exists()).toBe(false);
   expect(w.emitted("seek")).toBeUndefined();
   await w.findAll(".trim-handle.end")[0].trigger("keydown", { key: "ArrowRight" });
   expect((w.emitted("update:ranges")?.at(-1)?.[0] as typeof ranges)[0].end).toBe(4.01);

@@ -3,6 +3,7 @@ import {
   defaultArchiveAudioSettings,
   archiveSlideshowDuration,
   watermarkTimingError,
+  type ArchiveSlideshowAspect,
   type ArchiveVideoEditInput,
   type ArchiveWatermarkSettings,
   type ContentArchiveItem
@@ -11,7 +12,7 @@ import {
 export type ImageBatchRecipe = {
   kind: "watermark" | "audio";
   secondsPerImage: number;
-  aspect: "portrait" | "landscape" | "square";
+  aspect: ArchiveSlideshowAspect;
   watermark?: { settings: ArchiveWatermarkSettings; file?: File; libraryId?: string };
   music?: ({ id: string; revision: number } | { source: "original" }) & {
     volume: number;

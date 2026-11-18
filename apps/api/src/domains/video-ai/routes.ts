@@ -12,6 +12,7 @@ import {
   VIDEO_AI_MAX_STORAGE_BYTES,
   VideoAiDeleteSchema,
   VideoAiDetectionSchema,
+  VideoAiInputMetadataSchema,
   VideoAiHealthSchema,
   VideoAiHistoryQuerySchema,
   VideoAiHistorySchema,
@@ -254,6 +255,42 @@ export async function registerVideoAiRoutes(
   );
 
   app.post(
+    "/api/v1/tools/video-ai/metadata",
+    {
+      config: REQUEST_QUOTAS.ai,
+      schema: {
+        response: {
+          200: apiSuccessSchema(VideoAiInputMetadataSchema),
+          400: ApiFailureSchema,
+          409: ApiFailureSchema,
+          413: ApiFailureSchema,
+          422: ApiFailureSchema,
+          503: ApiFailureSchema
+        }
+      }
+    },
+    async (request, reply) => {
+      const tempDir = path.join(config.videoAiInputsDir, `probe-${nanoid(12)}`);
+      await fs.mkdir(tempDir, { recursive: true });
+      try {
+        const part = await request.file({ limits: { files: 1, fileSize: VIDEO_AI_MAX_FILE_BYTES } });
+        if (!part || part.fieldname !== "video") return reply.code(400).send(fail("FILE_REQUIRED", "请选择视频文件"));
+        assertVideoExtension(part.filename);
+        const destination = path.join(tempDir, "input.bin");
+        const stored = await storeStream(part.file, destination, VIDEO_AI_MAX_FILE_BYTES);
+        if (part.file.truncated) throw validationError("FILE_TOO_LARGE", "上传文件超过大小限制");
+        if (!stored.size) throw validationError("EMPTY_FILE", "上传的视频为空文件");
+        const metadata = await probeVideo(config, destination, new AbortController().signal);
+        return ok({ width: metadata.width, height: metadata.height, fps: metadata.fps, frameCount: metadata.frameCount, durationMs: metadata.durationMs });
+      } catch (error) {
+        const info = routeError(error);
+        return reply.code(info.status).send(fail(info.code, info.message));
+      } finally {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+  app.post(
     "/api/v1/tools/video-ai/detect",
     {
       config: REQUEST_QUOTAS.ai,
@@ -432,6 +469,7 @@ export async function registerVideoAiRoutes(
               : (JSON.parse(manualRanges) as VideoAiTimedRegion[]).map((range) => ({
                   start: range.start,
                   end: range.end,
+                  ...(range.lane === undefined ? {} : { lane: range.lane }),
                   rects: range.rects.map((rect) => ({ x: rect.x, y: rect.y, width: rect.width, height: rect.height }))
                 })),
           inputMetadata: {

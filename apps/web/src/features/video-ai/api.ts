@@ -4,6 +4,7 @@
 import {
   VideoAiDeleteSchema,
   VideoAiDetectionSchema,
+  VideoAiInputMetadataSchema,
   VideoAiHealthSchema,
   VideoAiHistorySchema,
   VideoAiTaskSchema,
@@ -17,6 +18,11 @@ import { resolveApiUrl } from "../../shared/config/runtime";
 import { httpClient, withApiError } from "../../shared/http/http";
 
 class VideoAiApi {
+  async metadata(file: File, signal?: AbortSignal) {
+    const form = new FormData();
+    form.append("video", file, file.name);
+    return withApiError(() => httpClient.post("/tools/video-ai/metadata", VideoAiInputMetadataSchema, form, { timeout: 1_800_000, signal }), "读取视频帧率失败");
+  }
   async health(signal?: AbortSignal) {
     return withApiError(
       () => httpClient.get("/tools/video-ai/health", VideoAiHealthSchema, { timeout: 20_000, signal }),

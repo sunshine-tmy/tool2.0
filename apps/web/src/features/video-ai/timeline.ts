@@ -43,6 +43,32 @@ export function snapTime(value: number, targets: number[], tolerance: number) {
   return nearest;
 }
 
+export function timelineRangesOverlap(a: VideoAiTimedRegion, b: VideoAiTimedRegion) {
+  const tolerance = 1e-7;
+  return a.start < b.end - tolerance && b.start < a.end - tolerance;
+}
+
+export function layoutTimelineLanes(ranges: VideoAiTimedRegion[]) {
+  const occupied: VideoAiTimedRegion[][] = [];
+  const rows: number[] = [];
+  const ordered = ranges.map((range, index) => ({ range, index })).sort((a, b) => a.range.start - b.range.start);
+  const place = (range: VideoAiTimedRegion, index: number, row: number) => {
+    rows[index] = row;
+    (occupied[row] ??= []).push(range);
+  };
+  for (const { range, index } of ordered) {
+    if (range.lane === undefined || !Number.isSafeInteger(range.lane) || range.lane < 0) continue;
+    const row = Math.min(range.lane, ranges.length);
+    if (!occupied[row]?.some((other) => timelineRangesOverlap(range, other))) place(range, index, row);
+  }
+  for (const { range, index } of ordered) {
+    if (rows[index] !== undefined) continue;
+    const row = occupied.findIndex((lane) => !lane?.some((other) => timelineRangesOverlap(range, other)));
+    place(range, index, row < 0 ? occupied.length : row);
+  }
+  return { rows, count: Math.max(1, occupied.length) };
+}
+
 export function editTimelineRange(
   range: VideoAiTimedRegion,
   operation: "move" | "start" | "end",
@@ -51,18 +77,42 @@ export function editTimelineRange(
   targets: number[],
   tolerance: number
 ) {
+  return previewTimelineRangeEdit(range, operation, delta, duration, targets, tolerance).range;
+}
+
+export function previewTimelineRangeEdit(
+  range: VideoAiTimedRegion,
+  operation: "move" | "start" | "end",
+  delta: number,
+  duration: number,
+  targets: number[],
+  tolerance: number
+): { range: VideoAiTimedRegion; snappedAt?: number } {
   const minimum = Math.min(0.01, duration);
-  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
-  if (operation === "start")
-    return { ...range, start: clamp(snapTime(range.start + delta, targets, tolerance), 0, range.end - minimum) };
-  if (operation === "end")
-    return { ...range, end: clamp(snapTime(range.end + delta, targets, tolerance), range.start + minimum, duration) };
   const length = range.end - range.start;
-  let start = clamp(range.start + delta, 0, duration - length);
-  const candidates = targets
-    .flatMap((target) => [target, target - length])
-    .filter((candidate) => Math.abs(candidate - start) <= tolerance && candidate >= 0 && candidate + length <= duration)
-    .sort((a, b) => Math.abs(a - start) - Math.abs(b - start));
-  start = clamp(candidates[0] ?? start, 0, duration - length);
-  return { ...range, start, end: start + length };
+  const requested = (operation === "end" ? range.end : range.start) + delta;
+  const min = operation === "end" ? range.start + minimum : 0;
+  const max = operation === "start" ? range.end - minimum : operation === "move" ? duration - length : duration;
+  let position = Math.max(min, Math.min(max, requested));
+  let snappedAt: number | undefined;
+  let snappedEnd = false;
+  if (tolerance > 0) {
+    const offsets = operation === "move" ? [0, length] : [0];
+    let nearestDistance = Infinity;
+    for (const target of targets) {
+      for (const offset of offsets) {
+        const candidate = target - offset;
+        const distance = Math.abs(candidate - requested);
+        if (candidate < min || candidate > max || distance > tolerance || distance >= nearestDistance) continue;
+        position = candidate;
+        snappedAt = target;
+        snappedEnd = offset !== 0;
+        nearestDistance = distance;
+      }
+    }
+  }
+  if (operation === "start") return { range: { ...range, start: position }, snappedAt };
+  if (operation === "end") return { range: { ...range, end: position }, snappedAt };
+  const end = snappedEnd && snappedAt !== undefined ? snappedAt : Math.min(duration, position + length);
+  return { range: { ...range, start: position, end }, snappedAt };
 }

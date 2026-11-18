@@ -76,6 +76,7 @@
               :segments="displaySegments"
               :manual-ranges="inspectedTask ? inspectedTask.manualRanges || [] : manualRanges"
               :duration="displayDuration"
+              :fps="inspectedTask?.inputMetadata?.fps || editingTask?.inputMetadata?.fps || videoFps"
               :editable="hasInput && !busy && !inspectedTask && sourceKind === 'original'"
               :width="displayWidth"
               :height="displayHeight"
@@ -198,6 +199,7 @@ const hasInput = computed(() => !!file.value || !!editingTask.value);
 const inputName = computed(() => file.value?.name || editingTask.value?.inputName);
 const previewUrl = ref<string>();
 const mediaMetadata = ref<{ width: number; height: number; duration: number }>();
+const videoFps = ref<number>();
 const sourceKind = ref<"original" | "result">("original");
 const mode = ref<VideoAiMode>("delogo");
 const submitting = ref(false);
@@ -300,7 +302,7 @@ const canSubmit = computed(
     !manualMode.value &&
     engineAvailable(mode.value) &&
     !inspectedTask.value &&
-    regionCount.value <= 20 &&
+    (manualRanges.value.length > 0 || regionCount.value <= 20) &&
     manualRanges.value.every((range) => range.end > range.start && range.rects.length > 0)
 );
 const canCancelActiveTask = computed(
@@ -407,6 +409,12 @@ function onFileChange(event: Event) {
   }
   resetSelection();
   file.value = selected;
+  videoFps.value = undefined;
+  void videoAiApi.metadata(selected, scope.signal).then((metadata) => {
+    if (file.value === selected && !scope.aborted) videoFps.value = metadata.fps;
+  }).catch(() => {
+    if (file.value === selected && !scope.aborted) actionError.value = "无法读取视频帧率，暂时无法逐帧移动指针";
+  });
   previewUrl.value = URL.createObjectURL(selected);
   sourceKind.value = "original";
 }
@@ -427,6 +435,7 @@ async function detectSubtitle() {
       scope.signal
     );
     if (scope.aborted || request !== editorRequest) return;
+    if (detection.fps > 0) videoFps.value = detection.fps;
     const duration = mediaMetadata.value?.duration || (detection.fps > 0 ? detection.frameCount / detection.fps : 0);
     const ranges = segmentsToTimelineRanges(detection.segments, detection.fps, duration);
     if (!mediaMetadata.value && duration > 0)
@@ -667,6 +676,7 @@ function resetSelection() {
   if (previewUrl.value?.startsWith("blob:")) URL.revokeObjectURL(previewUrl.value);
   previewUrl.value = undefined;
   mediaMetadata.value = undefined;
+  videoFps.value = undefined;
   detectedSegments.value = [];
   draftRect.value = undefined;
   detectionNotice.value = "";
