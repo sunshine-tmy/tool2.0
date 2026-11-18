@@ -6,6 +6,7 @@ import {
   XhsArchiveIdParamsSchema,
   XhsArchiveRemovalSchema,
   TikTokProfileInputSchema,
+  TikTokProfileImportWorksSchema,
   TikTokProfileStartSchema,
   TikTokProfileRetrySchema,
   TikTokProfileJobSchema,
@@ -15,7 +16,8 @@ import {
   apiSuccessSchema,
   ok,
   fail,
-  type TikTokProfileStart
+  type TikTokProfileStart,
+  type TikTokProfileImportWorks
 } from "@toolbox/shared";
 import type { TikTokProfileService } from "./service";
 import { ArchiveTaskError } from "../core/provider";
@@ -64,6 +66,22 @@ export function registerTikTokProfileRoutes(
       schema: { body: TikTokProfileInputSchema, response: { 200: apiSuccessSchema(TikTokProfileJobSchema), ...errors } }
     },
     (request, reply) => handle(reply, () => service.create(request.body.url))
+  );
+  app.post<{ Body: TikTokProfileImportWorks }>(
+    `${base}/import-works`,
+    {
+      bodyLimit: 3 * 1024 * 1024,
+      config: REQUEST_QUOTAS.lanUpload,
+      preValidation: async (request, reply) => {
+        if (!Value.Check(TikTokProfileImportWorksSchema, request.body))
+          return reply.code(400).send(fail("TIKTOK_PROFILE_INPUT_INVALID", "请输入有效的主页和作品链接"));
+      },
+      schema: {
+        body: TikTokProfileImportWorksSchema,
+        response: { 200: apiSuccessSchema(TikTokProfileJobSchema), ...errors }
+      }
+    },
+    (request, reply) => handle(reply, () => service.importWorks(request.body))
   );
   app.get<{ Params: { id: string } }>(
     `${base}/:id`,

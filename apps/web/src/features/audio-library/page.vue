@@ -174,7 +174,11 @@
               ><span>操作</span>
             </div>
             <n-spin :show="loading"
-              ><div class="library-items" :class="{ 'library-items--empty': !data?.items.length }" @play.capture="onItemPlay">
+              ><div
+                class="library-items"
+                :class="{ 'library-items--empty': !data?.items.length }"
+                @play.capture="onItemPlay"
+              >
                 <article
                   v-for="item in data?.items || []"
                   :key="item.id"
@@ -205,7 +209,8 @@
                       ><n-tag v-if="audioLibraryPurpose(item) === 'music'" size="small">背景音乐</n-tag
                       ><n-tag
                         v-if="
-                          audioLibraryPurpose(item) !== 'music' && (!item.foreignText.trim() || !item.chineseText.trim())
+                          audioLibraryPurpose(item) !== 'music' &&
+                          (!item.foreignText.trim() || !item.chineseText.trim())
                         "
                         size="small"
                         type="warning"
@@ -355,10 +360,17 @@
             >
           </div>
           <n-form-item label="目标分组">
-            <AudioGroupSelect v-model:value="moveTarget" :options="groups" root-label="未分组" placeholder="搜索分组名称或路径" />
+            <AudioGroupSelect
+              v-model:value="moveTarget"
+              :options="groups"
+              root-label="未分组"
+              placeholder="搜索分组名称或路径"
+            />
           </n-form-item>
-          <p class="library-group-target">可输入名称或路径搜索。移动到：{{ groups.find((group) => group.value === moveTarget)?.label || "未分组" }}</p><template
-            #footer
+          <p class="library-group-target">
+            可输入名称或路径搜索。移动到：{{ groups.find((group) => group.value === moveTarget)?.label || "未分组" }}
+          </p>
+          <template #footer
             ><n-button type="primary" :loading="busy" @click="moveItems">确认移动</n-button></template
           ></n-card
         ></n-modal
@@ -370,14 +382,21 @@
           closable
           @close="groupVisible = false"
           ><n-form label-placement="top"
-            ><n-form-item label="分组名称"><n-input v-model:value="groupDraft.name" maxlength="60" placeholder="输入分组名称" /></n-form-item
+            ><n-form-item label="分组名称"
+              ><n-input v-model:value="groupDraft.name" maxlength="60" placeholder="输入分组名称" /></n-form-item
             ><n-form-item label="上级分组"
               ><AudioGroupSelect
                 v-model:value="groupDraft.parentId"
                 :options="parentOptions"
                 root-label="无上级（顶级分组）"
-                placeholder="搜索上级分组名称或路径" /></n-form-item>
-            <p class="library-group-target">可输入名称或路径搜索上级分组。分组位置：{{ groups.find((group) => group.value === groupDraft.parentId)?.label || "顶级分组" }} / {{ groupDraft.name.trim() || "新分组" }}（最多三级）</p></n-form
+                placeholder="搜索上级分组名称或路径"
+            /></n-form-item>
+            <p class="library-group-target">
+              可输入名称或路径搜索上级分组。分组位置：{{
+                groups.find((group) => group.value === groupDraft.parentId)?.label || "顶级分组"
+              }}
+              / {{ groupDraft.name.trim() || "新分组" }}（最多三级）
+            </p></n-form
           ><template #footer
             ><n-button type="primary" :loading="busy" @click="saveGroup">保存分组</n-button></template
           ></n-card
@@ -385,19 +404,20 @@
       >
       <n-modal v-model:show="uploadVisible"
         ><n-card title="上传成品音频" class="library-upload-dialog" closable @close="uploadVisible = false"
-          ><p>支持 MP3、PCM WAV、AAC M4A、FLAC，单个文件最大 100 MiB。</p>
-          <p class="library-upload-hint">
+          ><p class="library-upload-hint">
             仅音频必填，其余信息均选填，可在入库后补充；标题留空使用文件名，语言留空为“未指定”。
           </p>
           <label
-            class="file-upload-area"
+            class="file-upload-area library-upload-picker"
             data-upload-area
             tabindex="0"
             :aria-disabled="uploading"
             @keydown.enter.prevent="!uploading && fileInput?.click()"
             @keydown.space.prevent="!uploading && fileInput?.click()"
           >
-            <Upload :size="28" aria-hidden="true" /><strong>点击选择音频，可多选</strong>
+            <Upload :size="20" aria-hidden="true" /><strong>{{
+              uploads.length ? "继续选择音频" : "选择音频（可多选）"
+            }}</strong>
             <span>MP3 / PCM WAV / AAC M4A / FLAC · 单个最大 100 MiB</span>
             <input
               ref="fileInput"
@@ -410,7 +430,7 @@
             />
           </label>
           <div class="library-upload-list">
-            <section v-for="(entry, index) in uploads" :key="index">
+            <section v-for="(entry, index) in uploads" v-show="index === uploadIndex" :key="index">
               <strong>{{ entry.file.name }} · {{ formatBytes(entry.file.size) }}</strong>
               <n-form
                 label-placement="top"
@@ -468,19 +488,48 @@
                   />
                 </n-form-item>
               </n-form>
-              <p :class="{ 'library-upload-error': entry.failed }">
+              <p v-if="entry.message && !entry.failed && !entry.duplicate" class="library-upload-legend" role="status">
                 {{ entry.message }}
               </p>
               <n-button v-if="entry.duplicate" size="small" :disabled="uploading" @click="uploadDuplicate(entry)"
                 >仍然另存一条</n-button
               >
+              <n-button v-if="uploads.length > 1" size="small" @click="confirmUploadInfo(entry)"
+                >确认此音频信息</n-button
+              >
             </section>
           </div>
-          <template #footer
-            ><n-button type="primary" :loading="uploading" :disabled="!uploads.length" @click="uploadAll"
-              >上传并入库 / 重试失败项</n-button
-            ></template
-          ></n-card
+          <div v-if="uploads.length > 1" class="library-upload-navigation" aria-label="音频信息切换">
+            <div class="library-upload-navigation-controls">
+              <n-button size="small" :disabled="uploadIndex === 0" @click="uploadIndex--">上一条</n-button>
+              <span>第 {{ uploadIndex + 1 }} / {{ uploads.length }} 条</span>
+              <n-button size="small" :disabled="uploadIndex >= uploads.length - 1" @click="uploadIndex++"
+                >下一条</n-button
+              >
+            </div>
+            <div class="library-upload-indicators">
+              <button
+                v-for="(entry, index) in uploads"
+                :key="index"
+                type="button"
+                class="library-upload-indicator"
+                :class="[`is-${uploadInfoState(entry)}`, { 'is-active': uploadIndex === index }]"
+                :aria-label="`第 ${index + 1} 条：${entry.file.name}，${uploadInfoLabel(entry)}`"
+                :aria-current="uploadIndex === index ? 'true' : undefined"
+                @click="uploadIndex = index"
+              >
+                {{ index + 1 }}
+              </button>
+            </div>
+            <p class="library-upload-legend">红色：未填写 · 黄色：已填写待确认 · 绿色：已确认（选填信息可留空）</p>
+          </div>
+          <template #footer>
+            <div class="library-upload-footer">
+              <n-button type="primary" :loading="uploading" :disabled="!uploads.length" @click="uploadAll">
+                上传并入库 / 重试失败项
+              </n-button>
+            </div>
+          </template></n-card
         ></n-modal
       >
     </section>
@@ -541,6 +590,7 @@ import { useAudioLibraryItems } from "./useAudioLibraryItems";
 import { useAudioLibraryGroups } from "./useAudioLibraryGroups";
 import AudioGroupSelect from "./AudioGroupSelect.vue";
 import { useAudioLibraryTransfers } from "./useAudioLibraryTransfers";
+import type { AudioUploadDraft } from "./upload-draft";
 const queuePanel = ref<InstanceType<typeof AudioQueuePanel>>();
 const collection = useAudioLibraryCollection();
 const purposeOptions = [
@@ -620,7 +670,9 @@ function groupNodeProps({ option }: { option: TreeOption }) {
       groupMenu.id = String(option.key);
       groupMenu.x = event.clientX;
       groupMenu.y = event.clientY;
-      void nextTick(() => { groupMenu.show = true; });
+      void nextTick(() => {
+        groupMenu.show = true;
+      });
     }
   };
 }
@@ -643,6 +695,40 @@ const {
   restoring,
   restoreBackup
 } = useAudioLibraryTransfers(collection, () => queuePanel.value?.refresh());
+const uploadIndex = ref(0);
+const confirmedUploadInfo = new WeakMap<AudioUploadDraft, string>();
+const uploadConfirmationRevision = ref(0);
+function uploadInfoSignature(entry: AudioUploadDraft) {
+  return JSON.stringify([
+    entry.title,
+    entry.language,
+    entry.purpose,
+    entry.groupId,
+    entry.foreignText,
+    entry.chineseText,
+    entry.note
+  ]);
+}
+function confirmUploadInfo(entry: AudioUploadDraft) {
+  confirmedUploadInfo.set(entry, uploadInfoSignature(entry));
+  uploadConfirmationRevision.value++;
+}
+function uploadInfoState(entry: AudioUploadDraft) {
+  void uploadConfirmationRevision.value;
+  if (confirmedUploadInfo.get(entry) === uploadInfoSignature(entry)) return "confirmed";
+  return entry.title.trim() ||
+    entry.foreignText.trim() ||
+    entry.chineseText.trim() ||
+    entry.note.trim() ||
+    entry.language ||
+    entry.groupId ||
+    entry.purpose !== "general"
+    ? "partial"
+    : "empty";
+}
+function uploadInfoLabel(entry: AudioUploadDraft) {
+  return { confirmed: "已确认", partial: "已填写待确认", empty: "未填写" }[uploadInfoState(entry)];
+}
 const message = useMessage();
 async function onClipSaved() {
   message.success("已另存到同一分组，原音频和队列不变；请校对中外文案");
@@ -1017,6 +1103,13 @@ async function onClipSaved() {
 .library-upload-dialog {
   width: min(720px, calc(100vw - 32px));
 }
+.library-upload-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+.library-upload-dialog :deep(.n-card__content) > * + * {
+  margin-top: 12px;
+}
 .library-dialog :deep(.n-card__content) > * + * {
   margin-top: 12px;
 }
@@ -1024,6 +1117,23 @@ async function onClipSaved() {
   font-size: 12px;
   line-height: 1.7;
   color: var(--color-text-secondary);
+}
+:global(:root .library-upload-dialog .library-upload-picker[data-upload-area]:not([hidden])) {
+  min-height: 52px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 10px 14px;
+}
+:global(:root .library-upload-dialog .library-upload-picker[data-upload-area]:not([hidden]) > svg) {
+  width: 20px;
+  height: 20px;
+}
+:global(:root .library-upload-dialog .library-upload-picker[data-upload-area]:not([hidden]) > strong) {
+  font-size: 14px;
+}
+:global(:root .library-upload-dialog .library-upload-picker[data-upload-area]:not([hidden]) > span) {
+  font-size: 12px;
 }
 .library-upload-meta {
   display: grid;
@@ -1037,8 +1147,7 @@ async function onClipSaved() {
   grid-column: 1 / -1;
 }
 .library-upload-list {
-  max-height: 55vh;
-  overflow: auto;
+  min-width: 0;
 }
 .library-upload-list > section {
   padding: 18px 0;
@@ -1046,8 +1155,45 @@ async function onClipSaved() {
   gap: 10px;
   border-bottom: 1px solid var(--color-border);
 }
-.library-upload-error {
-  color: #dc2626;
+.library-upload-navigation {
+  display: grid;
+  gap: 10px;
+}
+.library-upload-navigation-controls,
+.library-upload-indicators {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.library-upload-indicator {
+  min-width: 36px;
+  min-height: 36px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.library-upload-indicator.is-empty {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+.library-upload-indicator.is-partial {
+  color: #92400e;
+  background: #fffbeb;
+}
+.library-upload-indicator.is-confirmed {
+  color: #166534;
+  background: #f0fdf4;
+}
+.library-upload-indicator.is-active {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}
+.library-upload-legend {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 .library-source {
   font-size: 12px;

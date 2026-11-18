@@ -46,18 +46,32 @@ export function useAudioLibraryTransfers(
       entry.done = true;
       entry.duplicate = result.existing;
       entry.message = result.existing ? "相同文件已存在，已跳过；可选择另存独立素材" : "已永久保存";
+      if (result.existing) message.warning(`${entry.file.name}：${entry.message}`);
       rememberGroup(entry.groupId);
     } catch (e) {
       entry.failed = true;
       entry.message = formatApiError(e);
+      message.error(`${entry.file.name}：${entry.message}`);
     }
   }
   async function uploadAll() {
     if (uploading.value) return;
     uploading.value = true;
     try {
-      for (const entry of uploads.value) if (!entry.done || entry.failed) await uploadOne(entry);
+      const pending = uploads.value.filter((entry) => !entry.done || entry.failed);
+      for (const entry of pending) await uploadOne(entry);
       await load();
+      if (!pending.length) {
+        message.info("所选音频已处理，无需重复上传");
+      } else {
+        const saved = pending.filter((entry) => entry.done && !entry.failed && !entry.duplicate).length;
+        const duplicates = pending.filter((entry) => entry.duplicate && !entry.failed).length;
+        const failed = pending.filter((entry) => entry.failed).length;
+        const summary = `上传完成：成功 ${saved} 条，重复跳过 ${duplicates} 条，失败 ${failed} 条`;
+        if (failed) message.error(summary);
+        else if (duplicates) message.warning(summary);
+        else message.success(summary);
+      }
     } finally {
       uploading.value = false;
     }
@@ -68,6 +82,7 @@ export function useAudioLibraryTransfers(
     try {
       await uploadOne(entry, true);
       await load();
+      if (entry.done && !entry.failed && !entry.duplicate) message.success(`${entry.file.name}：已另存并入库`);
     } finally {
       uploading.value = false;
     }

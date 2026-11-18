@@ -3,7 +3,11 @@
   <div class="compare-panel" :class="{ 'is-compact': compact }">
     <div ref="compareStage" class="compare-stage" :class="{ 'is-compact': compact }">
       <img class="compare-before-image" :src="beforeUrl" :alt="beforeLabel" decoding="async" />
-      <div class="compare-after-layer" :class="{ checkerboard }" :style="{ clipPath: `inset(0 0 0 ${position}%)` }">
+      <div
+        class="compare-after-layer"
+        :class="[{ checkerboard }, previewBackground && `is-${previewBackground}`]"
+        :style="{ clipPath: `inset(0 0 0 ${position}%)` }"
+      >
         <img :src="afterUrl" :alt="afterLabel" decoding="async" />
       </div>
       <div
@@ -53,6 +57,7 @@ withDefaults(
     beforeLabel?: string;
     afterLabel?: string;
     checkerboard?: boolean;
+    previewBackground?: "transparent" | "light" | "dark";
     compact?: boolean;
   }>(),
   {

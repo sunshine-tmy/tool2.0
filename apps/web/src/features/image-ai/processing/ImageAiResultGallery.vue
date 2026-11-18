@@ -12,13 +12,13 @@
     <div class="result-gallery-grid">
       <article v-for="result in props.task.results" :key="result.id" class="result-gallery-card">
         <BeforeAfterCompare
-          v-if="sourceUrlForResult(result.id)"
+          v-if="!props.hidePreview && sourceUrlForResult(result.id)"
           :before-url="sourceUrlForResult(result.id) || ''"
           :after-url="absoluteImageAiUrl(result.downloadUrl)"
           :checkerboard="props.checkerboard"
           compact
         />
-        <img v-else :src="absoluteImageAiUrl(result.downloadUrl)" :alt="result.outputName" />
+        <img v-else-if="!props.hidePreview" :src="absoluteImageAiUrl(result.downloadUrl)" :alt="result.outputName" />
         <div class="result-gallery-meta">
           <strong>{{ result.outputName }}</strong>
           <span>{{ result.width }} × {{ result.height }} · {{ result.model }}</span>
@@ -57,6 +57,7 @@ const props = defineProps<{
   sourceFiles: File[];
   checkerboard?: boolean;
   persistedSources?: boolean;
+  hidePreview?: boolean;
 }>();
 const emit = defineEmits<{
   edit: [taskId: string, resultId: string];

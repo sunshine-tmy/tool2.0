@@ -148,31 +148,37 @@ it("continues after a manual refresh destroys the execution context and clears t
   expect(browser.listenerCount("requestfailed")).toBe(0);
   expect(browser.listenerCount("framenavigated")).toBe(0);
 });
-it("resumes normal discovery when an initial empty response is followed by valid public data without login or refresh", async () => {
-  const browser = page(state(), { ...api({}), body: async () => Buffer.alloc(0) });
-  let waited = false;
-  const result = await readProfileWorks(
-    browser,
-    "shop",
-    new AbortController().signal,
-    (snapshot) => {
-      if (!waited && snapshot.waitingUser) {
-        waited = true;
-        browser.emit(
-          "response",
-          api({ statusCode: 0, cursor: "20", hasMore: false, itemList: [item("12345"), item("12346")] })
-        );
-      }
-    },
-    [],
-    { pollMs: 1 }
-  );
-  expect(waited).toBe(true);
-  expect(result).toMatchObject({ complete: true, waitingUser: false });
-  expect(result.works).toHaveLength(2);
-  expect(browser.goto).toHaveBeenCalledOnce();
-  expect(browser.eventNames()).toEqual([]);
-});
+it.each([
+  ["empty", { ...api({}), body: async () => Buffer.alloc(0) }],
+  ["platform error", api({ statusCode: 1 })]
+] as const)(
+  "resumes discovery when an initial %s response is followed by valid public data",
+  async (_kind, initial) => {
+    const browser = page(state(), initial);
+    let waited = false;
+    const result = await readProfileWorks(
+      browser,
+      "shop",
+      new AbortController().signal,
+      (snapshot) => {
+        if (!waited && snapshot.waitingUser) {
+          waited = true;
+          browser.emit(
+            "response",
+            api({ statusCode: 0, cursor: "20", hasMore: false, itemList: [item("12345"), item("12346")] })
+          );
+        }
+      },
+      [],
+      { pollMs: 1 }
+    );
+    expect(waited).toBe(true);
+    expect(result).toMatchObject({ complete: true, waitingUser: false });
+    expect(result.works).toHaveLength(2);
+    expect(browser.goto).toHaveBeenCalledOnce();
+    expect(browser.eventNames()).toEqual([]);
+  }
+);
 it("reports retained discoveries when a later page is empty without declaring the profile complete", async () => {
   const browser = page(
     state(),

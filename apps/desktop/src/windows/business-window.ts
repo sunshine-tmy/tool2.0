@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, Menu, shell } from "electron";
 import { isSafeExternalUrl, isTrustedBackendUrl } from "../security/window-security";
 type BusinessWindowOptions = {
   origin: string;
@@ -38,6 +38,31 @@ export async function createBusinessWindow(context: BusinessWindowOptions) {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: "deny" };
+  });
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    if (!params.isEditable && !params.selectionText) return;
+    const { canCut, canCopy, canPaste, canSelectAll } = params.editFlags;
+    Menu.buildFromTemplate([
+      { role: "cut", label: "剪切", enabled: params.isEditable && canCut },
+      { role: "copy", label: "复制", enabled: canCopy },
+      { role: "paste", label: "粘贴", enabled: params.isEditable && canPaste },
+      { type: "separator" },
+      { role: "selectAll", label: "全选", enabled: canSelectAll }
+    ]).popup({ window: mainWindow });
+  });
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (process.platform !== "darwin" || input.type !== "keyDown" || !input.meta || input.control || input.alt) return;
+    const key = input.key.toLowerCase();
+    const contents = mainWindow.webContents;
+    if (input.shift && key === "z") contents.redo();
+    else if (input.shift) return;
+    else if (key === "c") contents.copy();
+    else if (key === "x") contents.cut();
+    else if (key === "v") contents.paste();
+    else if (key === "a") contents.selectAll();
+    else if (key === "z") contents.undo();
+    else return;
+    event.preventDefault();
   });
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (isTrustedBackendUrl(url, origin)) return;

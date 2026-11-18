@@ -206,6 +206,7 @@ afterEach(() => {
 });
 describe("desktop application assembly", () => {
   it("preserves paths/ready/recovery/proxy/backend/window/entered order and attaches the fixed preload", async () => {
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
     const app = application();
     app.focusMainWindow();
     expect(frameWindow.focus).not.toHaveBeenCalled();
@@ -227,6 +228,7 @@ describe("desktop application assembly", () => {
       "entered"
     ]);
     expect(mock.diagnosticsOptions[0].preload).toBe("fixed-preload.cjs");
+    expect(mock.resolveProxy).toHaveBeenCalledExactlyOnceWith("https://github.com");
     expect(mock.register.mock.calls.map(([name]) => name)).toEqual(["desktop:get-version", "fixed-desktop-methods"]);
     expect(mock.recover).toHaveBeenCalledWith(expect.objectContaining({ dataRoot: "synthetic-data" }));
     app.focusMainWindow();
@@ -330,10 +332,17 @@ describe("desktop application assembly", () => {
   });
   it("does not offer Windows legacy migration during a simulated macOS startup", async () => {
     Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    mock.resolveProxy.mockImplementation(async (url: string) =>
+      url === "https://www.tiktok.com/" ? "PROXY 127.0.0.1:7897; DIRECT" : "DIRECT"
+    );
     await application().boot();
     expect(mock.prepare).not.toHaveBeenCalled();
     expect(mock.migrationIpc).not.toHaveBeenCalled();
     expect(mock.entered).toHaveBeenCalledOnce();
+    expect(mock.backendOptions[0]).toMatchObject({
+      tiktokSystemProxy: "http://127.0.0.1:7897/",
+      componentProxyUrl: undefined
+    });
   });
   it("forwards the native macOS wake event to the managed backend", async () => {
     Object.defineProperty(process, "platform", { value: "darwin", configurable: true });

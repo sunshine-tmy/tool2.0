@@ -8,6 +8,17 @@ export const TikTokProfileInputSchema = Type.Object(
   { url: Type.String({ minLength: 1, maxLength: 2048 }) },
   { additionalProperties: false }
 );
+export const TikTokProfileImportWorksSchema = Type.Object(
+  {
+    url: TikTokProfileInputSchema.properties.url,
+    jobId: Type.Optional(ArchiveGroupIdSchema),
+    workUrls: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), {
+      minItems: 1,
+      maxItems: TIKTOK_PROFILE_MAX_WORKS
+    })
+  },
+  { additionalProperties: false }
+);
 export function normalizeTikTokProfileLink(input: string): { username: string; url: string } | undefined {
   try {
     const url = new URL(input.trim());
@@ -113,6 +124,7 @@ export const TikTokProfileStartSchema = Type.Object(
   { additionalProperties: false }
 );
 export type TikTokProfileWork = Static<typeof TikTokProfileWorkSchema>;
+export type TikTokProfileImportWorks = Static<typeof TikTokProfileImportWorksSchema>;
 export const TikTokProfileRetrySchema = Type.Object(
   { itemId: Type.Optional(TikTokProfileWorkSchema.properties.id) },
   { additionalProperties: false }

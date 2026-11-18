@@ -7,7 +7,7 @@ import { createStartupMigrationFlow } from "./startup-migration-flow";
 import { registerDesktopIpc } from "../ipc/register-desktop-ipc";
 import { app, powerMonitor, type BrowserWindow, ipcMain, session } from "electron";
 import { BackendSupervisor } from "../backend/backend-supervisor";
-import { componentProxyUrlFromResolution } from "../backend/system-proxy";
+import { componentProxyUrlFromResolution, tiktokSystemProxyFromResolution } from "../backend/system-proxy";
 import { recoverDesktopDataMigrations, type DesktopDataMigrationOptions } from "../data/desktop-data-migration";
 import { readDesktopSettings } from "../data/desktop-settings";
 import { prepareStartupDataMigration } from "../data/desktop-root-migration";
@@ -164,18 +164,27 @@ export function createDesktopApplication(options: DesktopApplicationOptions) {
         desktopOperationInProgress = false;
       }
       startupDiagnostics.stage("proxy");
-      const componentProxyUrl = await session.defaultSession
-        .resolveProxy("https://github.com")
-        .then(componentProxyUrlFromResolution)
-        .catch((error) => {
-          console.warn("Unable to resolve the system proxy for component downloads", error);
-          return undefined;
-        });
+      const [componentProxyUrl, tiktokSystemProxy] = await Promise.all([
+        session.defaultSession
+          .resolveProxy("https://github.com")
+          .then(componentProxyUrlFromResolution)
+          .catch((error) => {
+            console.warn("Unable to resolve the system proxy for component downloads", error);
+            return undefined;
+          }),
+        process.platform === "darwin"
+          ? session.defaultSession
+              .resolveProxy("https://www.tiktok.com/")
+              .then(tiktokSystemProxyFromResolution)
+              .catch(() => undefined)
+          : undefined
+      ]);
       startupDiagnostics.stage("process");
       backend = new BackendSupervisor({
         entrypoint: desktopBackendEntrypoint(app.isPackaged, process.resourcesPath),
         runtimeLayout: layout,
         componentProxyUrl,
+        tiktokSystemProxy,
         bootId: startupDiagnostics.bootId,
         onUnexpectedExit: (message) => {
           startupDiagnostics?.fail(new Error(message), false);

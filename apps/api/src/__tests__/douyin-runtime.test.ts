@@ -66,7 +66,12 @@ function fixture(platform: NodeJS.Platform = "win32", arch = "x64") {
     manifest: {
       id,
       dependencyIds: ["xhs-browser"],
-      version: id === "xhs-browser" ? "1.63.0-chromium-1243" : "1.0.0-anonymous-27468de"
+      version:
+        id !== "xhs-browser"
+          ? "1.0.0-anonymous-27468de"
+          : platform === "darwin"
+            ? "1.63.0-chromium-1243-darwin-arm64.1"
+            : "1.63.0-chromium-1243"
     } as ComponentPackageManifest
   }));
   const list = vi.fn(async () => [] as Awaited<ReturnType<ComponentManager["list"]>>);
@@ -374,7 +379,7 @@ describe("抖音受管匿名运行时", () => {
     expect(f.resolve).not.toHaveBeenCalled();
   });
 
-  it("macOS 从签名启动映射解析嵌套 .app 可执行资产", async () => {
+  it("macOS 接受实际签名包版本并从启动映射解析嵌套 .app 可执行资产", async () => {
     const f = fixture("darwin", "arm64");
     expect(await f.runtime.status()).toMatchObject({ available: true });
     expect(f.resolve.mock.calls.at(-1)).toEqual(["xhs-browser", "browser/Chromium.app/Contents/MacOS/Chromium"]);

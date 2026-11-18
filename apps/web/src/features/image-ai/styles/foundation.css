@@ -286,6 +286,12 @@
   inset: 0;
   overflow: hidden;
 }
+.compare-after-layer.is-light {
+  background-color: #f4f4f8;
+}
+.compare-after-layer.is-dark {
+  background-color: #383b4b;
+}
 
 .compare-after-layer img {
   display: block;

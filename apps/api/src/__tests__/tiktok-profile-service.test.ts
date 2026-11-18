@@ -305,6 +305,28 @@ it("requires an explicit partial-list decision and rejects forged or unselected 
   await expect(profiles.create("https://www.tiktok.com/@other")).rejects.toMatchObject({ code: "TIKTOK_PROFILE_BUSY" });
   await expect(profiles.remove(id)).rejects.toMatchObject({ code: "TIKTOK_PROFILE_BUSY" });
 });
+it("merges ordinary browser links into the same profile without accepting unrelated works or starting archive jobs", async () => {
+  const url = "https://www.tiktok.com/@shop";
+  const job = await profiles.importWorks({ url, workUrls: [`${url}/video/12345?_t=share`] });
+  expect(job).toMatchObject({ phase: "ready", discoveredCount: 1, complete: false });
+  const merged = await profiles.importWorks({
+    url,
+    jobId: job.id,
+    workUrls: [`${url}/video/12345`, `${url}/photo/12346`]
+  });
+  expect(merged.discoveredCount).toBe(2);
+  expect(profiles.page(job.id)?.items.map((entry) => entry.url)).toEqual([`${url}/video/12345`, `${url}/photo/12346`]);
+  await expect(
+    profiles.importWorks({
+      url,
+      jobId: job.id,
+      workUrls: [`${url}/video/12347`, "https://www.tiktok.com/@other/video/12348"]
+    })
+  ).rejects.toMatchObject({ code: "TIKTOK_PROFILE_WORK_URL_INVALID" });
+  expect(profiles.page(job.id)?.total).toBe(2);
+  expect(reader.read).not.toHaveBeenCalled();
+  expect(imports.list()).toHaveLength(0);
+});
 it("keeps ownership atomic on database failure, defers to manual batches, and stops only owned work", async () => {
   const id = await ready(201);
   await profiles.start(id, { selection: "all", existing: "skip", allowPartial: false });

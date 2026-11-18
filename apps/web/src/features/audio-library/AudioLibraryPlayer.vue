@@ -105,15 +105,18 @@
             >
           </div>
         </n-popover>
-        <n-button
-          circle
-          quaternary
-          :type="queueOpen ? 'primary' : 'default'"
-          :aria-label="`播放队列 ${player.queue.length} 条`"
-          :title="`播放队列 · ${player.queue.length} 条`"
-          @click="queueOpen = !queueOpen"
-          ><ListMusic :size="22"
-        /></n-button>
+        <span ref="queueTrigger">
+          <n-button
+            circle
+            quaternary
+            :type="queueOpen ? 'primary' : 'default'"
+            :aria-label="`播放队列 ${player.queue.length} 条`"
+            :title="`播放队列 · ${player.queue.length} 条`"
+            :aria-expanded="queueOpen"
+            @click="queueOpen = !queueOpen"
+            ><ListMusic :size="22"
+          /></n-button>
+        </span>
       </div>
     </div>
     <p v-if="player.phase === 'waiting'" class="library-player-waiting" role="status">
@@ -124,7 +127,7 @@
       {{ player.error }} <n-button text @click="player.play()">重试</n-button>
       <n-button text @click="player.step(1)">跳过</n-button>
     </p>
-    <div v-if="queueOpen" class="library-queue">
+    <div v-if="queueOpen" ref="queuePanel" class="library-queue">
       <header><strong>临时播放队列</strong><n-button size="tiny" @click="player.clear()">清空队列</n-button></header>
       <div
         v-for="(entry, index) in player.queue"
@@ -174,7 +177,7 @@
   </section>
 </template>
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { NButton, NInputNumber, NSelect, NSlider, NPopover } from "naive-ui";
 import {
   Clock3,
@@ -196,6 +199,17 @@ import { audioLibraryPlayer as player } from "./player";
 import { formatDuration } from "./presentation";
 import { vSliderLabel } from "./slider-label";
 const queueOpen = ref(false);
+const queueTrigger = ref<HTMLElement>();
+const queuePanel = ref<HTMLElement>();
+function closeQueueOnOutsideClick(event: PointerEvent) {
+  if (!queueOpen.value) return;
+  const target = event.target;
+  if (target instanceof Node && !queueTrigger.value?.contains(target) && !queuePanel.value?.contains(target)) {
+    queueOpen.value = false;
+  }
+}
+onMounted(() => document.addEventListener("pointerdown", closeQueueOnOutsideClick));
+onBeforeUnmount(() => document.removeEventListener("pointerdown", closeQueueOnOutsideClick));
 const modeOptions = [
   { label: "顺序播放", value: "sequence" },
   { label: "列表循环", value: "list" },

@@ -2,31 +2,12 @@
   <n-button size="small" type="primary" secondary title="从 TikTok 用户主页发现公开作品，再确认批量归档" @click="show()"
     >TikTok 主页批量归档</n-button
   >
-  <n-modal
-    v-model:show="open"
-    preset="card"
-    title="TikTok 主页批量归档"
-    style="width: min(1320px, calc(100vw - 32px))"
-  >
+  <n-modal v-model:show="open" preset="card" title="TikTok 主页批量归档" style="width: min(1320px, calc(100vw - 32px))">
     <n-alert type="info" :bordered="false"
       >读取时会打开运行服务电脑上的独立 TikTok
       浏览器；需要正常登录或验证时请在那里完成。关闭此弹窗不会停止后台任务。仅归档可访问的公开作品，每批最多 100
       条。主页任务历史长期保留，不自动清除；删除记录只影响选中的主页任务，批次和归档作品保留。</n-alert
     >
-    <details class="profile-browser-help">
-      <summary>自动窗口仍然出错？使用普通浏览器采集</summary>
-      <p>适用于普通浏览器（含无痕窗口）可以显示视频、自动窗口返回空列表的情况。先停止当前读取，再使用此可选方式。</p>
-      <ol>
-        <li>下载并打开助手 HTML，把其中的“采集 TikTok 作品”链接拖到浏览器书签栏。</li>
-        <li>用普通浏览器打开 TikTok 主页，确认视频可见后点击采集书签，再点“开始采集”。</li>
-        <li>停止后下载 CSV，每份最多 100 条；返回“表格批量归档”预览、指定分组并确认。</li>
-      </ol>
-      <p>无需安装扩展或提供 Cookie。只收集页面显示的链接，数量不代表全部作品；关闭助手会丢弃未导出的链接。</p>
-      <div class="profile-toolbar">
-        <n-button secondary @click="downloadCollector">下载普通浏览器采集助手</n-button>
-        <n-button secondary @click="copyCollector">复制采集书签地址</n-button>
-      </div>
-    </details>
     <div class="profile-toolbar">
       <n-input
         v-model:value="url"
@@ -48,19 +29,63 @@
       />
       <n-button :disabled="busy" @click="refreshHistory">刷新历史</n-button>
     </div>
+    <details class="profile-browser-help">
+      <summary>自动窗口仍然出错？使用普通浏览器采集</summary>
+      <ol>
+        <li>首次使用时，下载并打开助手 HTML，把“采集 TikTok 作品”拖到普通浏览器的书签栏。</li>
+        <li>在能显示作品的浏览器中打开主页，点击采集书签，再点“开始采集”。</li>
+        <li>点击“停止并准备导出”和“复制作品链接”，粘贴到下方导入。</li>
+      </ol>
+      <div class="profile-toolbar">
+        <n-button
+          v-if="browserProfile"
+          tag="a"
+          :href="browserProfile.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          secondary
+          >打开 @{{ browserProfile.username }} 主页</n-button
+        >
+        <n-button secondary @click="downloadCollector">下载普通浏览器采集助手</n-button>
+        <n-button secondary @click="copyCollector">复制采集书签地址</n-button>
+      </div>
+      <p v-if="isActive">请先停止当前任务并等待结束，再导入作品链接。</p>
+      <div class="profile-toolbar">
+        <n-input
+          v-model:value="browserWorkLinks"
+          type="textarea"
+          :autosize="{ minRows: 2, maxRows: 5 }"
+          :disabled="busy || isActive"
+          :input-props="{ 'aria-label': '普通浏览器采集的作品链接' }"
+          placeholder="粘贴当前主页的作品链接，每行一条"
+          class="profile-url"
+        />
+        <n-button
+          type="primary"
+          :disabled="busy || isActive || !browserProfile || !browserWorkLinks.trim()"
+          @click="importBrowserWorks"
+          >导入作品列表</n-button
+        >
+      </div>
+    </details>
     <template v-if="job">
       <n-alert :type="job.complete ? 'success' : 'warning'" :bordered="false">
         <strong
           >@{{ job.username }} · {{ phases[job.phase] }} ·
           {{ job.complete ? "列表已确认完整" : "列表未确认完整" }}</strong
         >
-        <p v-if="job.message !== '本次所选作品已处理完毕；失败项可手动重试' || job.failedCount" class="profile-status-message">{{ job.message }}</p>
-        <div class="profile-status-counts"
-          >已发现 {{ job.discoveredCount }} 条<span v-if="job.declaredCount !== undefined"
+        <p
+          v-if="job.message !== '本次所选作品已处理完毕；失败项可手动重试' || job.failedCount"
+          class="profile-status-message"
+        >
+          {{ job.message }}
+        </p>
+        <div class="profile-status-counts">
+          已发现 {{ job.discoveredCount }} 条<span v-if="job.declaredCount !== undefined"
             >，主页统计 {{ job.declaredCount }} 条</span
           >。已归档 {{ job.archivedCount }} · 失败 {{ job.failedCount }} · 跳过/取消 {{ job.skippedCount }} · 待处理
-          {{ job.pendingCount }}<span v-if="job.batchCount >= 900"> · 已创建 {{ job.batchCount }}/1000 批</span></div
-        >
+          {{ job.pendingCount }}<span v-if="job.batchCount >= 900"> · 已创建 {{ job.batchCount }}/1000 批</span>
+        </div>
       </n-alert>
       <div class="profile-toolbar profile-task-actions" role="group" aria-label="主页任务操作">
         <strong>主页任务</strong>
@@ -265,6 +290,7 @@ import { computed, onScopeDispose, ref, watch } from "vue";
 import { NAlert, NButton, NCheckbox, NEmpty, NInput, NModal, NPagination, NSelect, NSpin, useMessage } from "naive-ui";
 import {
   normalizeTikTokProfileLink,
+  TIKTOK_PROFILE_MAX_WORKS,
   ARCHIVE_IMPORT_ROW_LABELS as rowLabels,
   type ArchiveGroup,
   type TikTokProfileJob,
@@ -285,7 +311,8 @@ const message = useMessage(),
 const open = ref(false),
   busy = ref(false),
   loading = ref(false),
-  url = ref("");
+  url = ref(""),
+  browserWorkLinks = ref("");
 const selectedId = ref<string | null>(null),
   job = ref<TikTokProfileJob>(),
   history = ref<TikTokProfileJob[]>([]),
@@ -345,6 +372,7 @@ const phases: Record<TikTokProfileJob["phase"], string> = {
 const active = (value?: TikTokProfileJob) =>
   Boolean(value && ["discovering", "waiting-user", "archiving", "stopping"].includes(value.phase));
 const isActive = computed(() => active(job.value));
+const browserProfile = computed(() => normalizeTikTokProfileLink(url.value.trim() || job.value?.url || ""));
 const historyOptions = computed(() =>
   history.value.map((value) => ({
     label: `@${value.username} · ${phases[value.phase]} · ${formatArchiveDate(value.createdAt)}`,
@@ -496,6 +524,28 @@ async function create() {
     return;
   }
   await run(() => tiktokProfileApi.create(value.url, scope.signal));
+}
+async function importBrowserWorks() {
+  const profile = browserProfile.value;
+  if (!profile || busy.value || isActive.value) return;
+  const workUrls = browserWorkLinks.value
+    .split(/\r?\n/)
+    .map((link) => link.trim())
+    .filter(Boolean);
+  if (!workUrls.length || workUrls.length > TIKTOK_PROFILE_MAX_WORKS) {
+    message.warning("请粘贴 1 至 10000 条作品链接，每行一条");
+    return;
+  }
+  const jobId = job.value?.username === profile.username ? job.value.id : undefined;
+  await run(async () => {
+    const result = await tiktokProfileApi.importWorks({ url: profile.url, jobId, workUrls }, scope.signal);
+    if (!scope.aborted) {
+      browserWorkLinks.value = "";
+      allowPartial.value = false;
+      message.success(result.message);
+    }
+    return result;
+  });
 }
 async function archive() {
   if (!job.value || busy.value) return;

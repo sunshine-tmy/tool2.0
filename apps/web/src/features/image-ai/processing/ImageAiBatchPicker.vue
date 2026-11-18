@@ -24,16 +24,24 @@
       <strong>{{ props.title }}</strong>
       <span>{{ props.hint }}</span>
     </label>
+    <BeforeAfterCompare
+      v-if="selectedPreview && props.resultUrls?.[selectedIndex]"
+      class="batch-result-compare"
+      :before-url="selectedPreview.url"
+      :after-url="props.resultUrls[selectedIndex]!"
+      :checkerboard="props.checkerboard && props.previewBackground === 'transparent'"
+      :preview-background="props.checkerboard ? props.previewBackground : undefined"
+    />
     <div
-      v-if="selectedPreview"
+      v-else-if="selectedPreview"
       class="batch-main-preview"
       :class="[
         props.checkerboard && props.previewBackground === 'transparent' && 'checkerboard',
         `is-${props.previewBackground}`
       ]"
     >
-      <img :src="props.resultUrls?.[selectedIndex] || selectedPreview.url" :alt="selectedPreview.file.name" />
-      <span class="batch-preview-label">{{ props.resultUrls?.[selectedIndex] ? "处理后预览" : "输入图片预览" }}</span>
+      <img :src="selectedPreview.url" :alt="selectedPreview.file.name" />
+      <span class="batch-preview-label">输入图片预览</span>
     </div>
     <div v-else class="batch-main-preview batch-empty">
       <Images :size="42" :stroke-width="1.5" />
@@ -87,6 +95,7 @@
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { NButton } from "naive-ui";
 import { Images, UploadCloud, X } from "lucide-vue-next";
+import BeforeAfterCompare from "./BeforeAfterCompare.vue";
 
 const props = defineProps<{
   title: string;
@@ -147,6 +156,9 @@ function remove(index: number) {
 </script>
 
 <style scoped>
+.batch-result-compare {
+  margin-top: 16px;
+}
 .image-ai-dropzone:focus-visible {
   outline: 2px solid var(--color-primary-600);
   outline-offset: 3px;

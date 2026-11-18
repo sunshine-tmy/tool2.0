@@ -66,6 +66,7 @@ export function installTikTokCollector() {
     report(reason);
     exports.replaceChildren();
     const values = [...works.values()];
+    copyLinks.hidden = values.length === 0;
     for (let offset = 0; offset < values.length; offset += 100) {
       const rows = [["作品链接", "平台"], ...values.slice(offset, offset + 100).map((url) => [url, "tiktok"])];
       const csv =
@@ -145,11 +146,35 @@ export function installTikTokCollector() {
     stopped = false;
     started = lastChange = Date.now();
     exports.replaceChildren();
+    copyLinks.hidden = true;
     start.textContent = "采集中";
     collect();
     if (!stopped) timer = setInterval(collect, 2500);
   });
-  button("停止并准备 CSV", () => prepare("已按当前发现的作品准备 CSV"));
+  button("停止并准备导出", () => prepare("已按当前发现的作品准备导出"));
+  const copyLinks = button("复制作品链接", () => {
+    const value = [...works.values()].join("\n");
+    const showLinks = () => {
+      if (!panel.isConnected || !stopped) return;
+      let field = exports.querySelector("textarea");
+      if (!field) {
+        field = document.createElement("textarea");
+        field.setAttribute("aria-label", "采集到的作品链接");
+        field.style.cssText = "width:100%;box-sizing:border-box;margin:8px 0";
+        field.readOnly = true;
+        exports.prepend(field);
+      }
+      field.value = value;
+      field.focus();
+      field.select();
+      report("请手动复制已选中的链接");
+    };
+    if (!navigator.clipboard?.writeText) return showLinks();
+    void navigator.clipboard.writeText(value).then(() => {
+      if (panel.isConnected && stopped) report("已复制作品链接，返回电商工具箱导入");
+    }, showLinks);
+  });
+  copyLinks.hidden = true;
   button("关闭助手", () => {
     clear();
     window.removeEventListener("pagehide", clear);
@@ -167,5 +192,5 @@ export function createTikTokCollectorBookmarklet() {
 
 export function createTikTokCollectorHelpHtml() {
   const link = createTikTokCollectorBookmarklet();
-  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TikTok 普通浏览器采集助手</title><style>body{max-width:820px;margin:48px auto;padding:0 24px;font:16px/1.8 sans-serif;color:#162033}a{display:inline-block;padding:12px 24px;background:#245df5;color:white;border-radius:8px}li{margin:12px 0}small{color:#60708a}</style><h1>TikTok 普通浏览器采集助手</h1><p>用于普通浏览器可以显示作品，但程序自动窗口无法加载的情况。不需要安装扩展或提供 Cookie。</p><ol><li>按 Ctrl+Shift+B（Mac 为 ⌘+Shift+B）显示书签栏，把下面的蓝色链接拖到书签栏。</li><li>在这个普通浏览器中打开 TikTok 用户主页，确认视频可见，再点击书签栏里的“采集 TikTok 作品”。</li><li>在采集面板点击“开始采集”。保持页面在前台；可随时“停止并准备 CSV”。程序不会处理登录或验证码。</li><li>逐个下载生成的 CSV，每份最多 100 条。回到电商工具箱，使用“表格批量归档”预览、选择分组并确认。已有归档默认跳过。</li></ol><p><a href="${link}" title="拖到浏览器书签栏；不要直接在此页面点击">采集 TikTok 作品</a></p><small>仅收集公开页面实际显示的作品链接。停止滚动或采集数量均不能证明账号作品已全部获取；采集助手不发起 API 请求、不读取 Cookie、浏览器登录资料或本机文件。关闭后丢弃未导出的发现列表，已下载 CSV 保留。</small></html>`;
+  return `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>TikTok 普通浏览器采集助手</title><style>body{max-width:820px;margin:48px auto;padding:0 24px;font:16px/1.8 sans-serif;color:#162033}a{display:inline-block;padding:12px 24px;background:#245df5;color:white;border-radius:8px}li{margin:12px 0}small{color:#60708a}</style><h1>TikTok 普通浏览器采集助手</h1><p>用于普通浏览器可以显示作品，但程序自动窗口无法加载的情况。不需要安装扩展或提供 Cookie。</p><ol><li>按 Ctrl+Shift+B（Mac 为 ⌘+Shift+B）显示书签栏，把下面的蓝色链接拖到书签栏。</li><li>在这个普通浏览器中打开 TikTok 用户主页，确认视频可见，再点击书签栏里的“采集 TikTok 作品”。</li><li>在采集面板点击“开始采集”。保持页面在前台；可随时“停止并准备导出”。程序不会处理登录或验证码。</li><li>点击“复制作品链接”，回到电商工具箱的“TikTok 主页批量归档”，粘贴并导入链接。也可以下载 CSV，用“表格批量归档”导入。</li></ol><p><a href="${link}" title="拖到浏览器书签栏；不要直接在此页面点击">采集 TikTok 作品</a></p><small>仅收集公开页面实际显示的作品链接。停止滚动或采集数量均不能证明账号作品已全部获取；采集助手不发起 API 请求、不读取 Cookie、浏览器登录资料或本机文件。关闭后丢弃未导出的发现列表，已下载 CSV 保留。</small></html>`;
 }

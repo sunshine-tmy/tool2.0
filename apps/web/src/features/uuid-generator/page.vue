@@ -37,7 +37,6 @@
                 ]"
               />
             </div>
-            <n-checkbox v-model:checked="hyphens">保留连字符</n-checkbox>
             <div class="option">
               <span id="uuid-layout-label">输出格式</span
               ><n-select
@@ -55,7 +54,10 @@
             <n-button v-if="busy" @click="stop">停止</n-button>
             <n-button :disabled="!values.length && !busy && !error && !notice" @click="clear">清空</n-button>
           </div>
-          <p class="hint">数量为 1～10,000 的整数。调整大小写、连字符和输出格式只改变展示，UUID 不会重新生成。</p>
+          <div class="settings-footer">
+            <p class="hint">数量为 1～10,000 的整数。调整大小写、连字符和输出格式只改变展示，UUID 不会重新生成。</p>
+            <n-checkbox v-model:checked="hyphens">保留连字符</n-checkbox>
+          </div>
         </section>
         <section class="generator-panel generator-results">
           <p v-if="!validCount" class="validation" role="alert">请输入 1～10,000 的整数数量</p>
@@ -188,6 +190,16 @@ onScopeDispose(releaseDownload);
 }
 .toolbar {
   gap: 16px;
+}
+.settings-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin-top: 12px;
+}
+.settings-footer .hint {
+  margin: 0;
 }
 .option {
   max-width: 100%;

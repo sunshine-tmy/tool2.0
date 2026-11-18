@@ -19,6 +19,7 @@ import {
   createPinnedTikTokProxyFetch,
   resolveProxyPublicAddress
 } from "../domains/content-archive/providers/tiktok/proxy-fetch";
+import { createTikTokTransport } from "../domains/content-archive/providers/tiktok/transport";
 
 const proxy = "http://127.0.0.1:7897/";
 const address = { address: "93.184.216.34", family: 4 };
@@ -28,6 +29,26 @@ function remoteResponse(status = 200, headers: Record<string, string> = {}, byte
   return { statusCode: status, headers, body };
 }
 describe("TikTok pinned proxy transport", () => {
+  it("uses the macOS desktop proxy for both the work page and its CDN media", async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...originalPlatform, value: "darwin" });
+    vi.stubEnv("TOOLBOX_TIKTOK_SYSTEM_PROXY", proxy);
+    for (const key of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]) vi.stubEnv(key, undefined);
+    try {
+      const remote = createTikTokTransport({ resolver: async () => [address] });
+      for (const url of ["https://www.tiktok.com/@shop/video/12345", "https://v16.tiktokcdn.com/video.mp4"]) {
+        mocks.request.mockResolvedValueOnce(remoteResponse());
+        expect(await (await remote(url)).text()).toBe("ok");
+      }
+      expect(mocks.agents.mock.calls.map(([options]) => options)).toEqual([
+        { uri: proxy, requestTls: { servername: "www.tiktok.com" } },
+        { uri: proxy, requestTls: { servername: "v16.tiktokcdn.com" } }
+      ]);
+    } finally {
+      Object.defineProperty(process, "platform", originalPlatform);
+      vi.unstubAllEnvs();
+    }
+  });
   it("pins the CONNECT target while preserving TLS SNI/Host and removing credentials", async () => {
     const resolver = vi.fn().mockResolvedValue([address]);
     mocks.request.mockResolvedValue(remoteResponse(200, { "content-type": "text/plain" }));

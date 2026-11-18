@@ -9,9 +9,11 @@ import {
   ArchiveImportRowSchema,
   TIKTOK_PROFILE_MAX_WORKS,
   type ArchiveImportBatch,
+  type TikTokProfileImportWorks,
   type TikTokProfileJob,
   type TikTokProfilePage,
-  type TikTokProfileStart
+  type TikTokProfileStart,
+  type TikTokProfileWork
 } from "@toolbox/shared/archive";
 import type { ToolboxDatabase } from "../../../database/toolbox-database";
 import type { ArchiveImportService } from "../batch/service";
@@ -153,36 +155,61 @@ export class TikTokProfileService {
           "TIKTOK_PROFILE_URL_INVALID",
           "请输入 TikTok 用户主页链接，例如 https://www.tiktok.com/@用户名"
         );
-      if (this.records.size >= 20)
-        throw new ArchiveTaskError(
-          "TIKTOK_PROFILE_HISTORY_FULL",
-          "最多保留 20 个主页任务，请先手动删除旧任务记录（作品保留）",
-          409
-        );
-      const now = new Date().toISOString(),
-        record: ProfileRecord = {
-          version: 1,
-          meta: {
-            id: nanoid(12),
-            ...profile,
-            phase: "discovering",
-            complete: false,
-            discoveredCount: 0,
-            message: "正在打开本机独立浏览器；本次只发现链接，尚未开始归档",
-            createdAt: now,
-            updatedAt: now,
-            archivedCount: 0,
-            failedCount: 0,
-            skippedCount: 0,
-            pendingCount: 0,
-            batchCount: 0
-          },
-          works: [],
-          batchIds: [],
-          nextIndex: 0
-        };
+      const record = this.newRecord(profile);
+      record.meta.phase = "discovering";
+      record.meta.message = "正在打开本机独立浏览器；本次只发现链接，尚未开始归档";
       this.save(record);
       this.launchDiscovery(record.meta.id);
+      return this.get(record.meta.id)!;
+    });
+  }
+  importWorks(input: TikTokProfileImportWorks) {
+    return this.serial(() => {
+      this.assertIdle();
+      const profile = normalizeTikTokProfileLink(input.url);
+      if (!profile) throw new ArchiveTaskError("TIKTOK_PROFILE_URL_INVALID", "请输入有效的 HTTPS TikTok 用户主页链接");
+      const record = input.jobId ? this.required(input.jobId) : this.newRecord(profile);
+      if (record.meta.username !== profile.username)
+        throw new ArchiveTaskError("TIKTOK_PROFILE_IDENTITY_MISMATCH", "所选任务与要导入的主页不一致", 409);
+      if (
+        record.currentBatchId &&
+        ["running", "stopping"].includes(this.imports.get(record.currentBatchId)?.status ?? "")
+      )
+        throw new ArchiveTaskError("ARCHIVE_IMPORT_BUSY", "所属批次仍在执行，请先等待当前作品结束", 409);
+
+      const works = new Map<string, TikTokProfileWork>(record.works.map((work) => [work.id, work]));
+      for (const value of input.workUrls) {
+        const url = URL.parse(value.trim());
+        const match = url && /^\/@([A-Za-z0-9_.]{1,24})\/(video|photo)\/(\d{5,24})\/?$/.exec(url.pathname);
+        if (
+          !url ||
+          url.protocol !== "https:" ||
+          !["tiktok.com", "www.tiktok.com", "m.tiktok.com"].includes(url.hostname) ||
+          url.username ||
+          url.password ||
+          url.port ||
+          !match ||
+          match[1].toLowerCase() !== profile.username
+        )
+          throw new ArchiveTaskError(
+            "TIKTOK_PROFILE_WORK_URL_INVALID",
+            "请粘贴当前主页的 TikTok 视频或图文链接，每行一条"
+          );
+        const [, , type, id] = match;
+        if (!works.has(id)) works.set(id, { id, url: `${profile.url}/${type}/${id}` });
+        if (works.size > TIKTOK_PROFILE_MAX_WORKS)
+          throw new ArchiveTaskError("TIKTOK_PROFILE_WORK_LIMIT", "此主页任务最多保留 10000 条作品", 409);
+      }
+      const added = works.size - record.works.length;
+      record.works = [...works.values()];
+      record.meta.discoveredCount = works.size;
+      if (added) record.meta.complete = false;
+      record.meta.phase = "ready";
+      record.meta.errorCode = undefined;
+      record.meta.message = added
+        ? `已导入 ${added} 条作品链接，尚未开始归档。普通浏览器采集未验证列表完整性。`
+        : "作品链接已在当前列表中，无需重复导入。";
+      this.save(record);
       return this.get(record.meta.id)!;
     });
   }
@@ -601,6 +628,36 @@ export class TikTokProfileService {
     const record = this.records.get(id);
     if (!record) throw new ArchiveTaskError("TIKTOK_PROFILE_NOT_FOUND", "主页任务不存在", 404);
     return structuredClone(record);
+  }
+  private newRecord(profile: { username: string; url: string }): ProfileRecord {
+    if (this.records.size >= 20)
+      throw new ArchiveTaskError(
+        "TIKTOK_PROFILE_HISTORY_FULL",
+        "最多保留 20 个主页任务，请先手动删除旧任务记录（作品保留）",
+        409
+      );
+    const now = new Date().toISOString();
+    return {
+      version: 1,
+      meta: {
+        id: nanoid(12),
+        ...profile,
+        phase: "ready",
+        complete: false,
+        discoveredCount: 0,
+        message: "",
+        createdAt: now,
+        updatedAt: now,
+        archivedCount: 0,
+        failedCount: 0,
+        skippedCount: 0,
+        pendingCount: 0,
+        batchCount: 0
+      },
+      works: [],
+      batchIds: [],
+      nextIndex: 0
+    };
   }
   private assertIdle() {
     if (this.stopped || [...this.records.values()].some((record) => active(record.meta.phase)))

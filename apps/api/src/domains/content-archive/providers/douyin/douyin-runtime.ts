@@ -361,7 +361,11 @@ export class DouyinRuntimeManager {
       executable = value.executableAssetPath;
     }
     const browser = await this.components.resolveInstalledAsset("xhs-browser", executable);
-    if (browser.manifest.version !== "1.63.0-chromium-1243")
+    const version = browser.manifest.version;
+    if (
+      version !== "1.63.0-chromium-1243" &&
+      !(platform === "darwin" && /^1\.63\.0-chromium-1243-darwin-arm64\.\d+$/.test(version))
+    )
       throw new DouyinRuntimeError("DOUYIN_RUNTIME_INCOMPATIBLE", "归档浏览器包版本不兼容，请修复能力包");
     return browser.path;
   }

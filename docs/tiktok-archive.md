@@ -50,9 +50,9 @@
 
 1. `.env` 的 `TIKTOK_HTTPS_PROXY`，示例 `http://127.0.0.1:7897`；设置 `direct` 强制直连。
 2. API 进程的 `HTTPS_PROXY` / `https_proxy`，其次 `HTTP_PROXY` / `http_proxy`。
-3. Windows 已启用的系统 HTTP 代理。macOS/Linux 不自动读取系统代理。
+3. Windows 读取已启用的系统 HTTP 代理。macOS 桌面版沿用系统为 TikTok 选定的 HTTP(S) 代理或直连线路，解析不可用时读取系统固定 HTTPS 代理。Linux 使用显式配置或进程代理。
 
-只接受不含账号、密码和路径的 HTTP(S) 代理。浏览器扩展、PAC、VPN 并不一定提供可用的 HTTP 代理端口。修改设置后重启 API；不改动操作系统代理配置，也不改变其他平台的网络路径。
+TikTok 主页、作品解析、媒体下载和图文音轨都使用同一代理选择规则。只接受不含账号、密码和路径的 HTTP(S) 代理。修改系统代理后请完全退出并重新打开桌面端。
 
 代理模式通过代理访问固定的 Cloudflare HTTPS DNS 端点，解析目标 A 记录；所有返回地址均须通过既有公网检查，再将 CONNECT 固定到已验证 IP，保留原域名的 TLS 校验和 Host。直连复用现有 DNS 与安全传输。每次重定向继续校验 HTTPS、端口、凭据及公网地址，最多 5 次。没有关闭 SSRF 或 TLS 校验；DNS 失败时不回退到未经验证的代理解析。
 

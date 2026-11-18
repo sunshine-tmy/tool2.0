@@ -79,7 +79,7 @@ it("deduplicates only this public profile's works and generates bounded CSV file
   click("开始采集");
   expect(browser.scrollBy).toHaveBeenCalledOnce();
   expect(exports()).toHaveLength(0);
-  click("停止并准备 CSV");
+  click("停止并准备导出");
   const links = exports();
   expect(links).toHaveLength(3);
   expect(links.map((link) => decodeURIComponent(link.href.split(",")[1]!).trim().split("\r\n").length - 1)).toEqual([
@@ -175,7 +175,7 @@ it("runs the exact serialized bookmark with no captured module state and ships a
   expect(code).not.toMatch(/fetch\(|XMLHttpRequest|\.cookie|localStorage|eval\(/);
   new Function("window", "document", code)(browser, document);
   click("开始采集");
-  click("停止并准备 CSV");
+  click("停止并准备导出");
   expect(exports()).toHaveLength(1);
   const html = createTikTokCollectorHelpHtml();
   expect(html).toContain(`href="${bookmark}"`);
@@ -209,7 +209,7 @@ it("keeps the downloaded bookmark self-contained after the production minifier t
   const code = decodeURIComponent(compiled.createTikTokCollectorBookmarklet().slice("javascript:".length));
   new Function("window", "document", code)(browser, document);
   click("开始采集");
-  click("停止并准备 CSV");
+  click("停止并准备导出");
   expect(exports()).toHaveLength(1);
   expect(compiled.createTikTokCollectorHelpHtml()).toContain("采集 TikTok 作品");
 });

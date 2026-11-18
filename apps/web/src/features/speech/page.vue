@@ -187,7 +187,7 @@ async function refreshService() {
   font-size: 18px;
 }
 .speech-page :deep(.panel-heading p),
-.speech-page :deep(.panel-heading > span) {
+.speech-page :deep(.panel-heading > span:not(.chatterbox-batch-status-badge)) {
   font-size: 12px;
   line-height: 1.7;
   color: var(--color-text-secondary);
@@ -555,21 +555,6 @@ async function refreshService() {
   margin: 0;
   color: var(--color-text-secondary);
   font-size: 12px;
-}
-.speech-page :deep(.edge-tts-result .chatterbox-batch-status-badge) {
-  flex-shrink: 0;
-  min-height: 28px;
-  padding: 0 12px;
-  border-color: transparent;
-  border-radius: 999px;
-}
-.speech-page :deep(.edge-tts-result .chatterbox-batch-status-badge--success) {
-  color: #16804a;
-  background: #eaf7ef;
-}
-.speech-page :deep(.edge-tts-result .chatterbox-batch-status-badge--default) {
-  color: var(--color-primary-700);
-  background: var(--color-primary-100);
 }
 .speech-page :deep(.edge-tts-result .edge-tts-progress) {
   height: 6px;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { componentProxyUrlFromResolution } from "./system-proxy";
+import { componentProxyUrlFromResolution, tiktokSystemProxyFromResolution } from "./system-proxy";
 
 describe("componentProxyUrlFromResolution", () => {
   it("returns no proxy for a direct system route", () => {
@@ -25,4 +25,10 @@ describe("componentProxyUrlFromResolution", () => {
       "http://proxy.example:8080/"
     );
   });
+});
+
+it("preserves the first system route for TikTok, including explicit direct and unsupported routes", () => {
+  expect(tiktokSystemProxyFromResolution("DIRECT; PROXY proxy.example:8080")).toBe("direct");
+  expect(tiktokSystemProxyFromResolution("HTTPS proxy.example:8443; DIRECT")).toBe("https://proxy.example:8443/");
+  expect(tiktokSystemProxyFromResolution("SOCKS5 proxy.example:1080; DIRECT")).toBeUndefined();
 });

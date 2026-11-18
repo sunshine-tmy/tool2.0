@@ -37,79 +37,90 @@
         />
         <div v-else class="image-editor-workspace">
           <nav class="image-tool-rail" aria-label="图片处理工具">
-            <button v-for="tool in imageTools" :key="tool.id" type="button" :class="{ active: activeTab === tool.id }"
-              :aria-current="activeTab === tool.id ? 'page' : undefined" @click="selectTool(tool.id)">
+            <button
+              v-for="tool in imageTools"
+              :key="tool.id"
+              type="button"
+              :class="{ active: activeTab === tool.id }"
+              :aria-current="activeTab === tool.id ? 'page' : undefined"
+              @click="selectTool(tool.id)"
+            >
               <component :is="tool.icon" :size="20" aria-hidden="true" />
               <span>{{ tool.label }}</span>
             </button>
           </nav>
           <div class="image-tool-content">
-          <section v-show="activeTab === 'watermark'">
-            <ImageAiWatermarkPanel
-              :watermark-file="watermarkFile"
-              :watermark-preview-url="watermarkPreviewUrl"
-              :watermark-result-url="watermarkResultUrl"
-              :watermark-dimensions-label="watermarkDimensionsLabel"
-              :is-busy="isBusy"
-              :suggesting="suggesting"
-              :active-task="activeTask?.operation === 'watermark_remove' ? activeTask : undefined"
-              :operation-available="operationAvailable"
-              :select-watermark="selectWatermark"
-              :clear-watermark="clearWatermark"
-              :suggest-watermark="suggestWatermark"
-              :submit-watermark="submitWatermark"
-              :download-watermark-result="downloadWatermarkResult"
-              :reset-watermark-result="resetWatermarkResult"
-              :cancel-active-task="cancelActiveTask"
-              :format-bytes="formatBytes"
-              :on-dimensions="setWatermarkDimensions"
-              @continue="continueWithResult"
-            />
-          </section>
-          <section v-show="activeTab === 'enhance'">
-            <ImageAiOperationPanel
-              v-model:files="enhanceFiles"
-              operation="enhance"
-              :unavailable-reason="operationUnavailableReason('enhance')"
-              :scale="enhanceScale"
-              :is-busy="isBusy"
-              :active-task="activeTask"
-              :active-task-files="activeTaskFiles"
-              :model-policy-label="modelPolicyLabel"
-              :operation-available="operationAvailable"
-              :validate-file="validateClientFile"
-              :format-bytes="formatBytes"
-              :submit-batch="submitBatch"
-              :cancel-active-task="cancelActiveTask"
-              @update:scale="enhanceScale = $event"
-              @edit="openEditor"
-              @continue="continueWithResult"
-              @select-preview="enhancePreviewIndex = $event"
-            />
-          </section>
-          <section v-show="activeTab === 'cutout'">
-            <ImageAiOperationPanel
-              v-model:files="cutoutFiles"
-              operation="background_remove"
-              :unavailable-reason="operationUnavailableReason('background_remove')"
-              :scale="enhanceScale"
-              :is-busy="isBusy"
-              :active-task="activeTask"
-              :active-task-files="activeTaskFiles"
-              :model-policy-label="modelPolicyLabel"
-              :operation-available="operationAvailable"
-              :validate-file="validateClientFile"
-              :format-bytes="formatBytes"
-              :submit-batch="submitBatch"
-              :cancel-active-task="cancelActiveTask"
-              @edit="openEditor"
-              @continue="continueWithResult"
-              @select-preview="cutoutPreviewIndex = $event"
-            />
-          </section>
-          <section v-show="activeTab === 'history'">
-            <ImageAiHistoryPanel :refresh-version="historyVersion" @deleted="onHistoryDeleted" @edit="openEditor" @continue="continueWithResult" />
-          </section>
+            <section v-show="activeTab === 'watermark'">
+              <ImageAiWatermarkPanel
+                :watermark-file="watermarkFile"
+                :watermark-preview-url="watermarkPreviewUrl"
+                :watermark-result-url="watermarkResultUrl"
+                :watermark-dimensions-label="watermarkDimensionsLabel"
+                :is-busy="isBusy"
+                :suggesting="suggesting"
+                :active-task="activeTask?.operation === 'watermark_remove' ? activeTask : undefined"
+                :operation-available="operationAvailable"
+                :select-watermark="selectWatermark"
+                :clear-watermark="clearWatermark"
+                :suggest-watermark="suggestWatermark"
+                :submit-watermark="submitWatermark"
+                :download-watermark-result="downloadWatermarkResult"
+                :reset-watermark-result="resetWatermarkResult"
+                :cancel-active-task="cancelActiveTask"
+                :format-bytes="formatBytes"
+                :on-dimensions="setWatermarkDimensions"
+                @continue="continueWithResult"
+              />
+            </section>
+            <section v-show="activeTab === 'enhance'">
+              <ImageAiOperationPanel
+                v-model:files="enhanceFiles"
+                operation="enhance"
+                :unavailable-reason="operationUnavailableReason('enhance')"
+                :scale="enhanceScale"
+                :is-busy="isBusy"
+                :active-task="activeTask"
+                :active-task-files="activeTaskFiles"
+                :model-policy-label="modelPolicyLabel"
+                :operation-available="operationAvailable"
+                :validate-file="validateClientFile"
+                :format-bytes="formatBytes"
+                :submit-batch="submitBatch"
+                :cancel-active-task="cancelActiveTask"
+                @update:scale="enhanceScale = $event"
+                @edit="openEditor"
+                @continue="continueWithResult"
+                @select-preview="enhancePreviewIndex = $event"
+              />
+            </section>
+            <section v-show="activeTab === 'cutout'">
+              <ImageAiOperationPanel
+                v-model:files="cutoutFiles"
+                operation="background_remove"
+                :unavailable-reason="operationUnavailableReason('background_remove')"
+                :scale="enhanceScale"
+                :is-busy="isBusy"
+                :active-task="activeTask"
+                :active-task-files="activeTaskFiles"
+                :model-policy-label="modelPolicyLabel"
+                :operation-available="operationAvailable"
+                :validate-file="validateClientFile"
+                :format-bytes="formatBytes"
+                :submit-batch="submitBatch"
+                :cancel-active-task="cancelActiveTask"
+                @edit="openEditor"
+                @continue="continueWithResult"
+                @select-preview="cutoutPreviewIndex = $event"
+              />
+            </section>
+            <section v-show="activeTab === 'history'">
+              <ImageAiHistoryPanel
+                :refresh-version="historyVersion"
+                @deleted="onHistoryDeleted"
+                @edit="openEditor"
+                @continue="continueWithResult"
+              />
+            </section>
           </div>
         </div>
       </section>
@@ -188,30 +199,80 @@ async function selectTool(target: ImageTool) {
   if (target === activeTab.value) return;
   if (continuing) return;
   if (target !== "history" && activeTab.value !== "history") {
-    const operation = activeTab.value === "watermark" ? "watermark_remove" :
-      activeTab.value === "enhance" ? "enhance" : "background_remove";
+    const operation =
+      activeTab.value === "watermark"
+        ? "watermark_remove"
+        : activeTab.value === "enhance"
+          ? "enhance"
+          : "background_remove";
     const task = activeTask.value;
     if (task?.operation === operation && !isBusy.value && (task.status === "completed" || task.results.length)) {
-      const index = activeTab.value === "watermark" ? 0 :
-        activeTab.value === "enhance" ? enhancePreviewIndex.value : cutoutPreviewIndex.value;
+      const index =
+        target === "cutout" || activeTab.value === "watermark"
+          ? 0
+          : activeTab.value === "enhance"
+            ? enhancePreviewIndex.value
+            : cutoutPreviewIndex.value;
       const result = task.results.find((item) => item.id === `${task.id}-${index + 1}`);
       if (!result) {
-        message.warning(task.results.length ? "当前选中的图片没有处理结果，请选择已完成的图片" : "处理结果仍在读取，请稍后重试");
+        message.warning(
+          task.results.length ? "当前选中的图片没有处理结果，请选择已完成的图片" : "处理结果仍在读取，请稍后重试"
+        );
         return;
       }
       await continueWithResult(result, target);
       return;
     }
   }
+  if (
+    !isBusy.value &&
+    (activeTab.value === "enhance" || activeTab.value === "cutout") &&
+    (target === "enhance" || target === "cutout")
+  ) {
+    const source = activeTab.value === "enhance" ? enhanceFiles.value : cutoutFiles.value;
+    const next = [...source];
+    const destination = target === "enhance" ? enhanceFiles.value : cutoutFiles.value;
+    if (
+      next.length &&
+      (destination.length !== next.length || destination.some((file, index) => file !== next[index]))
+    ) {
+      if (
+        destination.length &&
+        !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" }))
+      )
+        return;
+      if (target === "enhance") enhanceFiles.value = next;
+      else cutoutFiles.value = next;
+    }
+    activeTab.value = target;
+    return;
+  }
   if (!isBusy.value && target !== "history" && activeTab.value !== "history") {
-    const current = activeTab.value === "watermark" ? watermarkFile.value
-      : activeTab.value === "enhance" ? (enhanceFiles.value.length === 1 ? enhanceFiles.value[0] : undefined)
-      : (cutoutFiles.value.length === 1 ? cutoutFiles.value[0] : undefined);
+    const current =
+      activeTab.value === "watermark"
+        ? watermarkFile.value
+        : activeTab.value === "enhance"
+          ? enhanceFiles.value.length === 1
+            ? enhanceFiles.value[0]
+            : undefined
+          : cutoutFiles.value.length === 1
+            ? cutoutFiles.value[0]
+            : undefined;
     if (current) {
-      const destinationFiles = target === "watermark" ? (watermarkFile.value ? [watermarkFile.value] : []) :
-        target === "enhance" ? enhanceFiles.value : cutoutFiles.value;
+      const destinationFiles =
+        target === "watermark"
+          ? watermarkFile.value
+            ? [watermarkFile.value]
+            : []
+          : target === "enhance"
+            ? enhanceFiles.value
+            : cutoutFiles.value;
       if (current === transferredFile.value && (destinationFiles.length !== 1 || destinationFiles[0] !== current)) {
-        if (destinationFiles.length && !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" }))) return;
+        if (
+          destinationFiles.length &&
+          !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" }))
+        )
+          return;
         if (target === "watermark") setWatermarkFile(current);
         else if (target === "enhance") enhanceFiles.value = [current];
         else cutoutFiles.value = [current];
@@ -229,20 +290,47 @@ async function continueWithResult(result: ImageAiTask["results"][number], target
     message.warning("请等待当前处理结束后再继续处理图片");
     return;
   }
-  const existing = target === "watermark" ? Boolean(watermarkFile.value) :
-    target === "enhance" ? Boolean(enhanceFiles.value.length) : Boolean(cutoutFiles.value.length);
+  const existing =
+    target === "watermark"
+      ? Boolean(watermarkFile.value)
+      : target === "enhance"
+        ? Boolean(enhanceFiles.value.length)
+        : Boolean(cutoutFiles.value.length);
   continuing = true;
   try {
-    if (existing && !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" }))) return;
-    const response = await fetch(absoluteImageAiUrl(result.downloadUrl), { credentials: "include", signal: requestScope.signal });
-    if (!response.ok) throw new Error("无法读取处理结果，请确认记录仍然存在");
-    const blob = await response.blob();
-    const file = new File([blob], result.outputName, { type: blob.type.split(";")[0] || "image/png" });
-    if (!validateClientFile(file)) return;
+    if (existing && !(await confirm("将替换该工具当前选择的图片和未提交的编辑内容，是否继续？", { title: "继续处理" })))
+      return;
+    const task = activeTask.value;
+    let selected = [result];
+    if (
+      task &&
+      (task.operation === "enhance" || task.operation === "background_remove") &&
+      task.results.some((item) => item.id === result.id) &&
+      (target === "enhance" || target === "cutout")
+    ) {
+      const count = activeTaskFiles.value.length;
+      selected = Array.from({ length: count }, (_, index) =>
+        task.results.find((item) => item.id === `${task.id}-${index + 1}`)
+      ).filter((item): item is ImageAiTask["results"][number] => Boolean(item));
+      if (selected.length !== count) throw new Error("部分图片尚无处理结果，请完成处理后再继续");
+    }
+    const files: File[] = [];
+    for (const item of selected) {
+      const response = await fetch(absoluteImageAiUrl(item.downloadUrl), {
+        credentials: "include",
+        signal: requestScope.signal
+      });
+      if (!response.ok) throw new Error("无法读取处理结果，请确认记录仍然存在");
+      const blob = await response.blob();
+      const file = new File([blob], item.outputName, { type: blob.type.split(";")[0] || "image/png" });
+      if (!validateClientFile(file)) return;
+      files.push(file);
+    }
+    const file = files[0];
     transferredFile.value = file;
     if (target === "watermark") setWatermarkFile(file);
-    else if (target === "enhance") enhanceFiles.value = [file];
-    else cutoutFiles.value = [file];
+    else if (target === "enhance") enhanceFiles.value = files;
+    else cutoutFiles.value = files;
     activeTask.value = undefined;
     activeTaskFiles.value = [];
     editTarget.value = undefined;
@@ -568,7 +656,9 @@ function formatBytes(bytes: number) {
   outline: 2px solid var(--color-primary-600);
   outline-offset: 2px;
 }
-.image-tool-content { min-width: 0; }
+.image-tool-content {
+  min-width: 0;
+}
 .image-ai-workspace :deep(.image-ai-tab-grid) {
   align-items: stretch;
   gap: 20px;
@@ -611,9 +701,18 @@ function formatBytes(bytes: number) {
   overflow-wrap: anywhere;
 }
 @container tool-content (max-width: 900px) {
-  .image-editor-workspace { grid-template-columns: minmax(0, 1fr); }
-  .image-tool-rail { display: flex; flex-wrap: wrap; }
-  .image-tool-rail button { min-height: 44px; flex-direction: row; padding: 0 12px; }
+  .image-editor-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .image-tool-rail {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .image-tool-rail button {
+    min-height: 44px;
+    flex-direction: row;
+    padding: 0 12px;
+  }
 
   .image-ai-workspace :deep(.image-ai-tab-grid) {
     grid-template-columns: minmax(0, 1fr);

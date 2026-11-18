@@ -88,6 +88,7 @@
       :task="resultTask"
       :source-files="props.activeTaskFiles"
       :checkerboard="props.operation === 'background_remove'"
+      hide-preview
       @edit="(taskId, resultId) => emit('edit', taskId, resultId)"
       @continue="(result, target) => emit('continue', result, target)"
     />

@@ -40,6 +40,20 @@ export function windowsTikTokProxy(value: string): string | undefined {
   return endpoint ? normalizeTikTokProxy(/^https?:\/\//i.test(endpoint) ? endpoint : `http://${endpoint}`) : undefined;
 }
 
+export function macOSTikTokProxy(value: string): string | undefined {
+  const fields = new Map<string, string>();
+  for (const line of value.split(/\r?\n/)) {
+    const match = /^\s*(HTTPSEnable|HTTPSProxy|HTTPSPort)\s*:\s*(.*?)\s*$/.exec(line);
+    if (match) fields.set(match[1], match[2]);
+  }
+  const host = fields.get("HTTPSProxy"),
+    port = fields.get("HTTPSPort");
+  if (fields.get("HTTPSEnable") !== "1" || !host || !port || !/^\d+$/.test(port)) return undefined;
+  const number = Number(port);
+  if (number < 1 || number > 65535 || !/^[a-zA-Z0-9.:-]+$/.test(host)) return undefined;
+  return normalizeTikTokProxy(`http://${host.includes(":") ? `[${host}]` : host}:${number}`);
+}
+
 export async function resolveTikTokProxy(
   options: {
     explicit?: string;
@@ -52,7 +66,16 @@ export async function resolveTikTokProxy(
   const env = options.environment ?? process.env;
   const value = env.HTTPS_PROXY || env.https_proxy || env.HTTP_PROXY || env.http_proxy;
   if (value?.trim()) return normalizeTikTokProxy(value.trim());
-  if ((options.platform ?? process.platform) !== "win32") return undefined;
+  const platform = options.platform ?? process.platform;
+  if (platform === "darwin") {
+    const desktopProxy = env.TOOLBOX_TIKTOK_SYSTEM_PROXY?.trim();
+    if (desktopProxy) return normalizeTikTokProxy(desktopProxy);
+    const read =
+      options.readSystem ??
+      (async () => (await exec("/usr/sbin/scutil", ["--proxy"], { timeout: 5000, maxBuffer: 16384 })).stdout);
+    return macOSTikTokProxy(await read().catch(() => ""));
+  }
+  if (platform !== "win32") return undefined;
   const read =
     options.readSystem ??
     (async () => {

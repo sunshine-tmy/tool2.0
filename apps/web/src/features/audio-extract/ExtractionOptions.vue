@@ -149,6 +149,7 @@ function choose(e: Event) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 16px;
 }
 .module-section-heading h3,
 .module-section-title {

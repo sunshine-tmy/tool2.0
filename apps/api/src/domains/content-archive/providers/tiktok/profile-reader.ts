@@ -44,6 +44,18 @@ export async function readProfileWorks(
     waitingUser,
     message
   });
+  const acceptPage = (value: unknown, owner: string | null, cursor: string | null) => {
+    if (!collector.identity.secUid || owner !== collector.identity.secUid || !cursor || !/^\d{1,24}$/.test(cursor))
+      return;
+    try {
+      collector.accept(value, owner, cursor);
+      listProblem = undefined;
+      lastChanged = Date.now();
+    } catch (error) {
+      if (!(error instanceof ArchiveTaskError) || error.code !== "TIKTOK_PROFILE_PAGE_INVALID") throw error;
+      listProblem = "TikTok 未返回有效的作品列表。可在独立浏览器刷新，或使用普通浏览器采集可见作品。";
+    }
+  };
   const response = (response: Response) => {
     const url = new URL(response.url());
     if (
@@ -85,13 +97,10 @@ export async function readProfileWorks(
           listProblem = "TikTok 作品列表返回的内容无法解析，尚未获取完整列表；请在独立浏览器检查页面提示后手动刷新";
           return;
         }
-        const value: unknown = parsed,
-          owner = url.searchParams.get("secUid"),
+        const owner = url.searchParams.get("secUid"),
           cursor = url.searchParams.get("cursor");
-        if (!collector.identity.secUid && early.length < 4) early.push({ value, owner, cursor });
-        else collector.accept(value, owner, cursor);
-        if (owner === collector.identity.secUid) listProblem = undefined;
-        lastChanged = Date.now();
+        if (!collector.identity.secUid && early.length < 4) early.push({ value: parsed, owner, cursor });
+        else acceptPage(parsed, owner, cursor);
       } catch (error) {
         if (active && !signal.aborted && revision === navigationRevision) failure = error;
       } finally {
@@ -124,10 +133,20 @@ export async function readProfileWorks(
   page.on("requestfailed", requestFailed);
   page.on("framenavigated", navigated);
   try {
-    const navigation = await page.goto(`https://www.tiktok.com/@${username}`, {
-      waitUntil: "domcontentloaded",
-      timeout: 60_000
-    });
+    let navigation;
+    try {
+      navigation = await page.goto(`https://www.tiktok.com/@${username}`, {
+        waitUntil: "domcontentloaded",
+        timeout: 60_000
+      });
+    } catch (error) {
+      if (signal.aborted) throw error;
+      throw new ArchiveTaskError(
+        "TIKTOK_PROFILE_NAVIGATION_FAILED",
+        "独立浏览器已启动，但无法打开 TikTok 主页。请检查网络和 TikTok 代理设置后重试。",
+        409
+      );
+    }
     if ([401, 403, 404, 410, 429, 451].includes(navigation?.status() ?? 0))
       throw new ArchiveTaskError("TIKTOK_PROFILE_UNAVAILABLE", "TikTok 主页不可访问或暂时受限，请检查网络或代理", 409);
     let previousCount = collector.works.size;
@@ -172,7 +191,7 @@ export async function readProfileWorks(
         }
       }
       if (collector.identity.secUid)
-        for (const item of early.splice(0)) collector.accept(item.value, item.owner, item.cursor);
+        for (const item of early.splice(0)) acceptPage(item.value, item.owner, item.cursor);
       for (const link of state.links) collector.addLink(link.url, link.title);
       waitingUser =
         state.waiting ||

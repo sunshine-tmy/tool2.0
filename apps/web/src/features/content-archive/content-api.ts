@@ -30,6 +30,7 @@ import {
   TikTokProfileJobSchema,
   TikTokProfileListSchema,
   TikTokProfilePageSchema,
+  type TikTokProfileImportWorks,
   type TikTokProfileStart
 } from "@toolbox/shared/archive";
 import { httpClient, withApiError } from "../../shared/http/http";
@@ -100,6 +101,11 @@ export const tiktokProfileApi = {
     withApiError(
       () => httpClient.post(profileBase, TikTokProfileJobSchema, { url }, { signal }),
       "读取 TikTok 主页失败"
+    ),
+  importWorks: (input: TikTokProfileImportWorks, signal?: AbortSignal) =>
+    withApiError(
+      () => httpClient.post(`${profileBase}/import-works`, TikTokProfileJobSchema, input, { signal }),
+      "导入 TikTok 作品链接失败"
     ),
   archive: (id: string, input: TikTokProfileStart, signal?: AbortSignal) =>
     withApiError(

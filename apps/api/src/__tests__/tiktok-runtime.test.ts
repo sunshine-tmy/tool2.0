@@ -234,6 +234,25 @@ describe("TikTok proxy selection", () => {
     expect(await resolveTikTokProxy({ platform: "darwin", environment: {}, readSystem })).toBeUndefined();
     expect(windowsTikTokProxy("127.0.0.1:7897")).toBe("http://127.0.0.1:7897/");
   });
+  it("uses the macOS desktop route for TikTok while respecting explicit configuration", async () => {
+    const readSystem = vi.fn().mockResolvedValue("HTTPSEnable : 1\nHTTPSProxy : 127.0.0.1\nHTTPSPort : 7002");
+    const options = { platform: "darwin", readSystem } as const;
+    const desktop = { TOOLBOX_TIKTOK_SYSTEM_PROXY: "http://127.0.0.1:7003" };
+    expect(await resolveTikTokProxy({ ...options, environment: desktop })).toBe("http://127.0.0.1:7003/");
+    expect(
+      await resolveTikTokProxy({ ...options, environment: { TOOLBOX_TIKTOK_SYSTEM_PROXY: "direct" } })
+    ).toBeUndefined();
+    expect(
+      await resolveTikTokProxy({
+        ...options,
+        environment: { ...desktop, HTTPS_PROXY: "http://127.0.0.1:7004" }
+      })
+    ).toBe("http://127.0.0.1:7004/");
+    expect(await resolveTikTokProxy({ ...options, environment: desktop, explicit: "direct" })).toBeUndefined();
+    expect(await resolveTikTokProxy({ ...options, platform: "linux", environment: desktop })).toBeUndefined();
+    expect(readSystem).not.toHaveBeenCalled();
+    expect(await resolveTikTokProxy({ ...options, environment: {} })).toBe("http://127.0.0.1:7002/");
+  });
   it.each([
     "socks5://127.0.0.1:7897",
     "http://user:password@127.0.0.1:7897",

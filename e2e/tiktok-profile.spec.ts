@@ -104,9 +104,9 @@ test("normal-browser collector exports deduplicated 100-row CSVs accepted by the
     decodeURIComponent(bookmark!.slice("javascript:".length))
   );
   await collector.getByRole("button", { name: "开始采集", exact: true }).click();
-  await collector.getByRole("button", { name: "停止并准备 CSV", exact: true }).click();
+  await collector.getByRole("button", { name: "停止并准备导出", exact: true }).click();
   await expect(
-    collector.getByText("已按当前发现的作品准备 CSV。已发现 201 条；列表未确认完整。", { exact: true })
+    collector.getByText("已按当前发现的作品准备导出。已发现 201 条；列表未确认完整。", { exact: true })
   ).toBeVisible();
   await expect(collector.locator("a[download]")).toHaveCount(3);
   const csvDownloading = collector.waitForEvent("download");

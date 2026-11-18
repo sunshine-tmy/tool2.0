@@ -31,6 +31,7 @@ export class BackendSupervisor {
       entrypoint: string;
       runtimeLayout: RuntimeLayout;
       componentProxyUrl?: string;
+      tiktokSystemProxy?: string;
       bootId?: string;
       onUnexpectedExit?: (message: string) => void;
       onStage?: (stage: string) => void;
@@ -57,6 +58,8 @@ export class BackendSupervisor {
     const componentProxyUrl = this.options.componentProxyUrl ?? process.env.TOOLBOX_COMPONENT_HTTPS_PROXY;
     if (componentProxyUrl) environment.TOOLBOX_COMPONENT_HTTPS_PROXY = componentProxyUrl;
     else delete environment.TOOLBOX_COMPONENT_HTTPS_PROXY;
+    if (this.options.tiktokSystemProxy) environment.TOOLBOX_TIKTOK_SYSTEM_PROXY = this.options.tiktokSystemProxy;
+    else delete environment.TOOLBOX_TIKTOK_SYSTEM_PROXY;
     const child = utilityProcess.fork(this.options.entrypoint, [], {
       cwd: this.options.runtimeLayout.appRoot,
       env: environment,

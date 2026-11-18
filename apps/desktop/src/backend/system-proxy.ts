@@ -23,3 +23,9 @@ export function componentProxyUrlFromResolution(resolution: string) {
   }
   return undefined;
 }
+
+/** Preserve the system's first route, including PAC rules that explicitly select DIRECT. */
+export function tiktokSystemProxyFromResolution(resolution: string) {
+  const first = resolution.split(";", 1)[0].trim();
+  return first.toUpperCase() === "DIRECT" ? "direct" : componentProxyUrlFromResolution(first);
+}
