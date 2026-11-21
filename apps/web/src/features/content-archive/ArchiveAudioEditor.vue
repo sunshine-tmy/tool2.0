@@ -5,13 +5,13 @@
     @update:show="close"
   >
     <n-card
-      :title="isImage ? '图集生成配乐视频' : '编辑视频：配乐与水印'"
+      :title="isImage ? '图集生成配乐视频' : '编辑视频：粗剪、配乐与水印'"
       class="audio-editor"
       :class="{ 'is-embedded': embedded }"
       closable
       @close="close"
     >
-      <p class="editor-hint">始终从原片生成，可反复换音乐。保存后详情与下载使用最新成品，原片保留。</p>
+      <p class="editor-hint">从原片生成，支持粗剪、配乐与水印。保存后详情与下载使用最新成品，原片保留。</p>
       <n-alert v-if="error || watermarkError" type="error"
         >{{ error || watermarkError
         }}<n-button v-if="activeJob" size="small" @click="schedulePoll(generation)">重试状态</n-button></n-alert
@@ -19,8 +19,32 @@
       <n-alert v-if="!ready && initialized" type="warning"
         >需要已安装的 FFmpeg 共享媒体运行时；请在能力管理中检查后重新打开。</n-alert
       >
-      <div class="editor-layout">
+      <div class="editor-layout" :class="{ 'is-portrait': portraitPreview }">
         <section class="editor-preview">
+          <div v-if="!isImage && panel === 'cut'" class="preview-toolbar">
+            <strong>视频预览</strong>
+            <n-button
+              size="small"
+              :type="portraitPreview ? 'primary' : 'default'"
+              :disabled="busy"
+              @click="changePreviewAspect('9:16')"
+              >竖屏</n-button
+            >
+            <n-button
+              size="small"
+              :type="!portraitPreview ? 'primary' : 'default'"
+              :disabled="busy"
+              @click="changePreviewAspect('16:9')"
+              >横屏</n-button
+            >
+            <n-select
+              :value="roughCut.frameSettings.value.aspect"
+              :disabled="busy || !roughCut.loaded.value"
+              :options="previewAspectOptions"
+              aria-label="成片画幅比例"
+              @update:value="changePreviewAspect"
+            />
+          </div>
           <ArchiveWatermarkPreview
             :class="{ 'video-stage': !isImage || previewIsDraft }"
             :video="video"
@@ -35,21 +59,39 @@
             :settings="watermarkSettings"
             :disabled="busy"
             @move="moveWatermark"
-            @time="playhead = $event"
+            @time="recordPlayhead"
             @duration="recordDuration"
           >
             <video
               v-if="!isImage || previewIsDraft"
               ref="video"
+              v-show="!cutPictureActive"
               :key="previewUrl"
               :src="previewUrl"
-              controls
+              :controls="panel !== 'cut' || previewIsDraft"
               playsinline
-              preload="metadata"
-              @play="musicRange?.stop()"
+              :preload="panel === 'cut' ? 'auto' : 'metadata'"
+              @play="
+                musicRange?.stop();
+                roughCut.onPlay();
+              "
+              @timeupdate="roughCut.sync()"
+              @ended="roughCut.onEnded()"
+              @loadedmetadata="roughCut.onReady()"
               @error="previewError"
             />
-            <img v-else class="slideshow-image" :src="previewUrl" alt="图集原图预览" />
+            <ArchiveCutPicture
+              v-if="cutPictureActive"
+              :video="video"
+              :frame="roughCut.frameSettings.value"
+              :subtitles="roughCut.studio.value.subtitles"
+              :clips="roughCut.clips.value"
+              :gap="roughCut.isGap.value"
+              :time="roughCut.time.value"
+              :source-width="roughCut.sourceWidth.value"
+              :source-height="roughCut.sourceHeight.value"
+            />
+            <img v-if="isImage && !previewIsDraft" class="slideshow-image" :src="previewUrl" alt="图集原图预览" />
           </ArchiveWatermarkPreview>
           <video
             v-if="current?.audioEdit && !isImage"
@@ -80,8 +122,10 @@
                 ]"
             /></label>
           </div>
-          <p v-if="isImage" class="editor-hint">按原图顺序生成附加视频，不足 15 秒时循环至完整一轮结束；原图不会被替换。</p>
-          <p>
+          <p v-if="isImage" class="editor-hint">
+            按原图顺序生成附加视频，不足 15 秒时循环至完整一轮结束；原图不会被替换。
+          </p>
+          <p v-if="panel !== 'cut'">
             {{
               previewIsDraft
                 ? panel === "watermark"
@@ -97,19 +141,27 @@
             }}
           </p>
           <div class="editor-actions">
-            <n-button @click="viewOriginal">{{ isImage ? "查看原图" : "查看原始视频" }}</n-button>
-            <n-button v-if="viewingOriginal && !isImage" @click="viewCurrent">查看当前已保存视频</n-button>
+            <n-button v-if="panel !== 'cut'" @click="viewOriginal">{{
+              isImage ? "查看原图" : "查看原始视频"
+            }}</n-button>
+            <n-button v-if="viewingOriginal && !isImage && panel !== 'cut'" @click="viewCurrent"
+              >查看当前已保存视频</n-button
+            >
             <n-input-number
               v-if="panel === 'watermark'"
               v-model:value="previewStart"
               :min="0"
-              :max="Math.max(0, (current?.durationMs || 0) / 1000 - 0.1)"
+              :max="Math.max(0, editDuration - 0.1)"
               :disabled="busy"
               aria-label="试听起点秒数"
             />
-            <n-button :disabled="busy || !ready || Boolean(watermarkValidation)" @click="submit('preview')">{{
-              panel === "watermark" ? "生成 15 秒水印效果" : "试听完整视频效果"
-            }}</n-button>
+            <n-button
+              :disabled="busy || !ready || Boolean(watermarkValidation) || (panel === 'cut' && !roughCut.loaded.value)"
+              @click="submit('preview')"
+              >{{
+                panel === "watermark" ? "生成 15 秒水印效果" : panel === "cut" ? "生成完整效果" : "试听完整视频效果"
+              }}</n-button
+            >
           </div>
           <p v-if="basePreviewJob && activeJob" class="editor-hint">
             正在准备保留当前配乐的无水印编辑画面，避免重复叠加旧水印…
@@ -126,20 +178,63 @@
           </template>
         </section>
         <section class="editor-controls">
-          <div v-if="!isImage" class="editor-actions">
-            <n-button :type="panel === 'audio' ? 'primary' : 'default'" @click="panel = 'audio'">配乐设置</n-button>
-            <n-button :type="panel === 'watermark' ? 'primary' : 'default'" @click="panel = 'watermark'"
-              >水印设置</n-button
+          <div v-if="!isImage" class="inspector-tabs" role="tablist" aria-label="素材操作分类">
+            <n-button
+              v-for="entry in inspectorTabs"
+              :key="entry.value"
+              size="small"
+              :type="inspector === entry.value ? 'primary' : 'default'"
+              :disabled="busy"
+              role="tab"
+              :aria-selected="inspector === entry.value"
+              @click="selectInspector(entry.value)"
+              >{{ entry.label }}</n-button
             >
           </div>
+          <template v-if="panel === 'cut' && !isImage && inspector === 'video'">
+            <p v-if="roughCut.loading.value" role="status">正在读取原片和粗剪草稿…</p>
+            <n-alert v-if="roughCut.error.value" type="error"
+              >{{ roughCut.error.value
+              }}<n-button size="small" @click="roughCut.loaded.value ? roughCut.flush() : roughCut.load()"
+                >重试</n-button
+              ></n-alert
+            >
+            <div class="cut-overview">
+              原片 {{ roughCut.sourceDuration.value.toFixed(2) }} 秒 · 成片 {{ roughCut.duration.value.toFixed(2) }} 秒
+            </div>
+            <ArchiveCutSettings
+              v-if="roughCut.loaded.value"
+              :clips="roughCut.clips.value"
+              :selected="roughCut.selected.value"
+              :frame="roughCut.frameSettings.value"
+              :source-duration="
+                roughCut.durationFor(roughCut.clips.value.find((clip) => clip.id === roughCut.selected.value[0]))
+              "
+              :source-width="roughCut.sourceWidth.value"
+              :source-height="roughCut.sourceHeight.value"
+              :fps="roughCut.fpsFor(roughCut.clips.value.find((clip) => clip.id === roughCut.selected.value[0]))"
+              :disabled="busy || previewIsDraft"
+              @clip="roughCut.updateClip"
+              @frame="roughCut.updateFrame"
+              @duplicate="roughCut.duplicate"
+            />
+            <small>{{
+              previewIsDraft ? "当前为生成后的完整效果" : "当前为粗剪预览，转场、配乐与水印请生成完整效果查看。"
+            }}</small>
+            <n-button :disabled="busy || !roughCut.loaded.value" @click="roughCut.resetClips()"
+              >恢复完整时间线</n-button
+            >
+            <n-button v-if="previewIsDraft" :disabled="busy" @click="viewCut">返回粗剪预览</n-button>
+            <small role="status">{{ roughCut.draftStatus.value }}</small>
+          </template>
           <ArchiveWatermarkControls
-            v-if="panel === 'watermark' && !isImage"
+            v-else-if="panel === 'watermark' && !isImage"
             v-model:settings="watermarkSettings"
             v-model:selected-point="selectedPoint"
             v-model:selected-frame="selectedFrame"
             :asset="watermarkAsset"
             :disabled="busy"
-            :duration="videoDuration"
+            :duration="editDuration"
             :time="playhead"
             @upload="uploadWatermark"
             @select-library="selectLibraryWatermark"
@@ -147,7 +242,7 @@
             @move="moveWatermark"
             @seek="seekWatermark"
           />
-          <template v-else>
+          <template v-else-if="panel === 'audio' || isImage">
             <label v-if="!isImage"
               >视频原声音量 {{ settings.originalVolume }}%<n-slider
                 v-model:value="settings.originalVolume"
@@ -263,16 +358,88 @@
             <p v-if="uploading" role="status">正在上传音乐…</p>
           </template>
           <p v-if="watermarkUploading" role="status">正在上传水印…</p>
+          <ArchiveStudioPanel
+            v-if="!isImage && panel === 'cut' && inspector !== 'video' && roughCut.loaded.value"
+            :active-tab="inspector"
+            :item-id="item.id"
+            :media-id="mediaId"
+            :clips="roughCut.clips.value"
+            :selected="roughCut.selected.value"
+            :studio="roughCut.studio.value"
+            :time="roughCut.time.value"
+            :duration="roughCut.duration.value"
+            :disabled="busy || previewIsDraft"
+            @studio="roughCut.updateStudio"
+            @source="roughCut.appendSource"
+            @seek="seekCut"
+            @analysis="roughCut.applyAnalysis"
+          />
         </section>
       </div>
+      <ArchiveCutTimeline
+        v-if="!isImage && panel === 'cut' && roughCut.loaded.value"
+        :clips="roughCut.clips.value"
+        v-model:selected="roughCut.selected.value"
+        :time="roughCut.time.value"
+        :duration="roughCut.duration.value"
+        :source-duration="roughCut.sourceDuration.value"
+        :fps="roughCut.fps.value"
+        v-model:zoom="roughCut.zoom.value"
+        v-model:snapping="roughCut.snapping.value"
+        :can-trim="roughCut.canTrim.value"
+        :can-undo="Boolean(roughCut.undo.value.length)"
+        :can-redo="Boolean(roughCut.redo.value.length)"
+        :can-paste="roughCut.canPaste.value"
+        :source-url="originalUrl"
+        :source-urls="roughCut.sourceUrls.value"
+        :sources="roughCut.studio.value.sources"
+        :studio="roughCut.studio.value"
+        @studio="roughCut.updateStudio"
+        :disabled="busy || previewIsDraft"
+        @seek="seekCut"
+        @play="roughCut.togglePlay"
+        @split="roughCut.split"
+        @trim="roughCut.trim"
+        @remove="roughCut.remove"
+        @duplicate="roughCut.duplicate"
+        @copy="roughCut.copySelection"
+        @paste="roughCut.paste"
+        @undo="roughCut.undoEdit"
+        @redo="roughCut.redoEdit"
+        @begin="roughCut.begin"
+        @commit="roughCut.commit"
+        @layout="roughCut.commitLayout"
+        @cancel="roughCut.cancelGesture"
+      />
       <template #footer
         ><div class="editor-actions editor-footer">
           <n-button :disabled="busy || !current?.audioEdit" @click="restore">恢复原始视频</n-button>
+          <n-button
+            v-if="!isImage"
+            :disabled="
+              busy ||
+              !ready ||
+              !initialized ||
+              Boolean(watermarkValidation) ||
+              (panel === 'cut' && !roughCut.loaded.value) ||
+              (roughCut.loaded.value && !roughCut.clips.value.length)
+            "
+            @click="submit('preview', false, true)"
+            >导出视频</n-button
+          >
+          <n-button v-if="exportedUrl" tag="a" :href="exportedUrl">下载生成的视频</n-button>
           <n-button @click="close">关闭窗口</n-button>
           <n-button
             type="primary"
             :loading="submitting"
-            :disabled="busy || !ready || !initialized || Boolean(watermarkValidation)"
+            :disabled="
+              busy ||
+              !ready ||
+              !initialized ||
+              Boolean(watermarkValidation) ||
+              (panel === 'cut' && !roughCut.loaded.value) ||
+              (roughCut.loaded.value && !roughCut.clips.value.length)
+            "
             @click="submit('save')"
             >{{ isImage ? "生成视频并归档" : "保存为最新版本" }}</n-button
           >
@@ -287,7 +454,7 @@
 
 <script setup lang="ts">
 import { vSliderLabel } from "../../shared/ui/slider-label";
-import { computed, onScopeDispose, reactive, ref, watch, toRaw } from "vue";
+import { computed, onScopeDispose, reactive, ref, watch, toRaw, nextTick } from "vue";
 import {
   NAlert,
   NButton,
@@ -304,6 +471,9 @@ import {
 import {
   defaultArchiveAudioSettings,
   archiveSlideshowDuration,
+  archiveProjectDuration,
+  archiveFrameGeometry,
+  type ArchiveFrame,
   watermarkTimingError,
   type ArchiveSlideshowAspect,
   type ArchiveVideoEditInput,
@@ -321,13 +491,18 @@ import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import ArchiveWatermarkControls from "./ArchiveWatermarkControls.vue";
 import ArchiveWatermarkPreview from "./ArchiveWatermarkPreview.vue";
 import ArchiveMusicRange from "./ArchiveMusicRange.vue";
+import ArchiveCutTimeline from "./ArchiveCutTimeline.vue";
+import ArchiveStudioPanel from "./ArchiveStudioPanel.vue";
+import ArchiveCutSettings from "./ArchiveCutSettings.vue";
+import ArchiveCutPicture from "./ArchiveCutPicture.vue";
+import { useArchiveRoughCut } from "./useArchiveRoughCut";
 import { useArchiveWatermark } from "./useArchiveWatermark";
 const props = defineProps<{
   show: boolean;
   item: ContentArchiveItem;
   mediaId: string;
   embedded?: boolean;
-  initialPanel?: "audio" | "watermark";
+  initialPanel?: "audio" | "watermark" | "cut";
   initialMusicId?: string;
   conversionReturnTo?: string;
 }>();
@@ -357,7 +532,7 @@ const {
   () => scope.signal
 );
 const watermarkValidation = computed(() =>
-  watermarkInput.value ? watermarkTimingError(watermarkSettings.value, videoDuration.value) : undefined
+  watermarkInput.value ? watermarkTimingError(watermarkSettings.value, editDuration.value) : undefined
 );
 const isImage = computed(() => current.value?.kind === "image");
 const secondsPerImage = ref(3),
@@ -368,7 +543,11 @@ const editDuration = computed(() =>
         props.item.media.filter((entry) => entry.kind === "image" && !entry.frameSourceMediaId).length,
         secondsPerImage.value
       )
-    : videoDuration.value
+    : roughCut.loaded.value
+      ? roughCut.duration.value
+      : ((current.value?.audioEdit?.cut
+          ? archiveProjectDuration(current.value.audioEdit.cut, current.value.audioEdit.studio)
+          : undefined) ?? videoDuration.value)
 );
 const settings = reactive(defaultArchiveAudioSettings());
 const originalMusic = computed(() => props.item.media.find((media) => media.kind === "audio"));
@@ -390,12 +569,87 @@ const previewUrl = ref(""),
   previewStart = ref(0),
   video = ref<HTMLVideoElement>(),
   fileInput = ref<HTMLInputElement>();
+const roughCut = useArchiveRoughCut(
+  () => props.item.id,
+  () => current.value,
+  () => video.value,
+  () => panel.value === "cut" && !previewIsDraft.value,
+  () => originalUrl.value,
+  () => settings.originalVolume,
+  (source) =>
+    resolveBackendUrl(
+      current.value?.audioEdit?.studioSources?.some(
+        (entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum
+      )
+        ? `/api/v1/tools/media-archive/items/${props.item.id}/media/${props.mediaId}/studio-sources/${source.id}`
+        : `/api/v1/tools/media-archive/items/${source.itemId}/media/${source.mediaId}/original`
+    ),
+  (url) => {
+    if (panel.value === "cut" && !previewIsDraft.value) previewUrl.value = url;
+  }
+);
+const cutPictureActive = computed(() => panel.value === "cut" && !previewIsDraft.value && roughCut.loaded.value);
+const inspector = ref("video");
+const inspectorTabs = [
+  { label: "视频", value: "video" },
+  { label: "字幕", value: "subtitles" },
+  { label: "配乐轨", value: "music" },
+  { label: "视频素材", value: "sources" },
+  { label: "智能检测", value: "analysis" },
+  { label: "整体声音", value: "audio" },
+  { label: "水印", value: "watermark" }
+];
+function selectInspector(value: string) {
+  inspector.value = value;
+  panel.value = value === "audio" || value === "watermark" ? value : "cut";
+}
+watch(
+  () => roughCut.selected.value,
+  (ids) => {
+    if (ids.length !== 1) return;
+    const id = ids[0];
+    if (roughCut.clips.value.some((entry) => entry.id === id)) selectInspector("video");
+    else if (roughCut.studio.value.subtitles.some((entry) => entry.id === id)) selectInspector("subtitles");
+    else if (roughCut.studio.value.musicTracks.some((entry) => entry.id === id)) selectInspector("music");
+  },
+  { deep: true }
+);
+watch(
+  panel,
+  (value) => {
+    if (value === "audio" || value === "watermark") inspector.value = value;
+    else if (inspector.value === "audio" || inspector.value === "watermark") inspector.value = "video";
+  },
+  { immediate: true }
+);
+const previewAspectOptions = [
+  { label: "原始比例", value: "source" },
+  { label: "横屏 16:9", value: "16:9" },
+  { label: "竖屏 9:16", value: "9:16" },
+  { label: "竖屏 3:4", value: "3:4" },
+  { label: "方形 1:1", value: "1:1" }
+];
+const portraitPreview = computed(() => {
+  if (isImage.value) return aspect.value === "portrait" || aspect.value === "portrait_3_4";
+  const size = archiveFrameGeometry(
+    roughCut.sourceWidth.value || current.value?.width || 1920,
+    roughCut.sourceHeight.value || current.value?.height || 1080,
+    roughCut.frameSettings.value
+  );
+  return size.height > size.width;
+});
+function changePreviewAspect(value: ArchiveFrame["aspect"]) {
+  if (busy.value || !roughCut.loaded.value) return;
+  roughCut.updateFrame({ ...roughCut.frameSettings.value, aspect: value });
+}
 const musicRange = ref<InstanceType<typeof ArchiveMusicRange>>();
 const viewingOriginal = ref(false),
   basePreviewUrl = ref(""),
   basePreviewJob = ref<string>(),
   basePreviewFailed = ref(false);
 const activeJob = computed(() => Boolean(job.value && ["pending", "running"].includes(job.value.status)));
+const exportedUrl = ref(""),
+  exportJobId = ref<string>();
 const initialRecipe = ref("");
 const recipe = computed(() =>
   JSON.stringify([
@@ -420,9 +674,7 @@ const originalUrl = computed(() =>
   )
 );
 const savedUrl = computed(() => (current.value ? resolveBackendUrl(current.value.previewUrl) : ""));
-const watermarkBaseUrl = computed(() =>
-  current.value?.audioEdit?.watermark ? basePreviewUrl.value || savedUrl.value : savedUrl.value
-);
+const watermarkBaseUrl = computed(() => basePreviewUrl.value || savedUrl.value);
 const musicOptions = computed(() => {
   const items = [...music.value];
   if (chosenMusic.value && !items.some((item) => item.id === chosenMusic.value!.id)) items.unshift(chosenMusic.value);
@@ -512,6 +764,9 @@ watch(
   { immediate: true }
 );
 function applyMedia(media?: ContentArchiveMedia) {
+  roughCut.reset();
+  exportedUrl.value = "";
+  exportJobId.value = undefined;
   current.value = media ? structuredClone(toRaw(media)) : undefined;
   loadWatermark(current.value);
   videoDuration.value = (media?.durationMs ?? 0) / 1000;
@@ -530,6 +785,10 @@ function applyMedia(media?: ContentArchiveMedia) {
   previewUrl.value = savedUrl.value;
   previewIsDraft.value = false;
   initialRecipe.value = recipe.value;
+  if (panel.value === "cut" && media)
+    void roughCut.load().then(() => {
+      if (panel.value === "cut") viewCut();
+    });
 }
 async function loadMusic() {
   const request = ++musicRequest,
@@ -603,6 +862,9 @@ function recordOriginalDuration(event: Event) {
   videoDuration.value = element.duration;
 }
 function previewError() {
+  if (panel.value === "cut" && !previewIsDraft.value) {
+    roughCut.error.value = "当前视频素材加载失败，请检查来源视频是否仍可访问，或重新选择素材。";
+  }
   if (basePreviewUrl.value && previewUrl.value === basePreviewUrl.value) {
     basePreviewUrl.value = "";
     basePreviewFailed.value = true;
@@ -612,9 +874,36 @@ function previewError() {
 }
 function seekWatermark(time: number) {
   viewCurrent();
-  if (video.value) video.value.currentTime = Math.min(videoDuration.value, Math.max(0, time));
+  if (video.value) video.value.currentTime = Math.min(editDuration.value, Math.max(0, time));
+}
+function recordPlayhead(time: number) {
+  if (panel.value !== "cut") playhead.value = time;
+  else if (previewIsDraft.value) roughCut.time.value = Math.min(roughCut.duration.value, time);
+}
+function seekCut(time: number) {
+  roughCut.stop();
+  roughCut.seek(time);
+}
+function viewCut() {
+  video.value?.pause();
+  previewUrl.value = originalUrl.value;
+  previewIsDraft.value = false;
+  viewingOriginal.value = false;
+  void roughCut.load().then(async () => {
+    await nextTick();
+    if (panel.value === "cut" && !previewIsDraft.value) roughCut.seek(roughCut.time.value);
+  });
 }
 watch(panel, (value) => {
+  roughCut.stop();
+  if (video.value) {
+    video.value.playbackRate = 1;
+    video.value.volume = 1;
+  }
+  if (value === "cut") {
+    viewCut();
+    return;
+  }
   if (!activeJob.value) viewCurrent();
   if (value === "watermark") prepareWatermarkBase();
 });
@@ -624,13 +913,13 @@ function prepareWatermarkBase() {
     initialized.value &&
     ready.value &&
     !busy.value &&
-    current.value?.audioEdit?.watermark &&
+    (current.value?.audioEdit?.watermark || roughCut.loaded.value) &&
     !basePreviewUrl.value &&
     !basePreviewFailed.value
   )
     void submit("preview", true);
 }
-watch([initialized, () => current.value?.checksum], prepareWatermarkBase);
+watch([initialized, () => current.value?.checksum, roughCut.loaded], prepareWatermarkBase);
 watch(
   watermarkInput,
   () => {
@@ -638,17 +927,42 @@ watch(
   },
   { deep: true }
 );
-async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = false) {
+watch(
+  [roughCut.clips, roughCut.frameSettings, roughCut.studio],
+  () => {
+    basePreviewUrl.value = "";
+    basePreviewFailed.value = false;
+    exportedUrl.value = "";
+  },
+  { deep: true }
+);
+watch(recipe, () => {
+  exportedUrl.value = "";
+});
+async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = false, exporting = false) {
   if (!current.value || busy.value || scope.signal.aborted) return;
+  if (mode !== "restore" && panel.value === "cut" && !roughCut.loaded.value) {
+    error.value = "请先等待原片和粗剪草稿读取完成";
+    return;
+  }
   if (!cleanWatermarkBase && mode !== "restore" && watermarkValidation.value) {
     error.value = watermarkValidation.value;
+    return;
+  }
+  if (mode !== "restore" && roughCut.loaded.value && !roughCut.clips.value.length) {
+    error.value = "请至少保留一个视频片段";
+    return;
+  }
+  const version = generation;
+  submitting.value = true;
+  await roughCut.flush();
+  if (scope.signal.aborted || version !== generation) {
+    submitting.value = false;
     return;
   }
   video.value?.pause();
   error.value = "";
   musicRange.value?.stop();
-  const version = generation;
-  submitting.value = true;
   const images = props.item.media.filter((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
   if (isImage.value && images.length > 100) {
     error.value = "图集生成视频每次最多支持 100 张原图";
@@ -664,6 +978,13 @@ async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = 
       ? { sourceMusicId: originalMusic.value.id, sourceMusicChecksum: originalMusic.value.checksum }
       : {}),
     settings: { ...settings },
+    ...(roughCut.loaded.value && mode !== "restore"
+      ? {
+          cut: JSON.parse(JSON.stringify(roughCut.clips.value)),
+          frame: { ...roughCut.frameSettings.value },
+          studio: JSON.parse(JSON.stringify(roughCut.studio.value))
+        }
+      : {}),
     ...(isImage.value
       ? {}
       : {
@@ -672,8 +993,8 @@ async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = 
               ? { ...watermarkInput.value, settings: JSON.parse(JSON.stringify(watermarkSettings.value)) }
               : null
         }),
-    previewStartSeconds: panel.value === "audio" || cleanWatermarkBase ? 0 : previewStart.value,
-    previewFullLength: mode === "preview" && (panel.value === "audio" || cleanWatermarkBase),
+    previewStartSeconds: panel.value !== "watermark" || cleanWatermarkBase || exporting ? 0 : previewStart.value,
+    previewFullLength: mode === "preview" && (panel.value !== "watermark" || cleanWatermarkBase || exporting),
     ...(isImage.value
       ? {
           slideshow: {
@@ -690,18 +1011,16 @@ async function submit(mode: ArchiveVideoEditInput["mode"], cleanWatermarkBase = 
       : {})
   };
   if (cleanWatermarkBase) {
-    input.useSavedMusic = Boolean(current.value.audioEdit?.music);
-    input.settings = structuredClone(toRaw(current.value.audioEdit?.settings ?? defaultArchiveAudioSettings()));
     input.watermark = null;
-    delete input.musicId;
-    delete input.musicRevision;
-    delete input.sourceMusicId;
-    delete input.sourceMusicChecksum;
   }
   try {
     const result = await videoEditApi.create(props.item.id, current.value.id, input, scope.signal);
     if (version !== generation || scope.signal.aborted) return;
     job.value = result;
+    if (exporting) {
+      exportJobId.value = result.id;
+      exportedUrl.value = "";
+    }
     if (cleanWatermarkBase) {
       basePreviewJob.value = result.id;
       basePreviewFailed.value = false;
@@ -728,6 +1047,7 @@ async function poll(version: number) {
     if (["pending", "running"].includes(result.status)) schedulePoll(version);
     else if (result.status === "completed") {
       if (result.mode === "preview" && result.previewUrl) {
+        if (result.id === exportJobId.value) exportedUrl.value = resolveBackendUrl(result.previewUrl + "?download=1");
         previewUrl.value = resolveBackendUrl(result.previewUrl);
         if (result.id === basePreviewJob.value) {
           basePreviewUrl.value = previewUrl.value;
@@ -773,7 +1093,7 @@ async function cancel() {
 async function restore() {
   const version = generation;
   if (
-    await confirm("将原片设为最新版本，移除当前成品的配乐、音量修改和水印。音乐库素材、原片和截帧均保留。", {
+    await confirm("将原片设为最新版本，移除当前成品的粗剪、配乐、音量修改和水印。音乐库素材、原片和截帧均保留。", {
       title: "恢复原始视频",
       positiveText: "恢复原片"
     })
@@ -781,13 +1101,15 @@ async function restore() {
     if (version === generation && !scope.signal.aborted) await submit("restore");
 }
 async function canLeave() {
+  await roughCut.flush();
+  if (roughCut.draftStatus.value === "草稿保存失败") return false;
   const version = generation;
   if (
     !activeJob.value &&
     initialized.value &&
     recipe.value !== initialRecipe.value &&
-    !(await confirm("未保存的参数不会写入归档，已上传到音乐库的素材保留；未保存的水印草稿 24 小时后清理。", {
-      title: "关闭配乐编辑",
+    !(await confirm("粗剪草稿会自动保留。未保存的配乐与水印参数不会应用到成品；水印上传草稿保留 24 小时。", {
+      title: "关闭视频编辑",
       positiveText: "关闭窗口",
       danger: false
     }))
@@ -815,6 +1137,20 @@ defineExpose({ canLeave, close });
   gap: 24px;
   margin: 16px 0;
 }
+.editor-layout.is-portrait {
+  grid-template-columns: minmax(260px, 0.85fr) minmax(360px, 1.15fr);
+}
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.preview-toolbar :deep(.n-select) {
+  width: 160px;
+  margin-left: auto;
+}
 .editor-preview,
 .editor-controls {
   min-width: 0;
@@ -822,6 +1158,12 @@ defineExpose({ canLeave, close });
 .editor-preview :deep(.video-stage) {
   background: #101418;
   border-radius: 10px;
+  height: clamp(280px, 56vh, 680px);
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .editor-preview :deep(video) {
   width: auto;
@@ -834,6 +1176,20 @@ defineExpose({ canLeave, close });
   margin: 0 auto;
   object-fit: contain;
 }
+/* 画布与原生视频共同服从预览容器尺寸，避免内部 vh 上限高于容器。 */
+.editor-preview :deep(.video-stage > video),
+.editor-preview :deep(.video-stage > .cut-picture) {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 auto;
+  object-fit: contain;
+  margin: 0;
+}
 .slideshow-image {
   width: 100%;
   max-height: 56vh;
@@ -841,9 +1197,33 @@ defineExpose({ canLeave, close });
   background: #f1f5f9;
 }
 .editor-controls {
+  height: clamp(360px, 68vh, 780px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.inspector-tabs {
+  position: sticky;
+  top: -14px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--color-surface, #fff);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.editor-controls > * {
+  flex-shrink: 0;
 }
 .editor-controls label {
   display: grid;
@@ -881,7 +1261,8 @@ small {
   line-height: 1.7;
 }
 @media (max-width: 800px) {
-  .editor-layout {
+  .editor-layout,
+  .editor-layout.is-portrait {
     grid-template-columns: 1fr;
   }
 }

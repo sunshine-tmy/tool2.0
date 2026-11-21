@@ -3,13 +3,14 @@ import { Type, type Static } from "@sinclair/typebox";
 
 export const ArchiveGroupIdSchema = Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" });
 export const ArchiveGroupInputSchema = Type.Object(
-  { name: Type.String({ minLength: 1, maxLength: 80, pattern: "^[^\\x00-\\x1f\\x7f]+$" }) },
+  { name: Type.String({ minLength: 1, maxLength: 80, pattern: "^[^\\x00-\\x1f\\x7f]+$" }), parentId: Type.Optional(Type.Union([ArchiveGroupIdSchema, Type.Null()])) },
   { additionalProperties: false }
 );
 export const ArchiveGroupSchema = Type.Object(
   {
     id: ArchiveGroupIdSchema,
     name: ArchiveGroupInputSchema.properties.name,
+    parentId: Type.Optional(Type.Union([ArchiveGroupIdSchema, Type.Null()])),
     createdAt: Type.String({ format: "date-time" }),
     updatedAt: Type.String({ format: "date-time" })
   },

@@ -5,6 +5,12 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   ArchiveVideoEditInputSchema,
+  ArchiveAnalysisInputSchema,
+  ArchiveAnalysisJobSchema,
+  type ArchiveAnalysisInput,
+  ArchiveCutDraftSchema,
+  ArchiveCutSourceSchema,
+  type ArchiveCutDraft,
   ArchiveVideoEditJobSchema,
   ArchiveWatermarkDraftSchema,
   ArchiveWatermarkPresetSchema,
@@ -197,6 +203,113 @@ export function registerVideoEditRoutes(
       }
     }
   );
+  app.post<{ Params: XhsArchiveMediaParams; Body: ArchiveAnalysisInput }>(
+    `${prefix}/items/:id/media/:mediaId/cut-analysis`,
+    {
+      config: REQUEST_QUOTAS.ai,
+      schema: {
+        params: XhsArchiveMediaParamsSchema,
+        body: ArchiveAnalysisInputSchema,
+        response: { 202: apiSuccessSchema(ArchiveAnalysisJobSchema) }
+      }
+    },
+    async (request, reply) => {
+      try {
+        return reply
+          .code(202)
+          .send(
+            ok(
+              service.analysis.create(request.body, () =>
+                service.pinStudioSource(request.params.id, request.params.mediaId, request.body.source)
+              )
+            )
+          );
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      }
+    }
+  );
+  app.get<{ Params: TaskIdParams }>(
+    `${prefix}/cut-analysis/:taskId`,
+    { schema: { params: TaskIdParamsSchema, response: { 200: apiSuccessSchema(ArchiveAnalysisJobSchema) } } },
+    async (request, reply) => {
+      const job = service.analysis.get(request.params.taskId);
+      return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_ANALYSIS_MISSING", "检测任务不存在，请重新检测"));
+    }
+  );
+  app.delete<{ Params: TaskIdParams }>(
+    `${prefix}/cut-analysis/:taskId`,
+    { schema: { params: TaskIdParamsSchema, response: { 200: apiSuccessSchema(ArchiveAnalysisJobSchema) } } },
+    async (request, reply) => {
+      const job = await service.analysis.cancel(request.params.taskId);
+      return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_ANALYSIS_MISSING", "检测任务不存在"));
+    }
+  );
+  app.get<{ Params: XhsArchiveMediaParams & { sourceId: string } }>(
+    `${prefix}/items/:id/media/:mediaId/studio-sources/:sourceId`,
+    {
+      config: REQUEST_QUOTAS.mediaPreview,
+      schema: {
+        params: Type.Composite([
+          XhsArchiveMediaParamsSchema,
+          Type.Object({ sourceId: Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" }) })
+        ])
+      }
+    },
+    async (request, reply) => {
+      try {
+        const value = await service.studioSourcePath(
+          request.params.id,
+          request.params.mediaId,
+          request.params.sourceId
+        );
+        reply.raw.once("close", value.release);
+        reply
+          .header("content-type", value.asset.mimeType)
+          .header("cache-control", "no-store")
+          .header("accept-ranges", "bytes");
+        return sendArchiveRange(reply, value.file, value.asset.size, request.headers.range, value.release);
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      }
+    }
+  );
+  app.get<{ Params: XhsArchiveMediaParams }>(
+    `${prefix}/items/:id/media/:mediaId/cut-source`,
+    {
+      config: REQUEST_QUOTAS.mediaPreview,
+      schema: { params: XhsArchiveMediaParamsSchema, response: { 200: apiSuccessSchema(ArchiveCutSourceSchema) } }
+    },
+    async (request, reply) => {
+      try {
+        return ok(await service.cutSource(request.params.id, request.params.mediaId));
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      }
+    }
+  );
+  app.put<{ Params: XhsArchiveMediaParams; Body: ArchiveCutDraft }>(
+    `${prefix}/items/:id/media/:mediaId/cut-draft`,
+    {
+      config: REQUEST_QUOTAS.archiveCutDraft,
+      schema: {
+        params: XhsArchiveMediaParamsSchema,
+        body: ArchiveCutDraftSchema,
+        response: { 200: apiSuccessSchema(ArchiveCutDraftSchema) }
+      }
+    },
+    async (request, reply) => {
+      try {
+        return ok(await service.saveCutDraft(request.params.id, request.params.mediaId, request.body));
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      }
+    }
+  );
   app.get(
     `${prefix}/video-edit-runtime`,
     { schema: { response: { 200: apiSuccessSchema(Type.Object({ ready: Type.Boolean() })) } } },
@@ -278,7 +391,9 @@ export function registerVideoEditRoutes(
       config: REQUEST_QUOTAS.voice,
       preValidation: async (request, reply) => {
         if (!Value.Check(ArchiveVideoEditInputSchema, request.body))
-          return reply.code(400).send(fail("ARCHIVE_EDIT_INPUT_INVALID", "配乐参数无效，请检查音量、版本和音乐来源"));
+          return reply
+            .code(400)
+            .send(fail("ARCHIVE_EDIT_INPUT_INVALID", "视频编辑参数无效，请检查片段、配乐、水印和版本"));
         // AJV may coerce the number/null union's null into 0. Remember only the
         // strictly validated automatic-end sentinel; explicit numeric 0 stays invalid.
         if (request.body.watermark?.settings.endSeconds === null) automaticWatermarkEnd.add(request);
@@ -306,7 +421,7 @@ export function registerVideoEditRoutes(
     { schema: { params: TaskIdParamsSchema, response: { 200: apiSuccessSchema(ArchiveVideoEditJobSchema) } } },
     async (request, reply) => {
       const job = service.get(request.params.taskId);
-      return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_EDIT_NOT_FOUND", "配乐任务不存在"));
+      return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_EDIT_NOT_FOUND", "视频编辑任务不存在"));
     }
   );
   app.delete<{ Params: TaskIdParams }>(
@@ -315,21 +430,25 @@ export function registerVideoEditRoutes(
     async (request, reply) => {
       try {
         const job = await service.cancel(request.params.taskId);
-        return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_EDIT_NOT_FOUND", "配乐任务不存在"));
+        return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_EDIT_NOT_FOUND", "视频编辑任务不存在"));
       } catch (error) {
         const known = failure(error);
         return reply.code(known.statusCode).send(fail(known.code, known.message));
       }
     }
   );
-  app.get<{ Params: TaskIdParams }>(
+  app.get<{ Params: TaskIdParams; Querystring: { download?: string } }>(
     `${prefix}/video-edits/:taskId/preview`,
-    { config: REQUEST_QUOTAS.mediaPreview, schema: { params: TaskIdParamsSchema } },
+    {
+      config: REQUEST_QUOTAS.mediaPreview,
+      schema: { params: TaskIdParamsSchema, querystring: Type.Object({ download: Type.Optional(Type.Literal("1")) }) }
+    },
     async (request, reply) => {
       const file = service.previewPath(request.params.taskId);
       const stat = file ? await fs.stat(file).catch(() => undefined) : undefined;
       if (!file || !stat?.isFile())
         return reply.code(404).send(fail("ARCHIVE_EDIT_PREVIEW_MISSING", "试听已失效，请重新生成"));
+      if (request.query.download) reply.header("content-disposition", 'attachment; filename="archive-video.mp4"');
       reply.header("content-type", "video/mp4").header("cache-control", "no-store").header("accept-ranges", "bytes");
       return sendArchiveRange(reply, file, stat.size, request.headers.range);
     }

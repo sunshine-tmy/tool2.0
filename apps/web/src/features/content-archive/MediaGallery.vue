@@ -113,17 +113,17 @@
           >
             保存当前帧
           </n-button>
-          <small aria-live="polite">
-            {{ frameMessage || frameHint }}
-          </small>
         </div>
         <n-button tag="a" :href="mediaUrl(media.downloadUrl)" size="small" secondary>
           <template #icon><Download :size="15" /></template>下载当前媒体
         </n-button>
-        <n-button v-if="isVideoMedia(media)" size="small" @click="openAudioEditor">编辑配乐</n-button>
-        <n-button v-if="isVideoMedia(media)" size="small" @click="openWatermarkEditor">{{
-          media.audioEdit?.watermark ? "编辑水印" : "添加水印"
-        }}</n-button>
+        <div v-if="isVideoMedia(media)" class="media-editor-actions" role="group" aria-label="视频编辑操作">
+          <n-button size="small" @click="openCutEditor">视频粗剪</n-button>
+          <n-button size="small" @click="openAudioEditor">编辑配乐</n-button>
+          <n-button size="small" @click="openWatermarkEditor">{{
+            media.audioEdit?.watermark ? "编辑水印" : "添加水印"
+          }}</n-button>
+        </div>
         <n-button v-if="media.kind === 'image' && !media.frameSourceMediaId" size="small" @click="openSlideshow"
           >图集生成视频</n-button
         >
@@ -139,7 +139,8 @@
           <template #icon><Trash2 :size="15" /></template>删除截帧
         </n-button>
       </div>
-      <small v-if="frameMessage && !isVideoMedia(media)" class="frame-feedback" role="status">{{ frameMessage }}</small>
+      <small v-if="isVideoMedia(media)" class="frame-feedback frame-capture-feedback" aria-live="polite">{{ frameMessage || frameHint }}</small>
+      <small v-else-if="frameMessage" class="frame-feedback" role="status">{{ frameMessage }}</small>
     </template>
     <section v-for="audio in soundtracks" :key="audio.id" class="archive-soundtrack" aria-label="原作品配乐">
       <div class="soundtrack-heading">
@@ -223,6 +224,12 @@ function onAudioSaved(updated: ContentArchiveItem) {
   if (generated >= 0) selected.value = generated;
   emit("mediaUpdated", updated);
 }
+function openCutEditor() {
+  if (!media.value) return;
+  pauseSoundtracks();
+  videoElement.value?.pause();
+  emit("editCut", media.value.id);
+}
 function openAudioEditor() {
   if (!media.value) return;
   pauseSoundtracks();
@@ -271,6 +278,7 @@ const emit = defineEmits<{
   mediaUpdated: [item: ContentArchiveItem];
   editWatermark: [mediaId: string];
   editAudio: [mediaId: string];
+  editCut: [mediaId: string];
 }>();
 
 watch(
@@ -787,10 +795,24 @@ function changeMedia(direction: -1 | 1) {
 .media-actions {
   display: flex;
   width: min(100%, 520px);
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+.media-actions :deep(.n-button) {
+  height: 30px;
+  padding: 0 10px;
+}
+.media-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.frame-capture-feedback {
+  margin-top: -5px;
+  line-height: 1.4;
 }
 .frame-feedback {
   width: min(100%, 520px);
@@ -800,14 +822,9 @@ function changeMedia(direction: -1 | 1) {
   width: min(100%, 480px);
 }
 .frame-capture-actions {
-  display: grid;
-  justify-items: start;
-  gap: 5px;
+  display: flex;
+  flex-shrink: 0;
   margin-right: auto;
-}
-.frame-capture-actions small {
-  color: #758096;
-  line-height: 1.4;
 }
 .media-empty {
   display: grid;
@@ -851,7 +868,12 @@ function changeMedia(direction: -1 | 1) {
   }
 }
 @media (max-width: 360px) {
-  .soundtrack-player { gap: 6px; padding: 6px; }
-  .soundtrack-player > span { font-size: 0; }
+  .soundtrack-player {
+    gap: 6px;
+    padding: 6px;
+  }
+  .soundtrack-player > span {
+    font-size: 0;
+  }
 }
 </style>

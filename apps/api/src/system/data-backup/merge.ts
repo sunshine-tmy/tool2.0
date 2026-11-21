@@ -185,10 +185,21 @@ export function planRestore(
         }
       }
       if (mode === "merge" && row.kind === "archive-group") {
-        const name = text(object(row.payload).name).trim().toLowerCase();
-        const same = current
-          .find((m) => m.id === module.id)
-          ?.records.find((r) => r.kind === row.kind && text(object(r.payload).name).trim().toLowerCase() === name);
+        const groupPath = (entry: typeof row, records: typeof module.records): string => {
+          const names: string[] = [];
+          const visited = new Set<string>();
+          let cursor: typeof row | undefined = entry;
+          while (cursor && !visited.has(cursor.id)) {
+            visited.add(cursor.id);
+            names.unshift(text(object(cursor.payload).name).trim().toLowerCase());
+            const parentId = text(object(cursor.payload).parentId);
+            cursor = parentId ? records.find((candidate) => candidate.kind === "archive-group" && candidate.id === parentId) : undefined;
+          }
+          return JSON.stringify(names);
+        };
+        const existing = current.find((m) => m.id === module.id)?.records ?? [];
+        const path = groupPath(row, module.records);
+        const same = existing.find((entry) => entry.kind === row.kind && groupPath(entry, existing) === path);
         if (same) {
           map[key] = same.id;
           skip.add(key);

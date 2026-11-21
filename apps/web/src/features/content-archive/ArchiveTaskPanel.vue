@@ -32,7 +32,8 @@
             style="width: 160px"
           />
           <span>归档分组</span>
-          <n-select
+          <n-cascader
+        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups"
             v-model:value="groupId"
             :options="groupOptions"
             placeholder="不指定分组"
@@ -131,6 +132,8 @@
 </template>
 
 <script setup lang="ts">
+import { NCascader } from "naive-ui";
+import { archiveGroupTree, groupMenuProps, filterArchiveGroups } from "./archive-group-tree";
 import { computed, ref } from "vue";
 import { NButton, NInput, NProgress, NSelect } from "naive-ui";
 import { Archive, Box, Check, Download, FileSearch, HardDriveDownload } from "lucide-vue-next";
@@ -170,7 +173,7 @@ defineExpose({
 });
 const platform = defineModel<ArchivePlatformSelection>("platform", { default: "auto" });
 const groupId = defineModel<string | null>("groupId", { default: null });
-const groupOptions = computed(() => (props.groups ?? []).map((group) => ({ label: group.name, value: group.id })));
+const groupOptions = computed(() => archiveGroupTree(props.groups ?? []));
 const platformOptions = [
   { label: "自动识别", value: "auto" },
   { label: "小红书", value: "xiaohongshu" },

@@ -258,7 +258,7 @@ const rangeActions = computed<RangeAction[]>(() => {
   const actions: RangeAction[] = [
     {
       label: "按指针拆分",
-      tooltip: `按指针拆分 · ${splitDisabledReason.value || "将选中区间一分为二，两段均保留字幕框"}`,
+      tooltip: `按指针拆分（Ctrl+B / ⌘B）· ${splitDisabledReason.value || "将选中区间一分为二，两段均保留字幕框"}`,
       icon: TableColumnsSplit,
       run: splitRange,
       disabled: Boolean(splitDisabledReason.value)
@@ -282,14 +282,14 @@ const rangeActions = computed<RangeAction[]>(() => {
   actions.push(
     {
       label: "向左裁剪",
-      tooltip: `向左裁剪 · ${canTrimRange.value ? "删除指针左侧，保留右侧" : trimHint}`,
+      tooltip: `向左裁剪（Q）· ${canTrimRange.value ? "删除指针左侧，保留右侧" : trimHint}`,
       icon: PanelLeftClose,
       run: () => trimRange("left"),
       disabled: !canTrimRange.value
     },
     {
       label: "向右裁剪",
-      tooltip: `向右裁剪 · ${canTrimRange.value ? "删除指针右侧，保留左侧" : trimHint}`,
+      tooltip: `向右裁剪（W）· ${canTrimRange.value ? "删除指针右侧，保留左侧" : trimHint}`,
       icon: PanelRightClose,
       run: () => trimRange("right"),
       disabled: !canTrimRange.value
@@ -495,6 +495,7 @@ onMounted(() => {
   window.addEventListener("keydown", onPlaybackKeydown);
   window.addEventListener("keydown", onFrameKeydown, true);
   window.addEventListener("keydown", onUndoKeydown);
+  window.addEventListener("keydown", onRangeShortcut);
   resizeObserver = new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
     if (rect) stageSize.value = { width: rect.width, height: rect.height };
@@ -584,6 +585,21 @@ function onFrameKeydown(event: KeyboardEvent) {
   currentTime.value = startTime;
   queueVideoSeek(previewTime);
 }
+function onRangeShortcut(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.repeat || event.isComposing || event.altKey || event.shiftKey) return;
+  if (!props.src || !props.editable || editGesture || scrubbing.value) return;
+  if (document.querySelector('.n-modal[aria-modal="true"], .n-drawer[aria-modal="true"]')) return;
+  if (event.target instanceof Element && event.target.closest(
+    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'
+  )) return;
+  const key = event.key.toLowerCase();
+  const split = key === "b" && event.ctrlKey !== event.metaKey;
+  const trim = !event.ctrlKey && !event.metaKey && (key === "q" || key === "w");
+  if (!split && !trim) return;
+  event.preventDefault();
+  if (split) splitRange();
+  else trimRange(key === "q" ? "left" : "right");
+}
 function onUndoKeydown(event: KeyboardEvent) {
   if (
     event.defaultPrevented ||
@@ -617,6 +633,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", onPlaybackKeydown);
   window.removeEventListener("keydown", onFrameKeydown, true);
   window.removeEventListener("keydown", onUndoKeydown);
+  window.removeEventListener("keydown", onRangeShortcut);
   resizeObserver?.disconnect();
   stopTrackingFrames();
 });

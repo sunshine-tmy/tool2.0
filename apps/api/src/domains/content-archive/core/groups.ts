@@ -24,7 +24,7 @@ export class ArchiveGroupStore {
     if (!this.database.get(groupKind, id))
       throw new ArchiveTaskError("ARCHIVE_GROUP_NOT_FOUND", "分组不存在，请刷新后重选", 404);
   }
-  save(name: string, id?: string) {
+  save(name: string, id?: string, parentId?: string | null) {
     const normalized = name.trim();
     if (
       !normalized ||
@@ -36,7 +36,25 @@ export class ArchiveGroupStore {
       const groups = this.list();
       const current = id ? groups.find((entry) => entry.id === id) : undefined;
       if (id && !current) this.assertExists(id);
-      if (groups.some((entry) => entry.id !== id && entry.name.toLowerCase() === normalized.toLowerCase()))
+      const parent = parentId === undefined ? current?.parentId ?? null : parentId;
+      const descendants = new Set<string>();
+      const collect = (value: string) => {
+        if (descendants.has(value)) return;
+        descendants.add(value);
+        groups.filter((entry) => entry.parentId === value).forEach((entry) => collect(entry.id));
+      };
+      if (id) collect(id);
+      let depth = 0;
+      let cursor = parent;
+      while (cursor) {
+        if (descendants.has(cursor) || ++depth > 2) throw new ArchiveTaskError("ARCHIVE_GROUP_DEPTH", "分组最多三级，不能选择当前分组或其子分组", 400);
+        const found = groups.find((entry) => entry.id === cursor);
+        if (!found) throw new ArchiveTaskError("ARCHIVE_GROUP_NOT_FOUND", "上级分组不存在", 404);
+        cursor = found.parentId ?? null;
+      }
+      const subtreeDepth = (value: string): number => 1 + Math.max(0, ...groups.filter((entry) => entry.parentId === value).map((entry) => subtreeDepth(entry.id)));
+      if (depth + (id ? subtreeDepth(id) : 1) > 3) throw new ArchiveTaskError("ARCHIVE_GROUP_DEPTH", "分组最多支持三级", 400);
+      if (groups.some((entry) => entry.id !== id && (entry.parentId ?? null) === parent && entry.name.toLowerCase() === normalized.toLowerCase()))
         throw new ArchiveTaskError("ARCHIVE_GROUP_NAME_EXISTS", "已有同名分组", 409);
       if (!id && groups.length >= 200)
         throw new ArchiveTaskError("ARCHIVE_GROUP_LIMIT", "最多保留 200 个分组，请先整理现有分组", 409);
@@ -44,6 +62,7 @@ export class ArchiveGroupStore {
       const group: ArchiveGroup = {
         id: id ?? nanoid(12),
         name: normalized,
+        parentId: parent,
         createdAt: current?.createdAt ?? now,
         updatedAt: now
       };
@@ -96,10 +115,16 @@ export class ArchiveGroupStore {
   remove(id: string) {
     return this.database.transaction(() => {
       this.assertExists(id);
-      for (const entry of this.database.list(memberKind)) {
-        if (entry.status === id) this.database.remove(memberKind, entry.id);
+      const groups = this.list();
+      const removed = new Set<string>([id]);
+      for (let size = 0; size !== removed.size;) {
+        size = removed.size;
+        groups.forEach((group) => { if (group.parentId && removed.has(group.parentId)) removed.add(group.id); });
       }
-      this.database.remove(groupKind, id);
+      for (const entry of this.database.list(memberKind)) {
+        if (entry.status && removed.has(entry.status)) this.database.remove(memberKind, entry.id);
+      }
+      for (const groupId of removed) this.database.remove(groupKind, groupId);
     });
   }
 }

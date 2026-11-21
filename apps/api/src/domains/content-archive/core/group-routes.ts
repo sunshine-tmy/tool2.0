@@ -33,7 +33,7 @@ export function registerArchiveGroupRoutes(app: FastifyInstance, groups: Archive
     ok(groups.list())
   );
   for (const method of ["POST", "PATCH"] as const) {
-    app.route<{ Body: { name: string }; Params: { id: string } }>({
+    app.route<{ Body: { name: string; parentId?: string | null }; Params: { id: string } }>({
       method,
       url: method === "POST" ? base : `${base}/:id`,
       config: REQUEST_QUOTAS.lanUpload,
@@ -47,7 +47,7 @@ export function registerArchiveGroupRoutes(app: FastifyInstance, groups: Archive
         response: { 200: apiSuccessSchema(ArchiveGroupSchema), ...errors }
       },
       handler: async (request, reply) =>
-        handle(() => groups.save(request.body.name, method === "PATCH" ? request.params.id : undefined), reply)
+        handle(() => groups.save(request.body.name, method === "PATCH" ? request.params.id : undefined, request.body.parentId), reply)
     });
   }
   app.post<{ Body: ArchiveGroupAssignment }>(

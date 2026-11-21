@@ -120,7 +120,7 @@ export function rewriteRecord(row: StoredEntity, module: ModuleData, map: IdMapp
     if (module.id === "content-archive") {
       if (["archiveId", "archive_id", "currentItemId", "itemIds"].includes(key)) return m("xhs-archive", value);
       if (key === "itemId" && context !== "tiktok-work") return m("xhs-archive", value);
-      if (key === "groupId") return m("archive-group", value);
+      if (key === "groupId" || (row.kind === "archive-group" && key === "parentId")) return m("archive-group", value);
       if (key === "taskId") return m("archive-fetch-task", value);
       if (["batchId", "currentBatchId"].includes(key) || key === "batchIds") return m("archive-import-batch", value);
       if (key === "ownerProfileId") return m("tiktok-profile-job", value);

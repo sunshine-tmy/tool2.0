@@ -26,7 +26,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
       : "all"
   );
   const groupFilter = ref(
-    typeof restored.group === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(restored.group) ? restored.group : "all"
+    typeof restored.group === "string" && /^[A-Za-z0-9_,-]{1,26000}$/.test(restored.group) ? restored.group : "all"
   );
   const publicationFilter = ref<NonNullable<ContentArchiveListQuery["publication"]>>(
     restored.publication === "published" || restored.publication === "unpublished" ? restored.publication : "all"
@@ -71,7 +71,7 @@ export function useArchiveCollection(reportError: (error: unknown) => void, init
       type: typeFilter.value,
       platform: platformFilter.value,
       ...(publicationFilter.value !== "all" ? { publication: publicationFilter.value } : {}),
-      ...(groupFilter.value !== "all" ? { groupId: groupFilter.value } : {})
+      ...(groupFilter.value !== "all" ? { groupIds: groupFilter.value } : {})
     };
   }
   function invalidateList() {

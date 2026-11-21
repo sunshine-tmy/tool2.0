@@ -81,7 +81,8 @@ export const ContentArchiveListQuerySchema = Type.Composite(
           Type.Literal("archived-asc")
         ])
       ),
-      groupId: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("ungrouped"), ArchiveGroupIdSchema]))
+      groupId: Type.Optional(Type.Union([Type.Literal("all"), Type.Literal("ungrouped"), ArchiveGroupIdSchema])),
+      groupIds: Type.Optional(Type.String({ minLength: 1, maxLength: 26000, pattern: "^[A-Za-z0-9_,\\-]+$" }))
     })
   ],
   { additionalProperties: false }

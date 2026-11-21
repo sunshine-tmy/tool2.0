@@ -23,6 +23,7 @@
         @media-updated="emit('mediaUpdated', $event)"
         @edit-watermark="emit('editWatermark', $event)"
         @edit-audio="emit('editAudio', $event)"
+        @edit-cut="emit('editCut', $event)"
       />
       <div class="detail-meta">
         <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
@@ -106,6 +107,7 @@ const emit = defineEmits<{
   mediaUpdated: [item: ContentArchiveItem];
   editWatermark: [mediaId: string];
   editAudio: [mediaId: string];
+  editCut: [mediaId: string];
   copy: [text: string, label: string];
   setPublication: [id: string, publishedElsewhere: boolean];
   refreshPublication: [];

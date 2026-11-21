@@ -55,7 +55,8 @@
     </div>
     <div class="upload-group">
       <label>归档分组</label>
-      <n-select
+      <n-cascader
+        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups"
         v-model:value="groupId"
         :options="groupOptions"
         :disabled="running"
@@ -138,6 +139,8 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { NCascader } from "naive-ui";
+import { archiveGroupTree, groupMenuProps, filterArchiveGroups } from "./archive-group-tree";
 import { UploadCloud } from "lucide-vue-next";
 import { computed, markRaw, onScopeDispose, ref, watch } from "vue";
 import { onBeforeRouteLeave } from "vue-router";
@@ -179,8 +182,8 @@ const opened = ref(false),
   activeId = ref<number>(),
   fileInput = ref<HTMLInputElement>();
 const groupOptions = computed(() => {
-  const options = (props.groups ?? []).map((group) => ({ label: group.name, value: group.id, disabled: false }));
-  if (groupId.value && !options.some((option) => option.value === groupId.value))
+  const options = archiveGroupTree(props.groups ?? []);
+  if (groupId.value && !props.groups?.some((group) => group.id === groupId.value))
     options.push({ label: "所选分组已删除，请停止后重选", value: groupId.value, disabled: true });
   return options;
 });

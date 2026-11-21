@@ -1,8 +1,25 @@
+import path from "node:path";
+import { studioAudio, writeStudioSubtitles } from "./studio-render";
 /** 有界 FFmpeg 子进程：仅处理本地受控文件，音量/混音只由数值参数生成。 */
 import fs from "node:fs/promises";
 import { spawn } from "node:child_process";
-import type { ArchiveAudioSettings, ArchiveWatermarkSettings } from "@toolbox/shared";
-import { archiveWatermarkSize, watermarkTimingError } from "@toolbox/shared";
+import type {
+  ArchiveAudioSettings,
+  ArchiveWatermarkSettings,
+  ArchiveCutClip,
+  ArchiveFrame,
+  ArchiveStudio
+} from "@toolbox/shared";
+import {
+  archiveWatermarkSize,
+  watermarkTimingError,
+  archiveFrameGeometry,
+  archiveClipDuration,
+  archiveVisibleSubtitles,
+  archiveCutStarts,
+  archiveProjectDuration
+} from "@toolbox/shared";
+import { prepareClipEffects } from "./clip-effects";
 import { watermarkFilter } from "./watermark-filter";
 import { terminateChildProcess } from "../../../lifecycle/child-process";
 
@@ -16,7 +33,7 @@ export class VideoEditError extends Error {
   }
 }
 export type MediaTools = { ffmpeg: string; ffprobe: string };
-type Probe = { duration: number; codec: string; hasAudio: boolean; width: number; height: number };
+type Probe = { duration: number; codec: string; hasAudio: boolean; width: number; height: number; fps?: number };
 const inputOptions = [
   "-protocol_whitelist",
   "file,pipe",
@@ -27,11 +44,23 @@ export async function runMediaProcess(
   executable: string,
   args: string[],
   signal: AbortSignal,
-  options: { timeoutMs?: number; onOutput?: (chunk: string) => void; output?: string; maxBytes?: number } = {}
+  options: {
+    cwd?: string;
+    onDiagnostic?: (chunk: string) => void;
+    timeoutMs?: number;
+    onOutput?: (chunk: string) => void;
+    output?: string;
+    maxBytes?: number;
+  } = {}
 ) {
   signal.throwIfAborted();
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(executable, args, { windowsHide: true, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(executable, args, {
+      windowsHide: true,
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      cwd: options.cwd
+    });
     let stdout = "",
       failure: Error | undefined,
       checking = false;
@@ -78,7 +107,14 @@ export async function runMediaProcess(
       if (stdout.length > 1024 * 1024) stop(new VideoEditError("ARCHIVE_EDIT_PROCESS_OUTPUT", "媒体信息超出处理上限"));
     });
     // 排空诊断流，不把本机路径或不受信任的媒体文本作为 API 错误直接返回。
-    child.stderr.resume();
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (failure) return;
+      try {
+        options.onDiagnostic?.(chunk.toString());
+      } catch (error) {
+        stop(error instanceof Error ? error : new Error("MEDIA_DIAGNOSTIC_FAILED"));
+      }
+    });
     child.once("error", () => {
       failure ??= new VideoEditError(
         "ARCHIVE_EDIT_RUNTIME_UNAVAILABLE",
@@ -120,7 +156,7 @@ export async function probeMedia(
       "error",
       ...inputOptions,
       "-show_entries",
-      "stream=codec_type,codec_name,width,height,duration,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration",
+      "stream=codec_type,codec_name,width,height,duration,avg_frame_rate,r_frame_rate,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation:format=duration",
       "-of",
       "json",
       file
@@ -135,6 +171,8 @@ export async function probeMedia(
       width?: number;
       height?: number;
       duration?: string;
+      avg_frame_rate?: string;
+      r_frame_rate?: string;
       sample_aspect_ratio?: string;
       tags?: { rotate?: string };
       side_data_list?: Array<{ rotation?: number }>;
@@ -159,8 +197,16 @@ export async function probeMedia(
   const sar = num > 0 && den > 0 ? num / den : 1;
   const rotated = Math.abs(rotation % 180) === 90;
   const displayWidth = (video?.width ?? 0) * sar;
+  const fps =
+    [video?.avg_frame_rate, video?.r_frame_rate]
+      .map((rate) => {
+        const [num, den] = (rate ?? "0/0").split("/").map(Number);
+        return num > 0 && den > 0 ? num / den : 0;
+      })
+      .find((rate) => Number.isFinite(rate) && rate > 0) ?? 30;
   return {
     duration,
+    fps,
     codec: video?.codec_name ?? "",
     hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === "audio")),
     width: displayDimensions ? Math.round(rotated ? (video?.height ?? 0) : displayWidth) : (video?.width ?? 0),
@@ -168,9 +214,15 @@ export async function probeMedia(
   };
 }
 
-export function audioMixFilter(settings: ArchiveAudioSettings, duration: number, hasAudio: boolean, hasMusic: boolean) {
+export function audioMixFilter(
+  settings: ArchiveAudioSettings,
+  duration: number,
+  hasAudio: boolean,
+  hasMusic: boolean,
+  audioSource = "0:a:0"
+) {
   const original = hasAudio
-    ? `[0:a:0]aresample=48000:async=1:first_pts=0,volume=${settings.originalVolume / 100},apad,atrim=duration=${duration}[original]`
+    ? `[${audioSource}]aresample=48000:async=1:first_pts=0,volume=${settings.originalVolume / 100},apad,atrim=duration=${duration}[original]`
     : `anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=${duration}[original]`;
   if (!hasMusic) return `${original};[original]alimiter=limit=0.95:level=0:latency=1[mix]`;
   const fadeIn = Math.min(settings.fadeInSeconds, duration / 2),
@@ -183,6 +235,12 @@ export type RenderVideoOptions = {
   tools: MediaTools;
   source: string;
   music?: string;
+  cut?: ArchiveCutClip[];
+  layoutClips?: ArchiveCutClip[];
+  frame?: ArchiveFrame;
+  studio?: ArchiveStudio;
+  clipSources?: Record<string, string>;
+  trackFiles?: Record<string, string>;
   watermark?: { file: string; width: number; height: number; settings: ArchiveWatermarkSettings };
   output: string;
   settings: ArchiveAudioSettings;
@@ -194,8 +252,141 @@ export type RenderVideoOptions = {
   onProgress: (value: number) => void;
 };
 export async function renderArchiveVideo(options: RenderVideoOptions) {
-  const source = await probeMedia(options.tools, options.source, options.signal, true, Boolean(options.watermark));
-  const args = ["-hide_banner", "-v", "error", "-nostdin", "-y", ...inputOptions, "-i", options.source];
+  // 已有未显式裁剪的视频在字幕/配乐延伸时同样需要黑屏尾段。
+  if (!options.cut && options.studio && [...options.studio.subtitles, ...options.studio.musicTracks].length) {
+    const info = await probeMedia(options.tools, options.source, options.signal);
+    if (archiveProjectDuration([], options.studio) > info.duration)
+      options = { ...options, cut: [{ id: "original", start: 0, end: info.duration, at: 0, lane: 1 }] };
+  }
+  if (
+    options.cut &&
+    options.studio &&
+    archiveProjectDuration([], options.studio) > archiveProjectDuration(options.cut)
+  ) {
+    const starts = archiveCutStarts(options.cut);
+    options = { ...options, cut: options.cut.map((clip, i) => ({ ...clip, at: clip.at ?? starts[i] })) };
+  }
+  const layoutClips = options.cut;
+  // 连续的单轨排列仍走顺序管线，避免为普通剪辑增加中间文件。
+  if (options.cut?.some((clip) => clip.at !== undefined)) {
+    const sequential = options.cut.map(({ at: _at, ...clip }) => clip),
+      positions = archiveCutStarts(sequential);
+    if (
+      options.cut.every(
+        (clip, i) =>
+          (clip.lane ?? 1) === (options.cut![0].lane ?? 1) && Math.abs((clip.at ?? positions[i]) - positions[i]) < 1e-6
+      ) &&
+      archiveProjectDuration(options.cut, options.studio) <= archiveProjectDuration(sequential) + 1e-6
+    )
+      options = { ...options, cut: sequential, layoutClips };
+  }
+  const enhanced = options.cut?.some(
+    (clip) =>
+      (clip.speed ?? 1) !== 1 ||
+      (clip.volume ?? 100) !== 100 ||
+      clip.fadeIn ||
+      clip.fadeOut ||
+      clip.sourceId ||
+      clip.transition ||
+      clip.at !== undefined
+  );
+  if (!enhanced) return renderVideoCore(options);
+  const prepared = await prepareClipEffects(options);
+  try {
+    if (options.maxBytes - prepared.occupied < 1024 * 1024)
+      throw new VideoEditError("ARCHIVE_EDIT_DISK_FULL", "剩余空间不足以保存视频成品，原成品保留", 507);
+    return await renderVideoCore(
+      {
+        ...options,
+        cut: undefined,
+        layoutClips: options.layoutClips ?? options.cut,
+        maxBytes: options.maxBytes - prepared.occupied,
+        onProgress: (progress) => options.onProgress(60 + progress * 0.35)
+      },
+      prepared
+    );
+  } finally {
+    await fs.rm(prepared.directory, { recursive: true, force: true });
+  }
+}
+async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<ReturnType<typeof prepareClipEffects>>) {
+  const source = prepared
+    ? { ...prepared.info, duration: prepared.duration, hasAudio: true, codec: "ffv1" }
+    : await probeMedia(
+        options.tools,
+        options.source,
+        options.signal,
+        true,
+        Boolean(options.watermark || options.frame || options.studio)
+      );
+  const args = ["-hide_banner", "-v", "error", "-nostdin", "-y"];
+  const cut = options.cut;
+  let outputDuration = source.duration;
+  const filters: string[] = [];
+  if (prepared) {
+    args.push(
+      "-copyts",
+      "-protocol_whitelist",
+      "file,pipe",
+      "-f",
+      "concat",
+      "-safe",
+      "1",
+      "-segment_time_metadata",
+      "1",
+      "-i",
+      prepared.list
+    );
+    filters.push(
+      "[0:v:0]select=concatdec_select,setpts=PTS-STARTPTS[preparedvideo]",
+      "[0:a:0]aselect=concatdec_select,asetpts=PTS-STARTPTS[preparedaudio]"
+    );
+  } else if (cut) {
+    if (
+      !cut.length ||
+      cut.some(
+        (clip) =>
+          !Number.isFinite(clip.start) ||
+          !Number.isFinite(clip.end) ||
+          clip.start < 0 ||
+          clip.end <= clip.start ||
+          clip.end > source.duration + 0.001
+      )
+    )
+      throw new VideoEditError("ARCHIVE_CUT_RANGE_INVALID", "剪辑片段超出原片范围或时长无效");
+    outputDuration = cut.reduce((sum, clip) => sum + archiveClipDuration(clip), 0);
+    if (outputDuration > 7200) throw new VideoEditError("ARCHIVE_CUT_TOO_LONG", "剪辑后视频最长支持 2 小时");
+    // 顺序解复用并筛掉关键帧预读，避免乱序片段 split/concat 缓存大量解码帧。
+    // https://ffmpeg.org/ffmpeg-filters.html#select_002c-aselect
+    const escapedSource = options.source.replaceAll("\\", "/").replaceAll("'", "'\\''");
+    const lines = [
+      "ffconcat version 1.0",
+      ...cut.flatMap((clip) => [
+        `file '${escapedSource}'`,
+        `inpoint ${clip.start}`,
+        `outpoint ${clip.end}`,
+        `duration ${clip.end - clip.start}`
+      ])
+    ];
+    await fs.writeFile(`${options.output}.ffconcat`, lines.join("\n"), "utf8");
+    args.push(
+      "-copyts",
+      "-protocol_whitelist",
+      "file,pipe",
+      "-format_whitelist",
+      "concat,mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,avi",
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-segment_time_metadata",
+      "1",
+      "-i",
+      `${options.output}.ffconcat`
+    );
+    filters.push("[0:v:0]select=concatdec_select,setpts=PTS-STARTPTS[cutvideo]");
+    if (source.hasAudio) filters.push("[0:a:0]aselect=concatdec_select,asetpts=PTS-STARTPTS[cutaudio]");
+  } else args.push(...inputOptions, "-i", options.source);
   if (options.music) {
     const music = await probeMedia(options.tools, options.music, options.signal, false);
     if (!music.hasAudio || options.settings.musicStartSeconds >= music.duration)
@@ -203,14 +394,52 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
     if (options.settings.loop) args.push("-stream_loop", "-1");
     args.push("-ss", String(options.settings.musicStartSeconds), ...inputOptions, "-i", options.music);
   }
-  const filters = [audioMixFilter(options.settings, source.duration, source.hasAudio, Boolean(options.music))];
+  filters.push(
+    audioMixFilter(
+      options.settings,
+      outputDuration,
+      source.hasAudio,
+      Boolean(options.music),
+      prepared ? "preparedaudio" : cut ? "cutaudio" : "0:a:0"
+    )
+  );
+  let videoLabel = prepared ? "preparedvideo" : cut ? "cutvideo" : "0:v:0";
+  let geometry = { width: source.width, height: source.height };
+  if (options.frame) {
+    const frame = options.frame;
+    const size = archiveFrameGeometry(source.width, source.height, frame);
+    const transforms = [
+      `scale=${Math.max(2, Math.floor(source.width / 2) * 2)}:${Math.max(2, Math.floor(source.height / 2) * 2)}`,
+      "setsar=1"
+    ];
+    if (frame.rotation === 90) transforms.push("transpose=clock");
+    else if (frame.rotation === 180) transforms.push("hflip", "vflip");
+    else if (frame.rotation === 270) transforms.push("transpose=cclock");
+    if (frame.flipX) transforms.push("hflip");
+    if (frame.flipY) transforms.push("vflip");
+    transforms.push(`crop=${size.width}:${size.height}:${size.x}:${size.y}`);
+    filters.push(`[${videoLabel}]${transforms.join(",")}[framed]`);
+    videoLabel = "framed";
+    geometry = size;
+  }
+  let subtitleFile: string | undefined;
+  if (options.studio?.subtitles.length) {
+    subtitleFile = `${options.output}.ass`;
+    const visible = archiveVisibleSubtitles(
+      options.studio.subtitles,
+      options.layoutClips ?? options.cut ?? [{ id: "original", start: 0, end: source.duration, at: 0, lane: 1 }]
+    );
+    const name = await writeStudioSubtitles(subtitleFile, visible, geometry.width, geometry.height);
+    filters.push(`[${videoLabel}]subtitles=filename='${name}'[subtitled]`);
+    videoLabel = "subtitled";
+  }
   if (options.watermark) {
-    const error = watermarkTimingError(options.watermark.settings, source.duration);
+    const error = watermarkTimingError(options.watermark.settings, outputDuration);
     if (error) throw new VideoEditError("ARCHIVE_WATERMARK_TIME_INVALID", error);
     if (source.width < 2 || source.height < 2)
       throw new VideoEditError("ARCHIVE_EDIT_MEDIA_INVALID", "无法确定视频画面尺寸", 415);
-    const width = Math.max(2, Math.floor(source.width / 2) * 2),
-      height = Math.max(2, Math.floor(source.height / 2) * 2);
+    const width = Math.max(2, Math.floor(geometry.width / 2) * 2),
+      height = Math.max(2, Math.floor(geometry.height / 2) * 2);
     const size = archiveWatermarkSize(options.watermark.settings, options.watermark, { width, height });
     args.push(
       "-protocol_whitelist",
@@ -229,26 +458,45 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
       options.watermark.file
     );
     filters.push(
-      `[0:v:0]scale=${width}:${height},setsar=1,setpts=PTS-STARTPTS[base]`,
+      `[${videoLabel}]scale=${width}:${height},setsar=1,setpts=PTS-STARTPTS[base]`,
       watermarkFilter(options.watermark.settings, options.music ? 2 : 1, size.width, size.height)
     );
   }
+  const audioLabel = await studioAudio(
+    options,
+    args,
+    filters,
+    outputDuration,
+    1 + (options.music ? 1 : 0) + (options.watermark ? 1 : 0)
+  );
   const shortPreview = options.preview && !options.previewFullLength;
-  const start = shortPreview ? Math.min(options.previewStartSeconds ?? 0, Math.max(0, source.duration - 0.1)) : 0;
-  const duration = shortPreview ? Math.min(15, source.duration - start) : source.duration;
+  const start = shortPreview ? Math.min(options.previewStartSeconds ?? 0, Math.max(0, outputDuration - 0.1)) : 0;
+  const duration = shortPreview ? Math.min(15, outputDuration - start) : outputDuration;
+  const filterScript = `${options.output}.filters.txt`;
+  await fs.writeFile(filterScript, filters.join(";"), "utf8");
   args.push(
-    "-filter_complex",
-    filters.join(";"),
+    "-filter_complex_script",
+    filterScript,
     "-map",
-    options.watermark ? "[watermarked]" : "0:v:0",
+    options.watermark ? "[watermarked]" : videoLabel === "0:v:0" ? videoLabel : `[${videoLabel}]`,
     "-map",
-    "[mix]",
+    audioLabel,
     "-map_metadata",
     "0"
   );
-  if (!options.watermark && !shortPreview && ["h264", "hevc"].includes(source.codec)) args.push("-c:v", "copy");
+  if (
+    !prepared &&
+    !options.studio?.subtitles.length &&
+    !options.frame &&
+    !cut &&
+    !options.watermark &&
+    !shortPreview &&
+    ["h264", "hevc"].includes(source.codec)
+  )
+    args.push("-c:v", "copy");
   else args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p");
-  if (options.watermark) args.push("-metadata:s:v:0", "rotate=0");
+  if (options.watermark || options.frame || cut || prepared) args.push("-metadata:s:v:0", "rotate=0");
+  if (cut) args.push("-fps_mode", "vfr");
   if (start) args.push("-ss", String(start));
   args.push(
     "-t",
@@ -268,15 +516,22 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
     "-nostats",
     options.output
   );
-  await runMediaProcess(options.tools.ffmpeg, args, options.signal, {
-    output: options.output,
-    maxBytes: options.maxBytes,
-    onOutput: (chunk) => {
-      const match = /out_time_us=(\d+)/g;
-      for (const entry of chunk.matchAll(match))
-        options.onProgress(Math.min(95, (Number(entry[1]) / (duration * 1_000_000)) * 95));
-    }
-  });
+  try {
+    await runMediaProcess(options.tools.ffmpeg, args, options.signal, {
+      cwd: path.dirname(options.output),
+      output: options.output,
+      maxBytes: options.maxBytes,
+      onOutput: (chunk) => {
+        const match = /out_time_us=(\d+)/g;
+        for (const entry of chunk.matchAll(match))
+          options.onProgress(Math.min(95, (Number(entry[1]) / (duration * 1_000_000)) * 95));
+      }
+    });
+  } finally {
+    await fs.rm(filterScript, { force: true });
+    if (subtitleFile) await fs.rm(subtitleFile, { force: true });
+    if (cut) await fs.rm(`${options.output}.ffconcat`, { force: true });
+  }
   const rendered = await probeMedia(options.tools, options.output, options.signal);
   if (!rendered.hasAudio || Math.abs(rendered.duration - duration) > Math.max(0.25, Math.min(0.5, duration * 0.002)))
     throw new VideoEditError("ARCHIVE_EDIT_OUTPUT_INVALID", "生成结果时长或音轨校验失败，原成品已保留", 415);

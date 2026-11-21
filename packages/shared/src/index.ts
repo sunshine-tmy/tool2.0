@@ -51,3 +51,5 @@ export type {
   ShutdownInspection,
   ShutdownPreparation
 } from "./desktop/types";
+
+export * from "./archive/video-studio";

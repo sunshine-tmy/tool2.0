@@ -90,6 +90,7 @@
         @media-updated="onMediaUpdated"
         @edit-watermark="openVideoEditor(current, $event)"
         @edit-audio="openVideoEditor(current, $event, 'audio')"
+        @edit-cut="openVideoEditor(current, $event, 'cut')"
         @copy="copyContent"
       />
       <ArchiveListPanel
@@ -150,6 +151,7 @@
         @media-updated="onMediaUpdated"
         @edit-watermark="detail && openVideoEditor(detail, $event)"
         @edit-audio="detail && openVideoEditor(detail, $event, 'audio')"
+        @edit-cut="detail && openVideoEditor(detail, $event, 'cut')"
         @copy="copyContent"
         @set-publication="setPublication"
         @refresh-publication="loadDetailPublication"
@@ -279,7 +281,11 @@ async function localVideosFinished(item: ContentArchiveItem | undefined) {
   await loadArchives();
 }
 let videoEditorOpening = false;
-async function openVideoEditor(item: ContentArchiveItem, mediaId: string, panel: "audio" | "watermark" = "watermark") {
+async function openVideoEditor(
+  item: ContentArchiveItem,
+  mediaId: string,
+  panel: "audio" | "watermark" | "cut" = "watermark"
+) {
   if (videoEditorOpening) return;
   videoEditorOpening = true;
   const query = new URLSearchParams({

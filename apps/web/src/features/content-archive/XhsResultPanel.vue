@@ -57,6 +57,7 @@
         @media-updated="emit('mediaUpdated', $event)"
         @edit-watermark="emit('editWatermark', $event)"
         @edit-audio="emit('editAudio', $event)"
+        @edit-cut="emit('editCut', $event)"
       />
       <div class="drawer-meta result-meta">
         <ArchiveFacts :item="props.current" :format-date="props.formatDate" />
@@ -97,6 +98,7 @@ const emit = defineEmits<{
   mediaUpdated: [item: ContentArchiveItem];
   editWatermark: [mediaId: string];
   editAudio: [mediaId: string];
+  editCut: [mediaId: string];
   copy: [text: string, label: string];
 }>();
 </script>

@@ -3,7 +3,7 @@
     <section class="archive-video-editor-page v2-tool-page">
       <ToolPageHeader
         title="归档视频编辑"
-        description="调整配乐与水印，保存为当前归档的最新版本。"
+        description="粗剪、配乐与水印，保存为当前归档的最新版本。"
         kicker="VIDEO EDITOR"
       />
       <n-alert v-if="error" type="error">{{ error }}<n-button @click="load">重试</n-button></n-alert>
@@ -39,7 +39,9 @@ import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 const route = useRoute(),
   router = useRouter();
 const mediaId = computed(() => String(route.params.mediaId));
-const initialPanel = computed(() => (route.query.panel === "audio" ? "audio" : "watermark"));
+const initialPanel = computed(() =>
+  route.query.panel === "cut" ? "cut" : route.query.panel === "audio" ? "audio" : "watermark"
+);
 const item = ref<ContentArchiveItem>(),
   error = ref(""),
   editor = ref<InstanceType<typeof ArchiveAudioEditor>>();

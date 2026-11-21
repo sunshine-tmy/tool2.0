@@ -1,3 +1,4 @@
+import { ArchiveCutAnalysis } from "./analysis";
 import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
@@ -6,6 +7,11 @@ import { nanoid } from "nanoid";
 import { Value } from "@sinclair/typebox/value";
 import {
   ArchiveVideoEditJobSchema,
+  type ArchiveStudioSource,
+  type ArchiveStudio,
+  ArchiveCutDraftSchema,
+  type ArchiveCutDraft,
+  archiveProjectDuration,
   ArchiveVideoEditInputSchema,
   watermarkTimingError,
   defaultArchiveAudioSettings,
@@ -20,7 +26,7 @@ import type { TaskStore, Task } from "../../../tasks/task-store";
 import { ContentArchiveStore, ContentArchiveStoreError } from "../core/store";
 import { mediaFile } from "../core/media-assets";
 import { renderSlideshow } from "./slideshow";
-import { renderArchiveVideo, VideoEditError, type MediaTools, type RenderVideoOptions } from "./renderer";
+import { renderArchiveVideo, probeMedia, VideoEditError, type MediaTools, type RenderVideoOptions } from "./renderer";
 import { ArchiveWatermarkDrafts } from "./watermark-drafts";
 import { ArchiveWatermarkPresets } from "./watermark-presets";
 import { ArchiveWatermarkLibrary } from "./watermark-library";
@@ -38,6 +44,7 @@ type Work = {
   watermark?: WatermarkLease;
 };
 export class ArchiveVideoEditService {
+  readonly analysis: ArchiveCutAnalysis;
   readonly watermarks: ArchiveWatermarkDrafts;
   readonly watermarkPresets: ArchiveWatermarkPresets;
   readonly watermarkLibrary: ArchiveWatermarkLibrary;
@@ -61,6 +68,7 @@ export class ArchiveVideoEditService {
       onError?: (error: unknown) => void;
     }
   ) {
+    this.analysis = new ArchiveCutAnalysis(options.tools);
     this.watermarks = new ArchiveWatermarkDrafts(options.config.xhsArchiveStagingDir);
     this.watermarkPresets = new ArchiveWatermarkPresets(options.database);
     this.watermarkLibrary = new ArchiveWatermarkLibrary(
@@ -69,6 +77,88 @@ export class ArchiveVideoEditService {
       options.config.storageRoot,
       options.onError
     );
+  }
+  async cutSource(itemId: string, mediaId: string) {
+    const value = await this.options.store.mediaPath(itemId, mediaId);
+    if (!value || !["video", "live-photo"].includes(value.media.kind))
+      throw new VideoEditError("ARCHIVE_EDIT_VIDEO_REQUIRED", "归档视频不存在", 404);
+    const original = value.media.audioEdit?.original ?? value.media;
+    const file = localFile(path.dirname(value.filePath), original.fileName);
+    const release = this.options.store.pinMedia(file);
+    try {
+      const info = await probeMedia(await this.options.tools(), file, new AbortController().signal, true, true);
+      const draft = this.options.database.get("archive-cut-draft", `${itemId}:${mediaId}`)?.payload;
+      return {
+        width: info.width,
+        height: info.height,
+        duration: info.duration,
+        fps: info.fps ?? 30,
+        checksum: original.checksum,
+        ...(Value.Check(ArchiveCutDraftSchema, draft) &&
+        draft.checksum === value.media.checksum &&
+        draft.revision === (value.media.audioEdit?.revision ?? 0)
+          ? { draft }
+          : {})
+      };
+    } finally {
+      release();
+    }
+  }
+  async pinStudioSource(itemId: string, mediaId: string, source?: ArchiveStudioSource) {
+    const current = await this.options.store.mediaPath(itemId, mediaId);
+    if (!current) throw new VideoEditError("ARCHIVE_MEDIA_NOT_FOUND", "归档视频不存在", 404);
+    const saved = source
+      ? current.media.audioEdit?.studioSources?.find(
+          (entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum
+        )
+      : undefined;
+    if (saved) {
+      const file = localFile(path.dirname(current.filePath), saved.file.fileName);
+      return { file, mimeType: saved.file.mimeType, release: this.options.store.pinMedia(file) };
+    }
+    const target = source ? await this.options.store.mediaPath(source.itemId, source.mediaId) : current;
+    if (!target || !["video", "live-photo"].includes(target.media.kind))
+      throw new VideoEditError("ARCHIVE_SOURCE_MISSING", "拼接来源视频不存在", 404);
+    const original = target.media.audioEdit?.original ?? target.media;
+    if (source && source.checksum !== original.checksum)
+      throw new VideoEditError("ARCHIVE_SOURCE_CHANGED", "拼接来源视频已变化，请重新选择", 409);
+    const file = localFile(path.dirname(target.filePath), original.fileName);
+    return { file, mimeType: original.mimeType, release: this.options.store.pinMedia(file) };
+  }
+  async studioSourcePath(itemId: string, mediaId: string, sourceId: string) {
+    const current = await this.options.store.mediaPath(itemId, mediaId);
+    const saved = current?.media.audioEdit?.studioSources?.find((entry) => entry.sourceId === sourceId);
+    if (!current || !saved) throw new VideoEditError("ARCHIVE_SOURCE_MISSING", "拼接素材快照不存在", 404);
+    const file = localFile(path.dirname(current.filePath), saved.file.fileName);
+    return { file, asset: saved.file, release: this.options.store.pinMedia(file) };
+  }
+  async saveCutDraft(itemId: string, mediaId: string, input: ArchiveCutDraft) {
+    const value = await this.options.store.mediaPath(itemId, mediaId);
+    if (!value || !["video", "live-photo"].includes(value.media.kind))
+      throw new VideoEditError("ARCHIVE_EDIT_VIDEO_REQUIRED", "归档视频不存在", 404);
+    if (input.checksum !== value.media.checksum || input.revision !== (value.media.audioEdit?.revision ?? 0))
+      throw new VideoEditError("ARCHIVE_EDIT_CONFLICT", "视频已更新，请重新打开编辑器", 409);
+    if (
+      input.clips.some((clip) => clip.end <= clip.start) ||
+      archiveProjectDuration(input.clips, input.studio) > 7200 ||
+      new Set(
+        [...input.clips, ...(input.studio?.subtitles ?? []), ...(input.studio?.musicTracks ?? [])].map(
+          (entry) => entry.id
+        )
+      ).size !==
+        input.clips.length + (input.studio?.subtitles.length ?? 0) + (input.studio?.musicTracks.length ?? 0)
+    )
+      throw new VideoEditError("ARCHIVE_CUT_RANGE_INVALID", "剪辑片段无效");
+    const now = new Date().toISOString();
+    this.options.database.upsert({
+      id: `${itemId}:${mediaId}`,
+      kind: "archive-cut-draft",
+      status: itemId,
+      payload: structuredClone(input),
+      createdAt: now,
+      updatedAt: now
+    });
+    return input;
   }
   async selectLibraryWatermark(itemId: string, mediaId: string, id: string) {
     const { bytes } = await this.watermarkLibrary.read(id);
@@ -167,10 +257,30 @@ export class ArchiveVideoEditService {
     if ((current.media.audioEdit?.revision ?? 0) !== input.revision || current.media.checksum !== input.checksum)
       throw new VideoEditError("ARCHIVE_EDIT_CONFLICT", "视频已更新，请重新打开编辑器", 409);
     if (input.mode !== "restore") await this.options.tools();
-    if (input.mode !== "restore" && input.watermark && current.media.durationMs) {
-      const error = watermarkTimingError(input.watermark.settings, current.media.durationMs / 1000);
+    const studio = input.studio === null ? undefined : (input.studio ?? current.media.audioEdit?.studio);
+    const cut = input.cut === null ? undefined : (input.cut ?? current.media.audioEdit?.cut);
+    const originalDuration = (current.media.audioEdit?.originalDurationMs ?? current.media.durationMs ?? 0) / 1000;
+    const projectDuration = archiveProjectDuration(
+      cut ?? [{ id: "original", start: 0, end: originalDuration }],
+      studio
+    );
+    if (input.mode !== "restore" && projectDuration > 7200)
+      throw new VideoEditError("ARCHIVE_CUT_TOO_LONG", "剪辑后视频最长支持 2 小时");
+    if (input.mode !== "restore" && input.watermark && projectDuration > 0) {
+      const error = watermarkTimingError(input.watermark.settings, projectDuration);
       if (error) throw new VideoEditError("ARCHIVE_WATERMARK_TIME_INVALID", error);
     }
+    if (cut?.some((clip) => clip.sourceId && !studio?.sources.some((source) => source.id === clip.sourceId)))
+      throw new VideoEditError("ARCHIVE_SOURCE_MISSING", "部分片段没有有效来源视频");
+    const elements = [...(cut ?? []), ...(studio?.subtitles ?? []), ...(studio?.musicTracks ?? [])];
+    if (
+      new Set(elements.map((entry) => entry.id)).size !== elements.length ||
+      (studio &&
+        (new Set(studio.sources.map((entry) => entry.id)).size !== studio.sources.length ||
+          studio.subtitles.some((cue) => cue.end <= cue.start) ||
+          studio.musicTracks.some((track) => track.end <= track.start)))
+    )
+      throw new VideoEditError("ARCHIVE_STUDIO_INVALID", "片段、字幕、配乐或来源素材设置无效");
     const watermark =
       input.mode !== "restore" && input.watermark?.draftId
         ? await this.watermarks.acquire(itemId, mediaId, input.watermark.draftId)
@@ -222,6 +332,7 @@ export class ArchiveVideoEditService {
   }
   async close() {
     this.stopped = true;
+    await this.analysis.close();
     clearInterval(this.cleanupTimer);
     for (const work of this.queue.splice(0)) {
       work.watermark?.release();
@@ -397,8 +508,89 @@ export class ArchiveVideoEditService {
           selected.release();
         }
       }
+      const cut =
+        input.mode === "restore" || input.cut === null ? undefined : (input.cut ?? lease.media.audioEdit?.cut);
+      let originalDurationMs = lease.media.audioEdit?.originalDurationMs ?? lease.media.durationMs;
+      let originalWidth = lease.media.audioEdit?.originalWidth ?? lease.media.width;
+      let originalHeight = lease.media.audioEdit?.originalHeight ?? lease.media.height;
+      const frame =
+        input.mode === "restore" || input.frame === null ? undefined : (input.frame ?? lease.media.audioEdit?.frame);
+      const studio =
+        input.mode === "restore" || input.studio === null ? undefined : (input.studio ?? lease.media.audioEdit?.studio);
+      const studioSources: NonNullable<NonNullable<typeof lease.media.audioEdit>["studioSources"]> = [];
+      const studioMusic: NonNullable<NonNullable<typeof lease.media.audioEdit>["studioMusic"]> = [];
+      const clipSources: Record<string, string> = {},
+        trackFiles: Record<string, string> = {};
+      let snapshotBytes = 0;
+      const snapshotSpace = await fs.statfs(directory);
+      const snapshotBudget = Math.min(
+        Number(snapshotSpace.bavail) * Number(snapshotSpace.bsize) - 64 * 1024 * 1024,
+        config.xhsArchiveMaxStorageBytes
+      );
+      const reserveSnapshot = async (file: string) => {
+        snapshotBytes += (await fs.stat(file)).size;
+        if (snapshotBytes > snapshotBudget)
+          throw new VideoEditError("ARCHIVE_EDIT_DISK_FULL", "拼接素材或配乐快照超过可用空间，原成品保留", 507);
+      };
+      if (studio) {
+        for (const source of studio.sources) {
+          const pinned = await this.pinStudioSource(job.itemId, job.mediaId, source);
+          try {
+            const old = lease.media.audioEdit?.studioSources?.find(
+              (entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum
+            );
+            const name = old?.file.fileName ?? `source-${nanoid(12)}${path.extname(pinned.file)}`;
+            await reserveSnapshot(pinned.file);
+            await fs.copyFile(pinned.file, localFile(directory, name));
+            const file = await inspectEditFile(localFile(directory, name), old?.file.mimeType ?? pinned.mimeType);
+            if (file.checksum !== source.checksum)
+              throw new VideoEditError("ARCHIVE_SOURCE_CHANGED", "拼接来源视频发生变化", 409);
+            studioSources.push({ sourceId: source.id, ref: structuredClone(source), file });
+            clipSources[source.id] = localFile(directory, name);
+            if (!old) addedFiles.push(name);
+          } finally {
+            pinned.release();
+          }
+        }
+        for (const track of studio.musicTracks) {
+          const old = lease.media.audioEdit?.studioMusic?.find(
+            (entry) => entry.libraryItemId === track.libraryItemId && entry.libraryRevision === track.libraryRevision
+          );
+          if (old) {
+            await reserveSnapshot(localFile(lease.directory, old.file.fileName));
+            await fs.copyFile(localFile(lease.directory, old.file.fileName), localFile(directory, old.file.fileName));
+            studioMusic.push({ ...structuredClone(old), trackId: track.id });
+            trackFiles[track.id] = localFile(directory, old.file.fileName);
+          } else {
+            const chosen = await this.options.music.acquire(track.libraryItemId, track.libraryRevision);
+            try {
+              const name = `track-${nanoid(12)}${path.extname(chosen.item.fileName)}`;
+              await reserveSnapshot(chosen.file);
+              await fs.copyFile(chosen.file, localFile(directory, name));
+              const file = await inspectEditFile(localFile(directory, name), chosen.item.mimeType);
+              if (file.checksum !== chosen.item.sha256)
+                throw new VideoEditError("ARCHIVE_EDIT_MUSIC_CHANGED", "配乐素材发生变化", 409);
+              studioMusic.push({
+                trackId: track.id,
+                libraryItemId: track.libraryItemId,
+                libraryRevision: track.libraryRevision,
+                file
+              });
+              trackFiles[track.id] = localFile(directory, name);
+              addedFiles.push(name);
+            } finally {
+              chosen.release();
+            }
+          }
+        }
+      }
       const nextMedia = structuredClone(lease.media);
-      if (input.mode === "restore") Object.assign(nextMedia, original);
+      if (input.mode === "restore")
+        Object.assign(nextMedia, original, {
+          durationMs: originalDurationMs,
+          width: originalWidth,
+          height: originalHeight
+        });
       else {
         const tools = await this.options.tools();
         const free = await fs.statfs(directory);
@@ -440,11 +632,22 @@ export class ArchiveVideoEditService {
           nextMedia.previewUrl = mediaUrl;
           nextMedia.downloadUrl = `${mediaUrl}?download=1`;
         }
+        if (frame) {
+          const originalInfo = await probeMedia(tools, originalPath, controller.signal, true, true);
+          originalDurationMs = originalInfo.duration * 1000;
+          originalWidth = originalInfo.width;
+          originalHeight = originalInfo.height;
+        }
         const fileName = input.mode === "preview" ? "preview.mp4" : `edited-${nanoid(12)}.mp4`;
         let lastProgress = 0;
         const result = await (this.options.render ?? renderArchiveVideo)({
           tools,
           source: originalPath,
+          cut,
+          frame,
+          studio,
+          clipSources,
+          trackFiles,
           music: music ? localFile(directory, music.fileName) : undefined,
           output: localFile(directory, fileName),
           settings: input.settings,
@@ -500,6 +703,12 @@ export class ArchiveVideoEditService {
       nextMedia.audioEdit = {
         revision: input.revision + 1,
         original: structuredClone(original),
+        ...(originalDurationMs ? { originalDurationMs } : {}),
+        ...(originalWidth ? { originalWidth } : {}),
+        ...(originalHeight ? { originalHeight } : {}),
+        ...(frame ? { frame: structuredClone(frame) } : {}),
+        ...(studio ? { studio: structuredClone(studio), studioSources, studioMusic } : {}),
+        ...(cut ? { cut: structuredClone(cut) } : {}),
         ...(music ? { music } : {}),
         ...(watermark ? { watermark } : {}),
         settings: input.mode === "restore" ? defaultArchiveAudioSettings() : structuredClone(input.settings),

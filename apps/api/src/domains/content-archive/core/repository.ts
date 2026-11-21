@@ -54,6 +54,7 @@ export class ContentArchiveRepository {
       .all(...(platform === "all" ? [] : [platform])) as Row[];
     const keyword = options.keyword?.trim().toLowerCase();
     const memberships = new ArchiveGroupStore(this.database).memberships();
+    const selectedGroups = options.groupIds === undefined ? undefined : new Set(options.groupIds.split(","));
     const published = new ArchivePublicationStore(this.database).marked();
     const items = rows
       .map(decode)
@@ -67,9 +68,11 @@ export class ContentArchiveRepository {
       )
       .filter(
         (item) =>
-          !options.groupId ||
-          options.groupId === "all" ||
-          (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
+          selectedGroups
+            ? selectedGroups.has(memberships.get(item.id) ?? "ungrouped")
+            : !options.groupId ||
+              options.groupId === "all" ||
+              (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
       )
       .filter(
         (item) =>

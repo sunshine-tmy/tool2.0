@@ -1,3 +1,5 @@
+import { ArchiveAnalysisJobSchema, type ArchiveAnalysisInput } from "@toolbox/shared/archive";
+import { ArchiveCutSourceSchema, ArchiveCutDraftSchema, type ArchiveCutDraft } from "@toolbox/shared/archive";
 import { Type } from "@sinclair/typebox";
 import {
   ArchiveVideoEditJobSchema,
@@ -12,6 +14,40 @@ const root = "/tools/media-archive";
 const mediaPath = (itemId: string, mediaId: string) =>
   `${root}/items/${encodeURIComponent(itemId)}/media/${encodeURIComponent(mediaId)}/audio-edits`;
 export const videoEditApi = {
+  analyze: (itemId: string, mediaId: string, input: ArchiveAnalysisInput, signal?: AbortSignal) =>
+    withApiError(() =>
+      httpClient.post(
+        `${root}/items/${encodeURIComponent(itemId)}/media/${encodeURIComponent(mediaId)}/cut-analysis`,
+        ArchiveAnalysisJobSchema,
+        input,
+        { signal }
+      )
+    ),
+  analysis: (id: string, signal?: AbortSignal) =>
+    withApiError(() =>
+      httpClient.get(`${root}/cut-analysis/${encodeURIComponent(id)}`, ArchiveAnalysisJobSchema, { signal })
+    ),
+  cancelAnalysis: (id: string, signal?: AbortSignal) =>
+    withApiError(() =>
+      httpClient.delete(`${root}/cut-analysis/${encodeURIComponent(id)}`, ArchiveAnalysisJobSchema, { signal })
+    ),
+  cutSource: (itemId: string, mediaId: string, signal?: AbortSignal) =>
+    withApiError(() =>
+      httpClient.get(
+        `${root}/items/${encodeURIComponent(itemId)}/media/${encodeURIComponent(mediaId)}/cut-source`,
+        ArchiveCutSourceSchema,
+        { signal }
+      )
+    ),
+  saveCutDraft: (itemId: string, mediaId: string, draft: ArchiveCutDraft, signal?: AbortSignal) =>
+    withApiError(() =>
+      httpClient.put(
+        `${root}/items/${encodeURIComponent(itemId)}/media/${encodeURIComponent(mediaId)}/cut-draft`,
+        ArchiveCutDraftSchema,
+        draft,
+        { signal }
+      )
+    ),
   watermarkLibrary: (signal?: AbortSignal) =>
     withApiError(() =>
       httpClient.get(`${root}/watermark-library`, Type.Array(ArchiveWatermarkLibraryItemSchema), { signal })

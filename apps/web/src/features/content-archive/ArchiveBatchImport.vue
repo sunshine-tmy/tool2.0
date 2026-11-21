@@ -67,7 +67,8 @@
         style="width: 230px"
       />
       <label>成功结果分组</label>
-      <n-select
+      <n-cascader
+        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups" filterable
         v-model:value="groupId"
         :disabled="busy"
         clearable
@@ -192,6 +193,8 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { NCascader } from "naive-ui";
+import { archiveGroupTree, groupMenuProps, filterArchiveGroups } from "./archive-group-tree";
 import { computed, ref, watch } from "vue";
 import { NAlert, NButton, NEmpty, NInput, NModal, NSelect, NSpin, NTag, useMessage } from "naive-ui";
 import { FileSpreadsheet } from "lucide-vue-next";
@@ -230,7 +233,7 @@ const {
   owner,
   ownerActive
 } = model;
-const groupOptions = computed(() => (props.groups ?? []).map((group) => ({ label: group.name, value: group.id })));
+const groupOptions = computed(() => archiveGroupTree(props.groups ?? []));
 watch(
   () => props.groups,
   (groups) => {

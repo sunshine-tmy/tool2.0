@@ -97,6 +97,7 @@ export class ContentArchiveStore {
       pageSize?: number;
       platform?: ContentArchivePlatform | "all";
       groupId?: string;
+      groupIds?: string;
       publication?: ContentArchiveListQuery["publication"];
       sort?: ContentArchiveListQuery["sort"];
     } = {}
@@ -107,6 +108,7 @@ export class ContentArchiveStore {
     const page = positiveInteger(options.page, 1);
     const pageSize = Math.min(positiveInteger(options.pageSize, 12), CONTENT_ARCHIVE_MAX_PAGE_SIZE);
     const memberships = this.groups.memberships();
+    const selectedGroups = options.groupIds === undefined ? undefined : new Set(options.groupIds.split(","));
     const published = this.publications.marked();
     const sort = options.sort;
     const matched = [...this.items.values()]
@@ -120,9 +122,11 @@ export class ContentArchiveStore {
       )
       .filter(
         (item) =>
-          !options.groupId ||
-          options.groupId === "all" ||
-          (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
+          selectedGroups
+            ? selectedGroups.has(memberships.get(item.id) ?? "ungrouped")
+            : !options.groupId ||
+              options.groupId === "all" ||
+              (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
       )
       .filter((item) => type === "all" || item.type === type)
       .filter((item) => {
@@ -538,7 +542,10 @@ export class ContentArchiveStore {
             this.database.remove("archive-group-member", id);
             this.database.remove("archive-publication", id);
             this.fileMetadata.removeForEntity("xhs-archive", id);
-            for (const media of item.media) this.fileMetadata.removeForEntity("xhs-media", media.id);
+            for (const media of item.media) {
+              this.fileMetadata.removeForEntity("xhs-media", media.id);
+              this.database.remove("archive-cut-draft", `${id}:${media.id}`);
+            }
           });
           this.items.delete(id);
         } catch (error) {

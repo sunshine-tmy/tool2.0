@@ -159,12 +159,12 @@ export const tiktokProfileResultsUrl = (id: string) =>
 export const archiveGroupApi = {
   list: (signal?: AbortSignal) =>
     withApiError(() => httpClient.get(`${base}/groups`, ArchiveGroupListSchema, { signal }), "读取分组失败"),
-  save: (name: string, id?: string, signal?: AbortSignal) =>
+  save: (name: string, id?: string, signal?: AbortSignal, parentId?: string | null) =>
     withApiError(
       () =>
         id
-          ? httpClient.patch(`${base}/groups/${encodeURIComponent(id)}`, ArchiveGroupSchema, { name }, { signal })
-          : httpClient.post(`${base}/groups`, ArchiveGroupSchema, { name }, { signal }),
+          ? httpClient.patch(`${base}/groups/${encodeURIComponent(id)}`, ArchiveGroupSchema, { name, parentId }, { signal })
+          : httpClient.post(`${base}/groups`, ArchiveGroupSchema, { name, parentId }, { signal }),
       "保存分组失败"
     ),
   assign: (input: ArchiveGroupAssignment, signal?: AbortSignal) =>

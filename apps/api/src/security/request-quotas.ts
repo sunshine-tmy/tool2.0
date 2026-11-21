@@ -26,6 +26,8 @@ export const REQUEST_QUOTAS = {
   ai: { rateLimit: { max: 10, timeWindow: minute }, concurrencyLimit: 2 },
   translation: { rateLimit: { max: 20, timeWindow: minute }, concurrencyLimit: 2 },
   translationBatch: { rateLimit: { max: 5, timeWindow: minute }, concurrencyLimit: 1 },
+  // 时间线每次编辑会自动保存轻量草稿，不能使用上传/生成任务的低额度。
+  archiveCutDraft: { rateLimit: { max: 600, timeWindow: minute }, concurrencyLimit: 4 },
   voice: { rateLimit: { max: 30, timeWindow: minute }, concurrencyLimit: 4 }
 } as const;
 
