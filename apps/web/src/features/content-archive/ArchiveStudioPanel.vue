@@ -57,78 +57,6 @@
           </div>
         </div>
       </n-tab-pane>
-      <n-tab-pane name="analysis" tab="智能检测">
-        <div class="studio-form">
-          <small>{{
-            selectedClip ? "针对选中片段的原片范围进行检测；检测结果不会自动修改时间线。" : "请选择一个视频片段。"
-          }}</small>
-          <div class="studio-grid">
-            <label
-              >场景灵敏度阈值<n-input-number
-                v-model:value="sceneThreshold"
-                :min="0.05"
-                :max="0.9"
-                :step="0.05"
-                :disabled="disabled || analyzing" /></label
-            ><label
-              >静音阈值（dB）<n-input-number
-                v-model:value="silenceDb"
-                :min="-80"
-                :max="-10"
-                :disabled="disabled || analyzing" /></label
-            ><label
-              >最短静音（秒）<n-input-number
-                v-model:value="minSilence"
-                :min="0.1"
-                :max="10"
-                :step="0.1"
-                :disabled="disabled || analyzing"
-            /></label>
-          </div>
-          <div class="studio-line">
-            <n-button :disabled="disabled || analyzing || !selectedClip" @click="analyze('scenes')"
-              >检测场景切点</n-button
-            ><n-button :disabled="disabled || analyzing || !selectedClip" @click="analyze('silence')"
-              >检测静音片段</n-button
-            ><n-button v-if="analyzing" @click="cancelAnalysis">停止检测</n-button>
-          </div>
-          <template v-if="analysis"
-            ><n-progress type="line" :percentage="Math.floor(analysis.progress)" />
-            <p role="status">{{ analysis.message }}</p>
-            <small v-if="analysisChanged">来源片段已修改，请重新检测。</small>
-            <div v-if="analysis.status === 'completed'" class="studio-line">
-              <n-button
-                v-if="analysis.kind === 'scenes'"
-                :disabled="disabled || analysisChanged || !analysis.scenes.length"
-                @click="applyScenes"
-                >按切点拆分</n-button
-              ><n-button
-                v-else
-                :disabled="disabled || analysisChanged || !analysis.silence.length"
-                @click="removeSilence"
-                >移除检测到的静音</n-button
-              >
-            </div>
-            <div class="analysis-results">
-              <n-button
-                v-for="point in analysis.scenes"
-                :key="point"
-                size="small"
-                :disabled="analysisChanged"
-                @click="seekSource(point)"
-                >{{ point.toFixed(2) }} 秒</n-button
-              ><n-button
-                v-for="(range, index) in analysis.silence"
-                :key="index"
-                size="small"
-                :disabled="analysisChanged"
-                @click="seekSource(range.start)"
-                >{{ range.start.toFixed(2) }} — {{ range.end.toFixed(2) }} 秒</n-button
-              >
-            </div>
-          </template>
-        </div>
-      </n-tab-pane>
       <n-tab-pane name="subtitles" tab="字幕轨">
         <div class="studio-form">
           <div class="studio-line">
@@ -148,26 +76,54 @@
             ><div class="studio-grid">
               <label
                 >开始（秒）<n-input-number
-                  v-model:value="cueDraft.start"
+                  :precision="1"
+                  :value="editorNumber(cueDraft.start, 1)"
+                  @update:value="(value) => value !== null && (cueDraft.start = editorNumber(value, 1))"
                   :min="0"
                   :max="7200"
                   :step="0.1"
                   :disabled="disabled" /></label
               ><label
                 >结束（秒）<n-input-number
-                  v-model:value="cueDraft.end"
+                  :precision="1"
+                  :value="editorNumber(cueDraft.end, 1)"
+                  @update:value="(value) => value !== null && (cueDraft.end = editorNumber(value, 1))"
                   :min="0"
                   :max="7200"
                   :step="0.1"
                   :disabled="disabled" /></label
               ><label
                 >字号<n-input-number
-                  v-model:value="cueDraft.fontSize"
+                  :precision="0"
+                  :value="editorNumber(cueDraft.fontSize, 0)"
+                  @update:value="(value) => value !== null && (cueDraft.fontSize = editorNumber(value, 0))"
                   :min="16"
                   :max="96"
                   :disabled="disabled" /></label
               ><label
-                >位置<n-select v-model:value="cueDraft.position" :options="positions" :disabled="disabled"
+                >位置<n-select
+                  v-model:value="cueDraft.position"
+                  :options="positions"
+                  :disabled="disabled"
+                  @update:value="resetCuePosition" /></label
+              ><label
+                >旋转角度<n-input-number
+                  :precision="1"
+                  :value="editorNumber(cueDraft.rotation ?? 0, 1)"
+                  @update:value="(value) => value !== null && (cueDraft.rotation = editorNumber(value, 1))"
+                  :min="-360"
+                  :max="360"
+                  :step="0.5"
+                  :disabled="disabled" /></label
+              ><label
+                >缩放比例<n-input-number
+                  :precision="1"
+                  :value="editorNumber(cueDraft.scale ?? 1, 1)"
+                  @update:value="(value) => value !== null && (cueDraft.scale = editorNumber(value, 1))"
+                  :min="0.1"
+                  :max="10"
+                  :step="0.1"
+                  :disabled="disabled"
               /></label>
             </div>
             <n-input
@@ -179,8 +135,7 @@
               :disabled="disabled"
             /><label>文字颜色<input v-model="cueDraft.color" type="color" :disabled="disabled" /></label>
             <div class="studio-line">
-              <n-button type="primary" secondary :disabled="disabled" @click="saveCue">应用字幕</n-button
-              ><n-button :disabled="disabled" @click="removeCue">删除字幕</n-button
+              <n-button :disabled="disabled" @click="removeCue">删除字幕</n-button
               ><n-button @click="$emit('seek', cue.start)">定位字幕</n-button>
             </div></template
           >
@@ -191,93 +146,38 @@
       </n-tab-pane>
       <n-tab-pane name="music" tab="独立配乐轨">
         <div class="studio-form">
-          <div class="studio-line">
-            <n-input
-              v-model:value="musicKeyword"
-              placeholder="搜索音频素材库中的背景音乐"
-              @keyup.enter="searchMusic"
-              :disabled="disabled"
-            /><n-button :disabled="disabled" @click="searchMusic">搜索</n-button>
-          </div>
-          <n-select
-            v-model:value="libraryId"
-            :options="libraryOptions"
-            filterable
-            placeholder="选择配乐素材"
-            :disabled="disabled"
-          />
-          <n-pagination
-            v-if="musicTotal > 20"
-            v-model:page="musicPage"
-            :page-size="20"
-            :item-count="musicTotal"
-            @update:page="loadMusic"
-            :disabled="disabled"
-          />
-          <n-button :disabled="disabled || !libraryId || !duration || studio.musicTracks.length >= 16" @click="addTrack"
-            >在指针处添加独立配乐轨</n-button
-          >
-          <n-select
-            v-model:value="trackId"
-            :options="trackOptions"
-            placeholder="选择要编辑的配乐轨"
-            :disabled="disabled"
-          />
-          <template v-if="track"
-            ><div class="studio-grid">
-              <label
-                >开始（秒）<n-input-number
-                  v-model:value="trackDraft.start"
-                  :min="0"
-                  :max="7200"
-                  :step="0.1"
-                  :disabled="disabled" /></label
-              ><label
-                >结束（秒）<n-input-number
-                  v-model:value="trackDraft.end"
-                  :min="0"
-                  :max="7200"
-                  :step="0.1"
-                  :disabled="disabled" /></label
-              ><label
-                >音乐起点（秒）<n-input-number
-                  v-model:value="trackDraft.sourceStart"
-                  :min="0"
-                  :max="86400"
-                  :step="0.1"
-                  :disabled="disabled" /></label
-              ><label
-                >音量（%）<n-input-number
-                  v-model:value="trackDraft.volume"
-                  :min="0"
-                  :max="100"
-                  :disabled="disabled" /></label
-              ><label
-                >淡入（秒）<n-input-number
-                  v-model:value="trackDraft.fadeIn"
-                  :min="0"
-                  :max="5"
-                  :step="0.1"
-                  :disabled="disabled" /></label
-              ><label
-                >淡出（秒）<n-input-number
-                  v-model:value="trackDraft.fadeOut"
-                  :min="0"
-                  :max="5"
-                  :step="0.1"
-                  :disabled="disabled"
-              /></label>
-            </div>
-            <n-checkbox v-model:checked="trackDraft.loop" :disabled="disabled">音乐不足时循环</n-checkbox>
+          <template v-if="libraryOnly || !activeTab">
             <div class="studio-line">
-              <n-button type="primary" secondary :disabled="disabled" @click="saveTrack">应用配乐轨</n-button
-              ><n-button :disabled="disabled" @click="removeTrack">删除配乐轨</n-button
-              ><n-button @click="$emit('seek', track.start)">定位配乐</n-button>
-            </div></template
-          >
-          <small
-            >独立配乐轨与原声、原有配乐共同混音。拖动轨道或调整两端可修改位置和时长；完整混音效果请生成预览。</small
-          >
+              <n-input
+                v-model:value="musicKeyword"
+                placeholder="搜索音频素材库中的背景音乐"
+                @keyup.enter="searchMusic"
+                :disabled="disabled"
+              /><n-button :disabled="disabled" @click="searchMusic">搜索</n-button>
+            </div>
+            <n-select
+              v-model:value="libraryId"
+              :options="libraryOptions"
+              filterable
+              placeholder="选择配乐素材"
+              :disabled="disabled"
+            />
+            <n-pagination
+              v-if="musicTotal > 20"
+              v-model:page="musicPage"
+              :page-size="20"
+              :item-count="musicTotal"
+              @update:page="loadMusic"
+              :disabled="disabled"
+            />
+            <n-button
+              :disabled="disabled || !libraryId || !duration || studio.musicTracks.length >= 16"
+              @click="addTrack"
+              >在指针处添加独立配乐轨</n-button
+            >
+          </template>
+
+          <small>独立配乐轨与原声、原有配乐共同混音。拖动轨道或调整两端可修改位置和时长；修改会实时应用到预览。</small>
         </div>
       </n-tab-pane>
     </n-tabs>
@@ -285,27 +185,14 @@
   </section>
 </template>
 <script setup lang="ts">
+import { editorNumber } from "./editor-numbers";
 import { computed, onMounted, onScopeDispose, reactive, ref, watch } from "vue";
+import { NAlert, NButton, NInput, NInputNumber, NPagination, NSelect, NTabPane, NTabs } from "naive-ui";
 import {
-  NAlert,
-  NButton,
-  NCheckbox,
-  NInput,
-  NInputNumber,
-  NPagination,
-  NProgress,
-  NSelect,
-  NTabPane,
-  NTabs
-} from "naive-ui";
-import {
-  archiveCutStarts,
   type ArchiveStudio,
   type ArchiveStudioSource,
   type ArchiveCutClip,
-  type ArchiveAnalysisJob,
   type ArchiveSubtitle,
-  type ArchiveStudioMusic,
   type ContentArchiveListItem,
   type ContentArchiveMedia
 } from "@toolbox/shared/archive";
@@ -318,6 +205,7 @@ import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { parseStudioSrt, exportStudioSrt } from "./studio-subtitles";
 const props = defineProps<{
   activeTab?: string;
+  libraryOnly?: boolean;
   itemId: string;
   mediaId: string;
   clips: ArchiveCutClip[];
@@ -331,7 +219,6 @@ const emit = defineEmits<{
   studio: [ArchiveStudio];
   source: [ArchiveStudioSource];
   seek: [number];
-  analysis: [id: string, boundaries: number[], silence?: Array<{ start: number; end: number }>];
 }>();
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
 const tab = ref("sources"),
@@ -354,8 +241,7 @@ watch(
 
 const scope = new AbortController();
 let archiveRevision = 0,
-  mediaRevision = 0,
-  pollTimer: ReturnType<typeof setTimeout> | undefined;
+  mediaRevision = 0;
 const archiveOptions = computed(() => archives.value.map((item) => ({ label: item.title || item.id, value: item.id })));
 const mediaOptions = computed(() =>
   sourceMedia.value.map((media, i) => ({
@@ -416,6 +302,8 @@ async function appendVideo() {
       mediaId,
       checksum: info.checksum,
       title: (archives.value.find((item) => item.id === itemId)?.title ?? "归档视频").slice(0, 500),
+      fileName: info.fileName,
+      hasAudio: info.hasAudio,
       duration: info.duration,
       width: info.width ?? 1280,
       height: info.height ?? 720,
@@ -433,88 +321,6 @@ function removeSource(id: string) {
   value.sources = value.sources.filter((source) => source.id !== id);
   emit("studio", value);
 }
-const selectedClip = computed(() =>
-  props.selected.length === 1 ? props.clips.find((clip) => clip.id === props.selected[0]) : undefined
-);
-const sceneThreshold = ref<number | null>(0.3),
-  silenceDb = ref<number | null>(-35),
-  minSilence = ref<number | null>(0.5),
-  analysis = ref<ArchiveAnalysisJob>(),
-  analysisClip = ref<ArchiveCutClip>();
-const analyzing = computed(() => analysis.value && ["pending", "running"].includes(analysis.value.status));
-const analysisChanged = computed(
-  () =>
-    !analysisClip.value ||
-    JSON.stringify(props.clips.find((clip) => clip.id === analysisClip.value!.id)) !==
-      JSON.stringify(analysisClip.value)
-);
-async function analyze(kind: "scenes" | "silence") {
-  if (!selectedClip.value || analyzing.value || props.disabled) return;
-  analysisClip.value = clone(selectedClip.value);
-  try {
-    const clip = analysisClip.value;
-    analysis.value = await videoEditApi.analyze(
-      props.itemId,
-      props.mediaId,
-      {
-        kind,
-        start: clip.start,
-        end: clip.end,
-        sceneThreshold: sceneThreshold.value ?? 0.3,
-        silenceDb: silenceDb.value ?? -35,
-        minSilence: minSilence.value ?? 0.5,
-        source: props.studio.sources.find((source) => source.id === clip.sourceId)
-      },
-      scope.signal
-    );
-    schedulePoll();
-  } catch (e) {
-    report(e);
-  }
-}
-function schedulePoll() {
-  clearTimeout(pollTimer);
-  pollTimer = setTimeout(() => void poll(), 750);
-}
-async function poll() {
-  if (!analysis.value || scope.signal.aborted) return;
-  try {
-    analysis.value = await videoEditApi.analysis(analysis.value.id, scope.signal);
-    if (analyzing.value) schedulePoll();
-  } catch (e) {
-    report(e);
-  }
-}
-async function cancelAnalysis() {
-  if (analysis.value) {
-    try {
-      analysis.value = await videoEditApi.cancelAnalysis(analysis.value.id, scope.signal);
-    } catch (e) {
-      report(e);
-    }
-  }
-}
-function applyScenes() {
-  if (!analysisChanged.value && analysis.value && analysisClip.value)
-    emit("analysis", analysisClip.value.id, analysis.value.scenes);
-}
-function removeSilence() {
-  if (!analysisChanged.value && analysis.value && analysisClip.value)
-    emit(
-      "analysis",
-      analysisClip.value.id,
-      analysis.value.silence.flatMap((range) => [range.start, range.end]),
-      analysis.value.silence
-    );
-}
-function seekSource(value: number) {
-  const index = props.clips.findIndex((clip) => clip.id === analysisClip.value?.id);
-  if (index >= 0)
-    emit(
-      "seek",
-      archiveCutStarts(props.clips)[index] + (value - props.clips[index].start) / (props.clips[index].speed ?? 1)
-    );
-}
 const cueId = ref<string | null>(null),
   srtInput = ref<HTMLInputElement>();
 const cue = computed(() => props.studio.subtitles.find((entry) => entry.id === cueId.value));
@@ -525,12 +331,23 @@ const cueDraft = reactive<ArchiveSubtitle>({
   text: "",
   fontSize: 36,
   color: "#ffffff",
-  position: "bottom"
+  position: "bottom",
+  rotation: 0,
+  scale: 1
 });
 watch(
   cue,
   (value) => {
-    if (value) Object.assign(cueDraft, clone(value));
+    if (!value) return;
+    for (const key of Object.keys(cueDraft))
+      if (!(key in value)) delete (cueDraft as unknown as Record<string, unknown>)[key];
+    Object.assign(
+      cueDraft,
+      { id: "", start: 0, end: 3, text: "", fontSize: 36, color: "#ffffff", position: "bottom", rotation: 0, scale: 1 },
+      clone(value)
+    );
+    if (value.x === undefined) delete cueDraft.x;
+    if (value.y === undefined) delete cueDraft.y;
   },
   { deep: true }
 );
@@ -562,6 +379,10 @@ function addCue() {
   });
   emit("studio", value);
   cueId.value = id;
+}
+function resetCuePosition() {
+  delete cueDraft.x;
+  delete cueDraft.y;
 }
 function saveCue() {
   if (!cueDraft.text.trim() || cueDraft.end <= cueDraft.start) {
@@ -613,35 +434,10 @@ const musicKeyword = ref(""),
   musicPage = ref(1),
   musicTotal = ref(0),
   library = ref<AudioLibraryItemView[]>([]),
-  libraryId = ref<string | null>(null),
-  trackId = ref<string | null>(null);
+  libraryId = ref<string | null>(null);
 let musicRevision = 0;
 const libraryOptions = computed(() =>
   library.value.filter((entry) => entry.available).map((entry) => ({ label: entry.title, value: entry.id }))
-);
-const trackOptions = computed(() =>
-  props.studio.musicTracks.map((entry, i) => ({ label: `配乐 ${i + 1} · ${entry.title}`, value: entry.id }))
-);
-const track = computed(() => props.studio.musicTracks.find((entry) => entry.id === trackId.value));
-const trackDraft = reactive<ArchiveStudioMusic>({
-  id: "",
-  libraryItemId: "",
-  libraryRevision: 1,
-  title: "",
-  start: 0,
-  end: 3,
-  sourceStart: 0,
-  volume: 20,
-  loop: false,
-  fadeIn: 0.5,
-  fadeOut: 0.5
-});
-watch(
-  track,
-  (value) => {
-    if (value) Object.assign(trackDraft, clone(value));
-  },
-  { deep: true }
 );
 async function loadMusic() {
   const revision = ++musicRevision;
@@ -676,35 +472,14 @@ function addTrack() {
     start,
     end: Math.min(props.duration, start + music.duration),
     sourceStart: 0,
+    speed: 1,
     lane: Math.min(1999, 2 + value.musicTracks.length),
-    volume: 20,
+    volume: 100,
     loop: false,
-    fadeIn: 0.5,
-    fadeOut: 0.5
+    fadeIn: 0,
+    fadeOut: 0
   });
   emit("studio", value);
-  trackId.value = id;
-}
-function saveTrack() {
-  if (trackDraft.end <= trackDraft.start) {
-    error.value = "配乐终点须晚于起点";
-    return;
-  }
-  trackDraft.start = Number(trackDraft.start ?? 0);
-  trackDraft.end = Number(trackDraft.end ?? 0);
-  trackDraft.sourceStart = Number(trackDraft.sourceStart ?? 0);
-  trackDraft.volume = Number(trackDraft.volume ?? 20);
-  trackDraft.fadeIn = Number(trackDraft.fadeIn ?? 0);
-  trackDraft.fadeOut = Number(trackDraft.fadeOut ?? 0);
-  const value = clone(props.studio);
-  value.musicTracks = value.musicTracks.map((entry) => (entry.id === trackId.value ? clone(trackDraft) : entry));
-  emit("studio", value);
-}
-function removeTrack() {
-  const value = clone(props.studio);
-  value.musicTracks = value.musicTracks.filter((entry) => entry.id !== trackId.value);
-  emit("studio", value);
-  trackId.value = null;
 }
 watch(
   () => props.selected,
@@ -713,27 +488,34 @@ watch(
     if (props.studio.subtitles.some((cue) => cue.id === ids[0])) {
       cueId.value = ids[0];
       if (!props.activeTab || props.activeTab === "subtitles") tab.value = "subtitles";
-    } else if (props.studio.musicTracks.some((track) => track.id === ids[0])) {
-      trackId.value = ids[0];
-      if (!props.activeTab || props.activeTab === "music") tab.value = "music";
     }
   },
   { deep: true, immediate: true }
+);
+watch(
+  cueDraft,
+  () => {
+    if (
+      !props.disabled &&
+      cue.value &&
+      cueDraft.id === cue.value.id &&
+      cueDraft.text.trim() &&
+      cueDraft.end > cueDraft.start &&
+      JSON.stringify(cueDraft) !== JSON.stringify(cue.value)
+    )
+      saveCue();
+  },
+  { deep: true, flush: "post" }
 );
 onMounted(() => {
   void loadArchives();
   void loadMusic();
 });
 onScopeDispose(() => {
-  clearTimeout(pollTimer);
-  if (analyzing.value && analysis.value) void videoEditApi.cancelAnalysis(analysis.value.id).catch(() => {});
   scope.abort();
 });
 </script>
 <style scoped>
-.external-tabs :deep(.n-tabs-nav) {
-  display: none;
-}
 .studio-panel {
   min-width: 0;
   border: 1px solid var(--color-border);
@@ -770,8 +552,7 @@ onScopeDispose(() => {
   color: var(--color-text-secondary);
   line-height: 1.6;
 }
-.studio-sources,
-.analysis-results {
+.studio-sources {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

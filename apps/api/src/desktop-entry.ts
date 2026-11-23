@@ -6,6 +6,7 @@ import { getConfig } from "./config";
 import { startDesktopLanGateway, type DesktopLanGateway } from "./runtime/desktop-lan-gateway";
 import { createRuntimeLayout, type RuntimeLayout } from "./runtime/runtime-layout";
 import { createDesktopWorkerSession, workerSessionEnvironment } from "./runtime/worker-session";
+import { desktopServiceEnvironment } from "./runtime/desktop-service-ports";
 import { diagnosticFailure } from "@toolbox/shared";
 
 type ParentMessage = { type?: unknown; id?: unknown; confirmed?: unknown };
@@ -28,13 +29,15 @@ await new Promise<void>((resolve) => {
 try {
   parentPort.postMessage({ type: "stage", stage: "config" });
   const layout = readRuntimeLayout(process.env.TOOLBOX_RUNTIME_LAYOUT);
-  Object.assign(process.env, workerSessionEnvironment(await createDesktopWorkerSession()));
+  const environment = desktopServiceEnvironment(process.env);
+  const workerEnvironment = workerSessionEnvironment(await createDesktopWorkerSession());
+  Object.assign(process.env, workerEnvironment);
   // 桌面内部服务只监听 loopback；局域网由受限网关提供。
   const config = getConfig({
     layout,
     dotenvPath: false,
     desktopManagedCapabilities: true,
-    environment: { ...process.env, DEPLOYMENT_MODE: "local" }
+    environment: { ...environment, ...workerEnvironment, DEPLOYMENT_MODE: "local" }
   });
   const backend = await startBackend({
     config,
@@ -43,6 +46,7 @@ try {
     onStage: (stage) => parentPort.postMessage({ type: "stage", stage }),
     onShutdownStage: (stage) => parentPort.postMessage({ type: "shutdown-stage", stage })
   });
+  config.port = Number(new URL(backend.origin).port);
   let lanGateway: DesktopLanGateway;
   try {
     lanGateway = await startDesktopLanGateway(backend.origin, config.lanTransferWebPort);

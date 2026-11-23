@@ -62,7 +62,8 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
     onAfterMutation: (componentId, operation) => refreshDesktopCapabilities(componentId, operation),
     isInUse: (componentId, taskToolIds) =>
       Boolean(diagnosticsState.service?.isBusy(true)) ||
-      (componentId === "ffmpeg" && database.hasStatus("archive-video-edit-job", ["pending", "running"])) ||
+      (["ffmpeg", "video-interpolation"].includes(componentId) &&
+        database.hasStatus("archive-video-edit-job", ["pending", "running"])) ||
       (componentId === "ffmpeg" &&
         taskStore
           .list()

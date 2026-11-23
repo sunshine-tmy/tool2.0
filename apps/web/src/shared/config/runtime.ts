@@ -4,7 +4,15 @@
 const configuredApiBase = import.meta.env.VITE_API_BASE?.trim();
 
 // 所有业务 API 都从同一基地址派生，默认使用相对路径以兼容 Vite 代理和生产反向代理。
-export const apiBaseUrl = normalizeApiBaseUrl(configuredApiBase);
+export const apiBaseUrl = runtimeApiBaseUrl(configuredApiBase);
+
+export function runtimeApiBaseUrl(
+  value?: string,
+  desktop = typeof window !== "undefined" && Boolean(window.toolboxDesktop)
+) {
+  // Electron loads the page from its own assigned backend origin, regardless of build-time development overrides.
+  return desktop ? "/api/v1" : normalizeApiBaseUrl(value);
+}
 
 export function normalizeApiBaseUrl(value?: string) {
   // 兼容旧配置中的 /api，并统一补齐 /api/v1，避免页面分别拼接新旧接口路径。

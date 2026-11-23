@@ -45,8 +45,8 @@
           <span :title="item.name">{{ item.name }}</span>
           <small>{{ item.width }} × {{ item.height }}</small>
           <div class="library-actions">
-            <n-button size="tiny" :disabled="busy" @click="select(item.id)">使用</n-button>
-            <n-button size="tiny" :disabled="busy" :aria-label="`删除水印 ${item.name}`" @click="remove(item)"
+            <n-button size="small" :disabled="busy" @click="select(item.id)">使用</n-button>
+            <n-button size="small" :disabled="busy" :aria-label="`删除水印 ${item.name}`" @click="remove(item)"
               >删除</n-button
             >
           </div>
@@ -179,11 +179,15 @@ async function remove(item: ArchiveWatermarkLibraryItem) {
 }
 </script>
 <style scoped>
+.library-thumbnail:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 2px;
+}
 .watermark-library {
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid #dbe5f2;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-subtle);
   min-width: 0;
@@ -205,7 +209,7 @@ async function remove(item: ArchiveWatermarkLibraryItem) {
 .library-grid article {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 .library-grid article > span {
@@ -218,9 +222,9 @@ async function remove(item: ArchiveWatermarkLibraryItem) {
   height: 80px;
   padding: 8px;
   cursor: pointer;
-  border: 1px solid #dbe5f2;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: repeating-conic-gradient(#e8edf5 0% 25%, var(--color-surface) 0% 50%) 0 / 12px 12px;
+  background: repeating-conic-gradient(var(--color-border) 0% 25%, var(--color-surface) 0% 50%) 0 / 12px 12px;
 }
 .library-thumbnail:disabled {
   cursor: default;
@@ -239,6 +243,6 @@ p {
   margin: 0;
 }
 [role="status"] {
-  color: #0f766e;
+  color: var(--color-success, #0f766e);
 }
 </style>

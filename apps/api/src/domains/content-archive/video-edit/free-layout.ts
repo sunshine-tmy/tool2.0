@@ -3,29 +3,38 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   archiveClipDuration,
+  archiveFrameGeometry,
+  defaultArchiveFrame,
   archiveCutStarts,
   archiveProjectDuration,
   archiveTransitionDuration,
-  archiveTransitionTarget
+  archiveTransitionTarget,
+  archiveOutputFps
 } from "@toolbox/shared";
 import { runMediaProcess, VideoEditError, type RenderVideoOptions, type probeMedia } from "./renderer";
 
+import { appendVideoFrame } from "./frame-render";
+
 type Input = { file: string; offset: number };
 type Transition = { from: number; to: number; start: number; end: number; file: string };
-const frame = (time: number) => Math.round(time * 30) / 30;
 export async function prepareFreeLayout(
   options: RenderVideoOptions,
   directory: string,
   info: Awaited<ReturnType<typeof probeMedia>>,
   initialBytes: number
 ) {
+  const fps = archiveOutputFps(options.frame);
+  const frame = (time: number) => Math.round(time * fps) / fps;
   const clips = options.cut!,
     starts = archiveCutStarts(clips);
-  const duration = Math.ceil(archiveProjectDuration(clips, options.studio) * 30 - 1e-7) / 30;
+  const duration = Math.ceil(archiveProjectDuration(clips, options.studio) * fps - 1e-7) / fps;
   if (!(duration > 0 && duration <= 7200))
     throw new VideoEditError("ARCHIVE_CUT_TOO_LONG", "剪辑后视频时长须在 0～2 小时之间");
   const width = Math.max(2, Math.floor(info.width / 2) * 2),
     height = Math.max(2, Math.floor(info.height / 2) * 2);
+  const frameApplied = clips.some((clip) => clip.transform !== undefined);
+  const projectFrame = options.frame ?? defaultArchiveFrame();
+  const geometry = frameApplied ? archiveFrameGeometry(width, height, projectFrame) : { width, height };
   let occupied = initialBytes;
   const common = ["-hide_banner", "-v", "error", "-nostdin", "-y", "-filter_complex_threads", "1"];
   async function render(args: string[], output: string) {
@@ -46,7 +55,7 @@ export async function prepareFreeLayout(
   for (const [i, clip] of clips.entries()) {
     const to = archiveTransitionTarget(clips, i),
       length = archiveTransitionDuration(clips, i);
-    if (to < 0 || length < 1 / 30) continue;
+    if (to < 0 || length < 1 / fps || clip.hidden || clips[to].hidden) continue;
     const start = frame(starts[to]),
       end = Math.min(duration, frame(start + length));
     if (end <= start) continue;
@@ -68,7 +77,7 @@ export async function prepareFreeLayout(
         "-t",
         String(end - start),
         "-r",
-        "30",
+        String(fps),
         "-c:v",
         "ffv1",
         "-level",
@@ -99,12 +108,12 @@ export async function prepareFreeLayout(
       end = edges[part + 1],
       length = end - start,
       middle = (start + end) / 2;
-    if (length < 1 / 60) continue;
+    if (length < 0.5 / fps) continue;
     const active = clips
       .map((clip, i) => ({ clip, i }))
       .filter(({ clip, i }) => middle >= frame(starts[i]) && middle < frame(starts[i] + archiveClipDuration(clip)))
       .sort((a, b) => (a.clip.lane ?? 1) - (b.clip.lane ?? 1) || b.i - a.i);
-    const visible = active[0]?.i;
+    const visible = active.find((entry) => !entry.clip.hidden)?.i;
     const fades = transitions.filter((t) => middle >= t.start && middle < t.end);
     const visualFade = fades.find((t) => t.from === visible || t.to === visible);
     const picture: Input | undefined = visualFade
@@ -150,9 +159,14 @@ export async function prepareFreeLayout(
     if (picture) {
       args.push("-ss", String(picture.offset), "-i", picture.file);
       filters.push(
-        `[0:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${length},trim=duration=${length},fps=30,format=yuv420p[v]`
+        `[0:v]setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration=${length},trim=duration=${length},fps=${fps},format=yuv420p[v]`
       );
-    } else args.push("-f", "lavfi", "-i", `color=c=black:s=${width}x${height}:r=30:d=${length}`);
+    } else args.push("-f", "lavfi", "-i", `color=c=black:s=${geometry.width}x${geometry.height}:r=${fps}:d=${length}`);
+    let videoLabel = picture ? "v" : "0:v:0";
+    if (picture && frameApplied) {
+      const settings = { ...projectFrame, ...(visible !== undefined ? clips[visible].transform : {}) };
+      videoLabel = appendVideoFrame(filters, videoLabel, width, height, settings).videoLabel;
+    }
     if (mixed[0]) args.push("-ss", String(mixed[0].offset), "-i", mixed[0].file);
     else args.push("-f", "lavfi", "-i", `anullsrc=r=48000:cl=stereo:d=${length}`);
     filters.push(`[1:a]asetpts=PTS-STARTPTS,apad,atrim=duration=${length}[a]`);
@@ -164,13 +178,13 @@ export async function prepareFreeLayout(
         "-filter_complex",
         filters.join(";"),
         "-map",
-        picture ? "[v]" : "0:v:0",
+        picture ? `[${videoLabel}]` : "0:v:0",
         "-map",
         "[a]",
         "-t",
         String(length),
         "-r",
-        "30",
+        String(fps),
         "-c:v",
         "ffv1",
         "-level",
@@ -191,5 +205,12 @@ export async function prepareFreeLayout(
   }
   const list = path.join(directory, "clips.ffconcat");
   await fs.writeFile(list, lines.join("\n"), "utf8");
-  return { directory, list, duration, occupied, info: { ...info, width, height } };
+  return {
+    directory,
+    list,
+    duration,
+    occupied,
+    info: { ...info, width: geometry.width, height: geometry.height, fps },
+    frameApplied
+  };
 }

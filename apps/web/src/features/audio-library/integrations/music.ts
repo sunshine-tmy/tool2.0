@@ -7,3 +7,17 @@ export const archiveMusicLibraryApi = {
   upload: audioLibraryApi.upload,
   item: audioLibraryApi.item
 };
+
+export {
+  loadWaveformData as loadArchiveMusicWaveform,
+  type WaveformData as ArchiveMusicWaveformData
+} from "../waveform-peaks";
+
+/** 编辑器音频素材页可查询全部未删除素材，旧配乐选择器仍只查询背景音乐。 */
+export const archiveEditorAudioApi = {
+  list: (params: Record<string, unknown> = {}, signal?: AbortSignal) =>
+    audioLibraryApi.list(
+      { ...params, view: params.view === "music" || params.view === "speech" ? params.view : "all" },
+      signal
+    )
+};

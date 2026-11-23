@@ -1,3 +1,7 @@
+import type { TimelineAudioChange } from "./timeline-audio";
+import { editorNumber, previewRate } from "./editor-numbers";
+import { useReversePreview } from "./useReversePreview";
+import { copyTimeline, pasteTimeline, type TimelineClipboard } from "./timeline-clipboard";
 import { Value } from "@sinclair/typebox/value";
 import { computed, ref, watch, onScopeDispose } from "vue";
 import {
@@ -9,7 +13,19 @@ import {
   ArchiveCutClipSchema,
   type ArchiveStudio,
   type ArchiveStudioSource,
+  type ArchiveSubtitle,
+  type ArchiveStudioMusic,
   archiveClipDuration,
+  archiveOutputFps,
+  archiveNeedsSourcePreview,
+  migrateArchiveStudio,
+  watermarkTrackError,
+  type ArchiveStudioWatermark,
+  archivePreviewClip,
+  type ArchiveInterpolationRuntime,
+  archiveClipSourceTime,
+  archiveSliceClip,
+  archiveClipRangeValid,
   defaultArchiveFrame,
   type ArchiveFrame,
   type ArchiveCutClip,
@@ -30,7 +46,13 @@ export function useArchiveRoughCut(
   sourceUrl: () => string,
   originalVolume: () => number = () => 100,
   studioUrl: (source: ArchiveStudioSource) => string = () => sourceUrl(),
-  switchSource: (url: string) => void = () => {}
+  switchSource: (url: string) => void = () => {},
+  musicUrl: (track: ArchiveStudio["musicTracks"][number]) => string = () => "",
+  backgroundMusic: () =>
+    { url: string; start: number; volume: number; loop: boolean; fadeIn: number; fadeOut: number } | undefined = () =>
+    undefined,
+  saveDraftEnabled: () => boolean = () => true,
+  prepareEnabled: () => boolean = () => true
 ) {
   const clips = ref<ArchiveCutClip[]>([]),
     selected = ref<string[]>([]),
@@ -44,8 +66,74 @@ export function useArchiveRoughCut(
     error = ref(""),
     draftStatus = ref("");
   const studio = ref<ArchiveStudio>(defaultArchiveStudio());
+  const clipboard = ref<TimelineClipboard>();
+  const interpolationRuntime = ref<ArchiveInterpolationRuntime>({
+    flowReady: false,
+    rifeReady: false,
+    componentId: "video-interpolation",
+    message: "正在检测补帧能力…"
+  });
+  const comparisonOriginal = ref(false);
+  const legacyInterpolation = ref(false);
+  const checkingInterpolation = ref(false);
+  async function refreshInterpolationRuntime() {
+    if (checkingInterpolation.value || typeof videoEditApi.interpolationRuntime !== "function") return;
+    checkingInterpolation.value = true;
+    try {
+      interpolationRuntime.value = await videoEditApi.interpolationRuntime(scope.signal);
+    } catch (e) {
+      if (!isApiErrorCancelled(e)) error.value = formatApiError(e);
+    } finally {
+      checkingInterpolation.value = false;
+    }
+  }
+  const reversePreview = useReversePreview(itemId, media, () => interpolationRuntime.value.modelVersion ?? "");
+  const previewAsset = (clip: ArchiveCutClip) =>
+    reversePreview.asset(clip, studio.value, archiveOutputFps(frameSettings.value));
+  const reverseSources = computed(() =>
+    Object.fromEntries(
+      clips.value.flatMap((clip) => {
+        const asset = previewAsset(clip);
+        return asset
+          ? [
+              [
+                clip.id,
+                {
+                  url: asset.url,
+                  start: asset.start,
+                  end: asset.end,
+                  interpolation: asset.interpolation,
+                  speed: asset.speed
+                }
+              ]
+            ]
+          : [];
+      })
+    )
+  );
+  function playback(clip: ArchiveCutClip, elapsed: number, audio = false) {
+    const recipe = archivePreviewClip(clip);
+    elapsed = clip.freezeSample?.time ?? elapsed;
+    const source = sourceOf(clip),
+      asset = comparisonOriginal.value && !audio ? undefined : previewAsset(clip);
+    const position = archiveClipSourceTime(clip, elapsed, fpsFor(clip));
+    return {
+      url: asset?.url ?? (source ? studioUrl(source) : sourceUrl()),
+      rate: asset?.interpolation ? 1 : (clip.speed ?? 1),
+      position:
+        asset && (clip.freezeAt === undefined || clip.freezeSample)
+          ? Math.max(
+              0,
+              asset.interpolation
+                ? (recipe.reverse ? asset.end - recipe.end : recipe.start - asset.start) / asset.speed + elapsed
+                : asset.end - recipe.end + elapsed * (recipe.speed ?? 1)
+            )
+          : position
+    };
+  }
   const activeUrl = ref("");
   let wantPlay = false;
+  const isPlaying = ref(false);
   const sourceOf = (clip?: ArchiveCutClip) => studio.value.sources.find((entry) => entry.id === clip?.sourceId);
   const fpsFor = (clip?: ArchiveCutClip) => sourceOf(clip)?.fps ?? fps.value;
   const durationFor = (clip?: ArchiveCutClip) => sourceOf(clip)?.duration ?? sourceDuration.value;
@@ -53,6 +141,8 @@ export function useArchiveRoughCut(
     Object.fromEntries(studio.value.sources.map((entry) => [entry.id, studioUrl(entry)]))
   );
   const frameSettings = ref<ArchiveFrame>(defaultArchiveFrame());
+  const sourceName = ref(""),
+    sourceHasAudio = ref<boolean>();
   const sourceWidth = ref(0),
     sourceHeight = ref(0);
   const duration = computed(() => archiveProjectDuration(clips.value, studio.value));
@@ -60,31 +150,48 @@ export function useArchiveRoughCut(
   const isGap = computed(() => visibleIndex.value < 0);
   const undo = ref<ArchiveCutDraft[]>([]),
     redo = ref<ArchiveCutDraft[]>([]);
-  const clipboard = ref<ArchiveCutClip[]>([]);
-  const clipboardSources = ref<ArchiveStudioSource[]>([]);
-  const copiedSubtitles = ref<ArchiveStudio["subtitles"]>([]);
-  const copiedMusic = ref<ArchiveStudio["musicTracks"]>([]);
-  const canPaste = computed(
-    () => loaded.value && clipboard.value.length + copiedSubtitles.value.length + copiedMusic.value.length > 0
-  );
-  const activeIndex = computed(() => clips.value.findIndex((clip) => selected.value.includes(clip.id)));
   const starts = computed(() => archiveCutStarts(clips.value));
   function videoEligible(clip: ArchiveCutClip, index: number) {
     const edge = 0.5 / (fpsFor(clip) * (clip.speed ?? 1));
     return (
+      !clip.locked &&
       selected.value.includes(clip.id) &&
       time.value > starts.value[index] + edge &&
       time.value < starts.value[index] + archiveClipDuration(clip) - edge
     );
   }
-  const timedEligible = (entry: { id: string; start: number; end: number }) =>
-    selected.value.includes(entry.id) && time.value > entry.start + 0.005 && time.value < entry.end - 0.005;
+  const timedEligible = (entry: { id: string; start: number; end: number; locked?: boolean }) =>
+    !entry.locked &&
+    selected.value.includes(entry.id) &&
+    time.value > entry.start + 0.005 &&
+    time.value < entry.end - 0.005;
   const canTrim = computed(
     () =>
       clips.value.some(videoEligible) ||
       studio.value.subtitles.some(timedEligible) ||
-      studio.value.musicTracks.some(timedEligible)
+      studio.value.musicTracks.some(timedEligible) ||
+      (studio.value.watermarks ?? []).some(timedEligible)
   );
+  const selectedVideos = computed(() => clips.value.filter((clip) => selected.value.includes(clip.id) && !clip.locked));
+  const canVideoTools = computed(() => selectedVideos.value.length > 0);
+  const freezeTarget = computed(() => {
+    if (selected.value.length !== 1) return undefined;
+    const index = clips.value.findIndex(
+      (clip, i) =>
+        selected.value[0] === clip.id &&
+        !clip.locked &&
+        !clip.hidden &&
+        time.value >= starts.value[i] &&
+        time.value < starts.value[i] + archiveClipDuration(clip)
+    );
+    const clip = clips.value[index];
+    if (
+      !clip ||
+      clips.value.some((other, i) => other.lane === clip.lane && other.locked && starts.value[i] >= time.value)
+    )
+      return undefined;
+    return { clip, index };
+  });
   let generation = 0,
     scope = new AbortController(),
     saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,14 +215,14 @@ export function useArchiveRoughCut(
     };
   }
   function scheduleSave() {
-    if (!loaded.value) return;
+    if (!loaded.value || !saveDraftEnabled()) return;
     draftStatus.value = "正在保存草稿…";
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void flush(), 500);
   }
   async function flush() {
     clearTimeout(saveTimer);
-    if (!loaded.value || !media()) return;
+    if (!loaded.value || !media() || !saveDraftEnabled()) return;
     const data = snapshot(),
       token = generation,
       serial = ++revision;
@@ -126,7 +233,7 @@ export function useArchiveRoughCut(
         try {
           await videoEditApi.saveCutDraft(itemId(), media()!.id, data, scope.signal);
           if (token === generation && serial === revision) {
-            draftStatus.value = "粗剪草稿已保存";
+            draftStatus.value = "工程草稿已保存";
             error.value = "";
           }
         } catch (e) {
@@ -138,14 +245,145 @@ export function useArchiveRoughCut(
       });
     await pendingSave;
   }
+  let audioContext: AudioContext | undefined, master: DynamicsCompressorNode | undefined;
+  function prepareAudio() {
+    try {
+      if (!audioContext) {
+        audioContext = new AudioContext();
+        master = audioContext.createDynamicsCompressor();
+        master.threshold.value = -1;
+        master.knee.value = 0;
+        master.ratio.value = 20;
+        master.attack.value = 0.003;
+        master.release.value = 0.1;
+        master.connect(audioContext.destination);
+      }
+      if (audioContext.state === "suspended") void audioContext.resume().catch(() => {});
+    } catch {
+      /* 无 Web Audio 能力时仍保留原生播放。 */
+    }
+  }
+  type AudioPlayer = { url: string; element: HTMLAudioElement; source?: MediaElementAudioSourceNode; gain?: GainNode };
+  const audioPlayers = new Map<string, AudioPlayer>();
+  function releasePlayer(player: AudioPlayer) {
+    player.element.pause();
+    player.source?.disconnect();
+    player.gain?.disconnect();
+    player.element.removeAttribute("src");
+    player.element.load();
+  }
+
+  function clearAudio() {
+    for (const player of audioPlayers.values()) releasePlayer(player);
+    audioPlayers.clear();
+  }
+  function syncAudio() {
+    const active = new Set<string>();
+    function sound(id: string, url: string, position: number, rate: number, gain: number, loop = false) {
+      if (!url || gain <= 0) return;
+      active.add(id);
+      let player = audioPlayers.get(id);
+      if (!player || player.url !== url) {
+        if (player) {
+          releasePlayer(player);
+        }
+        const element = new Audio();
+        element.crossOrigin = "anonymous";
+        element.preload = "auto";
+        element.src = url;
+        player = { url, element };
+        if (audioContext && master) {
+          try {
+            player.source = audioContext.createMediaElementSource(element);
+            player.gain = audioContext.createGain();
+            player.source.connect(player.gain);
+            player.gain.connect(master);
+          } catch {
+            player.source?.disconnect();
+            player.source = undefined;
+            player.gain = undefined;
+          }
+        }
+        audioPlayers.set(id, player);
+      }
+      const element = player.element;
+      element.playbackRate = previewRate(rate);
+      element.preservesPitch = true;
+      element.volume = player.gain ? 1 : Math.max(0, Math.min(1, gain));
+      if (player.gain && audioContext)
+        player.gain.gain.setTargetAtTime(Math.max(0, gain), audioContext.currentTime, 0.005);
+      element.loop = loop;
+      if (element.readyState >= 1) {
+        const target = loop && Number.isFinite(element.duration) ? position % element.duration : position;
+        if (!loop && target >= element.duration) {
+          element.pause();
+          return;
+        }
+        if (!element.seeking && Math.abs(element.currentTime - target) > 0.12)
+          element.currentTime = Math.max(0, target);
+        if (element.paused) void element.play().catch(() => {});
+      }
+    }
+    const fade = (position: number, length: number, fadeIn = 0, fadeOut = 0) =>
+      Math.max(0, Math.min(1, fadeIn ? position / Math.min(fadeIn, length) : 1)) *
+      Math.max(0, Math.min(1, fadeOut ? (length - position) / Math.min(fadeOut, length) : 1));
+    for (const [i, clip] of clips.value.entries()) {
+      const elapsed = time.value - starts.value[i],
+        length = archiveClipDuration(clip);
+      if (elapsed < 0 || elapsed >= length || clip.muted || clip.freezeAt !== undefined) continue;
+      const soundSource = playback(clip, elapsed, true);
+      if (archiveNeedsSourcePreview(clip) && !previewAsset(clip)) continue;
+      sound(
+        clip.id,
+        soundSource.url,
+        soundSource.position,
+        soundSource.rate,
+        ((((clip.volume ?? 100) / 100) * originalVolume()) / 100) * fade(elapsed, length, clip.fadeIn, clip.fadeOut)
+      );
+    }
+    for (const track of studio.value.musicTracks) {
+      const elapsed = time.value - track.start;
+      if (elapsed < 0 || time.value >= track.end || track.muted) continue;
+      sound(
+        track.id,
+        musicUrl(track),
+        track.sourceStart + elapsed * (track.speed ?? 1),
+        track.speed ?? 1,
+        (track.volume / 100) * fade(elapsed, track.end - track.start, track.fadeIn, track.fadeOut),
+        track.loop
+      );
+    }
+    const background = backgroundMusic();
+    if (background)
+      sound(
+        "background",
+        background.url,
+        background.start + time.value,
+        1,
+        (background.volume / 100) * fade(time.value, duration.value, background.fadeIn, background.fadeOut),
+        background.loop
+      );
+    for (const [id, player] of audioPlayers)
+      if (!active.has(id)) {
+        releasePlayer(player);
+        audioPlayers.delete(id);
+      }
+  }
   function stop() {
     wantPlay = false;
+    isPlaying.value = false;
     video()?.pause();
+    if (video()) video()!.muted = false;
+    clearAudio();
     if (frame !== undefined) cancelAnimationFrame(frame);
     frame = undefined;
   }
   function reset() {
+    legacyInterpolation.value = false;
     stop();
+    clipboard.value = undefined;
+    comparisonOriginal.value = false;
+    reversePreview.reset();
     if (seekFrame !== undefined) cancelAnimationFrame(seekFrame);
     seekFrame = undefined;
     pendingSeek = undefined;
@@ -158,13 +396,11 @@ export function useArchiveRoughCut(
     studio.value = defaultArchiveStudio();
     activeUrl.value = "";
     frameSettings.value = defaultArchiveFrame();
+    sourceName.value = "";
+    sourceHasAudio.value = undefined;
     sourceWidth.value = 0;
     sourceHeight.value = 0;
-    clipboard.value = [];
-    copiedSubtitles.value = [];
-    copiedMusic.value = [];
     visibleIndex.value = -1;
-    clipboardSources.value = [];
     clips.value = [];
     selected.value = [];
     time.value = 0;
@@ -175,7 +411,17 @@ export function useArchiveRoughCut(
     draftStatus.value = "";
     gesture = undefined;
   }
-  async function load() {
+  let loadingRequest: Promise<void> | undefined;
+  function load(preferSaved = false) {
+    if (loading.value && loadingRequest) return loadingRequest;
+    const request = loadSource(preferSaved);
+    loadingRequest = request;
+    void request.finally(() => {
+      if (loadingRequest === request) loadingRequest = undefined;
+    });
+    return request;
+  }
+  async function loadSource(preferSaved = false) {
     if (loaded.value || loading.value || !media()) return;
     const token = generation;
     loading.value = true;
@@ -183,25 +429,63 @@ export function useArchiveRoughCut(
     try {
       const current = media()!;
       const result = await videoEditApi.cutSource(itemId(), current.id, scope.signal);
+      if (typeof videoEditApi.interpolationRuntime === "function") {
+        try {
+          interpolationRuntime.value = await videoEditApi.interpolationRuntime(scope.signal);
+        } catch {
+          /* 能力状态失败不影响原视频编辑。 */
+        }
+      }
       if (token !== generation) return;
       sourceDuration.value = result.duration;
       fps.value = result.fps;
+      sourceName.value = result.fileName ?? current.audioEdit?.original.fileName ?? current.fileName;
+      sourceHasAudio.value = result.hasAudio;
       sourceWidth.value = result.width ?? current.audioEdit?.originalWidth ?? current.width ?? 0;
       sourceHeight.value = result.height ?? current.audioEdit?.originalHeight ?? current.height ?? 0;
-      const draft = result.draft;
-      studio.value = clone(draft?.studio ?? current.audioEdit?.studio ?? defaultArchiveStudio());
-      frameSettings.value = clone(result.draft?.frame ?? current.audioEdit?.frame ?? defaultArchiveFrame());
+      const draft = preferSaved ? undefined : result.draft;
+      const inputStudio = draft?.studio ?? current.audioEdit?.studio ?? defaultArchiveStudio();
+      const migrateWatermarkLane = !inputStudio.unified && Boolean(current.audioEdit?.watermark);
+      studio.value = migrateArchiveStudio(
+        current.audioEdit,
+        inputStudio,
+        archiveProjectDuration(
+          draft?.clips ?? current.audioEdit?.cut ?? [{ id: "original", start: 0, end: result.duration }],
+          inputStudio
+        ),
+        draft?.clips ?? current.audioEdit?.cut
+      );
+      frameSettings.value = {
+        ...clone(draft?.frame ?? current.audioEdit?.frame ?? defaultArchiveFrame()),
+        fit: "contain"
+      };
       const saved = current.audioEdit?.cut;
       const restored = clone(draft?.clips ?? saved ?? [{ id: cutClipId(), start: 0, end: result.duration }]);
+      legacyInterpolation.value = restored.some((clip) => Boolean(clip.interpolation));
       const positions = archiveCutStarts(restored);
-      clips.value = restored.map((clip, i) => ({ ...clip, at: clip.at ?? positions[i], lane: clip.lane ?? 1 }));
+      clips.value = restored.map(({ interpolation: _legacy, ...clip }, i) => ({
+        ...clip,
+        at: clip.at ?? positions[i],
+        lane: (clip.lane ?? 1) + (migrateWatermarkLane ? 1 : 0)
+      }));
+      for (const mark of studio.value.watermarks ?? [])
+        if (mark.followEnd) mark.end = Math.max(mark.start + 0.01, archiveProjectDuration(clips.value, studio.value));
       studio.value.subtitles = studio.value.subtitles.map((cue) => ({ ...cue, lane: cue.lane ?? 0 }));
       studio.value.musicTracks = studio.value.musicTracks.map((track, i) => ({ ...track, lane: track.lane ?? 2 + i }));
+      const elements = [
+        ...clips.value,
+        ...studio.value.subtitles,
+        ...studio.value.musicTracks,
+        ...(studio.value.watermarks ?? [])
+      ];
+      const lanes = [...new Set(elements.map((entry) => entry.lane ?? 1))].sort((a, b) => a - b);
+      for (const entry of elements) entry.lane = lanes.indexOf(entry.lane ?? 1);
+      studio.value.lanes = Math.max(1, lanes.length);
       time.value = Math.min(draft?.playhead ?? 0, duration.value);
       selected.value = draft?.selected ?? [];
       zoom.value = draft?.zoom ?? 1;
       loaded.value = true;
-      draftStatus.value = draft ? "已恢复粗剪草稿" : "";
+      draftStatus.value = draft ? "已恢复工程草稿" : "";
       if (enabled()) seek(time.value);
     } catch (e) {
       if (token === generation && !isApiErrorCancelled(e)) error.value = formatApiError(e);
@@ -217,9 +501,7 @@ export function useArchiveRoughCut(
     const clip = clips.value[index];
     return {
       index,
-      source: clip
-        ? clip.start + Math.min(clip.end - clip.start, Math.max(0, position - starts.value[index]) * (clip.speed ?? 1))
-        : 0
+      source: clip ? playback(clip, Math.max(0, position - starts.value[index])).position : 0
     };
   }
   function requestVideoPosition() {
@@ -232,8 +514,7 @@ export function useArchiveRoughCut(
       return;
     }
     pendingSeek = target.source;
-    const source = sourceOf(clips.value[target.index]);
-    const nextUrl = source ? studioUrl(source) : sourceUrl();
+    const nextUrl = playback(clips.value[target.index], time.value - starts.value[target.index]).url;
     if (activeUrl.value !== nextUrl || video()?.getAttribute("src") !== nextUrl) {
       activeUrl.value = nextUrl;
       video()?.pause();
@@ -250,11 +531,20 @@ export function useArchiveRoughCut(
           pendingSeek !== undefined &&
           playingIndex >= 0
         ) {
-          element.playbackRate = clips.value[playingIndex]?.speed ?? 1;
+          element.muted = wantPlay;
+          element.playbackRate = previewRate(
+            playback(clips.value[playingIndex], time.value - starts.value[playingIndex]).rate
+          );
           element.preservesPitch = true;
           element.currentTime = pendingSeek;
           pendingSeek = undefined;
-          if (wantPlay) void element.play().catch(() => {});
+          if (
+            wantPlay &&
+            clips.value[playingIndex]?.freezeAt === undefined &&
+            !(comparisonOriginal.value && clips.value[playingIndex]?.reverse)
+          )
+            void element.play().catch(() => {});
+          else element.pause();
         }
       });
   }
@@ -276,28 +566,36 @@ export function useArchiveRoughCut(
         return;
       }
     }
+    if (wantPlay) syncAudio();
     const target = locate(time.value),
       element = video();
     if (target.index !== visibleIndex.value) requestVideoPosition();
     if (!element || target.index < 0 || element.getAttribute("src") !== activeUrl.value || element.readyState < 1)
       return;
     const clip = clips.value[target.index];
-    element.playbackRate = clip.speed ?? 1;
+    const still = clip.freezeAt !== undefined,
+      backwardsComparison = comparisonOriginal.value && clip.reverse;
+    if (still || backwardsComparison) element.pause();
+    element.muted = wantPlay;
+    element.playbackRate = previewRate(playback(clip, time.value - starts.value[target.index]).rate);
     element.preservesPitch = true;
     const position = Math.max(0, time.value - starts.value[target.index]),
       length = archiveClipDuration(clip);
     const fadeIn = Math.min(clip.fadeIn ?? 0, length / 2),
       fadeOut = Math.min(clip.fadeOut ?? 0, length / 2);
     const gain = Math.min(1, fadeIn ? position / fadeIn : 1, fadeOut ? Math.max(0, length - position) / fadeOut : 1);
-    element.volume = Math.max(0, Math.min(1, ((((clip.volume ?? 100) / 100) * originalVolume()) / 100) * gain));
+    element.volume = Math.max(
+      0,
+      Math.min(1, ((((clip.muted ? 0 : (clip.volume ?? 100)) / 100) * originalVolume()) / 100) * gain)
+    );
     if (
       wantPlay &&
       !element.seeking &&
       pendingSeek === undefined &&
-      Math.abs(element.currentTime - target.source) > 0.15
+      Math.abs(element.currentTime - target.source) > (backwardsComparison ? 0.5 / fpsFor(clip) : 0.15)
     )
       element.currentTime = target.source;
-    if (wantPlay && element.paused && !element.seeking && pendingSeek === undefined)
+    if (wantPlay && !still && !backwardsComparison && element.paused && !element.seeking && pendingSeek === undefined)
       void element.play().catch(() => {});
   }
   function tick() {
@@ -319,14 +617,25 @@ export function useArchiveRoughCut(
   function onEnded() {
     if (enabled() && wantPlay) sync();
   }
-  function togglePlay() {
+  async function togglePlay() {
     if (!loaded.value || duration.value <= 0) return;
+    if (reversePreview.preparing.value) return;
+    if (!wantPlay && clips.value.some((clip) => archiveNeedsSourcePreview(clip) && !previewAsset(clip))) {
+      try {
+        await reversePreview.prepare(clone(clips.value), clone(studio.value), archiveOutputFps(frameSettings.value));
+      } catch (e) {
+        if (!isApiErrorCancelled(e)) error.value = formatApiError(e);
+        return;
+      }
+    }
     if (wantPlay) {
       sync();
       stop();
     } else {
       if (time.value >= duration.value) seek(0);
+      prepareAudio();
       wantPlay = true;
+      isPlaying.value = true;
       anchorTime = time.value;
       anchorWall = performance.now();
       requestVideoPosition();
@@ -346,15 +655,82 @@ export function useArchiveRoughCut(
     stop();
     gesture = snapshot();
   }
-  function commit(next: ArchiveCutClip[], frame = frameSettings.value, composition = studio.value): boolean {
+  function beginAudio() {
+    clearTimeout(saveTimer);
+    gesture = snapshot();
+  }
+  function finishAudio() {
+    commit(clips.value, frameSettings.value, studio.value);
+    // 无改动的点击也要恢复开始拖动前尚未触发的草稿保存。
+    scheduleSave();
+  }
+  /** 指针拖动期间只更新参数，结束时统一提交；不重复寻帧或生成撤回记录。 */
+  function previewAudio(id: string, changes: TimelineAudioChange) {
+    if (!gesture) return;
+    const clean: TimelineAudioChange = {};
+    for (const key of ["volume", "fadeIn", "fadeOut"] as const) {
+      const value = changes[key];
+      if (value !== undefined && Number.isFinite(value))
+        clean[key] = Math.max(0, Math.min(key === "volume" ? 1000 : 10, editorNumber(value, key === "volume" ? 6 : 1)));
+    }
+    if (!Object.keys(clean).length) return;
+    const clip = clips.value.find((entry) => entry.id === id);
+    if (clip && !clip.locked)
+      clips.value = clips.value.map((entry) => (entry.id === id ? { ...entry, ...clean } : entry));
+    else {
+      const music = studio.value.musicTracks.find((entry) => entry.id === id);
+      if (!music || music.locked) return;
+      studio.value = {
+        ...studio.value,
+        musicTracks: studio.value.musicTracks.map((entry) => (entry.id === id ? { ...entry, ...clean } : entry))
+      };
+    }
+    if (wantPlay) syncAudio();
+  }
+  let lastPropertyKey = "",
+    lastPropertyTime = 0;
+  function commit(
+    next: ArchiveCutClip[],
+    frame = frameSettings.value,
+    composition = studio.value,
+    trackChange = false,
+    historyKey = ""
+  ): boolean {
     if (next.length > 2000 || archiveProjectDuration(next, composition) > 7200) {
       gesture = undefined;
       error.value = next.length > 2000 ? "单次粗剪最多支持 2000 个片段" : "剪辑后视频最长支持 2 小时";
       return false;
     }
+    if (!trackChange) {
+      function protect<T extends { id: string; locked?: boolean; lane?: number }>(original: T[], incoming: T[]): T[] {
+        const result = incoming.map((entry) => {
+          const old = original.find((old) => old.id === entry.id);
+          return old?.locked ? { ...clone(old), lane: entry.lane } : entry;
+        });
+        for (const old of original)
+          if (old.locked && !result.some((entry) => entry.id === old.id)) result.push(clone(old));
+        return result;
+      }
+      next = protect(clips.value, next);
+      composition = {
+        ...composition,
+        subtitles: protect(studio.value.subtitles, composition.subtitles),
+        musicTracks: protect(studio.value.musicTracks, composition.musicTracks),
+        watermarks: protect(studio.value.watermarks ?? [], composition.watermarks ?? [])
+      };
+    }
     next = clone(next);
     composition = clone(composition);
+    for (const mark of composition.watermarks ?? [])
+      if (mark.followEnd) mark.end = Math.max(mark.start + 0.01, archiveProjectDuration(next, composition));
     const entries = [
+      ...(composition.watermarks ?? []).map((mark) => ({
+        entry: mark,
+        kind: "watermark",
+        at: mark.start,
+        end: mark.end,
+        lane: mark.lane ?? 0
+      })),
       ...next.map((clip) => ({
         entry: clip,
         kind: "video",
@@ -403,10 +779,10 @@ export function useArchiveRoughCut(
       next.some(
         (clip) =>
           !Value.Check(ArchiveCutClipSchema, clip) ||
-          clip.end <= clip.start ||
-          clip.end >
-            (composition.sources.find((source) => source.id === clip.sourceId)?.duration ?? sourceDuration.value) +
-              0.001
+          !archiveClipRangeValid(
+            clip,
+            composition.sources.find((source) => source.id === clip.sourceId)?.duration ?? sourceDuration.value
+          )
       )
     ) {
       gesture = undefined;
@@ -416,7 +792,8 @@ export function useArchiveRoughCut(
     if (
       !Value.Check(ArchiveStudioSchema, composition) ||
       composition.subtitles.some((cue) => cue.end <= cue.start) ||
-      composition.musicTracks.some((track) => track.end <= track.start)
+      composition.musicTracks.some((track) => track.end <= track.start) ||
+      (composition.watermarks ?? []).some((mark) => mark.end <= mark.start || watermarkTrackError(mark))
     ) {
       error.value = "字幕、配乐或拼接素材参数无效，请检查时间范围与数量";
       return false;
@@ -431,19 +808,25 @@ export function useArchiveRoughCut(
       JSON.stringify(before.studio) === JSON.stringify(composition)
     )
       return false;
-    stop();
+    if (!wantPlay) stop();
     error.value = "";
-    undo.value.push(before);
+    const now = performance.now();
+    if (!historyKey || historyKey !== lastPropertyKey || now - lastPropertyTime > 500) undo.value.push(before);
+    lastPropertyKey = historyKey;
+    lastPropertyTime = now;
     if (undo.value.length > 100) undo.value.shift();
     redo.value = [];
     clips.value = clone(next);
     frameSettings.value = clone(frame);
     studio.value = clone(composition);
-    const ids = new Set([...next, ...composition.subtitles, ...composition.musicTracks].map((entry) => entry.id));
+    const ids = new Set(
+      [...next, ...composition.subtitles, ...composition.musicTracks, ...(composition.watermarks ?? [])].map(
+        (entry) => entry.id
+      )
+    );
     selected.value = selected.value.filter((id) => ids.has(id));
     seek(Math.min(time.value, duration.value));
     scheduleSave();
-    void flush();
     return true;
   }
   function cancelGesture() {
@@ -454,6 +837,7 @@ export function useArchiveRoughCut(
     }
   }
   function undoEdit() {
+    lastPropertyKey = "";
     const previous = undo.value.pop();
     if (previous) {
       redo.value.push(snapshot());
@@ -461,6 +845,7 @@ export function useArchiveRoughCut(
     }
   }
   function redoEdit() {
+    lastPropertyKey = "";
     const next = redo.value.pop();
     if (next) {
       undo.value.push(snapshot());
@@ -472,21 +857,31 @@ export function useArchiveRoughCut(
     const composition = clone(studio.value);
     const next = clips.value.flatMap((clip, index): ArchiveCutClip[] => {
       if (!videoEligible(clip, index)) return [clone(clip)];
-      const source = clip.start + (time.value - starts.value[index]) * (clip.speed ?? 1);
-      if (mode === "left") return [{ ...clone(clip), start: source, at: time.value }];
-      if (mode === "right") return [{ ...clone(clip), end: source }];
+      const offset = time.value - starts.value[index];
+      const left = archiveSliceClip(clone(clip), 0, offset),
+        right = archiveSliceClip(clone(clip), offset);
+      if (mode === "left") return [{ ...right, at: time.value }];
+      if (mode === "right") return [left];
       return [
-        { ...clone(clip), end: source, transition: undefined, fadeOut: 0 },
-        { ...clone(clip), id: cutClipId(), start: source, at: time.value, fadeIn: 0 }
+        { ...left, transition: undefined, fadeOut: 0 },
+        { ...right, id: cutClipId(), at: time.value, fadeIn: 0 }
       ];
     });
     function edit<
-      T extends { id: string; start: number; end: number; sourceStart?: number; fadeIn?: number; fadeOut?: number }
+      T extends {
+        id: string;
+        start: number;
+        end: number;
+        sourceStart?: number;
+        speed?: number;
+        fadeIn?: number;
+        fadeOut?: number;
+      }
     >(list: T[]): T[] {
       return list.flatMap((entry): T[] => {
         if (!timedEligible(entry)) return [entry];
         const right = { ...clone(entry), start: time.value };
-        if (right.sourceStart !== undefined) right.sourceStart += time.value - entry.start;
+        if (right.sourceStart !== undefined) right.sourceStart += (time.value - entry.start) * (entry.speed ?? 1);
         if (mode === "left") return [right];
         const left = { ...entry, end: time.value };
         if (mode === "right") return [left];
@@ -498,13 +893,20 @@ export function useArchiveRoughCut(
     }
     composition.subtitles = edit(composition.subtitles);
     composition.musicTracks = edit(composition.musicTracks);
+    composition.watermarks = edit(composition.watermarks ?? []).map((mark) =>
+      selected.value.includes(mark.id) || !studio.value.watermarks?.some((old) => old.id === mark.id)
+        ? { ...mark, followEnd: false }
+        : mark
+    );
     const previousIds = new Set(
-      [...clips.value, ...studio.value.subtitles, ...studio.value.musicTracks].map((entry) => entry.id)
+      [...clips.value, ...studio.value.subtitles, ...studio.value.musicTracks, ...(studio.value.watermarks ?? [])].map(
+        (entry) => entry.id
+      )
     );
     if (commit(next, frameSettings.value, composition)) {
       selected.value = [
         ...selected.value,
-        ...[...next, ...composition.subtitles, ...composition.musicTracks]
+        ...[...next, ...composition.subtitles, ...composition.musicTracks, ...(composition.watermarks ?? [])]
           .filter((entry) => !previousIds.has(entry.id))
           .map((entry) => entry.id)
       ];
@@ -518,71 +920,224 @@ export function useArchiveRoughCut(
     batchEdit(side);
   }
   function copySelection() {
-    if (!selected.value.length) return;
-    clipboard.value = clone(clips.value.filter((clip) => selected.value.includes(clip.id)));
-    copiedSubtitles.value = clone(studio.value.subtitles.filter((cue) => selected.value.includes(cue.id)));
-    copiedMusic.value = clone(studio.value.musicTracks.filter((track) => selected.value.includes(track.id)));
-    clipboardSources.value = clone(
-      studio.value.sources.filter((source) => clipboard.value.some((clip) => clip.sourceId === source.id))
+    const data = copyTimeline(clips.value, studio.value, selected.value);
+    if (data) clipboard.value = data;
+  }
+  function pasteSelection() {
+    if (!loaded.value || !clipboard.value) return;
+    const pasted = pasteTimeline(clipboard.value, time.value, clips.value, studio.value, cutClipId);
+    if (commit(pasted.clips, frameSettings.value, pasted.studio)) {
+      selected.value = pasted.selected;
+      scheduleSave();
+    }
+  }
+  function rotateVideo() {
+    commit(
+      clips.value.map((clip) =>
+        !selectedVideos.value.includes(clip)
+          ? clip
+          : {
+              ...clip,
+              transform: {
+                ...clip.transform,
+                angle:
+                  (((((clip.transform?.angle ?? frameSettings.value.angle ?? 0) + 90 + 180) % 360) + 360) % 360) - 180
+              }
+            }
+      )
     );
   }
-  function paste() {
-    if (!canPaste.value) return;
-    const origin = Math.min(
-      ...clipboard.value.map((clip) => clip.at ?? 0),
-      ...copiedSubtitles.value.map((cue) => cue.start),
-      ...copiedMusic.value.map((track) => track.start)
+  function mirrorVideo() {
+    commit(
+      clips.value.map((clip) =>
+        !selectedVideos.value.includes(clip)
+          ? clip
+          : {
+              ...clip,
+              transform: { ...clip.transform, flipX: !(clip.transform?.flipX ?? frameSettings.value.flipX) }
+            }
+      )
     );
-    const offset = time.value - origin;
-    const copied = clipboard.value.map((clip) => ({ ...clone(clip), id: cutClipId(), at: (clip.at ?? 0) + offset }));
-    const cues = copiedSubtitles.value.map((cue) => ({
-      ...clone(cue),
-      id: cutClipId(),
-      start: cue.start + offset,
-      end: cue.end + offset
-    }));
-    const tracks = copiedMusic.value.map((track) => ({
-      ...clone(track),
-      id: cutClipId(),
-      start: track.start + offset,
-      end: track.end + offset
-    }));
-    const composition = clone(studio.value);
-    composition.subtitles.push(...cues);
-    composition.musicTracks.push(...tracks);
-    for (const source of clipboardSources.value)
-      if (!composition.sources.some((entry) => entry.id === source.id)) composition.sources.push(clone(source));
-    if (!commit([...clips.value, ...copied], frameSettings.value, composition)) return;
-    selected.value = [...copied, ...cues, ...tracks].map((entry) => entry.id);
-    scheduleSave();
   }
-  function duplicate() {
-    if (!selected.value.length) return;
-    copySelection();
-    const end = Math.max(
-      ...clipboard.value.map((clip) => (clip.at ?? 0) + archiveClipDuration(clip)),
-      ...copiedSubtitles.value.map((cue) => cue.end),
-      ...copiedMusic.value.map((track) => track.end)
-    );
-    const previous = time.value;
-    time.value = end;
-    paste();
-    seek(previous);
+  async function reverseVideo() {
+    const selected = selectedVideos.value.filter((clip) => clip.freezeAt === undefined);
+    if (!selected.length || reversePreview.preparing.value) return;
+    stop();
+    const next = clips.value.map((clip) => (selected.includes(clip) ? { ...clip, reverse: !clip.reverse } : clip));
+    try {
+      await reversePreview.prepare(next, studio.value, archiveOutputFps(frameSettings.value));
+      commit(next);
+    } catch (e) {
+      if (!isApiErrorCancelled(e)) error.value = formatApiError(e);
+    }
   }
-  function updateClip(id: string, changes: Partial<ArchiveCutClip>) {
+  function freezeVideo() {
+    const target = freezeTarget.value;
+    if (!target) return;
+    const { clip, index } = target,
+      at = time.value,
+      offset = at - starts.value[index],
+      length = archiveClipDuration(clip);
+    const id = cutClipId();
+    const still: ArchiveCutClip = {
+      ...clone(clip),
+      id,
+      at,
+      start: 0,
+      end: 3,
+      speed: 1,
+      freezeAt: Math.floor((archiveClipSourceTime(clip, offset, fpsFor(clip)) + 1e-7) * fpsFor(clip)) / fpsFor(clip),
+      freezeSample:
+        clip.interpolation && clip.freezeAt === undefined
+          ? {
+              start: clip.start,
+              end: clip.end,
+              speed: clip.speed ?? 1,
+              reverse: Boolean(clip.reverse),
+              interpolation: clone(clip.interpolation),
+              time:
+                Math.floor((offset + 1e-7) * archiveOutputFps(frameSettings.value)) /
+                archiveOutputFps(frameSettings.value),
+              fps: frameSettings.value.fps ?? 30
+            }
+          : clip.freezeSample,
+      interpolation: undefined,
+      reverse: false,
+      muted: true,
+      fadeIn: 0,
+      fadeOut: 0,
+      transition: undefined
+    };
+    const next = clips.value.flatMap((entry, i) => {
+      if (i !== index)
+        return [{ ...clone(entry), at: starts.value[i] + (entry.lane === clip.lane && starts.value[i] >= at ? 3 : 0) }];
+      return [
+        ...(offset > 1e-7 ? [{ ...archiveSliceClip(clone(clip), 0, offset), transition: undefined, fadeOut: 0 }] : []),
+        still,
+        ...(length - offset > 1e-7
+          ? [{ ...archiveSliceClip(clone(clip), offset), id: cutClipId(), at: at + 3, fadeIn: 0 }]
+          : [])
+      ];
+    });
+    if (commit(next)) {
+      selected.value = [id];
+      seek(at);
+      scheduleSave();
+    }
+  }
+  function updateClip(id: string, changes: Partial<ArchiveCutClip>, discrete = false) {
     const next = clips.value.map((clip) => (clip.id === id ? { ...clip, ...changes, id } : clip));
     if (
-      next.some(
-        (clip) => clip.start < 0 || clip.end > durationFor(clip) + 0.001 || clip.end - clip.start < 0.5 / fpsFor(clip)
-      )
+      next.some((clip) => !archiveClipRangeValid(clip, durationFor(clip)) || clip.end - clip.start < 0.5 / fpsFor(clip))
     ) {
       error.value = "起点须早于终点，且不能超出原片范围";
       return;
     }
-    commit(next);
+    commit(
+      next,
+      frameSettings.value,
+      studio.value,
+      false,
+      discrete ? "" : `clip:${id}:${Object.keys(changes).join(",")}`
+    );
+  }
+  function updateMusic(id: string, changes: Partial<ArchiveStudioMusic>) {
+    const composition = clone(studio.value);
+    composition.musicTracks = composition.musicTracks.map((track) =>
+      track.id === id ? { ...track, ...changes, id } : track
+    );
+    commit(clips.value, frameSettings.value, composition, false, `music:${id}:${Object.keys(changes).join(",")}`);
   }
   function updateStudio(value: ArchiveStudio) {
+    commit(clips.value, frameSettings.value, value, false, "studio");
+  }
+  function updateSubtitle(id: string, changes: Partial<ArchiveSubtitle>, discrete = false) {
+    const composition = clone(studio.value);
+    composition.subtitles = composition.subtitles.map((cue) => (cue.id === id ? { ...cue, ...changes, id } : cue));
+    commit(
+      clips.value,
+      frameSettings.value,
+      composition,
+      false,
+      discrete ? "" : `subtitle:${id}:${Object.keys(changes).sort().join(",")}`
+    );
+  }
+  function updateWatermark(id: string, changes: Partial<ArchiveStudioWatermark>, discrete = false) {
+    const composition = clone(studio.value);
+    composition.watermarks = (composition.watermarks ?? []).map((mark) =>
+      mark.id === id ? { ...mark, ...clone(changes), id } : mark
+    );
+    commit(
+      clips.value,
+      frameSettings.value,
+      composition,
+      false,
+      discrete ? "" : `watermark:${id}:${Object.keys(changes).join(",")}`
+    );
+  }
+  function addWatermark(mark: ArchiveStudioWatermark) {
+    const composition = clone(studio.value),
+      next = clone(clips.value);
+    for (const entry of [
+      ...next,
+      ...composition.subtitles,
+      ...composition.musicTracks,
+      ...(composition.watermarks ?? [])
+    ])
+      entry.lane = (entry.lane ?? 1) + 1;
+    (composition.watermarks ??= []).push({ ...clone(mark), lane: 0 });
+    if (commit(next, frameSettings.value, composition)) selected.value = [mark.id];
+  }
+  function registerSource(source: ArchiveStudioSource) {
+    const value = clone(studio.value);
+    if (
+      value.sources.some(
+        (entry) =>
+          entry.itemId === source.itemId && entry.mediaId === source.mediaId && entry.checksum === source.checksum
+      )
+    )
+      return;
+    if (value.sources.length >= 100) {
+      error.value = "最多导入 100 个视频素材";
+      return;
+    }
+    value.sources.push(source);
     commit(clips.value, frameSettings.value, value);
+  }
+  function appendOriginal() {
+    if (!sourceDuration.value) return;
+    const id = cutClipId();
+    if (
+      commit([
+        ...clips.value,
+        { id, start: 0, end: sourceDuration.value, at: duration.value, lane: clips.value[0]?.lane ?? 1 }
+      ])
+    ) {
+      selected.value = [id];
+      seek(starts.value[clips.value.length - 1]);
+    }
+  }
+  function insertTexts(cues: ArchiveSubtitle[]) {
+    if (!cues.length) return;
+    const value = clone(studio.value),
+      ends: number[] = [];
+    const prepared = clone(cues)
+      .sort((a, b) => a.start - b.start)
+      .map((cue) => {
+        let lane = ends.findIndex((end) => end <= cue.start);
+        if (lane < 0) lane = ends.length;
+        ends[lane] = cue.end;
+        return { ...cue, lane };
+      });
+    const next = clips.value.map((clip) => ({ ...clip, lane: (clip.lane ?? 1) + ends.length }));
+    value.subtitles = value.subtitles.map((cue) => ({ ...cue, lane: (cue.lane ?? 0) + ends.length }));
+    value.musicTracks = value.musicTracks.map((track) => ({ ...track, lane: (track.lane ?? 2) + ends.length }));
+    value.watermarks = (value.watermarks ?? []).map((mark) => ({ ...mark, lane: (mark.lane ?? 0) + ends.length }));
+    value.subtitles.push(...prepared);
+    if (commit(next, frameSettings.value, value)) {
+      selected.value = [prepared[0].id];
+      seek(prepared[0].start);
+    }
   }
   function appendSource(source: ArchiveStudioSource) {
     const value = clone(studio.value);
@@ -594,69 +1149,29 @@ export function useArchiveRoughCut(
     const id = cutClipId();
     const next = [
       ...clips.value,
-      { id, sourceId: known?.id ?? source.id, start: 0, end: source.duration, at: duration.value, lane: 1 }
+      {
+        id,
+        sourceId: known?.id ?? source.id,
+        start: 0,
+        end: source.duration,
+        at: duration.value,
+        lane: clips.value[0]?.lane ?? 1
+      }
     ];
     if (commit(next, frameSettings.value, value)) {
       selected.value = [id];
       seek(starts.value[clips.value.length - 1]);
     }
   }
-  function applyAnalysis(id: string, boundaries: number[], silence?: Array<{ start: number; end: number }>) {
-    const index = clips.value.findIndex((clip) => clip.id === id);
-    if (index < 0) return;
-    const clip = clips.value[index],
-      frame = 1 / fpsFor(clip);
-    const points = [clip.start];
-    for (const point of [...new Set(boundaries)].sort((a, b) => a - b)) {
-      if (point >= points[points.length - 1] + frame && point <= clip.end - frame) points.push(point);
-    }
-    points.push(clip.end);
-    let pieces: ArchiveCutClip[] = points.slice(0, -1).map((start, i) => ({
-      ...clone(clip),
-      id: cutClipId(),
-      start,
-      end: points[i + 1],
-      at: starts.value[index] + (start - clip.start) / (clip.speed ?? 1),
-      transition: undefined,
-      fadeIn: i === 0 ? clip.fadeIn : 0,
-      fadeOut: i === points.length - 2 ? clip.fadeOut : 0
-    }));
-    if (silence)
-      pieces = pieces.filter(
-        (piece) =>
-          !silence.some(
-            (range) => (piece.start + piece.end) / 2 >= range.start && (piece.start + piece.end) / 2 <= range.end
-          )
-      );
-    if (pieces.length && clip.transition) pieces[pieces.length - 1].transition = clone(clip.transition);
-    const next = clone(clips.value);
-    if (silence) {
-      let at = starts.value[index];
-      for (const piece of pieces) {
-        piece.at = at;
-        at += archiveClipDuration(piece);
-      }
-      const removed = archiveClipDuration(clip) - (at - starts.value[index]);
-      for (const [i, entry] of next.entries())
-        if (
-          i !== index &&
-          (entry.lane ?? 1) === (clip.lane ?? 1) &&
-          starts.value[i] >= starts.value[index] + archiveClipDuration(clip) - 1e-6
-        )
-          entry.at = Math.max(0, starts.value[i] - removed);
-    }
-    next.splice(index, 1, ...pieces);
-    if (!commit(next)) return;
-    selected.value = pieces.map((piece) => piece.id);
-  }
   function updateFrame(value: ArchiveFrame) {
-    commit(clips.value, value);
+    commit(clips.value, value, studio.value, false, "frame");
   }
   function remove() {
     if (!selected.value.length) return;
     const composition = clone(studio.value);
     composition.subtitles = composition.subtitles.filter((cue) => !selected.value.includes(cue.id));
     composition.musicTracks = composition.musicTracks.filter((track) => !selected.value.includes(track.id));
+    composition.watermarks = (composition.watermarks ?? []).filter((mark) => !selected.value.includes(mark.id));
     commit(
       clips.value.filter((clip) => !selected.value.includes(clip.id)),
       frameSettings.value,
@@ -671,37 +1186,132 @@ export function useArchiveRoughCut(
     }
   }
   watch([time, selected, zoom], scheduleSave, { deep: true });
+  watch(selected, () => {
+    if (comparisonOriginal.value) {
+      comparisonOriginal.value = false;
+      seek(time.value);
+    }
+  });
   onScopeDispose(() => {
+    if (audioContext) void audioContext.close().catch(() => {});
     clearTimeout(saveTimer);
     stop();
     if (seekFrame !== undefined) cancelAnimationFrame(seekFrame);
     scope.abort();
+    reversePreview.reset();
   });
+  function toggleTrack(lane: number, key: "locked" | "hidden" | "muted") {
+    const next = clone(clips.value),
+      composition = clone(studio.value);
+    const entries = [
+      ...next,
+      ...composition.subtitles,
+      ...composition.musicTracks,
+      ...(composition.watermarks ?? [])
+    ].filter((entry) => (entry.lane ?? 0) === lane);
+    const value = !entries.every((entry) => entry[key]);
+    for (const entry of entries) entry[key] = value;
+    commit(next, frameSettings.value, composition, true);
+  }
   function commitLayout(next: ArchiveCutClip[], composition: ArchiveStudio) {
     commit(next, frameSettings.value, composition);
   }
+  watch(
+    () =>
+      loaded.value
+        ? JSON.stringify(
+            clips.value
+              .filter(archiveNeedsSourcePreview)
+              .map((clip) => [
+                clip.sourceId,
+                clip.start,
+                clip.end,
+                clip.reverse,
+                clip.interpolation ? [clip.speed, clip.interpolation, frameSettings.value.fps] : null
+              ])
+          )
+        : "",
+    (_value, _previous, onCleanup) => {
+      const timer = setTimeout(async () => {
+        if (
+          !loaded.value ||
+          !prepareEnabled() ||
+          !clips.value.some((clip) => archiveNeedsSourcePreview(clip) && !previewAsset(clip))
+        )
+          return;
+        stop();
+        try {
+          await reversePreview.prepare(clone(clips.value), clone(studio.value), archiveOutputFps(frameSettings.value));
+          if (loaded.value) seek(time.value);
+        } catch (e) {
+          if (!isApiErrorCancelled(e)) error.value = formatApiError(e);
+        }
+      }, 250);
+      onCleanup(() => clearTimeout(timer));
+    }
+  );
   return {
+    interpolationRuntime,
+    legacyInterpolation,
+    checkingInterpolation,
+    refreshInterpolationRuntime,
+    comparisonOriginal,
+    processingMessage: reversePreview.message,
+    interpolationNotice: reversePreview.notice,
+    copySelection,
+    pasteSelection,
+    canPaste: computed(() => Boolean(clipboard.value)),
+    rotateVideo,
+    mirrorVideo,
+    reverseVideo,
+    freezeVideo,
+    canVideoTools,
+    canReverse: computed(() => selectedVideos.value.some((clip) => clip.freezeAt === undefined)),
+    canFreeze: computed(() => Boolean(freezeTarget.value)),
+    reversePreparing: reversePreview.preparing,
+    reverseProgress: reversePreview.progress,
+    reverseSources,
+    freezeSources: computed(() =>
+      Object.fromEntries(
+        clips.value
+          .filter((clip) => clip.freezeSample)
+          .map((clip) => {
+            const source = playback(clip, 0);
+            return [clip.id, { url: source.url, time: source.position }];
+          })
+      )
+    ),
+    cancelReverse: () => reversePreview.reset(false),
     clips,
     isGap,
     visibleIndex,
     commitLayout,
+    toggleTrack,
+    isPlaying,
     studio,
     sourceUrls,
     sourceOf,
     fpsFor,
     durationFor,
     updateStudio,
+    updateSubtitle,
+    updateWatermark,
+    addWatermark,
+    updateMusic,
     appendSource,
-    applyAnalysis,
+    registerSource,
+    appendOriginal,
+    insertTexts,
     onReady,
     frameSettings,
+    sourceName,
+    sourceHasAudio,
     sourceWidth,
     sourceHeight,
-    duplicate,
-    copySelection,
-    paste,
-    canPaste,
     updateClip,
+    beginAudio,
+    previewAudio,
+    finishAudio,
     updateFrame,
     selected,
     time,

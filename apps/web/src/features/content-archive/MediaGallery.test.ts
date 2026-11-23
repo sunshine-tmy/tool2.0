@@ -218,16 +218,15 @@ describe("归档媒体编辑入口", () => {
     expect(reopened.find('[aria-label="预览媒体 2"] .video-thumb-placeholder').exists()).toBe(true);
     reopened.unmount();
   });
-  it.each(["video", "live-photo"] as const)("%s 配乐和水印均派发页面跳转事件，不打开弹窗", async (kind) => {
+  it.each(["video", "live-photo"] as const)("%s 统一视频编辑入口派发页面跳转事件，不打开弹窗", async (kind) => {
     const { wrapper, video } = mountGallery({ ...archive, media: [{ ...archive.media[0]!, kind }] });
     const pause = vi.spyOn(video!, "pause").mockImplementation(() => {});
-    const button = (label: string) => wrapper.findAll("button").find((entry) => entry.text() === label)!;
-    await button("编辑配乐").trigger("click");
-    expect(wrapper.emitted("editAudio")).toEqual([["video-123"]]);
-    await button("添加水印").trigger("click");
-    await button("添加水印").trigger("click");
-    expect(wrapper.emitted("editWatermark")).toEqual([["video-123"], ["video-123"]]);
-    expect(pause).toHaveBeenCalledTimes(3);
+    const button = wrapper.findAll("button").find((entry) => entry.text() === "视频编辑")!;
+    await button.trigger("click");
+    expect(wrapper.emitted("editCut")).toEqual([["video-123"]]);
+    expect(wrapper.text()).not.toContain("编辑配乐");
+    expect(wrapper.text()).not.toContain("添加水印");
+    expect(pause).toHaveBeenCalledTimes(1);
     expect(wrapper.findComponent({ name: "ArchiveAudioEditor" }).exists()).toBe(false);
     wrapper.unmount();
   });
@@ -244,6 +243,34 @@ describe("归档媒体编辑入口", () => {
     const frame = mountGallery({ ...archive, media: [archiveWithFrame.media[1]!] });
     expect(frame.wrapper.text()).not.toContain("图集生成视频");
     frame.wrapper.unmount();
+  });
+  it("图集生成成功后关闭弹窗，刷新归档预览，不自动进入视频编辑", async () => {
+    const image = { ...archiveWithFrame.media[1]!, frameSourceMediaId: undefined, frameTimestampMs: undefined };
+    const item: ContentArchiveItem = { ...archive, type: "image", media: [image] };
+    const { wrapper } = mountGallery(item);
+    await wrapper
+      .findAll("button")
+      .find((entry) => entry.text() === "图集生成视频")!
+      .trigger("click");
+    await flushPromises();
+    const editor = wrapper.findComponent({ name: "ArchiveAudioEditor" });
+    expect(editor.attributes("media-id")).toBe(image.id);
+    const updated: ContentArchiveItem = {
+      ...item,
+      media: [
+        image,
+        { ...archive.media[0], id: "generated_001", derivedFromImages: [{ id: image.id, checksum: image.checksum }] }
+      ]
+    };
+    editor.vm.$emit("saved", updated);
+    await wrapper.setProps({ item: updated });
+    await flushPromises();
+    expect(wrapper.findComponent({ name: "ArchiveAudioEditor" }).exists()).toBe(false);
+    expect(wrapper.emitted("mediaUpdated")?.[0]).toEqual([updated]);
+    expect(wrapper.emitted("editCut")).toBeUndefined();
+    expect(wrapper.emitted("editAudio")).toBeUndefined();
+    expect(wrapper.find(".media-stage video").exists()).toBe(true);
+    wrapper.unmount();
   });
 });
 

@@ -1,17 +1,12 @@
 <template>
   <ToolLayout>
     <section class="archive-video-editor-page v2-tool-page">
-      <ToolPageHeader
-        title="归档视频编辑"
-        description="粗剪、配乐与水印，保存为当前归档的最新版本。"
-        kicker="VIDEO EDITOR"
-      />
       <n-alert v-if="error" type="error">{{ error }}<n-button @click="load">重试</n-button></n-alert>
       <p v-else-if="!item">正在读取归档视频…</p>
       <ArchiveAudioEditor
         v-if="item"
         ref="editor"
-        :key="`${item.id}/${mediaId}/${initialPanel}`"
+        :key="`${item.id}/${mediaId}`"
         :show="true"
         :item="item"
         :media-id="mediaId"
@@ -32,7 +27,6 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from "vu
 import { NAlert, NButton } from "naive-ui";
 import type { ContentArchiveItem } from "@toolbox/shared/archive";
 import ToolLayout from "../../shell/ToolLayout.vue";
-import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ArchiveAudioEditor from "./ArchiveAudioEditor.vue";
 import { contentArchiveApi } from "./content-api";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
@@ -40,7 +34,7 @@ const route = useRoute(),
   router = useRouter();
 const mediaId = computed(() => String(route.params.mediaId));
 const initialPanel = computed(() =>
-  route.query.panel === "cut" ? "cut" : route.query.panel === "audio" ? "audio" : "watermark"
+  route.query.panel === "watermark" ? "watermark" : route.query.panel === "audio" ? "audio" : "cut"
 );
 const item = ref<ContentArchiveItem>(),
   error = ref(""),
@@ -81,7 +75,10 @@ async function leave() {
   }
 }
 onBeforeRouteLeave(async () => closing || !editor.value || (await editor.value.canLeave()));
-onBeforeRouteUpdate(async () => !editor.value || (await editor.value.canLeave()));
+onBeforeRouteUpdate(async (to, from) => {
+  if (to.params.itemId === from.params.itemId && to.params.mediaId === from.params.mediaId) return true;
+  return !editor.value || (await editor.value.canLeave());
+});
 watch(
   () => [route.params.itemId, route.params.mediaId],
   () => void load(),

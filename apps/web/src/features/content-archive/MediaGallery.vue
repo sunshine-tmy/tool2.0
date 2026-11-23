@@ -118,11 +118,7 @@
           <template #icon><Download :size="15" /></template>下载当前媒体
         </n-button>
         <div v-if="isVideoMedia(media)" class="media-editor-actions" role="group" aria-label="视频编辑操作">
-          <n-button size="small" @click="openCutEditor">视频粗剪</n-button>
-          <n-button size="small" @click="openAudioEditor">编辑配乐</n-button>
-          <n-button size="small" @click="openWatermarkEditor">{{
-            media.audioEdit?.watermark ? "编辑水印" : "添加水印"
-          }}</n-button>
+          <n-button size="small" @click="openCutEditor">视频编辑</n-button>
         </div>
         <n-button v-if="media.kind === 'image' && !media.frameSourceMediaId" size="small" @click="openSlideshow"
           >图集生成视频</n-button
@@ -139,7 +135,9 @@
           <template #icon><Trash2 :size="15" /></template>删除截帧
         </n-button>
       </div>
-      <small v-if="isVideoMedia(media)" class="frame-feedback frame-capture-feedback" aria-live="polite">{{ frameMessage || frameHint }}</small>
+      <small v-if="isVideoMedia(media)" class="frame-feedback frame-capture-feedback" aria-live="polite">{{
+        frameMessage || frameHint
+      }}</small>
       <small v-else-if="frameMessage" class="frame-feedback" role="status">{{ frameMessage }}</small>
     </template>
     <section v-for="audio in soundtracks" :key="audio.id" class="archive-soundtrack" aria-label="原作品配乐">
@@ -169,10 +167,10 @@
       {{ warning }}
     </p>
     <ArchiveAudioEditor
-      v-if="editorOpen && media"
+      v-if="editorOpen && slideshowMediaId"
       v-model:show="editorOpen"
       :item="item"
-      :media-id="media.id"
+      :media-id="slideshowMediaId"
       @saved="onAudioSaved"
     />
   </div>
@@ -200,24 +198,21 @@ const props = withDefaults(
 
 const ArchiveAudioEditor = defineAsyncComponent(() => import("./ArchiveAudioEditor.vue"));
 const editorOpen = ref(false);
+const slideshowMediaId = ref("");
 const visualMedia = computed(() => props.item.media.filter((media) => media.kind !== "audio"));
 const soundtracks = computed(() => props.item.media.filter((media) => media.kind === "audio"));
-function openWatermarkEditor() {
-  if (!media.value) return;
-  pauseSoundtracks();
-  videoElement.value?.pause();
-  emit("editWatermark", media.value.id);
-}
 function openSlideshow() {
   const index = visualMedia.value.findIndex((entry) => entry.kind === "image" && !entry.frameSourceMediaId);
   if (index >= 0) {
     pauseSoundtracks();
     videoElement.value?.pause();
     selected.value = index;
+    slideshowMediaId.value = visualMedia.value[index].id;
     editorOpen.value = true;
   }
 }
 function onAudioSaved(updated: ContentArchiveItem) {
+  editorOpen.value = false;
   const generated = updated.media
     .filter((media) => media.kind !== "audio")
     .findIndex((entry) => entry.derivedFromImages && !props.item.media.some((existing) => existing.id === entry.id));
@@ -229,12 +224,6 @@ function openCutEditor() {
   pauseSoundtracks();
   videoElement.value?.pause();
   emit("editCut", media.value.id);
-}
-function openAudioEditor() {
-  if (!media.value) return;
-  pauseSoundtracks();
-  videoElement.value?.pause();
-  emit("editAudio", media.value.id);
 }
 const selected = ref(0);
 const requestScope = useRequestScope();

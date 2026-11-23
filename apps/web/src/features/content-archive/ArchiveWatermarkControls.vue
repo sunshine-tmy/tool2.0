@@ -1,6 +1,7 @@
 <template>
-  <section class="watermark-controls" aria-label="水印设置">
+  <section class="watermark-controls" :class="{ 'track-mode': trackMode }" aria-label="水印设置">
     <button
+      v-if="!trackMode"
       class="watermark-upload file-upload-area"
       data-upload-area
       type="button"
@@ -14,6 +15,7 @@
       <small>PNG / JPG / WebP · 最大 20 MiB · 推荐透明 PNG</small>
     </button>
     <input
+      v-if="!trackMode"
       ref="fileInput"
       hidden
       type="file"
@@ -21,33 +23,38 @@
       aria-label="上传水印图片"
       @change="choose"
     />
-    <ArchiveWatermarkLibrary :disabled="disabled" @select="emit('selectLibrary', $event)" />
+    <ArchiveWatermarkLibrary v-if="!trackMode" :disabled="disabled" @select="emit('selectLibrary', $event)" />
     <template v-if="asset">
-      <label
-        >透明度 {{ settings.opacity }}%<n-slider
+      <label v-if="!trackMode"
+        >透明度 {{ editorNumber(settings.opacity) }}%<n-slider
           v-slider-label="{ label: '水印透明度', text: `${settings.opacity}%` }"
-          :value="settings.opacity"
+          :step="1"
+          :format-tooltip="editorTooltip(0)"
+          :value="editorNumber(settings.opacity)"
           :min="0"
           :max="100"
           :disabled="disabled"
           aria-label="水印透明度"
           @update:value="set('opacity', $event)"
       /></label>
-      <label
-        >水印宽度 {{ settings.widthPercent }}%<n-slider
+      <label v-if="!trackMode"
+        >水印宽度 {{ editorNumber(settings.widthPercent) }}%<n-slider
           v-slider-label="{ label: '水印宽度', text: `${settings.widthPercent}%` }"
-          :value="settings.widthPercent"
+          :step="1"
+          :format-tooltip="editorTooltip(0)"
+          :value="editorNumber(settings.widthPercent)"
           :min="1"
           :max="50"
           :disabled="disabled"
           aria-label="水印大小"
           @update:value="set('widthPercent', $event)"
       /></label>
-      <div class="watermark-fields">
+      <div v-if="!trackMode" class="watermark-fields">
         <label
           >开始显示（秒）<n-input-number
+            :precision="2"
             aria-label="水印开始时间"
-            :value="settings.startSeconds"
+            :value="editorNumber(settings.startSeconds, 2)"
             :min="0"
             :max="duration"
             :disabled="disabled"
@@ -55,8 +62,15 @@
         /></label>
         <label
           >结束显示（秒）<n-input-number
+            :precision="2"
             aria-label="水印结束时间"
-            :value="settings.endSeconds ?? (duration > 0 ? duration : null)"
+            :value="
+              settings.endSeconds !== null
+                ? editorNumber(settings.endSeconds, 2)
+                : duration > 0
+                  ? editorNumber(duration, 2)
+                  : null
+            "
             :min="0"
             :max="duration"
             placeholder="视频结束"
@@ -64,12 +78,20 @@
             @update:value="set('endSeconds', $event)"
         /></label>
       </div>
-      <n-checkbox :checked="settings.endSeconds === null" :disabled="disabled" @update:checked="autoEnd"
+      <n-checkbox
+        v-if="!trackMode"
+        :checked="settings.endSeconds === null"
+        :disabled="disabled"
+        @update:checked="autoEnd"
         >自动跟随视频结尾</n-checkbox
       >
-      <small v-if="settings.endSeconds === null">已自动识别视频时长，保存时以原片的实际结尾为准，无需手填。</small>
+      <small v-if="!trackMode && settings.endSeconds === null"
+        >已自动识别视频时长，保存时以原片的实际结尾为准，无需手填。</small
+      >
       <label
         >运动方式<n-select
+          :to="true"
+          :menu-props="menuProps"
           :value="settings.motion.type"
           :options="motions"
           :disabled="disabled"
@@ -78,6 +100,8 @@
       /></label>
       <label v-if="settings.motion.type === 'bounce'"
         >反弹轨迹<n-select
+          :to="true"
+          :menu-props="menuProps"
           :value="settings.motion.bounceStyle ?? 'standard'"
           :options="bounceStyles"
           :disabled="disabled"
@@ -93,6 +117,8 @@
       <template v-if="settings.motion.type !== 'keyframes'">
         <n-select
           v-if="['linear', 'ping-pong'].includes(settings.motion.type)"
+          :to="true"
+          :menu-props="menuProps"
           :value="selectedPoint"
           :options="[
             { label: '编辑起点', value: 'from' },
@@ -111,7 +137,11 @@
             >{{ positionNames[index] }}</n-button
           >
         </div>
-        <small>可拖动画面中的水印调整{{ selectedPoint === "to" ? "终点" : "位置" }}。</small>
+        <small>{{
+          trackMode
+            ? "画面拖拽移动整条轨迹，九宫格调整所选起点或终点。"
+            : `可拖动画面中的水印调整${selectedPoint === "to" ? "终点" : "位置"}。`
+        }}</small>
       </template>
       <label v-if="settings.motion.type !== 'fixed' && settings.motion.type !== 'keyframes'">
         {{
@@ -124,7 +154,8 @@
               : "移动时间（秒）"
         }}
         <n-input-number
-          :value="settings.motion.periodSeconds"
+          :precision="2"
+          :value="editorNumber(settings.motion.periodSeconds, 2)"
           :min="0.25"
           :max="7200"
           :disabled="disabled"
@@ -133,6 +164,8 @@
       </label>
       <div v-if="settings.motion.type === 'bounce'" class="watermark-fields">
         <n-select
+          :to="true"
+          :menu-props="menuProps"
           :value="settings.motion.directionX"
           :disabled="disabled"
           :options="[
@@ -142,6 +175,8 @@
           @update:value="setDirection('directionX', $event)"
         />
         <n-select
+          :to="true"
+          :menu-props="menuProps"
           :value="settings.motion.directionY"
           :disabled="disabled"
           :options="[
@@ -163,7 +198,8 @@
           :class="{ selected: selectedFrame === index }"
         >
           <n-input-number
-            :value="frame.timeSeconds"
+            :precision="1"
+            :value="editorNumber(frame.timeSeconds, 2)"
             :min="settings.startSeconds"
             :max="settings.endSeconds ?? duration"
             :step="0.1"
@@ -174,9 +210,28 @@
           <n-button size="small" :disabled="disabled" @click="selectFrame(index)"
             >{{ frame.timeSeconds.toFixed(2) }} 秒 · 定位</n-button
           >
-          <n-button size="small" :disabled="disabled" @click="removeFrame(index)">删除</n-button>
+          <n-button
+            size="small"
+            :disabled="disabled || (trackMode && settings.motion.keyframes.length <= 2)"
+            @click="removeFrame(index)"
+            >删除</n-button
+          >
         </div>
-        <small>选择关键帧后拖动水印；按时间线性移动，最后一帧后保持位置，最多 20 帧。</small>
+        <div v-if="trackMode" class="watermark-positions" aria-label="水印关键帧九宫格定位">
+          <n-button
+            v-for="(point, index) in positions"
+            :key="index"
+            size="small"
+            :disabled="disabled"
+            @click="emit('move', point)"
+            >{{ positionNames[index] }}</n-button
+          >
+        </div>
+        <small>{{
+          trackMode
+            ? "选择关键帧后使用九宫格定位；按时间线性移动，最后一帧后保持位置，最多 20 帧。"
+            : "选择关键帧后拖动水印；按时间线性移动，最后一帧后保持位置，最多 20 帧。"
+        }}</small>
       </template>
       <p v-if="validation" role="alert">{{ validation }}</p>
       <n-button :disabled="disabled" @click="emit('remove')">移除水印</n-button>
@@ -185,18 +240,21 @@
   </section>
 </template>
 <script setup lang="ts">
+import { editorNumber, editorTooltip } from "./editor-numbers";
 import { vSliderLabel } from "../../shared/ui/slider-label";
-import { computed, ref, toRaw } from "vue";
+import { type HTMLAttributes, computed, ref, toRaw } from "vue";
 import { NButton, NCheckbox, NInputNumber, NSelect, NSlider } from "naive-ui";
 import {
   ARCHIVE_WATERMARK_BOUNCE_STYLES,
   archiveWatermarkPosition,
   watermarkTimingError,
+  watermarkTrackError,
   type ArchiveWatermarkSettings
 } from "@toolbox/shared/archive";
 import ArchiveWatermarkPresets from "./ArchiveWatermarkPresets.vue";
 import ArchiveWatermarkLibrary from "./ArchiveWatermarkLibrary.vue";
 const props = defineProps<{
+  trackMode?: boolean;
   settings: ArchiveWatermarkSettings;
   asset?: { width: number; height: number; url: string };
   disabled: boolean;
@@ -215,6 +273,7 @@ const emit = defineEmits<{
   move: [{ x: number; y: number }];
   seek: [number];
 }>();
+const menuProps: HTMLAttributes = { style: { position: "relative", zIndex: 3000 } };
 const fileInput = ref<HTMLInputElement>();
 const bounceStyles = ARCHIVE_WATERMARK_BOUNCE_STYLES.map((style) => ({ ...style }));
 const motions = [
@@ -226,18 +285,32 @@ const motions = [
 ];
 const positions = [0.03, 0.5, 0.97].flatMap((y) => [0.03, 0.5, 0.97].map((x) => ({ x, y })));
 const positionNames = ["左上", "上中", "右上", "左中", "居中", "右中", "左下", "下中", "右下"];
-const validation = computed(() => (props.asset ? watermarkTimingError(props.settings, props.duration) : undefined));
+const validation = computed(() =>
+  props.asset
+    ? props.trackMode
+      ? watermarkTrackError({ settings: props.settings })
+      : watermarkTimingError(props.settings, props.duration)
+    : undefined
+);
 function autoEnd(checked: boolean) {
   if (!props.disabled) set("endSeconds", checked ? null : props.duration);
 }
 function set<K extends keyof ArchiveWatermarkSettings>(key: K, value: ArchiveWatermarkSettings[K]) {
-  emit("update:settings", JSON.parse(JSON.stringify({ ...props.settings, [key]: value })) as ArchiveWatermarkSettings);
+  const normalized =
+    typeof value === "number" ? editorNumber(value, key === "opacity" || key === "widthPercent" ? 0 : 2) : value;
+  emit(
+    "update:settings",
+    JSON.parse(JSON.stringify({ ...props.settings, [key]: normalized })) as ArchiveWatermarkSettings
+  );
 }
 function setMotion<K extends keyof ArchiveWatermarkSettings["motion"]>(
   key: K,
   value: ArchiveWatermarkSettings["motion"][K]
 ) {
-  set("motion", { ...props.settings.motion, [key]: value });
+  set("motion", {
+    ...props.settings.motion,
+    [key]: typeof value === "number" ? editorNumber(value, key === "periodSeconds" ? 2 : 0) : value
+  });
 }
 function motionType(type: string) {
   const next = structuredClone(toRaw(props.settings));
@@ -253,27 +326,18 @@ function motionType(type: string) {
   emit("seek", next.startSeconds);
 }
 function bounceStyle(style: NonNullable<ArchiveWatermarkSettings["motion"]["bounceStyle"]>) {
+  if (style === (props.settings.motion.bounceStyle ?? "standard")) return;
   set("motion", {
     ...props.settings.motion,
     bounceStyle: style,
-    ...(style === "standard" ? {} : { from: { x: 0, y: 0 }, directionX: 1, directionY: 1 }),
     ...(style === "random" ? { bounceSeed: Math.floor(Math.random() * 2147483647) } : {})
   });
   emit("update:selectedPoint", "from");
   emit("seek", props.settings.startSeconds);
 }
 function setDirection(axis: "directionX" | "directionY", value: -1 | 1) {
-  const motion = props.settings.motion;
-  if (motion.bounceStyle && motion.bounceStyle !== "standard" && motion[axis] !== value) {
-    set("motion", {
-      ...motion,
-      [axis]: value,
-      from: {
-        x: axis === "directionX" ? 1 - motion.from.x : motion.from.x,
-        y: axis === "directionY" ? 1 - motion.from.y : motion.from.y
-      }
-    });
-  } else setMotion(axis, value);
+  // 所有预设只镜像路线，起点和随机种子保持不变。
+  if (props.settings.motion[axis] !== value) setMotion(axis, value);
 }
 function applyPreset(settings: ArchiveWatermarkSettings) {
   emit("update:settings", settings);
@@ -347,6 +411,28 @@ function drop(event: DragEvent) {
 }
 </script>
 <style scoped>
+.watermark-controls.track-mode {
+  gap: 16px;
+  min-width: 0;
+}
+.track-mode .watermark-frame {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px;
+}
+.track-mode :deep(.n-base-selection) {
+  min-width: 0;
+}
+.watermark-positions :deep(.n-button) {
+  min-height: 32px;
+}
+@media (pointer: coarse) {
+  .watermark-positions :deep(.n-button) {
+    min-height: 44px;
+  }
+}
+
 .watermark-controls {
   display: grid;
   gap: 14px;
@@ -359,7 +445,7 @@ function drop(event: DragEvent) {
   display: grid;
   justify-items: center;
   gap: 8px;
-  min-height: 125px;
+  min-height: 144px;
   padding: 16px;
   border: 1px dashed var(--border-color, #cbd5e1);
   border-radius: 10px;
@@ -387,7 +473,7 @@ function drop(event: DragEvent) {
 .watermark-positions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: 8px;
 }
 .watermark-frame {
   display: grid;
@@ -406,7 +492,7 @@ small {
   color: var(--text-secondary, var(--color-text-secondary));
 }
 [role="alert"] {
-  color: #dc2626;
+  color: var(--color-error, #dc2626);
   margin: 0;
 }
 </style>

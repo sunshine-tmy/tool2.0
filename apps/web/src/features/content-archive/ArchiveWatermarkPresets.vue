@@ -143,13 +143,13 @@ void load();
   display: grid;
   gap: 10px;
   padding: 12px;
-  border: 1px solid #dbe5f2;
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface-subtle);
 }
 .watermark-presets label {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 .preset-actions {
   display: flex;
@@ -161,7 +161,7 @@ small {
   line-height: 1.6;
 }
 [role="status"] {
-  color: #0f766e;
+  color: var(--color-success);
   margin: 0;
   font-size: 12px;
 }

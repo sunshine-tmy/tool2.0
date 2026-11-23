@@ -21047,6 +21047,76 @@ export const packagedComponentCatalog = {
     },
     {
       "protocolVersion": 1,
+      "id": "video-interpolation",
+      "moduleId": "video-interpolation",
+      "groupId": "media",
+      "displayName": "智能补帧（RIFE）",
+      "purpose": "为归档视频编辑提供 RIFE 中间帧生成、慢动作平滑与最高 120 FPS 输出。",
+      "dependencyIds": [
+        "ffmpeg"
+      ],
+      "taskToolIds": [
+        "media-archive-audio-edit"
+      ],
+      "installConditions": [
+        "程序与 rife-v4.6 模型来自固定上游版本，处理时离线运行，不自动下载模型。",
+        "GPU 推理使用 Vulkan；设备资源不足时重试低占用 CPU 模式。无需 CUDA 或 PyTorch 环境。",
+        "未安装此能力时仍可使用 FFmpeg 兼容补帧；是否允许 AI 失败后使用兼容引擎由用户设置。"
+      ],
+      "version": "1.0.0-rife46-20221029",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-interpolation-1.0.0-rife46-20221029.tar.gz",
+        "bytes": 12283527,
+        "sha256": "61a88e119676dc6ad4431106410b9b0addee5648dd8f139be4c677fad4da4451",
+        "format": "tar.gz"
+      },
+      "installedBytes": 150000000,
+      "files": [
+        {
+          "path": "bin/rife-ncnn-vulkan.exe",
+          "bytes": 6974464,
+          "sha256": "4b970319db2814c82b15fceed8193151560a676a9eb63f20d4877be77b98f44f"
+        },
+        {
+          "path": "bin/vcomp140.dll",
+          "bytes": 181680,
+          "sha256": "54fe6b087528b33c2969143d811eb62f1bd49071d37de9db0745fc079764d698"
+        },
+        {
+          "path": "licenses/LICENSE",
+          "bytes": 1093,
+          "sha256": "de18cbedb0c3b0d1eeb9ccac3988cdf69c21fa89039cd97dd8846cb68f661f81"
+        },
+        {
+          "path": "models/rife-v4.6/flownet.bin",
+          "bytes": 10614320,
+          "sha256": "f334ed2260149ce0188a6dcf049844e8b0cdd912e01cbcfb63553157d2508958"
+        },
+        {
+          "path": "models/rife-v4.6/flownet.param",
+          "bytes": 16749,
+          "sha256": "28df14d57a225725ee5386f52eba422488450d37c9f40800ed4f62e8ba846692"
+        },
+        {
+          "path": "upstream.json",
+          "bytes": 90,
+          "sha256": "0b91e7d47652db6c25febe53430faa70435b914080dbd034ad518c9eb42ab2fb"
+        }
+      ],
+      "license": {
+        "name": "MIT",
+        "url": "https://github.com/nihui/rife-ncnn-vulkan/blob/master/LICENSE"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-interpolation-1.0.0-rife46-20221029.spdx.json",
+        "sha256": "7a8d5ab92d1f97018118578430d15895adf474126c03b55d30e641387a005d81"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "iS2SGEkKjOnAthssoQ/Z6frus7j52IID6GD+OKjwt6LPaMEpANLK5I6pQtxuAx3ih0/DYK6LmzPBjXhqZcBxBQ=="
+    },
+    {
+      "protocolVersion": 1,
       "id": "xhs-archive",
       "moduleId": "xhs-archive",
       "groupId": "archive",

@@ -2,9 +2,16 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { ArchiveWatermarkInputSchema, ArchiveWatermarkSettingsSchema } from "./video-watermark";
 import {
+  ArchiveFrameRateSchema,
+  ArchiveInterpolationSchema,
+  ArchiveFreezeSampleSchema,
+  ArchiveVideoOutputSchema
+} from "./video-interpolation";
+import {
   ArchiveStudioSchema,
   ArchiveStudioSourceAssetSchema,
   ArchiveStudioMusicAssetSchema,
+  ArchiveStudioWatermarkAssetSchema,
   ArchiveTransitionSchema
 } from "./video-studio";
 const strict = { additionalProperties: false } as const;
@@ -52,26 +59,57 @@ export const ArchiveAudioSettingsSchema = Type.Object(
   },
   strict
 );
-/** 单源单轨剪辑，时间始终相对于保留的原片；数组顺序即成片顺序。 */
+/** 片段独立的空间变换，坐标相对于项目成片画布。 */
+export const ArchiveClipTransformSchema = Type.Object(
+  {
+    scaleX: Type.Optional(Type.Number({ minimum: 0.01, maximum: 5 })),
+    scaleY: Type.Optional(Type.Number({ minimum: 0.01, maximum: 5 })),
+    linkedScale: Type.Optional(Type.Boolean()),
+    flipX: Type.Optional(Type.Boolean()),
+    offsetX: Type.Optional(Type.Number({ minimum: -10, maximum: 10 })),
+    offsetY: Type.Optional(Type.Number({ minimum: -10, maximum: 10 })),
+    angle: Type.Optional(Type.Number({ minimum: -180, maximum: 180 })),
+    cornerRadius: Type.Optional(Type.Number({ minimum: 0, maximum: 0.5 }))
+  },
+  strict
+);
 export const ArchiveCutClipSchema = Type.Object(
   {
     id: Id,
     sourceId: Type.Optional(Id),
+    transform: Type.Optional(ArchiveClipTransformSchema),
     at: Type.Optional(Type.Number({ minimum: 0, maximum: 7200 })),
     lane: Type.Optional(Type.Integer({ minimum: 0, maximum: 1999 })),
+    locked: Type.Optional(Type.Boolean()),
+    hidden: Type.Optional(Type.Boolean()),
+    muted: Type.Optional(Type.Boolean()),
     transition: Type.Optional(ArchiveTransitionSchema),
     start: Type.Number({ minimum: 0, maximum: 7200 }),
     end: Type.Number({ exclusiveMinimum: 0, maximum: 7200 }),
-    speed: Type.Optional(Type.Number({ minimum: 0.25, maximum: 4 })),
-    volume: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
-    fadeIn: Type.Optional(Type.Number({ minimum: 0, maximum: 5 })),
-    fadeOut: Type.Optional(Type.Number({ minimum: 0, maximum: 5 }))
+    speed: Type.Optional(Type.Number({ minimum: 0.1, maximum: 100 })),
+    reverse: Type.Optional(Type.Boolean()),
+    interpolation: Type.Optional(ArchiveInterpolationSchema),
+    // 静帧保留源取帧位置；start/end 描述可裁剪、可拆分的静帧时长。
+    freezeAt: Type.Optional(Type.Number({ minimum: 0, maximum: 7200 })),
+    freezeSample: Type.Optional(ArchiveFreezeSampleSchema),
+    volume: Type.Optional(Type.Number({ minimum: 0, maximum: 1000 })),
+    fadeIn: Type.Optional(Type.Number({ minimum: 0, maximum: 10 })),
+    fadeOut: Type.Optional(Type.Number({ minimum: 0, maximum: 10 }))
   },
   strict
 );
 export const ArchiveCutSchema = Type.Array(ArchiveCutClipSchema, { minItems: 1, maxItems: 2000 });
 export const ArchiveFrameSchema = Type.Object(
   {
+    fps: Type.Optional(ArchiveFrameRateSchema),
+    fit: Type.Optional(Type.Literal("contain")),
+    scaleX: Type.Optional(Type.Number({ minimum: 0.01, maximum: 5 })),
+    scaleY: Type.Optional(Type.Number({ minimum: 0.01, maximum: 5 })),
+    linkedScale: Type.Optional(Type.Boolean()),
+    offsetX: Type.Optional(Type.Number({ minimum: -10, maximum: 10 })),
+    offsetY: Type.Optional(Type.Number({ minimum: -10, maximum: 10 })),
+    angle: Type.Optional(Type.Number({ minimum: -180, maximum: 180 })),
+    cornerRadius: Type.Optional(Type.Number({ minimum: 0, maximum: 0.5 })),
     aspect: Type.Union([
       Type.Literal("source"),
       Type.Literal("9:16"),
@@ -89,6 +127,7 @@ export const ArchiveFrameSchema = Type.Object(
 );
 export type ArchiveFrame = Static<typeof ArchiveFrameSchema>;
 export const defaultArchiveFrame = (): ArchiveFrame => ({
+  fit: "contain",
   aspect: "source",
   rotation: 0,
   flipX: false,
@@ -104,6 +143,24 @@ export function archiveFrameGeometry(width: number, height: number, frame: Archi
     frame.aspect === "source"
       ? fullWidth / fullHeight
       : Number(frame.aspect.split(":")[0]) / Number(frame.aspect.split(":")[1]);
+  if (frame.fit === "contain") {
+    const longest = Math.max(fullWidth, fullHeight);
+    const canvasWidth = frame.aspect === "source" ? fullWidth : ratio >= 1 ? longest : longest * ratio;
+    const canvasHeight = frame.aspect === "source" ? fullHeight : ratio >= 1 ? longest / ratio : longest;
+    const w = Math.max(2, Math.floor(canvasWidth / 2) * 2),
+      h = Math.max(2, Math.floor(canvasHeight / 2) * 2);
+    const fit = Math.min(w / fullWidth, h / fullHeight);
+    return {
+      fullWidth,
+      fullHeight,
+      width: w,
+      height: h,
+      x: 0,
+      y: 0,
+      contentWidth: Math.max(2, Math.floor((fullWidth * fit) / 2) * 2),
+      contentHeight: Math.max(2, Math.floor((fullHeight * fit) / 2) * 2)
+    };
+  }
   const cropWidth = Math.max(2, Math.floor(Math.min(fullWidth, fullHeight * ratio) / 2) * 2);
   const cropHeight = Math.max(2, Math.floor(Math.min(fullHeight, fullWidth / ratio) / 2) * 2);
   return {
@@ -111,6 +168,8 @@ export function archiveFrameGeometry(width: number, height: number, frame: Archi
     fullHeight,
     width: cropWidth,
     height: cropHeight,
+    contentWidth: cropWidth,
+    contentHeight: cropHeight,
     x: Math.floor((Math.max(0, fullWidth - cropWidth) * frame.x) / 2) * 2,
     y: Math.floor((Math.max(0, fullHeight - cropHeight) * frame.y) / 2) * 2
   };
@@ -131,6 +190,8 @@ export const ArchiveCutDraftSchema = Type.Object(
 );
 export const ArchiveCutSourceSchema = Type.Object(
   {
+    fileName: Type.Optional(Type.String({ maxLength: 255 })),
+    hasAudio: Type.Optional(Type.Boolean()),
     duration: Type.Number({ exclusiveMinimum: 0 }),
     fps: Type.Number({ exclusiveMinimum: 0 }),
     checksum: Type.String(),
@@ -181,17 +242,23 @@ export const archiveCutDuration = (clips: ArchiveCutClip[]) => {
 };
 export const archiveProjectDuration = (
   clips: ArchiveCutClip[],
-  studio?: { subtitles: { end: number }[]; musicTracks: { end: number }[] }
+  studio?: {
+    subtitles: { end: number }[];
+    musicTracks: { end: number }[];
+    watermarks?: { end: number; followEnd?: boolean }[];
+  }
 ) =>
   Math.max(
     archiveCutDuration(clips),
     ...(studio?.subtitles.map((cue) => cue.end) ?? []),
-    ...(studio?.musicTracks.map((track) => track.end) ?? [])
+    ...(studio?.musicTracks.map((track) => track.end) ?? []),
+    ...(studio?.watermarks?.filter((mark) => !mark.followEnd).map((mark) => mark.end) ?? [])
   );
 export function archiveVisibleClip(clips: ArchiveCutClip[], time: number) {
   const starts = archiveCutStarts(clips);
   let visible = -1;
   for (const [i, clip] of clips.entries()) {
+    if (clip.hidden) continue;
     if (time < starts[i] - 1e-7 || time >= starts[i] + archiveClipDuration(clip) - 1e-7) continue;
     if (visible < 0 || (clip.lane ?? 1) <= (clips[visible].lane ?? 1)) visible = i;
   }
@@ -216,6 +283,7 @@ export function archiveVisibleSubtitles<T extends { start: number; end: number; 
   }
   return cues
     .flatMap((cue) => {
+      if ((cue as T & { hidden?: boolean }).hidden) return [];
       const result: T[] = [];
       let start = cue.start;
       for (const span of spans) {
@@ -231,6 +299,7 @@ export function archiveVisibleSubtitles<T extends { start: number; end: number; 
 
 export const ArchiveVideoEditSchema = Type.Object(
   {
+    outputSettings: Type.Optional(ArchiveVideoOutputSchema),
     revision: Type.Integer({ minimum: 1 }),
     original: ArchiveEditFileSchema,
     originalDurationMs: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
@@ -239,7 +308,8 @@ export const ArchiveVideoEditSchema = Type.Object(
     frame: Type.Optional(ArchiveFrameSchema),
     studio: Type.Optional(ArchiveStudioSchema),
     studioSources: Type.Optional(Type.Array(ArchiveStudioSourceAssetSchema, { maxItems: 100 })),
-    studioMusic: Type.Optional(Type.Array(ArchiveStudioMusicAssetSchema, { maxItems: 16 })),
+    studioMusic: Type.Optional(Type.Array(ArchiveStudioMusicAssetSchema, { maxItems: 32 })),
+    studioWatermarks: Type.Optional(Type.Array(ArchiveStudioWatermarkAssetSchema, { maxItems: 2000 })),
     cut: Type.Optional(ArchiveCutSchema),
     music: Type.Optional(
       Type.Composite(
@@ -274,7 +344,9 @@ export const ArchiveVideoEditSchema = Type.Object(
 );
 export const ArchiveVideoEditInputSchema = Type.Object(
   {
+    outputSettings: Type.Optional(ArchiveVideoOutputSchema),
     mode: Type.Union([Type.Literal("save"), Type.Literal("preview"), Type.Literal("restore")]),
+    purpose: Type.Optional(Type.Union([Type.Literal("reverse-source"), Type.Literal("interpolation-source")])),
     revision: Type.Integer({ minimum: 0 }),
     checksum: Type.String({ pattern: "^[a-f0-9]{64}$" }),
     musicId: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9_-]{1,80}$" })),
@@ -314,6 +386,7 @@ export const ArchiveVideoEditJobSchema = Type.Object(
     itemId: Id,
     mediaId: Id,
     mode: ArchiveVideoEditInputSchema.properties.mode,
+    purpose: Type.Optional(Type.Union([Type.Literal("reverse-source"), Type.Literal("interpolation-source")])),
     status: Type.Union([
       Type.Literal("pending"),
       Type.Literal("running"),
@@ -323,6 +396,7 @@ export const ArchiveVideoEditJobSchema = Type.Object(
     ]),
     stage: Type.String(),
     progress: Type.Number({ minimum: 0, maximum: 100 }),
+    warnings: Type.Optional(Type.Array(Type.String({ maxLength: 300 }), { maxItems: 8 })),
     message: Type.String(),
     errorCode: Type.Optional(Type.String()),
     previewUrl: Type.Optional(Type.String()),

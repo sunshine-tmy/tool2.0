@@ -13,13 +13,17 @@ import type {
 import {
   archiveWatermarkSize,
   watermarkTimingError,
-  archiveFrameGeometry,
   archiveClipDuration,
   archiveVisibleSubtitles,
   archiveCutStarts,
   archiveProjectDuration
 } from "@toolbox/shared";
+import { appendVideoFrame } from "./frame-render";
 import { prepareClipEffects } from "./clip-effects";
+import type { RifeRuntime } from "./interpolation-runtime";
+import type { ArchiveVideoOutput } from "@toolbox/shared";
+import { renderFinalOutput } from "./final-output";
+import { appendStudioVisuals } from "./studio-visuals";
 import { watermarkFilter } from "./watermark-filter";
 import { terminateChildProcess } from "../../../lifecycle/child-process";
 
@@ -32,8 +36,17 @@ export class VideoEditError extends Error {
     super(message);
   }
 }
-export type MediaTools = { ffmpeg: string; ffprobe: string };
-type Probe = { duration: number; codec: string; hasAudio: boolean; width: number; height: number; fps?: number };
+export type MediaTools = { ffmpeg: string; ffprobe: string; rife?: RifeRuntime };
+type Probe = {
+  duration: number;
+  codec: string;
+  hasAudio: boolean;
+  width: number;
+  height: number;
+  fps?: number;
+  videoDuration?: number;
+  audioDuration?: number;
+};
 const inputOptions = [
   "-protocol_whitelist",
   "file,pipe",
@@ -206,6 +219,11 @@ export async function probeMedia(
       .find((rate) => Number.isFinite(rate) && rate > 0) ?? 30;
   return {
     duration,
+    videoDuration: Number(video?.duration) > 0 ? Number(video?.duration) : undefined,
+    audioDuration:
+      Number(data.streams?.find((stream) => stream.codec_type === "audio")?.duration) > 0
+        ? Number(data.streams?.find((stream) => stream.codec_type === "audio")?.duration)
+        : undefined,
     fps,
     codec: video?.codec_name ?? "",
     hasAudio: Boolean(data.streams?.some((stream) => stream.codec_type === "audio")),
@@ -232,6 +250,12 @@ export function audioMixFilter(
 }
 
 export type RenderVideoOptions = {
+  outputSettings?: ArchiveVideoOutput;
+  ignoreClipInterpolation?: boolean;
+  lossless?: boolean;
+  compositionCacheRoot?: string;
+  compositionKey?: string;
+  interpolationBoundaries?: number[];
   tools: MediaTools;
   source: string;
   music?: string;
@@ -241,6 +265,7 @@ export type RenderVideoOptions = {
   studio?: ArchiveStudio;
   clipSources?: Record<string, string>;
   trackFiles?: Record<string, string>;
+  watermarkFiles?: Record<string, { file: string; width: number; height: number }>;
   watermark?: { file: string; width: number; height: number; settings: ArchiveWatermarkSettings };
   output: string;
   settings: ArchiveAudioSettings;
@@ -250,10 +275,23 @@ export type RenderVideoOptions = {
   previewFullLength?: boolean;
   preview?: boolean;
   onProgress: (value: number) => void;
+  onStatus?: (message: string) => void;
+  onWarning?: (message: string) => void;
+  outputFps?: number;
+  interpolationCacheRoot?: string;
+  sourceChecksum?: string;
 };
-export async function renderArchiveVideo(options: RenderVideoOptions) {
+export async function renderArchiveVideo(options: RenderVideoOptions): Promise<Awaited<ReturnType<typeof probeMedia>>> {
+  if (options.ignoreClipInterpolation && options.cut)
+    options = { ...options, cut: options.cut.map(({ interpolation: _legacy, ...clip }) => clip) };
+  if (options.outputSettings) return renderFinalOutput(options);
+  options = { ...options, outputFps: options.frame?.fps };
   // 已有未显式裁剪的视频在字幕/配乐延伸时同样需要黑屏尾段。
-  if (!options.cut && options.studio && [...options.studio.subtitles, ...options.studio.musicTracks].length) {
+  if (
+    !options.cut &&
+    options.studio &&
+    [...options.studio.subtitles, ...options.studio.musicTracks, ...(options.studio.watermarks ?? [])].length
+  ) {
     const info = await probeMedia(options.tools, options.source, options.signal);
     if (archiveProjectDuration([], options.studio) > info.duration)
       options = { ...options, cut: [{ id: "original", start: 0, end: info.duration, at: 0, lane: 1 }] };
@@ -266,9 +304,16 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
     const starts = archiveCutStarts(options.cut);
     options = { ...options, cut: options.cut.map((clip, i) => ({ ...clip, at: clip.at ?? starts[i] })) };
   }
+  if (options.cut?.some((clip) => clip.hidden || clip.muted || clip.transform)) {
+    const starts = archiveCutStarts(options.cut);
+    options = { ...options, cut: options.cut.map((clip, i) => ({ ...clip, at: clip.at ?? starts[i] })) };
+  }
   const layoutClips = options.cut;
   // 连续的单轨排列仍走顺序管线，避免为普通剪辑增加中间文件。
-  if (options.cut?.some((clip) => clip.at !== undefined)) {
+  if (
+    options.cut?.some((clip) => clip.at !== undefined) &&
+    !options.cut.some((clip) => clip.hidden || clip.muted || clip.transform)
+  ) {
     const sequential = options.cut.map(({ at: _at, ...clip }) => clip),
       positions = archiveCutStarts(sequential);
     if (
@@ -286,8 +331,12 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
       (clip.volume ?? 100) !== 100 ||
       clip.fadeIn ||
       clip.fadeOut ||
+      clip.reverse ||
+      clip.interpolation ||
+      clip.freezeAt !== undefined ||
       clip.sourceId ||
       clip.transition ||
+      clip.transform ||
       clip.at !== undefined
   );
   if (!enhanced) return renderVideoCore(options);
@@ -299,6 +348,7 @@ export async function renderArchiveVideo(options: RenderVideoOptions) {
       {
         ...options,
         cut: undefined,
+        frame: prepared.frameApplied ? undefined : options.frame,
         layoutClips: options.layoutClips ?? options.cut,
         maxBytes: options.maxBytes - prepared.occupied,
         onProgress: (progress) => options.onProgress(60 + progress * 0.35)
@@ -404,26 +454,32 @@ async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<R
     )
   );
   let videoLabel = prepared ? "preparedvideo" : cut ? "cutvideo" : "0:v:0";
-  let geometry = { width: source.width, height: source.height };
-  if (options.frame) {
-    const frame = options.frame;
-    const size = archiveFrameGeometry(source.width, source.height, frame);
-    const transforms = [
-      `scale=${Math.max(2, Math.floor(source.width / 2) * 2)}:${Math.max(2, Math.floor(source.height / 2) * 2)}`,
-      "setsar=1"
-    ];
-    if (frame.rotation === 90) transforms.push("transpose=clock");
-    else if (frame.rotation === 180) transforms.push("hflip", "vflip");
-    else if (frame.rotation === 270) transforms.push("transpose=cclock");
-    if (frame.flipX) transforms.push("hflip");
-    if (frame.flipY) transforms.push("vflip");
-    transforms.push(`crop=${size.width}:${size.height}:${size.x}:${size.y}`);
-    filters.push(`[${videoLabel}]${transforms.join(",")}[framed]`);
-    videoLabel = "framed";
-    geometry = size;
-  }
+  const { videoLabel: framedLabel, geometry } = appendVideoFrame(
+    filters,
+    videoLabel,
+    source.width,
+    source.height,
+    options.frame
+  );
+  videoLabel = framedLabel;
   let subtitleFile: string | undefined;
-  if (options.studio?.subtitles.length) {
+  const subtitleFiles: string[] = [];
+  let studioInputs = 0;
+  if (options.studio?.watermarks?.length) {
+    const result = await appendStudioVisuals(
+      options,
+      args,
+      filters,
+      videoLabel,
+      1 + (options.music ? 1 : 0),
+      geometry.width,
+      geometry.height,
+      outputDuration,
+      subtitleFiles
+    );
+    videoLabel = result.label;
+    studioInputs = result.inputCount;
+  } else if (options.studio?.subtitles.length) {
     subtitleFile = `${options.output}.ass`;
     const visible = archiveVisibleSubtitles(
       options.studio.subtitles,
@@ -459,7 +515,7 @@ async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<R
     );
     filters.push(
       `[${videoLabel}]scale=${width}:${height},setsar=1,setpts=PTS-STARTPTS[base]`,
-      watermarkFilter(options.watermark.settings, options.music ? 2 : 1, size.width, size.height)
+      watermarkFilter(options.watermark.settings, (options.music ? 2 : 1) + studioInputs, size.width, size.height)
     );
   }
   const audioLabel = await studioAudio(
@@ -467,7 +523,7 @@ async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<R
     args,
     filters,
     outputDuration,
-    1 + (options.music ? 1 : 0) + (options.watermark ? 1 : 0)
+    1 + (options.music ? 1 : 0) + (options.watermark ? 1 : 0) + studioInputs
   );
   const shortPreview = options.preview && !options.previewFullLength;
   const start = shortPreview ? Math.min(options.previewStartSeconds ?? 0, Math.max(0, outputDuration - 0.1)) : 0;
@@ -485,8 +541,11 @@ async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<R
     "0"
   );
   if (
+    !options.lossless &&
+    !options.outputFps &&
     !prepared &&
     !options.studio?.subtitles.length &&
+    !options.studio?.watermarks?.length &&
     !options.frame &&
     !cut &&
     !options.watermark &&
@@ -494,29 +553,32 @@ async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<R
     ["h264", "hevc"].includes(source.codec)
   )
     args.push("-c:v", "copy");
+  else if (options.lossless) args.push("-c:v", "ffv1", "-level", "3", "-pix_fmt", "yuv420p");
   else args.push("-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p");
   if (options.watermark || options.frame || cut || prepared) args.push("-metadata:s:v:0", "rotate=0");
-  if (cut) args.push("-fps_mode", "vfr");
+  const targetFps = options.outputFps ?? (prepared ? prepared.info.fps : undefined);
+  if (targetFps && (prepared || options.outputFps)) args.push("-r", String(targetFps), "-fps_mode", "cfr");
+  else if (cut) args.push("-fps_mode", "vfr");
   if (start) args.push("-ss", String(start));
   args.push(
     "-t",
     String(duration),
     "-c:a",
-    "aac",
+    options.lossless ? "pcm_s16le" : "aac",
     "-b:a",
     "192k",
     "-ar",
     "48000",
     "-ac",
     "2",
-    "-movflags",
-    "+faststart",
+    ...(!options.lossless ? ["-movflags", "+faststart"] : []),
     "-progress",
     "pipe:1",
     "-nostats",
     options.output
   );
   try {
+    options.onStatus?.(options.lossless ? "正在完成无损合成" : "最终编码 · 正在生成视频文件");
     await runMediaProcess(options.tools.ffmpeg, args, options.signal, {
       cwd: path.dirname(options.output),
       output: options.output,
@@ -530,9 +592,18 @@ async function renderVideoCore(options: RenderVideoOptions, prepared?: Awaited<R
   } finally {
     await fs.rm(filterScript, { force: true });
     if (subtitleFile) await fs.rm(subtitleFile, { force: true });
+    await Promise.all(subtitleFiles.map((file) => fs.rm(file, { force: true })));
     if (cut) await fs.rm(`${options.output}.ffconcat`, { force: true });
   }
   const rendered = await probeMedia(options.tools, options.output, options.signal);
+  if (options.outputFps && Math.abs((rendered.fps ?? 0) - options.outputFps) > 0.01)
+    throw new VideoEditError("ARCHIVE_INTERPOLATION_OUTPUT_FPS", "导出帧率校验失败，原视频保留", 415);
+  if (
+    options.outputFps &&
+    Math.abs((rendered.videoDuration ?? rendered.duration) - (rendered.audioDuration ?? rendered.duration)) >
+      1 / options.outputFps + 0.001
+  )
+    throw new VideoEditError("ARCHIVE_INTERPOLATION_AUDIO_SYNC", "补帧结果音画同步校验失败，原视频保留", 415);
   if (!rendered.hasAudio || Math.abs(rendered.duration - duration) > Math.max(0.25, Math.min(0.5, duration * 0.002)))
     throw new VideoEditError("ARCHIVE_EDIT_OUTPUT_INVALID", "生成结果时长或音轨校验失败，原成品已保留", 415);
   return rendered;

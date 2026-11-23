@@ -21,6 +21,25 @@ afterEach(async () => {
 });
 
 describe("desktop component self-test", () => {
+  it("智能补帧校验固定模型与原生程序，使用 CPU 生成一帧且不依赖 Python", async () => {
+    temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
+    const files = ["bin/rife-ncnn-vulkan.exe", "models/rife-v4.6/flownet.param", "models/rife-v4.6/flownet.bin"];
+    for (const file of files) await writeAsset(file);
+    const definition = manifest("video-interpolation", files);
+    delete definition.pythonEnvironment;
+    const run = vi.fn(async (_exe: string, args: string[]) => {
+      if (args.includes("-o")) await fs.writeFile(args[args.indexOf("-o") + 1], "generated frame");
+      return "";
+    });
+    await createDesktopComponentSelfTest(run, async () => "signed-ffmpeg/bin/ffmpeg.exe")(definition, temporaryRoot);
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenLastCalledWith(
+      path.join(temporaryRoot, "bin", "rife-ncnn-vulkan.exe"),
+      expect.arrayContaining(["-g", "-1", "-m", path.join(temporaryRoot, "models", "rife-v4.6")]),
+      expect.any(String),
+      expect.any(Object)
+    );
+  });
   it("checks video CPU assets with the signed shared FFmpeg paths and offline environment", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
     const files = [
@@ -186,16 +205,18 @@ describe("desktop component self-test", () => {
 
   it("prevents Python version self-tests from writing into the signed runtime generation", async () => {
     temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), "desktop-component-self-test-"));
-    await writeExecutableAsset("python/bin/python3.12");
+    const isWindows = process.platform === "win32";
+    const binary = isWindows ? "python/python.exe" : "python/bin/python3.12";
+    await writeExecutableAsset(binary);
     const runProcess = vi.fn(async () => "3.12\n");
 
     await createDesktopComponentSelfTest(runProcess)(
-      manifest("python-312", ["python/bin/python3.12"], "3.12", "darwin-arm64"),
+      manifest("python-312", [binary], "3.12", isWindows ? "win32-x64" : "darwin-arm64"),
       temporaryRoot
     );
 
     expect(runProcess).toHaveBeenCalledWith(
-      path.join(temporaryRoot, "python", "bin", "python3.12"),
+      path.join(temporaryRoot, ...binary.split("/")),
       ["-c", expect.stringContaining("sys.version_info")],
       temporaryRoot,
       expect.objectContaining({ PYTHONDONTWRITEBYTECODE: "1" })

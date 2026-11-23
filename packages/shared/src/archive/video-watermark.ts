@@ -115,13 +115,18 @@ export function watermarkTimingError(settings: ArchiveWatermarkSettings, duratio
 }
 const clamp = (value: number) => Math.max(0, Math.min(1, value));
 const reflect = (value: number) => 1 - Math.abs((((value % 2) + 2) % 2) - 1);
-const bouncePaths: Record<string, Array<[number, number]>> = {
+type BounceStyle = (typeof ARCHIVE_WATERMARK_BOUNCE_STYLES)[number]["value"];
+type ShapedBounceStyle = Exclude<BounceStyle, "standard" | "random">;
+// 每个命名预设独立保存完整顶点，不能再依赖可编辑的 motion.from 补齐首点。
+const bouncePaths: Record<ShapedBounceStyle, Array<[number, number]>> = {
   z: [
+    [0, 0],
     [1, 0],
     [0, 1],
     [1, 1]
   ],
   zigzag: [
+    [0, 0],
     [1, 0.12],
     [0, 0.32],
     [1, 0.55],
@@ -129,6 +134,7 @@ const bouncePaths: Record<string, Array<[number, number]>> = {
     [1, 1]
   ],
   cross: [
+    [0, 0],
     [1, 1],
     [0, 0.65],
     [1, 0.1],
@@ -137,6 +143,7 @@ const bouncePaths: Record<string, Array<[number, number]>> = {
     [0, 0]
   ],
   staggered: [
+    [0, 0],
     [1, 0.9],
     [0.7, 0],
     [0, 0.6],
@@ -146,6 +153,7 @@ const bouncePaths: Record<string, Array<[number, number]>> = {
     [0, 0.2]
   ],
   polygon: [
+    [0, 0],
     [1, 0.3],
     [0.65, 1],
     [0, 0.75],
@@ -160,25 +168,38 @@ export function archiveWatermarkBouncePath(settings: ArchiveWatermarkSettings) {
   const m = settings.motion,
     style = m.bounceStyle ?? "standard";
   if (style === "standard") return undefined;
-  let points = bouncePaths[style];
+  let points: Array<[number, number]>;
   if (style === "random") {
     let seed = ((m.bounceSeed ?? 1) ^ 0x9e3779b9) >>> 0,
-      edge = 0;
+      edge = -1;
     const random = () => {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
       return seed / 4294967296;
     };
-    points = Array.from({ length: 8 }, () => {
-      edge = (edge + 1 + Math.floor(random() * 3)) % 4;
-      const offset = 0.08 + random() * 0.84;
-      return edge === 0 ? [offset, 0] : edge === 1 ? [1, offset] : edge === 2 ? [offset, 1] : [0, offset];
-    });
-  }
-  if (!points) return undefined;
-  return [
-    { ...m.from },
-    ...points.map(([x, y]) => ({ x: m.directionX < 0 ? 1 - x : x, y: m.directionY < 0 ? 1 - y : y }))
-  ];
+    // 每轮访问全部四边，避免随机选择反复集中在一侧。
+    points = Array.from({ length: 2 }, () => {
+      const edges = [0, 1, 2, 3];
+      for (let i = edges.length - 1; i > 0; i--) {
+        const j = Math.floor(random() * (i + 1));
+        [edges[i], edges[j]] = [edges[j], edges[i]];
+      }
+      if (edges[0] === edge) [edges[0], edges[1]] = [edges[1], edges[0]];
+      edge = edges[edges.length - 1];
+      return edges.map((side): [number, number] => {
+        const offset = 0.08 + random() * 0.84;
+        return side === 0 ? [offset, 0] : side === 1 ? [1, offset] : side === 2 ? [offset, 1] : [0, offset];
+      });
+    }).flat();
+  } else points = bouncePaths[style];
+  // 命名预设有固定的几何形状。手动起点只负责接入，不能替换预设首顶点，
+  // 否则 Z 型的顶部横线会变成斜线，其他预设也会随拖动变形。
+  const route = points.map(([x, y]) => ({
+    x: m.directionX < 0 ? 1 - x : x,
+    y: m.directionY < 0 ? 1 - y : y
+  }));
+  return [{ ...m.from }, ...route].filter(
+    (point, index, all) => index === 0 || point.x !== all[index - 1].x || point.y !== all[index - 1].y
+  );
 }
 export function archiveWatermarkPosition(settings: ArchiveWatermarkSettings, time: number) {
   const motion = settings.motion;

@@ -1,7 +1,12 @@
 <template>
-  <section class="cut-timeline" aria-label="视频自由编排时间线">
-    <div class="cut-toolbar">
-      <strong>视频粗剪</strong>
+  <section
+    ref="timelineRoot"
+    class="cut-timeline"
+    :style="{ '--timeline-min-height': `${minimumHeight}px` }"
+    aria-label="视频自由编排时间线"
+  >
+    <div ref="toolbar" class="cut-toolbar">
+      <strong>编辑时间线</strong>
       <n-button
         v-for="action in actions"
         :key="action.label"
@@ -14,41 +19,19 @@
       >
         <template #icon><component :is="action.icon" :size="17" /></template>
       </n-button>
-      <n-button size="small" :disabled="disabled" @click="$emit('play')"
-        ><template #icon><Play :size="16" /></template>播放 / 暂停</n-button
-      >
-      <div v-if="focusedNode" class="cut-placement">
-        <label
-          >轨道<input
-            type="number"
-            min="1"
-            max="2000"
-            :value="focusedNode.lane + 1"
-            :disabled="disabled"
-            aria-label="选中元素所在轨道"
-            @change="place('lane', Number(($event.target as HTMLInputElement).value) - 1)"
-        /></label>
-        <label
-          >起点（秒）<input
-            type="number"
-            min="0"
-            max="7200"
-            step="0.01"
-            :value="Number(focusedNode.at.toFixed(3))"
-            :disabled="disabled"
-            aria-label="选中元素在时间线的起点"
-            @change="place('at', Number(($event.target as HTMLInputElement).value))"
-        /></label>
-      </div>
-      <span class="cut-clock">{{ clock(time) }} / {{ clock(duration) }}</span>
-      <label class="cut-snap"
-        ><input
-          type="checkbox"
-          :checked="snapping"
-          @change="$emit('update:snapping', ($event.target as HTMLInputElement).checked)"
-        />自动吸附</label
-      >
       <div class="cut-zoom">
+        <n-button
+          size="small"
+          :quaternary="!snapping"
+          :secondary="snapping"
+          :type="snapping ? 'primary' : 'default'"
+          :disabled="disabled"
+          :aria-pressed="snapping"
+          :aria-label="snapping ? '关闭自动吸附' : '开启自动吸附'"
+          :title="snapping ? '关闭自动吸附' : '开启自动吸附'"
+          @click="$emit('update:snapping', !snapping)"
+          ><template #icon><FoldHorizontal :size="17" /></template
+        ></n-button>
         <n-button quaternary size="small" title="缩小时间线" aria-label="缩小时间线" @click="setZoom(zoom / 1.5)"
           ><template #icon><ZoomOut :size="16" /></template
         ></n-button>
@@ -66,11 +49,55 @@
         ></n-button>
       </div>
     </div>
-    <div ref="viewport" class="cut-scroll" @wheel="onWheel">
+    <div ref="viewport" class="cut-scroll" :style="{ minHeight: `${minimumViewportHeight}px` }" @wheel="onWheel">
+      <div class="lane-headers" @pointerdown.stop>
+        <div
+          v-for="row in rowCount"
+          :key="row"
+          class="lane-header"
+          :style="{ top: `${laneTop(row - 1)}px`, height: `${laneHeight(row - 1)}px` }"
+        >
+          <div>
+            <span
+              class="lane-kind"
+              role="img"
+              :aria-label="`${laneKind(row - 1)}轨道 ${row}`"
+              :title="`${laneKind(row - 1)}轨道 ${row}`"
+            >
+              <component
+                :is="
+                  laneKind(row - 1) === '视频'
+                    ? Film
+                    : laneKind(row - 1) === '字幕'
+                      ? Type
+                      : laneKind(row - 1) === '水印'
+                        ? ImageIcon
+                        : Music2
+                "
+                :size="16"
+              />
+            </span>
+            <button
+              v-for="control in laneControls(row - 1)"
+              :key="control.key"
+              :title="control.title"
+              :aria-label="control.title"
+              :aria-pressed="control.active"
+              :disabled="disabled"
+              @click="$emit('track', row - 1, control.key)"
+            >
+              <component :is="control.icon" :size="14" />
+            </button>
+          </div>
+        </div>
+      </div>
       <div
         ref="track"
         class="cut-track"
-        :style="{ width: `${zoom * 100}%`, height: `${34 + rowCount * rowHeight}px` }"
+        :style="{
+          width: `calc(${zoom * 100}% - ${132 * zoom}px)`,
+          height: `${timelineHeight + timelineBottomSpace}px`
+        }"
         @pointerdown="beginBackground"
       >
         <div class="cut-ruler" @pointerdown.stop="beginSeek">
@@ -80,11 +107,9 @@
           v-for="row in rowCount"
           :key="row"
           class="cut-lane"
-          :class="{ target: dragPreview && dropLane === row - 1 }"
-          :style="{ top: `${34 + (row - 1) * rowHeight}px`, height: `${rowHeight}px` }"
-        >
-          <span class="lane-label">轨道 {{ row }}</span>
-        </div>
+          :class="{ target: dragPreview && dropLane === row - 1, last: row === rowCount }"
+          :style="{ top: `${laneTop(row - 1)}px`, height: `${laneHeight(row - 1)}px` }"
+        ></div>
         <div
           v-for="node in nodes"
           :key="node.id"
@@ -92,19 +117,78 @@
           class="cut-node"
           :class="[
             node.kind,
-            { selected: selected.includes(node.id), dragging: gesture?.ids.includes(node.id) && moved }
+            {
+              selected: selected.includes(node.id),
+              dragging: gesture?.ids.includes(node.id) && moved,
+              locked: nodeLocked(node.id)
+            }
           ]"
           :data-node-id="node.id"
-          :title="`${node.label} · ${clock(node.at)} — ${clock(node.at + node.length)}`"
-          :style="{ left: `${percent(node.at)}%`, width: `${percent(node.length)}%`, top: `${top(node.lane)}px` }"
+          :title="`${node.kind === 'video' ? videoName(node) : node.label} · ${clock(node.at)} — ${clock(node.at + node.length)}`"
+          :style="{
+            left: `${percent(node.at)}%`,
+            width: `${percent(node.length)}%`,
+            top: `${top(node.lane)}px`,
+            height: `${nodeHeight(node)}px`
+          }"
           @pointerdown.stop="beginNode($event, node, 'move')"
         >
-          <ArchiveCutThumbnail
-            v-if="node.kind === 'video'"
-            :url="node.clip?.sourceId ? sourceUrls?.[node.clip.sourceId] || sourceUrl : sourceUrl"
-            :time="node.clip?.start ?? 0"
+          <template v-if="node.kind === 'video'">
+            <div class="video-caption">
+              <template v-if="node.clip?.freezeAt !== undefined">
+                <span class="video-speed freeze-label">定格</span>
+                <span class="freeze-duration">{{ freezeTimecode(node) }}</span>
+              </template>
+              <template v-else>
+                <span v-if="node.clip?.interpolation" class="video-speed">补帧 {{ outputFps || 30 }} FPS</span>
+                <span class="video-speed"
+                  >{{ node.clip?.reverse ? "倒放" : "变速" }} {{ (node.clip?.speed ?? 1).toFixed(2) }}×</span
+                >
+                <span class="video-name">{{ videoName(node) }}</span>
+                <span class="video-duration">{{ clock(node.length) }}</span>
+              </template>
+            </div>
+            <ArchiveCutThumbnail
+              :class="{ 'with-audio': videoHasAudio(node) || node.clip?.freezeAt !== undefined }"
+              :url="freezeSources?.[node.id]?.url ?? videoUrl(node)"
+              :time="freezeSources?.[node.id]?.time ?? node.clip?.freezeAt ?? node.clip?.start ?? 0"
+              :end="freezeSources?.[node.id]?.time ?? node.clip?.freezeAt ?? node.clip?.end ?? 0"
+              :reverse="node.clip?.reverse"
+              :fps="fpsOf(node)"
+              :revision="videoRevision(node)"
+            />
+            <ArchiveTimelineAudio
+              v-if="videoHasAudio(node) && node.clip"
+              class="video-audio"
+              :audio="videoAudio(node)"
+              :url="videoUrl(node)"
+              :waveform-version="videoRevision(node)"
+              :load-waveform="videoWaveformLoader(node)"
+              :disabled="disabled || nodeLocked(node.id)"
+              @available="setVideoAudio(node, $event)"
+              @begin="beginAudio(node)"
+              @update="$emit('audio', node.id, $event)"
+              @commit="finishAudio"
+              @cancel="cancelAudio"
+            />
+          </template>
+          <ArchiveTimelineAudio
+            v-if="node.kind === 'music' && studio?.musicTracks[node.index]"
+            :audio="studio.musicTracks[node.index]"
+            :url="musicUrls?.[node.id] ?? ''"
+            :disabled="disabled || nodeLocked(node.id)"
+            @begin="beginAudio(node)"
+            @update="$emit('audio', node.id, $event)"
+            @commit="finishAudio"
+            @cancel="cancelAudio"
           />
-          <span class="node-text">{{ node.label }}</span>
+          <img
+            v-if="node.kind === 'watermark'"
+            :src="watermarkUrls?.[studio?.watermarks?.[node.index]?.asset.id ?? '']"
+            class="watermark-thumb"
+            alt=""
+          />
+          <span v-if="node.kind !== 'video'" class="node-text">{{ node.label }}</span>
           <span v-if="node.clip && archiveTransitionDuration(clips, node.index)" class="transition-badge">转场</span>
           <button
             class="cut-handle left"
@@ -126,12 +210,13 @@
             :style="{
               left: `${percent(node.at)}%`,
               width: `${percent(node.length)}%`,
-              top: `${top(gesture.anchor.lane) + gesture.dy + (node.lane - dropLane) * rowHeight}px`
+              top: `${top(gesture.anchor.lane) + gesture.dy + laneTop(node.lane) - laneTop(dropLane)}px`,
+              height: `${nodeHeight(node)}px`
             }"
           >
             {{ node.label }}
           </div>
-          <div class="drop-guide" :style="{ top: `${34 + dropLane * rowHeight}px`, height: `${rowHeight}px` }">
+          <div class="drop-guide" :style="{ top: `${laneTop(dropLane)}px`, height: `${laneHeight(dropLane)}px` }">
             <span>放置到轨道 {{ dropLane + 1 }} · {{ clock(dragPreview[0]?.at ?? 0) }}</span>
           </div>
         </template>
@@ -148,38 +233,60 @@
         </div>
       </div>
     </div>
-    <div class="cut-summary">
+    <div ref="summary" class="cut-summary">
       <span>已选 {{ selected.length }} 个元素 · {{ rowCount }} 条轨道</span
       ><span>上方轨道优先显示 · 空隙保留黑屏 · 声音叠加</span>
     </div>
   </section>
 </template>
 <script setup lang="ts">
-import { computed, ref, onMounted, onScopeDispose } from "vue";
+import { computed, ref, watch, onMounted, onScopeDispose } from "vue";
 import { NButton } from "naive-ui";
 import {
+  Image as ImageIcon,
+  FoldHorizontal,
+  Film,
+  Music2,
+  Type,
+  Lock,
+  Unlock,
+  Eye,
+  EyeOff,
+  Volume2,
+  VolumeX,
   Undo2,
   Redo2,
   SplitSquareHorizontal,
   PanelLeftClose,
   PanelRightClose,
   Trash2,
-  Play,
   ZoomIn,
   ZoomOut,
-  Copy,
-  ClipboardPaste
+  RotateCw,
+  FlipHorizontal2,
+  RotateCcw,
+  GalleryHorizontal
 } from "lucide-vue-next";
 import {
   archiveClipDuration,
+  archiveSliceClip,
   archiveCutStarts,
   archiveTransitionDuration,
   type ArchiveStudio,
   type ArchiveStudioSource,
   type ArchiveCutClip
 } from "@toolbox/shared/archive";
+import { videoEditApi } from "./video-edit-api";
+import ArchiveTimelineAudio from "./ArchiveTimelineAudio.vue";
+import type { TimelineAudioChange } from "./timeline-audio";
 import ArchiveCutThumbnail from "./ArchiveCutThumbnail.vue";
 const props = defineProps<{
+  watermarkUrls?: Record<string, string>;
+  itemId: string;
+  mediaId: string;
+  sourceName?: string;
+  sourceHasAudio?: boolean;
+  sourceRevision?: string;
   clips: ArchiveCutClip[];
   selected: string[];
   time: number;
@@ -191,14 +298,21 @@ const props = defineProps<{
   canTrim: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  canPaste: boolean;
+  canVideoTools?: boolean;
+  canReverse?: boolean;
+  canFreeze?: boolean;
+  canPaste?: boolean;
+  outputFps?: number;
+  freezeSources?: Record<string, { url: string; time: number }>;
   disabled: boolean;
   sourceUrl: string;
   sourceUrls?: Record<string, string>;
+  musicUrls?: Record<string, string>;
   sources?: ArchiveStudioSource[];
   studio?: ArchiveStudio;
 }>();
 const emit = defineEmits<{
+  "minimum-height": [number];
   "update:selected": [string[]];
   "update:zoom": [number];
   "update:snapping": [boolean];
@@ -207,32 +321,25 @@ const emit = defineEmits<{
   split: [];
   trim: ["left" | "right"];
   remove: [];
-  duplicate: [];
-  copy: [];
-  paste: [];
   undo: [];
   redo: [];
+  rotate: [];
+  mirror: [];
+  reverse: [];
+  freeze: [];
+  copy: [];
+  paste: [];
   begin: [];
   cancel: [];
   commit: [ArchiveCutClip[]];
   studio: [ArchiveStudio];
   layout: [ArchiveCutClip[], ArchiveStudio];
+  track: [number, "locked" | "hidden" | "muted"];
+  "audio-begin": [];
+  "audio-end": [];
+  audio: [id: string, changes: TimelineAudioChange];
 }>();
 const actions = computed(() => [
-  {
-    label: "复制到剪贴板",
-    title: "复制选中元素（Ctrl+C / ⌘C）",
-    icon: Copy,
-    disabled: !props.selected.length,
-    run: () => emit("copy")
-  },
-  {
-    label: "粘贴元素",
-    title: "在指针处粘贴元素（Ctrl+V / ⌘V）",
-    icon: ClipboardPaste,
-    disabled: !props.canPaste,
-    run: () => emit("paste")
-  },
   { label: "撤回", title: "撤回（Ctrl+Z / ⌘Z）", icon: Undo2, disabled: !props.canUndo, run: () => emit("undo") },
   {
     label: "重做",
@@ -268,12 +375,40 @@ const actions = computed(() => [
     icon: Trash2,
     disabled: !props.selected.length,
     run: () => emit("remove")
+  },
+  {
+    label: "旋转",
+    title: "选中视频顺时针旋转 90°",
+    icon: RotateCw,
+    disabled: !props.canVideoTools,
+    run: () => emit("rotate")
+  },
+  {
+    label: "镜像",
+    title: "选中视频左右镜像",
+    icon: FlipHorizontal2,
+    disabled: !props.canVideoTools,
+    run: () => emit("mirror")
+  },
+  {
+    label: "倒放",
+    title: "切换选中视频倒放（含原声）",
+    icon: RotateCcw,
+    disabled: !props.canReverse,
+    run: () => emit("reverse")
+  },
+  {
+    label: "定格",
+    title: "在指针位置插入 3 秒静帧，同轨后续片段顺延",
+    icon: GalleryHorizontal,
+    disabled: !props.canFreeze,
+    run: () => emit("freeze")
   }
 ]);
 
 type Node = {
   id: string;
-  kind: "video" | "subtitle" | "music";
+  kind: "video" | "subtitle" | "music" | "watermark";
   at: number;
   length: number;
   lane: number;
@@ -281,11 +416,77 @@ type Node = {
   index: number;
   clip?: ArchiveCutClip;
 };
-const rowHeight = 72;
+const audioEditing = ref(false);
+function beginAudio(node: Node) {
+  emit("update:selected", [node.id]);
+  audioEditing.value = true;
+  emit("audio-begin");
+}
+function finishAudio() {
+  audioEditing.value = false;
+  emit("audio-end");
+}
+function cancelAudio() {
+  audioEditing.value = false;
+  emit("cancel");
+}
+const knownAudio = ref(new Map<string, boolean>());
+const videoSource = (node: Node) => props.sources?.find((source) => source.id === node.clip?.sourceId);
+const videoUrl = (node: Node) =>
+  node.clip?.sourceId ? props.sourceUrls?.[node.clip.sourceId] || props.sourceUrl : props.sourceUrl;
+const videoRevision = (node: Node) => videoSource(node)?.checksum ?? props.sourceRevision ?? "";
+const videoKey = (node: Node) => `${videoUrl(node)}:${videoRevision(node)}`;
+function videoHasAudio(node: Node) {
+  if (node.clip?.freezeAt !== undefined) return false;
+  return (
+    knownAudio.value.get(videoKey(node)) ??
+    (node.clip?.sourceId ? videoSource(node)?.hasAudio : props.sourceHasAudio) ??
+    true
+  );
+}
+function setVideoAudio(node: Node, available: boolean) {
+  if (knownAudio.value.get(videoKey(node)) === available) return;
+  knownAudio.value = new Map(knownAudio.value).set(videoKey(node), available);
+}
+function videoName(node: Node) {
+  return node.clip?.sourceId
+    ? videoSource(node)?.fileName || videoSource(node)?.title || node.label
+    : props.sourceName || node.label;
+}
+function videoAudio(node: Node) {
+  return {
+    start: node.at,
+    end: node.at + node.length,
+    sourceStart: node.clip?.start ?? 0,
+    reverseEnd: node.clip?.reverse ? node.clip.end : undefined,
+    speed: node.clip?.speed ?? 1,
+    volume: node.clip?.volume ?? 100,
+    fadeIn: node.clip?.fadeIn ?? 0,
+    fadeOut: node.clip?.fadeOut ?? 0,
+    muted: node.clip?.muted,
+    loop: false
+  };
+}
+function videoWaveformLoader(node: Node) {
+  return async (signal: AbortSignal) => {
+    const result = await videoEditApi.waveform(props.itemId, props.mediaId, videoSource(node), signal);
+    return { ...result, peaks: Float32Array.from(result.peaks) };
+  };
+}
+const nodeHeight = (node: Node) => (node.kind === "video" ? 82 : node.kind === "music" ? 48 : 30);
 const track = ref<HTMLDivElement>(),
   viewport = ref<HTMLDivElement>();
 const starts = computed(() => archiveCutStarts(props.clips));
 const nodes = computed<Node[]>(() => [
+  ...(props.studio?.watermarks ?? []).map((mark, index) => ({
+    id: mark.id,
+    kind: "watermark" as const,
+    at: mark.start,
+    length: mark.end - mark.start,
+    lane: mark.lane ?? 0,
+    label: mark.title,
+    index
+  })),
   ...props.clips.map((clip, index) => ({
     id: clip.id,
     kind: "video" as const,
@@ -315,14 +516,136 @@ const nodes = computed<Node[]>(() => [
     index
   }))
 ]);
+const members = computed(() => [
+  ...props.clips,
+  ...(props.studio?.subtitles ?? []),
+  ...(props.studio?.musicTracks ?? []),
+  ...(props.studio?.watermarks ?? [])
+]);
+const nodeLocked = (id: string) => Boolean(members.value.find((entry) => entry.id === id)?.locked);
+const laneKind = (lane: number) =>
+  ({ video: "视频", subtitle: "字幕", music: "配乐", watermark: "水印" })[
+    nodes.value.find((node) => node.lane === lane)?.kind ?? "video"
+  ];
+function laneControls(lane: number) {
+  const entries = members.value.filter((entry) => (entry.lane ?? 0) === lane);
+  if (!entries.length) return [];
+  const active = (key: "locked" | "hidden" | "muted") => entries.every((entry) => entry[key]);
+  return [
+    {
+      key: "locked" as const,
+      active: active("locked"),
+      title: active("locked") ? "解锁轨道" : "锁定轨道",
+      icon: active("locked") ? Lock : Unlock
+    },
+    ...(laneKind(lane) !== "配乐"
+      ? [
+          {
+            key: "hidden" as const,
+            active: active("hidden"),
+            title: active("hidden") ? "显示轨道" : "隐藏轨道",
+            icon: active("hidden") ? EyeOff : Eye
+          }
+        ]
+      : []),
+    ...(laneKind(lane) !== "字幕"
+      ? [
+          {
+            key: "muted" as const,
+            active: active("muted"),
+            title: active("muted") ? "开启声音" : "关闭声音",
+            icon: active("muted") ? VolumeX : Volume2
+          }
+        ]
+      : [])
+  ];
+}
+const timelineBottomSpace = 64;
+const timelineRoot = ref<HTMLElement>(),
+  toolbar = ref<HTMLElement>(),
+  summary = ref<HTMLElement>();
+const chromeHeight = ref(96),
+  scrollPadding = ref(10);
+const minimumViewportHeight = computed(() => {
+  const heights = new Map<number, number>();
+  for (const node of nodes.value) heights.set(node.lane, Math.max(heights.get(node.lane) ?? 0, nodeHeight(node) + 2));
+  // The two tallest occupied rows guarantee room for any two adjacent materials.
+  // A single row reserves a second slot of the same height; drag-created empty rows do not affect the limit.
+  const rows = [...heights.values()].sort((a, b) => b - a);
+  return 34 + (rows[0] ?? 58) + (rows[1] ?? rows[0] ?? 58) + scrollPadding.value;
+});
+const minimumHeight = computed(() => Math.ceil(Math.max(200, minimumViewportHeight.value + chromeHeight.value)));
+watch(minimumHeight, (height) => emit("minimum-height", height), { immediate: true });
+function measureChrome() {
+  if (!timelineRoot.value || !toolbar.value || !summary.value || !viewport.value) return;
+  const toolbarHeight = toolbar.value.offsetHeight,
+    summaryHeight = summary.value.offsetHeight;
+  if (!toolbarHeight || !summaryHeight) return;
+  const number = (value: string) => Number.parseFloat(value) || 0;
+  const outer = getComputedStyle(timelineRoot.value),
+    tools = getComputedStyle(toolbar.value),
+    status = getComputedStyle(summary.value),
+    scroll = getComputedStyle(viewport.value);
+  chromeHeight.value =
+    toolbarHeight +
+    summaryHeight +
+    number(tools.marginTop) +
+    number(tools.marginBottom) +
+    number(status.marginTop) +
+    number(status.marginBottom) +
+    number(outer.paddingTop) +
+    number(outer.paddingBottom) +
+    number(outer.borderTopWidth) +
+    number(outer.borderBottomWidth);
+  scrollPadding.value = number(scroll.paddingTop) + number(scroll.paddingBottom);
+}
+let chromeObserver: ResizeObserver | undefined;
 const rowCount = computed(() =>
-  Math.min(2000, Math.max(1, ...nodes.value.map((node) => node.lane + 1)) + (gesture.value?.mode === "move" ? 1 : 0))
+  Math.min(
+    2000,
+    Math.max(1, ...nodes.value.map((node) => node.lane + 1)) + (gesture.value?.mode === "move" && moved.value ? 1 : 0)
+  )
 );
 const baseSpan = computed(() => Math.min(7200, Math.max(30, props.duration + 15, props.duration * 1.2)));
 const span = computed(() => gesture.value?.span ?? baseSpan.value);
 const percent = (value: number) => (value / span.value) * 100;
-const top = (lane: number) => 34 + lane * rowHeight + 19;
+const laneMetrics = computed(() => {
+  const heights = new Map<number, number>();
+  for (const node of nodes.value) heights.set(node.lane, Math.max(heights.get(node.lane) ?? 0, nodeHeight(node)));
+  let offset = 34;
+  return Array.from({ length: rowCount.value }, (_, lane) => {
+    const height = (heights.get(lane) ?? (gesture.value ? nodeHeight(gesture.value.anchor) : 56)) + 2;
+    const result = { top: offset, height };
+    offset += height;
+    return result;
+  });
+});
+const timelineHeight = computed(() => {
+  const last = laneMetrics.value.at(-1)!;
+  return last.top + last.height;
+});
+const laneTop = (lane: number) => laneMetrics.value[lane]?.top ?? timelineHeight.value;
+const laneHeight = (lane: number) => laneMetrics.value[lane]?.height ?? 50;
+const top = (lane: number) => laneTop(lane) + 1;
+function laneAt(y: number) {
+  let lo = 0,
+    hi = laneMetrics.value.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (y >= laneTop(mid) + laneHeight(mid)) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 const fpsOf = (node?: Node) => props.sources?.find((source) => source.id === node?.clip?.sourceId)?.fps ?? props.fps;
+function freezeTimecode(node: Node) {
+  const rate = Math.max(1, Math.round(fpsOf(node)));
+  const frames = Math.round(node.length * rate),
+    seconds = Math.floor(frames / rate);
+  return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60, frames % rate]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
+}
 const clock = (value: number) =>
   `${Math.floor(Math.max(0, value) / 60)}:${(Math.max(0, value) % 60).toFixed(2).padStart(5, "0")}`;
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -378,7 +701,7 @@ function initialize(event: PointerEvent, mode: Gesture["mode"], anchor?: Node) {
     mode,
     anchor: anchor ? clone(anchor) : { id: "", kind: "video", at: 0, length: 0, lane: 0, label: "", index: -1 },
     ids,
-    originals: clone(nodes.value.filter((node) => ids.includes(node.id))),
+    originals: clone(nodes.value.filter((node) => ids.includes(node.id) && !nodeLocked(node.id))),
     x: p.x,
     y: p.y,
     px: track.value.clientWidth / baseSpan.value,
@@ -402,6 +725,10 @@ function initialize(event: PointerEvent, mode: Gesture["mode"], anchor?: Node) {
   return true;
 }
 function beginNode(event: PointerEvent, node: Node, mode: "move" | "start" | "end") {
+  if (nodeLocked(node.id)) {
+    emit("update:selected", [node.id]);
+    return;
+  }
   if (!initialize(event, mode, node)) return;
   const g = gesture.value!;
   if (g.additive && mode === "move") {
@@ -410,7 +737,7 @@ function beginNode(event: PointerEvent, node: Node, mode: "move" | "start" | "en
       : [...props.selected, node.id];
     emit("update:selected", selected);
     g.ids = selected.includes(node.id) ? selected : [node.id];
-    g.originals = clone(nodes.value.filter((entry) => g.ids.includes(entry.id)));
+    g.originals = clone(nodes.value.filter((entry) => g.ids.includes(entry.id) && !nodeLocked(entry.id)));
   } else emit("update:selected", g.ids);
 }
 function beginBackground(event: PointerEvent) {
@@ -487,7 +814,7 @@ function move(event: PointerEvent) {
           node.at * g.px < rect.left + rect.width &&
           (node.at + node.length) * g.px > rect.left &&
           top(node.lane) < rect.top + rect.height &&
-          top(node.lane) + 44 > rect.top
+          top(node.lane) + nodeHeight(node) > rect.top
       )
       .map((node) => node.id);
     emit("update:selected", g.additive ? [...new Set([...g.selected, ...ids])] : ids);
@@ -514,7 +841,7 @@ function move(event: PointerEvent) {
       -Math.min(...g.originals.map((node) => node.at)),
       Math.min(7200 - Math.max(...g.originals.map((node) => node.at + node.length)), delta)
     );
-    const requested = Math.max(0, Math.min(rowCount.value - 1, Math.floor((p.y - 34) / rowHeight)));
+    const requested = laneAt(p.y);
     let laneDelta = requested - g.anchor.lane;
     laneDelta = Math.max(
       -Math.min(...g.originals.map((node) => node.lane)),
@@ -529,20 +856,27 @@ function move(event: PointerEvent) {
     if (node.clip) {
       const speed = node.clip.speed ?? 1,
         fps = fpsOf(node);
+      const sourceDuration =
+        node.clip.freezeAt !== undefined
+          ? 7200
+          : (props.sources?.find((source) => source.id === node.clip!.sourceId)?.duration ?? props.sourceDuration);
+      const reversed = node.clip.reverse && node.clip.freezeAt === undefined;
       if (g.mode === "start") {
-        const source = Math.max(
-          0,
-          Math.min(node.clip.end - 1 / fps, Math.round((node.clip.start + delta * speed) * fps) / fps)
+        const change = Math.max(
+          -node.at,
+          reversed ? -(sourceDuration - node.clip.end) / speed : -node.clip.start / speed,
+          Math.min(node.length - 1 / fps / speed, Math.round(delta * speed * fps) / fps / speed)
         );
-        const change = Math.max(-node.at, (source - node.clip.start) / speed);
-        node.clip.start += change * speed;
+        node.clip = archiveSliceClip(node.clip, change);
         node.at += change;
-      } else
-        node.clip.end = Math.min(
-          props.sources?.find((source) => source.id === node.clip!.sourceId)?.duration ?? props.sourceDuration,
-          node.clip.start + (7200 - node.at) * speed,
-          Math.max(node.clip.start + 1 / fps, Math.round((node.clip.end + delta * speed) * fps) / fps)
+      } else {
+        const length = Math.min(
+          reversed ? node.clip.end / speed : (sourceDuration - node.clip.start) / speed,
+          7200 - node.at,
+          Math.max(1 / fps / speed, Math.round((node.length + delta) * speed * fps) / fps / speed)
         );
+        node.clip = archiveSliceClip(node.clip, 0, length);
+      }
       node.length = archiveClipDuration(node.clip);
     } else if (g.mode === "start") {
       const change = Math.max(-node.at, Math.min(node.length - 0.01, delta));
@@ -603,7 +937,12 @@ function apply(g: Pick<Gesture, "clips" | "studio" | "mode">, preview: Node[]) {
           )
         ].sort((a, b) => a - b)
       : [];
-  for (const entry of [...clips, ...composition.subtitles, ...composition.musicTracks]) {
+  for (const entry of [
+    ...clips,
+    ...composition.subtitles,
+    ...composition.musicTracks,
+    ...(composition.watermarks ?? [])
+  ]) {
     if (moving.has(entry.id)) continue;
     const origin = nodes.value.find((node) => node.id === entry.id);
     if (origin) entry.lane = origin.lane + insertions.filter((lane) => lane <= origin.lane).length;
@@ -614,36 +953,24 @@ function apply(g: Pick<Gesture, "clips" | "studio" | "mode">, preview: Node[]) {
       const clip = clips.find((clip) => clip.id === node.id)!;
       Object.assign(clip, node.clip, { at: node.at, lane: node.lane });
     } else {
-      const list = node.kind === "subtitle" ? composition.subtitles : composition.musicTracks;
+      const list =
+        node.kind === "subtitle"
+          ? composition.subtitles
+          : node.kind === "watermark"
+            ? (composition.watermarks ?? [])
+            : composition.musicTracks;
       const entry = list.find((entry) => entry.id === node.id)!;
-      if (node.kind === "music" && g.mode === "start" && "sourceStart" in entry)
-        entry.sourceStart = Math.max(0, entry.sourceStart + node.at - entry.start);
+      if ((node.kind === "music" || node.kind === "watermark") && g.mode === "start" && "sourceStart" in entry)
+        entry.sourceStart = Math.max(
+          0,
+          entry.sourceStart + (node.at - entry.start) * ("speed" in entry ? (entry.speed ?? 1) : 1)
+        );
       Object.assign(entry, { start: node.at, end: node.at + node.length, lane: node.lane });
+      if (node.kind === "watermark") Object.assign(entry, { followEnd: false });
     }
   }
   composition.lanes = Math.max(composition.lanes ?? 0, ...preview.map((node) => node.lane + 1));
   emit("layout", clips, composition);
-}
-const focusedNode = computed(() => nodes.value.find((node) => props.selected.includes(node.id)));
-function place(field: "lane" | "at", value: number) {
-  if (props.disabled || !focusedNode.value || !Number.isFinite(value) || !props.studio) return;
-  const selection = nodes.value.filter((node) => props.selected.includes(node.id));
-  let delta = value - focusedNode.value[field];
-  if (field === "lane")
-    delta = Math.max(
-      -Math.min(...selection.map((node) => node.lane)),
-      Math.min(1999 - Math.max(...selection.map((node) => node.lane)), Math.round(delta))
-    );
-  else
-    delta = Math.max(
-      -Math.min(...selection.map((node) => node.at)),
-      Math.min(7200 - Math.max(...selection.map((node) => node.at + node.length)), delta)
-    );
-  emit("begin");
-  apply(
-    { clips: clone(props.clips), studio: clone(props.studio), mode: "move" },
-    selection.map((node) => ({ ...node, [field]: node[field] + delta }))
-  );
 }
 function finish(event: PointerEvent) {
   const g = gesture.value;
@@ -678,32 +1005,46 @@ function cancel() {
 function keydown(event: KeyboardEvent) {
   if (
     props.disabled ||
+    audioEditing.value ||
     event.defaultPrevented ||
     event.isComposing ||
     event.altKey ||
-    (event.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"],.n-base-selection')
+    (event.target as HTMLElement)?.closest(
+      'input,textarea,select,[contenteditable]:not([contenteditable="false"]),.n-base-selection,.n-slider'
+    )
   )
     return;
   const dialog = (event.target as HTMLElement)?.closest(".n-modal");
   if (dialog && !dialog.classList.contains("audio-editor") && !dialog.querySelector(".audio-editor")) return;
   const key = event.key.toLowerCase(),
     modifier = event.ctrlKey || event.metaKey;
+  if (
+    (event.target as Element)?.closest("[data-timeline-audio-control]") &&
+    !(modifier && (key === "z" || key === "y"))
+  )
+    return;
   if (key === "escape") {
     cancel();
     return;
   }
   if (gesture.value) return;
-  if (modifier && !event.shiftKey && (key === "c" || key === "v")) {
-    if (gesture.value || (key === "c" ? !props.selected.length : !props.canPaste)) return;
+  if (
+    modifier &&
+    !event.shiftKey &&
+    key === "c" &&
+    nodes.value.some((node) => props.selected.includes(node.id) && !nodeLocked(node.id))
+  ) {
     event.preventDefault();
-    if (key === "c") emit("copy");
-    else emit("paste");
+    event.stopImmediatePropagation();
+    emit("copy");
+  } else if (modifier && !event.shiftKey && key === "v" && props.canPaste) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    emit("paste");
   } else if (modifier && (key === "z" || key === "y")) {
     event.preventDefault();
-    key === "y" || event.shiftKey ? emit("redo") : emit("undo");
-  } else if (modifier && key === "d") {
-    event.preventDefault();
-    emit("duplicate");
+    if (key === "y" || event.shiftKey) emit("redo");
+    else emit("undo");
   } else if (modifier && key === "b") {
     event.preventDefault();
     emit("split");
@@ -726,18 +1067,102 @@ function keydown(event: KeyboardEvent) {
       "seek",
       Math.max(
         0,
-        Math.min(props.duration, props.time + (key === "arrowleft" ? -1 : 1) / (fpsOf(node) * (node?.clip?.speed ?? 1)))
+        Math.min(
+          props.duration,
+          props.time +
+            (key === "arrowleft" ? -1 : 1) /
+              (node?.clip?.interpolation ? props.outputFps || 30 : fpsOf(node) * (node?.clip?.speed ?? 1))
+        )
       )
     );
   }
 }
-onMounted(() => window.addEventListener("keydown", keydown, true));
+onMounted(() => {
+  window.addEventListener("keydown", keydown, true);
+  measureChrome();
+  if (typeof ResizeObserver !== "undefined") {
+    chromeObserver = new ResizeObserver(measureChrome);
+    for (const element of [timelineRoot.value, toolbar.value, summary.value])
+      if (element) chromeObserver.observe(element);
+  }
+});
 onScopeDispose(() => {
+  chromeObserver?.disconnect();
   cleanup();
   window.removeEventListener("keydown", keydown, true);
 });
 </script>
 <style scoped>
+.watermark-thumb {
+  height: 24px;
+  max-width: 42px;
+  object-fit: contain;
+  pointer-events: none;
+  margin-right: 6px;
+}
+.lane-headers {
+  position: sticky;
+  left: 0;
+  width: 132px;
+  height: 0;
+  z-index: 21;
+}
+.lane-header {
+  position: absolute;
+  left: 0;
+  width: 132px;
+  background: var(--color-surface, #fff);
+  border-bottom: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  font-size: 11px;
+}
+.lane-kind {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+.lane-header div {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  margin-top: 0;
+}
+.lane-header button {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.lane-header button:hover,
+.lane-header button[aria-pressed="true"] {
+  background: var(--color-primary-100, #eeeaff);
+  color: var(--color-primary-600);
+}
+.cut-timeline {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: var(--timeline-min-height, 200px);
+  max-height: max(var(--workspace-timeline, 300px), var(--timeline-min-height, 200px));
+  box-sizing: border-box;
+}
+.cut-scroll {
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
 .cut-timeline {
   min-width: 0;
   border: 1px solid var(--color-border);
@@ -747,6 +1172,7 @@ onScopeDispose(() => {
 }
 .cut-toolbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
@@ -755,20 +1181,10 @@ onScopeDispose(() => {
 .cut-toolbar strong {
   margin-right: 8px;
 }
-.cut-clock,
-.cut-summary,
-.cut-snap {
+.cut-summary {
+  flex-shrink: 0;
   color: var(--color-text-secondary);
   font-size: 12px;
-}
-.cut-clock {
-  font-variant-numeric: tabular-nums;
-  margin: 0 8px;
-}
-.cut-snap {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 .cut-zoom {
   display: flex;
@@ -807,12 +1223,22 @@ onScopeDispose(() => {
 }
 .cut-scroll {
   overflow: auto;
+  /* 滚动仍可用，但新增轨道时不让滚动条占用画布宽高。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   max-height: 480px;
   padding-bottom: 10px;
 }
+.cut-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
 .cut-track {
+  /* 留白属于可操作画布，沿用点击定位、拖动框选与指针拖动。 */
+  margin-left: 132px;
   position: relative;
-  min-width: 100%;
+  min-width: calc(100% - 132px);
   touch-action: none;
   overflow: hidden;
   user-select: none;
@@ -841,6 +1267,9 @@ onScopeDispose(() => {
   box-sizing: border-box;
   pointer-events: none;
 }
+.cut-lane.last {
+  border-bottom: 1px solid var(--color-border);
+}
 .cut-lane.target {
   background: rgb(102 80 255 / 8%);
 }
@@ -854,7 +1283,6 @@ onScopeDispose(() => {
 .cut-node,
 .cut-ghost {
   position: absolute;
-  height: 44px;
   box-sizing: border-box;
   border: 2px solid transparent;
   border-radius: 6px;
@@ -862,6 +1290,13 @@ onScopeDispose(() => {
   overflow: hidden;
   cursor: grab;
   min-width: 2px;
+}
+.cut-node.locked {
+  cursor: not-allowed;
+  filter: saturate(0.5);
+}
+.cut-node.locked .cut-handle {
+  visibility: hidden;
 }
 .cut-node.selected {
   border-color: var(--color-primary-600);
@@ -877,8 +1312,11 @@ onScopeDispose(() => {
 }
 .cut-node.music,
 .cut-ghost.music {
-  background: #cdece5;
-  color: #244f45;
+  --timeline-audio-wave: #0e91bc;
+  --timeline-audio-text: #e4f3ff;
+  --timeline-audio-background: #12345a;
+  background: #12345a;
+  color: #e4f3ff;
 }
 .node-text {
   position: absolute;
@@ -889,6 +1327,16 @@ onScopeDispose(() => {
   max-width: calc(100% - 16px);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.music .node-text {
+  top: 0;
+  bottom: auto;
+  line-height: 12px;
+  z-index: 3;
+  pointer-events: none;
+}
+.cut-node :deep(.timeline-audio) {
+  z-index: 2;
 }
 .video .node-text {
   color: white;
@@ -1001,5 +1449,90 @@ onScopeDispose(() => {
   font-size: 10px;
   padding: 1px 3px;
   border-radius: 3px;
+}
+.cut-node.video,
+.cut-node.music {
+  --audio-controls-opacity: 0;
+  --audio-controls-visibility: hidden;
+  --audio-controls-events: none;
+}
+.cut-node.video:hover,
+.cut-node.music:hover {
+  --audio-controls-opacity: 1;
+  --audio-controls-visibility: visible;
+  --audio-controls-events: auto;
+}
+
+.cut-node.video,
+.cut-ghost.video {
+  --timeline-audio-wave: #159b9d;
+  --timeline-audio-text: #e6f8f8;
+  --timeline-audio-background: #074c52;
+  background: #074c52;
+  color: #e6f8f8;
+}
+.video-caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 15px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 0 4px;
+  background: #074c52;
+  color: #e6f8f8;
+  font-size: 10px;
+  line-height: 15px;
+  overflow: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.video-speed,
+.video-duration {
+  flex-shrink: 0;
+}
+.freeze-label,
+.freeze-duration {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 12%);
+  line-height: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.video-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.video-duration {
+  margin-left: auto;
+}
+.cut-node :deep(.cut-thumb.with-audio) {
+  bottom: 26px;
+}
+.cut-node :deep(.timeline-audio.video-audio) {
+  top: auto;
+  bottom: 0;
+  height: 26px;
+  background: #074c52;
+}
+
+.cut-node.video.selected,
+.cut-node.music.selected {
+  border-color: #f3fbff;
+  box-shadow:
+    0 0 0 1px #16839b,
+    inset 0 0 0 1px rgb(255 255 255 / 30%);
+}
+.cut-node.video .cut-handle,
+.cut-node.music .cut-handle {
+  background: rgb(255 255 255 / 20%);
+}
+.cut-node.video.selected .cut-handle,
+.cut-node.music.selected .cut-handle {
+  background: rgb(255 255 255 / 65%);
 }
 </style>

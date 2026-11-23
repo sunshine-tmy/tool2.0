@@ -12,6 +12,12 @@ export * from "./archive-import";
 export * from "./archive-groups";
 export * from "./tiktok-profile";
 export * from "./video-edit";
+export * from "./video-clip-tools";
+export * from "./video-interpolation";
 export * from "./video-watermark";
 
 export * from "./video-studio";
+export * from "./unified-studio";
+export * from "./vertical-text";
+export * from "./text-appearance";
+export * from "./fancy-text";

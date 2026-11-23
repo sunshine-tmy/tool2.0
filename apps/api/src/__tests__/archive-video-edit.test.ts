@@ -8,7 +8,10 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultArchiveAudioSettings,
+  defaultArchiveStudio,
+  migrateArchiveStudio,
   defaultArchiveWatermarkSettings,
+  defaultArchiveInterpolation,
   type ArchiveVideoEditInput,
   type AudioLibraryItem,
   type ContentArchiveItem
@@ -166,6 +169,26 @@ async function execute(overrides: Partial<ArchiveVideoEditInput> = {}) {
   return service.get(job.id)!;
 }
 describe("可重复编辑的归档配乐", () => {
+  it("成片补帧只传给最终渲染并持久化；历史片段补帧不会静默沿用", async () => {
+    const outputSettings = { fps: 60 as const, interpolation: defaultArchiveInterpolation() };
+    await expect(
+      service.create(itemId, mediaId, await input({ outputSettings: { interpolation: defaultArchiveInterpolation() } }))
+    ).rejects.toMatchObject({ code: "ARCHIVE_INTERPOLATION_FPS_REQUIRED" });
+    const result = await execute({
+      outputSettings,
+      cut: [{ id: "legacy_001", start: 0, end: 2, interpolation: { ...defaultArchiveInterpolation(), engine: "rife" } }]
+    });
+    expect(result.status).toBe("completed");
+    const options = render.mock.calls.at(-1)![0];
+    expect(options.outputSettings).toEqual(outputSettings);
+    expect(options.cut?.[0].interpolation).toBeUndefined();
+    expect(options.ignoreClipInterpolation).toBe(true);
+    const saved = (await store.get(itemId))!.media[0].audioEdit!;
+    expect(saved.outputSettings).toEqual(outputSettings);
+    expect(saved.cut?.[0].interpolation).toBeUndefined();
+    expect((await execute({ outputSettings: {}, cut: undefined })).status).toBe("completed");
+    expect((await store.get(itemId))!.media[0].audioEdit!.outputSettings).toEqual({});
+  });
   it("使用归档原配乐生成独立快照，刷新更换原附件后仍可复用已保存配乐", async () => {
     const item = (await store.get(itemId))!;
     const sourceMusic = {
@@ -930,4 +953,221 @@ describe("可重复编辑的归档配乐", () => {
     expect(filter).toContain("normalize=0");
     expect(filter).toContain("alimiter");
   });
+});
+
+describe("统一视频工程", () => {
+  it("迁移旧配乐和水印后只合成一次；素材库删除后仍从独立快照再保存", async () => {
+    const png = await sharp({ create: { width: 24, height: 12, channels: 4, background: "red" } })
+      .png()
+      .toBuffer();
+    const library = await service.watermarkLibrary.upload(png, "水印.png", "image/png");
+    const normalized = (await service.watermarkLibrary.read(library.id)).bytes;
+    const draft = await service.selectLibraryWatermark(itemId, mediaId, library.id);
+    expect(
+      (await execute({ watermark: { draftId: draft.id, settings: defaultArchiveWatermarkSettings() } })).status
+    ).toBe("completed");
+    let media = (await store.get(itemId))!.media[0];
+    const studio = migrateArchiveStudio(media.audioEdit, defaultArchiveStudio(), 2);
+    libraryItem.deletedAt = new Date().toISOString();
+    await service.watermarkLibrary.remove(library.id, library.revision);
+    expect(
+      (await execute({ studio, musicId: undefined, musicRevision: undefined, useSavedMusic: false, watermark: null }))
+        .status
+    ).toBe("completed");
+    const options = render.mock.lastCall![0];
+    expect(options.music).toBeUndefined();
+    expect(options.watermark).toBeUndefined();
+    expect(Object.keys(options.trackFiles!)).toHaveLength(1);
+    expect(Object.keys(options.watermarkFiles!)).toHaveLength(1);
+    media = (await store.get(itemId))!.media[0];
+    expect(media.audioEdit!.music).toBeUndefined();
+    expect(media.audioEdit!.watermark).toBeUndefined();
+    expect(media.audioEdit!.studioWatermarks).toHaveLength(1);
+    expect(media.audioEdit!.studioMusic).toHaveLength(1);
+    const assetId = media.audioEdit!.studio!.watermarks![0].asset.id;
+    const preview = await app.inject({
+      method: "GET",
+      url: `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/studio-watermarks/${assetId}`
+    });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.rawPayload).toEqual(normalized);
+    expect(
+      (
+        await execute({
+          studio: media.audioEdit!.studio,
+          musicId: undefined,
+          musicRevision: undefined,
+          useSavedMusic: false,
+          watermark: null
+        })
+      ).status
+    ).toBe("completed");
+    expect((await store.get(itemId))!.media[0].audioEdit!.studioWatermarks).toHaveLength(1);
+  });
+  it("同一水印的复制片段共用一次快照；丢失素材报错保留原成品", async () => {
+    const png = await sharp({ create: { width: 24, height: 12, channels: 4, background: "blue" } })
+      .png()
+      .toBuffer();
+    const draft = await service.uploadWatermark(itemId, mediaId, png, "水印.png", "image/png");
+    const mark = {
+      id: "mark_0001",
+      title: "水印",
+      start: 0,
+      end: 1,
+      sourceStart: 0,
+      lane: 0,
+      asset: { id: draft.id, kind: "draft" as const, width: draft.width, height: draft.height },
+      settings: defaultArchiveWatermarkSettings()
+    };
+    const studio = {
+      ...defaultArchiveStudio(),
+      unified: true,
+      watermarks: [mark, { ...mark, id: "mark_0002", start: 1, end: 2 }]
+    };
+    const data = await input({ studio, musicId: undefined, musicRevision: undefined });
+    const job = await service.create(itemId, mediaId, data);
+    await vi.waitFor(() => expect(service.get(job.id)?.status).toBe("completed"));
+    let media = (await store.get(itemId))!.media[0];
+    expect(media.audioEdit!.studioWatermarks).toHaveLength(1);
+    expect(media.audioEdit!.studio!.watermarks!.every((mark) => mark.asset.kind === "saved")).toBe(true);
+    const before = media.checksum;
+    const missing = {
+      ...media.audioEdit!.studio!,
+      watermarks: [
+        {
+          ...media.audioEdit!.studio!.watermarks![0],
+          asset: { ...mark.asset, kind: "saved" as const, id: "missing_asset" }
+        }
+      ]
+    };
+    expect((await execute({ studio: missing, musicId: undefined, musicRevision: undefined })).status).toBe("failed");
+    media = (await store.get(itemId))!.media[0];
+    expect(media.checksum).toBe(before);
+    const snapshot = media.audioEdit!.studioWatermarks![0];
+    expect(
+      (
+        await execute({
+          studio: { ...media.audioEdit!.studio!, watermarks: [] },
+          musicId: undefined,
+          musicRevision: undefined
+        })
+      ).status
+    ).toBe("completed");
+    expect((await store.get(itemId))!.media[0].audioEdit!.studioWatermarks).toEqual([]);
+    await vi.waitFor(async () =>
+      expect(
+        await fs.stat(path.join(config.xhsArchiveItemsDir, itemId, snapshot.file.fileName)).catch(() => undefined)
+      ).toBeUndefined()
+    );
+  });
+});
+
+it("统一水印任务取消后不改成品，草稿租约释放且仍能重试保存", async () => {
+  const png = await sharp({ create: { width: 20, height: 10, channels: 4, background: "red" } })
+    .png()
+    .toBuffer();
+  const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+  const studio = {
+    ...defaultArchiveStudio(),
+    unified: true,
+    watermarks: [
+      {
+        id: "mark_001",
+        title: "水印",
+        start: 0,
+        end: 2,
+        sourceStart: 0,
+        asset: { id: draft.id, kind: "draft" as const, width: draft.width, height: draft.height },
+        settings: defaultArchiveWatermarkSettings()
+      }
+    ]
+  };
+  render.mockImplementationOnce(async (options) => {
+    await new Promise<void>((_resolve, reject) =>
+      options.signal.addEventListener("abort", () => reject(new Error("cancelled")), { once: true })
+    );
+    throw new Error("unreachable");
+  });
+  const before = await store.get(itemId),
+    job = await service.create(itemId, mediaId, await input({ studio, musicId: undefined, musicRevision: undefined }));
+  await vi.waitFor(() => expect(render).toHaveBeenCalled());
+  await service.cancel(job.id);
+  expect(await store.get(itemId)).toEqual(before);
+  const held = await service.watermarks.acquire(itemId, mediaId, draft.id);
+  held.release();
+  expect((await execute({ studio, musicId: undefined, musicRevision: undefined })).status).toBe("completed");
+});
+
+it("HTTP 添加水印后自动保存草稿保留自动结束 null，手动 0 不得误作自动结束", async () => {
+  const current = (await store.get(itemId))!.media[0];
+  const mark = {
+    id: "mark_001",
+    title: "水印",
+    start: 0,
+    end: 2,
+    sourceStart: 0,
+    asset: { id: "draft_000001", kind: "draft" as const, width: 20, height: 10 },
+    settings: defaultArchiveWatermarkSettings()
+  };
+  const body = {
+    revision: 0,
+    checksum: current.checksum,
+    clips: [{ id: "video_001", start: 0, end: 2 }],
+    playhead: 0,
+    selected: [mark.id],
+    zoom: 1,
+    studio: { ...defaultArchiveStudio(), unified: true, watermarks: [mark] }
+  };
+  const url = `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/cut-draft`;
+  const response = await app.inject({ method: "PUT", url, payload: body });
+  expect(response.statusCode, response.body).toBe(200);
+  expect(response.json().data.studio.watermarks[0].settings.endSeconds).toBeNull();
+  const saved = database.get("archive-cut-draft", `${itemId}:${mediaId}`)!.payload as typeof body;
+  expect(saved.studio.watermarks[0].settings.endSeconds).toBeNull();
+  body.studio.watermarks[0].settings.endSeconds = 0;
+  const invalid = await app.inject({ method: "PUT", url, payload: body });
+  expect(invalid.statusCode).toBe(400);
+  expect(database.get("archive-cut-draft", `${itemId}:${mediaId}`)!.payload).toEqual(saved);
+});
+it("HTTP 正式保存混合水印时保留各自自动和手动结束时间，不接受数字字符串", async () => {
+  const png = await sharp({ create: { width: 20, height: 10, channels: 4, background: "red" } })
+    .png()
+    .toBuffer();
+  const draft = await service.uploadWatermark(itemId, mediaId, png, "logo.png", "image/png");
+  const mark = {
+    id: "mark_001",
+    title: "水印",
+    start: 0,
+    end: 2,
+    sourceStart: 0,
+    asset: { id: draft.id, kind: "draft" as const, width: draft.width, height: draft.height },
+    settings: defaultArchiveWatermarkSettings()
+  };
+  const studio = {
+    ...defaultArchiveStudio(),
+    unified: true,
+    watermarks: [
+      mark,
+      { ...mark, id: "mark_002", settings: { ...mark.settings, endSeconds: 1.5 } },
+      { ...mark, id: "mark_003" }
+    ]
+  };
+  const url = `/api/v1/tools/media-archive/items/${itemId}/media/${mediaId}/audio-edits`;
+  const body = await input({ studio, musicId: undefined, musicRevision: undefined, watermark: null });
+  const invalid = structuredClone(body) as unknown as {
+    studio: { watermarks: { settings: { endSeconds: unknown } }[] };
+  };
+  invalid.studio.watermarks[0].settings.endSeconds = "1";
+  expect((await app.inject({ method: "POST", url, payload: invalid })).statusCode).toBe(400);
+  const response = await app.inject({ method: "POST", url, payload: body });
+  expect(response.statusCode, response.body).toBe(202);
+  await vi.waitFor(() => expect(service.get(response.json().data.id)?.status).toBe("completed"));
+  expect(render.mock.lastCall![0].studio!.watermarks!.map((watermark) => watermark.settings.endSeconds)).toEqual([
+    null,
+    1.5,
+    null
+  ]);
+  expect(
+    (await store.get(itemId))!.media[0].audioEdit!.studio!.watermarks!.map((watermark) => watermark.settings.endSeconds)
+  ).toEqual([null, 1.5, null]);
 });

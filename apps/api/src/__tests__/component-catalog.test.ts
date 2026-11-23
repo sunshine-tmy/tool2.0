@@ -11,6 +11,22 @@ const catalogs: Array<[string, ComponentCatalog]> = [
 ];
 
 describe("embedded component catalog signatures", () => {
+  it("includes signed native RIFE assets and the FFmpeg dependency on Windows", () => {
+    const manifest = windowsCatalog.manifests.find((entry) => entry.id === "video-interpolation");
+    expect(manifest?.platform).toBe("win32-x64");
+    expect(manifest?.dependencyIds).toEqual(["ffmpeg"]);
+    expect(manifest?.pythonEnvironment).toBeUndefined();
+    expect(manifest?.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        "bin/rife-ncnn-vulkan.exe",
+        "bin/vcomp140.dll",
+        "models/rife-v4.6/flownet.param",
+        "models/rife-v4.6/flownet.bin",
+        "licenses/LICENSE"
+      ])
+    );
+    expect(macCatalog.manifests.some((entry) => entry.id === "video-interpolation")).toBe(false);
+  });
   it("uses only Python 3.12 for new Windows installations", () => {
     expect(
       windowsCatalog.manifests.filter((manifest) => manifest.id.startsWith("python-")).map((manifest) => manifest.id)

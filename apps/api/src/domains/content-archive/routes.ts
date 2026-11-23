@@ -30,6 +30,7 @@ import type { AudioLibraryStore } from "../audio-library/store";
 import { ArchiveVideoEditService } from "./video-edit/service";
 import { registerVideoEditRoutes } from "./video-edit/routes";
 import { VideoEditError, runMediaProcess } from "./video-edit/renderer";
+import { resolveRifeRuntime } from "./video-edit/interpolation-runtime";
 import { LocalVideoArchiveUploads, registerLocalVideoUploadRoutes } from "./core/local-upload";
 import { ArchiveDownloadGateway } from "./core/download-gateway";
 
@@ -117,7 +118,7 @@ export async function registerXhsArchiveRoutes(options: {
           503
         );
       }
-      return { ffmpeg, ffprobe };
+      return { ffmpeg, ffprobe, rife: await resolveRifeRuntime(config.desktopManagedCapabilities, options.components) };
     },
     onError: (error) => app.log.error({ err: error }, "archive video edit failed")
   });

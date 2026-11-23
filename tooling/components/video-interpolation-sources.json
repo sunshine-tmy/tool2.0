@@ -1,0 +1,16 @@
+{
+  "project": "nihui/rife-ncnn-vulkan",
+  "release": "20221029",
+  "model": "rife-v4.6",
+  "windows": {
+    "url": "https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-windows.zip",
+    "archiveSha256": "d8e4d772d26cd8006ef0ad0bc82eb191b53c68677d1ae2f42506d74cbbbea606",
+    "files": {
+      "rife-ncnn-vulkan.exe": "4b970319db2814c82b15fceed8193151560a676a9eb63f20d4877be77b98f44f",
+      "vcomp140.dll": "54fe6b087528b33c2969143d811eb62f1bd49071d37de9db0745fc079764d698",
+      "rife-v4.6/flownet.param": "28df14d57a225725ee5386f52eba422488450d37c9f40800ed4f62e8ba846692",
+      "rife-v4.6/flownet.bin": "f334ed2260149ce0188a6dcf049844e8b0cdd912e01cbcfb63553157d2508958",
+      "LICENSE": "de18cbedb0c3b0d1eeb9ccac3988cdf69c21fa89039cd97dd8846cb68f661f81"
+    }
+  }
+}

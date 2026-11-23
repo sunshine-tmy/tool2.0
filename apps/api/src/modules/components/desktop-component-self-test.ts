@@ -83,6 +83,13 @@ export function createDesktopComponentSelfTest(
     const bundledPythonPath = isMacOS ? `python/bin/${pythonName}` : "python/python.exe";
     const browserPath = isMacOS ? await resolveMacBrowserPath(manifest, generationRoot) : "browser/chrome.exe";
     const required = [
+      ...(manifest.id === "video-interpolation"
+        ? [
+            `bin/rife-ncnn-vulkan${isMacOS ? "" : ".exe"}`,
+            "models/rife-v4.6/flownet.param",
+            "models/rife-v4.6/flownet.bin"
+          ]
+        : []),
       ...(manifest.id === "ffmpeg" ? [`bin/${ffmpegName}`, `bin/${ffprobeName}`] : []),
       ...(manifest.id === "python-311" || manifest.id === "python-312" ? [bundledPythonPath] : []),
       ...(requiredFiles[manifest.id] ?? []),
@@ -111,6 +118,54 @@ export function createDesktopComponentSelfTest(
     if (manifest.id === "ffmpeg") {
       await runProcess(path.join(generationRoot, "bin", ffmpegName), ["-version"], generationRoot, cleanEnvironment());
       await runProcess(path.join(generationRoot, "bin", ffprobeName), ["-version"], generationRoot, cleanEnvironment());
+      return;
+    }
+    if (manifest.id === "video-interpolation") {
+      if (!resolveMediaAsset) throw new Error("智能补帧自检需要共享 FFmpeg");
+      const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-interpolation-check-"));
+      try {
+        const ffmpeg = await resolveMediaAsset(`bin/${ffmpegName}`);
+        for (const [name, color] of [
+          ["a", "black"],
+          ["b", "white"]
+        ])
+          await runProcess(
+            ffmpeg,
+            [
+              "-v",
+              "error",
+              "-f",
+              "lavfi",
+              "-i",
+              `color=${color}:s=32x32`,
+              "-frames:v",
+              "1",
+              path.join(temporary, `${name}.png`)
+            ],
+            temporary,
+            cleanEnvironment()
+          );
+        await runProcess(
+          path.join(generationRoot, "bin", `rife-ncnn-vulkan${isMacOS ? "" : ".exe"}`),
+          [
+            "-0",
+            path.join(temporary, "a.png"),
+            "-1",
+            path.join(temporary, "b.png"),
+            "-o",
+            path.join(temporary, "result.png"),
+            "-m",
+            path.join(generationRoot, "models", "rife-v4.6"),
+            "-g",
+            "-1"
+          ],
+          temporary,
+          cleanEnvironment()
+        );
+        if (!(await fs.stat(path.join(temporary, "result.png"))).size) throw new Error("智能补帧自检未生成中间帧");
+      } finally {
+        await fs.rm(temporary, { recursive: true, force: true });
+      }
       return;
     }
 

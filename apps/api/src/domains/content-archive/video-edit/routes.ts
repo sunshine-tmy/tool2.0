@@ -5,9 +5,10 @@ import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   ArchiveVideoEditInputSchema,
-  ArchiveAnalysisInputSchema,
-  ArchiveAnalysisJobSchema,
-  type ArchiveAnalysisInput,
+  ArchiveInterpolationRuntimeSchema,
+  ArchiveVideoWaveformSchema,
+  ArchiveVideoWaveformInputSchema,
+  type ArchiveVideoWaveformInput,
   ArchiveCutDraftSchema,
   ArchiveCutSourceSchema,
   type ArchiveCutDraft,
@@ -33,6 +34,7 @@ import { REQUEST_QUOTAS } from "../../../security/request-quotas";
 import { ContentArchiveStoreError, type ContentArchiveStore } from "../core/store";
 import { sendArchiveRange } from "../core/media-preview-routes";
 import { ArchiveVideoEditService, localFile } from "./service";
+import { videoWaveform } from "./video-waveform";
 import { VideoEditError } from "./renderer";
 
 export function registerVideoEditRoutes(
@@ -41,7 +43,66 @@ export function registerVideoEditRoutes(
   store: ContentArchiveStore
 ) {
   const prefix = "/api/v1/tools/media-archive";
-  const automaticWatermarkEnd = new WeakSet<FastifyRequest>();
+  app.get(
+    `${prefix}/interpolation-runtime`,
+    {
+      schema: { response: { 200: apiSuccessSchema(ArchiveInterpolationRuntimeSchema) } }
+    },
+    async () => ok(await service.interpolationRuntime())
+  );
+  // Preserve strictly validated null sentinels before AJV coerces number/null unions.
+  // Both legacy global watermarks and timeline watermarks use the same contract.
+  const automaticWatermarkEnds = new WeakMap<FastifyRequest, Array<{ endSeconds: number | null }>>();
+  function rememberAutomaticEnds(
+    request: FastifyRequest,
+    body: {
+      watermark?: { settings: { endSeconds: number | null } } | null;
+      studio?: { watermarks?: Array<{ settings: { endSeconds: number | null } }> } | null;
+    }
+  ) {
+    const settings = [
+      ...(body.watermark ? [body.watermark.settings] : []),
+      ...(body.studio?.watermarks ?? []).map((mark) => mark.settings)
+    ];
+    automaticWatermarkEnds.set(
+      request,
+      settings.filter((entry) => entry.endSeconds === null)
+    );
+  }
+  function restoreAutomaticEnds(request: FastifyRequest) {
+    for (const settings of automaticWatermarkEnds.get(request) ?? []) settings.endSeconds = null;
+    automaticWatermarkEnds.delete(request);
+  }
+  app.get<{ Params: XhsArchiveMediaParams & { assetId: string } }>(
+    `${prefix}/items/:id/media/:mediaId/studio-watermarks/:assetId`,
+    {
+      config: REQUEST_QUOTAS.mediaPreview,
+      schema: {
+        params: Type.Composite([
+          XhsArchiveMediaParamsSchema,
+          Type.Object({ assetId: Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" }) })
+        ])
+      }
+    },
+    async (request, reply) => {
+      try {
+        const value = await service.studioWatermarkPath(
+          request.params.id,
+          request.params.mediaId,
+          request.params.assetId
+        );
+        reply.raw.once("close", value.release);
+        reply
+          .header("content-type", value.asset.mimeType)
+          .header("cache-control", "no-store")
+          .header("x-content-type-options", "nosniff");
+        return sendArchiveRange(reply, value.file, value.asset.size, request.headers.range, value.release);
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      }
+    }
+  );
   const failure = (error: unknown) => {
     if (error instanceof VideoEditError || error instanceof ContentArchiveStoreError) return error;
     throw error;
@@ -203,49 +264,6 @@ export function registerVideoEditRoutes(
       }
     }
   );
-  app.post<{ Params: XhsArchiveMediaParams; Body: ArchiveAnalysisInput }>(
-    `${prefix}/items/:id/media/:mediaId/cut-analysis`,
-    {
-      config: REQUEST_QUOTAS.ai,
-      schema: {
-        params: XhsArchiveMediaParamsSchema,
-        body: ArchiveAnalysisInputSchema,
-        response: { 202: apiSuccessSchema(ArchiveAnalysisJobSchema) }
-      }
-    },
-    async (request, reply) => {
-      try {
-        return reply
-          .code(202)
-          .send(
-            ok(
-              service.analysis.create(request.body, () =>
-                service.pinStudioSource(request.params.id, request.params.mediaId, request.body.source)
-              )
-            )
-          );
-      } catch (error) {
-        const known = failure(error);
-        return reply.code(known.statusCode).send(fail(known.code, known.message));
-      }
-    }
-  );
-  app.get<{ Params: TaskIdParams }>(
-    `${prefix}/cut-analysis/:taskId`,
-    { schema: { params: TaskIdParamsSchema, response: { 200: apiSuccessSchema(ArchiveAnalysisJobSchema) } } },
-    async (request, reply) => {
-      const job = service.analysis.get(request.params.taskId);
-      return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_ANALYSIS_MISSING", "检测任务不存在，请重新检测"));
-    }
-  );
-  app.delete<{ Params: TaskIdParams }>(
-    `${prefix}/cut-analysis/:taskId`,
-    { schema: { params: TaskIdParamsSchema, response: { 200: apiSuccessSchema(ArchiveAnalysisJobSchema) } } },
-    async (request, reply) => {
-      const job = await service.analysis.cancel(request.params.taskId);
-      return job ? ok(job) : reply.code(404).send(fail("ARCHIVE_ANALYSIS_MISSING", "检测任务不存在"));
-    }
-  );
   app.get<{ Params: XhsArchiveMediaParams & { sourceId: string } }>(
     `${prefix}/items/:id/media/:mediaId/studio-sources/:sourceId`,
     {
@@ -276,6 +294,62 @@ export function registerVideoEditRoutes(
       }
     }
   );
+  app.get<{ Params: XhsArchiveMediaParams & { trackId: string } }>(
+    `${prefix}/items/:id/media/:mediaId/studio-music/:trackId`,
+    {
+      config: REQUEST_QUOTAS.mediaPreview,
+      schema: {
+        params: Type.Composite([
+          XhsArchiveMediaParamsSchema,
+          Type.Object({ trackId: Type.String({ pattern: "^[A-Za-z0-9_-]{6,128}$" }) })
+        ])
+      }
+    },
+    async (request, reply) => {
+      try {
+        const value = await service.studioMusicPath(request.params.id, request.params.mediaId, request.params.trackId);
+        reply.raw.once("close", value.release);
+        reply
+          .header("content-type", value.asset.mimeType)
+          .header("cache-control", "no-store")
+          .header("accept-ranges", "bytes");
+        return sendArchiveRange(reply, value.file, value.asset.size, request.headers.range, value.release);
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      }
+    }
+  );
+  app.post<{ Params: XhsArchiveMediaParams; Body: ArchiveVideoWaveformInput }>(
+    `${prefix}/items/:id/media/:mediaId/video-waveform`,
+    {
+      config: REQUEST_QUOTAS.mediaPreview,
+      schema: {
+        params: XhsArchiveMediaParamsSchema,
+        body: ArchiveVideoWaveformInputSchema,
+        response: { 200: apiSuccessSchema(ArchiveVideoWaveformSchema) }
+      }
+    },
+    async (request, reply) => {
+      const controller = new AbortController();
+      const abort = () => {
+        if (!reply.raw.writableFinished) controller.abort();
+      };
+      reply.raw.once("close", abort);
+      let release: (() => void) | undefined;
+      try {
+        const source = await service.pinStudioSource(request.params.id, request.params.mediaId, request.body.source);
+        release = source.release;
+        return ok(await videoWaveform(await service.mediaTools(), source.file, controller.signal));
+      } catch (error) {
+        const known = failure(error);
+        return reply.code(known.statusCode).send(fail(known.code, known.message));
+      } finally {
+        reply.raw.removeListener("close", abort);
+        release?.();
+      }
+    }
+  );
   app.get<{ Params: XhsArchiveMediaParams }>(
     `${prefix}/items/:id/media/:mediaId/cut-source`,
     {
@@ -295,6 +369,11 @@ export function registerVideoEditRoutes(
     `${prefix}/items/:id/media/:mediaId/cut-draft`,
     {
       config: REQUEST_QUOTAS.archiveCutDraft,
+      preValidation: async (request, reply) => {
+        if (!Value.Check(ArchiveCutDraftSchema, request.body))
+          return reply.code(400).send(fail("ARCHIVE_CUT_RANGE_INVALID", "工程草稿参数无效，请检查片段、配乐和水印"));
+        rememberAutomaticEnds(request, request.body);
+      },
       schema: {
         params: XhsArchiveMediaParamsSchema,
         body: ArchiveCutDraftSchema,
@@ -303,6 +382,7 @@ export function registerVideoEditRoutes(
     },
     async (request, reply) => {
       try {
+        restoreAutomaticEnds(request);
         return ok(await service.saveCutDraft(request.params.id, request.params.mediaId, request.body));
       } catch (error) {
         const known = failure(error);
@@ -394,9 +474,7 @@ export function registerVideoEditRoutes(
           return reply
             .code(400)
             .send(fail("ARCHIVE_EDIT_INPUT_INVALID", "视频编辑参数无效，请检查片段、配乐、水印和版本"));
-        // AJV may coerce the number/null union's null into 0. Remember only the
-        // strictly validated automatic-end sentinel; explicit numeric 0 stays invalid.
-        if (request.body.watermark?.settings.endSeconds === null) automaticWatermarkEnd.add(request);
+        rememberAutomaticEnds(request, request.body);
       },
       schema: {
         params: XhsArchiveMediaParamsSchema,
@@ -406,9 +484,7 @@ export function registerVideoEditRoutes(
     },
     async (request, reply) => {
       try {
-        if (automaticWatermarkEnd.has(request) && request.body.watermark)
-          request.body.watermark.settings.endSeconds = null;
-        automaticWatermarkEnd.delete(request);
+        restoreAutomaticEnds(request);
         return reply.code(202).send(ok(await service.create(request.params.id, request.params.mediaId, request.body)));
       } catch (error) {
         const known = failure(error);

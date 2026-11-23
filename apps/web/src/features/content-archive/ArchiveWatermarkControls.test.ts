@@ -45,7 +45,7 @@ describe("水印面板", () => {
     select.vm.$emit("update:value", "z");
     const config = wrapper.emitted("update:settings")!.at(-1)![0] as typeof settings;
     expect(config.motion).toMatchObject({ bounceStyle: "z", from: { x: 0, y: 0 }, directionX: 1, directionY: 1 });
-    expect(settings.motion.bounceStyle).toBeUndefined();
+    expect(settings.motion.bounceStyle).toBe("polygon");
     select.vm.$emit("update:value", "random");
     expect((wrapper.emitted("update:settings")!.at(-1)![0] as typeof settings).motion.bounceSeed).toBeTypeOf("number");
     wrapper.unmount();
@@ -122,4 +122,40 @@ describe("水印面板", () => {
     expect(wrapper.emitted("upload")).toHaveLength(1);
     wrapper.unmount();
   });
+});
+
+it("轨道模式只显示运动控制，裁剪后保留源关键帧且可用九宫格定位", async () => {
+  const settings = defaultArchiveWatermarkSettings();
+  settings.endSeconds = 10;
+  settings.motion.type = "keyframes";
+  settings.motion.keyframes = [
+    { timeSeconds: 0, x: 0, y: 0 },
+    { timeSeconds: 10, x: 1, y: 1 }
+  ];
+  const wrapper = mount(Controls, {
+    props: {
+      trackMode: true,
+      settings,
+      asset,
+      duration: 5,
+      time: 3,
+      disabled: false,
+      selectedPoint: "from",
+      selectedFrame: 1
+    }
+  });
+  expect(wrapper.find("input[type=file]").exists()).toBe(false);
+  expect(wrapper.find("[role=alert]").exists()).toBe(false);
+  await wrapper
+    .findAllComponents(NButton)
+    .find((button) => button.text() === "居中")!
+    .trigger("click");
+  expect(wrapper.emitted("move")?.[0]).toEqual([{ x: 0.5, y: 0.5 }]);
+  expect(
+    wrapper
+      .findAllComponents(NButton)
+      .filter((button) => button.text() === "删除")
+      .every((button) => button.props("disabled"))
+  ).toBe(true);
+  wrapper.unmount();
 });

@@ -1,7 +1,16 @@
 /** 只由校验后的数值编译轨迹；时间 t 始终是原视频时间，不随预览裁剪重置。 */
 import type { ArchiveWatermarkSettings } from "@toolbox/shared";
 import { archiveWatermarkBouncePath } from "@toolbox/shared";
-export function watermarkFilter(settings: ArchiveWatermarkSettings, input: number, width: number, height: number) {
+export function watermarkFilter(
+  settings: ArchiveWatermarkSettings,
+  input: number,
+  width: number,
+  height: number,
+  angle = 0,
+  offsetX = 0,
+  offsetY = 0,
+  constrainMotion = false
+) {
   const m = settings.motion,
     elapsed = `(t-${settings.startSeconds})`;
   const position = (axis: "x" | "y") => {
@@ -38,8 +47,21 @@ export function watermarkFilter(settings: ArchiveWatermarkSettings, input: numbe
     settings.endSeconds === null
       ? `gte(t,${settings.startSeconds})`
       : `between(t,${settings.startSeconds},${settings.endSeconds})`;
+  const coordinate = (axis: "x" | "y") => {
+    const total = axis === "x" ? "W" : "H";
+    const original = axis === "x" ? width : height;
+    const rotated = axis === "x" ? "w" : "h";
+    const offset = axis === "x" ? offsetX : offsetY;
+    if (constrainMotion && m.type === "bounce")
+      return `if(gte(${rotated},${total}),(${total}-${rotated})/2,(${total}-${rotated})*clip(${position(axis)},0,1))`;
+    const center = `(${total}-${original})*clip(${position(axis)},0,1)+${original}/2+(${offset})`;
+    // 与 watermarkTrackGeometry 相同：先限制旋转后中心，再换算 overlay 左上角。
+    return constrainMotion && m.type !== "fixed"
+      ? `if(gte(${rotated},${total}),(${total}-${rotated})/2,clip(${center},${rotated}/2,${total}-${rotated}/2)-${rotated}/2)`
+      : `(${total}-${original})*clip(${position(axis)},0,1)+${original}/2-${rotated}/2+(${offset})`;
+  };
   return (
-    `[${input}:v:0]scale=${width}:${height},format=rgba,colorchannelmixer=aa=${settings.opacity / 100},setpts=PTS-STARTPTS[logo];` +
-    `[base][logo]overlay=x='(W-w)*clip(${position("x")},0,1)':y='(H-h)*clip(${position("y")},0,1)':enable='${visible}':eval=frame:format=auto[watermarked]`
+    `[${input}:v:0]scale=${width}:${height},format=rgba${angle ? `,rotate=${(angle * Math.PI) / 180}:ow=rotw(${(angle * Math.PI) / 180}):oh=roth(${(angle * Math.PI) / 180}):c=none` : ""},colorchannelmixer=aa=${settings.opacity / 100},setpts=PTS-STARTPTS[logo];` +
+    `[base][logo]overlay=x='${coordinate("x")}':y='${coordinate("y")}':enable='${visible}':eval=frame:format=auto[watermarked]`
   );
 }

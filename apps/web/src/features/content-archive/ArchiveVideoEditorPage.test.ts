@@ -55,11 +55,11 @@ function setup() {
 }
 describe("归档视频编辑页面", () => {
   it.each([
-    [undefined, "watermark"],
+    [undefined, "cut"],
     ["watermark", "watermark"],
     ["audio", "audio"],
-    ["invalid", "watermark"],
-    [["audio", "watermark"], "watermark"]
+    ["invalid", "cut"],
+    [["audio", "watermark"], "cut"]
   ])("面板参数 %s 打开 %s，始终使用完整编辑页面", async (panel, expected) => {
     mocks.route.query.panel = panel;
     const wrapper = setup();
@@ -67,20 +67,22 @@ describe("归档视频编辑页面", () => {
     expect(wrapper.getComponent(Editor).props()).toMatchObject({ initialPanel: expected, embedded: true });
     wrapper.unmount();
   });
-  it("同一视频切换面板先检查未保存修改，通过后重建编辑器而不重复加载作品", async () => {
+  it("同一视频的旧面板链接只切换素材分类，保留编辑器与工程；换视频仍确认离开", async () => {
     const wrapper = setup();
     await flushPromises();
-    expect(mocks.editorMounted).toHaveBeenCalledOnce();
-    mocks.canLeave.mockResolvedValueOnce(false);
-    expect(await mocks.updateGuard.mock.calls[0][0]()).toBe(false);
-    expect(mocks.editorUnmounted).not.toHaveBeenCalled();
-    expect(await mocks.updateGuard.mock.calls[0][0]()).toBe(true);
+    const from = { params: { itemId: "archive-123", mediaId: "video-123" } };
+    expect(await mocks.updateGuard.mock.calls[0][0](from, from)).toBe(true);
+    expect(mocks.canLeave).not.toHaveBeenCalled();
     reactive(mocks.route).query.panel = "audio";
     await flushPromises();
-    expect(mocks.editorUnmounted).toHaveBeenCalledOnce();
-    expect(mocks.editorMounted).toHaveBeenCalledTimes(2);
+    expect(mocks.editorMounted).toHaveBeenCalledOnce();
+    expect(mocks.editorUnmounted).not.toHaveBeenCalled();
     expect(wrapper.getComponent(Editor).props("initialPanel")).toBe("audio");
     expect(mocks.detail).toHaveBeenCalledOnce();
+    mocks.canLeave.mockResolvedValueOnce(false);
+    expect(await mocks.updateGuard.mock.calls[0][0]({ params: { ...from.params, mediaId: "other-video" } }, from)).toBe(
+      false
+    );
     wrapper.unmount();
   });
   it("只加载指定归档媒体，返回原筛选页；路由离开复用未保存确认且仅调用一次", async () => {

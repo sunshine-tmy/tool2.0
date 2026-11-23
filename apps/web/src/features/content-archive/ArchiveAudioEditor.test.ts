@@ -1,19 +1,23 @@
 // @vitest-environment happy-dom
 import { mount, flushPromises, type VueWrapper } from "@vue/test-utils";
-import { defineComponent } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NButton, NSelect, NSlider, NPagination } from "naive-ui";
+import { NButton, NSelect } from "naive-ui";
 import {
   defaultArchiveAudioSettings,
   defaultArchiveWatermarkSettings,
   type ArchiveVideoEditJob,
   type ContentArchiveItem
 } from "@toolbox/shared";
-import ArchiveWatermarkControls from "./ArchiveWatermarkControls.vue";
 import ArchiveAudioEditor from "./ArchiveAudioEditor.vue";
-import ArchiveMusicRange from "./ArchiveMusicRange.vue";
+import ArchiveOutputSettings from "./ArchiveOutputSettings.vue";
+import ArchiveMaterialPanel from "./ArchiveMaterialPanel.vue";
+import ArchiveCutTimeline from "./ArchiveCutTimeline.vue";
 import ArchiveWatermarkPreview from "./ArchiveWatermarkPreview.vue";
+import ArchiveWatermarkSettings from "./ArchiveWatermarkSettings.vue";
 const mocks = vi.hoisted(() => ({
+  cutSource: vi.fn(),
+  saveCutDraft: vi.fn(),
+  interpolationRuntime: vi.fn(),
   runtime: vi.fn(),
   list: vi.fn(),
   create: vi.fn(),
@@ -85,10 +89,14 @@ const pending: ArchiveVideoEditJob = {
 let wrappers: VueWrapper[] = [];
 beforeEach(() => {
   vi.useFakeTimers();
+  mocks.cutSource
+    .mockReset()
+    .mockResolvedValue({ duration: 2, fps: 30, width: 720, height: 1280, hasAudio: true, checksum: "a".repeat(64) });
+  mocks.saveCutDraft.mockReset().mockResolvedValue(undefined);
+  mocks.interpolationRuntime.mockReset().mockResolvedValue({ flowReady: true, rifeReady: true });
   mocks.runtime.mockReset().mockResolvedValue({ ready: true });
   mocks.list.mockReset().mockResolvedValue([]);
   mocks.music.mockReset().mockResolvedValue({ items: [selectedMusic], total: 1 });
-  mocks.upload.mockReset().mockResolvedValue({ item: selectedMusic, existing: false });
   mocks.musicItem.mockReset().mockResolvedValue(selectedMusic);
   mocks.create
     .mockReset()
@@ -97,47 +105,37 @@ beforeEach(() => {
   mocks.detail.mockReset().mockResolvedValue(original);
   mocks.confirm.mockReset().mockResolvedValue(true);
   mocks.cancel.mockReset().mockResolvedValue({ ...pending, status: "cancelled" });
-  mocks.uploadWatermark.mockReset().mockResolvedValue({
-    id: "watermark1234",
-    width: 100,
-    height: 50,
-    previewUrl: "/draft.png",
-    expiresAt: "2030-01-01"
-  });
-  mocks.selectLibraryWatermark.mockReset().mockImplementation(mocks.uploadWatermark);
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+  vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => undefined);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    measureText: (text: string) => ({ width: text.length * 20 })
+  } as unknown as CanvasRenderingContext2D);
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
 });
 afterEach(() => {
-  for (const wrapper of wrappers) wrapper.unmount();
+  wrappers.forEach((w) => w.unmount());
   wrappers = [];
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
-async function setup(item = original, initialPanel?: "audio" | "watermark") {
+async function setup(item = original, initialPanel?: "audio" | "watermark" | "cut") {
   const wrapper = mount(ArchiveAudioEditor, {
     props: { show: true, item, mediaId: item.media[0].id, initialPanel },
     global: {
       stubs: {
         RouterLink: { template: "<a><slot /></a>" },
         teleport: true,
-        Modal: { template: "<div><slot /></div>" },
         NModal: { template: "<div><slot /></div>" },
-        ArchiveMusicRange: defineComponent({
-          name: "ArchiveMusicRange",
-          props: {
-            url: String,
-            title: String,
-            musicDuration: Number,
-            videoDuration: Number,
-            start: Number,
-            disabled: Boolean,
-            loop: Boolean,
-            volume: Number
-          },
-          emits: ["update:start"],
-          methods: { stop: () => undefined },
-          template: "<div />"
-        })
+        ArchiveMaterialPanel: true,
+        ArchiveCutPicture: true,
+        ArchiveCutTimeline: true,
+        ArchiveCutSettings: true,
+        ArchiveTextSettings: true,
+        ArchiveWatermarkSettings: true,
+        ArchiveOutputSettings: true,
+        ArchiveMusicRange: { template: "<div />", methods: { stop() {} } }
       }
     }
   });
@@ -145,571 +143,212 @@ async function setup(item = original, initialPanel?: "audio" | "watermark") {
   await flushPromises();
   return wrapper;
 }
-function button(wrapper: VueWrapper, text: string) {
-  return wrapper.findAllComponents(NButton).find((entry) => entry.text() === text)!;
-}
-describe("归档视频配乐编辑交互", () => {
-  it("图集生成视频默认选用归档原配乐，提交身份与摘要，且不把音频加入图片序列", async () => {
-    const item = structuredClone(original);
-    item.type = "image";
-    item.media[0].kind = "image";
-    const source = {
-      ...item.media[0],
-      id: "source_music123",
-      kind: "audio" as const,
-      title: "原曲",
-      mimeType: "audio/mpeg",
-      previewUrl: "/source.mp3",
-      checksum: "b".repeat(64),
-      durationMs: 10000
-    };
-    item.media.push(source);
-    const wrapper = await setup(item);
-    const select = wrapper.findAllComponents(NSelect).find((entry) => entry.props("value") === "__original__")!;
-    expect(select).toBeDefined();
-    expect(wrapper.getComponent(ArchiveMusicRange).props()).toMatchObject({
-      title: "原曲",
-      musicDuration: undefined,
-      videoDuration: 3
-    });
-    await button(wrapper, "生成视频并归档").trigger("click");
-    await flushPromises();
-    const request = mocks.create.mock.calls[0][2];
-    expect(request).toMatchObject({
-      sourceMusicId: source.id,
-      sourceMusicChecksum: source.checksum,
-      slideshow: { images: [{ id: item.media[0].id }] }
-    });
-    expect(request.musicId).toBeUndefined();
-    expect(request.musicRevision).toBeUndefined();
-    expect(request.useSavedMusic).toBe(false);
+const button = (w: VueWrapper, label: string) => w.findAllComponents(NButton).find((b) => b.text() === label)!;
+describe("统一视频工作台", () => {
+  it.each([
+    ["cut", "sources"],
+    ["audio", "audio"],
+    ["watermark", "watermark"]
+  ] as const)("兼容旧 %s 入口，直接定位 %s 素材分类，不再保存切换模块", async (mode, tab) => {
+    const w = await setup(original, mode);
+    expect(w.find(".editor-mode-tabs").exists()).toBe(false);
+    expect(w.getComponent(ArchiveMaterialPanel).props("initialTab")).toBe(tab);
+    expect(w.getComponent(ArchiveCutTimeline).props("disabled")).toBe(false);
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.confirm).not.toHaveBeenCalled();
   });
-  it("selects converted library music on return without saving the video automatically", async () => {
-    const wrapper = await setup();
-    await wrapper.setProps({ initialMusicId: selectedMusic.id, show: false });
-    await wrapper.setProps({ show: true });
+  it("文本、音乐和水印编辑共用草稿、时间线及一次最终保存", async () => {
+    const w = await setup(),
+      panel = w.getComponent(ArchiveMaterialPanel);
+    panel.vm.$emit("texts", [
+      { id: "text_001", text: "文字", start: 0, end: 2, fontSize: 36, color: "#ffffff", position: "center" }
+    ]);
     await flushPromises();
-    expect(mocks.musicItem).toHaveBeenCalledWith(selectedMusic.id);
-    expect(wrapper.findAllComponents(NSelect).some((select) => select.props("value") === selectedMusic.id)).toBe(true);
+    panel.vm.$emit("studio", {
+      ...panel.props("studio"),
+      musicTracks: [
+        {
+          id: "music_001",
+          libraryItemId: selectedMusic.id,
+          libraryRevision: 3,
+          title: "音乐",
+          start: 0,
+          end: 2,
+          sourceStart: 0,
+          volume: 50,
+          loop: false,
+          fadeIn: 0,
+          fadeOut: 0,
+          lane: 2
+        }
+      ]
+    });
+    await flushPromises();
+    panel.vm.$emit("watermark", { id: "draft_000001", width: 100, height: 50, previewUrl: "/draft.png" }, "品牌水印");
+    await flushPromises();
+    expect(w.getComponent(ArchiveWatermarkSettings).props("mark").title).toBe("品牌水印");
+    expect(w.getComponent(ArchiveWatermarkPreview).props("asset")).toBeUndefined();
+    expect(w.getComponent(ArchiveCutTimeline).props("studio")!.watermarks).toHaveLength(1);
+    await button(w, "保存为最新版本").trigger("click");
+    await flushPromises();
+    expect(mocks.create).not.toHaveBeenCalled();
+    w.getComponent(ArchiveOutputSettings).vm.$emit("start", { fps: 60 });
+    await flushPromises();
+    expect(mocks.saveCutDraft).toHaveBeenCalled();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    const input = mocks.create.mock.lastCall![2];
+    expect(input).toMatchObject({
+      mode: "save",
+      outputSettings: { fps: 60 },
+      watermark: null,
+      useSavedMusic: false,
+      studio: {
+        unified: true,
+        subtitles: [{ text: "文字" }],
+        musicTracks: [{ volume: 50 }],
+        watermarks: [{ title: "品牌水印", asset: { kind: "draft", id: "draft_000001" } }]
+      }
+    });
+    expect(input.musicId).toBeUndefined();
+    expect(input.cut).toHaveLength(1);
+  });
+  it("最终输出设置取消不提交，未开启补帧不携带补帧配置", async () => {
+    const w = await setup();
+    await button(w, "导出视频").trigger("click");
+    await flushPromises();
+    const dialog = w.getComponent(ArchiveOutputSettings);
+    expect(dialog.props("show")).toBe(true);
+    dialog.vm.$emit("cancel");
+    await flushPromises();
+    expect(mocks.create).not.toHaveBeenCalled();
+    await button(w, "保存为最新版本").trigger("click");
+    dialog.vm.$emit("start", {});
+    await flushPromises();
+    expect(mocks.create.mock.lastCall![2].outputSettings).toEqual({});
+  });
+  it("打开旧工程把全局配乐和水印迁入轨道，使用归档快照地址", async () => {
+    const item = structuredClone(original),
+      file = { fileName: "old.mp4", mimeType: "video/mp4", size: 100, checksum: "b".repeat(64) };
+    item.media[0].audioEdit = {
+      revision: 1,
+      original: file,
+      settings: defaultArchiveAudioSettings(),
+      music: { ...file, title: "旧配乐" },
+      watermark: {
+        file: { ...file, fileName: "logo.png", mimeType: "image/png" },
+        width: 100,
+        height: 50,
+        settings: defaultArchiveWatermarkSettings()
+      },
+      updatedAt: "2026-11-23"
+    };
+    const w = await setup(item),
+      timeline = w.getComponent(ArchiveCutTimeline);
+    expect(timeline.props("studio")!.musicTracks).toHaveLength(1);
+    expect(timeline.props("studio")!.watermarks).toHaveLength(1);
+    expect(timeline.props("musicUrls")!.legacy_music_track).toContain("/saved-music");
+    expect(timeline.props("watermarkUrls")!.legacy_watermark).toContain("/studio-watermarks/legacy_watermark");
+    expect(w.getComponent(ArchiveWatermarkPreview).props("asset")).toBeUndefined();
+  });
+  it("音乐转换返回后插入音乐轨道，避免停留在已移除的全局配乐中", async () => {
+    const w = await setup();
+    await w.setProps({ show: false, initialMusicId: selectedMusic.id });
+    await w.setProps({ show: true });
+    await flushPromises();
+    expect(w.getComponent(ArchiveCutTimeline).props("studio")!.musicTracks[0]).toMatchObject({
+      libraryItemId: selectedMusic.id,
+      fadeIn: 0,
+      fadeOut: 0
+    });
     expect(mocks.create).not.toHaveBeenCalled();
   });
-  it("配乐选择分页展示服务端总数，并在搜索后更新总数及页码", async () => {
-    mocks.music.mockResolvedValue({ items: [selectedMusic], total: 43 });
-    const wrapper = await setup();
-    expect(mocks.music).toHaveBeenCalledWith(expect.objectContaining({ view: "music" }), expect.any(AbortSignal));
-    expect(wrapper.find('[aria-label="音乐库范围"]').exists()).toBe(false);
-    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
-    wrapper.getComponent(NPagination).vm.$emit("update:page", 2);
+  it("关闭窗口只保留草稿并停止轮询，不取消后台任务", async () => {
+    mocks.list.mockResolvedValue([pending]);
+    mocks.get.mockResolvedValue(pending);
+    const w = await setup();
+    await button(w, "关闭窗口").trigger("click");
     await flushPromises();
-    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 43 条");
-    expect(mocks.music).toHaveBeenLastCalledWith(
-      expect.objectContaining({ view: "music", page: 2 }),
-      expect.any(AbortSignal)
-    );
-    mocks.music.mockResolvedValue({ items: [selectedMusic], total: 21 });
-    await wrapper.get('input[placeholder="搜索音乐标题、备注"]').setValue("Tea");
-    await button(wrapper, "搜索").trigger("click");
-    await flushPromises();
-    expect(wrapper.get(".n-pagination-prefix").text()).toBe("共 21 条");
-    expect(mocks.music).toHaveBeenLastCalledWith(
-      expect.objectContaining({ view: "music", keyword: "Tea", page: 1 }),
-      expect.any(AbortSignal)
-    );
+    expect(w.emitted("update:show")?.[0]).toEqual([false]);
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    await w.setProps({ show: false });
+    const count = mocks.get.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.get).toHaveBeenCalledTimes(count);
   });
-  it("编辑器上传的音频加入背景音乐，刷新仍使用相同分类", async () => {
-    const wrapper = await setup();
-    const file = new File(["audio"], "voice.mp3", { type: "audio/mpeg" });
-    const input = wrapper.get('input[type="file"]');
-    Object.defineProperty(input.element, "files", { value: [file], configurable: true });
-    await input.trigger("change");
+  it("恢复原片先确认，清除整个工程而非单独重置模块", async () => {
+    const w = await setup();
+    mocks.confirm.mockResolvedValueOnce(false);
+    await button(w, "恢复原始视频").trigger("click");
     await flushPromises();
-    expect(mocks.upload).toHaveBeenCalledWith(file, { purpose: "music" }, undefined, expect.any(AbortSignal));
-    expect(mocks.music).toHaveBeenLastCalledWith(expect.objectContaining({ view: "music" }), expect.any(AbortSignal));
-    expect(wrapper.findAllComponents(NSelect).some((select) => select.props("value") === selectedMusic.id)).toBe(true);
+    expect(mocks.create).not.toHaveBeenCalled();
+    await button(w, "恢复原始视频").trigger("click");
+    await flushPromises();
+    expect(mocks.create.mock.lastCall![2].mode).toBe("restore");
   });
-  it("库素材选择失败保留当前水印，选择响应迟到不覆盖后来打开的作品", async () => {
-    const wrapper = await setup();
-    await button(wrapper, "水印设置").trigger("click");
-    const controls = wrapper.getComponent(ArchiveWatermarkControls);
-    controls.vm.$emit("upload", new File(["png"], "brand.png"));
-    await flushPromises();
-    mocks.selectLibraryWatermark.mockRejectedValueOnce(new Error("素材不可用"));
-    controls.vm.$emit("selectLibrary", "abcdefghijkl");
-    await flushPromises();
-    expect(controls.props("asset")).toMatchObject({ draftId: "watermark1234" });
-    let finish!: (value: unknown) => void;
-    mocks.selectLibraryWatermark.mockReturnValueOnce(
+  it("运行时不可用时禁用保存", async () => {
+    mocks.runtime.mockResolvedValue({ ready: false });
+    const w = await setup();
+    expect(button(w, "保存为最新版本").props("disabled")).toBe(true);
+  });
+  it("切换作品后丢弃旧的后台完成响应", async () => {
+    mocks.list.mockResolvedValueOnce([pending]);
+    let finish!: (job: ArchiveVideoEditJob) => void;
+    mocks.get.mockReturnValueOnce(
       new Promise((resolve) => {
         finish = resolve;
       })
     );
-    controls.vm.$emit("selectLibrary", "abcdefghijkl");
-    await flushPromises();
-    await wrapper.setProps({ item: { ...structuredClone(original), id: "other_archive123" } });
-    await flushPromises();
-    finish({ id: "late_draft12", width: 20, height: 10, previewUrl: "/late.png" });
-    await flushPromises();
-    expect(wrapper.getComponent(ArchiveWatermarkControls).props("asset")).toBeUndefined();
-  });
-  it("从水印库选择只更换图片，保留透明度及轨迹并将独立草稿提交给保存任务", async () => {
-    const wrapper = await setup();
-    await button(wrapper, "水印设置").trigger("click");
-    const controls = wrapper.getComponent(ArchiveWatermarkControls);
-    const settings = defaultArchiveWatermarkSettings();
-    settings.opacity = 35;
-    settings.motion.type = "bounce";
-    settings.motion.bounceStyle = "z";
-    controls.vm.$emit("update:settings", settings);
-    controls.vm.$emit("selectLibrary", "abcdefghijkl");
-    await flushPromises();
-    expect(mocks.selectLibraryWatermark).toHaveBeenCalledWith(
-      original.id,
-      original.media[0].id,
-      "abcdefghijkl",
-      expect.any(AbortSignal)
-    );
-    expect(controls.props("asset")).toMatchObject({ draftId: "watermark1234" });
-    expect(controls.props("settings")).toMatchObject({ opacity: 35, motion: { type: "bounce", bounceStyle: "z" } });
-    await button(wrapper, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
-      watermark: { draftId: "watermark1234", settings: { opacity: 35 } }
-    });
-  });
-  it("上传水印并调透明度和轨迹，保存提交完整配方，移除水印保留已选音乐", async () => {
-    const wrapper = await setup();
-    await button(wrapper, "水印设置").trigger("click");
-    const controls = wrapper.findComponent(ArchiveWatermarkControls);
-    controls.vm.$emit("upload", new File(["png"], "logo.png", { type: "image/png" }));
-    await flushPromises();
-    expect(mocks.uploadWatermark).toHaveBeenCalledWith(
-      original.id,
-      original.media[0].id,
-      expect.any(File),
-      expect.any(AbortSignal)
-    );
-    const config = defaultArchiveWatermarkSettings();
-    config.opacity = 35;
-    config.motion.type = "ping-pong";
-    controls.vm.$emit("update:settings", config);
-    await flushPromises();
-    await button(wrapper, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
-      watermark: { draftId: "watermark1234", settings: { opacity: 35, motion: { type: "ping-pong" } } }
-    });
-    await button(wrapper, "停止当前任务").trigger("click");
-    await flushPromises();
-    controls.vm.$emit("remove");
-    await flushPromises();
-    await button(wrapper, "配乐设置").trigger("click");
-    wrapper
-      .findAllComponents(NSelect)
-      .find((entry) => entry.attributes("aria-label") === "选择背景音乐")!
-      .vm.$emit("update:value", selectedMusic.id);
-    await flushPromises();
-    await button(wrapper, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ musicId: selectedMusic.id, watermark: null });
-  });
-  it("重新打开水印快照，拒绝非法时间与未确认离开，上传迟到不污染新作品", async () => {
-    const edited = structuredClone(original);
-    edited.media[0].audioEdit = {
-      revision: 1,
-      original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
-      settings: defaultArchiveAudioSettings(),
-      updatedAt: "2026-10-29",
-      watermark: {
-        file: { fileName: "watermark-a.png", mimeType: "image/png", size: 20, checksum: "b".repeat(64) },
-        width: 100,
-        height: 50,
-        settings: defaultArchiveWatermarkSettings()
-      }
-    };
-    const wrapper = await setup(edited);
-    mocks.get.mockResolvedValueOnce({
-      ...pending,
-      mode: "preview",
-      status: "completed",
-      progress: 100,
-      previewUrl: "/clean-watermark-base.mp4"
-    });
-    await button(wrapper, "水印设置").trigger("click");
-    await vi.advanceTimersByTimeAsync(800);
-    await flushPromises();
-    const controls = wrapper.findComponent(ArchiveWatermarkControls);
-    expect(controls.props("asset")?.url).toContain("/saved-watermark");
-    controls.vm.$emit("update:settings", { ...defaultArchiveWatermarkSettings(), endSeconds: 0.5, startSeconds: 1 });
-    await flushPromises();
-    expect(button(wrapper, "保存为最新版本").props("disabled")).toBe(true);
-    mocks.confirm.mockResolvedValueOnce(false);
-    await button(wrapper, "关闭窗口").trigger("click");
-    await flushPromises();
-    expect(wrapper.emitted("update:show")).toBeUndefined();
-    let resolve!: (value: unknown) => void;
-    mocks.uploadWatermark.mockReturnValueOnce(
-      new Promise((done) => {
-        resolve = done;
-      })
-    );
-    controls.vm.$emit("upload", new File(["png"], "logo.png"));
-    await flushPromises();
-    await wrapper.setProps({ item: { ...structuredClone(original), id: "other_archive123" } });
-    await flushPromises();
-    resolve({ id: "watermark1234", width: 20, height: 10, previewUrl: "/late.png" });
-    await flushPromises();
-    expect(wrapper.findComponent(ArchiveWatermarkControls).props("asset")).toBeUndefined();
-  });
-  it("图集按原图顺序提交生成参数，结果新增视频后可直接继续换配乐", async () => {
-    const photos = structuredClone(original);
-    photos.type = "image";
-    photos.media[0].kind = "image";
-    photos.media.push({ ...photos.media[0], id: "image_second123", index: 1 });
-    const wrapper = await setup(photos);
-    expect(wrapper.find('img[alt="图集原图预览"]').exists()).toBe(true);
-    await button(wrapper, "生成视频并归档").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2].slideshow).toEqual({
-      images: photos.media.map((media) => ({ id: media.id, checksum: media.checksum })),
-      secondsPerImage: 3,
-      aspect: "portrait"
-    });
-  });
-  it("选择配乐并独立调原声音量，保存后刷新归档，再次保存使用快照和新版本", async () => {
-    const wrapper = await setup();
-    wrapper.findAllComponents(NSlider)[0].vm.$emit("update:value", 0);
-    wrapper
-      .findAllComponents(NSelect)
-      .find((entry) => entry.attributes("aria-label") === "选择背景音乐")!
-      .vm.$emit("update:value", selectedMusic.id);
-    await button(wrapper, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create).toHaveBeenCalledWith(
-      original.id,
-      original.media[0].id,
-      expect.objectContaining({
-        mode: "save",
-        revision: 0,
-        checksum: "a".repeat(64),
-        musicId: "music123",
-        musicRevision: 3,
-        settings: expect.objectContaining({ originalVolume: 0, musicVolume: 20 })
-      }),
-      expect.any(AbortSignal)
-    );
-    const saved = structuredClone(original);
-    saved.media[0].checksum = "b".repeat(64);
-    saved.media[0].previewUrl = `/latest.mp4?v=${saved.media[0].checksum}`;
-    saved.media[0].audioEdit = {
-      revision: 1,
-      original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
-      music: { fileName: "music.mp3", mimeType: "audio/mpeg", size: 20, checksum: "c".repeat(64), title: "配乐 A" },
-      settings: { ...defaultArchiveAudioSettings(), originalVolume: 0 },
-      updatedAt: "2026-10-28"
-    };
-    mocks.detail.mockResolvedValueOnce(saved);
-    await vi.advanceTimersByTimeAsync(800);
-    await flushPromises();
-    expect(wrapper.emitted("saved")?.[0]).toEqual([saved]);
-    await button(wrapper, "水印设置").trigger("click");
-    await flushPromises();
-    expect(wrapper.get("video").attributes("src")).toContain("/latest.mp4?v=");
-    expect(wrapper.get("video").attributes("src")).not.toContain("/original");
-    expect(wrapper.getComponent(ArchiveWatermarkPreview).props("active")).toBe(true);
-    await button(wrapper, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create).toHaveBeenLastCalledWith(
-      original.id,
-      original.media[0].id,
-      expect.objectContaining({ revision: 1, checksum: "b".repeat(64), useSavedMusic: true }),
-      expect.any(AbortSignal)
-    );
-    expect(mocks.create.mock.lastCall?.[2]).not.toHaveProperty("musicId");
-  });
-  it("reopens a saved music version directly in watermark settings and keeps the same version when switching panels", async () => {
-    const saved = structuredClone(original);
-    saved.media[0].previewUrl = "/saved-with-music.mp4?v=revision2";
-    saved.media[0].audioEdit = {
-      revision: 2,
-      original: { fileName: "original.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
-      music: { fileName: "music.mp3", mimeType: "audio/mpeg", size: 20, checksum: "c".repeat(64), title: "音乐快照" },
-      settings: { ...defaultArchiveAudioSettings(), originalVolume: 30, musicStartSeconds: 1 },
-      updatedAt: "2026-11-01"
-    };
-    const w = await setup(saved, "watermark");
-    const probe = w.get("[data-original-duration]");
-    Object.defineProperty(probe.element, "duration", { value: 1.96 });
-    await probe.trigger("loadedmetadata");
-    w.getComponent(ArchiveWatermarkPreview).vm.$emit("duration", 2.05);
-    await flushPromises();
-    expect(w.getComponent(ArchiveWatermarkControls).props("duration")).toBe(1.96);
-    expect(w.get("video").attributes("src")).toContain("/saved-with-music.mp4?v=revision2");
-    await button(w, "配乐设置").trigger("click");
-    await flushPromises();
-    expect(w.getComponent(ArchiveMusicRange).props("url")).toContain(`/saved-music?v=${"c".repeat(64)}`);
-    await button(w, "水印设置").trigger("click");
-    await flushPromises();
-    expect(w.get("video").attributes("src")).toContain("/saved-with-music.mp4?v=revision2");
-    expect(mocks.create).not.toHaveBeenCalled();
-    w.getComponent(ArchiveWatermarkControls).vm.$emit("upload", new File(["png"], "logo.png"));
-    await flushPromises();
-    await button(w, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
-      useSavedMusic: true,
-      revision: 2,
-      settings: { originalVolume: 30, musicStartSeconds: 1 },
-      watermark: { settings: { endSeconds: null } }
-    });
-  });
-  it("prepares a clean watermark canvas with the saved soundtrack, without baking in the old watermark or saving automatically", async () => {
-    const saved = structuredClone(original);
-    saved.media[0].audioEdit = {
-      revision: 1,
-      original: { fileName: "original.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
-      music: { fileName: "music.mp3", mimeType: "audio/mpeg", size: 20, checksum: "c".repeat(64), title: "音乐快照" },
-      settings: { ...defaultArchiveAudioSettings(), musicStartSeconds: 1 },
-      watermark: {
-        file: { fileName: "logo.png", mimeType: "image/png", size: 10, checksum: "d".repeat(64) },
-        width: 100,
-        height: 50,
-        settings: defaultArchiveWatermarkSettings()
-      },
-      updatedAt: "2026-11-01"
-    };
-    mocks.get.mockResolvedValueOnce({
-      ...pending,
-      mode: "preview",
-      status: "completed",
-      progress: 100,
-      previewUrl: "/clean-music-base.mp4"
-    });
-    const w = await setup(saved, "watermark");
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
-      mode: "preview",
-      previewFullLength: true,
-      watermark: null,
-      useSavedMusic: true,
-      settings: { musicStartSeconds: 1 }
-    });
-    await button(w, "配乐设置").trigger("click");
-    await flushPromises();
-    await vi.advanceTimersByTimeAsync(800);
-    await flushPromises();
-    expect(w.get("video").attributes("src")).toContain("/video");
-    await button(w, "水印设置").trigger("click");
-    await flushPromises();
-    expect(w.get("video").attributes("src")).toContain("/clean-music-base.mp4");
-    expect(w.getComponent(ArchiveWatermarkPreview).props("active")).toBe(true);
-    expect(w.emitted("saved")).toBeUndefined();
-    await w.get("video").trigger("error");
-    await flushPromises();
-    expect(w.get("video").attributes("src")).toContain("/video");
-    expect(button(w, "重试水印编辑画面").exists()).toBe(true);
-    expect(mocks.create).toHaveBeenCalledTimes(1);
-    await button(w, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
-      mode: "save",
-      useSavedMusic: true,
-      revision: 1,
-      watermark: { settings: { opacity: 70 } }
-    });
-  });
-  it("保存水印后父页面回写归档不会中断或重复创建无水印编辑画面任务", async () => {
-    const w = await setup(original, "watermark");
-    w.getComponent(ArchiveWatermarkControls).vm.$emit("upload", new File(["png"], "logo.png"));
-    await flushPromises();
-    const saved = structuredClone(original);
-    saved.media[0].checksum = "b".repeat(64);
-    saved.media[0].previewUrl = "/saved-watermark.mp4";
-    saved.media[0].audioEdit = {
-      revision: 1,
-      original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
-      settings: defaultArchiveAudioSettings(),
-      watermark: {
-        file: { fileName: "logo.png", mimeType: "image/png", size: 10, checksum: "c".repeat(64) },
-        width: 100,
-        height: 50,
-        settings: defaultArchiveWatermarkSettings()
-      },
-      updatedAt: "2026-11-04"
-    };
-    mocks.detail.mockResolvedValueOnce(saved);
-    let finishBase!: (value: ArchiveVideoEditJob) => void;
-    mocks.create.mockResolvedValueOnce(pending).mockReturnValueOnce(
-      new Promise<ArchiveVideoEditJob>((resolve) => {
-        finishBase = resolve;
-      })
-    );
-    await button(w, "保存为最新版本").trigger("click");
-    await flushPromises();
-    await vi.advanceTimersByTimeAsync(800);
-    await flushPromises();
-    expect(w.emitted("saved")?.[0]).toEqual([saved]);
-    expect(mocks.create).toHaveBeenCalledTimes(2);
-    const baseSignal = mocks.create.mock.calls[1][3] as AbortSignal;
-    // 与页面的 @saved="item = $event" 一致，同一归档的新对象回写给编辑器。
-    await w.setProps({ item: saved });
-    await flushPromises();
-    expect(baseSignal.aborted).toBe(false);
-    expect(mocks.list).toHaveBeenCalledTimes(1);
-    expect(mocks.create).toHaveBeenCalledTimes(2);
-    finishBase({ ...pending, id: "clean_base123", mode: "preview" });
-    mocks.get.mockResolvedValueOnce({
-      ...pending,
-      id: "clean_base123",
-      mode: "preview",
-      status: "completed",
-      previewUrl: "/clean-watermark-base.mp4"
-    });
-    await flushPromises();
-    await vi.advanceTimersByTimeAsync(800);
-    await flushPromises();
-    expect(w.get("video").attributes("src")).toContain("/clean-watermark-base.mp4");
-    expect(w.text()).not.toContain("ARCHIVE_EDIT_BUSY");
-    expect(button(w, "重试水印编辑画面")).toBeUndefined();
-    expect(button(w, "保存为最新版本").props("disabled")).toBe(false);
-    await button(w, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create).toHaveBeenCalledTimes(3);
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ mode: "save", revision: 1, checksum: "b".repeat(64) });
-  });
-  it("保存终态刷新详情期间保持操作锁，切换水印面板不抢先创建新任务", async () => {
     const w = await setup();
-    let finishDetail!: (value: ContentArchiveItem) => void;
-    mocks.detail.mockReturnValueOnce(
-      new Promise<ContentArchiveItem>((resolve) => {
-        finishDetail = resolve;
-      })
-    );
-    await button(w, "保存为最新版本").trigger("click");
-    await flushPromises();
     await vi.advanceTimersByTimeAsync(800);
+    await w.setProps({ item: { ...structuredClone(original), id: "archive_other123" } });
     await flushPromises();
-    expect(mocks.detail).toHaveBeenCalledTimes(1);
-    expect(button(w, "保存为最新版本").props("disabled")).toBe(true);
-    await button(w, "水印设置").trigger("click");
+    finish({ ...pending, status: "completed" });
     await flushPromises();
-    expect(mocks.create).toHaveBeenCalledTimes(1);
-    finishDetail(original);
-    await flushPromises();
-    expect(button(w, "保存为最新版本").props("disabled")).toBe(false);
+    expect(mocks.detail).not.toHaveBeenCalled();
+    expect(w.emitted("saved")).toBeUndefined();
   });
-  it("submits the dragged music range for both full audition and saving and does not shorten the range to a preview clip", async () => {
+  it("图集生成保留原配乐来源和 3:4 画幅选项", async () => {
     const item = structuredClone(original);
-    item.media[0].durationMs = 22000;
-    mocks.music.mockResolvedValue({ items: [{ ...selectedMusic, duration: 120 }], total: 1 });
+    item.type = "image";
+    item.media[0].kind = "image";
+    item.media.push({
+      ...item.media[0],
+      id: "source_music123",
+      kind: "audio",
+      mimeType: "audio/mpeg",
+      checksum: "b".repeat(64)
+    });
     const w = await setup(item);
-    w.findAllComponents(NSelect)
-      .find((s) => s.attributes("aria-label") === "选择背景音乐")!
-      .vm.$emit("update:value", selectedMusic.id);
+    const select = w.findAllComponents(NSelect).find((entry) => entry.props("value") === "portrait")!;
+    expect(select.props("options")!.some((option) => option.value === "portrait_3_4")).toBe(true);
+    select.vm.$emit("update:value", "portrait_3_4");
+    await button(w, "生成视频并归档").trigger("click");
     await flushPromises();
-    const range = w.getComponent(ArchiveMusicRange);
-    range.vm.$emit("update:start", 42);
-    await button(w, "试听完整视频效果").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({
-      mode: "preview",
-      previewFullLength: true,
-      settings: { musicStartSeconds: 42 }
+    expect(mocks.create.mock.lastCall![2]).toMatchObject({
+      sourceMusicId: "source_music123",
+      slideshow: { aspect: "portrait_3_4", images: [{ id: item.media[0].id }] }
     });
-    mocks.get.mockResolvedValueOnce({
-      ...pending,
-      mode: "preview",
-      status: "completed",
-      progress: 100,
-      previewUrl: "/full.mp4"
-    });
-    await vi.advanceTimersByTimeAsync(800);
-    await flushPromises();
-    w.getComponent(ArchiveWatermarkPreview).vm.$emit("duration", 15);
-    await flushPromises();
-    expect(range.props("videoDuration")).toBe(22);
-    expect(w.text()).not.toContain("音乐起点（秒）");
-    await button(w, "保存为最新版本").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ mode: "save", settings: { musicStartSeconds: 42 } });
   });
-  it("试听不替换归档，使用后台生成片段且不触发保存通知", async () => {
-    mocks.create.mockResolvedValueOnce({ ...pending, mode: "preview" });
-    mocks.get.mockResolvedValueOnce({
-      ...pending,
-      mode: "preview",
-      status: "completed",
-      progress: 100,
-      previewUrl: "/preview.mp4"
+  it("图集生成完成只回传归档并关闭，不把生成弹窗切换为视频编辑器", async () => {
+    const item = structuredClone(original);
+    item.type = "image";
+    item.media[0].kind = "image";
+    const updated = structuredClone(item);
+    updated.media.push({
+      ...original.media[0],
+      id: "generated_001",
+      derivedFromImages: [{ id: item.media[0].id, checksum: item.media[0].checksum }]
     });
-    const wrapper = await setup();
-    await button(wrapper, "试听完整视频效果").trigger("click");
+    mocks.detail.mockResolvedValue(updated);
+    mocks.get.mockResolvedValue({ ...pending, status: "completed", resultMediaId: "generated_001" });
+    const w = await setup(item);
+    await button(w, "生成视频并归档").trigger("click");
     await flushPromises();
     await vi.advanceTimersByTimeAsync(800);
     await flushPromises();
-    expect(wrapper.get("video").attributes("src")).toContain("/preview.mp4");
-    expect(wrapper.text()).toContain("完整试听（尚未保存）");
-    expect(mocks.create.mock.lastCall?.[2]).toMatchObject({ previewFullLength: true, previewStartSeconds: 0 });
-    expect(mocks.detail).not.toHaveBeenCalled();
-    expect(wrapper.emitted("saved")).toBeUndefined();
-  });
-  it("重新打开可接续后台任务，关闭窗口不取消任务，卸载后停止轮询", async () => {
-    mocks.list.mockResolvedValueOnce([pending]);
-    mocks.get.mockResolvedValue(pending);
-    const wrapper = await setup();
-    expect(wrapper.text()).toContain("正在生成");
-    await button(wrapper, "关闭窗口").trigger("click");
-    expect(wrapper.emitted("update:show")?.[0]).toEqual([false]);
-    expect(mocks.cancel).not.toHaveBeenCalled();
-    await wrapper.setProps({ show: false });
-    const calls = mocks.get.mock.calls.length;
-    await vi.advanceTimersByTimeAsync(5000);
-    expect(mocks.get).toHaveBeenCalledTimes(calls);
-    expect((mocks.list.mock.calls[0][2] as AbortSignal).aborted).toBe(true);
-  });
-  it("停止任务可继续编辑，恢复原片需确认且不删除音乐库", async () => {
-    const edited = structuredClone(original);
-    edited.media[0].audioEdit = {
-      revision: 1,
-      original: { fileName: "video.mp4", mimeType: "video/mp4", size: 100, checksum: "a".repeat(64) },
-      settings: defaultArchiveAudioSettings(),
-      updatedAt: "2026-10-28"
-    };
-    mocks.list.mockResolvedValueOnce([pending]);
-    const wrapper = await setup(edited);
-    await button(wrapper, "停止当前任务").trigger("click");
-    await flushPromises();
-    expect(mocks.cancel).toHaveBeenCalled();
-    mocks.confirm.mockResolvedValueOnce(false);
-    await button(wrapper, "恢复原始视频").trigger("click");
-    await flushPromises();
-    expect(mocks.create).not.toHaveBeenCalled();
-    await button(wrapper, "恢复原始视频").trigger("click");
-    await flushPromises();
-    expect(mocks.create.mock.lastCall?.[2].mode).toBe("restore");
-  });
-  it("运行时缺失时禁止生成，保留原片查看和错误提示", async () => {
-    mocks.runtime.mockResolvedValueOnce({ ready: false });
-    const wrapper = await setup();
-    expect(button(wrapper, "保存为最新版本").props("disabled")).toBe(true);
-    expect(wrapper.text()).toContain("FFmpeg 共享媒体运行时");
-    await button(wrapper, "查看原始视频").trigger("click");
-    expect(wrapper.get("video").attributes("src")).toContain("/original");
-  });
-  it("请求迟到或切换作品后，不把旧任务成品写到新作品", async () => {
-    mocks.list.mockResolvedValueOnce([pending]);
-    let resolve!: (value: ArchiveVideoEditJob) => void;
-    mocks.get.mockReturnValueOnce(
-      new Promise<ArchiveVideoEditJob>((done) => {
-        resolve = done;
-      })
-    );
-    const wrapper = await setup();
-    await vi.advanceTimersByTimeAsync(800);
-    const next = { ...structuredClone(original), id: "archive_other123" };
-    await wrapper.setProps({ item: next });
-    await flushPromises();
-    resolve({ ...pending, status: "completed" });
-    await flushPromises();
-    expect(mocks.detail).not.toHaveBeenCalled();
-    expect(wrapper.emitted("saved")).toBeUndefined();
+    expect(w.emitted("saved")?.[0]).toEqual([updated]);
+    expect(w.emitted("update:show")?.at(-1)).toEqual([false]);
+    expect(w.findComponent(ArchiveCutTimeline).exists()).toBe(false);
+    expect(mocks.cutSource).not.toHaveBeenCalled();
   });
 });
