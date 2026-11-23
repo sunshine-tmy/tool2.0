@@ -20,7 +20,11 @@ export class ArchiveWatermarkDrafts {
   private pins = new Map<string, number>();
   private retired = new Set<string>();
   private tail: Promise<unknown> = Promise.resolve();
-  constructor(private root: string) {}
+  constructor(
+    private root: string,
+    private onRetain?: (id: string, directory: string) => Promise<void>,
+    private onDiscard?: (id: string) => void
+  ) {}
   private serial<T>(action: () => Promise<T>): Promise<T> {
     const result = this.tail.then(action);
     this.tail = result.catch(() => undefined);
@@ -93,7 +97,9 @@ export class ArchiveWatermarkDrafts {
         mediaId,
         width: normalized.info.width,
         height: normalized.info.height,
-        expiresAt: new Date(Date.now() + lifetime).toISOString(),
+        expiresAt: itemId.startsWith("editor_")
+          ? "9999-12-31T23:59:59.999Z"
+          : new Date(Date.now() + lifetime).toISOString(),
         file: {
           fileName: `watermark-${id}.png`,
           mimeType: "image/png",
@@ -105,6 +111,7 @@ export class ArchiveWatermarkDrafts {
       try {
         await fs.writeFile(path.join(directory, draft.file.fileName), normalized.data, { flag: "wx" });
         await fs.writeFile(path.join(directory, "draft.json"), JSON.stringify(draft), { flag: "wx" });
+        if (itemId.startsWith("editor_")) await this.onRetain?.(id, directory);
       } catch (error) {
         await fs.rm(directory, { recursive: true, force: true });
         throw error;
@@ -148,7 +155,19 @@ export class ArchiveWatermarkDrafts {
       }
       await fs.rm(directory, { recursive: true, force: true });
       this.retired.delete(id);
+      this.onDiscard?.(id);
     });
+  }
+  async removeProject(itemId: string) {
+    for (const name of await fs.readdir(this.root).catch(() => [])) {
+      const match = /^watermark-draft-([A-Za-z0-9_-]{12})$/.exec(name);
+      if (!match) continue;
+      const draft = await fs
+        .readFile(path.join(this.directory(match[1]), "draft.json"), "utf8")
+        .then((text) => JSON.parse(text) as Draft)
+        .catch(() => undefined);
+      if (draft?.itemId === itemId) await this.discard(match[1]);
+    }
   }
   async idle() {
     await this.tail;
@@ -160,9 +179,15 @@ export class ArchiveWatermarkDrafts {
       const directory = this.directory(match[1]);
       const stat = await fs.lstat(directory).catch(() => undefined);
       if (!stat?.isDirectory() || stat.isSymbolicLink()) continue;
-      if (this.retired.has(match[1]) || stat.mtimeMs < Date.now() - lifetime) {
+      const draft = await fs
+        .readFile(path.join(directory, "draft.json"), "utf8")
+        .then((text) => JSON.parse(text) as Draft)
+        .catch(() => undefined);
+      const retained = draft?.itemId?.startsWith("editor_") && Date.parse(draft.expiresAt) > Date.now();
+      if (this.retired.has(match[1]) || (!retained && stat.mtimeMs < Date.now() - lifetime)) {
         await fs.rm(directory, { recursive: true, force: true });
         this.retired.delete(match[1]);
+        this.onDiscard?.(match[1]);
       }
     }
   }

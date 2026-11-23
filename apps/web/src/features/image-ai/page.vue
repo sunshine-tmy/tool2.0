@@ -587,17 +587,6 @@ function formatBytes(bytes: number) {
   min-width: 0;
   min-height: 0;
 }
-.image-ai-main :deep(.tool-page-header) {
-  margin-bottom: 24px;
-}
-.image-ai-main :deep(.tool-page-icon) {
-  width: 72px;
-  height: 72px;
-}
-.image-ai-main :deep(.tool-page-header h2) {
-  font-size: 30px;
-  line-height: 1.3;
-}
 .image-ai-main > .rights-alert {
   display: flex;
   align-items: flex-start;
@@ -722,13 +711,6 @@ function formatBytes(bytes: number) {
   }
 }
 @media (max-width: 600px) {
-  .image-ai-main :deep(.tool-page-icon) {
-    width: 56px;
-    height: 56px;
-  }
-  .image-ai-main :deep(.tool-page-header h2) {
-    font-size: 26px;
-  }
   .image-ai-workspace :deep(.image-ai-stage) {
     padding: 16px;
   }

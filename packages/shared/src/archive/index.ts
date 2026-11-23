@@ -21,3 +21,5 @@ export * from "./unified-studio";
 export * from "./vertical-text";
 export * from "./text-appearance";
 export * from "./fancy-text";
+
+export * from "./editor-project";

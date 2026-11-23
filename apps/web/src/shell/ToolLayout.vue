@@ -99,21 +99,6 @@
           'compress-content': route.path === '/tools/image-compress'
         }"
       >
-        <nav v-if="route.path !== '/'" class="workspace-breadcrumb" aria-label="当前位置">
-          <router-link to="/"><ArrowLeft :size="16" />返回首页</router-link>
-          <span aria-hidden="true">/</span>
-          <router-link v-if="route.path.startsWith('/tools/media-archive/')" to="/tools/media-archive"
-            >多媒体内容归档</router-link
-          >
-          <span v-else>{{
-            currentTool?.title ||
-            (route.path.includes("data-backup")
-              ? "数据备份与恢复"
-              : route.path.includes("diagnostics")
-                ? "启动与环境诊断"
-                : "桌面设置")
-          }}</span>
-        </nav>
         <n-alert
           v-if="
             localDiagnosticsAvailable && diagnosticConnection === 'offline' && route.path !== '/settings/diagnostics'
@@ -231,7 +216,7 @@ import { useRoute } from "vue-router";
 import brandIcon from "../assets/ui-v2/brand.webp";
 import { toolForPath, toolPresentationKey, workbenchTools } from "../shared/ui/tool/catalog";
 import { NButton, NDrawer, NDrawerContent } from "naive-ui";
-import { ChevronRight, ArrowLeft, Menu, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
+import { ChevronRight, Menu, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
 import ModuleSidebar from "./ModuleSidebar.vue";
 import { diagnosticConnection, localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { useShellNavigation } from "./useShellNavigation";

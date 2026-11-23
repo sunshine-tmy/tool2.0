@@ -1,3 +1,4 @@
+import { FileMetadataRepository } from "../../../database/file-metadata";
 import fs from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
@@ -18,6 +19,7 @@ import {
   type ArchiveVideoEditInput,
   type ArchiveVideoEditJob,
   type AudioLibraryItem,
+  type ArchiveVideoEdit,
   type ArchiveInterpolationRuntime
 } from "@toolbox/shared";
 import type { AppConfig } from "../../../config";
@@ -64,6 +66,7 @@ export class ArchiveVideoEditService {
   private stopped = false;
   private initialized = false;
   private cleanupTimer?: ReturnType<typeof setInterval>;
+  private draftTails = new Map<string, Promise<void>>();
   private cleanupTail: Promise<void> = Promise.resolve();
   constructor(
     private options: {
@@ -78,7 +81,31 @@ export class ArchiveVideoEditService {
       onError?: (error: unknown) => void;
     }
   ) {
-    this.watermarks = new ArchiveWatermarkDrafts(options.config.xhsArchiveStagingDir);
+    this.watermarks = new ArchiveWatermarkDrafts(
+      options.config.xhsArchiveStagingDir,
+      async (id, directory) => {
+        const metadata = new FileMetadataRepository(options.database, options.config.storageRoot);
+        const records = await Promise.all(
+          [`watermark-${id}.png`, "draft.json"].map((name) =>
+            metadata.inspect({
+              entityKind: "video-editor-watermark",
+              entityId: id,
+              filePath: path.join(directory, name),
+              mediaType: name.endsWith("png") ? "image/png" : "application/json",
+              owner: "local"
+            })
+          )
+        );
+        options.database.transaction(() => {
+          for (const record of records) options.database.upsertFile(record);
+        });
+      },
+      (id) =>
+        new FileMetadataRepository(options.database, options.config.storageRoot).removeForEntity(
+          "video-editor-watermark",
+          id
+        )
+    );
     this.watermarkPresets = new ArchiveWatermarkPresets(options.database);
     this.watermarkLibrary = new ArchiveWatermarkLibrary(
       path.join(options.config.xhsArchiveDir, "watermark-library"),
@@ -119,9 +146,10 @@ export class ArchiveVideoEditService {
     const current = await this.options.store.mediaPath(itemId, mediaId);
     if (!current) throw new VideoEditError("ARCHIVE_MEDIA_NOT_FOUND", "归档视频不存在", 404);
     const saved = source
-      ? current.media.audioEdit?.studioSources?.find(
-          (entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum
-        )
+      ? [
+          ...(current.media.audioEdit?.studioSources ?? []),
+          ...(this.projectDraftAssets(itemId, mediaId).studioSources ?? [])
+        ].find((entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum)
       : undefined;
     if (saved) {
       const file = localFile(path.dirname(current.filePath), saved.file.fileName);
@@ -138,14 +166,20 @@ export class ArchiveVideoEditService {
   }
   async studioSourcePath(itemId: string, mediaId: string, sourceId: string) {
     const current = await this.options.store.mediaPath(itemId, mediaId);
-    const saved = current?.media.audioEdit?.studioSources?.find((entry) => entry.sourceId === sourceId);
+    const saved = [
+      ...(current?.media.audioEdit?.studioSources ?? []),
+      ...(this.projectDraftAssets(itemId, mediaId).studioSources ?? [])
+    ].find((entry) => entry.sourceId === sourceId);
     if (!current || !saved) throw new VideoEditError("ARCHIVE_SOURCE_MISSING", "拼接素材快照不存在", 404);
     const file = localFile(path.dirname(current.filePath), saved.file.fileName);
     return { file, asset: saved.file, release: this.options.store.pinMedia(file) };
   }
   async studioMusicPath(itemId: string, mediaId: string, trackId: string) {
     const current = await this.options.store.mediaPath(itemId, mediaId);
-    const saved = current?.media.audioEdit?.studioMusic?.find((entry) => entry.trackId === trackId);
+    const saved = [
+      ...(current?.media.audioEdit?.studioMusic ?? []),
+      ...(this.projectDraftAssets(itemId, mediaId).studioMusic ?? [])
+    ].find((entry) => entry.trackId === trackId);
     if (!current || !saved) throw new VideoEditError("ARCHIVE_STUDIO_MUSIC_MISSING", "配乐快照不存在", 404);
     const file = localFile(path.dirname(current.filePath), saved.file.fileName);
     return { file, asset: saved.file, release: this.options.store.pinMedia(file) };
@@ -188,6 +222,16 @@ export class ArchiveVideoEditService {
           (input.studio?.watermarks?.length ?? 0)
     )
       throw new VideoEditError("ARCHIVE_CUT_RANGE_INVALID", "剪辑片段无效");
+    if (itemId.startsWith("editor_")) {
+      await this.withDraftAssetWrite(itemId, mediaId, () => this.retainProjectDraftAssets(itemId, mediaId, input));
+      const latest = await this.options.store.mediaPath(itemId, mediaId);
+      if (
+        !latest ||
+        latest.media.checksum !== input.checksum ||
+        (latest.media.audioEdit?.revision ?? 0) !== input.revision
+      )
+        throw new VideoEditError("ARCHIVE_EDIT_CONFLICT", "工程成品已更新，请重新读取后保存草稿", 409);
+    }
     const now = new Date().toISOString();
     this.options.database.upsert({
       id: `${itemId}:${mediaId}`,
@@ -198,6 +242,122 @@ export class ArchiveVideoEditService {
       updatedAt: now
     });
     return input;
+  }
+  async withDraftAssetWrite<T>(itemId: string, mediaId: string, action: () => Promise<T>): Promise<T> {
+    if (this.stopped) throw new VideoEditError("ARCHIVE_EDIT_STOPPED", "服务正在退出", 503);
+    const key = `${itemId}:${mediaId}`;
+    const next = (this.draftTails.get(key) ?? Promise.resolve()).catch(() => undefined).then(action);
+    const tail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    this.draftTails.set(key, tail);
+    try {
+      return await next;
+    } finally {
+      if (this.draftTails.get(key) === tail) this.draftTails.delete(key);
+    }
+  }
+  private projectDraftAssets(itemId: string, mediaId: string) {
+    return (this.options.database.get("video-editor-draft-assets", `${itemId}:${mediaId}`)?.payload ??
+      {}) as import("@toolbox/shared").VideoEditorDraftAssets;
+  }
+  private async retainProjectDraftAssets(itemId: string, mediaId: string, draft: ArchiveCutDraft) {
+    const current = await this.options.store.mediaPath(itemId, mediaId);
+    if (!current || !draft.studio) return;
+    const previous = this.projectDraftAssets(itemId, mediaId);
+    const sources = [...(previous.studioSources ?? [])],
+      music = [...(previous.studioMusic ?? [])];
+    const directory = path.dirname(current.filePath),
+      created: string[] = [];
+    const metadata = new FileMetadataRepository(this.options.database, this.options.config.storageRoot);
+    const files: Awaited<ReturnType<FileMetadataRepository["inspect"]>>[] = [];
+    let bytes = 0;
+    const capture = async (source: string, mime: string, expected: string) => {
+      const stat = await fs.stat(source);
+      bytes += stat.size;
+      const free = await fs.statfs(directory);
+      if (
+        bytes > this.options.config.xhsArchiveMaxStorageBytes ||
+        stat.size + 64 * 1024 * 1024 > Number(free.bavail) * Number(free.bsize)
+      )
+        throw new VideoEditError("EDITOR_DRAFT_STORAGE_FULL", "工程素材空间不足，草稿未保存", 507);
+      const name = `draft-${nanoid(12)}${path.extname(source)}`,
+        target = localFile(directory, name);
+      await fs.copyFile(source, target);
+      created.push(target);
+      const file = await inspectEditFile(target, mime);
+      if (file.checksum !== expected) throw new VideoEditError("EDITOR_DRAFT_ASSET_CHANGED", "素材文件已变化", 409);
+      files.push(
+        await metadata.inspect({
+          entityKind: "video-editor-draft-assets",
+          entityId: itemId,
+          filePath: target,
+          mediaType: mime,
+          owner: "local"
+        })
+      );
+      return file;
+    };
+    try {
+      for (const source of draft.studio.sources) {
+        if (
+          sources.some((e) => e.sourceId === source.id && e.ref.checksum === source.checksum) ||
+          current.media.audioEdit?.studioSources?.some(
+            (e) => e.sourceId === source.id && e.ref.checksum === source.checksum
+          )
+        )
+          continue;
+        const pinned = await this.pinStudioSource(itemId, mediaId, source);
+        try {
+          sources.push({
+            sourceId: source.id,
+            ref: structuredClone(source),
+            file: await capture(pinned.file, pinned.mimeType, source.checksum)
+          });
+        } finally {
+          pinned.release();
+        }
+      }
+      for (const track of draft.studio.musicTracks) {
+        const found = [...music, ...(current.media.audioEdit?.studioMusic ?? [])].find(
+          (e) => e.libraryItemId === track.libraryItemId && e.libraryRevision === track.libraryRevision
+        );
+        if (found) {
+          if (!music.some((e) => e.trackId === track.id)) music.push({ ...found, trackId: track.id });
+          continue;
+        }
+        if (track.snapshotId === "legacy_music" && current.media.audioEdit?.music) continue;
+        if (track.libraryItemId.startsWith("local_audio_"))
+          throw new VideoEditError("EDITOR_AUDIO_MISSING", "草稿音频文件不存在，请重新上传", 404);
+        const pinned = await this.options.music.acquire(track.libraryItemId, track.libraryRevision);
+        try {
+          music.push({
+            trackId: track.id,
+            libraryItemId: track.libraryItemId,
+            libraryRevision: track.libraryRevision,
+            file: await capture(pinned.file, pinned.item.mimeType, pinned.item.sha256)
+          });
+        } finally {
+          pinned.release();
+        }
+      }
+      const now = new Date().toISOString();
+      this.options.database.transaction(() => {
+        this.options.database.upsert({
+          id: `${itemId}:${mediaId}`,
+          kind: "video-editor-draft-assets",
+          status: itemId,
+          payload: { ...previous, studioSources: sources, studioMusic: music },
+          createdAt: now,
+          updatedAt: now
+        });
+        for (const file of files) this.options.database.upsertFile(file);
+      });
+    } catch (error) {
+      await Promise.all(created.map((file) => fs.rm(file, { force: true })));
+      throw error;
+    }
   }
   async selectLibraryWatermark(itemId: string, mediaId: string, id: string) {
     const { bytes } = await this.watermarkLibrary.read(id);
@@ -467,6 +627,7 @@ export class ArchiveVideoEditService {
     this.running?.work.controller.abort();
     await this.running?.done;
     await this.cleanupTail;
+    await Promise.allSettled(this.draftTails.values());
     await this.watermarks.idle();
     await this.watermarkLibrary.idle();
   }
@@ -663,9 +824,10 @@ export class ArchiveVideoEditService {
         for (const source of studio.sources) {
           const pinned = await this.pinStudioSource(job.itemId, job.mediaId, source);
           try {
-            const old = lease.media.audioEdit?.studioSources?.find(
-              (entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum
-            );
+            const old = [
+              ...(lease.media.audioEdit?.studioSources ?? []),
+              ...(this.projectDraftAssets(job.itemId, job.mediaId).studioSources ?? [])
+            ].find((entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum);
             const name = old?.file.fileName ?? `source-${nanoid(12)}${path.extname(pinned.file)}`;
             await reserveSnapshot(pinned.file);
             await fs.copyFile(pinned.file, localFile(directory, name));
@@ -682,7 +844,10 @@ export class ArchiveVideoEditService {
         for (const track of studio.musicTracks) {
           const legacy = track.snapshotId === "legacy_music" ? lease.media.audioEdit?.music : undefined;
           const old =
-            lease.media.audioEdit?.studioMusic?.find(
+            [
+              ...(lease.media.audioEdit?.studioMusic ?? []),
+              ...(this.projectDraftAssets(job.itemId, job.mediaId).studioMusic ?? [])
+            ].find(
               (entry) => entry.libraryItemId === track.libraryItemId && entry.libraryRevision === track.libraryRevision
             ) ??
             (legacy
@@ -704,6 +869,8 @@ export class ArchiveVideoEditService {
             studioMusic.push({ ...structuredClone(old), trackId: track.id });
             trackFiles[track.id] = localFile(directory, old.file.fileName);
           } else {
+            if (track.libraryItemId.startsWith("local_audio_"))
+              throw new VideoEditError("EDITOR_AUDIO_MISSING", "草稿音频文件不存在，请重新上传", 404);
             const chosen = await this.options.music.acquire(track.libraryItemId, track.libraryRevision);
             try {
               const name = `track-${nanoid(12)}${path.extname(chosen.item.fileName)}`;

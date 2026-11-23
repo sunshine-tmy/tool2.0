@@ -359,10 +359,6 @@ onMounted(() => {
   margin: 0;
 }
 
-.desktop-settings-main > :deep(.tool-page-header) {
-  margin-bottom: var(--space-1, 4px);
-}
-
 .desktop-settings-main > .workspace-panel > .panel-heading:only-child {
   margin-bottom: 0;
 }

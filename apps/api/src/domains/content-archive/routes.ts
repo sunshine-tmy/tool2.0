@@ -1,3 +1,6 @@
+import { VideoEditorProjects } from "../video-editor/projects";
+import { registerVideoEditorProjects } from "../video-editor/routes";
+import { registerEditorLocalAudio } from "../video-editor/local-audio";
 /** Domain assembly keeps the original service ownership and Fastify registration/close order. */
 import type { FastifyInstance } from "fastify";
 import fsp from "node:fs/promises";
@@ -70,11 +73,13 @@ export async function registerXhsArchiveRoutes(options: {
     options.tiktokRuntime
   );
   await service.initialize();
+  const projects = new VideoEditorProjects(store.content, database, config);
+  registerVideoEditorProjects(app, projects);
   const videoEdits = new ArchiveVideoEditService({
     config,
     database,
     tasks: taskStore,
-    store: store.content,
+    store: projects.combined,
     music: {
       acquire: async (id, revision) => {
         if (!options.audioLibrary) throw new VideoEditError("ARCHIVE_EDIT_MUSIC_UNAVAILABLE", "音频素材库不可用", 503);
@@ -122,8 +127,49 @@ export async function registerXhsArchiveRoutes(options: {
     },
     onError: (error) => app.log.error({ err: error }, "archive video edit failed")
   });
+  projects.editor = videoEdits;
+  registerEditorLocalAudio(app, projects, videoEdits, options.audioLibrary);
+  projects.tools = () => videoEdits.mediaTools();
   videoEdits.initialize();
-  registerVideoEditRoutes(app, videoEdits, store.content);
+  registerVideoEditRoutes(app, videoEdits, projects.combined);
+  const projectUploads = new LocalVideoArchiveUploads({
+    config: projects.config,
+    store: projects.assets,
+    tasks: taskStore,
+    tools: () => videoEdits.mediaTools(),
+    idPrefix: "editor"
+  });
+  registerLocalVideoUploadRoutes(app, projectUploads, "video-editor");
+  const materialUploads = new LocalVideoArchiveUploads({
+    config: projects.config,
+    store: projects.assets,
+    tasks: taskStore,
+    tools: () => videoEdits.mediaTools(),
+    idPrefix: "editor_material"
+  });
+  registerLocalVideoUploadRoutes(app, materialUploads, "video-editor/materials", {
+    beforeUpload: async (request) => {
+      const ownerId = (request.query as { ownerId?: string }).ownerId;
+      if (
+        typeof ownerId !== "string" ||
+        !/^[A-Za-z0-9_-]{6,128}$/.test(ownerId) ||
+        !(await projects.combined.get(ownerId))
+      )
+        throw new VideoEditError("EDITOR_PROJECT_NOT_FOUND", "请先打开有效的视频工程", 404);
+    },
+    afterUpload: async (request, item) => {
+      const ownerId = (request.query as { ownerId: string }).ownerId,
+        now = new Date().toISOString();
+      database.upsert({
+        kind: "video-editor-material",
+        id: `${ownerId}:${item.id}`,
+        status: ownerId,
+        payload: { ownerId, itemId: item.id },
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+  });
   const localUploads = new LocalVideoArchiveUploads({
     config,
     store: store.content,
@@ -174,13 +220,16 @@ export async function registerXhsArchiveRoutes(options: {
     }
   });
   registerArchiveGroupRoutes(app, store.content.groups);
-  registerContentArchiveRoutes(app, store.content, service.content);
+  registerContentArchiveRoutes(app, projects.combined, service.content);
   registerArchiveTranslationRoutes(app, store.content, translation, "media-archive");
 
   registerLegacyXhsArchiveRoutes({ app, store, service, auth, translation });
 
   app.addHook("onClose", async () => {
     await localUploads.close();
+    await projectUploads.close();
+    await materialUploads.close();
+    await projects.close();
     await videoEdits.close();
     await profiles.close();
     await imports.stop();
@@ -188,7 +237,7 @@ export async function registerXhsArchiveRoutes(options: {
       await service.close();
     } finally {
       imports.recoverInterrupted();
-      await store.content.flushVideoEdits();
+      await projects.combined.flushVideoEdits();
     }
   });
   app.addHook("onClose", async () => auth.stop());

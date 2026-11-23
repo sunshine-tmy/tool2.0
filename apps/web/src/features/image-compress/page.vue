@@ -538,26 +538,6 @@ onBeforeUnmount(() => {
 .compression-layout :deep(.content.compress-content) {
   grid-template-columns: minmax(0, 1fr);
   padding-inline: 32px;
-  gap: 16px;
-}
-.compression-layout :deep(.tool-page-header) {
-  min-height: 72px;
-  margin-bottom: 0;
-  padding-inline: 0;
-  gap: 16px;
-}
-.compression-layout :deep(.tool-page-icon) {
-  width: 64px;
-  height: 64px;
-  flex-basis: 64px;
-}
-.compression-layout :deep(.tool-page-header h2) {
-  font-size: 26px;
-  line-height: 36px;
-}
-.compression-layout :deep(.tool-page-header p) {
-  font-size: 14px;
-  line-height: 22px;
 }
 .image-compress-workspace {
   display: grid;
@@ -864,15 +844,6 @@ onBeforeUnmount(() => {
 @media (max-width: 560px) {
   .compression-layout :deep(.content.compress-content) {
     padding-inline: 16px;
-  }
-  .compression-layout :deep(.tool-page-icon) {
-    width: 56px;
-    height: 56px;
-    flex-basis: 56px;
-  }
-  .compression-layout :deep(.tool-page-header h2) {
-    font-size: 24px;
-    line-height: 32px;
   }
   .image-compress-workspace .image-compress-panel {
     min-height: 0;

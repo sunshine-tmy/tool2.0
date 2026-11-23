@@ -56,3 +56,5 @@ export type {
 
 export * from "./archive/video-studio";
 export * from "./archive/unified-studio";
+
+export * from "./archive/editor-project";

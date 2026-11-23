@@ -26,12 +26,13 @@ export async function inspectArchiveFiles(
   repository: FileMetadataRepository,
   item: ContentArchiveItem,
   staging: string,
-  target: string
+  target: string,
+  entityKind = "xhs-archive"
 ): Promise<FileMetadata[]> {
   const files: FileMetadata[] = [
     await repository.inspect(
       {
-        entityKind: "xhs-archive",
+        entityKind,
         entityId: item.id,
         filePath: path.join(target, "manifest.json"),
         mediaType: "application/json",

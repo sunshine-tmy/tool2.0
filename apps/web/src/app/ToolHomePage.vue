@@ -37,15 +37,7 @@
         </button>
       </nav>
       <div v-if="filtered.length" class="workbench-grid">
-        <router-link
-          v-for="tool in filtered"
-          :key="tool.id"
-          class="workbench-card"
-          :class="{
-            'workbench-card-wide': tool.id === 'lan-transfer' && !category && !keyword.trim()
-          }"
-          :to="tool.routePath"
-        >
+        <router-link v-for="tool in filtered" :key="tool.id" class="workbench-card" :to="tool.routePath">
           <img
             v-if="tool.icon"
             :src="tool.icon"

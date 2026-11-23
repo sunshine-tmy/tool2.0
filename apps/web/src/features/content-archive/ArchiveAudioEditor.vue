@@ -9,7 +9,7 @@
       class="audio-editor"
       :class="{ 'is-embedded': embedded, 'is-workbench': !isImage }"
       :style="workspace.style.value"
-      closable
+      :closable="!embedded"
       @close="close"
     >
       <n-alert v-if="error || watermarkError" type="error"
@@ -583,7 +583,7 @@
               (roughCut.loaded.value && !roughCut.clips.value.length)
             "
             @click="isImage ? submit('save') : requestOutput('save')"
-            >{{ isImage ? "生成视频并归档" : "保存为最新版本" }}</n-button
+            >{{ isImage ? "生成视频并归档" : saveLabel || "保存为最新版本" }}</n-button
           >
         </div>
         <small
@@ -627,6 +627,7 @@ import {
   type ArchiveStudioSource,
   watermarkTimingError,
   type ArchiveSlideshowAspect,
+  type ArchiveVideoEdit,
   type ArchiveVideoEditInput,
   type ArchiveVideoEditJob,
   type AudioLibraryItemView,
@@ -661,6 +662,8 @@ const props = defineProps<{
   initialPanel?: "audio" | "watermark" | "cut";
   initialMusicId?: string;
   conversionReturnTo?: string;
+  saveLabel?: string;
+  draftAssets?: Pick<ArchiveVideoEdit, "studioSources" | "studioMusic">;
 }>();
 const emit = defineEmits<{ "update:show": [value: boolean]; saved: [item: ContentArchiveItem] }>();
 const confirm = useConfirmDialog();
@@ -729,7 +732,7 @@ const roughCut = useArchiveRoughCut(
   () => settings.originalVolume,
   (source) =>
     resolveBackendUrl(
-      current.value?.audioEdit?.studioSources?.some(
+      [...(current.value?.audioEdit?.studioSources ?? []), ...(props.draftAssets?.studioSources ?? [])].some(
         (entry) => entry.sourceId === source.id && entry.ref.checksum === source.checksum
       )
         ? `/api/v1/tools/media-archive/items/${props.item.id}/media/${props.mediaId}/studio-sources/${source.id}`
@@ -754,16 +757,18 @@ const roughCut = useArchiveRoughCut(
   () => !busy.value
 );
 function studioMusicUrl(track: ArchiveStudioMusic) {
-  const snapshot = current.value?.audioEdit?.studioMusic?.find(
+  const snapshot = [...(current.value?.audioEdit?.studioMusic ?? []), ...(props.draftAssets?.studioMusic ?? [])].find(
     (entry) =>
       entry.trackId === track.snapshotId ||
       (entry.libraryItemId === track.libraryItemId && entry.libraryRevision === track.libraryRevision)
   );
   if (!snapshot && track.snapshotId === "legacy_music" && current.value?.audioEdit?.music)
     return resolveBackendUrl(`/api/v1/tools/media-archive/items/${props.item.id}/media/${props.mediaId}/saved-music`);
+  const localTrackId =
+    snapshot?.trackId ?? (track.libraryItemId.startsWith("local_audio_") ? track.libraryItemId : undefined);
   return resolveBackendUrl(
-    snapshot
-      ? `/api/v1/tools/media-archive/items/${props.item.id}/media/${props.mediaId}/studio-music/${snapshot.trackId}`
+    localTrackId
+      ? `/api/v1/tools/media-archive/items/${props.item.id}/media/${props.mediaId}/studio-music/${localTrackId}`
       : `/api/v1/tools/audio-library/items/${track.libraryItemId}/audio`
   );
 }
@@ -1473,7 +1478,7 @@ async function canLeave() {
     !activeJob.value &&
     initialized.value &&
     recipe.value !== initialRecipe.value &&
-    !(await confirm("整个工程草稿会自动保留。未导出的修改不会应用到最新成品；尚未保存的水印上传草稿保留 24 小时。", {
+    !(await confirm("整个工程草稿会自动保留。未生成成品的修改不会应用到最新视频或关联归档。", {
       title: "关闭视频编辑",
       positiveText: "关闭窗口",
       danger: false

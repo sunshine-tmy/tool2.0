@@ -8,7 +8,6 @@
       @click="fileInput?.click()"
       ><template #icon><Upload :size="18" /></template>上传水印并添加到轨道</n-button
     >
-    <p class="hint">PNG / JPG / WebP · 最大 20 MiB · 推荐透明 PNG</p>
     <input ref="fileInput" hidden type="file" accept=".png,.jpg,.jpeg,.webp" @change="choose" />
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
     <ArchiveWatermarkLibrary :disabled="disabled || uploading" @select="fromLibrary" />
@@ -63,11 +62,5 @@ function fromLibrary(id: string) {
 .upload-action {
   width: 100%;
   min-height: 44px;
-}
-.hint {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 1.7;
 }
 </style>

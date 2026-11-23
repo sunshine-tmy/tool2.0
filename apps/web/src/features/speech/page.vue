@@ -101,17 +101,6 @@ async function refreshService() {
 </script>
 
 <style scoped>
-.speech-page :deep(.tool-page-header) {
-  margin-bottom: 24px;
-}
-.speech-page :deep(.tool-page-icon) {
-  width: 72px;
-  height: 72px;
-}
-.speech-page :deep(.tool-page-header h2) {
-  font-size: 30px;
-  line-height: 1.3;
-}
 .speech-page :deep(.chatterbox-panel),
 .speech-page :deep(.online-tts-panel) {
   display: grid;
@@ -696,13 +685,6 @@ async function refreshService() {
   }
 }
 @media (max-width: 640px) {
-  .speech-page :deep(.tool-page-icon) {
-    width: 56px;
-    height: 56px;
-  }
-  .speech-page :deep(.tool-page-header h2) {
-    font-size: 26px;
-  }
   .speech-page :deep(:is(.chatterbox-panel, .online-tts-panel) .edge-tts-editor),
   .speech-page :deep(:is(.chatterbox-panel, .online-tts-panel) .edge-tts-controls),
   .speech-page :deep(.edge-tts-history),

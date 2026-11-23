@@ -34,6 +34,7 @@ export class LocalVideoArchiveUploads {
       tasks: TaskStore;
       store: ContentArchiveStore;
       tools: () => Promise<MediaTools>;
+      idPrefix?: string;
       probe?: typeof probeMedia;
       run?: typeof runMediaProcess;
     }
@@ -183,7 +184,8 @@ export class LocalVideoArchiveUploads {
           ? header.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
           : atom === "ftyp" || (video.extension === ".mov" && ["moov", "mdat", "wide", "free", "skip"].includes(atom));
       if (!containerValid) throw new VideoEditError("ARCHIVE_UPLOAD_FORMAT", "文件内容不是受支持的视频容器", 415);
-      const existing = await store.findBySource("local", video.checksum);
+      const contentId = this.options.idPrefix === "editor_material" ? `material_${video.checksum}` : video.checksum;
+      const existing = await store.findBySource("local", contentId);
       if (existing) return { item: existing, duplicate: true };
       const info = await (this.options.probe ?? probeMedia)(tools, video.file, signal, true, true);
       if (!(info.width > 0 && info.height > 0) || info.width > 16384 || info.height > 16384)
@@ -220,7 +222,7 @@ export class LocalVideoArchiveUploads {
         { timeoutMs: 60000, output: coverFile, maxBytes: 20 * 1024 * 1024 }
       );
       const cover = await fs.readFile(coverFile);
-      const id = `local_${nanoid(16)}`,
+      const id = `${this.options.idPrefix ?? "local"}_${nanoid(16)}`,
         mediaId = nanoid(16),
         coverId = nanoid(16),
         now = new Date().toISOString();
@@ -228,7 +230,7 @@ export class LocalVideoArchiveUploads {
       const item: ContentArchiveItem = {
         id,
         platform: "local",
-        contentId: video.checksum,
+        contentId,
         type: "video",
         sourceUrl: `toolbox://local-video/${video.checksum}`,
         canonicalUrl: `toolbox://local-video/${video.checksum}`,
@@ -281,9 +283,17 @@ export class LocalVideoArchiveUploads {
   }
 }
 
-export function registerLocalVideoUploadRoutes(app: FastifyInstance, uploads: LocalVideoArchiveUploads) {
+export function registerLocalVideoUploadRoutes(
+  app: FastifyInstance,
+  uploads: LocalVideoArchiveUploads,
+  namespace = "media-archive",
+  hooks?: {
+    beforeUpload?: (request: FastifyRequest) => Promise<void>;
+    afterUpload?: (request: FastifyRequest, item: ContentArchiveItem) => Promise<void>;
+  }
+) {
   app.post<{ Reply: ApiResponse<{ item: ContentArchiveItem; duplicate: boolean }> }>(
-    "/api/v1/tools/media-archive/local-videos",
+    `/api/v1/tools/${namespace}/local-videos`,
     {
       bodyLimit: LOCAL_ARCHIVE_UPLOAD_MAX_BYTES + 64 * 1024,
       config: REQUEST_QUOTAS.localArchiveUpload,
@@ -297,7 +307,10 @@ export function registerLocalVideoUploadRoutes(app: FastifyInstance, uploads: Lo
       request.raw.once("aborted", abort);
       reply.raw.once("close", abort);
       try {
-        return reply.code(201).send(ok(await uploads.upload(request, controller.signal)));
+        await hooks?.beforeUpload?.(request);
+        const result = await uploads.upload(request, controller.signal);
+        await hooks?.afterUpload?.(request, result.item);
+        return reply.code(201).send(ok(result));
       } catch (error) {
         if (
           error instanceof VideoEditError ||

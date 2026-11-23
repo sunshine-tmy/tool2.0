@@ -23,13 +23,21 @@
       /></n-button>
     </div>
     <n-alert v-if="error" type="error" closable @close="error = ''">{{ error }}</n-alert>
+    <n-alert v-if="uploadMessage" type="success" closable @close="uploadMessage = ''">{{ uploadMessage }}</n-alert>
     <div class="browser-body">
       <template v-if="tab === 'sources'">
-        <div class="browser-tools">
-          <n-button type="primary" size="small" :disabled="disabled" @click="picker = true"
-            ><template #icon><Upload :size="15" /></template>导入</n-button
-          ><span>{{ videoCards.length }} 个视频素材</span>
+        <div class="browser-tools video-tools">
+          <div class="upload-actions">
+            <n-button type="primary" size="small" :disabled="disabled || uploading" @click="videoInput?.click()"
+              ><template #icon><Upload :size="15" /></template>上传视频</n-button
+            >
+            <n-button size="small" :disabled="disabled || uploading" @click="picker = true"
+              ><template #icon><FolderOpen :size="15" /></template>归档导入</n-button
+            >
+          </div>
+          <span>{{ videoCards.length }} 个视频素材</span>
         </div>
+        <input ref="videoInput" hidden type="file" multiple accept=".mp4,.mov,.webm" @change="uploadVideos" />
         <div class="video-grid">
           <article
             v-for="card in videoCards"
@@ -57,25 +65,18 @@
         </div>
       </template>
       <template v-else-if="tab === 'audio'">
-        <div class="audio-search">
-          <n-input
-            v-model:value="audioKeyword"
-            clearable
-            placeholder="搜索音频名称、文案或备注"
-            aria-label="搜索音频"
-            @keyup.enter="searchAudio"
-            ><template #prefix><Search :size="14" /></template></n-input
-          ><n-button class="audio-search-button" type="primary" :loading="audioLoading" @click="searchAudio"
-            >搜索</n-button
-          >
+        <div class="browser-tools video-tools">
+          <div class="upload-actions">
+            <n-button type="primary" size="small" :disabled="disabled || uploading" @click="audioInput?.click()">
+              <template #icon><Upload :size="15" /></template>上传音频
+            </n-button>
+            <n-button size="small" :disabled="disabled || uploading" @click="openAudioPicker">
+              <template #icon><FolderOpen :size="15" /></template>素材库导入
+            </n-button>
+          </div>
+          <span>{{ availableAudio.length }} 个音频素材</span>
         </div>
-        <n-select
-          v-model:value="audioView"
-          size="small"
-          :options="audioViews"
-          aria-label="音频类型"
-          @update:value="searchAudio"
-        />
+        <input ref="audioInput" hidden type="file" multiple accept=".mp3,.wav,.m4a,.flac" @change="uploadAudio" />
         <n-spin :show="audioLoading">
           <div class="audio-list">
             <article v-for="music in availableAudio" :key="music.id" class="audio-material">
@@ -92,7 +93,7 @@
               <div class="audio-copy">
                 <strong :title="music.title">{{ music.title }}</strong
                 ><span
-                  >{{ music.purpose === "music" ? "背景音乐" : music.purpose === "speech" ? "配音" : "音频" }} ·
+                  >{{ music.purpose === "music" ? "背景音乐" : music.purpose === "speech" ? "配音" : "草稿音频" }} ·
                   {{ clock(music.duration) }}</span
                 ><small v-if="studio.musicTracks.some((track) => track.libraryItemId === music.id)">已添加</small>
               </div>
@@ -107,18 +108,12 @@
                 <Plus :size="17" />
               </button>
             </article>
-            <n-empty v-if="!availableAudio.length && !audioLoading" description="当前条件下暂无可用音频" />
+            <n-empty
+              v-if="!availableAudio.length && !audioLoading"
+              description="尚未添加音频，请上传音频或从素材库导入"
+            />
           </div>
         </n-spin>
-        <n-pagination
-          v-if="audioTotal > 20"
-          v-model:page="audioPage"
-          simple
-          :page-size="20"
-          :item-count="audioTotal"
-          :disabled="audioLoading"
-          @update:page="loadAudio"
-        />
       </template>
       <ArchiveWatermarkMaterial
         v-else-if="tab === 'watermark'"
@@ -143,7 +138,31 @@
         <input ref="srtInput" hidden type="file" accept=".srt" @change="importSrt" />
       </template>
     </div>
+    <n-modal
+      :show="uploading"
+      preset="card"
+      title="正在上传素材"
+      style="width: min(480px, calc(100vw - 32px))"
+      :closable="false"
+      :mask-closable="false"
+      :close-on-esc="false"
+    >
+      <p class="upload-progress-label">{{ uploadLabel }}</p>
+      <n-progress type="line" :percentage="uploadProgress" :processing="true" />
+      <template #footer
+        ><div class="upload-progress-footer">
+          <n-button :disabled="uploadController?.signal.aborted" @click="uploadController?.abort()">取消上传</n-button>
+        </div></template
+      >
+    </n-modal>
     <ArchiveSourcePicker v-model:show="picker" :imported="studio.sources" @select="importSource" />
+    <ArchiveAudioPicker
+      v-model:show="audioPicker"
+      :item-id="itemId"
+      :media-id="mediaId"
+      :imported="localAudioItems"
+      @select="importAudio"
+    />
     <n-modal
       v-model:show="scriptOpen"
       preset="card"
@@ -181,29 +200,19 @@
 </template>
 <script setup lang="ts">
 import { computed, onMounted, onScopeDispose, ref, watch } from "vue";
-import { NAlert, NButton, NInput, NInputNumber, NSelect, NPagination, NSpin, NEmpty, NModal } from "naive-ui";
-import {
-  Film,
-  Music2,
-  Type,
-  Upload,
-  Plus,
-  Play,
-  Pause,
-  Search,
-  FolderOpen,
-  Text,
-  PanelsTopLeft
-} from "lucide-vue-next";
+import { NAlert, NButton, NInput, NInputNumber, NSpin, NEmpty, NModal, NProgress } from "naive-ui";
+import { Film, Music2, Type, Upload, Plus, Play, Pause, FolderOpen, Text, PanelsTopLeft } from "lucide-vue-next";
 import type { ArchiveCutClip, ArchiveStudio, ArchiveStudioSource, ArchiveSubtitle } from "@toolbox/shared/archive";
-import type { AudioLibraryItemView } from "@toolbox/shared";
-import { archiveEditorAudioApi } from "../audio-library/integrations/music";
+import type { AudioLibraryItemView, VideoEditorLocalAudio } from "@toolbox/shared";
+import { editorProjectsApi } from "../video-editor/api";
+import { videoEditApi } from "./video-edit-api";
 import { resolveBackendUrl } from "../../shared/config/runtime";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { cutClipId } from "./useArchiveRoughCut";
 import { parseStudioSrt } from "./studio-subtitles";
 import ArchiveVideoCover from "./ArchiveVideoCover.vue";
 import ArchiveSourcePicker from "./ArchiveSourcePicker.vue";
+import ArchiveAudioPicker from "./ArchiveAudioPicker.vue";
 import ArchiveWatermarkMaterial from "./ArchiveWatermarkMaterial.vue";
 import { Image as ImageIcon } from "lucide-vue-next";
 import type { ArchiveWatermarkDraft } from "@toolbox/shared/archive";
@@ -239,6 +248,7 @@ const tabs = [
 ];
 const tab = ref("sources"),
   picker = ref(false),
+  audioPicker = ref(false),
   error = ref(""),
   highlighted = ref("");
 watch(
@@ -248,6 +258,93 @@ watch(
   },
   { immediate: true }
 );
+const videoInput = ref<HTMLInputElement>(),
+  audioInput = ref<HTMLInputElement>(),
+  uploading = ref(false),
+  uploadProgress = ref(0),
+  uploadLabel = ref(""),
+  uploadMessage = ref("");
+let uploadController: AbortController | undefined;
+async function uploadFiles(event: Event, kind: "video" | "audio") {
+  const input = event.target as HTMLInputElement,
+    files = Array.from(input.files ?? []);
+  input.value = "";
+  if (!files.length || props.disabled || uploading.value) return;
+  if (kind === "video" && props.studio.sources.length + files.length > 100) {
+    error.value = "最多导入 100 个视频素材";
+    return;
+  }
+  const own = (uploadController = new AbortController()),
+    ownerId = props.itemId;
+  uploading.value = true;
+  uploadProgress.value = 0;
+  uploadMessage.value = "";
+  error.value = "";
+  stopPreview();
+  emit("preview");
+  let completed = 0;
+  try {
+    for (let index = 0; index < files.length; index++) {
+      if (own.signal.aborted || disposed || ownerId !== props.itemId) break;
+      const file = files[index];
+      uploadLabel.value = `正在上传 ${index + 1}/${files.length}：${file.name}`;
+      const progress = (percent: number) => {
+        if (own.signal.aborted || disposed) return;
+        uploadProgress.value = Math.min(99, Math.round(((index + percent / 100) * 100) / files.length));
+        if (percent === 100) uploadLabel.value = `正在读取 ${index + 1}/${files.length}：${file.name}`;
+      };
+      if (kind === "video") {
+        const result = await editorProjectsApi.uploadMaterialVideo(file, ownerId, own.signal, progress);
+        const video = result.item.media.find((media) => media.kind === "video" || media.kind === "live-photo");
+        if (!video) throw new Error("未找到有效的视频素材");
+        const info = await videoEditApi.cutSource(result.item.id, video.id, own.signal);
+        if (own.signal.aborted || disposed || ownerId !== props.itemId) break;
+        const known = props.studio.sources.find(
+          (source) =>
+            source.itemId === result.item.id && source.mediaId === video.id && source.checksum === info.checksum
+        );
+        importSource(
+          known ?? {
+            id: cutClipId(),
+            itemId: result.item.id,
+            mediaId: video.id,
+            title: file.name.slice(0, 500),
+            fileName: file.name.slice(0, 500),
+            checksum: info.checksum,
+            duration: info.duration,
+            width: info.width ?? video.width ?? 1280,
+            height: info.height ?? video.height ?? 720,
+            hasAudio: info.hasAudio,
+            fps: info.fps
+          }
+        );
+      } else {
+        const result = await editorProjectsApi.uploadMaterialAudio(file, ownerId, props.mediaId, own.signal, progress);
+        if (own.signal.aborted || disposed || ownerId !== props.itemId) break;
+        localAudioItems.value = [result, ...localAudioItems.value.filter((item) => item.id !== result.id)];
+      }
+      completed++;
+    }
+    if (!disposed && ownerId === props.itemId) {
+      uploadProgress.value = 100;
+      if (completed)
+        uploadMessage.value = `已上传 ${completed} 个${kind === "video" ? "视频素材，可点击加号添加到轨道" : "音频素材，可点击加号添加到轨道"}`;
+      if (kind === "audio" && completed) {
+        await loadAudio();
+      }
+    }
+  } catch (e) {
+    if (!disposed && !own.signal.aborted && !isApiErrorCancelled(e))
+      error.value = `${completed ? `已完成 ${completed} 个，` : ""}${formatApiError(e)}`;
+  } finally {
+    if (uploadController === own) {
+      uploading.value = false;
+      uploadController = undefined;
+    }
+  }
+}
+const uploadVideos = (event: Event) => uploadFiles(event, "video");
+const uploadAudio = (event: Event) => uploadFiles(event, "audio");
 type VideoCard = { id: string; title: string; duration: number; url: string; source?: ArchiveStudioSource };
 const videoCards = computed<VideoCard[]>(() => [
   { id: "__primary__", title: props.sourceName || "原始视频", duration: props.sourceDuration, url: props.sourceUrl },
@@ -271,18 +368,33 @@ function importSource(source: ArchiveStudioSource) {
   emit("import", source);
   highlighted.value = source.id;
 }
-const audioKeyword = ref(""),
-  audioPage = ref(1),
-  audioTotal = ref(0),
-  audioView = ref("all"),
-  audioLoading = ref(false),
-  audioItems = ref<AudioLibraryItemView[]>([]);
-const audioViews = [
-  { label: "全部音频", value: "all" },
-  { label: "背景音乐", value: "music" },
-  { label: "配音素材", value: "speech" }
-];
-const availableAudio = computed(() => audioItems.value.filter((item) => item.available));
+type AudioChoice = Pick<
+  AudioLibraryItemView,
+  "id" | "title" | "duration" | "purpose" | "available" | "audioUrl" | "revision"
+>;
+const localAudioItems = ref<VideoEditorLocalAudio[]>([]),
+  audioLoading = ref(false);
+const availableAudio = computed<AudioChoice[]>(() =>
+  localAudioItems.value.map((item) => ({
+    id: item.id,
+    title: item.title,
+    duration: item.duration,
+    purpose: item.source?.purpose ?? "general",
+    available: true,
+    revision: 1,
+    audioUrl: `/api/v1/tools/media-archive/items/${props.itemId}/media/${props.mediaId}/studio-music/${item.id}`
+  }))
+);
+function openAudioPicker() {
+  stopPreview();
+  emit("preview");
+  audioPicker.value = true;
+}
+function importAudio(asset: VideoEditorLocalAudio) {
+  audioController?.abort();
+  audioLoading.value = false;
+  localAudioItems.value = [asset, ...localAudioItems.value.filter((item) => item.id !== asset.id)];
+}
 let audioController: AbortController | undefined, player: HTMLAudioElement | undefined;
 const playingId = ref("");
 async function loadAudio() {
@@ -290,23 +402,13 @@ async function loadAudio() {
   const own = (audioController = new AbortController());
   audioLoading.value = true;
   try {
-    const result = await archiveEditorAudioApi.list(
-      { keyword: audioKeyword.value, page: audioPage.value, pageSize: 20, view: audioView.value },
-      own.signal
-    );
-    if (!own.signal.aborted) {
-      audioItems.value = result.items;
-      audioTotal.value = result.total;
-    }
+    const result = await editorProjectsApi.localAudio(props.itemId, props.mediaId, own.signal);
+    if (!own.signal.aborted) localAudioItems.value = result;
   } catch (e) {
     if (!own.signal.aborted && !isApiErrorCancelled(e)) error.value = formatApiError(e);
   } finally {
     if (audioController === own) audioLoading.value = false;
   }
-}
-function searchAudio() {
-  audioPage.value = 1;
-  void loadAudio();
 }
 function stopPreview() {
   if (player) {
@@ -317,7 +419,7 @@ function stopPreview() {
   }
   playingId.value = "";
 }
-async function preview(item: AudioLibraryItemView) {
+async function preview(item: AudioChoice) {
   if (playingId.value === item.id) {
     stopPreview();
     return;
@@ -352,7 +454,7 @@ async function preview(item: AudioLibraryItemView) {
     }
   }
 }
-function addAudio(item: AudioLibraryItemView) {
+function addAudio(item: AudioChoice) {
   if (!item.available || props.disabled || props.studio.musicTracks.length >= 16) return;
   stopPreview();
   const studio = JSON.parse(JSON.stringify(props.studio)) as ArchiveStudio,
@@ -462,10 +564,31 @@ onMounted(() => void loadAudio());
 onScopeDispose(() => {
   disposed = true;
   audioController?.abort();
+  uploadController?.abort();
   stopPreview();
 });
 </script>
 <style scoped>
+.upload-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.video-tools {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.video-tools > span {
+  margin-left: auto;
+}
+.upload-progress-label {
+  overflow-wrap: anywhere;
+}
+.upload-progress-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .material-browser {
   display: flex;
   flex-direction: column;
@@ -563,14 +686,22 @@ onScopeDispose(() => {
 .add-circle,
 .list-add,
 .tile-plus {
+  box-sizing: border-box;
   display: grid;
   place-items: center;
   width: 26px;
   height: 26px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
+  line-height: 1;
   color: #fff;
   background: var(--color-primary-600);
+}
+.add-circle :deep(svg),
+.list-add :deep(svg),
+.tile-plus :deep(svg) {
+  display: block;
 }
 .add-circle {
   position: absolute;
@@ -585,18 +716,6 @@ onScopeDispose(() => {
 button:disabled {
   cursor: default;
   opacity: 0.45;
-}
-.audio-search {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.audio-search-button {
-  height: 100%;
-  min-width: 60px;
-  white-space: nowrap;
 }
 .audio-list {
   display: grid;

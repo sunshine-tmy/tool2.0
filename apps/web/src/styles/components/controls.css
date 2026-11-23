@@ -4,7 +4,6 @@
   row-gap: 8px;
 }
 
-.tool-page-header,
 .section-title {
   display: flex;
   align-items: flex-start;
@@ -14,11 +13,6 @@
   margin-bottom: var(--space-5);
 }
 
-.tool-page-header-copy {
-  min-width: 0;
-}
-
-.tool-page-header h2,
 .section-title h2 {
   margin: 0;
   color: var(--color-text);
@@ -28,7 +22,6 @@
   letter-spacing: -0.025em;
 }
 
-.tool-page-header p,
 .section-title p {
   max-width: 760px;
   margin: 6px 0 0;
@@ -37,7 +30,6 @@
   line-height: 1.65;
 }
 
-.tool-page-kicker,
 .eyebrow {
   display: inline-flex;
   min-height: 24px;
@@ -52,7 +44,6 @@
   letter-spacing: 0.02em;
 }
 
-.tool-page-actions,
 .result-actions {
   display: flex;
   flex: 0 0 auto;

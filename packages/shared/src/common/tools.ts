@@ -117,6 +117,17 @@ const tools: ToolDefinition[] = [
     apiNamespace: "/api/v1/tools/video-ai"
   },
   {
+    id: "video-editor",
+    title: "视频编辑",
+    description: "独立视频创作与草稿管理，支持剪辑、文本、配乐和水印，可同步关联归档。",
+    category: "video",
+    status: "ready",
+    requiresAuth: false,
+    acceptedTypes: ["video/mp4", "video/webm", "video/quicktime"],
+    routePath: "/tools/video-editor",
+    apiNamespace: "/api/v1/tools/video-editor"
+  },
+  {
     id: "json-format",
     title: "JSON 格式化",
     description: "本地校验、格式化和压缩 JSON，保留数字精度与字段顺序，支持复制和下载。",

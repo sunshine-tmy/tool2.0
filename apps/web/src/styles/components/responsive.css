@@ -76,19 +76,16 @@
     padding: var(--space-5) var(--space-4) 88px;
   }
 
-  .tool-page-header,
   .section-title {
     align-items: stretch;
     flex-direction: column;
     margin-bottom: var(--space-4);
   }
 
-  .tool-page-header h2,
   .section-title h2 {
     font-size: 22px;
   }
 
-  .tool-page-actions,
   .result-actions {
     justify-content: flex-start;
   }

@@ -52,7 +52,8 @@ export class ContentArchiveStore {
   constructor(
     private readonly config: AppConfig,
     private readonly database: ToolboxDatabase,
-    fileMetadata?: FileMetadataRepository
+    fileMetadata?: FileMetadataRepository,
+    private readonly entityKind = "xhs-archive"
   ) {
     this.fileMetadata = fileMetadata ?? new FileMetadataRepository(database, config.storageRoot);
     this.groups = new ArchiveGroupStore(database);
@@ -68,11 +69,12 @@ export class ContentArchiveStore {
       fsp.mkdir(this.config.xhsArchiveItemsDir, { recursive: true }),
       fsp.mkdir(this.config.xhsArchiveStagingDir, { recursive: true })
     ]);
-    const stored = this.database.list("xhs-archive");
+    const stored = this.database.list(this.entityKind);
     if (stored.length) {
       const repository = new ContentArchiveRepository(this.database);
       stored.forEach((entity) => {
-        const item = repository.get(entity.id)!;
+        const item =
+          this.entityKind === "xhs-archive" ? repository.get(entity.id)! : decodeContentArchivePayload(entity.payload);
         this.items.set(item.id, item);
       });
     } else {
@@ -120,13 +122,12 @@ export class ContentArchiveStore {
             ? !published.has(item.id)
             : true
       )
-      .filter(
-        (item) =>
-          selectedGroups
-            ? selectedGroups.has(memberships.get(item.id) ?? "ungrouped")
-            : !options.groupId ||
-              options.groupId === "all" ||
-              (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
+      .filter((item) =>
+        selectedGroups
+          ? selectedGroups.has(memberships.get(item.id) ?? "ungrouped")
+          : !options.groupId ||
+            options.groupId === "all" ||
+            (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
       )
       .filter((item) => type === "all" || item.type === type)
       .filter((item) => {
@@ -309,10 +310,16 @@ export class ContentArchiveStore {
         } finally {
           await manifest.close();
         }
-        const preparedFiles = await inspectArchiveFiles(this.fileMetadata, nextItem, stagingDirectory, target);
+        const preparedFiles = await inspectArchiveFiles(
+          this.fileMetadata,
+          nextItem,
+          stagingDirectory,
+          target,
+          this.entityKind
+        );
         await replaceArchiveDirectory(stagingDirectory, target, async () => {
           await this.persistItem(nextItem, () => {
-            this.fileMetadata.removeForEntity("xhs-archive", item.id);
+            this.fileMetadata.removeForEntity(this.entityKind, item.id);
             for (const media of previousItem?.media ?? []) this.fileMetadata.removeForEntity("xhs-media", media.id);
             for (const file of preparedFiles) this.database.upsertFile(file);
             // Membership must commit with the archive and file index, or the directory is rolled back.
@@ -538,10 +545,10 @@ export class ContentArchiveStore {
         if (moved) await fsp.rename(directory, pendingDeletion);
         try {
           await this.persistIndex(() => {
-            this.database.remove("xhs-archive", id);
+            this.database.remove(this.entityKind, id);
             this.database.remove("archive-group-member", id);
             this.database.remove("archive-publication", id);
-            this.fileMetadata.removeForEntity("xhs-archive", id);
+            this.fileMetadata.removeForEntity(this.entityKind, id);
             for (const media of item.media) {
               this.fileMetadata.removeForEntity("xhs-media", media.id);
               this.database.remove("archive-cut-draft", `${id}:${media.id}`);
@@ -646,7 +653,8 @@ export class ContentArchiveStore {
     staging: string,
     addedFiles: string[],
     persistCompletion?: () => void,
-    sourceImageId?: string
+    sourceImageId?: string,
+    cover?: ContentArchiveMedia
   ) {
     await assertArchiveStaging(staging, this.config.xhsArchiveStagingDir);
     return this.withStorageMutation(() =>
@@ -663,7 +671,11 @@ export class ContentArchiveStore {
           throw new ContentArchiveStoreError("ARCHIVE_EDIT_CONFLICT", 409, "视频已更新或编辑已失效，原有成品已保留");
         if (!media.audioEdit || media.audioEdit.revision !== revision + 1)
           throw new Error("ARCHIVE_EDIT_REVISION_INVALID");
-        const activeNames = new Set(archiveMediaAssets(media, false).map((asset) => asset.fileName));
+        const activeNames = new Set(
+          [...archiveMediaAssets(media, false), ...(cover ? archiveMediaAssets(cover, false) : [])].map(
+            (asset) => asset.fileName
+          )
+        );
         media.audioEdit.pendingFiles = sourceImageId
           ? []
           : archiveMediaAssets(previous).filter((asset) => !activeNames.has(asset.fileName));
@@ -672,6 +684,15 @@ export class ContentArchiveStore {
           if (next.media.some((entry) => entry.id === media.id)) throw new Error("ARCHIVE_MEDIA_IDENTITY_CONFLICT");
           next.media.push(structuredClone(media));
         } else next.media[next.media.findIndex((entry) => entry.id === media.id)] = structuredClone(media);
+        if (cover) {
+          const oldCover = next.media.find((entry) => entry.id === current.coverMediaId && entry.kind === "cover");
+          if (oldCover) {
+            next.media[next.media.findIndex((entry) => entry.id === oldCover.id)] = structuredClone(cover);
+            media.audioEdit.pendingFiles.push(...archiveMediaAssets(oldCover));
+            next.media[next.media.findIndex((entry) => entry.id === media.id)] = structuredClone(media);
+          } else next.media.push(structuredClone(cover));
+          next.coverMediaId = cover.id;
+        }
         next.totalBytes = archiveMediaBytes(next.media);
         next.updatedAt = new Date().toISOString();
         if (!isContentArchiveItem(next)) throw new Error("ARCHIVE_PAYLOAD_INVALID");
@@ -694,10 +715,11 @@ export class ContentArchiveStore {
             moved.push(target);
           }
           await replaceArchiveManifest(directory, next, async () => {
-            const files = await inspectArchiveFiles(this.fileMetadata, next, directory, directory);
+            const files = await inspectArchiveFiles(this.fileMetadata, next, directory, directory, this.entityKind);
             await this.persistItem(next, () => {
               persistCompletion?.();
               this.fileMetadata.removeForEntity("xhs-media", media.id);
+              if (cover) this.fileMetadata.removeForEntity("xhs-media", cover.id);
               for (const file of files) this.database.upsertFile(file);
             });
           });
@@ -749,13 +771,25 @@ export class ContentArchiveStore {
         const active = new Set(
           next.media.flatMap((entry) => archiveMediaAssets(entry, false).map((file) => file.fileName))
         );
+        if (itemId.startsWith("editor_")) {
+          for (const media of next.media) {
+            const draft = this.database.get("video-editor-draft-assets", `${itemId}:${media.id}`)?.payload as
+              | {
+                  studioSources?: Array<{ file: { fileName: string } }>;
+                  studioMusic?: Array<{ file: { fileName: string } }>;
+                }
+              | undefined;
+            for (const entry of [...(draft?.studioSources ?? []), ...(draft?.studioMusic ?? [])])
+              active.add(entry.file.fileName);
+          }
+        }
         for (const media of next.media) {
           if (!media.audioEdit?.pendingFiles?.length) continue;
           const retained = [];
           for (const file of media.audioEdit.pendingFiles) {
             const target = path.join(directory, path.basename(file.fileName));
             if (
-              !/^(edited|music|watermark)-[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(file.fileName) ||
+              !/^(edited|music|watermark|editor-cover)-[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(file.fileName) ||
               active.has(file.fileName) ||
               this.mediaReadPins.has(target)
             ) {
@@ -775,7 +809,7 @@ export class ContentArchiveStore {
         next.totalBytes = archiveMediaBytes(next.media);
         // 仅退休成品可先删除后重试清单；原片、当前成品与配乐始终不进入该队列。
         await replaceArchiveManifest(directory, next, async () => {
-          const files = await inspectArchiveFiles(this.fileMetadata, next, directory, directory);
+          const files = await inspectArchiveFiles(this.fileMetadata, next, directory, directory, this.entityKind);
           await this.persistItem(next, () => {
             for (const media of next.media) this.fileMetadata.removeForEntity("xhs-media", media.id);
             for (const file of files) this.database.upsertFile(file);
@@ -850,7 +884,7 @@ export class ContentArchiveStore {
     return this.persistIndex(() => {
       this.database.upsert({
         id: snapshot.id,
-        kind: "xhs-archive",
+        kind: this.entityKind,
         status: snapshot.status,
         payload: snapshot,
         createdAt: snapshot.fetchedAt,
@@ -872,7 +906,7 @@ export class ContentArchiveStore {
           for (const item of this.items.values()) {
             this.database.upsert({
               id: item.id,
-              kind: "xhs-archive",
+              kind: this.entityKind,
               status: item.status,
               payload: item,
               createdAt: item.fetchedAt,
@@ -886,7 +920,7 @@ export class ContentArchiveStore {
 
   private inspectManifest(id: string, manifest: string) {
     return this.fileMetadata.inspect({
-      entityKind: "xhs-archive",
+      entityKind: this.entityKind,
       entityId: id,
       filePath: manifest,
       mediaType: "application/json",

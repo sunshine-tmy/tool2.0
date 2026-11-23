@@ -3,6 +3,7 @@ import type { ComputedRef, InjectionKey } from "vue";
 import imageCompress from "../../../assets/ui-v2/icons/image-compress.webp";
 import imageAi from "../../../assets/ui-v2/icons/image-ai.webp";
 import archive from "../../../assets/ui-v2/icons/content-archive.webp";
+import videoEditor from "../../../assets/ui-v2/icons/video-editor.webp";
 import video from "../../../assets/ui-v2/icons/video-ai.webp";
 import speech from "../../../assets/ui-v2/icons/speech.webp";
 import library from "../../../assets/ui-v2/icons/audio-library.webp";
@@ -19,6 +20,11 @@ export const toolPresentationKey: InjectionKey<ComputedRef<ReturnType<typeof too
 
 // Presentation only: the runtime catalog remains the owner of IDs, URLs and enabled entries.
 const presentation: Record<string, { icon: string; summary: string; keywords?: string }> = {
+  "lan-transfer": {
+    icon: lan,
+    summary: "同网设备收发文件与图文。",
+    keywords: "局域网 分享 传输 二维码"
+  },
   "image-compress": {
     icon: imageCompress,
     summary: "批量压缩与调整尺寸。",
@@ -38,6 +44,11 @@ const presentation: Record<string, { icon: string; summary: string; keywords?: s
     icon: video,
     summary: "识别、框选并修复字幕。",
     keywords: "去字幕 视频 STTN ProPainter"
+  },
+  "video-editor": {
+    icon: videoEditor,
+    summary: "视频创作、草稿管理与归档同步。",
+    keywords: "剪辑 配乐 水印 文本 视频"
   },
   "edge-tts": {
     icon: speech,
@@ -78,20 +89,15 @@ const presentation: Record<string, { icon: string; summary: string; keywords?: s
     icon: uuid,
     summary: "批量生成随机标识。",
     keywords: "UUID v4 随机 ID"
-  },
-  "lan-transfer": {
-    icon: lan,
-    summary: "同网设备收发文件与图文。",
-    keywords: "局域网 分享 传输 二维码"
   }
 };
 
 export const toolCategories: { value: ToolCategory; label: string }[] = [
+  { value: "file", label: "文件协作" },
   { value: "image", label: "图片处理" },
   { value: "video", label: "视频与内容" },
   { value: "audio", label: "音频工具" },
-  { value: "text", label: "开发工具" },
-  { value: "file", label: "文件协作" }
+  { value: "text", label: "开发工具" }
 ];
 
 export function workbenchTools() {
