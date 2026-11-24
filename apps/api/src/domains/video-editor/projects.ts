@@ -437,13 +437,14 @@ export class VideoEditorProjects {
             AbortSignal.timeout(60000),
             { timeoutMs: 60000, output: coverPath, maxBytes: 20 * 1024 * 1024 }
           );
+          const archiveItem = lease.item;
           const data = await fs.readFile(coverPath),
-            oldCover = lease.item.media.find((m) => m.id === lease.item.coverMediaId && m.kind === "cover"),
+            oldCover = archiveItem.media.find((m) => m.id === archiveItem.coverMediaId && m.kind === "cover"),
             coverId = oldCover?.id ?? nanoid(16);
           const url = `/api/v1/tools/media-archive/items/${link.itemId}/media/${coverId}?v=${revision}`;
           cover = {
             id: coverId,
-            index: oldCover?.index ?? Math.max(...lease.item.media.map((m) => m.index)) + 1,
+            index: oldCover?.index ?? Math.max(...archiveItem.media.map((m) => m.index)) + 1,
             kind: "cover",
             fileName: name,
             mimeType: "image/jpeg",
