@@ -80,27 +80,27 @@
     {
       "id": "chatterbox",
       "displayName": "参考音色克隆（CPU）",
-      "version": "1.0.0-py312-cpu1",
+      "version": "1.0.1-py312-cpu1",
       "required": true,
-      "manifestSha256": "4072b528e0c0f4d14cb7c94e16a2034a05ac648431304666337c1b4c6bde4923",
+      "manifestSha256": "b8fc49597fa0f15a85869b56371e23fe34a5961c191893c324dba0ff1148f598",
       "archives": [
         {
-          "filename": "chatterbox-1.0.0-py312-cpu1.tar.gz",
-          "bytes": 421067150,
-          "sha256": "bef1382bad5b7c0df9a56b7a3ab685152b18401e2a8db32bde62e849cabe86f2",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1.tar.gz"
+          "filename": "chatterbox-1.0.1-py312-cpu1.tar.gz",
+          "bytes": 420917727,
+          "sha256": "2162ec241226ec1ac91076efb9f90f97a6a4a2480532dde01ef0890a3c33760b",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1.tar.gz"
         },
         {
-          "filename": "chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz",
+          "filename": "chatterbox-1.0.1-py312-cpu1-model-t3.tar.gz",
           "bytes": 1980678922,
           "sha256": "54f58d9feeed3a286c537c5c66e8b65bf6d9dc1f7d131b12654bcb58515fd682",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz"
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1-model-t3.tar.gz"
         },
         {
-          "filename": "chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz",
+          "filename": "chatterbox-1.0.1-py312-cpu1-model-s3gen.tar.gz",
           "bytes": 984526575,
           "sha256": "89537f803a54c904e0c2dc7fa697a9dca6d666c6d20e60c57527711a0a0d46e8",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz"
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1-model-s3gen.tar.gz"
         }
       ]
     },
@@ -167,48 +167,48 @@
     {
       "id": "video-ai",
       "displayName": "视频去字幕（CPU 基础包）",
-      "version": "1.1.0-py312-cpu1",
+      "version": "1.1.1-py312-cpu1",
       "required": true,
-      "manifestSha256": "aa304eba2a2271cd2746035cca2b4861af7e1be237278a54e9202a1ca0fe8511",
+      "manifestSha256": "2227469ca4567bfa910b4d75f258e2ebf6fc341762ab76967493447faaa002a1",
       "archives": [
         {
-          "filename": "video-ai-1.1.0-py312-cpu1.tar.gz",
-          "bytes": 673898034,
-          "sha256": "0a829d1fa31e8a74e7012284e2a4f63765f8cdf61081fb9e63f831093cad5a0b",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.tar.gz"
+          "filename": "video-ai-1.1.1-py312-cpu1.tar.gz",
+          "bytes": 673903366,
+          "sha256": "765f64ff35c80c4706ef1d31533cb7e63e11c8ac90c4c2c43b97e6c6c498285f",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.1-py312-cpu1.tar.gz"
         }
       ]
     },
     {
       "id": "chatterbox-cuda",
       "displayName": "参考音色克隆 GPU 加速",
-      "version": "1.0.0-py312-cu1241",
+      "version": "1.0.1-py312-cu1241",
       "required": false,
-      "manifestSha256": "4905c510dbe9c5e48a5eef06652c068f2125a59dff69d80e35df7dacef9dd85a",
+      "manifestSha256": "7553a7a18b524d8422c59605befe2fb9ed30b36560ca545df8e56de5112bd85d",
       "archives": [
         {
-          "filename": "chatterbox-cuda-1.0.0-py312-cu1241.tar.gz",
-          "bytes": 210511812,
-          "sha256": "cf031a1283b9c68dd49504ca6dd996cbf1f64b5d6f64b81a4a5af71a397ea964",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241.tar.gz"
+          "filename": "chatterbox-cuda-1.0.1-py312-cu1241.tar.gz",
+          "bytes": 210512188,
+          "sha256": "04e0e2ec0b1c4680966a2f1d38468f4481ae8b41a38c4fac4f40a25dd10e0e43",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241.tar.gz"
         },
         {
-          "filename": "chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "filename": "chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0001.tar.gz",
           "bytes": 1498292694,
           "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz"
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0001.tar.gz"
         },
         {
-          "filename": "chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "filename": "chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0002.tar.gz",
           "bytes": 1028311500,
           "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz"
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0002.tar.gz"
         },
         {
-          "filename": "chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz",
+          "filename": "chatterbox-cuda-1.0.1-py312-cu1241-cuda-torchaudio.tar.gz",
           "bytes": 4116387,
           "sha256": "38dff6b27cc3b0fd318aaf355ec087bf0f7cd6649648d913128ccf32a942b7e3",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz"
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torchaudio.tar.gz"
         }
       ]
     },

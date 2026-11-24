@@ -200,7 +200,8 @@
                     :component="component"
                     :job="componentJobs[component.id]"
                     :canceling="cancelingJobId === componentJobs[component.id]?.id"
-                    :operation-loading="startingComponentId === component.id"
+                    :operation-loading="startingComponentId === component.id || startingComponentIds.has(component.id)"
+                    :dependencies-queued="dependenciesQueued(component)"
                     :offline-uploading="offlineUpload?.componentId === component.id"
                     :offline-upload-progress="offlineUpload?.componentId === component.id ? offlineUpload.progress : 0"
                     :exporting="exportingComponentId === component.id"
@@ -313,6 +314,8 @@ const {
   componentsError,
   componentsNotice,
   startingComponentId,
+  startingComponentIds,
+  dependenciesQueued,
   cancelingJobId,
   exportingComponentId,
   exportComponent,

@@ -23,12 +23,15 @@ export function registerRequestProtection(
   app.addHook("onRequest", async (request) => {
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) shutdown.enter(request);
     if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && !request.url.startsWith("/api/v1/diagnostics")) {
-      if (componentManager.hasActiveJobs() && !request.url.startsWith("/api/v1/component-jobs/"))
+      const enqueueInstall =
+        request.method === "POST" &&
+        /^\/api\/v1\/components\/[a-z0-9-]+\/(?:install|reinstall|offline-import)(?:\?|$)/.test(request.url);
+      if (componentManager.hasActiveJobs() && !enqueueInstall && !request.url.startsWith("/api/v1/component-jobs/"))
         throw Object.assign(new Error("能力组件操作尚未完成，请等待空闲后重试"), {
           statusCode: 409,
           code: "MAINTENANCE_BUSY"
         });
-      if (request.url.startsWith("/api/v1/components/") && diagnosticService.isBusy())
+      if (request.url.startsWith("/api/v1/components/") && diagnosticService.isBusy(enqueueInstall))
         throw Object.assign(new Error("有任务、安装或播放尚未结束"), { statusCode: 409, code: "DIAGNOSTICS_BUSY" });
       diagnosticService.gate.enterRequest(request.id);
     }

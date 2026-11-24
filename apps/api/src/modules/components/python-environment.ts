@@ -179,7 +179,8 @@ async function runProcess(
         ...environment,
         PIP_CONFIG_FILE: process.platform === "win32" ? "NUL" : os.devNull,
         PIP_DISABLE_PIP_VERSION_CHECK: "1",
-        PYTHONNOUSERSITE: "1"
+        PYTHONNOUSERSITE: "1",
+        PYTHONDONTWRITEBYTECODE: "1"
       }
     });
     let output = "";

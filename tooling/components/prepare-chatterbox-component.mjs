@@ -276,6 +276,7 @@ function cleanEnvironment() {
   const environment = { ...process.env };
   for (const key of ["PYTHONHOME", "PYTHONPATH", "PYTHONUSERBASE"]) delete environment[key];
   environment.PYTHONNOUSERSITE = "1";
+  environment.PYTHONDONTWRITEBYTECODE = "1";
   if (process.platform === "win32") environment.PIP_CONFIG_FILE = "NUL";
   return environment;
 }

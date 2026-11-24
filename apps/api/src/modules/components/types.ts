@@ -105,6 +105,7 @@ export type CurrentRecord = {
 
 export type InternalJob = {
   value: ComponentJob;
+  dependencyJobs?: Map<string, string>;
   controller?: AbortController;
   offlineArchivePaths?: string[];
   offlineImportRoot?: string;

@@ -10,7 +10,7 @@
     "建议至少 16 GB 内存；CPU 推理不要求 CUDA，但生成速度取决于处理器。",
     "固定 Chatterbox 源码提交、Python 哈希锁定依赖与模型均随包安装，生成时无需联网。"
   ],
-  "version": "1.0.0-py312-cpu1",
+  "version": "1.0.1-py312-cpu1",
   "installedBytes": 6000000000,
   "additionalArchives": [
     {

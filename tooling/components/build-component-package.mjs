@@ -70,8 +70,40 @@ export async function buildComponentPackage(options) {
   const outputPath = path.resolve(options.outputDirectory);
   const assetUrl = createAssetUrlResolver(options);
   validateDefinition(definition);
+  const retiredWindowsDefinitions = {
+    chatterbox: ["1.0.0-py312-cpu1"],
+    "chatterbox-cuda": ["1.0.0-py312-cu1241"],
+    "video-ai": ["1.0.0-py312-cpu1", "1.1.0-py312-cpu1"]
+  };
+  if (platform === "win32-x64" && retiredWindowsDefinitions[definition.id]?.includes(definition.version))
+    throw new Error(
+      `${definition.id}@${definition.version} 已是旧发布版本，修复包必须使用新的版本定义，禁止用新内容覆盖旧版签名包`
+    );
   const stageStat = await fs.stat(stageRoot);
   if (!stageStat.isDirectory()) throw new Error("能力目录必须是文件夹");
+  // Validate the staged payload rather than the repository source: the signed
+  // package must actually contain the diagnostic endpoints expected by the app.
+  const diagnosticWorkers = {
+    "video-ai": "video-ai-worker.py",
+    "image-ai": "image-ai-worker.py",
+    chatterbox: "chatterbox-worker.py",
+    "chatterbox-cuda": "chatterbox-worker.py"
+  };
+  const diagnosticWorker = diagnosticWorkers[definition.id];
+  if (diagnosticWorker) {
+    const worker = await fs.readFile(path.join(stageRoot, "scripts", diagnosticWorker), "utf8");
+    const currentWorker = await fs.readFile(path.join(REPOSITORY_ROOT, "scripts", diagnosticWorker), "utf8");
+    if (worker.replace(/\r\n/g, "\n") !== currentWorker.replace(/\r\n/g, "\n"))
+      throw new Error(`${definition.id} 暂存 Worker 与当前发布源码不一致，请重新准备能力目录后打包`);
+    if (
+      !/@app\.get\(["']\/diagnostics\/light["']\)/.test(worker) ||
+      !/@app\.post\(["']\/diagnostics\/deep["']\)/.test(worker) ||
+      !/["']protocolVersion["']\s*:\s*1\b/.test(worker)
+    )
+      throw new Error(
+        `${definition.id} 待打包 Worker 缺少协议 v1 诊断接口；请使用匹配的新版 Worker 并更新能力包版本后打包`
+      );
+  }
   if (
     definition.id === "video-ai" &&
     definition.version === "1.0.0-py312-cpu1" &&
@@ -521,6 +553,10 @@ async function scanFiles(root, linkPolicy) {
     )) {
       const relative = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
       if (!isSafeRelativePath(relative)) throw new Error(`能力目录包含不安全路径：${relative}`);
+      // vendor/scripts are shipped as source. Never sign or archive caches
+      // produced by staging/import checks, including those in old staging trees.
+      if (/^(?:vendor|scripts)\//.test(relative) && (entry.name === "__pycache__" || /\.py[co]$/i.test(entry.name)))
+        continue;
       const fullPath = path.join(directory, entry.name);
       const stat = await fs.lstat(fullPath);
       if (stat.isSymbolicLink()) {

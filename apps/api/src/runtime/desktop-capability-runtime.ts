@@ -591,6 +591,10 @@ async function startWorker(options: {
     CHATTERBOX_WORKER_TOKEN: token,
     PYTHONNOUSERSITE: "1",
     PYTHONUNBUFFERED: "1",
+    // Signed generations are read-only. -B alone still reads existing .pyc;
+    // a unique, unused cache prefix also prevents loading stale packaged caches.
+    PYTHONDONTWRITEBYTECODE: "1",
+    PYTHONPYCACHEPREFIX: path.join(options.tempDirectory, "python-bytecode", crypto.randomUUID()),
     TEMP: options.tempDirectory,
     TMP: options.tempDirectory
   });

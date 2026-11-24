@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { ComponentPackageManifest } from "./component-manager";
 import { isDouyinAdapterManifest } from "@toolbox/shared";
 import type { VerifiedComponentAsset } from "./types";
@@ -177,7 +178,10 @@ export function createDesktopComponentSelfTest(
         generationRoot,
         cleanEnvironment()
       );
-      if (output.trim() !== expectedVersion) throw new Error(`Python ${expectedVersion} 共享运行时自检失败`);
+      if (output.trim() !== expectedVersion)
+        throw Object.assign(new Error(`Python ${expectedVersion} 共享运行时自检失败`), {
+          code: "PYTHON_VERSION_MISMATCH"
+        });
       return;
     }
 
@@ -394,13 +398,19 @@ export function createDesktopComponentSelfTest(
 async function verifyRequiredFiles(manifest: ComponentPackageManifest, generationRoot: string, required: string[]) {
   const listed = new Set(manifest.files.map((file) => file.path));
   for (const relativePath of required) {
-    if (!listed.has(relativePath)) throw new Error(`能力 ${manifest.id} 的签名清单缺少必需文件：${relativePath}`);
+    if (!listed.has(relativePath))
+      throw Object.assign(new Error(`能力 ${manifest.id} 的签名清单缺少必需文件：${relativePath}`), {
+        code: "COMPONENT_MANIFEST_INVALID"
+      });
     const candidate = path.resolve(generationRoot, ...relativePath.split("/"));
     const relative = path.relative(generationRoot, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("能力包自检路径越界");
+    if (relative.startsWith("..") || path.isAbsolute(relative))
+      throw Object.assign(new Error("能力包自检路径越界"), { code: "COMPONENT_PATH_INVALID" });
     const stat = await fs.stat(candidate);
     if (!stat.isFile() || stat.size === 0)
-      throw new Error(`能力 ${manifest.id} 的必需文件为空或不存在：${relativePath}`);
+      throw Object.assign(new Error(`能力 ${manifest.id} 的必需文件为空或不存在：${relativePath}`), {
+        code: "COMPONENT_FILE_MISSING"
+      });
   }
 }
 
@@ -439,10 +449,10 @@ function assertJsonAvailable(output: string, label: string) {
   try {
     result = JSON.parse(lines.at(-1) ?? "");
   } catch {
-    throw new Error(`${label}安装自检没有返回有效结果`);
+    throw Object.assign(new Error(`${label}安装自检没有返回有效结果`), { code: "SELF_TEST_PROTOCOL_INVALID" });
   }
   if (!result || typeof result !== "object" || (result as { available?: unknown }).available !== true) {
-    throw new Error(`${label}安装自检未通过`);
+    throw Object.assign(new Error(`${label}安装自检未通过`), { code: "SELF_TEST_UNAVAILABLE" });
   }
 }
 
@@ -463,6 +473,7 @@ function cleanEnvironment() {
   // The signed Python generation is immutable; self-tests must not rewrite its
   // packaged __pycache__ files while checking the bundled interpreter.
   environment.PYTHONDONTWRITEBYTECODE = "1";
+  environment.PYTHONPYCACHEPREFIX = path.join(os.tmpdir(), "toolbox-no-bytecode", randomUUID());
   return environment;
 }
 

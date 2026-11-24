@@ -11,7 +11,12 @@ export class ComponentManagerError extends Error {
       | "COMPONENT_JOB_NOT_FOUND"
       | "COMPONENT_JOB_NOT_CANCELLABLE"
       | "COMPONENT_OPERATION_CONFLICT"
-      | "COMPONENT_NOT_INSTALLED",
+      | "COMPONENT_NOT_INSTALLED"
+      | "COMPONENT_VERSION_MISMATCH"
+      | "COMPONENT_FILE_MISSING"
+      | "COMPONENT_FILE_SIZE_MISMATCH"
+      | "COMPONENT_FILE_HASH_MISMATCH"
+      | "COMPONENT_PATH_INVALID",
     message: string
   ) {
     super(message);

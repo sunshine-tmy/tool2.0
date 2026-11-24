@@ -7,9 +7,21 @@
   >
     <div class="module-sidebar-heading">
       <span class="module-sidebar-copy">工具导航</span>
-      <span class="module-sidebar-count module-sidebar-copy">{{ tools.length }}</span>
+      <n-button
+        v-if="!mobile"
+        class="navigation-toggle"
+        quaternary
+        circle
+        size="small"
+        :aria-label="collapsed ? '展开工具导航' : '收起工具导航'"
+        :title="collapsed ? '展开工具导航' : '收起工具导航'"
+        :aria-expanded="!collapsed"
+        aria-controls="module-sidebar-links"
+        @click="$emit('toggle')"
+        ><template #icon><PanelLeftOpen v-if="collapsed" :size="18" /><PanelLeftClose v-else :size="18" /></template
+      ></n-button>
     </div>
-    <nav class="module-sidebar-links" aria-label="切换工具">
+    <nav id="module-sidebar-links" class="module-sidebar-links" aria-label="切换工具">
       <router-link class="module-sidebar-link module-sidebar-home" to="/" title="返回首页" aria-label="返回首页">
         <span class="module-sidebar-icon"><House :size="20" /></span>
         <span class="module-sidebar-copy">返回首页</span>
@@ -47,10 +59,12 @@
 </template>
 
 <script setup lang="ts">
-import { House, Settings, Wrench } from "lucide-vue-next";
+import { House, Settings, Wrench, PanelLeftOpen, PanelLeftClose } from "lucide-vue-next";
+import { NButton } from "naive-ui";
 import { toolCategories, workbenchTools } from "../shared/ui/tool/catalog";
 
 defineProps<{ currentToolId?: string; collapsed: boolean; showSettings: boolean; mobile?: boolean }>();
+defineEmits<{ toggle: [] }>();
 const tools = workbenchTools();
 const groups = toolCategories
   .map((category) => ({
@@ -85,12 +99,11 @@ const groups = toolCategories
   font-size: 13px;
   font-weight: 600;
 }
-.module-sidebar-count {
-  padding: 1px 7px;
-  border-radius: 6px;
-  background: var(--color-primary-50);
-  color: var(--color-primary-700);
-  font-size: 11px;
+.navigation-toggle {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-secondary);
 }
 .module-sidebar-links {
   display: grid;
@@ -158,6 +171,9 @@ const groups = toolCategories
 }
 .module-sidebar-copy {
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .module-sidebar-settings {
   margin-top: 20px;
@@ -172,7 +188,9 @@ const groups = toolCategories
   display: none;
 }
 .module-sidebar.is-collapsed .module-sidebar-heading {
-  display: none;
+  display: flex;
+  justify-content: center;
+  margin-inline: 0;
 }
 .module-sidebar.is-collapsed .module-sidebar-link {
   justify-content: center;
@@ -222,5 +240,12 @@ const groups = toolCategories
   padding-top: 0;
   margin-top: 0;
   border-top: 0;
+}
+@media (pointer: coarse) {
+  .navigation-toggle {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
 }
 </style>

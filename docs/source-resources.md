@@ -45,11 +45,11 @@
 
 ### 参考音色克隆（CPU）
 
-版本：`1.0.0-py312-cpu1`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
+版本：`1.0.1-py312-cpu1`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
 
-- [chatterbox-1.0.0-py312-cpu1.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1.tar.gz)（401.6 MiB）
-- [chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz)（1888.9 MiB）
-- [chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz)（938.9 MiB）
+- [chatterbox-1.0.1-py312-cpu1.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1.tar.gz)（401.4 MiB）
+- [chatterbox-1.0.1-py312-cpu1-model-t3.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1-model-t3.tar.gz)（1888.9 MiB）
+- [chatterbox-1.0.1-py312-cpu1-model-s3gen.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1-model-s3gen.tar.gz)（938.9 MiB）
 
 ### 小红书登录浏览器（Chromium）
 
@@ -77,18 +77,18 @@
 
 ### 视频去字幕（CPU 基础包）
 
-版本：`1.1.0-py312-cpu1`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
+版本：`1.1.1-py312-cpu1`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
 
-- [video-ai-1.1.0-py312-cpu1.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.tar.gz)（642.7 MiB）
+- [video-ai-1.1.1-py312-cpu1.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.1-py312-cpu1.tar.gz)（642.7 MiB）
 
 ### 参考音色克隆 GPU 加速（可选，仅 -WithCuda）
 
-版本：`1.0.0-py312-cu1241`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
+版本：`1.0.1-py312-cu1241`。将以下文件**全部**放到项目根目录的 `offline-resources/components/`，保持文件名，不解压：
 
-- [chatterbox-cuda-1.0.0-py312-cu1241.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241.tar.gz)（200.8 MiB）
-- [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz)（1428.9 MiB）
-- [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz)（980.7 MiB）
-- [chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz)（3.9 MiB）
+- [chatterbox-cuda-1.0.1-py312-cu1241.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241.tar.gz)（200.8 MiB）
+- [chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0001.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0001.tar.gz)（1428.9 MiB）
+- [chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0002.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0002.tar.gz)（980.7 MiB）
+- [chatterbox-cuda-1.0.1-py312-cu1241-cuda-torchaudio.tar.gz](https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torchaudio.tar.gz)（3.9 MiB）
 
 此为可选 GPU 扩展。12 个 CPU 基础归档之外，还需准备声音克隆和视频去字幕 GPU 扩展的全部 8 个归档，共 20 个文件。文件放入同一目录后，双击根目录 `start-gpu.bat`，或执行 `start.bat -WithCuda`；普通 `start.bat` 不安装 GPU 扩展。可用 `start-gpu.bat -ListResources` 列出完整清单。已有实例须先通过 `stop.bat` 正常停止，已安装且正常的能力和模型会复用。需要兼容的 NVIDIA 显卡和驱动，不自动修改驱动；安装包通过校验不等于 GPU 实际生成已验证。
 

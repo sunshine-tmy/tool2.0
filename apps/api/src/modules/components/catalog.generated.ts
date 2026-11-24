@@ -22,12 +22,12 @@ export const packagedComponentCatalog = {
         "建议至少 16 GB 内存；CPU 推理不要求 CUDA，但生成速度取决于处理器。",
         "固定 Chatterbox 源码提交、Python 哈希锁定依赖与模型均随包安装，生成时无需联网。"
       ],
-      "version": "1.0.0-py312-cpu1",
+      "version": "1.0.1-py312-cpu1",
       "platform": "win32-x64",
       "archive": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1.tar.gz",
-        "bytes": 421067150,
-        "sha256": "bef1382bad5b7c0df9a56b7a3ab685152b18401e2a8db32bde62e849cabe86f2",
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1.tar.gz",
+        "bytes": 420917727,
+        "sha256": "2162ec241226ec1ac91076efb9f90f97a6a4a2480532dde01ef0890a3c33760b",
         "format": "tar.gz",
         "filePaths": [
           "requirements.lock",
@@ -42,24 +42,8 @@ export const packagedComponentCatalog = {
           "vendor/chatterbox_tts-0.1.7.dist-info/top_level.txt",
           "vendor/chatterbox_tts-0.1.7.dist-info/WHEEL",
           "vendor/chatterbox/__init__.py",
-          "vendor/chatterbox/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/__pycache__/mtl_tts.cpython-312.pyc",
-          "vendor/chatterbox/__pycache__/tts.cpython-312.pyc",
-          "vendor/chatterbox/__pycache__/vc.cpython-312.pyc",
           "vendor/chatterbox/models/__init__.py",
-          "vendor/chatterbox/models/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/__pycache__/utils.cpython-312.pyc",
           "vendor/chatterbox/models/s3gen/__init__.py",
-          "vendor/chatterbox/models/s3gen/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/configs.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/const.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/decoder.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/f0_predictor.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/flow_matching.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/flow.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/hifigan.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/s3gen.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/__pycache__/xvector.cpython-312.pyc",
           "vendor/chatterbox/models/s3gen/configs.py",
           "vendor/chatterbox/models/s3gen/const.py",
           "vendor/chatterbox/models/s3gen/decoder.py",
@@ -67,24 +51,12 @@ export const packagedComponentCatalog = {
           "vendor/chatterbox/models/s3gen/flow_matching.py",
           "vendor/chatterbox/models/s3gen/flow.py",
           "vendor/chatterbox/models/s3gen/hifigan.py",
-          "vendor/chatterbox/models/s3gen/matcha/__pycache__/decoder.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/matcha/__pycache__/flow_matching.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/matcha/__pycache__/transformer.cpython-312.pyc",
           "vendor/chatterbox/models/s3gen/matcha/decoder.py",
           "vendor/chatterbox/models/s3gen/matcha/flow_matching.py",
           "vendor/chatterbox/models/s3gen/matcha/text_encoder.py",
           "vendor/chatterbox/models/s3gen/matcha/transformer.py",
           "vendor/chatterbox/models/s3gen/s3gen.py",
           "vendor/chatterbox/models/s3gen/transformer/__init__.py",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/activation.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/attention.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/convolution.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/embedding.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/encoder_layer.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/positionwise_feed_forward.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/subsampling.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/transformer/__pycache__/upsample_encoder.cpython-312.pyc",
           "vendor/chatterbox/models/s3gen/transformer/activation.py",
           "vendor/chatterbox/models/s3gen/transformer/attention.py",
           "vendor/chatterbox/models/s3gen/transformer/convolution.py",
@@ -93,45 +65,25 @@ export const packagedComponentCatalog = {
           "vendor/chatterbox/models/s3gen/transformer/positionwise_feed_forward.py",
           "vendor/chatterbox/models/s3gen/transformer/subsampling.py",
           "vendor/chatterbox/models/s3gen/transformer/upsample_encoder.py",
-          "vendor/chatterbox/models/s3gen/utils/__pycache__/class_utils.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/utils/__pycache__/intmeanflow.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/utils/__pycache__/mask.cpython-312.pyc",
-          "vendor/chatterbox/models/s3gen/utils/__pycache__/mel.cpython-312.pyc",
           "vendor/chatterbox/models/s3gen/utils/class_utils.py",
           "vendor/chatterbox/models/s3gen/utils/intmeanflow.py",
           "vendor/chatterbox/models/s3gen/utils/mask.py",
           "vendor/chatterbox/models/s3gen/utils/mel.py",
           "vendor/chatterbox/models/s3gen/xvector.py",
           "vendor/chatterbox/models/s3tokenizer/__init__.py",
-          "vendor/chatterbox/models/s3tokenizer/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/s3tokenizer/__pycache__/s3tokenizer.cpython-312.pyc",
           "vendor/chatterbox/models/s3tokenizer/s3tokenizer.py",
           "vendor/chatterbox/models/t3/__init__.py",
-          "vendor/chatterbox/models/t3/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/t3/__pycache__/llama_configs.cpython-312.pyc",
-          "vendor/chatterbox/models/t3/__pycache__/t3.cpython-312.pyc",
-          "vendor/chatterbox/models/t3/inference/__pycache__/t3_hf_backend.cpython-312.pyc",
           "vendor/chatterbox/models/t3/inference/t3_hf_backend.py",
           "vendor/chatterbox/models/t3/llama_configs.py",
-          "vendor/chatterbox/models/t3/modules/__pycache__/cond_enc.cpython-312.pyc",
-          "vendor/chatterbox/models/t3/modules/__pycache__/learned_pos_emb.cpython-312.pyc",
-          "vendor/chatterbox/models/t3/modules/__pycache__/perceiver.cpython-312.pyc",
-          "vendor/chatterbox/models/t3/modules/__pycache__/t3_config.cpython-312.pyc",
           "vendor/chatterbox/models/t3/modules/cond_enc.py",
           "vendor/chatterbox/models/t3/modules/learned_pos_emb.py",
           "vendor/chatterbox/models/t3/modules/perceiver.py",
           "vendor/chatterbox/models/t3/modules/t3_config.py",
           "vendor/chatterbox/models/t3/t3.py",
           "vendor/chatterbox/models/tokenizers/__init__.py",
-          "vendor/chatterbox/models/tokenizers/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/tokenizers/__pycache__/tokenizer.cpython-312.pyc",
           "vendor/chatterbox/models/tokenizers/tokenizer.py",
           "vendor/chatterbox/models/utils.py",
           "vendor/chatterbox/models/voice_encoder/__init__.py",
-          "vendor/chatterbox/models/voice_encoder/__pycache__/__init__.cpython-312.pyc",
-          "vendor/chatterbox/models/voice_encoder/__pycache__/config.cpython-312.pyc",
-          "vendor/chatterbox/models/voice_encoder/__pycache__/melspec.cpython-312.pyc",
-          "vendor/chatterbox/models/voice_encoder/__pycache__/voice_encoder.cpython-312.pyc",
           "vendor/chatterbox/models/voice_encoder/config.py",
           "vendor/chatterbox/models/voice_encoder/melspec.py",
           "vendor/chatterbox/models/voice_encoder/voice_encoder.py",
@@ -236,7 +188,7 @@ export const packagedComponentCatalog = {
       },
       "additionalArchives": [
         {
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-t3.tar.gz",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1-model-t3.tar.gz",
           "bytes": 1980678922,
           "sha256": "54f58d9feeed3a286c537c5c66e8b65bf6d9dc1f7d131b12654bcb58515fd682",
           "format": "tar.gz",
@@ -245,7 +197,7 @@ export const packagedComponentCatalog = {
           ]
         },
         {
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1-model-s3gen.tar.gz",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1-model-s3gen.tar.gz",
           "bytes": 984526575,
           "sha256": "89537f803a54c904e0c2dc7fa697a9dca6d666c6d20e60c57527711a0a0d46e8",
           "format": "tar.gz",
@@ -285,8 +237,8 @@ export const packagedComponentCatalog = {
         },
         {
           "path": "scripts/chatterbox-worker.py",
-          "bytes": 26755,
-          "sha256": "5bf37caa877026fe9dbc951dc3365533ca40501ec750c3b92c04e96cfc559eba"
+          "bytes": 28894,
+          "sha256": "144c8032c97d922f46e46cf869338cbeda6703d2ac410153ae8bc29c9db086fd"
         },
         {
           "path": "scripts/worker_lifecycle.py",
@@ -339,94 +291,14 @@ export const packagedComponentCatalog = {
           "sha256": "412a7588ec3e439bc34d3efde1436fffe7093c35540e809b18fd86fa02084433"
         },
         {
-          "path": "vendor/chatterbox/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 593,
-          "sha256": "2a67a383ffee74b9ca1315af6ccf01cb93edd9fb81d87ce26073016b0e2316a0"
-        },
-        {
-          "path": "vendor/chatterbox/__pycache__/mtl_tts.cpython-312.pyc",
-          "bytes": 15699,
-          "sha256": "7095b993e6769c3b16f2347edcd2bbd9dffec202a6077b6974e0025e3afd2155"
-        },
-        {
-          "path": "vendor/chatterbox/__pycache__/tts.cpython-312.pyc",
-          "bytes": 12577,
-          "sha256": "adeac643ec4b3fa260c5c1121a7ef458481116ba6bf39a482fa20a51f7f9ed5e"
-        },
-        {
-          "path": "vendor/chatterbox/__pycache__/vc.cpython-312.pyc",
-          "bytes": 5529,
-          "sha256": "b1c4e73abc2ba57bd44dc1d0700a464cf313e085e4104f44ae7612b15a7db224"
-        },
-        {
           "path": "vendor/chatterbox/models/__init__.py",
           "bytes": 0,
           "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         },
         {
-          "path": "vendor/chatterbox/models/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 203,
-          "sha256": "624723e5215975360905944d1baf061ea2923e35b58fa96073e330c2f4f36e29"
-        },
-        {
-          "path": "vendor/chatterbox/models/__pycache__/utils.cpython-312.pyc",
-          "bytes": 664,
-          "sha256": "ea7c8ec5f859d4bf3441807364ace9cad5acf62b1378aeb2c60d23405cc95dc1"
-        },
-        {
           "path": "vendor/chatterbox/models/s3gen/__init__.py",
           "bytes": 70,
           "sha256": "cdfafe103f5757b42bd813a1553eb481d9ea631eba34c42129399974e14a23cc"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 299,
-          "sha256": "685ea3dab7332832b68dcf16e21d943472953e0802e3eaab5ad3cb334b7423c5"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/configs.cpython-312.pyc",
-          "bytes": 458,
-          "sha256": "2fe1798c1299c650feb387bdbdaa6e426c75f98b3557e184e6606225334d9b1e"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/const.cpython-312.pyc",
-          "bytes": 252,
-          "sha256": "141c79b6f57ffddb9f870e5eb3e72fd9d57a24cabb47aede9e6885e5dd57635f"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/decoder.cpython-312.pyc",
-          "bytes": 15298,
-          "sha256": "ab58db1afc3c6809d1196da3d0dd404d9ec814506906a626ad72e88bf3d43762"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/f0_predictor.cpython-312.pyc",
-          "bytes": 2449,
-          "sha256": "44bff2390ded25eacd1a7b623d3b16dfce0ef019dbb05e45293d6c0b296f6f6f"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/flow_matching.cpython-312.pyc",
-          "bytes": 11793,
-          "sha256": "c08961f6fa5158b164ef406fd0cd35122d3370aef90a283f8a0bc96f806e2bd6"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/flow.cpython-312.pyc",
-          "bytes": 9369,
-          "sha256": "b83645f0cb4a281a92d26aa01db27996873a2ed4d4f48d45428843f85ad0034b"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/hifigan.cpython-312.pyc",
-          "bytes": 24067,
-          "sha256": "e9233ce64ab09704287d8429586ba5836712a52a1af6ca4c71b9216662eee8a9"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/s3gen.cpython-312.pyc",
-          "bytes": 14101,
-          "sha256": "8987e08b51f45f57436c14f959a8853d688eeb17287391fd59388cf230958e1a"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/__pycache__/xvector.cpython-312.pyc",
-          "bytes": 21341,
-          "sha256": "c9dad91b56da503e10a8dac46521ec0d2d250df6e1dd8cc94fcfe9b1d086448d"
         },
         {
           "path": "vendor/chatterbox/models/s3gen/configs.py",
@@ -464,21 +336,6 @@ export const packagedComponentCatalog = {
           "sha256": "0f9adcf24117e504027a515ffa1bf2a42d5f851f4a1a79665af24f39f8660a5b"
         },
         {
-          "path": "vendor/chatterbox/models/s3gen/matcha/__pycache__/decoder.cpython-312.pyc",
-          "bytes": 18099,
-          "sha256": "3e0e5b1bd313ace259a62d7c8f795b611e4bfa50619d168923d5aa31d6e848d0"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/matcha/__pycache__/flow_matching.cpython-312.pyc",
-          "bytes": 6053,
-          "sha256": "11f24a63669612c85d9c9611c50fe3c0b2c4ba364d304d2abe022c1e3e25abf5"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/matcha/__pycache__/transformer.cpython-312.pyc",
-          "bytes": 13857,
-          "sha256": "3339a31ceda23b50bf417ee04f4e8d4644cb0488295f5940278754c91d2447fa"
-        },
-        {
           "path": "vendor/chatterbox/models/s3gen/matcha/decoder.py",
           "bytes": 14878,
           "sha256": "da7cab6c294434d401ebbff9f20cd9b31579767320ab76a4d791b7bdd015e10a"
@@ -507,51 +364,6 @@ export const packagedComponentCatalog = {
           "path": "vendor/chatterbox/models/s3gen/transformer/__init__.py",
           "bytes": 0,
           "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 221,
-          "sha256": "26d3700b8597394983c844580103769561d039bbf0eeb24423d69e0d1f409fbd"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/activation.cpython-312.pyc",
-          "bytes": 3358,
-          "sha256": "2dc7638fd10b37996bfd6dfa74e7b78bf3cfdc69cecefba00d81b8381895e042"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/attention.cpython-312.pyc",
-          "bytes": 15255,
-          "sha256": "aec3f1ad611b486e6a047b3daafb439eec25fd5afb2e96cbed051b54874485a0"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/convolution.cpython-312.pyc",
-          "bytes": 5230,
-          "sha256": "a54627b570b17387f53fa7a07ac099fdd962037f2d3e31a27b9c61b18bfa83eb"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/embedding.cpython-312.pyc",
-          "bytes": 16472,
-          "sha256": "fc3dabf668bf4e7e1f5ff9202530740ce3f2a9a860d62f8b052527d7c7034755"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/encoder_layer.cpython-312.pyc",
-          "bytes": 11088,
-          "sha256": "3641a8237d06ef971bd2d855e9886305f9b777b4351635b1909856c93e7e4427"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/positionwise_feed_forward.cpython-312.pyc",
-          "bytes": 5823,
-          "sha256": "afc61dec26b50797b50c9acf487e4051148a3f99cd7991e66ce46b02563463c5"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/subsampling.cpython-312.pyc",
-          "bytes": 17637,
-          "sha256": "494e990fca143216aebacab5f662fcd415032f2a1ed10b2151d77e74019e2db2"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/transformer/__pycache__/upsample_encoder.cpython-312.pyc",
-          "bytes": 14143,
-          "sha256": "63fb8df2a908d00234ab737aff8b43f69e5f32e86e42381735b79349576b891d"
         },
         {
           "path": "vendor/chatterbox/models/s3gen/transformer/activation.py",
@@ -594,26 +406,6 @@ export const packagedComponentCatalog = {
           "sha256": "251c9376b56b57ac0d052abf4657b83691c6331808f5f8219ebcfd2b8cd1d137"
         },
         {
-          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/class_utils.cpython-312.pyc",
-          "bytes": 1876,
-          "sha256": "95d19d493bb78a62847aae308d05c5009cdb234557cf7d6bfcbfc784015d1db2"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/intmeanflow.cpython-312.pyc",
-          "bytes": 1912,
-          "sha256": "11b1fd18a761a0bcd12cdd3abf0295007396ae57ae10aa4be9da807e73149f92"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/mask.cpython-312.pyc",
-          "bytes": 6070,
-          "sha256": "72ced1be0da7424790b5dd32482fbf9c17bf8e5714dc693f62336fbac9d91df7"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3gen/utils/__pycache__/mel.cpython-312.pyc",
-          "bytes": 3956,
-          "sha256": "24aca5e7dbfa94c3dadd93ea9617599866b8679992f463f1705c707e90104b78"
-        },
-        {
           "path": "vendor/chatterbox/models/s3gen/utils/class_utils.py",
           "bytes": 2405,
           "sha256": "b0605ec5cb1e1fbadbcc24c488ad6ca8eff3e18f5f460edd0b3027b2de1f6aed"
@@ -644,16 +436,6 @@ export const packagedComponentCatalog = {
           "sha256": "fa602db9e952f86943274bacd0c5b126415938e268536b8dc551aeb0aa924bc1"
         },
         {
-          "path": "vendor/chatterbox/models/s3tokenizer/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 1224,
-          "sha256": "e944c8304af32a728a1d7ecf722be8760f0f402a91c435266b8cc5acaa787a44"
-        },
-        {
-          "path": "vendor/chatterbox/models/s3tokenizer/__pycache__/s3tokenizer.cpython-312.pyc",
-          "bytes": 7438,
-          "sha256": "741b34f6273be3cf766c3e5db5182ff583f070b199554c03a25fc0221daf1c8a"
-        },
-        {
           "path": "vendor/chatterbox/models/s3tokenizer/s3tokenizer.py",
           "bytes": 5323,
           "sha256": "8da30a6d978b5071761899d913b31f1fe9ae766a07c316a970b529cfcd0f0aa4"
@@ -664,26 +446,6 @@ export const packagedComponentCatalog = {
           "sha256": "9d4af45d74fc3c0ebef3e875d597aee3dff31e22d585385dc9567427a638e442"
         },
         {
-          "path": "vendor/chatterbox/models/t3/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 238,
-          "sha256": "d47ec31b99853c1d7d186223073ffa15b23de85d7486bd3286a5730058605381"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/__pycache__/llama_configs.cpython-312.pyc",
-          "bytes": 2194,
-          "sha256": "5004cfe3371aba3a4d75e818f7d9b593174f87b53570fceb662415143179b031"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/__pycache__/t3.cpython-312.pyc",
-          "bytes": 18584,
-          "sha256": "59f19d08d639a2ca89c0b5fa0569a69c279a27b3eb961c0fb28f1864d8f9f122"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/inference/__pycache__/t3_hf_backend.cpython-312.pyc",
-          "bytes": 4209,
-          "sha256": "ce6acea7584f52e251ef9aa9cb6601941b8452fc66d0775153ea5d1f1b6d9574"
-        },
-        {
           "path": "vendor/chatterbox/models/t3/inference/t3_hf_backend.py",
           "bytes": 4101,
           "sha256": "98ed48dfd7e671d8953a0ea13e003ee16aaf39e8e3228799076ef08eaadc3403"
@@ -692,26 +454,6 @@ export const packagedComponentCatalog = {
           "path": "vendor/chatterbox/models/t3/llama_configs.py",
           "bytes": 1882,
           "sha256": "a384ed991bdccaedb493511d81de95aa8d3c2dcd5dc7d41eb506993051947872"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/modules/__pycache__/cond_enc.cpython-312.pyc",
-          "bytes": 4984,
-          "sha256": "bbbe2ad228391a009d384b88d66f26b52599f3abe7d33080e2f85b94792ce8df"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/modules/__pycache__/learned_pos_emb.cpython-312.pyc",
-          "bytes": 2405,
-          "sha256": "0ec4f052da3aac4e58a4541dbea071ae6ca3ecd3260b4374968b5a7969ce1379"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/modules/__pycache__/perceiver.cpython-312.pyc",
-          "bytes": 11526,
-          "sha256": "9b77ca0b1adc9f867cb99c5bbc9f608c6403ecf688435db4b578f73bd3a0dddc"
-        },
-        {
-          "path": "vendor/chatterbox/models/t3/modules/__pycache__/t3_config.cpython-312.pyc",
-          "bytes": 2204,
-          "sha256": "0b2542663e0b46c5fc58ad92c06824067d55f91e6f1515505740e2ca5ef20902"
         },
         {
           "path": "vendor/chatterbox/models/t3/modules/cond_enc.py",
@@ -744,16 +486,6 @@ export const packagedComponentCatalog = {
           "sha256": "6759fb8b4f6d50b8e4ab8ddd0e39d44e1ca7196544f93311b385a7eeea6c38c2"
         },
         {
-          "path": "vendor/chatterbox/models/tokenizers/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 288,
-          "sha256": "413df49a139ccf0e0575a55b5601db974e600e1a0f764e7f1163d8b3294412a5"
-        },
-        {
-          "path": "vendor/chatterbox/models/tokenizers/__pycache__/tokenizer.cpython-312.pyc",
-          "bytes": 14670,
-          "sha256": "16372c2b05aee40c97bedea63f06ec380f69aaee7ac0ab9dd3a8bd320af712ac"
-        },
-        {
           "path": "vendor/chatterbox/models/tokenizers/tokenizer.py",
           "bytes": 10515,
           "sha256": "5fe52ef58684b2756ab0f0106d62de335311da04a493b637d7d093d1870c65cf"
@@ -767,26 +499,6 @@ export const packagedComponentCatalog = {
           "path": "vendor/chatterbox/models/voice_encoder/__init__.py",
           "bytes": 57,
           "sha256": "a3326161831fee10ffbfa5f5eb5dbd0e43172a92f342fb645ac5db8e0d5bcda7"
-        },
-        {
-          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/__init__.cpython-312.pyc",
-          "bytes": 298,
-          "sha256": "596e9d74d65171ae4add58fd0aba8d17bf580810311fb6b2fe6daba782432eb6"
-        },
-        {
-          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/config.cpython-312.pyc",
-          "bytes": 838,
-          "sha256": "2c08cadb233fc15ed268f2ac693a81320e0df8206a6f76616fc8286489ace205"
-        },
-        {
-          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/melspec.cpython-312.pyc",
-          "bytes": 3595,
-          "sha256": "0ae0c960d9a315fa91c38dbea499c6b0e4b466127a3917334c8b083c8eaa2ad3"
-        },
-        {
-          "path": "vendor/chatterbox/models/voice_encoder/__pycache__/voice_encoder.cpython-312.pyc",
-          "bytes": 16238,
-          "sha256": "a36237bb8a386d284dde3a86521cc095884341d526fb327f18ade0bea63592a4"
         },
         {
           "path": "vendor/chatterbox/models/voice_encoder/config.py",
@@ -1302,11 +1014,11 @@ export const packagedComponentCatalog = {
         "url": "https://opensource.org/license/mit/"
       },
       "sbom": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.0-py312-cpu1.spdx.json",
-        "sha256": "577ccd2c98b554ed722890ebf424c767e12f6f9784448a1c9c8f10e42a4f2c03"
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-1.0.1-py312-cpu1.spdx.json",
+        "sha256": "0e4e0dce4c324b9cea6c3253bda7f7a1255f6910e8e5349a72744a64f54823cb"
       },
       "keyId": "ed25519-f372f170675a31f5015c6a38",
-      "signature": "4H9nSfoDrAM6xSjSBWZFHE6K5vSJtmtf7Lz1Sthzr+QxGWdfplDKd0SNBwjaADV8jjFwCbA3UxrxOrCFwganAQ=="
+      "signature": "C2SN+SezN2z4zP89WPDZAoRMrjgY3UAFPGhfBgQf/LsDSsydMrhkGUDFwYrd8yZbMpk5jAuE1lgYLamKkbPcBg=="
     },
     {
       "protocolVersion": 1,
@@ -1327,12 +1039,12 @@ export const packagedComponentCatalog = {
         "需要 NVIDIA 显卡及兼容的 NVIDIA 驱动；本模块不会安装或修改显卡驱动。无兼容 GPU 时仍可用基础 CPU 能力。",
         "Python 3.12、PyTorch CUDA 12.4 与 Chatterbox 源码均版本锁定；生成时无需联网。"
       ],
-      "version": "1.0.0-py312-cu1241",
+      "version": "1.0.1-py312-cu1241",
       "platform": "win32-x64",
       "archive": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241.tar.gz",
-        "bytes": 210511812,
-        "sha256": "cf031a1283b9c68dd49504ca6dd996cbf1f64b5d6f64b81a4a5af71a397ea964",
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241.tar.gz",
+        "bytes": 210512188,
+        "sha256": "04e0e2ec0b1c4680966a2f1d38468f4481ae8b41a38c4fac4f40a25dd10e0e43",
         "format": "tar.gz",
         "filePaths": [
           "requirements.lock",
@@ -1491,7 +1203,7 @@ export const packagedComponentCatalog = {
       },
       "additionalArchives": [
         {
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0001.tar.gz",
           "bytes": 1498292694,
           "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
           "format": "tar.gz",
@@ -1500,7 +1212,7 @@ export const packagedComponentCatalog = {
           ]
         },
         {
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torch-part-0002.tar.gz",
           "bytes": 1028311500,
           "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
           "format": "tar.gz",
@@ -1509,7 +1221,7 @@ export const packagedComponentCatalog = {
           ]
         },
         {
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241-cuda-torchaudio.tar.gz",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241-cuda-torchaudio.tar.gz",
           "bytes": 4116387,
           "sha256": "38dff6b27cc3b0fd318aaf355ec087bf0f7cd6649648d913128ccf32a942b7e3",
           "format": "tar.gz",
@@ -1546,8 +1258,8 @@ export const packagedComponentCatalog = {
         },
         {
           "path": "scripts/chatterbox-worker.py",
-          "bytes": 26755,
-          "sha256": "5bf37caa877026fe9dbc951dc3365533ca40501ec750c3b92c04e96cfc559eba"
+          "bytes": 28894,
+          "sha256": "144c8032c97d922f46e46cf869338cbeda6703d2ac410153ae8bc29c9db086fd"
         },
         {
           "path": "scripts/worker_lifecycle.py",
@@ -2323,11 +2035,11 @@ export const packagedComponentCatalog = {
         "url": "https://opensource.org/license/mit/"
       },
       "sbom": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.0-py312-cu1241.spdx.json",
-        "sha256": "e3871e79cdb4b8f1149974d75d7b109d964f3348fc9ec63cb814665192cf6180"
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/chatterbox-cuda-1.0.1-py312-cu1241.spdx.json",
+        "sha256": "24ca0dec03869115c7682fd84b65a336feee7c142c6ed808f9b3b233a0c68a2f"
       },
       "keyId": "ed25519-f372f170675a31f5015c6a38",
-      "signature": "oFRpClzOa+WUMR2oh9KLKkJDYKIVz4HsM/rz0y1UFcPqiaRuQVjK9mcvtOxggwk6ianZx5gd0mZeVXbkoA4EDg=="
+      "signature": "FAEu4gbr8cbB/gajRvEXPSn0w6ofm8tfP2To367FPm48Gk12rd8GXy8rFUS5+F99wAMWRUz4CzP2w31J2dWiDw=="
     },
     {
       "protocolVersion": 1,
@@ -20124,12 +19836,12 @@ export const packagedComponentCatalog = {
         "字幕检测使用固定版本 PP-OCRv5 中文检测与识别模型；修复使用 Big-LaMa 权重。GPU 均衡档与极致档需要另装 video-ai-cuda 扩展包。",
         "视频合成复用共享 FFmpeg 8.1.2 组件，不重复打包。"
       ],
-      "version": "1.1.0-py312-cpu1",
+      "version": "1.1.1-py312-cpu1",
       "platform": "win32-x64",
       "archive": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.tar.gz",
-        "bytes": 673898034,
-        "sha256": "0a829d1fa31e8a74e7012284e2a4f63765f8cdf61081fb9e63f831093cad5a0b",
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.1-py312-cpu1.tar.gz",
+        "bytes": 673903366,
+        "sha256": "765f64ff35c80c4706ef1d31533cb7e63e11c8ac90c4c2c43b97e6c6c498285f",
         "format": "tar.gz"
       },
       "installedBytes": 3200000000,
@@ -20180,14 +19892,19 @@ export const packagedComponentCatalog = {
           "sha256": "14225eeb0bba9197fd5cc1c3342a0663f30c8cb1455a1c7008dacdfa9f165a4b"
         },
         {
+          "path": "scripts/video_ai_device.py",
+          "bytes": 2943,
+          "sha256": "28648afc81cedfdd49ec80a8704276f9e1aeb6f49f62a57393b651a1f2b284a7"
+        },
+        {
           "path": "scripts/video_ai_engine_assets.py",
-          "bytes": 9346,
-          "sha256": "970b311654b99b9c34bdd04e77e3c9595ef645ecb43ee446202146f3ff232d5f"
+          "bytes": 17499,
+          "sha256": "9fc8a836d8d88990248dd6eb16f47541c8916c676ade713ca3d62d17a4b309d2"
         },
         {
           "path": "scripts/video_ai_propainter.py",
-          "bytes": 11000,
-          "sha256": "e2140266f7f649d32b699d6cbde925879dda695e2c9241e2d13e8be45fd3986b"
+          "bytes": 25454,
+          "sha256": "c0b57605336fb14e19f1aa744633da5b99ece50b7296e2138a4c33a64d22753b"
         },
         {
           "path": "scripts/video_ai_sequence.py",
@@ -20196,8 +19913,8 @@ export const packagedComponentCatalog = {
         },
         {
           "path": "scripts/video_ai_sttn.py",
-          "bytes": 7890,
-          "sha256": "371acc2da31117f4a94d8a2cdd38791be62df74e766f5e8f638e19415d3117ea"
+          "bytes": 11726,
+          "sha256": "f9bae102c9bb4f9f74177471bffdb4188b156ec208e6af9b2449805cbe73f9b1"
         },
         {
           "path": "scripts/video-ai-sequence-support.json",
@@ -20206,8 +19923,8 @@ export const packagedComponentCatalog = {
         },
         {
           "path": "scripts/video-ai-worker.py",
-          "bytes": 58110,
-          "sha256": "a1bcef715fe96a1933adac013a833be78426e834b817d556f1926fcb68d005b2"
+          "bytes": 66690,
+          "sha256": "c1b993f1d9563a24ca7b8dad419e2358ecda7c96ee6e07c6183922bab1d9abaf"
         },
         {
           "path": "wheelhouse/aiohappyeyeballs-2.7.1-py3-none-any.whl",
@@ -20633,11 +20350,11 @@ export const packagedComponentCatalog = {
         "url": "https://opensource.org/license/mit/"
       },
       "sbom": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.0-py312-cpu1.spdx.json",
-        "sha256": "c718e11140115d0efd5b3d19029b65940d2224db57542ce038c5a8c20d5d1595"
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-1.1.1-py312-cpu1.spdx.json",
+        "sha256": "ca38f4ffd41aa9423feff11962bcaea268debd3de634f2fc5c71bf41693da950"
       },
       "keyId": "ed25519-f372f170675a31f5015c6a38",
-      "signature": "fCc8yWjUdkIx3CArT3VJJ/ZwYxj0kLQLzcT/l/Z82PyJmL+x5yr/Xh6+HevX1P531UupXwbhq9gywblDKQ4HDA=="
+      "signature": "zkFHKmmCSzkHS71VInUKIJgkRoHhYaaj5uoZ02dHl32pevYLRcSAi0E/YLs/8miDmrEt1399hZ+X6FYv9tdQDQ=="
     },
     {
       "protocolVersion": 1,

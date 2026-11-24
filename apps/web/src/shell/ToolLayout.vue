@@ -7,16 +7,16 @@
     <header ref="topbar" class="topbar">
       <div class="topbar-leading">
         <n-button
-          v-if="currentTool || isMobileNavigation"
+          v-if="isMobileNavigation"
           class="module-sidebar-toggle"
           quaternary
           circle
-          :aria-label="isMobileNavigation ? '打开工具菜单' : sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
-          :title="isMobileNavigation ? '工具菜单' : sidebarCollapsed ? '展开模块导航' : '收起模块导航'"
-          :aria-expanded="isMobileNavigation ? mobileMenuOpen : !sidebarCollapsed"
+          :aria-label="mobileMenuOpen ? '关闭工具菜单' : '打开工具菜单'"
+          title="工具菜单"
+          :aria-expanded="mobileMenuOpen"
           aria-controls="module-sidebar"
           @click="toggleModuleNavigation"
-          ><template #icon><Menu v-if="isMobileNavigation" :size="20" /><PanelLeft v-else :size="19" /></template
+          ><template #icon><Menu :size="20" /></template
         ></n-button>
         <router-link class="brand brand-link" to="/">
           <div class="brand-mark">
@@ -91,6 +91,7 @@
         :current-tool-id="currentTool.id"
         :collapsed="sidebarCollapsed"
         :show-settings="localDiagnosticsAvailable"
+        @toggle="toggleModuleNavigation"
       />
       <div
         class="content"
@@ -216,7 +217,7 @@ import { useRoute } from "vue-router";
 import brandIcon from "../assets/ui-v2/brand.webp";
 import { toolForPath, toolPresentationKey, workbenchTools } from "../shared/ui/tool/catalog";
 import { NButton, NDrawer, NDrawerContent } from "naive-ui";
-import { ChevronRight, Menu, PanelLeft, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
+import { ChevronRight, Menu, RefreshCw, ServerCog, Settings, Wrench } from "lucide-vue-next";
 import ModuleSidebar from "./ModuleSidebar.vue";
 import { diagnosticConnection, localDiagnosticsAvailable } from "../shared/http/diagnostics";
 import { useShellNavigation } from "./useShellNavigation";
@@ -293,6 +294,9 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
   overflow: hidden;
+  /* Text and rail width switch together; inherited grid animation reflows
+     expanded labels through the narrow collapsed width on every frame. */
+  transition: none;
 }
 .ui-v2 .shell.has-module-sidebar.module-sidebar-collapsed {
   grid-template-columns: 68px minmax(0, 1fr);
@@ -332,6 +336,11 @@ onMounted(() => {
 }
 .module-sidebar-toggle {
   color: var(--color-text-secondary);
+}
+@media (min-width: 901px) {
+  .workspace.ui-v2 .topbar {
+    padding-inline-start: 24px;
+  }
 }
 @media (max-width: 900px) {
   .ui-v2 .shell.has-module-sidebar {

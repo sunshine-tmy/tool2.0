@@ -96,6 +96,10 @@ export class ComponentManager {
   private readonly lastFailures = new Map<string, { code: string; message: string }>();
   private initialized?: Promise<void>;
   private readonly offlineTransfers = new Set<string>();
+  private readonly offlineImports = new Set<string>();
+  private readonly pendingInstalls: Array<{ internal: InternalJob; manifest: ComponentPackageManifest }> = [];
+  private readonly runningInstalls = new Set<string>();
+  private readonly diskReservations = new Map<string, number>();
 
   constructor(options: ComponentManagerOptions) {
     this.root = path.resolve(options.root);
@@ -260,7 +264,7 @@ export class ComponentManager {
   }
 
   hasActiveJobs() {
-    return this.activeByComponent.size > 0 || this.offlineTransfers.size > 0;
+    return this.activeByComponent.size > 0 || this.offlineTransfers.size > 0 || this.offlineImports.size > 0;
   }
 
   private offlineBundleManifests(componentId: string) {
@@ -422,29 +426,13 @@ export class ComponentManager {
       }
       handedOff = true;
       release();
+      for (let index = 0; index < manifests.length; index++)
+        this.pendingInstalls.push({ internal: operations[index], manifest: manifests[index] });
+      this.drainInstalls();
       void (async () => {
-        let failed = false;
-        for (let index = 0; index < manifests.length; index++) {
-          const internal = operations[index];
-          if (failed)
-            this.failJob(
-              internal,
-              new ComponentManagerError(
-                "COMPONENT_DEPENDENCY_MISSING",
-                "离线依赖安装未成功，后续能力未安装；已有可用版本保留"
-              )
-            );
-          else {
-            await this.runJob(internal, manifests[index]);
-            failed = internal.value.state !== "completed";
-          }
-        }
-      })()
-        .catch((error) => {
-          for (const internal of operations)
-            if (["queued", "running"].includes(internal.value.state)) this.failJob(internal, error);
-        })
-        .finally(() => fsp.rm(importRoot, { recursive: true, force: true }).catch(() => undefined));
+        while (operations.some((job) => ["queued", "running"].includes(job.value.state)))
+          await new Promise((resolve) => setTimeout(resolve, 100));
+      })().finally(() => fsp.rm(importRoot, { recursive: true, force: true }).catch(() => undefined));
       return operations.at(-1)!.value;
     } catch (error) {
       if (error instanceof ComponentManagerError) throw error;
@@ -459,26 +447,84 @@ export class ComponentManager {
   }
 
   /** 仅校验当前代，不安装、不切换版本。取消只中止本次只读检查。 */
-  async verifyCurrent(componentId: string, signal: AbortSignal, selfTest?: ComponentManagerOptions["selfTest"]) {
-    await this.initialize();
-    signal.throwIfAborted();
-    const manifest = this.getManifest(componentId);
-    this.verifyManifest(manifest);
-    const current = await this.readCurrent(this.componentRoot(componentId), componentId);
-    if (!current) throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "该能力尚未安装");
-    const versions = await fsp.realpath(path.join(this.componentRoot(componentId), "versions"));
-    const root = await fsp.realpath(safeChildPath(versions, current.directory));
-    if (!isPathWithin(versions, root)) throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力路径无效");
-    if (current.manifestSha256 !== sha256Text(canonicalManifest(manifest)))
-      throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "当前版本不匹配");
-    // 安装完成后可能新增合法 venv 和缓存；只逐一校验签名工件，不能误判生成目录为篡改。
-    for (const file of manifest.files) {
+  async verifyCurrent(
+    componentId: string,
+    signal: AbortSignal,
+    selfTest?: ComponentManagerOptions["selfTest"],
+    onProgress?: (value: { stage: string; checked: number; total: number; bytes: number; totalBytes: number }) => void
+  ) {
+    let stage = "manifest",
+      asset: string | undefined;
+    let checked = 0,
+      total = 0,
+      bytes = 0,
+      totalBytes = 0;
+    const progress = () => onProgress?.({ stage, checked, total, bytes, totalBytes });
+    try {
+      await this.initialize();
       signal.throwIfAborted();
-      await this.resolveInstalledAsset(componentId, file.path);
+      progress();
+      const manifest = this.getManifest(componentId);
+      this.verifyManifest(manifest);
+      stage = "installation";
+      progress();
+      const current = await this.readCurrent(this.componentRoot(componentId), componentId);
+      if (!current) throw new ComponentManagerError("COMPONENT_NOT_INSTALLED", "该能力尚未安装");
+      if (current.version !== manifest.version || current.manifestSha256 !== sha256Text(canonicalManifest(manifest)))
+        throw new ComponentManagerError("COMPONENT_VERSION_MISMATCH", "当前版本与受信任目录不匹配");
+      const versions = await fsp.realpath(path.join(this.componentRoot(componentId), "versions"));
+      const root = await fsp.realpath(safeChildPath(versions, current.directory));
+      if (!isPathWithin(versions, root)) throw new ComponentManagerError("COMPONENT_PATH_INVALID", "能力路径无效");
+      // Verify the trusted manifest once, then read every signed file. Generated venv/cache files are excluded.
+      stage = "files";
+      total = manifest.files.length;
+      totalBytes = manifest.files.reduce((sum, file) => sum + file.bytes, 0);
+      progress();
+      for (const file of manifest.files) {
+        signal.throwIfAborted();
+        asset = file.path;
+        const candidate = safeChildPath(root, file.path);
+        let resolved: string;
+        try {
+          resolved = await fsp.realpath(candidate);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT")
+            throw new ComponentManagerError("COMPONENT_FILE_MISSING", "签名文件不存在");
+          throw error;
+        }
+        if (!isPathWithin(root, resolved)) throw new ComponentManagerError("COMPONENT_PATH_INVALID", "文件路径越界");
+        const stat = await fsp.stat(resolved);
+        if (!stat.isFile()) throw new ComponentManagerError("COMPONENT_FILE_MISSING", "签名文件不可用");
+        if (stat.size !== file.bytes)
+          throw new ComponentManagerError("COMPONENT_FILE_SIZE_MISMATCH", "签名文件大小不符");
+        const completedBytes = bytes;
+        const digest = await sha256File(resolved, {
+          signal,
+          onBytes: (read) => {
+            bytes = completedBytes + read;
+            progress();
+          }
+        });
+        if (digest !== file.sha256) throw new ComponentManagerError("COMPONENT_FILE_HASH_MISMATCH", "签名文件摘要不符");
+        checked++;
+        progress();
+      }
+      signal.throwIfAborted();
+      stage = "self-test";
+      asset = undefined;
+      progress();
+      await (selfTest ?? this.selfTest)?.(manifest, root);
+      signal.throwIfAborted();
+    } catch (error) {
+      if (error && typeof error === "object")
+        Object.assign(error, {
+          diagnosticStage: stage,
+          diagnosticAsset: asset,
+          checkedFiles: checked,
+          totalFiles: total
+        });
+      throw error;
     }
-    signal.throwIfAborted();
-    await (selfTest ?? this.selfTest)?.(manifest, root);
-    signal.throwIfAborted();
   }
 
   async getJob(jobId: string) {
@@ -589,10 +635,10 @@ export class ComponentManager {
     await this.initialize();
     const manifest = this.getManifest(componentId);
     this.verifyManifest(manifest);
-    if (this.offlineTransfers.size || this.activeByComponent.has(componentId)) {
+    if (this.offlineTransfers.size || this.offlineImports.has(componentId) || this.activeByComponent.has(componentId)) {
       throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "该能力已有其他管理作业正在运行");
     }
-    await this.assertDependenciesReady(manifest);
+    await this.assertDependenciesReady(manifest, true);
     const current = await this.readCurrent(this.componentRoot(componentId), componentId);
     if (current && (await this.isInUse(componentId, this.affectedTaskToolIds(componentId)))) {
       throw new ComponentManagerError("COMPONENT_IN_USE", "能力正在被运行任务使用，暂时无法导入或重装");
@@ -634,8 +680,17 @@ export class ComponentManager {
       this.componentRoot(componentId),
       path.join("archives", `.offline-import-${crypto.randomUUID()}.partial`)
     );
-    await fsp.mkdir(path.dirname(importRoot), { recursive: true });
-    await fsp.mkdir(importRoot, { recursive: false });
+    if (this.activeByComponent.has(componentId) || this.offlineImports.has(componentId) || this.offlineTransfers.size)
+      throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "该能力已有其他管理作业正在运行");
+    this.offlineImports.add(componentId);
+    try {
+      await fsp.mkdir(path.dirname(importRoot), { recursive: true });
+      await fsp.mkdir(importRoot, { recursive: false });
+    } catch (error) {
+      this.offlineImports.delete(componentId);
+      this.drainInstalls();
+      throw error;
+    }
     const stagedPaths: Array<string | undefined> = Array.from({ length: assets.length });
     const received = new Set<number>();
     let uploadedBytes = 0;
@@ -713,6 +768,8 @@ export class ComponentManager {
       ownershipTransferred = true;
       return job;
     } finally {
+      this.offlineImports.delete(componentId);
+      this.drainInstalls();
       if (!ownershipTransferred) await fsp.rm(importRoot, { recursive: true, force: true }).catch(() => undefined);
     }
   }
@@ -720,8 +777,17 @@ export class ComponentManager {
   async cancelJob(jobId: string) {
     const job = this.jobs.get(jobId);
     if (!job) throw new ComponentManagerError("COMPONENT_JOB_NOT_FOUND", "未找到能力管理作业");
+    const pending = this.pendingInstalls.findIndex((entry) => entry.internal === job);
+    if (job.value.state === "queued" && pending >= 0) {
+      this.pendingInstalls.splice(pending, 1);
+      await this.cleanupInstallUploads(job);
+      this.updateJob(job, { state: "cancelled", phase: "complete" });
+      this.activeByComponent.delete(job.value.componentId);
+      this.drainInstalls();
+      return job.value;
+    }
     if (job.value.state !== "running" || job.value.phase !== "downloading" || !job.controller) {
-      throw new ComponentManagerError("COMPONENT_JOB_NOT_CANCELLABLE", "仅下载阶段可以取消");
+      throw new ComponentManagerError("COMPONENT_JOB_NOT_CANCELLABLE", "仅等待或下载阶段可以取消");
     }
     job.controller.abort();
     return job.value;
@@ -756,6 +822,8 @@ export class ComponentManager {
     if (this.offlineTransfers.size)
       throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "离线能力包正在传输，请稍后重试");
     this.getManifest(componentId);
+    if (this.offlineImports.has(componentId) && !offlineArchivePaths)
+      throw new ComponentManagerError("COMPONENT_OPERATION_CONFLICT", "该能力正在接收离线包");
     const existingId = this.activeByComponent.get(componentId);
     if (existingId) {
       const activeJob = this.jobs.get(existingId)!.value;
@@ -773,20 +841,84 @@ export class ComponentManager {
       operation === "uninstall" ? 0 : componentDownloadBytes(manifest),
       manifest.files.length
     );
-    const internal = {
+    const internal: InternalJob = {
       value: job,
       ...(offlineArchivePaths ? { offlineArchivePaths, offlineImportRoot } : {})
-    } satisfies InternalJob;
+    };
     this.jobs.set(job.id, internal);
     this.activeByComponent.set(componentId, job.id);
-    void this.runJob(internal, manifest);
+    for (const dependency of this.dependenciesOf(componentId)) {
+      const active = this.activeByComponent.get(dependency);
+      if (active) {
+        internal.dependencyJobs ??= new Map();
+        internal.dependencyJobs.set(dependency, active);
+      }
+    }
+    this.pendingInstalls.push({ internal, manifest });
+    this.drainInstalls();
     return job;
+  }
+
+  private dependenciesOf(id: string, result = new Set<string>()) {
+    for (const dependency of this.manifests.get(id)?.dependencyIds ?? []) {
+      if (result.has(dependency)) continue;
+      result.add(dependency);
+      this.dependenciesOf(dependency, result);
+    }
+    return result;
+  }
+  private drainInstalls() {
+    for (let index = 0; index < this.pendingInstalls.length && this.runningInstalls.size < 2;) {
+      const { internal, manifest } = this.pendingInstalls[index];
+      const dependencies = this.dependenciesOf(manifest.id);
+      internal.dependencyJobs ??= new Map();
+      for (const dependency of dependencies) {
+        const active = this.activeByComponent.get(dependency);
+        if (active) internal.dependencyJobs.set(dependency, active);
+      }
+      const waiting = [...dependencies].some(
+        (dependency) => this.activeByComponent.has(dependency) || this.offlineImports.has(dependency)
+      );
+      const relatedRunning = [...this.runningInstalls].some(
+        (id) => dependencies.has(id) || this.dependenciesOf(id).has(manifest.id)
+      );
+      if (waiting || relatedRunning) {
+        index++;
+        continue;
+      }
+      this.pendingInstalls.splice(index, 1);
+      this.runningInstalls.add(manifest.id);
+      void this.runJob(internal, manifest)
+        .catch((error) => {
+          if (["queued", "running"].includes(internal.value.state)) this.failJob(internal, error);
+        })
+        .finally(() => {
+          this.runningInstalls.delete(manifest.id);
+          this.diskReservations.delete(internal.value.id);
+          this.drainInstalls();
+        });
+    }
+  }
+  private async cleanupInstallUploads(internal: InternalJob) {
+    if (internal.offlineArchivePaths)
+      await Promise.all(
+        internal.offlineArchivePaths.map((archivePath) => fsp.rm(archivePath, { force: true }).catch(() => undefined))
+      );
+    if (internal.offlineImportRoot)
+      await fsp.rm(internal.offlineImportRoot, { recursive: true, force: true }).catch(() => undefined);
   }
 
   private async runJob(internal: InternalJob, manifest: ComponentPackageManifest) {
     const operation = internal.value.operation;
     let uninstallRuntimeStopped = false;
     try {
+      for (const [dependency, jobId] of internal.dependencyJobs ?? []) {
+        if (this.jobs.get(jobId)?.value.state !== "completed")
+          throw new ComponentManagerError(
+            "COMPONENT_DEPENDENCY_MISSING",
+            `依赖能力安装未成功或已取消：${this.manifests.get(dependency)?.displayName ?? dependency}；当前能力未继续安装`
+          );
+      }
       if (operation === "uninstall") {
         this.updateJob(internal, { state: "running", phase: "uninstalling" });
         await this.assertCanUninstall(manifest.id);
@@ -828,9 +960,11 @@ export class ComponentManager {
         internal.offlineArchivePaths || internal.offlineFilesRoot
           ? manifest.installedBytes
           : componentDownloadBytes(manifest) + manifest.installedBytes;
-      if (freeBytes < requiredBytes) {
+      const reserved = [...this.diskReservations.values()].reduce((sum, value) => sum + value, 0);
+      if (freeBytes < requiredBytes + reserved) {
         throw new ComponentManagerError("COMPONENT_DISK_SPACE_LOW", "磁盘可用空间不足");
       }
+      this.diskReservations.set(internal.value.id, requiredBytes);
       internal.controller = new AbortController();
       this.updateJob(internal, { state: "running", phase: "downloading" });
       const generation = await this.installGeneration(manifest, operation === "reinstall", internal);
@@ -866,12 +1000,7 @@ export class ComponentManager {
     } finally {
       this.activeByComponent.delete(manifest.id);
       internal.controller = undefined;
-      if (internal.offlineArchivePaths) {
-        await Promise.all(internal.offlineArchivePaths.map((archivePath) => fsp.rm(archivePath, { force: true })));
-      }
-      if (internal.offlineImportRoot) {
-        await fsp.rm(internal.offlineImportRoot, { recursive: true, force: true }).catch(() => undefined);
-      }
+      await this.cleanupInstallUploads(internal);
     }
   }
 
@@ -1042,7 +1171,7 @@ export class ComponentManager {
     return [...taskToolIds];
   }
 
-  private async assertDependenciesReady(manifest: ComponentPackageManifest) {
+  private async assertDependenciesReady(manifest: ComponentPackageManifest, allowQueued = false) {
     for (const dependencyId of manifest.dependencyIds) {
       const dependency = this.manifests.get(dependencyId);
       if (!dependency) throw new ComponentManagerError("COMPONENT_MANIFEST_INVALID", "能力依赖未出现在受信任目录中");
@@ -1051,9 +1180,23 @@ export class ComponentManager {
       if (activeDependency?.operation === "uninstall") {
         throw new ComponentManagerError("COMPONENT_DEPENDENCY_MISSING", "依赖能力正在卸载：" + dependency.displayName);
       }
+      if (
+        allowQueued &&
+        (this.offlineImports.has(dependencyId) ||
+          (activeDependency && ["install", "reinstall"].includes(activeDependency.operation)))
+      )
+        continue;
       const current = await this.readCurrent(this.componentRoot(dependencyId), dependencyId);
       if (!current)
         throw new ComponentManagerError("COMPONENT_DEPENDENCY_MISSING", "请先安装依赖能力：" + dependency.displayName);
+      if (
+        current.version !== dependency.version ||
+        current.manifestSha256 !== sha256Text(canonicalManifest(dependency))
+      )
+        throw new ComponentManagerError(
+          "COMPONENT_DEPENDENCY_MISSING",
+          "请先更新依赖能力至当前受信任版本：" + dependency.displayName
+        );
     }
   }
 

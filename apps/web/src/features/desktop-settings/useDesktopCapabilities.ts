@@ -22,6 +22,7 @@ export function useDesktopCapabilities() {
   const componentsError = ref("");
   const componentsNotice = ref("");
   const startingComponentId = ref("");
+  const startingComponentIds = ref(new Set<string>());
   const cancelingJobId = ref("");
   const exportingComponentId = ref("");
 
@@ -227,8 +228,13 @@ export function useDesktopCapabilities() {
   }
 
   async function startComponentOperation(component: ComponentPackageStatus, operation: ComponentJob["operation"]) {
-    if (startingComponentId.value || exportingComponentId.value) return;
-    startingComponentId.value = component.id;
+    if (
+      startingComponentIds.value.has(component.id) ||
+      offlineUpload.value?.componentId === component.id ||
+      exportingComponentId.value
+    )
+      return;
+    startingComponentIds.value = new Set([...startingComponentIds.value, component.id]);
     componentsError.value = "";
     componentsNotice.value = "";
     try {
@@ -242,7 +248,9 @@ export function useDesktopCapabilities() {
     } catch (cause) {
       componentsError.value = formatApiError(cause, "能力管理操作失败");
     } finally {
-      startingComponentId.value = "";
+      const remaining = new Set(startingComponentIds.value);
+      remaining.delete(component.id);
+      startingComponentIds.value = remaining;
     }
   }
 
@@ -271,9 +279,21 @@ export function useDesktopCapabilities() {
     jobSubscriptions.set(job.id, unsubscribe);
   }
 
+  function dependenciesQueued(component: ComponentPackageStatus) {
+    return component.dependencyIds.every((id) => {
+      const dependency = components.value.find((item) => item.id === id);
+      const job = componentJobs.value[id];
+      return (
+        dependency?.installed ||
+        Boolean(job && ["queued", "running"].includes(job.state) && job.operation !== "uninstall")
+      );
+    });
+  }
+
   function finishComponentJob(job: ComponentJob, announce: boolean) {
     jobSubscriptions.get(job.id)?.();
     jobSubscriptions.delete(job.id);
+    if (componentJobs.value[job.componentId] && componentJobs.value[job.componentId].id !== job.id) return;
     const { [job.componentId]: _finished, ...remainingJobs } = componentJobs.value;
     componentJobs.value = remainingJobs;
     if (announce) {
@@ -314,6 +334,8 @@ export function useDesktopCapabilities() {
     componentsError,
     componentsNotice,
     startingComponentId,
+    startingComponentIds,
+    dependenciesQueued,
     cancelingJobId,
     exportingComponentId,
     exportComponent,

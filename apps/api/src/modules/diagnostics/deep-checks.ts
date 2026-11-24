@@ -18,6 +18,7 @@ export function diagnosticProcess(
   return new Promise<string>((resolve, reject) => {
     const child = spawn(executable, args, { cwd, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let output = "",
+      stdout = "",
       timedOut = false,
       processError: Error | undefined;
     const stop = () => {
@@ -31,7 +32,10 @@ export function diagnosticProcess(
     const collect = (chunk: Buffer) => {
       output = (output + chunk.toString("utf8")).slice(-32_000);
     };
-    child.stdout.on("data", collect);
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout = (stdout + chunk.toString("utf8")).slice(-32_000);
+      collect(chunk);
+    });
     child.stderr.on("data", collect);
     child.on("error", (error) => {
       processError = error;
@@ -45,31 +49,52 @@ export function diagnosticProcess(
       if (code !== 0)
         return reject(
           diagnosticError(
-            /(?:\b403\b|Invalid response status.*403)/i.test(output) ? "ONLINE_FORBIDDEN" : "SELF_TEST_FAILED",
+            /(?:\b403\b|Invalid response status.*403)/i.test(output)
+              ? "ONLINE_FORBIDDEN"
+              : /DLL load failed|WinError (?:126|127|193)|Error loading.*\.dll/i.test(output)
+                ? "PYTHON_DLL_FAILED"
+                : /Fatal Python error|Could not find platform independent libraries|failed to get the Python codec|init_fs_encoding/i.test(
+                      output
+                    )
+                  ? "PYTHON_INIT_FAILED"
+                  : /ModuleNotFoundError|ImportError/i.test(output)
+                    ? "PYTHON_IMPORT_FAILED"
+                    : "SELF_TEST_FAILED",
             "检查子进程未成功完成",
             422
           )
         );
-      resolve(output);
+      resolve(stdout.trim() ? stdout : output);
     });
   });
 }
 export async function executeDeepCheck(
   service: DiagnosticsService,
   target: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onProgress?: (message: string) => void
 ): Promise<DiagnosticCheck> {
   const config = service.config;
   let title = target;
   if (target.startsWith("integrity-")) {
     const id = target.slice(10);
-    title = `能力包完整性 · ${id}`;
+    title = service.targetTitle(target);
     const tester = createDesktopComponentSelfTest(
       (executable, args, cwd, environment) => diagnosticProcess(executable, args, signal, cwd, environment),
       async (relative) => (await service.components.resolveInstalledAsset("ffmpeg", relative)).path,
       (componentId) => service.components.resolveInstalledPython(componentId)
     );
-    await service.components.verifyCurrent(id, signal, tester);
+    await service.components.verifyCurrent(id, signal, tester, (value) => {
+      const stages: Record<string, string> = {
+        manifest: "验证签名清单",
+        installation: "核对安装版本",
+        files: "校验文件",
+        "self-test": "运行安装自检"
+      };
+      onProgress?.(
+        `${title} · ${stages[value.stage] ?? "检查中"}${value.stage === "files" ? ` ${value.checked}/${value.total} · ${(value.bytes / 1024 ** 2).toFixed(1)}/${(value.totalBytes / 1024 ** 2).toFixed(1)} MiB` : ""}`
+      );
+    });
   } else if (target === "image-ai" || target === "chatterbox" || target === "video-ai-sequence") {
     title =
       target === "image-ai"

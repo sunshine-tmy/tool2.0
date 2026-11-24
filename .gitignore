@@ -79,6 +79,7 @@ storage/quarantine/**
 .runtime/macos-source-launcher/
 
 # User-provided startup archives are local resources, never source-control uploads.
+/备份能力包/
 offline-resources/**
 !offline-resources/README.md
 !offline-resources/bootstrap/

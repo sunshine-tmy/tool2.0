@@ -639,8 +639,12 @@ async def health() -> dict[str, Any]:
 async def diagnostics_light() -> dict[str, Any]:
     torch = sys.modules.get("torch")
     cuda = bool(torch.cuda.is_available()) if torch is not None else None
+    requested_device = os.getenv("IMAGE_AI_DEVICE", "auto").strip().lower()
+    if requested_device not in ("cpu", "cuda", "auto"):
+        requested_device = "auto"
     return {
         "protocolVersion": 1,
+        "requestedDevice": requested_device,
         "available": importlib.util.find_spec("torch") is not None,
         "modelLoaded": manager.gpu_model is not None or manager.ocr is not None,
         "busy": manager.lock.locked(),

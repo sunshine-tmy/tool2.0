@@ -11,7 +11,7 @@
     "字幕检测使用固定版本 PP-OCRv5 中文检测与识别模型；修复使用 Big-LaMa 权重。GPU 均衡档与极致档需要另装 video-ai-cuda 扩展包。",
     "视频合成复用共享 FFmpeg 8.1.2 组件，不重复打包。"
   ],
-  "version": "1.1.0-py312-cpu1",
+  "version": "1.1.1-py312-cpu1",
   "installedBytes": 3200000000,
   "pythonEnvironment": {
     "pythonComponentId": "python-312",

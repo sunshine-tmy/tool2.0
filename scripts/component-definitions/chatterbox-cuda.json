@@ -10,7 +10,7 @@
     "需要 NVIDIA 显卡及兼容的 NVIDIA 驱动；本模块不会安装或修改显卡驱动。无兼容 GPU 时仍可用基础 CPU 能力。",
     "Python 3.12、PyTorch CUDA 12.4 与 Chatterbox 源码均版本锁定；生成时无需联网。"
   ],
-  "version": "1.0.0-py312-cu1241",
+  "version": "1.0.1-py312-cu1241",
   "installedBytes": 12000000000,
   "pythonEnvironment": {
     "pythonComponentId": "python-312",

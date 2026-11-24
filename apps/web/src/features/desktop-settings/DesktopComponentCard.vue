@@ -25,7 +25,7 @@
           v-if="!component.installed && !component.retired"
           type="primary"
           size="small"
-          :disabled="busy || component.state === 'blocked'"
+          :disabled="busy || (component.state === 'blocked' && !dependenciesQueued)"
           :loading="operationLoading"
           @click="$emit('install', component)"
         >
@@ -75,13 +75,13 @@
           <template #icon><Trash2 :size="15" /></template>卸载
         </n-button>
         <n-button
-          v-if="job?.state === 'running' && job.phase === 'downloading'"
+          v-if="job && (job.state === 'queued' || (job.state === 'running' && job.phase === 'downloading'))"
           size="small"
           quaternary
           :loading="canceling"
           @click="$emit('cancel', job)"
         >
-          取消下载
+          {{ job.state === "queued" ? "取消等待" : "取消下载" }}
         </n-button>
         <n-button v-if="offlineUploading" size="small" quaternary @click="$emit('cancelOfflineImport', component)">
           取消导入
@@ -181,6 +181,7 @@ const props = defineProps<{
   offlineUploadProgress?: number;
   exporting?: boolean;
   managementBusy?: boolean;
+  dependenciesQueued?: boolean;
 }>();
 
 // Output may be silent while pip writes files; keep the last-output age live without fabricating work.
@@ -221,7 +222,7 @@ const updateAvailable = computed(() =>
 );
 const statusLabel = computed(() => {
   if (props.component.retired) return "旧版 · 仅供卸载";
-  if (props.job?.state === "queued") return "等待中";
+  if (props.job?.state === "queued") return "等待安装槽位或共享依赖";
   if (props.job?.state === "running") return props.job.phase === "downloading" ? "下载中" : "安装处理中";
   if (props.component.state === "ready") return props.component.health === "healthy" ? "健康可用" : "已安装";
   return {
