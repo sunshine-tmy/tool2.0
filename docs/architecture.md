@@ -55,7 +55,7 @@ Fastify 插件作用域与注册顺序、SSE 结束后再关闭数据库、安�
 
 页面只组合；每个 composable 完整拥有一组状态、迟到请求处理、取消和卸载清理。Object URL 的创建与释放归同一所有者。配音 KeepAlive 状态、应用级音频播放器单例及播放保护不能移到页面生命周期。API 文件只做通信，偏好设置和展示映射单独归属。
 
-样式入口保留 `tokens → foundation → components` 层级和全局加载顺序；`global.css` / `redesign.css` 是有序 import 清单。feature 分片不会改为异步或 scoped 加载；细节见 [R11 样式归属](refactoring/r11-style-ownership.md)。
+样式入口保留 `tokens → foundation → components` 层级和全局加载顺序；`global.css` / `redesign.css` 是有序 import 清单。feature 分片不会改为异步或 scoped 加载；细节见 [R11 样式归属](archive/refactoring/r11-style-ownership.md)。
 
 桌面 `app/` 拥有应用级状态及唯一退出协调；`ipc/` 注册固定能力，`windows/` 拥有窗口，`backend/` 监督本应用子进程，`data/` 维护迁移恢复，`updates/` 管理受控更新，`security/` 校验来源。统一的 shared desktop 类型不扩大 preload 权限，不能暴露通用 invoke 或任意路径/进程控制。boot 重试不重建应用状态，退出不按端口或进程名误杀外部进程。
 

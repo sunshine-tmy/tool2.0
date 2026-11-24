@@ -1,5 +1,5 @@
 /* Light icon family: retain the shared pale tile and equal canvas spacing. */
-.icon-frame img[src^="icons/"] {
+.icon-frame img {
   width: 64px;
   height: 64px;
   object-fit: contain;

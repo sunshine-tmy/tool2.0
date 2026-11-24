@@ -1,10 +1,12 @@
 {
-  "date": "2026-11-08",
-  "source": "Current runtime WebP assets. Icon generation sources: asset-manifest.json; current hero: hero-creative-assistant-manifest.json. Historical PNG design originals are retained in docs only.",
+  "date": "2026-11-24",
+  "source": "Current runtime WebP assets. Prompts remain in asset-manifest.json and video-editor-icon.md. The live homepage illustration is imported by HomeHeroArtwork.vue. Generation filenames are historical provenance; unused originals were removed.",
   "brand": {
-    "original": "docs/design/ui-v2/brand.png",
     "generation": "exec-5538e1e0-8b46-4598-b89b-bf476656b4cc.png",
-    "prompt": "Single transparent satin 2.5D closed briefcase/toolbox, periwinkle #6558FF, pale lavender highlights and a restrained cyan edge; upper-left lighting, centered single silhouette, no text or surrounding decoration."
+    "prompt": "Single transparent satin 2.5D closed briefcase/toolbox, periwinkle #6558FF, pale lavender highlights and a restrained cyan edge; upper-left lighting, centered single silhouette, no text or surrounding decoration.",
+    "originalFilename": "docs/design/ui-v2/brand.png",
+    "originalRetained": false,
+    "file": "apps/web/src/assets/ui-v2/brand.webp"
   },
   "encoding": {
     "format": "WebP",
@@ -12,9 +14,28 @@
     "alphaQuality": 100,
     "iconSize": 256,
     "brandWidth": 96,
-    "heroWidth": 960
+    "heroWidth": 640,
+    "iconQualityOverrides": {
+      "video-editor": 94
+    }
   },
   "assets": [
+    {
+      "file": "apps/web/src/assets/ui-v2/brand.webp",
+      "bytes": 3642,
+      "width": 96,
+      "height": 87,
+      "alpha": true,
+      "sha256": "6bb9c2d06596a8f53f75338c166f66678a252d0baef9c35e4df1dc0c878453e2"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/hero-ecommerce-assistant-refined.webp",
+      "bytes": 63654,
+      "width": 640,
+      "height": 585,
+      "alpha": true,
+      "sha256": "abcfaa7450fd0ebc758382366a13c782457f462d4957e02e79aa59e5f2d5b571"
+    },
     {
       "file": "apps/web/src/assets/ui-v2/icons/audio-convert.webp",
       "bytes": 5086,
@@ -120,21 +141,13 @@
       "sha256": "443c8da92a7fa93e7f6a05274fa55bcf79541b6345e5d76ffecc910165610300"
     },
     {
-      "file": "apps/web/src/assets/ui-v2/brand.webp",
-      "bytes": 3642,
-      "width": 96,
-      "height": 87,
-      "alpha": true,
-      "sha256": "6bb9c2d06596a8f53f75338c166f66678a252d0baef9c35e4df1dc0c878453e2"
-    },
-    {
-      "file": "apps/web/src/assets/ui-v2/hero-creative-assistant.webp",
-      "bytes": 76352,
-      "width": 960,
-      "height": 480,
-      "alpha": true,
-      "sha256": "708fc51983b0e0c04cb6edc3dfaa8bddd041be7863b367bf9619664a814261c2"
+      "file": "apps/web/src/assets/ui-v2/icons/video-editor.webp",
+      "bytes": 5868,
+      "width": 256,
+      "height": 256,
+      "alpha": false,
+      "sha256": "bfab66a4b0e647f5a80f56177684be970e5ca8f7ea3944a3df46b33088227f7e"
     }
   ],
-  "totalBytes": 136920
+  "totalBytes": 130090
 }

@@ -205,4 +205,4 @@ M01 视频门槛通过：STTN 与 ProPainter 均走完 Worker 解码、mask、�
 - Chatterbox MPS 内存补测：`.package/macos-validation/20261109T085328Z-e00daf0c/reports/M01-03-chatterbox-mps-memory-20261116/report.json`（SHA-256 `04f4e2bb7c902c506bb63fdc45928ed4a539bfc9cfa1c85281c8fd1d9dcb9e04`）。
 - STTN 合成：`.package/macos-validation/20261109T085328Z-e00daf0c/reports/M01-04-sttn-mps-post-propainter-final/report.json`；真实运行/独立核验：`.package/macos-validation/20261109T085328Z-e00daf0c/reports/M01-04-real-video-run3/`。
 - ProPainter FP32/FP16 真实运行与独立媒体核验：`.package/macos-validation/20261109T085328Z-e00daf0c/reports/M01-05-real-video-run1/` 与 `.package/macos-validation/20261109T085328Z-e00daf0c/reports/M01-05-real-video-fp16-run1/`。
-- 用户质量结论与报告 SHA-256 记录于 [macOS 执行台账](macos-execution-status.md) 的 M01-02 至 M01-05 条目。大模型、视频和机器报告留在忽略目录 `.package/`，不纳入 Git。
+- 用户质量结论与报告 SHA-256 记录于 [macOS 执行台账](archive/macos-execution-status.md) 的 M01-02 至 M01-05 条目。大模型、视频和机器报告留在忽略目录 `.package/`，不纳入 Git。

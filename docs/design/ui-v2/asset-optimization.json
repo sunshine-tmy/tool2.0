@@ -1,0 +1,353 @@
+{
+  "date": "2026-11-24",
+  "trackedBaselineBytes": 65711901,
+  "removedImages": [
+    {
+      "file": "docs/design/ui-v2/brand-logo-light.png",
+      "bytes": 1626579,
+      "sha256": "18060d53658252b4ffac4366c324c94e02454e3b55c14e3641cd16331bb4c7b2"
+    },
+    {
+      "file": "docs/design/ui-v2/brand.png",
+      "bytes": 762051,
+      "sha256": "abdb13e8630c52ea302299cf19e4dd3fb5f9178af15adf6da31ee9ccaa513d5a"
+    },
+    {
+      "file": "docs/design/ui-v2/hero-creative-assistant.png",
+      "bytes": 1091913,
+      "sha256": "1aa4ad30a23c09919ea1714a2c39e1e8bd60bd58805cc60d8de6859c910ed194"
+    },
+    {
+      "file": "docs/design/ui-v2/hero-workstation.png",
+      "bytes": 1706346,
+      "sha256": "469bdc005ce0025d7693aba4d231592a248eb59823352917f4af015a1e9894db"
+    },
+    {
+      "file": "docs/design/ui-v2/hero.png",
+      "bytes": 542830,
+      "sha256": "269dac0d46af9b55907b2bbb0e704fa477e511587e259278d68198a689b0b958"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/audio-convert.png",
+      "bytes": 1441652,
+      "sha256": "ea28b725592b7dd098f39fc585c6c62fba5a5c5a1ff9e9fc24ade1e027484bd3"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/audio-extract.png",
+      "bytes": 1456293,
+      "sha256": "f8688baa5f2bc2a2343ba5f7cca25850c304a0c2912d254e8b0f179d26ddc332"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/audio-library.png",
+      "bytes": 1380704,
+      "sha256": "2d1336b0c63b81f0c8c2539f0191b84fb238746cd265f3a9d1378a0b553aa1cd"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/base64.png",
+      "bytes": 1387443,
+      "sha256": "6e6bbdb591104c8422576f82de0f411947f032ea26616a7ec1eb81c44221441c"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/content-archive.png",
+      "bytes": 1386165,
+      "sha256": "fe03441f2de3175b512a3ca67b7754f3b7a9d89f05655d8407598529f14a9812"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/image-ai.png",
+      "bytes": 1386919,
+      "sha256": "9e5922a955c8b2bc328efa74793b1f3132e6d3bd1be5e40478ec70c1376c6522"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/image-compress.png",
+      "bytes": 1389106,
+      "sha256": "6f8881cd3d9e7dc0bc22f4559bbe1f6f5f1bd89ab218dde6e2132bec1b406436"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/json-format.png",
+      "bytes": 1437979,
+      "sha256": "65458cec29fd13586c068d683d6a7a92f7172c67e3cad04d0a6eec5a3dbf4fb8"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/lan-transfer.png",
+      "bytes": 1376295,
+      "sha256": "050d25b5a90509fde38da996509150ddd678296367d53a75b3261164e60f420f"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/speech.png",
+      "bytes": 1452628,
+      "sha256": "1946876f8fe6b109ff4cd0328b85e878086ecd8291af8be6bfadc6515a7e7f1c"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/url-codec.png",
+      "bytes": 1396823,
+      "sha256": "1384c881b39f04f3ef3aa0532bd49519ed6574109e30fd16eb35467e16a32b3d"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/uuid-generator.png",
+      "bytes": 1385716,
+      "sha256": "2069a7b21669c024aaeb8630aff6351872d89ec7fed11eb33a380a856829c4ce"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/video-ai.png",
+      "bytes": 1391734,
+      "sha256": "8c20487beb6f26029957d47ec3c1673221b901311e182590c93293b037f0a985"
+    },
+    {
+      "file": "docs/design/ui-v2/icons/video-editor.png",
+      "bytes": 1279432,
+      "sha256": "eec97277cce854bc00a55fd4b017a2bfe80614c3197f5f0543cdb2de5a296a7b"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/archive.png",
+      "bytes": 1965086,
+      "sha256": "180d85aa7791cade4b225624b252212e94284f615d9256d5738bccccea645726"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/audio-convert.png",
+      "bytes": 1688850,
+      "sha256": "0c91dc3d53eb0363687afbbd7dd8a606dad8ca74222a633ee56f3f18b67995a0"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/audio-library.png",
+      "bytes": 1613982,
+      "sha256": "19ab42cd22ca11c26b812baff1b4543521a341562f041d3e28b1724a9853e0f3"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/audio.png",
+      "bytes": 1589110,
+      "sha256": "38832625fe2097e96b598a3340348a4c10c39264059191e606b9bd8e3ad7f838"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/base64.png",
+      "bytes": 1492144,
+      "sha256": "d3ec65929e96b1af47f68b084fdef9794a2439f4771c26b0788b97321d4a1f83"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/developer.png",
+      "bytes": 1498286,
+      "sha256": "9383b90e9b73c718aee2136a2bb92be6942b504d478c939565d5ecba9eb2bd84"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/home.png",
+      "bytes": 1674964,
+      "sha256": "40130ba33a76fb548bea9c4f2678ff656bec3f67c69663347f4ee6302ee428fd"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/image-ai.png",
+      "bytes": 1617957,
+      "sha256": "774f5ea174e09ecbc27aefcc1ca443eff03ae1d125bc8eaa8d00e5304a289626"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/image-compress.png",
+      "bytes": 1641495,
+      "sha256": "39da193e9f62b3b89bb7c81f2cd82ded79edc9ba74302b21431a61dd13699096"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/lan-transfer.png",
+      "bytes": 1612364,
+      "sha256": "938f8fbf1fd407aa1259c535d17d391710abeac301e153cd7883c0d759608e0a"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/speech.png",
+      "bytes": 1692300,
+      "sha256": "7defe615cdfe8200ab0385d08c134ec476e92968492387ae0592f696925ef81e"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/url-codec.png",
+      "bytes": 1530032,
+      "sha256": "a7c4c49e8e1e560de257d6eea718ab5cf4c08dea59acaf6e627f37e0d60d3702"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/uuid-generator.png",
+      "bytes": 1324377,
+      "sha256": "6b68a85f8bb0b288b7d3bde7aa403908ad8a349e3b6c0c13d7796aa72636ca73"
+    },
+    {
+      "file": "docs/design/ui-v2/screens/video.png",
+      "bytes": 1702391,
+      "sha256": "6f544068e7a1e12cee5ef110f757a6d458f417225b26599452754f8d32931031"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/hero-creative-assistant.webp",
+      "bytes": 76352,
+      "sha256": "708fc51983b0e0c04cb6edc3dfaa8bddd041be7863b367bf9619664a814261c2"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/hero-ecommerce-assistant.webp",
+      "bytes": 36742,
+      "sha256": "211a7a776265e074ca0a2e4e3452f30040b547562297a7aef1ac552d3133e636"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/hero-ecommerce-assistant-color.webp",
+      "bytes": 38966,
+      "sha256": "3d79941f2445f24c40b6d82e4d74047d8e453d7ce50398f835beab0d71525bb3"
+    },
+    {
+      "file": "apps/web/src/assets/ui-v2/hero-ecommerce-assistant-flat.webp",
+      "bytes": 22420,
+      "sha256": "53cb41f391d3b9bbaa3ac6421be2c5235d40dfb673c4c31ddbc13deb2beb07f5"
+    }
+  ],
+  "previews": [
+    {
+      "file": "docs/design/ui-v2/screens/archive.webp",
+      "bytes": 204196,
+      "sha256": "636730caf8299100521b49984daa27552da41016b921b4df56bedcbaf97a91c9",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/audio-convert.webp",
+      "bytes": 120312,
+      "sha256": "5769f461710e0a3c0f6f66d533e29914bba2323839e1f2d127774598ddfceca6",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/audio-library.webp",
+      "bytes": 103956,
+      "sha256": "50cab4d492b2f2a35a0db5fa70d54df2ecd80a8c66b769c735317a72741a2091",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/audio.webp",
+      "bytes": 104352,
+      "sha256": "89751f6c4d5c5257b841e1d039f54b6a3e386bf4999df3090973aef3bce5638f",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/base64.webp",
+      "bytes": 81300,
+      "sha256": "969f9f979979e0b73eb536a7df882a089af3315a3611a0623cd83bb231724d11",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/developer.webp",
+      "bytes": 69832,
+      "sha256": "a9e4bf019baf28b6e3cb2975ed698aee987dcc6e288ce539b254c64fd2de46a0",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/home.webp",
+      "bytes": 125520,
+      "sha256": "621767f41e4a05fccd76b63be340abf2f1f8b93759ce088318c0b98144b77b86",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/image-ai.webp",
+      "bytes": 119208,
+      "sha256": "34c8e6557c8c7f5b7a7f6a56d7aefdd21eea512df1367bcc66a0bda69285c82a",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/image-compress.webp",
+      "bytes": 105312,
+      "sha256": "611b5f04d732848b2f34e4c3b093f108a505876d12ac779b5f1ec95d23f5952e",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/lan-transfer.webp",
+      "bytes": 99198,
+      "sha256": "ab91dfe3d1b616b046487f9eb56ae8c94a01e60b2223861ac6cca9b2b4bb5616",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/speech.webp",
+      "bytes": 121662,
+      "sha256": "11c847c8afc87c675fbae1684c9d8f9c7f67683de6c6a933828dafee0f88db50",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/url-codec.webp",
+      "bytes": 63342,
+      "sha256": "5c8d1a510dbc783444fed0fc3885fc9224b512f185496921cc5f6b95f77eb579",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/uuid-generator.webp",
+      "bytes": 77930,
+      "sha256": "769978896008d2e29612449d245469d15d16fcd278b4aa2240a8f2e7a6581054",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/screens/video.webp",
+      "bytes": 128980,
+      "sha256": "9d1ccd86495f19d260b4e34000eb9b53a58c9890388e72c7e0fb996aef5fd46b",
+      "dimensions": [
+        1487,
+        1058
+      ]
+    },
+    {
+      "file": "docs/design/ui-v2/hero.webp",
+      "bytes": 68066,
+      "sha256": "f135052b0f06c430bf2cf961fddbb61f49710d600b10a004a451eff265220264",
+      "dimensions": [
+        1774,
+        887
+      ]
+    }
+  ],
+  "videoEditorIcon": {
+    "file": "apps/web/src/assets/ui-v2/icons/video-editor.webp",
+    "beforeBytes": 1367735,
+    "afterBytes": 5868,
+    "dimensions": [
+      256,
+      256
+    ],
+    "format": "WebP",
+    "quality": 94,
+    "geometry": "Full original canvas scaled proportionally; no crop, color, or composition change."
+  },
+  "originalPolicy": "Unused originals and inactive derivatives removed after previews and references were updated; historical names and hashes retained for provenance.",
+  "runtimeTotalBytes": 130090,
+  "verificationScope": "Asset conversion metadata, file-size inventory, static reference review and Git whitespace check only; no functional tests, browser screenshots, type checks or builds.",
+  "removedSourceBytes": 48096426,
+  "staticReferenceInventory": "All current asset manifest, runtime metadata, and newly edited Markdown asset references resolve. Existing ignored historical evidence links are recorded separately.",
+  "preExistingHistoricalEvidenceLinks": [
+    "design-qa.md:output/playwright/ui-v2/compare-home-final.png",
+    "design-qa.md:output/playwright/ui-v2/json-populated-1440.jpg",
+    "design-qa.md:output/playwright/ui-v2/modal-1440.jpg",
+    "design-qa.md:output/playwright/ui-v2/modal-375.jpg"
+  ],
+  "currentSourceBytes": 17873558,
+  "sourceSizeMeasurementScope": "Snapshot after image optimization and before subsequent documentation consolidation; not a live repository-size counter."
+}

@@ -1,6 +1,6 @@
 # 图片压缩专项对照（2026-11-07，当前轮次）
 
-目标为用户再次指定的图片压缩设计图，已确认与 `docs/design/ui-v2/screens/image-compress.png` SHA-256 一致：`39da193e9f62b3b89bb7c81f2cd82ded79edc9ba74302b21431a61dd13699096`。用户截图表示旧实现，设计图表示本轮目标；配色继续使用当前 `design.md` Token。
+历史验收目标为用户再次指定的图片压缩设计图，原始 PNG 的 SHA-256 为 `39da193e9f62b3b89bb7c81f2cd82ded79edc9ba74302b21431a61dd13699096`。2026-11-24 已将设计图改为[原尺寸 WebP 预览](docs/design/ui-v2/screens/image-compress.webp)，PNG 原图已清理；上述摘要仅属于历史 PNG，不适用于当前 WebP。本文件保留此前的验收记录，本次资源精简未重新执行视觉或功能测试。配色继续使用当前 `design.md` Token。
 
 ## 差异与处理
 

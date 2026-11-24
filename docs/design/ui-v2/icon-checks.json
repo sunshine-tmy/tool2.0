@@ -11,7 +11,11 @@
       256,
       256
     ],
-    "webBytes": 4002
+    "webBytes": 4002,
+    "originalRetained": false,
+    "originalFilename": "icons/image-compress.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/image-compress.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "image-ai",
@@ -25,7 +29,11 @@
       256,
       256
     ],
-    "webBytes": 3630
+    "webBytes": 3630,
+    "originalRetained": false,
+    "originalFilename": "icons/image-ai.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/image-ai.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "content-archive",
@@ -39,7 +47,11 @@
       256,
       256
     ],
-    "webBytes": 4444
+    "webBytes": 4444,
+    "originalRetained": false,
+    "originalFilename": "icons/content-archive.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/content-archive.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "video-ai",
@@ -53,7 +65,11 @@
       256,
       256
     ],
-    "webBytes": 4156
+    "webBytes": 4156,
+    "originalRetained": false,
+    "originalFilename": "icons/video-ai.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/video-ai.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "speech",
@@ -67,7 +83,11 @@
       256,
       256
     ],
-    "webBytes": 4430
+    "webBytes": 4430,
+    "originalRetained": false,
+    "originalFilename": "icons/speech.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/speech.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "audio-library",
@@ -81,7 +101,11 @@
       256,
       256
     ],
-    "webBytes": 4030
+    "webBytes": 4030,
+    "originalRetained": false,
+    "originalFilename": "icons/audio-library.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/audio-library.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "audio-extract",
@@ -95,7 +119,11 @@
       256,
       256
     ],
-    "webBytes": 4464
+    "webBytes": 4464,
+    "originalRetained": false,
+    "originalFilename": "icons/audio-extract.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/audio-extract.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "audio-convert",
@@ -109,7 +137,11 @@
       256,
       256
     ],
-    "webBytes": 5086
+    "webBytes": 5086,
+    "originalRetained": false,
+    "originalFilename": "icons/audio-convert.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/audio-convert.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "json-format",
@@ -123,7 +155,11 @@
       256,
       256
     ],
-    "webBytes": 4238
+    "webBytes": 4238,
+    "originalRetained": false,
+    "originalFilename": "icons/json-format.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/json-format.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "base64",
@@ -137,7 +173,11 @@
       256,
       256
     ],
-    "webBytes": 5148
+    "webBytes": 5148,
+    "originalRetained": false,
+    "originalFilename": "icons/base64.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/base64.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "url-codec",
@@ -151,7 +191,11 @@
       256,
       256
     ],
-    "webBytes": 4832
+    "webBytes": 4832,
+    "originalRetained": false,
+    "originalFilename": "icons/url-codec.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/url-codec.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "uuid-generator",
@@ -165,7 +209,11 @@
       256,
       256
     ],
-    "webBytes": 4444
+    "webBytes": 4444,
+    "originalRetained": false,
+    "originalFilename": "icons/uuid-generator.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/uuid-generator.webp",
+    "webFormat": "WebP"
   },
   {
     "id": "lan-transfer",
@@ -179,6 +227,23 @@
       256,
       256
     ],
-    "webBytes": 4022
+    "webBytes": 4022,
+    "originalRetained": false,
+    "originalFilename": "icons/lan-transfer.png",
+    "webFile": "apps/web/src/assets/ui-v2/icons/lan-transfer.webp",
+    "webFormat": "WebP"
+  },
+  {
+    "id": "video-editor",
+    "originalRetained": false,
+    "originalFilename": "icons/video-editor.png",
+    "bytes": 1279432,
+    "webFile": "apps/web/src/assets/ui-v2/icons/video-editor.webp",
+    "webSize": [
+      256,
+      256
+    ],
+    "webBytes": 5868,
+    "webFormat": "WebP"
   }
 ]

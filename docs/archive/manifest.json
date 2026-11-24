@@ -1,0 +1,591 @@
+{
+  "date": "2026-11-24",
+  "sourceCommit": "83332021bf84aec8eaf2fac95ba5357c1860f9e0",
+  "scope": "Documentation organization only; original dates, failures, test counts and protected contract JSON remain unchanged. No tests or builds executed.",
+  "archived": [
+    {
+      "source": "docs/macos-execution-status.md",
+      "target": "docs/archive/macos-execution-status.md",
+      "sha256": "9f479c775d0d2ce94c66c403a41ee2192e18c73eec7dd371e7068e1ef396ef40",
+      "bytes": 186344
+    },
+    {
+      "source": "docs/multimedia-archive-validation.md",
+      "target": "docs/archive/multimedia-archive-validation.md",
+      "sha256": "37b45d3decbcbeae33f64467a4df6de581794798ad85cb6016e40410fd9120f7",
+      "bytes": 94064
+    },
+    {
+      "source": "docs/refactoring/b04-verification.md",
+      "target": "docs/archive/refactoring/b04-verification.md",
+      "sha256": "0abef459dd7aae2b7de1a4d0a04ce34c5a9d30ecd034a394eef4d3e2d03066d8",
+      "bytes": 6878
+    },
+    {
+      "source": "docs/refactoring/b05-verification.md",
+      "target": "docs/archive/refactoring/b05-verification.md",
+      "sha256": "ab0739c69bd4c0cc194e7b7fcb58e621479833af0d5a7df3c814eb1097027cbd",
+      "bytes": 2517
+    },
+    {
+      "source": "docs/refactoring/b06-verification.md",
+      "target": "docs/archive/refactoring/b06-verification.md",
+      "sha256": "f565e33ba1ae4ba7f5854a39a6adc3f037e4803090da3bd736ee2598719be192",
+      "bytes": 4363
+    },
+    {
+      "source": "docs/refactoring/b07-verification.md",
+      "target": "docs/archive/refactoring/b07-verification.md",
+      "sha256": "b5d94ae80332462f3ac289e977ef941ea69dab7ce9b067a55f2dab105f0465fb",
+      "bytes": 3235
+    },
+    {
+      "source": "docs/refactoring/b08-verification.md",
+      "target": "docs/archive/refactoring/b08-verification.md",
+      "sha256": "c8cf81ef6f97ae4a192a2ad3cc58f27214486f5effe506634d49ee0d7b6a1bc0",
+      "bytes": 2140
+    },
+    {
+      "source": "docs/refactoring/b09-verification.md",
+      "target": "docs/archive/refactoring/b09-verification.md",
+      "sha256": "3566cd24619504c5a453158580ce44a4111b7a589684d5eb6532ae54d7d1b082",
+      "bytes": 1447
+    },
+    {
+      "source": "docs/refactoring/b10-verification.md",
+      "target": "docs/archive/refactoring/b10-verification.md",
+      "sha256": "f4521fa6df5eb52c3bb282c9a5b6ec8b69471c435c70cc6023ab9a7968c160d1",
+      "bytes": 2954
+    },
+    {
+      "source": "docs/refactoring/b11-verification.md",
+      "target": "docs/archive/refactoring/b11-verification.md",
+      "sha256": "ced93a1c4236b8de17edd10d8c60c1991b00443c501991591270a4e4a1b8a4b0",
+      "bytes": 1761
+    },
+    {
+      "source": "docs/refactoring/b12-verification.md",
+      "target": "docs/archive/refactoring/b12-verification.md",
+      "sha256": "5b8cb22cfbb28ffe2fcf5f53998e65e2ca496e03cb813809c99c340cc77aee14",
+      "bytes": 2652
+    },
+    {
+      "source": "docs/refactoring/b13-inference-final-write-regression.md",
+      "target": "docs/archive/refactoring/b13-inference-final-write-regression.md",
+      "sha256": "4478d153b3ba5ecce306f260a67a0c4ae7d3c13d522097c4812f6cb0e316ff5a",
+      "bytes": 3885
+    },
+    {
+      "source": "docs/refactoring/b13-verification.md",
+      "target": "docs/archive/refactoring/b13-verification.md",
+      "sha256": "a9bc78eced5821c47270877d2eb1f7fac397018108fb8593b18fde23cc7ccdf0",
+      "bytes": 6374
+    },
+    {
+      "source": "docs/refactoring/baseline-issues.md",
+      "target": "docs/archive/refactoring/baseline-issues.md",
+      "sha256": "d0fbe0797d0a21571201c5de7883288277ef23f95a854abade64c8a826632284",
+      "bytes": 24190
+    },
+    {
+      "source": "docs/refactoring/r01-verification.md",
+      "target": "docs/archive/refactoring/r01-verification.md",
+      "sha256": "90053a199ecff2826d686f0e566a3f28046c0d7136468130ce5ff3b257ea473c",
+      "bytes": 9495
+    },
+    {
+      "source": "docs/refactoring/r02a-verification.md",
+      "target": "docs/archive/refactoring/r02a-verification.md",
+      "sha256": "22ec080e9d4adbb158ac9e1dbbc989641823543848ab92bb4595a5c931c6c88c",
+      "bytes": 8264
+    },
+    {
+      "source": "docs/refactoring/r02b-verification.md",
+      "target": "docs/archive/refactoring/r02b-verification.md",
+      "sha256": "cfef5601b6fa17c6cfed2295f1d1d1251d1873db9268c76451622dd1ace38bd2",
+      "bytes": 7885
+    },
+    {
+      "source": "docs/refactoring/r02c-verification.md",
+      "target": "docs/archive/refactoring/r02c-verification.md",
+      "sha256": "c4bf9563f9383c19cebbec110e8b28d1ddaa5e726edd5d5d891d8ef7aaf44512",
+      "bytes": 10287
+    },
+    {
+      "source": "docs/refactoring/r03-format-initialization-verification.md",
+      "target": "docs/archive/refactoring/r03-format-initialization-verification.md",
+      "sha256": "a092c8d8430af1a606f1ff437b3fbc77af483e087fea1ccda1fd87fecd4c369d",
+      "bytes": 5828
+    },
+    {
+      "source": "docs/refactoring/r03-verification.md",
+      "target": "docs/archive/refactoring/r03-verification.md",
+      "sha256": "438aa073c7797c4db9dbcfc10e00b096a490aa2b2306c8df21b5e64e01c74942",
+      "bytes": 6028
+    },
+    {
+      "source": "docs/refactoring/r03a-verification.md",
+      "target": "docs/archive/refactoring/r03a-verification.md",
+      "sha256": "c14f707e90482773bdaef91192d52b3cf7b706ead3c59e88cf0647877343ab45",
+      "bytes": 14657
+    },
+    {
+      "source": "docs/refactoring/r03b-archive-verification.md",
+      "target": "docs/archive/refactoring/r03b-archive-verification.md",
+      "sha256": "79bbf041e87c145432ef306fe5725b21efe2f8dea015a4b837ec4ebedc22f39f",
+      "bytes": 2398
+    },
+    {
+      "source": "docs/refactoring/r03b-audio-library-verification.md",
+      "target": "docs/archive/refactoring/r03b-audio-library-verification.md",
+      "sha256": "f507798768331afb01ce6e30e38728cd2d01b4d530cc9cc18b75fa7b263b9b0c",
+      "bytes": 5971
+    },
+    {
+      "source": "docs/refactoring/r03b-common-verification.md",
+      "target": "docs/archive/refactoring/r03b-common-verification.md",
+      "sha256": "2e9294cd2316f462c2d3f3a5a92c0cdc3f096b40d9b2ef5ebaa3883e14199072",
+      "bytes": 1592
+    },
+    {
+      "source": "docs/refactoring/r03b-image-verification.md",
+      "target": "docs/archive/refactoring/r03b-image-verification.md",
+      "sha256": "7f29b88a45c24ec3643443411f964d742047fe35d71fc526ad7b36832ebd74af",
+      "bytes": 6013
+    },
+    {
+      "source": "docs/refactoring/r03b-lan-verification.md",
+      "target": "docs/archive/refactoring/r03b-lan-verification.md",
+      "sha256": "4f4523af244d300fbdcb26e97343d4f32ea7701262c66d2b01c57d7cbb29e9f3",
+      "bytes": 2965
+    },
+    {
+      "source": "docs/refactoring/r03b-speech-verification.md",
+      "target": "docs/archive/refactoring/r03b-speech-verification.md",
+      "sha256": "2075fceca635d948c03edf31f8e769cc7a5f8116b0c5b2672955b88abc04f275",
+      "bytes": 1913
+    },
+    {
+      "source": "docs/refactoring/r03b-system-verification.md",
+      "target": "docs/archive/refactoring/r03b-system-verification.md",
+      "sha256": "41ad9eb668fa67263088dc244831bdb8ccaa143e9bb470774a81ac5cd9b26c43",
+      "bytes": 1479
+    },
+    {
+      "source": "docs/refactoring/r03c-lan-dto-verification.md",
+      "target": "docs/archive/refactoring/r03c-lan-dto-verification.md",
+      "sha256": "42a285350a11e3d319a00bf98b5eadb660d31f1ea378d12283dbe0bc057286c5",
+      "bytes": 1150
+    },
+    {
+      "source": "docs/refactoring/r03d-shared-layout-verification.md",
+      "target": "docs/archive/refactoring/r03d-shared-layout-verification.md",
+      "sha256": "65d04b763b945da0e151cc821395a70fb85ed5ce4dc630db3ed4b97e372fbfec",
+      "bytes": 3311
+    },
+    {
+      "source": "docs/refactoring/r03e-contract-ownership-verification.md",
+      "target": "docs/archive/refactoring/r03e-contract-ownership-verification.md",
+      "sha256": "844ac7afab831c5ebee41cf1f36bef743e9234044b79e2bb09dfee21d205efdb",
+      "bytes": 2730
+    },
+    {
+      "source": "docs/refactoring/r04-verification.md",
+      "target": "docs/archive/refactoring/r04-verification.md",
+      "sha256": "daa4a767b4e78c8a737351783729d92451ccfad8785171d158fcd91e1048b3ad",
+      "bytes": 5832
+    },
+    {
+      "source": "docs/refactoring/r04a-subtitle-time-verification.md",
+      "target": "docs/archive/refactoring/r04a-subtitle-time-verification.md",
+      "sha256": "02ad90cc340b3780304e45ac53bf2da562c893e29f32b46ddd98bbb4f47b36ec",
+      "bytes": 5142
+    },
+    {
+      "source": "docs/refactoring/r04b-file-replacement-verification.md",
+      "target": "docs/archive/refactoring/r04b-file-replacement-verification.md",
+      "sha256": "42c4bc45ef1b9323b5b0aea34edcdae883907c2fa518c6e26e4ca994b6193bc3",
+      "bytes": 2982
+    },
+    {
+      "source": "docs/refactoring/r04c-batch-subtitles-verification.md",
+      "target": "docs/archive/refactoring/r04c-batch-subtitles-verification.md",
+      "sha256": "852a4e6c0b7b44786acb5188bc867f2d697cdb2e376d5891d23fbed5c9e774ad",
+      "bytes": 2490
+    },
+    {
+      "source": "docs/refactoring/r04d-speech-file-names-verification.md",
+      "target": "docs/archive/refactoring/r04d-speech-file-names-verification.md",
+      "sha256": "20c189978c97e96cee7b8d376349a16f39db8a756c6e150d2a6ba03091ccf19b",
+      "bytes": 2769
+    },
+    {
+      "source": "docs/refactoring/r04e-presentation-verification.md",
+      "target": "docs/archive/refactoring/r04e-presentation-verification.md",
+      "sha256": "1f13c6c930f0d477874fea555e92ec7a5d13ff75992d85733ea5be6f961a4a27",
+      "bytes": 2300
+    },
+    {
+      "source": "docs/refactoring/r04f-json-file-verification.md",
+      "target": "docs/archive/refactoring/r04f-json-file-verification.md",
+      "sha256": "bad26009fa3cb3bca428d1662cf677caf86dfd52cb83a77fcb57350e7ddc88f0",
+      "bytes": 2305
+    },
+    {
+      "source": "docs/refactoring/r04g-translation-failure-verification.md",
+      "target": "docs/archive/refactoring/r04g-translation-failure-verification.md",
+      "sha256": "3f6abcd4f9ce4372f3cca8bfb716d1a6a6005af3f58c8619b68dbcef010db573",
+      "bytes": 1144
+    },
+    {
+      "source": "docs/refactoring/r04h-worker-transport-verification.md",
+      "target": "docs/archive/refactoring/r04h-worker-transport-verification.md",
+      "sha256": "f0d13e5bf2f27b6312316fd2121db981db9e17633666def7689028774a5ca287",
+      "bytes": 1672
+    },
+    {
+      "source": "docs/refactoring/r05-verification.md",
+      "target": "docs/archive/refactoring/r05-verification.md",
+      "sha256": "7292491b2a675f1d1dcb9f9a79b1644c2978b813863076c5973fcb7704e7452d",
+      "bytes": 9683
+    },
+    {
+      "source": "docs/refactoring/r06-verification.md",
+      "target": "docs/archive/refactoring/r06-verification.md",
+      "sha256": "528d3acc441da3156f55b7750cd9457a89ffbc42d887d8c10a33d60c04a27866",
+      "bytes": 9467
+    },
+    {
+      "source": "docs/refactoring/r07-completion-recheck.md",
+      "target": "docs/archive/refactoring/r07-completion-recheck.md",
+      "sha256": "f25d9dc3a46526236a07f3a75ee93a70ef504e9fece52331a30f08ceca666444",
+      "bytes": 4796
+    },
+    {
+      "source": "docs/refactoring/r07-verification.md",
+      "target": "docs/archive/refactoring/r07-verification.md",
+      "sha256": "f42761b0d93328244986479fbe718066801fce9772fcfc1be8bcc0e0b60e53c6",
+      "bytes": 11467
+    },
+    {
+      "source": "docs/refactoring/r07a-image-compress-verification.md",
+      "target": "docs/archive/refactoring/r07a-image-compress-verification.md",
+      "sha256": "c64c60c65947f4709ed2ef9961174fd7c1f757734a3a235225fa998c21feb17c",
+      "bytes": 8449
+    },
+    {
+      "source": "docs/refactoring/r07b1-image-ai-layout-verification.md",
+      "target": "docs/archive/refactoring/r07b1-image-ai-layout-verification.md",
+      "sha256": "38c5f6a93d9d3bd5abe72563cdf4b3f3bcb201429e15ef2689838acd34d51169",
+      "bytes": 7871
+    },
+    {
+      "source": "docs/refactoring/r07b2-image-ai-projections-verification.md",
+      "target": "docs/archive/refactoring/r07b2-image-ai-projections-verification.md",
+      "sha256": "1825a83d746817fc2612cf51589dc16c6fed2cd92f5fd7d4aae1e5951246c0d8",
+      "bytes": 9012
+    },
+    {
+      "source": "docs/refactoring/r07b3-image-ai-persistence-verification.md",
+      "target": "docs/archive/refactoring/r07b3-image-ai-persistence-verification.md",
+      "sha256": "f3fe3ccdb0a98ad89e9436d6a079b8975673615b31dbd4ff76ba8c7e54a2945c",
+      "bytes": 10388
+    },
+    {
+      "source": "docs/refactoring/r07b4-image-ai-inference-verification.md",
+      "target": "docs/archive/refactoring/r07b4-image-ai-inference-verification.md",
+      "sha256": "378654e5716589cf95833d823a5f8196105423a21424cc87b2ba047144e4feb9",
+      "bytes": 10511
+    },
+    {
+      "source": "docs/refactoring/r07b5-product-image-execution-verification.md",
+      "target": "docs/archive/refactoring/r07b5-product-image-execution-verification.md",
+      "sha256": "601bd8f0a8d04c09e4b3a03a4999bb78a3977bee3a64808226b97fd7f22bbfb4",
+      "bytes": 5930
+    },
+    {
+      "source": "docs/refactoring/r07b6-image-ai-history-query-verification.md",
+      "target": "docs/archive/refactoring/r07b6-image-ai-history-query-verification.md",
+      "sha256": "f5a58c5b886feecb480bf4d6a60b5aeb2f29493634377a6493121dff3e56c011",
+      "bytes": 4628
+    },
+    {
+      "source": "docs/refactoring/r07b7-image-ai-history-removal-verification.md",
+      "target": "docs/archive/refactoring/r07b7-image-ai-history-removal-verification.md",
+      "sha256": "99ea1dec9ae7780d2047eb13b8c669c49d95780160bd1facadcc57c3ffa9035c",
+      "bytes": 5920
+    },
+    {
+      "source": "docs/refactoring/r07c1-speech-shared-layout-verification.md",
+      "target": "docs/archive/refactoring/r07c1-speech-shared-layout-verification.md",
+      "sha256": "bd91c3ac78ec9ddfd3d87e978f66ca5900e5ac376e8682240585f1b8de19c9bb",
+      "bytes": 6281
+    },
+    {
+      "source": "docs/refactoring/r07c2-edge-tts-layout-verification.md",
+      "target": "docs/archive/refactoring/r07c2-edge-tts-layout-verification.md",
+      "sha256": "c52b534392e905b22d58ec876510aad4685b4c1460c84f5589a011576e68e96f",
+      "bytes": 5656
+    },
+    {
+      "source": "docs/refactoring/r07c3-chatterbox-layout-verification.md",
+      "target": "docs/archive/refactoring/r07c3-chatterbox-layout-verification.md",
+      "sha256": "3885823a800bdb54a1b62ef70744a37eb5f70d683c9444b202bfc7e82616c47a",
+      "bytes": 5654
+    },
+    {
+      "source": "docs/refactoring/r07d1-audio-library-speech-source-verification.md",
+      "target": "docs/archive/refactoring/r07d1-audio-library-speech-source-verification.md",
+      "sha256": "da2bfd25ac6e6a21f359d7a48cbeb885aae6f58a926168f53a889c1d39ec9b81",
+      "bytes": 6911
+    },
+    {
+      "source": "docs/refactoring/r07d2-audio-library-layout-verification.md",
+      "target": "docs/archive/refactoring/r07d2-audio-library-layout-verification.md",
+      "sha256": "c6f34046f8f1fcbf72f132948131da524bf4a9f2da94687687457d47b811442e",
+      "bytes": 4028
+    },
+    {
+      "source": "docs/refactoring/r07d3-audio-library-groups-verification.md",
+      "target": "docs/archive/refactoring/r07d3-audio-library-groups-verification.md",
+      "sha256": "25a27ace2075a93baf0f56fc6cfd6bbbcfd15be2404aec397802c3ce230e14b3",
+      "bytes": 5159
+    },
+    {
+      "source": "docs/refactoring/r07d4-audio-library-presets-verification.md",
+      "target": "docs/archive/refactoring/r07d4-audio-library-presets-verification.md",
+      "sha256": "ee1790f3df96efb73adfe9153b4f5c7ac7b3eb340673734f5d7680706b6baf93",
+      "bytes": 4947
+    },
+    {
+      "source": "docs/refactoring/r07d5-audio-library-recycle-bin-verification.md",
+      "target": "docs/archive/refactoring/r07d5-audio-library-recycle-bin-verification.md",
+      "sha256": "0e7d6fb578f31449470d4cbfbf9177a5c96ab961436dc7f206928105562f82d5",
+      "bytes": 4610
+    },
+    {
+      "source": "docs/refactoring/r07d6-audio-library-quota-verification.md",
+      "target": "docs/archive/refactoring/r07d6-audio-library-quota-verification.md",
+      "sha256": "a073cff3e41bdb14d4b30b49d0f1075f2af0d7f6ede8bf0a6ecad5fcdfb84e51",
+      "bytes": 4969
+    },
+    {
+      "source": "docs/refactoring/r07d7a-audio-library-catalog-verification.md",
+      "target": "docs/archive/refactoring/r07d7a-audio-library-catalog-verification.md",
+      "sha256": "da54500b7540e1449acc5bbe9b7179f6c0204131e7cf5bdaefb41bd23d303b40",
+      "bytes": 4814
+    },
+    {
+      "source": "docs/refactoring/r07d7b-audio-library-startup-recovery-verification.md",
+      "target": "docs/archive/refactoring/r07d7b-audio-library-startup-recovery-verification.md",
+      "sha256": "c68ed7a131a9fed150c5d50f391057c7003d830fdd7841492e6fa19e3a732693",
+      "bytes": 4922
+    },
+    {
+      "source": "docs/refactoring/r07d7c-audio-library-backup-merge-verification.md",
+      "target": "docs/archive/refactoring/r07d7c-audio-library-backup-merge-verification.md",
+      "sha256": "c24bd9d4fc1dfd68aa0701730c24362a4536ad66472385da6cc2d6165ebaee69",
+      "bytes": 5284
+    },
+    {
+      "source": "docs/refactoring/r07e-archive-assessment.md",
+      "target": "docs/archive/refactoring/r07e-archive-assessment.md",
+      "sha256": "418cb7e1087d0ca225e52ba614e096227e73f3290559ebcfc955f61f258bb83c",
+      "bytes": 5416
+    },
+    {
+      "source": "docs/refactoring/r07e1-xhs-provider-layout-verification.md",
+      "target": "docs/archive/refactoring/r07e1-xhs-provider-layout-verification.md",
+      "sha256": "d2036e95c4bcf82770d14cb4446ee07fdad8299a6c56632ae54890fd872ac95f",
+      "bytes": 5262
+    },
+    {
+      "source": "docs/refactoring/r07e2-douyin-provider-layout-verification.md",
+      "target": "docs/archive/refactoring/r07e2-douyin-provider-layout-verification.md",
+      "sha256": "453abb7e29f19791cbb8021d387f95f6e566ac45717172ec2543c0225395ad12",
+      "bytes": 6888
+    },
+    {
+      "source": "docs/refactoring/r07e3-translation-runtime-layout-verification.md",
+      "target": "docs/archive/refactoring/r07e3-translation-runtime-layout-verification.md",
+      "sha256": "c70481eb3f9cd67481f2a61f98cec49605437a4744b54c449b77461958d0a4cc",
+      "bytes": 6503
+    },
+    {
+      "source": "docs/refactoring/r07e4-archive-core-layout-verification.md",
+      "target": "docs/archive/refactoring/r07e4-archive-core-layout-verification.md",
+      "sha256": "dac90a8b73f0071df9212cd523dac6dfaab51ee55cd1f64e2424a54a3f39af26",
+      "bytes": 3131
+    },
+    {
+      "source": "docs/refactoring/r07e5-archive-compat-assembly-verification.md",
+      "target": "docs/archive/refactoring/r07e5-archive-compat-assembly-verification.md",
+      "sha256": "b2380ba93429afbb9fad7cefaebd1070fad2d53f956688232d826a2817e64bb3",
+      "bytes": 4084
+    },
+    {
+      "source": "docs/refactoring/r07f-lan-assessment.md",
+      "target": "docs/archive/refactoring/r07f-lan-assessment.md",
+      "sha256": "af273ec44ad28b9b9e4863d2010f3bb07dbedabad01df8f7919a8a26c6c13c45",
+      "bytes": 1907
+    },
+    {
+      "source": "docs/refactoring/r07f-lan-layout-verification.md",
+      "target": "docs/archive/refactoring/r07f-lan-layout-verification.md",
+      "sha256": "a9fed086a76bc9ceacdae29d55139d10fd41d14a40a436ad29ba42c112397fb2",
+      "bytes": 3758
+    },
+    {
+      "source": "docs/refactoring/r08-frontend-ownership.md",
+      "target": "docs/archive/refactoring/r08-frontend-ownership.md",
+      "sha256": "cb62cff6cfed99629179b980ceddc23ba4904c6551e0bd62f4c3f373e31b6b13",
+      "bytes": 4213
+    },
+    {
+      "source": "docs/refactoring/r08-verification.md",
+      "target": "docs/archive/refactoring/r08-verification.md",
+      "sha256": "31768e6647fda2634f4a7ced662c489a36e972fd7ab7236620462fe32bd951c8",
+      "bytes": 14528
+    },
+    {
+      "source": "docs/refactoring/r09-desktop-ownership.md",
+      "target": "docs/archive/refactoring/r09-desktop-ownership.md",
+      "sha256": "653e6a4b37d6fa29693369a2b23ca70fb49d9cf35592263763f540b697142ef3",
+      "bytes": 5470
+    },
+    {
+      "source": "docs/refactoring/r09-verification.md",
+      "target": "docs/archive/refactoring/r09-verification.md",
+      "sha256": "856bee84d27230575ab172c12929028cd9e8bb6cfa4ea0d5ad0fb3fd6a9c4d6e",
+      "bytes": 14858
+    },
+    {
+      "source": "docs/refactoring/r10-tooling-ownership.md",
+      "target": "docs/archive/refactoring/r10-tooling-ownership.md",
+      "sha256": "96d6a11d1992c685e5f56642b2be4a06c00f0e67d1733a8ef01af5a5f081111b",
+      "bytes": 6626
+    },
+    {
+      "source": "docs/refactoring/r10-verification.md",
+      "target": "docs/archive/refactoring/r10-verification.md",
+      "sha256": "6fa5dc9eba1e8eb0bc9e60fa876ac771c5409ba72f9327c3fb7ff1d0777c5d29",
+      "bytes": 12013
+    },
+    {
+      "source": "docs/refactoring/r11-style-ownership.md",
+      "target": "docs/archive/refactoring/r11-style-ownership.md",
+      "sha256": "ded5515ba3f1bb283c01936c96c4eea4a1ef70f5da5ee9bf31015b583b8fa576",
+      "bytes": 9051
+    },
+    {
+      "source": "docs/refactoring/r11-verification.md",
+      "target": "docs/archive/refactoring/r11-verification.md",
+      "sha256": "dbd5dfe9edcb39199ef93235f30f61ec3a8bb12cbcc811377fbe8204963a11ca",
+      "bytes": 12752
+    }
+  ],
+  "removed": [
+    {
+      "file": "docs/design/ui-v2/brand-logo-light-manifest.json",
+      "sha256": "07aaa39cf2b6f363cedaf7c80f0defdca7b7f9cf5ed43303522cbbaa55927475",
+      "bytes": 2391,
+      "summaryAnchor": "retired-images"
+    },
+    {
+      "file": "docs/design/ui-v2/hero-creative-assistant-manifest.json",
+      "sha256": "987e2df06ce3878ccd27e0ec6a167eea629a23e0246aea1ef02974adf4903427",
+      "bytes": 2837,
+      "summaryAnchor": "retired-images"
+    },
+    {
+      "file": "docs/design/ui-v2/hero-workstation-manifest.json",
+      "sha256": "293e8c26a765a337c983ab3259e987b1fc37ffb92726ddc61dde69cfcd175a30",
+      "bytes": 2612,
+      "summaryAnchor": "retired-images"
+    },
+    {
+      "file": "docs/enterprise-optimization-backlog.md",
+      "sha256": "feb45484c4ed598a84e3b004ed3d98b564f20b36b305a8c14060f4f70f11405c",
+      "bytes": 55544,
+      "summaryAnchor": "planning"
+    },
+    {
+      "file": "docs/macos-github-release-manifest-replacement-list.md",
+      "sha256": "2b760579e3c4bf4f0de1d8b469f1965998a4443bbfda8b4f4ae5cbab824b4877",
+      "bytes": 5267,
+      "summaryAnchor": "macos-release"
+    },
+    {
+      "file": "docs/macos-github-release-replacement-list-tag01.md",
+      "sha256": "e24e4bb1adf53251dee555a2e911554edd1e5d34f181ba13badb5877ff38fdab",
+      "bytes": 10482,
+      "summaryAnchor": "macos-release"
+    },
+    {
+      "file": "docs/macos-github-release-signed-manifests-mac-ability-pack-2026-11-12-01.md",
+      "sha256": "ed7f4883f9575b70a0b20d3aee7b4bb6b1b688bfc0386f56892ccb54fef1877c",
+      "bytes": 6686,
+      "summaryAnchor": "macos-release"
+    },
+    {
+      "file": "docs/macos-github-release-signed-manifests.md",
+      "sha256": "58db9dfc85eb279c634d90e17f386418ba99c9685c9feaf6231da9d90af61b0a",
+      "bytes": 781,
+      "summaryAnchor": "macos-release"
+    },
+    {
+      "file": "docs/macos-github-release-upload-list-mac-ability-pack-2026-11-12-01.md",
+      "sha256": "075164ab2fae587421fd5dbf74967800f5661d89dba211d5290f5c56a1e1347d",
+      "bytes": 16056,
+      "summaryAnchor": "macos-release"
+    },
+    {
+      "file": "docs/macos-github-release-upload-list.md",
+      "sha256": "41cac6cad1138b071c7ef49d4779f2834fd2b1e1d3e7936dbf00c659ee1317c5",
+      "bytes": 798,
+      "summaryAnchor": "macos-release"
+    },
+    {
+      "file": "docs/module-data-backup-plan.md",
+      "sha256": "4510ea02e59e2652c23e695628f9e334394dd21012c6d2fe40697e8d746caa25",
+      "bytes": 24479,
+      "summaryAnchor": "data-backup"
+    },
+    {
+      "file": "docs/multimedia-archive-plan.md",
+      "sha256": "bb4444a3f67b2ba26976edf45c34f60da344c73736df6b9b41a99ce350f342e1",
+      "bytes": 37344,
+      "summaryAnchor": "archive"
+    },
+    {
+      "file": "docs/project-plan.md",
+      "sha256": "ea5663bf05fa4010d91414f7f97d32fbe943fed84eab315bde94cf444e1f5f5c",
+      "bytes": 1188,
+      "summaryAnchor": "planning"
+    },
+    {
+      "file": "docs/superpowers/plans/2026-07-06-lightweight-ecommerce-toolbox.md",
+      "sha256": "7e8e5b52fc1f87f96d3e8e2bb71cc282179a701ee678f4c41fc6403b29ebe822",
+      "bytes": 2604,
+      "summaryAnchor": "planning"
+    },
+    {
+      "file": "docs/superpowers/specs/2026-07-06-lightweight-ecommerce-toolbox-design.md",
+      "sha256": "f83f4e3c228f296a7066a5bd5d2e89eaf7ae197e56eadea6486dd9a4da2df4e0",
+      "bytes": 2926,
+      "summaryAnchor": "planning"
+    },
+    {
+      "file": "docs/ui-ux-redesign-plan.md",
+      "sha256": "bf5f88e56a2662e7fd7ce18adba2375d09985e676c1d8dcafbfb481e752178b0",
+      "bytes": 13544,
+      "summaryAnchor": "planning"
+    },
+    {
+      "file": "docs/video-subtitle-removal-plan.md",
+      "sha256": "4edf026e7d8de7748a2d76db8d605b61f3a67438a23729b34bc154fe7de3d627",
+      "bytes": 34011,
+      "summaryAnchor": "video-subtitle"
+    }
+  ]
+}

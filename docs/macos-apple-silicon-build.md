@@ -1,8 +1,8 @@
 # Apple Silicon macOS 内部测试包
 
-> 当前状态（2026-11-14）：完整目标、任务顺序和验收边界以[macOS Apple Silicon 执行计划](macos-apple-silicon-implementation-plan.md)为准，目标为 macOS 14+、M1 16 GB 基线、13 个业务模块及十类 Mac 能力。Mac 专属目录已有十项签名 manifest，本机十项能力安装和自检通过；正式 Release 的十个 manifest 替换、原生界面/设备验收、Windows 真实备份、DMG 和干净环境安装仍未完成。旧的 macOS 13、八类能力、CPU-only 步骤仅作为历史说明，不代表当前范围。
+> 文档整理（2026-11-24）：目标和任务顺序以 [macOS 执行计划](macos-apple-silicon-implementation-plan.md) 为准，当前能力版本以应用内置的 Mac 目录为准。下文的十项能力及旧版本号属于当时的构建快照，不是当前机器或 Release 的实时状态。旧 manifest/SPDX 替换已在 2026-11-15 记录为完成，不应重复执行；[发布摘要](history-summary.md#macos-release) 和 [待验边界](history-summary.md#macos-acceptance) 区分已完成历史与仍需人工确认的事项。本次没有重新运行模型、设备或安装包验收。
 
-本文记录 Apple Silicon macOS 的源码启动、能力资产和内部构建边界。完整任务矩阵和实测状态以执行计划及[执行台账](macos-execution-status.md)为准；本文旧构建命令用于理解或再生成资产，不表示当前尚需从零制作所有能力。
+本文记录 Apple Silicon macOS 的源码启动、能力资产和内部构建边界。完整任务矩阵和实测状态以执行计划及[执行台账](archive/macos-execution-status.md)为准；本文旧构建命令用于理解或再生成资产，不表示当前尚需从零制作所有能力。
 
 ## 当前源码启动入口
 
@@ -38,13 +38,13 @@ pnpm --filter desktop exec vitest run --exclude .stage/** --exclude out/** --exc
 pnpm desktop:build
 ```
 
-`pnpm desktop:build` 构建源码桌面，不制作安装包。`pnpm desktop:make` 会生成 DMG，并按现有打包规则递增产品版本；当前版本为 `1.0.9`，普通打包预计变为 `1.0.10`。只有 M08-02 与 M03-04 前置完成、核对版本和输出路径后，用户明确启动一次打包，才进入 M09-B03。当前没有执行该命令。手动 GitHub Actions workflow 同样不得被误当作能力资产制作、模型验收或干净设备安装证明。
+`pnpm desktop:build` 构建源码桌面，不制作安装包。`pnpm desktop:make` 会生成 DMG，并按现有打包规则递增产品版本；实际版本以 `apps/desktop/package.json` 为准。核对前置验收、源码版本和输出路径，并按用户明确指令打包后，才进入 M09-B03。手动 GitHub Actions workflow 同样不得被误当作能力资产制作、模型验收或干净设备安装证明。
 
 图标由 `apps/desktop/assets/ecommerce-toolbox-icon-master-1024.png` 在 macOS 上转换为 `.icns`。桌面构建会在原生主机重建 `better-sqlite3`、`sharp`；Windows 打包目标仍为 x64 NSIS，维持原行为。
 
 ## 阶段 2：Mac 能力资产清单与再生成
 
-再生成能力资产时，准备、签名和打包必须在 Apple Silicon 原生构建机完成。Windows wheel、Windows 浏览器与 `win32-x64` manifest 不得改名后复用。`.package/` 是本机临时工作区，不应提交 Git。当前发布/验收缺口见[正式 Manifest 替换清单](macos-github-release-manifest-replacement-list.md)。
+再生成能力资产时，准备、签名和打包必须在 Apple Silicon 原生构建机完成。Windows wheel、Windows 浏览器与 `win32-x64` manifest 不得改名后复用。`.package/` 是本机临时工作区，不应提交 Git。旧发布操作已合并到 [发布历史摘要](history-summary.md#macos-release)，不再作为待执行的替换清单。
 
 当前 Mac 目录有十个受管能力 ID：
 

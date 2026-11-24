@@ -11,8 +11,9 @@ const esc = (value) =>
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
+const iconUrl = (tool) => "../../../apps/web/src/assets/ui-v2/icons/" + tool.id + ".webp";
 const img = (tool, cls = "") =>
-  '<img class="' + cls + '" src="icons/' + tool.id + '.png" alt="' + esc(tool.title) + '">';
+  '<img class="' + cls + '" src="' + iconUrl(tool) + '" alt="' + esc(tool.title) + '">';
 const button = (label, cls = "", attrs = "") => '<button class="' + cls + '" ' + attrs + ">" + label + "</button>";
 const demo = (label, cls = "") => button(label, cls, 'data-demo="' + esc(label) + '"');
 const select = (options, id = "") =>
@@ -33,7 +34,7 @@ document.addEventListener("click", (event) => {
 });
 function home() {
   app.innerHTML =
-    '<section class="hero"><div><h1>让素材工作，更简单。</h1><p>图片、视频、音频与开发工具，一站直达。</p><a href="#video-ai">继续上次使用：视频去字幕 →</a></div><img class="hero-art" src="hero.png" alt="素材工具箱插画"></section>' +
+    '<section class="hero"><div><h1>让素材工作，更简单。</h1><p>图片、视频、音频与开发工具，一站直达。</p><a href="#video-ai">继续上次使用：视频去字幕 →</a></div><img class="hero-art" src="hero.webp" alt="素材工具箱插画"></section>' +
     '<input id="search" class="search" aria-label="搜索工具" placeholder="搜索工具名称或用途，例如：提取音频、视频去字幕">' +
     '<nav class="categories" aria-label="工具分类">' +
     groups
@@ -413,7 +414,7 @@ function developer(t) {
 }
 function icons() {
   app.innerHTML =
-    '<div class="breadcrumb"><a href="#home">返回首页</a></div><h1>13 个独立图标</h1><p>原始透明 PNG；下方按 48px 与 32px 图片框展示，保留原始透明留白。生成资产未裁切或重采样。</p><section class="gallery" style="margin-top:24px">' +
+    '<div class="breadcrumb"><a href="#home">返回首页</a></div><h1>13 个独立图标</h1><p>复用正式页面的 WebP 图标；下方按 48px 与 32px 图片框展示。高分辨率原图已清理，图案与配色不变。</p><section class="gallery" style="margin-top:24px">' +
     tools
       .map(
         (t) =>
@@ -423,12 +424,12 @@ function icons() {
           t.title +
           "</h3><p>" +
           t.id +
-          '.png</p><div class="small-sizes">' +
+          '.webp</p><div class="small-sizes">' +
           img(t, "").replace("<img ", '<img width="48" height="48" ') +
           img(t, "").replace("<img ", '<img width="32" height="32" ') +
-          '</div><a href="icons/' +
-          t.id +
-          '.png" download>下载原图</a></figure>'
+          '</div><a href="' +
+          iconUrl(t) +
+          '" download>下载图标</a></figure>'
       )
       .join("") +
     "</section>";
@@ -438,7 +439,7 @@ function screens(moduleId = "") {
   const current = inventory.some((screen) => screen.moduleId === moduleId) ? moduleId : "";
   const list = current ? inventory.filter((screen) => screen.moduleId === current) : inventory;
   app.innerHTML =
-    '<div class="breadcrumb"><a href="#home">返回首页</a></div><h1>同风格效果图</h1><p>首页 + 13 个模块的独立主页面。图中文字、数值与细节不作为业务契约；实际图标以独立 PNG 为准。</p>' +
+    '<div class="breadcrumb"><a href="#home">返回首页</a></div><h1>同风格效果图</h1><p>首页 + 13 个模块的独立主页面，使用原尺寸 WebP 预览。图中文字、数值与细节不作为业务契约；实际图标以正式页面资源为准。</p>' +
     '<div class="toolbar screen-filter"><label>查看页面 <select id="screen-filter"><option value="">全部 14 张</option>' +
     inventory
       .map(
@@ -462,7 +463,7 @@ function screens(moduleId = "") {
           esc(title) +
           '</h2><div class="toolbar"><a href="' +
           esc(file) +
-          '" target="_blank" rel="noopener">打开原图</a><a href="#' +
+          '" target="_blank" rel="noopener">打开预览图</a><a href="#' +
           esc(target) +
           '">查看布局样机</a></div><img class="reference-screen" loading="lazy" src="' +
           esc(file) +

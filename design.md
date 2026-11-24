@@ -8,7 +8,7 @@
 
 ### 1.1 设计依据
 
-- [首页定稿方向](docs/design/ui-v2/screens/home.png)。
+- [首页定稿方向](docs/design/ui-v2/screens/home.webp)。
 - [首页与全部 13 个模块效果图总览](docs/design/ui-v2/index.html)：打开后选择“效果图”。
 - [页面与文件映射](docs/design/ui-v2/screens.js)。
 - [独立图标清单](docs/design/ui-v2/asset-manifest.json)、[图标检查结果](docs/design/ui-v2/icon-checks.json)。
@@ -191,23 +191,23 @@ Web 顶部栏默认高 64px，包含品牌、服务状态、局域网入口和�
 
 ### 6.1 文件与语义
 
-图标位于 `docs/design/ui-v2/icons/`，2026-11-08 已统一替换为用户确认的浅紫底色版本，均为独立生成的 PNG。前端使用 `apps/web/src/assets/ui-v2/icons/` 中的 256×256 WebP；首页与模块标题共用同一映射。提示词及生成文件记录见 `asset-manifest.json`。
+图标统一位于 `apps/web/src/assets/ui-v2/icons/`，使用用户确认的浅紫底色版本和 256×256 WebP；首页、模块标题与独立设计评审页复用同一资源，不重复保存大尺寸原图。2026-11-24 已在生成轻量预览并修正引用后清理未使用的 PNG 原图。提示词、历史源文件名与摘要保留在 `asset-manifest.json`，当前资源记录见 [资源维护说明](docs/design/ui-v2/asset-maintenance.md)。
 
 | 文件名                | 必须保持的主体语义                        |
 | --------------------- | ----------------------------------------- |
-| `image-compress.png`  | 图片与向内箭头                            |
-| `image-ai.png`        | 图片与修复光点                            |
-| `content-archive.png` | 图片、视频与归档托盘                      |
-| `video-ai.png`        | 视频、字幕线与橡皮                        |
-| `speech.png`          | 麦克风与对话气泡                          |
-| `audio-library.png`   | 叠放音频封套与音符                        |
-| `audio-extract.png`   | 视频分离出音轨                            |
-| `audio-convert.png`   | 音频文件与转换箭头                        |
-| `json-format.png`     | 花括号与结构化文本行                      |
-| `base64.png`          | 数据片与 64                               |
-| `url-codec.png`       | 链接与双向转换箭头                        |
-| `uuid-generator.png`  | 分组编码与唯一标记，避免密码/指纹登录语义 |
-| `lan-transfer.png`    | 两台设备与双向传输                        |
+| `image-compress.webp`  | 图片与向内箭头                            |
+| `image-ai.webp`        | 图片与修复光点                            |
+| `content-archive.webp` | 图片、视频与归档托盘                      |
+| `video-ai.webp`        | 视频、字幕线与橡皮                        |
+| `speech.webp`          | 麦克风与对话气泡                          |
+| `audio-library.webp`   | 叠放音频封套与音符                        |
+| `audio-extract.webp`   | 视频分离出音轨                            |
+| `audio-convert.webp`   | 音频文件与转换箭头                        |
+| `json-format.webp`     | 花括号与结构化文本行                      |
+| `base64.webp`          | 数据片与 64                               |
+| `url-codec.webp`       | 链接与双向转换箭头                        |
+| `uuid-generator.webp`  | 分组编码与唯一标记，避免密码/指纹登录语义 |
+| `lan-transfer.webp`    | 两台设备与双向传输                        |
 
 ### 6.2 资产使用规则
 
@@ -217,7 +217,7 @@ Web 顶部栏默认高 64px，包含品牌、服务状态、局域网入口和�
 - 工具图标统一左上光照、柔和倒角、蓝紫/蓝/青蓝材质，不各模块使用不同画风。
 - 设置、复制、返回、删除等小型操作图标继续复用现有统一线性图标库，常用尺寸 16–20px。
 - 图标与文字并排时图标是辅助识别，不能代替工具名称。
-- 首页插画由 `apps/web/src/app/HomeHeroArtwork.vue` 组合：透明主体 `apps/web/src/assets/ui-v2/hero-ecommerce-assistant-refined.webp`（保留粉桃色小助手、双芽、天蓝购物袋与薄荷青包裹的原版造型，弱化高光，包裹勾号保持正向，不进行镜像；装饰卡片采用蓝、珊瑚粉、薄荷青和浅紫辅助色）搭配商品卡、促销标签及音视频装饰。保持原首页占位，主体采用约 6 秒的轻摆，四张装饰卡片分别采用 5–7 秒错峰浮动与轻旋转；后台暂停，900px 及以下或系统要求减少动态效果时静止。560px 及以下沿用隐藏插画规则。旧 `hero-creative-assistant`、`hero.png` 与 `hero-workstation.png` 保留为历史方案，不重复放到每个工具页。
+- 首页插画由 `apps/web/src/app/HomeHeroArtwork.vue` 组合：透明主体 `apps/web/src/assets/ui-v2/hero-ecommerce-assistant-refined.webp`（保留粉桃色小助手、双芽、天蓝购物袋与薄荷青包裹的原版造型，弱化高光，包裹勾号保持正向，不进行镜像；装饰卡片采用蓝、珊瑚粉、薄荷青和浅紫辅助色）搭配商品卡、促销标签及音视频装饰。保持原首页占位，主体采用约 6 秒的轻摆，四张装饰卡片分别采用 5–7 秒错峰浮动与轻旋转；后台暂停，900px 及以下或系统要求减少动态效果时静止。560px 及以下沿用隐藏插画规则。旧插画方案只保留生成记录，未使用的图片已清理；独立评审样机的历史插画使用轻量 `hero.webp`，不进入正式页面。
 - 生产导出提供适配实际尺寸与高像素密度屏幕的资源，检查透明边缘、48px/32px 辨识度、体积和加载；不把栅格伪装成 SVG。
 
 ## 7. 公共组件规则
@@ -276,19 +276,19 @@ Web 顶部栏默认高 64px，包含品牌、服务状态、局域网入口和�
 
 | 模块 / 效果图                                                | 固定布局与保留重点                                                                            |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| [图片压缩](docs/design/ui-v2/screens/image-compress.png)     | 左上传/结果、右参数；原始与输出体积、尺寸、格式、节省或增大均如实显示                         |
-| [AI 图片处理](docs/design/ui-v2/screens/image-ai.png)        | 功能 Tab、图片预览、参数侧栏、处理记录；保留区域确认、商品图编辑与独立结果快照                |
-| [多媒体内容归档](docs/design/ui-v2/screens/archive.png)      | 获取/导入、分组、筛选、选择操作、卡片/列表、分页；详情居中，配乐和水印进入现有独立编辑页      |
-| [视频去字幕](docs/design/ui-v2/screens/video.png)            | 视频预览、右参数、下方时间线、处理记录；保留区间、多框、吸附、快捷键与二次编辑                |
-| [多国语言配音](docs/design/ui-v2/screens/speech.png)         | 引擎 Tab、分段编辑、参考音色、右侧参数、批次记录；目标语言按现有单次配置，保留授权确认        |
-| [音频素材库](docs/design/ui-v2/screens/audio-library.png)    | 搜索、来源类型、分组、素材列表、波形试听与应用级播放；保留回收站、预设和备份                  |
-| [音频提取器](docs/design/ui-v2/screens/audio.png)            | 上传视频、音轨、码率、队列、结果；保留试听、下载、入库及独立产物                              |
-| [音频格式转换](docs/design/ui-v2/screens/audio-convert.png)  | 输入队列、格式识别/必要密钥、码率、历史和入库；保留去重；不恢复已删除的全量全选与清空选择按钮 |
-| [JSON 格式化](docs/design/ui-v2/screens/developer.png)       | 精简工具栏、双栏输入输出、校验、复制和下载；不增加历史记录                                    |
-| [Base64 编解码](docs/design/ui-v2/screens/base64.png)        | 编解码、标准/URL 安全格式、文件与文本、双栏输出；保留 UTF-8 与实际限制                        |
-| [URL 编解码](docs/design/ui-v2/screens/url-codec.png)        | 处理方向、组件/完整 URL/表单模式、双栏输出；保持一次只处理一层、不自动访问地址                |
-| [UUID 生成](docs/design/ui-v2/screens/uuid-generator.png)    | 数量与格式、生成结果、单项/全部复制、下载；不扩展未实现的 UUID 版本                           |
-| [局域网文件传输](docs/design/ui-v2/screens/lan-transfer.png) | 地址/二维码、文件/图文 Tab、输入与列表、筛选与分页；保留续传、延期、配额和访客权限            |
+| [图片压缩](docs/design/ui-v2/screens/image-compress.webp)     | 左上传/结果、右参数；原始与输出体积、尺寸、格式、节省或增大均如实显示                         |
+| [AI 图片处理](docs/design/ui-v2/screens/image-ai.webp)        | 功能 Tab、图片预览、参数侧栏、处理记录；保留区域确认、商品图编辑与独立结果快照                |
+| [多媒体内容归档](docs/design/ui-v2/screens/archive.webp)      | 获取/导入、分组、筛选、选择操作、卡片/列表、分页；详情居中，配乐和水印进入现有独立编辑页      |
+| [视频去字幕](docs/design/ui-v2/screens/video.webp)            | 视频预览、右参数、下方时间线、处理记录；保留区间、多框、吸附、快捷键与二次编辑                |
+| [多国语言配音](docs/design/ui-v2/screens/speech.webp)         | 引擎 Tab、分段编辑、参考音色、右侧参数、批次记录；目标语言按现有单次配置，保留授权确认        |
+| [音频素材库](docs/design/ui-v2/screens/audio-library.webp)    | 搜索、来源类型、分组、素材列表、波形试听与应用级播放；保留回收站、预设和备份                  |
+| [音频提取器](docs/design/ui-v2/screens/audio.webp)            | 上传视频、音轨、码率、队列、结果；保留试听、下载、入库及独立产物                              |
+| [音频格式转换](docs/design/ui-v2/screens/audio-convert.webp)  | 输入队列、格式识别/必要密钥、码率、历史和入库；保留去重；不恢复已删除的全量全选与清空选择按钮 |
+| [JSON 格式化](docs/design/ui-v2/screens/developer.webp)       | 精简工具栏、双栏输入输出、校验、复制和下载；不增加历史记录                                    |
+| [Base64 编解码](docs/design/ui-v2/screens/base64.webp)        | 编解码、标准/URL 安全格式、文件与文本、双栏输出；保留 UTF-8 与实际限制                        |
+| [URL 编解码](docs/design/ui-v2/screens/url-codec.webp)        | 处理方向、组件/完整 URL/表单模式、双栏输出；保持一次只处理一层、不自动访问地址                |
+| [UUID 生成](docs/design/ui-v2/screens/uuid-generator.webp)    | 数量与格式、生成结果、单项/全部复制、下载；不扩展未实现的 UUID 版本                           |
+| [局域网文件传输](docs/design/ui-v2/screens/lan-transfer.webp) | 地址/二维码、文件/图文 Tab、输入与列表、筛选与分页；保留续传、延期、配额和访客权限            |
 
 ### 8.1 编辑器专项
 
@@ -344,7 +344,7 @@ Web 顶部栏默认高 64px，包含品牌、服务状态、局域网入口和�
 
 现有 CSS 变量和 scoped 样式可继续使用。SCSS 为可选工程工具，不是实现本设计的必要条件；如引入，主题仍由 CSS 变量表达，不维护重复 `.css`/`.scss` 实现，也不使用深层嵌套提高优先级。
 
-保持当前 `tokens → foundation → components` 的级联约束，逐项登记新的设计差异。参见 [R11 样式归属](docs/refactoring/r11-style-ownership.md)。旧契约是历史兼容证据，不通过删除检查、重置摘要、扩大忽略或提高截图容差来接受新视觉。
+保持当前 `tokens → foundation → components` 的级联约束，逐项登记新的设计差异。参见 [R11 样式归属](docs/archive/refactoring/r11-style-ownership.md)。旧契约是历史兼容证据，不通过删除检查、重置摘要、扩大忽略或提高截图容差来接受新视觉。
 
 保持路由懒加载与当前体积预算；设计原图目录不整体复制进运行时资源。图标、插画按需导出，不把页面截图作为可交互界面的背景来替代组件。
 

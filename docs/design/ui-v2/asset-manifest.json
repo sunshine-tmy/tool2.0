@@ -6,93 +6,143 @@
     {
       "id": "image-compress",
       "title": "图片压缩",
-      "file": "icons/image-compress.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/image-compress.webp",
       "prompt": "Approved sample: pale lavender outer rounded tile, blue-purple beveled photo tile, white mountain and sun, two inward white compression arrows.",
-      "generationFile": "exec-b74ccb8b-926e-4966-a8fd-2c8259f3a36e.png"
+      "generationFile": "exec-b74ccb8b-926e-4966-a8fd-2c8259f3a36e.png",
+      "originalFilename": "icons/image-compress.png",
+      "originalSha256": "6f8881cd3d9e7dc0bc22f4559bbe1f6f5f1bd89ab218dde6e2132bec1b406436",
+      "originalRetained": false
     },
     {
       "id": "image-ai",
       "title": "AI 图片处理",
-      "file": "icons/image-ai.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/image-ai.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: AI 图片处理. Subject: A white mountain/photo glyph with one small white four-point magic sparkle at top right. NO compression arrows.",
-      "generationFile": "exec-148fba1c-5c25-4f66-bcf3-519fd351662d.png"
+      "generationFile": "exec-148fba1c-5c25-4f66-bcf3-519fd351662d.png",
+      "originalFilename": "icons/image-ai.png",
+      "originalSha256": "9e5922a955c8b2bc328efa74793b1f3132e6d3bd1be5e40478ec70c1376c6522",
+      "originalRetained": false
     },
     {
       "id": "content-archive",
       "title": "多媒体内容归档",
-      "file": "icons/content-archive.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/content-archive.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 多媒体内容归档. Subject: An archive tray holding a photo card and a video card with white play triangle; compact unified stack.",
-      "generationFile": "exec-9b70029c-d398-4697-bb10-4faa76334b20.png"
+      "generationFile": "exec-9b70029c-d398-4697-bb10-4faa76334b20.png",
+      "originalFilename": "icons/content-archive.png",
+      "originalSha256": "fe03441f2de3175b512a3ca67b7754f3b7a9d89f05655d8407598529f14a9812",
+      "originalRetained": false
     },
     {
       "id": "video-ai",
       "title": "视频去字幕",
-      "file": "icons/video-ai.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/video-ai.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 视频去字幕. Subject: A white video frame with white play triangle and TWO short subtitle strokes at bottom, a small white eraser crossing one subtitle stroke. Simple readable subtitle removal.",
-      "generationFile": "exec-ba5e9722-276d-48f5-8f03-fd80eb6d37e9.png"
+      "generationFile": "exec-ba5e9722-276d-48f5-8f03-fd80eb6d37e9.png",
+      "originalFilename": "icons/video-ai.png",
+      "originalSha256": "8c20487beb6f26029957d47ec3c1673221b901311e182590c93293b037f0a985",
+      "originalRetained": false
     },
     {
       "id": "speech",
       "title": "多国语言配音",
-      "file": "icons/speech.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/speech.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 多国语言配音. Subject: A bold white microphone with a small white speech bubble to the upper right, compact balanced silhouette.",
-      "generationFile": "exec-2c19cbbc-0038-497e-b11b-ad69fcf7f860.png"
+      "generationFile": "exec-2c19cbbc-0038-497e-b11b-ad69fcf7f860.png",
+      "originalFilename": "icons/speech.png",
+      "originalSha256": "1946876f8fe6b109ff4cd0328b85e878086ecd8291af8be6bfadc6515a7e7f1c",
+      "originalRetained": false
     },
     {
       "id": "audio-library",
       "title": "音频素材库",
-      "file": "icons/audio-library.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/audio-library.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 音频素材库. Subject: Two slightly stacked rounded album covers, front cover has one bold white music note. Clearly music collection.",
-      "generationFile": "exec-3292b831-43ad-4ed0-b97d-b1274b63e9ce.png"
+      "generationFile": "exec-3292b831-43ad-4ed0-b97d-b1274b63e9ce.png",
+      "originalFilename": "icons/audio-library.png",
+      "originalSha256": "2d1336b0c63b81f0c8c2539f0191b84fb238746cd265f3a9d1378a0b553aa1cd",
+      "originalRetained": false
     },
     {
       "id": "audio-extract",
       "title": "音频提取器",
-      "file": "icons/audio-extract.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/audio-extract.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 音频提取器. Subject: A white outlined video frame with play triangle at left and a short bold white audio waveform emerging from it at right, implying separating audio from video.",
-      "generationFile": "exec-8fee1e67-d790-442f-a70e-a143dfa10bf8.png"
+      "generationFile": "exec-8fee1e67-d790-442f-a70e-a143dfa10bf8.png",
+      "originalFilename": "icons/audio-extract.png",
+      "originalSha256": "f8688baa5f2bc2a2343ba5f7cca25850c304a0c2912d254e8b0f179d26ddc332",
+      "originalRetained": false
     },
     {
       "id": "audio-convert",
       "title": "音频格式转换",
-      "file": "icons/audio-convert.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/audio-convert.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 音频格式转换. Subject: A bold white audio waveform encircled by two white curved conversion arrows. Distinct from microphone and music collection.",
-      "generationFile": "exec-462c4b40-fe08-4867-9116-e31fe5b5b174.png"
+      "generationFile": "exec-462c4b40-fe08-4867-9116-e31fe5b5b174.png",
+      "originalFilename": "icons/audio-convert.png",
+      "originalSha256": "ea28b725592b7dd098f39fc585c6c62fba5a5c5a1ff9e9fc24ade1e027484bd3",
+      "originalRetained": false
     },
     {
       "id": "json-format",
       "title": "JSON 格式化",
-      "file": "icons/json-format.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/json-format.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: JSON 格式化. Subject: Two bold white curly braces enclosing three short neatly aligned white horizontal text lines. No letters.",
-      "generationFile": "exec-d4f87631-76f1-47ed-8594-02e80d75cda4.png"
+      "generationFile": "exec-d4f87631-76f1-47ed-8594-02e80d75cda4.png",
+      "originalFilename": "icons/json-format.png",
+      "originalSha256": "65458cec29fd13586c068d683d6a7a92f7172c67e3cad04d0a6eec5a3dbf4fb8",
+      "originalRetained": false
     },
     {
       "id": "base64",
       "title": "Base64 编解码",
-      "file": "icons/base64.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/base64.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: Base64 编解码. Subject: Large clear white digits '64' centered, with two tiny rows of binary-like square dots below. No other text.",
-      "generationFile": "exec-d2c88cfd-e2b7-4fdf-b844-0db792d4f5d6.png"
+      "generationFile": "exec-d2c88cfd-e2b7-4fdf-b844-0db792d4f5d6.png",
+      "originalFilename": "icons/base64.png",
+      "originalSha256": "6e6bbdb591104c8422576f82de0f411947f032ea26616a7ec1eb81c44221441c",
+      "originalRetained": false
     },
     {
       "id": "url-codec",
       "title": "URL 编解码",
-      "file": "icons/url-codec.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/url-codec.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: URL 编解码. Subject: A large bold white diagonal chain link, with one small opposing arrow pair below indicating encode/decode.",
-      "generationFile": "exec-14bf8691-49f9-42cb-8af7-0481cbe370e5.png"
+      "generationFile": "exec-14bf8691-49f9-42cb-8af7-0481cbe370e5.png",
+      "originalFilename": "icons/url-codec.png",
+      "originalSha256": "1384c881b39f04f3ef3aa0532bd49519ed6574109e30fd16eb35467e16a32b3d",
+      "originalRetained": false
     },
     {
       "id": "uuid-generator",
       "title": "UUID 生成",
-      "file": "icons/uuid-generator.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/uuid-generator.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: UUID 生成. Subject: Four neat groups of white short code strokes in two rows, and a small unique white diamond marker at lower right. NO fingerprint, lock or password symbols.",
-      "generationFile": "exec-9adda187-0e54-4de4-866c-7bf9e9328326.png"
+      "generationFile": "exec-9adda187-0e54-4de4-866c-7bf9e9328326.png",
+      "originalFilename": "icons/uuid-generator.png",
+      "originalSha256": "2069a7b21669c024aaeb8630aff6351872d89ec7fed11eb33a380a856829c4ce",
+      "originalRetained": false
     },
     {
       "id": "lan-transfer",
       "title": "局域网文件传输",
-      "file": "icons/lan-transfer.png",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/lan-transfer.webp",
       "prompt": "Use the provided APPROVED icon as a strict STYLE reference only. Generate ONE standalone replacement module icon. Match its exact pale lavender rounded-square outer tile (94% of square canvas), centered smaller blue-purple rounded beveled tile (about 56% canvas), straight-on orthographic view, generous light lavender breathing space, soft satin/clay 3D depth, diffuse shadows, white semantic pictogram, upper-left light, light white exterior. Palette outer #F5F2FF, inner #8E9AFF to #6554FF. SAME framing and visual scale as approved reference. Change ONLY central semantic subject, REMOVE old mountains/sun/arrows unless subject explicitly needs them. No UI, no montage, no labels, no extra decorations. Simple legible large silhouette for 64px. Module: 局域网文件传输. Subject: Two white outlined computer monitors connected by clear opposing horizontal transfer arrows. Compact readable linked devices.",
-      "generationFile": "exec-a2187c18-e83d-4b22-b5e1-48028a639a50.png"
+      "generationFile": "exec-a2187c18-e83d-4b22-b5e1-48028a639a50.png",
+      "originalFilename": "icons/lan-transfer.png",
+      "originalSha256": "050d25b5a90509fde38da996509150ddd678296367d53a75b3261164e60f420f",
+      "originalRetained": false
+    },
+    {
+      "id": "video-editor",
+      "title": "视频编辑",
+      "file": "../../../apps/web/src/assets/ui-v2/icons/video-editor.webp",
+      "originalFilename": "icons/video-editor.png",
+      "originalSha256": "eec97277cce854bc00a55fd4b017a2bfe80614c3197f5f0543cdb2de5a296a7b",
+      "originalRetained": false,
+      "promptSource": "video-editor-icon.md"
     }
-  ]
+  ],
+  "optimizedAt": "2026-11-24",
+  "sourcePolicy": "Original generation filenames and prompts below are historical provenance, not live file references. Unused PNG originals were removed; file points to the runtime derivative."
 }

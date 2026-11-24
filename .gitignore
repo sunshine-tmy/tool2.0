@@ -80,6 +80,8 @@ storage/quarantine/**
 
 # User-provided startup archives are local resources, never source-control uploads.
 /备份能力包/
+# Design review keeps lightweight previews; high-resolution generation sources stay local.
+/docs/design/ui-v2/**/*.png
 offline-resources/**
 !offline-resources/README.md
 !offline-resources/bootstrap/
