@@ -280,6 +280,11 @@ export async function registerImageAiRoutes(
           throw validationError("TOO_MANY_FILES", `该操作最多支持 ${maxFiles} 张图片`);
         }
 
+        const requestedDevice = fields.device ?? "auto";
+        if (requestedDevice !== "auto" && requestedDevice !== "cpu" && requestedDevice !== "cuda") {
+          throw validationError("INVALID_DEVICE", "不支持的推理设备");
+        }
+        const device = process.platform === "darwin" ? "cpu" : requestedDevice;
         const scale = fields.scale === "4" ? 4 : 2;
         const validatedFiles: StoredInput[] = [];
         for (const part of fileParts) {
@@ -325,6 +330,7 @@ export async function registerImageAiRoutes(
           id: taskId,
           operation,
           files: validatedFiles,
+          device,
           maskPath: maskPart?.path,
           scale: operation === "enhance" ? scale : undefined
         });

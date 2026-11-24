@@ -62,6 +62,13 @@ export function createImageAiInferenceExecutor(
         try {
           inference = await worker.process({
             operation: task.operation,
+            device: task.device ?? "auto",
+            onPhase: (phase) => {
+              const next = `${index + 1}/${task.inputs.length} · ${phase}`;
+              if (task.phase === next) return;
+              patchTask(task, { phase: next });
+              void persist(task).catch(() => undefined);
+            },
             inputPath: input.path,
             outputPath,
             maskPath: task.maskPath,
@@ -90,6 +97,7 @@ export function createImageAiInferenceExecutor(
           height: metadata.height,
           provider: inference.provider,
           model: inference.model,
+          ...(inference.execution ? { execution: inference.execution } : {}),
           warnings: inference.warnings ?? []
         });
         task.warnings = unique([...task.warnings, ...(inference.warnings ?? [])]);
@@ -138,7 +146,7 @@ export function createImageAiInferenceExecutor(
       if (failures > 0) task.warnings = unique([...task.warnings, `${failures} 张图片处理失败`]);
       terminal = { status: "completed", progress: 100 };
     }
-    finishInference(task, terminal);
+    finishInference(task, { ...terminal, phase: undefined });
   }
 
   return processTask;

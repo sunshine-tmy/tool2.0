@@ -35,7 +35,7 @@ export const MACOS_COMPONENT_IDS = Object.freeze([
   "douyin-archive",
   "video-ai"
 ]);
-const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda"]);
+const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda", "image-ai-cuda"]);
 
 export async function assembleComponentCatalog(feedDirectory, platform = componentPlatformForBuildHost(), baseCatalog) {
   if (platform !== "win32-x64" && platform !== "darwin-arm64") throw new Error("目标平台无效");

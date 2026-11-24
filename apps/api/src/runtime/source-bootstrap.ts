@@ -7,6 +7,7 @@ import { installFailureAdvice } from "../modules/components/install-diagnostics"
 export const sourceComponentIds = [
   "python-312",
   "ffmpeg",
+  "video-interpolation",
   "edge-tts",
   "image-ai",
   "chatterbox",
@@ -16,7 +17,7 @@ export const sourceComponentIds = [
   "douyin-archive",
   "video-ai"
 ] as const;
-export const sourceCudaComponentIds = ["chatterbox-cuda", "video-ai-cuda"] as const;
+export const sourceCudaComponentIds = ["chatterbox-cuda", "video-ai-cuda", "image-ai-cuda"] as const;
 
 type Manager = Pick<
   ComponentManager,
@@ -25,12 +26,14 @@ type Manager = Pick<
 const windowsAnchors: Record<string, string> = {
   "python-312": "python/python.exe",
   ffmpeg: "bin/ffmpeg.exe",
+  "video-interpolation": "bin/rife-ncnn-vulkan.exe",
   "xhs-browser": "browser/chrome.exe",
   "douyin-archive": "adapter/manifest.json"
 };
 const macOSAnchors: Record<string, string> = {
   "python-312": "python/bin/python3.12",
   ffmpeg: "bin/ffmpeg",
+  "video-interpolation": "bin/rife-ncnn-vulkan",
   "xhs-browser": "browser/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
   "douyin-archive": "adapter/manifest.json"
 };
@@ -61,10 +64,10 @@ export async function prepareSourceComponents(
   }
   report(
     withCuda
-      ? "本次准备 CPU 基础能力、参考音色克隆及视频去字幕 GPU 扩展；安装能力包不代表显卡与驱动已通过实际生成验证。"
+      ? "本次准备 CPU 基础能力、图片处理、参考音色克隆及视频去字幕 GPU 扩展；安装能力包不代表显卡与驱动已通过实际生成验证。"
       : process.platform === "darwin"
         ? "本次只准备签名的 Apple Silicon 基础能力；所有安装只读取 offline-resources/components 中的本地归档，不自动联网下载。"
-        : "本次只准备 CPU 基础能力（含视频去字幕），不安装 GPU 扩展；已有 GPU 能力保留。需 GPU 加速时请准备额外 8 个包，使用 start-gpu.bat 或 start.bat -WithCuda。"
+        : "本次准备基础能力（含视频去字幕与智能补帧），不安装 CUDA 扩展；已有扩展保留。需 NVIDIA 加速图片、声音克隆或去字幕时请准备资源清单中的 CUDA 分卷，使用 start-gpu.bat 或 start.bat -WithCuda。"
   );
   for (const [index, id] of ids.entries()) {
     signal.throwIfAborted();

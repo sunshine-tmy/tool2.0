@@ -10,11 +10,36 @@ export const WORKER_PROTOCOL_VERSION = 1 as const;
 const NonNegativeNumber = Type.Number({ minimum: 0 });
 const WorkerProtocolVersionSchema = Type.Integer({ minimum: 1 });
 
+export const ImageAiExecutionSchema = Type.Object({
+  requestedDevice: Type.Union([Type.Literal("auto"), Type.Literal("cpu"), Type.Literal("cuda")]),
+  device: Type.Union([Type.Literal("cpu"), Type.Literal("cuda")]),
+  precision: Type.String(),
+  gpuName: Type.Optional(Type.String()),
+  peakMemoryMb: Type.Optional(NonNegativeNumber),
+  elapsedMs: NonNegativeNumber,
+  phaseMs: Type.Optional(Type.Record(Type.String(), NonNegativeNumber))
+});
+export const ImageAiRuntimeSchema = Type.Object({
+  cudaAvailable: Type.Boolean(),
+  onnxCudaAvailable: Type.Boolean(),
+  platform: Type.String(),
+  torchVersion: Type.Optional(Type.String()),
+  cudaVersion: Type.Optional(Type.String()),
+  cudnnVersion: Type.Optional(Type.String()),
+  onnxVersion: Type.Optional(Type.String()),
+  onnxProviders: Type.Optional(Type.Array(Type.String())),
+  gpuName: Type.Optional(Type.String()),
+  totalMemoryMb: Type.Optional(NonNegativeNumber),
+  reason: Type.Optional(Type.String()),
+  onnxReason: Type.Optional(Type.String())
+});
+
 export const ImageWorkerHealthSchema = Type.Object({
   protocolVersion: WorkerProtocolVersionSchema,
   available: Type.Boolean(),
   deploymentUsage: Type.Union([Type.Literal("internal-noncommercial"), Type.Literal("commercial")]),
   workerUrl: Type.String({ pattern: "^https?://" }),
+  runtime: Type.Optional(ImageAiRuntimeSchema),
   models: Type.Array(
     Type.Object({
       provider: Type.String({ minLength: 1 }),
@@ -57,7 +82,8 @@ export const ImageWorkerProcessSchema = Type.Object({
     Type.Literal("birefnet-general")
   ]),
   model: Type.String({ minLength: 1 }),
-  warnings: Type.Optional(Type.Array(Type.String()))
+  warnings: Type.Optional(Type.Array(Type.String())),
+  execution: Type.Optional(ImageAiExecutionSchema)
 });
 
 export const ChatterboxWorkerHealthSchema = Type.Object({

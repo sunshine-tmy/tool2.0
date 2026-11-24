@@ -12,6 +12,7 @@ export type Task = {
   status: TaskStatus;
   progress: number;
   outputPath?: string;
+  phase?: string;
   error?: string;
   createdAt: string;
   updatedAt: string;

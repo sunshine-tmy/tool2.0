@@ -19,6 +19,7 @@
       />
       <aside class="image-ai-controls">
         <h3 class="operation-title">{{ props.operation === "enhance" ? "变清晰设置" : "抠图设置" }}</h3>
+        <slot name="device" />
         <div class="panel-heading">
           <div v-if="props.operation === 'enhance'">
             <h3>增强倍率</h3>
@@ -60,7 +61,11 @@
           /></template>
           {{ props.operation === "enhance" ? "开始变清晰" : "开始抠图" }}
         </n-button>
-        <ImageAiTaskStatusCard :task="resultTask" @cancel="props.cancelActiveTask" />
+        <ImageAiTaskStatusCard
+          :show-device-details="props.showDeviceDetails"
+          :task="resultTask"
+          @cancel="props.cancelActiveTask"
+        />
         <section v-if="props.operation === 'background_remove'" class="preview-background-settings">
           <h3>展示背景</h3>
           <div class="preview-background-options" aria-label="抠图预览背景">
@@ -108,6 +113,7 @@ import { absoluteImageAiUrl } from "../media-links";
 type BatchOperation = "enhance" | "background_remove";
 
 const props = defineProps<{
+  showDeviceDetails?: boolean;
   operation: BatchOperation;
   files: File[];
   scale: 2 | 4;

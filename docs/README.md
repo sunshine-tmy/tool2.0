@@ -26,6 +26,7 @@
 
 ## 专项方案与交付
 
+- [图片 AI GPU 接入方案](image-ai-gpu-plan.md)：Windows 图片推理的独立 CUDA 环境、设备回退、8 GB 显存管理及三阶段实施记录；新版签名包已生成，实机验收由用户执行。
 - [STTN / ProPainter 接入](video-ai-sttn-propainter-plan.md)：非商用视频去字幕扩展的资产、依赖、能力包、时序处理、资源门槛和 S00～S07 阶段证据。
 - [时序引擎交付与验收](video-ai-sequence-release.md)：实现范围、复现命令、升级兼容矩阵及历史审阅阶段，不能将旧审阅包状态当作当前发布状态。
 - [视频去字幕安装记录](video-ai-local-installation.md)：保留 1.1.0 本地试用包的安装过程；当前安装版本以应用签名目录为准。

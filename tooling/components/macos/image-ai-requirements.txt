@@ -21,3 +21,8 @@ transformers==5.17.0
 safetensors==0.8.0
 paddleocr==3.7.0
 paddlepaddle==3.0.0
+
+# Shared image Worker dependency checks; keep the existing Mac CPU inference stack.
+timm==1.0.15
+kornia==0.8.2
+kornia-rs==0.2.0

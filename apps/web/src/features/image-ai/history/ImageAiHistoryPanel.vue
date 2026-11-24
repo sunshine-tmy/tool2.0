@@ -176,7 +176,7 @@
                 已长期留档，删除记录时会一起移除本机保存的原图、蒙版和处理结果。
               </p>
             </div>
-            <ImageAiTaskStatusCard :task="selectedTask" read-only />
+            <ImageAiTaskStatusCard :show-device-details="props.showDeviceDetails" :task="selectedTask" read-only />
             <ImageAiResultGallery
               v-if="selectedTask.results.length"
               :task="selectedTask"
@@ -225,7 +225,7 @@ import {
 } from "./presentation";
 import { useImageAiHistory } from "./useImageAiHistory";
 import { useImageAiHistoryDetail } from "./useImageAiHistoryDetail";
-const props = defineProps<{ refreshVersion: number }>();
+const props = defineProps<{ refreshVersion: number; showDeviceDetails?: boolean }>();
 const emit = defineEmits<{
   deleted: [id: string];
   edit: [taskId: string, resultId: string];

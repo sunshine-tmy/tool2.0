@@ -50,6 +50,7 @@
     "components:test-xhs-lifecycle": "pnpm --filter backend exec tsx ../../scripts/test-xhs-capability-lifecycle.mjs",
     "components:lock-xhs-dependencies": "pwsh -NoProfile -File scripts/lock-xhs-dependencies.ps1",
     "components:prepare-edge-tts": "node scripts/prepare-edge-tts-component.mjs",
+    "components:prepare-image-ai-cuda": "node scripts/prepare-image-ai-cuda-component.mjs",
     "components:prepare-image-ai": "node scripts/prepare-image-ai-component.mjs",
     "components:prepare-video-ai": "node scripts/prepare-video-ai-component.mjs",
     "components:prepare-video-ai-cuda": "node scripts/prepare-video-ai-cuda-component.mjs",

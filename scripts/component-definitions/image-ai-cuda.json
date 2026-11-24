@@ -1,0 +1,23 @@
+{
+  "id": "image-ai-cuda",
+  "groupId": "image",
+  "displayName": "AI 图片 GPU 加速",
+  "purpose": "为 LaMa 去水印、Real-ESRGAN 变清晰、BRIA RMBG 2.0 与 BiRefNet 抠图提供 NVIDIA CUDA 加速；复用基础包模型。",
+  "dependencyIds": ["image-ai", "python-312"],
+  "taskToolIds": ["image-ai"],
+  "installConditions": [
+    "需要 Windows x64、兼容 CUDA 12.4 的 NVIDIA 驱动；建议 8 GB 显存。不会安装或修改显卡驱动。",
+    "独立 Python 3.12 GPU 环境，不覆盖 CPU 环境；OCR 保持 CPU。",
+    "复用基础包模型与用户已授权的 BRIA RMBG 2.0 目录，推理不联网下载模型。",
+    "包体与安装空间以生成清单为准，安装前检查本机磁盘空间。"
+  ],
+  "version": "1.0.0-py312-cu1241",
+  "installedBytes": 12000000000,
+  "pythonEnvironment": {
+    "pythonComponentId": "python-312",
+    "pythonExecutablePath": "python/python.exe",
+    "wheelhousePath": "wheelhouse",
+    "requirementsLockPath": "requirements.lock",
+    "expectedPythonVersion": "3.12"
+  }
+}

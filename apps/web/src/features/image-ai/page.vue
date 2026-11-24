@@ -52,6 +52,7 @@
           <div class="image-tool-content">
             <section v-show="activeTab === 'watermark'">
               <ImageAiWatermarkPanel
+                :show-device-details="showDeviceControls"
                 :watermark-file="watermarkFile"
                 :watermark-preview-url="watermarkPreviewUrl"
                 :watermark-result-url="watermarkResultUrl"
@@ -70,10 +71,20 @@
                 :format-bytes="formatBytes"
                 :on-dimensions="setWatermarkDimensions"
                 @continue="continueWithResult"
-              />
+              >
+                <template #device>
+                  <ImageAiDeviceSettings
+                    v-if="showDeviceControls"
+                    v-model:value="processingDevice"
+                    :disabled="isBusy"
+                    :health="health"
+                  />
+                </template>
+              </ImageAiWatermarkPanel>
             </section>
             <section v-show="activeTab === 'enhance'">
               <ImageAiOperationPanel
+                :show-device-details="showDeviceControls"
                 v-model:files="enhanceFiles"
                 operation="enhance"
                 :unavailable-reason="operationUnavailableReason('enhance')"
@@ -91,10 +102,20 @@
                 @edit="openEditor"
                 @continue="continueWithResult"
                 @select-preview="enhancePreviewIndex = $event"
-              />
+              >
+                <template #device>
+                  <ImageAiDeviceSettings
+                    v-if="showDeviceControls"
+                    v-model:value="processingDevice"
+                    :disabled="isBusy"
+                    :health="health"
+                  />
+                </template>
+              </ImageAiOperationPanel>
             </section>
             <section v-show="activeTab === 'cutout'">
               <ImageAiOperationPanel
+                :show-device-details="showDeviceControls"
                 v-model:files="cutoutFiles"
                 operation="background_remove"
                 :unavailable-reason="operationUnavailableReason('background_remove')"
@@ -111,10 +132,20 @@
                 @edit="openEditor"
                 @continue="continueWithResult"
                 @select-preview="cutoutPreviewIndex = $event"
-              />
+              >
+                <template #device>
+                  <ImageAiDeviceSettings
+                    v-if="showDeviceControls"
+                    v-model:value="processingDevice"
+                    :disabled="isBusy"
+                    :health="health"
+                  />
+                </template>
+              </ImageAiOperationPanel>
             </section>
             <section v-show="activeTab === 'history'">
               <ImageAiHistoryPanel
+                :show-device-details="showDeviceControls"
                 :refresh-version="historyVersion"
                 @deleted="onHistoryDeleted"
                 @edit="openEditor"
@@ -133,11 +164,12 @@ import DiagnosticErrorLink from "../../shared/ui/DiagnosticErrorLink.vue";
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { Eraser, History, Info, Scan, Sparkles } from "lucide-vue-next";
-import type { ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
+import type { ImageAiDevice, ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ServiceStatusPopover from "../../shared/ui/tool/ServiceStatusPopover.vue";
+import ImageAiDeviceSettings from "./processing/ImageAiDeviceSettings.vue";
 import ImageAiOperationPanel from "./processing/ImageAiOperationPanel.vue";
 import ImageAiWatermarkPanel from "./processing/ImageAiWatermarkPanel.vue";
 import ImageAiHistoryPanel from "./history/ImageAiHistoryPanel.vue";
@@ -164,6 +196,30 @@ const imageTools: Array<{ id: ImageTool; label: string; icon: typeof Eraser }> =
 ];
 const historyVersion = ref(0);
 const health = ref<ImageAiHealth>();
+// Older Mac workers do not report runtime metadata. Unknown platforms keep the original UI.
+const showDeviceControls = computed(() => health.value?.runtime?.platform === "Windows");
+const processingDevice = ref<ImageAiDevice>("auto");
+watch(
+  showDeviceControls,
+  (supported) => {
+    if (!supported) return;
+    try {
+      const saved = localStorage.getItem("image-ai-device");
+      if (saved === "auto" || saved === "cpu" || saved === "cuda") processingDevice.value = saved;
+    } catch {
+      /* Preferences are optional when local storage is unavailable. */
+    }
+  },
+  { immediate: true }
+);
+watch(processingDevice, (value) => {
+  if (!showDeviceControls.value) return;
+  try {
+    localStorage.setItem("image-ai-device", value);
+  } catch {
+    /* Keep the in-memory preference. */
+  }
+});
 const loadingHealth = ref(false);
 const watermarkFile = ref<File>();
 const watermarkPreviewUrl = ref("");
@@ -359,7 +415,10 @@ function onHistoryDeleted(taskId: string) {
 const healthLabel = computed(() => {
   if (!health.value) return "请启动本地 Worker";
   const ready = health.value.models.filter((model) => model.available).length;
-  return `${health.value.deploymentUsage === "internal-noncommercial" ? "内部非商用" : "商业安全"} · ${ready}/${health.value.models.length} 模型可用`;
+  const summary = `${health.value.deploymentUsage === "internal-noncommercial" ? "内部非商用" : "商业安全"} · ${ready}/${health.value.models.length} 模型可用`;
+  return showDeviceControls.value
+    ? `${summary} · ${health.value.runtime?.cudaAvailable ? health.value.runtime.gpuName : "CPU"}`
+    : summary;
 });
 const healthIndicator = computed(() => {
   if (loadingHealth.value) return "loading";
@@ -393,6 +452,7 @@ watch(taskEvents.task, (task) => {
     ...activeTask.value,
     status: task.error === "CANCELLED" ? "canceled" : task.status,
     progress: task.progress,
+    phase: task.phase,
     error: task.error,
     updatedAt: task.updatedAt
   };
@@ -476,6 +536,7 @@ async function submitWatermark(editor?: { toMaskBlob: () => Promise<Blob> }) {
     const mask = await editor.toMaskBlob();
     const form = new FormData();
     form.append("operation", "watermark_remove");
+    if (showDeviceControls.value) form.append("device", processingDevice.value);
     form.append("files", watermarkFile.value);
     form.append("mask", mask, "mask.png");
     activeTask.value = await imageAiApi.createTask(form);
@@ -493,6 +554,7 @@ async function submitBatch(operation: "enhance" | "background_remove") {
   // 批量任务只发送用户当前选中的文件快照，提交后页面可继续选择其它文件。
   const form = new FormData();
   form.append("operation", operation);
+  if (showDeviceControls.value) form.append("device", processingDevice.value);
   if (operation === "enhance") form.append("scale", String(enhanceScale.value));
   files.forEach((file) => form.append("files", file));
   try {

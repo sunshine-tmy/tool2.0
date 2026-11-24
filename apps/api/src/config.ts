@@ -60,6 +60,6 @@ export function getConfig(options: ConfigOptions = {}): AppConfig {
     ...readImageConfig(context),
     ...readVideoAiConfig(context),
     ...readSpeechConfig(context),
-    deploymentUsage: configuredUsage === "internal-noncommercial" ? "internal-noncommercial" : "commercial"
+    deploymentUsage: configuredUsage === "commercial" ? "commercial" : "internal-noncommercial"
   };
 }

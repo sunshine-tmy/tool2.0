@@ -53,6 +53,7 @@
 
     <aside class="image-ai-controls">
       <h3 class="operation-title">去水印设置</h3>
+      <slot name="device" />
       <div class="panel-heading">
         <div>
           <h3>水印区域</h3>
@@ -91,7 +92,11 @@
       <n-button v-if="props.watermarkResultUrl" block secondary @click="props.resetWatermarkResult"
         >重新编辑蒙版</n-button
       >
-      <ImageAiTaskStatusCard :task="props.activeTask" @cancel="props.cancelActiveTask" />
+      <ImageAiTaskStatusCard
+        :show-device-details="props.showDeviceDetails"
+        :task="props.activeTask"
+        @cancel="props.cancelActiveTask"
+      />
       <div class="watermark-help">
         <h4>操作提示</h4>
         <p>1. 上传图片，使用 OCR 检测或手动涂抹。</p>
@@ -118,6 +123,7 @@ type MaskEditorExposed = {
 };
 
 const props = defineProps<{
+  showDeviceDetails?: boolean;
   watermarkFile?: File;
   watermarkPreviewUrl: string;
   watermarkResultUrl: string;

@@ -6,6 +6,7 @@ import {
   isImageWorkerHealth,
   isImageWorkerProcess,
   isImageWorkerSuggestion,
+  type ImageAiDevice,
   type ImageAiOperation,
   type ImageWorkerHealth,
   type ImageWorkerProcess,
@@ -32,6 +33,8 @@ export class ImageAiWorkerError extends Error {
 }
 
 export function createImageAiWorkerClient(config: AppConfig, resources?: InferenceResourceCoordinator) {
+  let progressSupported = true;
+  let progressWorkerUrl = "";
   let verifiedWeightStamp = "";
   async function legacyBirefnetWeightReady() {
     const asset = config.imageAiBirefnetAsset;
@@ -86,6 +89,7 @@ export function createImageAiWorkerClient(config: AppConfig, resources?: Inferen
         birefnet.sha256 = verifiedSha;
         health.available = true;
       }
+      progressSupported = !!health.runtime;
       return health;
     },
 
@@ -128,30 +132,79 @@ export function createImageAiWorkerClient(config: AppConfig, resources?: Inferen
       outputPath: string;
       maskPath?: string;
       scale?: 2 | 4;
+      device?: ImageAiDevice;
+      onPhase?: (phase: string) => void;
       signal?: AbortSignal;
       onWaiting?: (waiting: boolean) => void;
     }): Promise<ImageWorkerProcess> {
       return coordinate(
-        () =>
-          requestWorker<ImageWorkerProcess>(
-            config,
-            "/process",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                operation: input.operation,
-                input_path: input.inputPath,
-                output_path: input.outputPath,
-                mask_path: input.maskPath,
-                scale: input.scale,
-                deployment_usage: config.deploymentUsage
-              }),
-              signal: input.signal
-            },
-            config.imageAiWorkerTimeoutMs,
-            isImageWorkerProcess
-          ),
+        async () => {
+          const requestId = crypto.randomUUID();
+          const device = process.platform === "darwin" ? "cpu" : (input.device ?? "auto");
+          if (device === "cuda") {
+            const state = await this.health();
+            if (!state.runtime?.cudaAvailable)
+              throw new ImageAiWorkerError(
+                "IMAGE_AI_CUDA_UNAVAILABLE",
+                "图片 GPU 运行时未就绪，请先安装 AI 图片 GPU 加速能力并检查驱动",
+                503
+              );
+          }
+          if (progressWorkerUrl !== config.imageAiWorkerUrl) {
+            progressSupported = true;
+            progressWorkerUrl = config.imageAiWorkerUrl;
+          }
+          let ended = false;
+          let poll: Promise<void> | undefined;
+          const timer = setInterval(() => {
+            if (!progressSupported || poll || ended) return;
+            poll = requestWorker<{ phase?: string }>(
+              config,
+              `/progress/${requestId}`,
+              { method: "GET", signal: input.signal },
+              3000,
+              (value): value is { phase?: string } =>
+                typeof value === "object" && value !== null && (!("phase" in value) || typeof value.phase === "string")
+            )
+              .then((value) => {
+                if (!ended && value.phase) input.onPhase?.(value.phase);
+              })
+              .catch((error: unknown) => {
+                if (error instanceof ImageAiWorkerError && (error.status === 404 || error.status === 405))
+                  progressSupported = false;
+              })
+              .finally(() => {
+                poll = undefined;
+              });
+          }, 750);
+          try {
+            return await requestWorker<ImageWorkerProcess>(
+              config,
+              "/process",
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  operation: input.operation,
+                  request_id: requestId,
+                  device,
+                  input_path: input.inputPath,
+                  output_path: input.outputPath,
+                  mask_path: input.maskPath,
+                  scale: input.scale,
+                  deployment_usage: config.deploymentUsage
+                }),
+                signal: input.signal
+              },
+              config.imageAiWorkerTimeoutMs,
+              isImageWorkerProcess
+            );
+          } finally {
+            ended = true;
+            clearInterval(timer);
+            await poll;
+          }
+        },
         { signal: input.signal, onWaiting: input.onWaiting }
       );
     }

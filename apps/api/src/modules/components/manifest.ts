@@ -7,7 +7,7 @@ import { isSafeRelativePath } from "./package-paths";
 import { verifyManifestSignature } from "./manifest-signature";
 import { hasExactMacOSChromiumFrameworkLinks, resolveMacOSChromiumLinkPath } from "./chromium-framework-links";
 const MAX_MANIFEST_FILES = 100_000;
-const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda"]);
+const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda", "image-ai-cuda"]);
 export function componentArchiveAssets(manifest: ComponentPackageManifest) {
   return [manifest.archive, ...(manifest.additionalArchives ?? [])];
 }

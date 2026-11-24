@@ -46,6 +46,7 @@ export const TaskSchema = Type.Object({
   status: TaskStatusSchema,
   progress: Type.Number({ minimum: 0, maximum: 100 }),
   outputPath: Type.Optional(Type.String()),
+  phase: Type.Optional(Type.String()),
   error: Type.Optional(Type.String()),
   createdAt: Type.String({ format: "date-time" }),
   updatedAt: Type.String({ format: "date-time" })

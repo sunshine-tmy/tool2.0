@@ -142,35 +142,69 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
           return;
         const generationRoot = script.generationRoot;
         const modelRoot = path.join(generationRoot, "models", "image-ai");
-        const worker = await startWorker({
-          pythonPath: python.path,
-          scriptPath: script.path,
-          componentId: "image-ai",
-          generationRoot,
-          healthUrlPath: "/health",
-          tempDirectory: config.tempDir,
-          diagnosticsDirectory: path.join(config.storageRoot, "..", "logs"),
-          signal,
-          environment: {
-            TOOLBOX_DESKTOP_MANAGED: "1",
-            IMAGE_AI_WORKER_HOST: "127.0.0.1",
-            IMAGE_AI_STORAGE_ROOT: config.imageAiDir,
-            IMAGE_AI_MODELS_ROOT: modelRoot,
-            PADDLE_PDX_CACHE_HOME: path.join(config.imageAiDir, "cache", "paddlex"),
-            PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True",
-            PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT: "False",
-            IMAGE_AI_BRIA_MODEL_DIR: path.join(config.runtime.modelsRoot, "image-ai", "BRIA-RMBG-2.0"),
-            TORCH_HOME: path.join(modelRoot, "torch"),
-            U2NET_HOME: path.join(modelRoot, "rembg"),
-            IMAGE_AI_OCR_DETECTION_MODEL_DIR: path.dirname(ocrDetection.path),
-            IMAGE_AI_OCR_RECOGNITION_MODEL_DIR: path.dirname(ocrRecognition.path),
-            IMAGE_AI_DEVICE: "cpu",
-            DEPLOYMENT_USAGE: config.deploymentUsage,
-            HF_HUB_OFFLINE: "1",
-            TRANSFORMERS_OFFLINE: "1"
-          },
-          available: (payload) => payload.available === true
-        });
+        if (script.manifest.files.some((file) => file.path === "scripts/image-ai-bria-assets.json")) {
+          await components.resolveInstalledAsset("image-ai", "scripts/image-ai-bria-assets.json");
+        }
+        let selectedPython = python;
+        let selectedScript = script;
+        if (python.manifest.platform === "win32-x64") {
+          try {
+            const cuda = await optionalPython(components, "image-ai-cuda");
+            const cudaScript = cuda && (await optionalAsset(components, "image-ai-cuda", "scripts/image-ai-worker.py"));
+            if (cuda && cudaScript) {
+              await components.resolveInstalledAsset("image-ai-cuda", "scripts/image-ai-bria-assets.json");
+              selectedPython = cuda;
+              selectedScript = cudaScript;
+            }
+          } catch (error) {
+            console.warn(
+              "图片 CUDA 环境未就绪，使用 CPU 基础包：",
+              error instanceof Error ? error.message : "未知错误"
+            );
+          }
+        }
+        const launchImageWorker = (useCuda: boolean) =>
+          startWorker({
+            pythonPath: useCuda ? selectedPython.path : python.path,
+            scriptPath: useCuda ? selectedScript.path : script.path,
+            componentId: "image-ai",
+            generationRoot: useCuda ? selectedScript.generationRoot : generationRoot,
+            healthUrlPath: "/health",
+            tempDirectory: config.tempDir,
+            diagnosticsDirectory: path.join(config.storageRoot, "..", "logs"),
+            signal,
+            environment: {
+              TOOLBOX_DESKTOP_MANAGED: "1",
+              IMAGE_AI_WORKER_HOST: "127.0.0.1",
+              IMAGE_AI_STORAGE_ROOT: config.imageAiDir,
+              IMAGE_AI_MODELS_ROOT: modelRoot,
+              PADDLE_PDX_CACHE_HOME: path.join(config.imageAiDir, "cache", "paddlex"),
+              HF_MODULES_CACHE: path.join(config.imageAiDir, "cache", "huggingface", "modules"),
+              PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True",
+              PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT: "False",
+              IMAGE_AI_BRIA_MODEL_DIR: path.join(config.runtime.modelsRoot, "image-ai", "BRIA-RMBG-2.0"),
+              ...(python.manifest.version === "1.0.0-py312-cpu1" && !useCuda
+                ? { PYTHONPATH: path.join(config.runtime.modelsRoot, "image-ai", "bria-dependencies") }
+                : {}),
+              TORCH_HOME: path.join(modelRoot, "torch"),
+              U2NET_HOME: path.join(modelRoot, "rembg"),
+              IMAGE_AI_OCR_DETECTION_MODEL_DIR: path.dirname(ocrDetection.path),
+              IMAGE_AI_OCR_RECOGNITION_MODEL_DIR: path.dirname(ocrRecognition.path),
+              IMAGE_AI_DEVICE: useCuda ? "auto" : "cpu",
+              DEPLOYMENT_USAGE: config.deploymentUsage,
+              HF_HUB_OFFLINE: "1",
+              TRANSFORMERS_OFFLINE: "1"
+            },
+            available: (payload) => payload.available === true
+          });
+        let worker: ManagedWorker;
+        try {
+          worker = await launchImageWorker(selectedPython !== python);
+        } catch (error) {
+          if (signal.aborted || selectedPython === python) throw error;
+          console.warn("图片 GPU Worker 启动失败，回退 CPU：", error instanceof Error ? error.message : "未知错误");
+          worker = await launchImageWorker(false);
+        }
         workers.push(worker);
         if (signal.aborted) return;
         config.imageAiWorkerUrl = worker.url;
@@ -351,8 +385,10 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
   return {
     beforeUninstall: async (componentId: string) => {
       await initializing.catch(() => undefined);
-      await stopManagedWorkers(componentId === "video-ai-cuda" ? ["video-ai"] : [componentId]);
-      if (componentId === "image-ai") {
+      await stopManagedWorkers(
+        componentId === "video-ai-cuda" ? ["video-ai"] : componentId === "image-ai-cuda" ? ["image-ai"] : [componentId]
+      );
+      if (["image-ai", "image-ai-cuda"].includes(componentId)) {
         config.imageAiCapabilityReady = false;
         config.imageAiWorkerUrl = "http://127.0.0.1:1";
         config.imageAiWorkerToken = undefined;
@@ -390,8 +426,8 @@ export async function configureDesktopCapabilityRuntime(config: AppConfig, compo
           ) {
             throw new Error("Edge-TTS 依赖已安装，但运行时自检未就绪");
           }
-        } else if (componentId === "image-ai") {
-          await stopManagedWorkers([componentId]);
+        } else if (["image-ai", "image-ai-cuda"].includes(componentId)) {
+          await stopManagedWorkers(["image-ai"]);
           await configureImageAi(controller.signal);
           if (
             operation !== "uninstall" &&

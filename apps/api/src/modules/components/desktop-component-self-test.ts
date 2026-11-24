@@ -34,6 +34,7 @@ const requiredFiles: Record<string, string[]> = {
     "models/video-ai/ocr/recognition/inference.yml"
   ],
   "video-ai-cuda": ["requirements.lock"],
+  "image-ai-cuda": ["requirements.lock", "scripts/image-ai-worker.py", "scripts/image-ai-bria-assets.json"],
   "image-ai": [
     "scripts/image-ai-worker.py",
     "models/image-ai/torch/hub/checkpoints/big-lama.pt",
@@ -215,6 +216,20 @@ export function createDesktopComponentSelfTest(
         environment
       );
       assertJsonAvailable(output, "Edge-TTS");
+      return;
+    }
+
+    if (manifest.id === "image-ai-cuda") {
+      const output = await runProcess(
+        pythonPath,
+        [
+          "-c",
+          "import json,torch,torchvision,onnxruntime as ort,timm,kornia,transformers,rembg,fastapi,uvicorn; assert torch.version.cuda == '12.4', 'Expected CUDA 12.4 PyTorch'; assert 'CUDAExecutionProvider' in ort.get_available_providers(), 'Missing ONNX CUDA provider'; print(json.dumps({'available':True, 'cudaAvailable':torch.cuda.is_available()}))"
+        ],
+        generationRoot,
+        environment
+      );
+      assertJsonAvailable(output, "图片 CUDA 12.4");
       return;
     }
 

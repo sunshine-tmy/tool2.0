@@ -1,4 +1,4 @@
-/** Mac-only FIFO gate for heavyweight model work performed by local AI workers. */
+/** FIFO gate for Windows CUDA and Mac for heavyweight model work performed by local AI workers. */
 export type InferenceResourceKind = "image-ai" | "chatterbox" | "video-ai";
 
 export type InferenceWorkerControl = {

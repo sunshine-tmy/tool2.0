@@ -8,6 +8,7 @@ export function toUnifiedTask(task: StoredImageAiTask): Task {
     toolId: "image-ai",
     status: task.status === "canceled" ? "failed" : task.status,
     progress: task.progress,
+    ...(task.phase ? { phase: task.phase } : {}),
     outputPath: task.results[0]?.outputPath,
     error: task.status === "canceled" ? "CANCELLED" : task.error,
     createdAt: task.createdAt,
@@ -30,6 +31,7 @@ export function toPublicTask(task: StoredImageAiTask): ImageAiTask {
   return {
     id: task.id,
     operation: task.operation,
+    ...(task.device ? { device: task.device } : {}),
     status: task.status,
     progress: task.progress,
     queuePosition: task.queuePosition,

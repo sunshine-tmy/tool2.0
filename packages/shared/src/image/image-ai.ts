@@ -2,8 +2,15 @@
  * 中文模块说明：共享契约层，负责跨前后端复用的类型、Schema、响应和领域常量
  */
 import { Type, type Static } from "@sinclair/typebox";
-import { ImageWorkerHealthSchema, ImageWorkerSuggestionSchema } from "../common/worker-protocol";
+import {
+  ImageAiExecutionSchema,
+  ImageWorkerHealthSchema,
+  ImageWorkerSuggestionSchema
+} from "../common/worker-protocol";
 import { ProductImageRecipeSchema } from "./product-image";
+
+export type ImageAiDevice = "auto" | "cpu" | "cuda";
+export const ImageAiDeviceSchema = Type.Union([Type.Literal("auto"), Type.Literal("cpu"), Type.Literal("cuda")]);
 
 export const imageAiOperations = ["watermark_remove", "enhance", "background_remove", "product_image"] as const;
 
@@ -40,6 +47,7 @@ export const ImageAiResultSchema = Type.Object(
     height: Type.Integer({ minimum: 1 }),
     provider: ImageAiProviderSchema,
     model: Type.String({ minLength: 1 }),
+    execution: Type.Optional(ImageAiExecutionSchema),
     warnings: Type.Array(Type.String())
   },
   { additionalProperties: false }
@@ -49,6 +57,7 @@ export const ImageAiTaskSchema = Type.Object(
   {
     id: Type.String({ minLength: 6, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" }),
     operation: ImageAiOperationSchema,
+    device: Type.Optional(ImageAiDeviceSchema),
     status: ImageAiTaskStatusSchema,
     progress: Type.Number({ minimum: 0, maximum: 100 }),
     queuePosition: Type.Union([Type.Integer({ minimum: 1 }), Type.Null()]),

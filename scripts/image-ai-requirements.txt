@@ -8,8 +8,7 @@ numpy==2.3.5
 pandas==2.2.3
 opencv-python-headless==4.11.0.86
 
-# Local inference providers. Keep the CUDA runtime versions in this input so the
-# generated hash lock also covers the large PyTorch wheels.
+# CPU base; CUDA dependencies are isolated in image-ai-cuda-requirements.txt.
 torch==2.6.0+cpu
 torchvision==0.21.0+cpu
 basicsr==1.4.2
@@ -17,7 +16,11 @@ cython==3.1.3
 setuptools==80.9.0
 realesrgan==0.3.0
 rembg[cpu]==2.0.84
-transformers==5.17.0
+transformers==4.48.3
 safetensors==0.8.0
 paddleocr==3.7.0
 paddlepaddle==3.3.1
+
+# BRIA RMBG 2.0 custom model imports (runtime must remain offline).
+timm==1.0.15
+kornia==0.8.2

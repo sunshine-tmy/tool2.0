@@ -21,7 +21,7 @@ const COMPONENT_ID = /^[a-z0-9][a-z0-9-]*$/;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_GITHUB_RELEASE_ASSET_BYTES = 2 * 1024 * 1024 * 1024;
 const GROUP_IDS = new Set(["shared", "media", "audio", "image", "archive", "translation"]);
-const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda"]);
+const FORBIDDEN_MACOS_COMPONENT_IDS = new Set(["python-311", "chatterbox-cuda", "video-ai-cuda", "image-ai-cuda"]);
 const MACOS_VIDEO_SUPPORT_PATH = "scripts/video-ai-sequence-support-macos.json";
 const MACOS_VIDEO_SUPPORT_SOURCE = path.join(
   REPOSITORY_ROOT,
@@ -86,6 +86,7 @@ export async function buildComponentPackage(options) {
   const diagnosticWorkers = {
     "video-ai": "video-ai-worker.py",
     "image-ai": "image-ai-worker.py",
+    "image-ai-cuda": "image-ai-worker.py",
     chatterbox: "chatterbox-worker.py",
     "chatterbox-cuda": "chatterbox-worker.py"
   };

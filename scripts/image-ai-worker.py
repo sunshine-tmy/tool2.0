@@ -8,6 +8,9 @@ image-ai storage root from the trusted Fastify gateway.
 
 from __future__ import annotations
 
+import time
+import threading
+import platform
 import argparse
 import asyncio
 import atexit
@@ -297,6 +300,33 @@ class LamaInpaintingModel:
         return Image.fromarray(output)
 
 
+def memory_bound_realesrgan(parent: Any) -> Any:
+    # The upstream tile loop swallows RuntimeError and keeps a full output tensor on
+    # the GPU. Accumulate on CPU and propagate failures so bounded retries are safe.
+    class TiledUpsampler(parent):
+        def tile_process(self) -> None:
+            import math
+            import torch
+            batch, channel, height, width = self.img.shape
+            self.output = torch.empty((batch, channel, height * self.scale, width * self.scale),
+                                      dtype=self.img.dtype, device="cpu")
+            count_x, count_y = math.ceil(width / self.tile_size), math.ceil(height / self.tile_size)
+            for y in range(count_y):
+                for x in range(count_x):
+                    left, top = x * self.tile_size, y * self.tile_size
+                    right, bottom = min(left + self.tile_size, width), min(top + self.tile_size, height)
+                    pl, pt = max(left - self.tile_pad, 0), max(top - self.tile_pad, 0)
+                    pr, pb = min(right + self.tile_pad, width), min(bottom + self.tile_pad, height)
+                    with manager.status_guard:
+                        manager.status["phase"] = f"图片处理 · 分块 {y * count_x + x + 1}/{count_x * count_y}"
+                    with torch.inference_mode():
+                        tile = self.model(self.img[:, :, pt:pb, pl:pr]).to("cpu")
+                    a, b = (left - pl) * self.scale, (top - pt) * self.scale
+                    self.output[:, :, top*self.scale:bottom*self.scale, left*self.scale:right*self.scale] = tile[:, :, b:b+(bottom-top)*self.scale, a:a+(right-left)*self.scale]
+                    del tile
+    return TiledUpsampler
+
+
 class SuggestionRequest(BaseModel):
     input_path: str
 
@@ -307,7 +337,9 @@ class ProcessRequest(BaseModel):
     output_path: str
     mask_path: str | None = None
     scale: Literal[2, 4] | None = None
-    deployment_usage: Literal["internal-noncommercial", "commercial"] = "commercial"
+    device: Literal["auto", "cpu", "cuda"] = "auto"
+    request_id: str | None = None
+    deployment_usage: Literal["internal-noncommercial", "commercial"] = "internal-noncommercial"
 
 
 class ModelManager:
@@ -316,10 +348,21 @@ class ModelManager:
         self.gpu_model: Any = None
         self.ocr: Any = None
         self.lock = asyncio.Lock()
+        self.requested_device = "auto"
+        self.active_device = "cpu"
+        self.device_warnings: list[str] = []
+        self.status: dict[str, Any] = {}
+        self.phase_times: dict[str, float] = {}
+        self.phase_since = time.monotonic()
+        self.status_guard = threading.Lock()
+        self.current_phase = ""
+        self.precision = "fp32"
 
     def unload_gpu(self) -> None:
         self.gpu_key = None
         self.gpu_model = None
+        import gc
+        gc.collect()
         try:
             import torch
 
@@ -335,18 +378,58 @@ class ModelManager:
 
         gc.collect()
 
-    def device(self) -> str:
-        configured_device = os.getenv("IMAGE_AI_DEVICE", "auto").strip().lower()
-        if configured_device == "cpu":
-            return "cpu"
-        try:
-            import torch
+    def phase(self, value: str) -> None:
+        now = time.monotonic()
+        with self.status_guard:
+            if self.current_phase:
+                self.phase_times[self.current_phase] = self.phase_times.get(self.current_phase, 0) + now - self.phase_since
+            self.current_phase = value
+            self.phase_since = now
+            self.status["phase"] = value
+            self.status["device"] = self.active_device
 
-            if configured_device == "cuda" and not torch.cuda.is_available():
-                raise WorkerFailure("IMAGE_AI_CUDA_UNAVAILABLE", "当前设备没有可用的 CUDA 运行时")
-            return "cuda" if configured_device == "cuda" or torch.cuda.is_available() else "cpu"
-        except ImportError:
-            return "cpu"
+    def device(self) -> str:
+        return self.active_device
+
+    def select_device(self, requested: str) -> None:
+        previous = self.active_device
+        self.requested_device = requested
+        self.device_warnings = []
+        self.active_device = "cpu"
+        if requested != "cpu":
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    self.active_device = "cuda"
+                elif requested == "cuda":
+                    raise WorkerFailure("IMAGE_AI_CUDA_UNAVAILABLE", "NVIDIA GPU 不可用，请检查图片 GPU 能力包及显卡驱动")
+                else:
+                    self.device_warnings.append("GPU 运行时不可用，本次使用 CPU")
+            except Exception as error:
+                if requested == "cuda":
+                    raise WorkerFailure("IMAGE_AI_CUDA_UNAVAILABLE", "未安装图片 GPU 推理运行时") from error
+                self.device_warnings.append("未安装 GPU 推理运行时，本次使用 CPU")
+        if previous != self.active_device:
+            self.unload_gpu()
+        if self.active_device == "cuda":
+            import torch
+            torch.cuda.reset_peak_memory_stats()
+
+    def execute(self, work: Any) -> Any:
+        try:
+            return work()
+        except Exception as error:
+            code = error.code if isinstance(error, WorkerFailure) else ""
+            gpu_failure = is_cuda_oom(error) or code in {"IMAGE_AI_CUDA_PROVIDER_UNAVAILABLE", "IMAGE_AI_CUDA_PROVIDER_FAILED"}
+            if not gpu_failure:
+                raise
+            if self.requested_device != "auto" or self.active_device != "cuda":
+                raise WorkerFailure("IMAGE_AI_GPU_FAILED", "GPU 推理失败或显存不足，请释放显存后重试或选择 CPU：" + safe_error(error)) from error
+        # Leave the exception scope before retrying to release its GPU tensor traceback.
+        self.unload_gpu()
+        self.active_device = "cpu"
+        self.device_warnings.append("GPU 显存或推理后端不可用，已使用同一模型在 CPU 重试一次")
+        return work()
 
     def get_ocr(self) -> Any:
         if self.ocr is not None:
@@ -392,6 +475,7 @@ class ModelManager:
         if self.gpu_key == "lama":
             return self.gpu_model
         self.unload_gpu()
+        self.phase("加载 LaMa 模型")
         try:
             import torch
         except ImportError as exc:
@@ -420,10 +504,11 @@ class ModelManager:
         return self.gpu_model
 
     def get_realesrgan(self, scale: int, tile: int) -> Any:
-        key = f"realesrgan-{scale}-{tile}"
+        key = f"realesrgan-{scale}-{tile}-{self.device()}"
         if self.gpu_key == key:
             return self.gpu_model
         self.unload_gpu()
+        self.phase("加载 Real-ESRGAN 模型")
         try:
             # BasicSR's optional SLURM helper can invoke a command with this
             # environment value. This desktop worker never runs under SLURM.
@@ -451,7 +536,7 @@ class ModelManager:
             num_grow_ch=32,
             scale=scale,
         )
-        self.gpu_model = RealESRGANer(
+        self.gpu_model = memory_bound_realesrgan(RealESRGANer)(
             scale=scale,
             model_path=str(weight_path),
             model=model,
@@ -459,6 +544,7 @@ class ModelManager:
             tile_pad=16,
             pre_pad=0,
             half=self.device() == "cuda",
+            device=self.device(),
         )
         self.gpu_key = key
         return self.gpu_model
@@ -467,6 +553,7 @@ class ModelManager:
         if self.gpu_key == "bria-rmbg-2.0":
             return self.gpu_model
         self.unload_gpu()
+        self.phase("加载 BRIA 模型")
         model_dir = Path(os.getenv("IMAGE_AI_BRIA_MODEL_DIR", MODELS_ROOT / "RMBG-2.0")).resolve()
         if not model_dir.is_dir():
             raise WorkerFailure("BRIA_WEIGHTS_MISSING", f"缺少本地 BRIA RMBG 2.0 权重：{model_dir}")
@@ -477,6 +564,7 @@ class ModelManager:
         except ImportError as exc:
             raise WorkerFailure("BRIA_UNAVAILABLE", "未安装 BRIA 推理依赖") from exc
 
+        verify_bria_assets(model_dir)
         model = AutoModelForImageSegmentation.from_pretrained(
             str(model_dir), trust_remote_code=True, local_files_only=True
         )
@@ -496,24 +584,34 @@ class ModelManager:
         if self.gpu_key == "birefnet-general":
             return self.gpu_model
         self.unload_gpu()
+        self.phase("加载 BiRefNet 模型")
         try:
             from rembg import new_session
         except ImportError as exc:
             raise WorkerFailure("BIREFNET_UNAVAILABLE", "未安装 rembg/BiRefNet 推理组件") from exc
         try:
-            if DESKTOP_MANAGED:
-                model_file = birefnet_model_path()
-                if not model_file.is_file():
-                    raise WorkerFailure("BIREFNET_WEIGHTS_MISSING", "BiRefNet 权重未安装，请前往设置安装图像模型")
-                self.gpu_model = new_session("birefnet-general", providers=["CPUExecutionProvider"])
-            else:
-                self.gpu_model = new_session("birefnet-general")
+            if DESKTOP_MANAGED and not birefnet_model_path().is_file():
+                raise WorkerFailure("BIREFNET_WEIGHTS_MISSING", "BiRefNet 权重未安装，请前往设置安装图像模型")
+            providers: list[Any] = ["CPUExecutionProvider"]
+            if self.device() == "cuda":
+                # torch/lib supplies the matching CUDA/cuDNN DLLs on Windows.
+                import torch
+                import onnxruntime as ort
+                if "CUDAExecutionProvider" not in ort.get_available_providers():
+                    raise WorkerFailure("IMAGE_AI_CUDA_PROVIDER_UNAVAILABLE", "缺少 CUDA ONNX 推理后端")
+                providers = [("CUDAExecutionProvider", {"device_id": 0, "gpu_mem_limit": 4 * 1024**3,
+                              "arena_extend_strategy": "kSameAsRequested", "cudnn_conv_algo_search": "HEURISTIC"}), "CPUExecutionProvider"]
+            self.gpu_model = new_session("birefnet-general", providers=providers)
+            actual = self.gpu_model.inner_session.get_providers()
+            if self.device() == "cuda" and "CUDAExecutionProvider" not in actual:
+                self.unload_gpu()
+                raise WorkerFailure("IMAGE_AI_CUDA_PROVIDER_FAILED", "ONNX CUDA 初始化失败，请检查 CUDA/cuDNN DLL 与驱动")
         except Exception as exc:
             if isinstance(exc, WorkerFailure):
                 raise
-            raise WorkerFailure(
-                "BIREFNET_WEIGHTS_MISSING", "BiRefNet 权重不可用；请在联网安装阶段预下载后再离线运行"
-            ) from exc
+            if self.device() == "cuda":
+                raise WorkerFailure("IMAGE_AI_CUDA_PROVIDER_FAILED", "BiRefNet CUDA 初始化失败：" + safe_error(exc)) from exc
+            raise WorkerFailure("BIREFNET_LOAD_FAILED", "BiRefNet 加载失败：" + safe_error(exc)) from exc
         self.gpu_key = "birefnet-general"
         return self.gpu_model
 
@@ -584,8 +682,9 @@ async def unexpected_failure_handler(_request: Request, error: Exception) -> JSO
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    device = manager.device()
-    internal = os.getenv("DEPLOYMENT_USAGE", "commercial") == "internal-noncommercial"
+    runtime = await asyncio.to_thread(runtime_info)
+    device = "cuda" if runtime["cudaAvailable"] else "cpu"
+    internal = os.getenv("DEPLOYMENT_USAGE", "internal-noncommercial") == "internal-noncommercial"
     models = [
         model_health(
             "lama",
@@ -627,12 +726,34 @@ async def health() -> dict[str, Any]:
         "success": True,
         "data": {
             "protocolVersion": 1,
-            "available": any(item["available"] for item in models[:4]),
+            "available": "torchVersion" in runtime and any(item["available"] for item in models[:4]),
             "deploymentUsage": "internal-noncommercial" if internal else "commercial",
             "workerUrl": f"http://{HOST}:{PORT}",
             "models": models,
+            "runtime": runtime,
         },
     }
+
+
+def runtime_info() -> dict[str, Any]:
+    data: dict[str, Any] = {"cudaAvailable": False, "onnxCudaAvailable": False, "platform": platform.system()}
+    try:
+        import torch
+        data.update(torchVersion=torch.__version__, cudaVersion=torch.version.cuda or "none",
+                    cudaAvailable=torch.cuda.is_available(), cudnnVersion=str(torch.backends.cudnn.version() or "none"))
+        if data["cudaAvailable"]:
+            data.update(gpuName=torch.cuda.get_device_name(0), totalMemoryMb=round(torch.cuda.get_device_properties(0).total_memory / 1024**2))
+    except Exception as error:
+        data["reason"] = safe_error(error)
+    try:
+        import onnxruntime as ort
+        data.update(onnxVersion=ort.__version__, onnxProviders=ort.get_available_providers(),
+                    onnxCudaAvailable="CUDAExecutionProvider" in ort.get_available_providers())
+    except Exception as error:
+        data["onnxReason"] = safe_error(error)
+    if not data["cudaAvailable"]:
+        data.setdefault("reason", "当前图片运行时为 CPU，或 NVIDIA 驱动不可用")
+    return data
 
 
 @app.get("/diagnostics/light")
@@ -660,8 +781,10 @@ async def diagnostics_deep() -> dict[str, Any]:
         try:
             # 已加载模型不切换；否则仅加载本地 LaMa，不下载、不卸载其他模型。
             if manager.gpu_model is None:
+                await asyncio.to_thread(manager.select_device, "auto")
                 await asyncio.to_thread(manager.get_lama)
-            return {"protocolVersion": 1, "available": True, "modelLoaded": True}
+            return {"protocolVersion": 1, "available": True, "modelLoaded": True, "actualDevice": manager.device(),
+                    "runtime": await asyncio.to_thread(runtime_info)}
         except Exception as error:
             cause = error.__cause__ or error
             code = "CUDA_OUT_OF_MEMORY" if type(cause).__name__ == "OutOfMemoryError" else "MODEL_LOAD_FAILED"
@@ -683,28 +806,53 @@ async def watermark_suggestions(payload: SuggestionRequest) -> dict[str, Any]:
     return {"success": True, "data": result}
 
 
+@app.get("/progress/{request_id}")
+async def progress(request_id: str) -> dict[str, Any]:
+    with manager.status_guard:
+        return {"success": True, "data": dict(manager.status) if manager.status.get("requestId") == request_id else {}}
+
+
 @app.post("/process")
 async def process(payload: ProcessRequest) -> dict[str, Any]:
     input_path = trusted_path(payload.input_path, must_exist=True)
     output_path = trusted_path(payload.output_path, must_exist=False)
     mask_path = trusted_path(payload.mask_path, must_exist=True) if payload.mask_path else None
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
     async with manager.lock:
-        if payload.operation == "watermark_remove":
-            if mask_path is None:
-                raise WorkerFailure("MASK_REQUIRED", "去水印必须提供用户确认的蒙版", 422)
-            result = await asyncio.to_thread(run_lama, input_path, mask_path, output_path)
-        elif payload.operation == "enhance":
-            result = await asyncio.to_thread(run_realesrgan, input_path, output_path, payload.scale or 2)
-        else:
-            result = await asyncio.to_thread(
-                run_background_removal,
-                input_path,
-                output_path,
-                payload.deployment_usage,
-            )
-    return {"success": True, "data": result}
+        with manager.status_guard:
+            manager.status = {"requestId": (payload.request_id or "")[:128], "phase": "准备推理环境"}
+            manager.current_phase = ""
+            manager.phase_times = {}
+        started = time.monotonic()
+        try:
+            await asyncio.to_thread(manager.select_device, payload.device)
+            if payload.operation == "watermark_remove":
+                if mask_path is None:
+                    raise WorkerFailure("MASK_REQUIRED", "去水印必须提供用户确认的蒙版", 422)
+                result = await asyncio.to_thread(manager.execute, lambda: run_lama(input_path, mask_path, output_path))
+            elif payload.operation == "enhance":
+                result = await asyncio.to_thread(manager.execute, lambda: run_realesrgan(input_path, output_path, payload.scale or 2))
+            else:
+                result = await asyncio.to_thread(run_background_removal, input_path, output_path, payload.deployment_usage)
+            manager.phase("处理完成")
+            device = manager.device()
+            info = {"requestedDevice": payload.device, "device": device,
+                    "precision": "fp16" if device == "cuda" and payload.operation == "enhance" else "fp32",
+                    "elapsedMs": round((time.monotonic() - started) * 1000),
+                    "phaseMs": {k: round(v * 1000) for k, v in manager.phase_times.items()}}
+            if device == "cuda":
+                import torch
+                info.update(gpuName=torch.cuda.get_device_name(0))
+                if result["provider"] != "birefnet-general":
+                    info["peakMemoryMb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 1)
+            result["execution"] = info
+            result["warnings"] = list(dict.fromkeys(result.get("warnings", []) + manager.device_warnings))
+            return {"success": True, "data": result}
+        finally:
+            with manager.status_guard:
+                manager.status = {}
+            # Keep one warm model; intermediate tensors live only inside the finished call.
+
 
 
 def run_ocr(input_path: Path) -> dict[str, Any]:
@@ -750,10 +898,12 @@ def run_lama(input_path: Path, mask_path: Path, output_path: Path) -> dict[str, 
     model = manager.get_lama()
     with Image.open(input_path) as source, Image.open(mask_path) as mask:
         original_size = source.size
+        manager.phase("图片处理")
         result = model(source.convert("RGB"), mask.convert("L"))
         # LaMa pads inputs to multiples of eight. Remove only the generated right/bottom
         # padding so watermark removal preserves the exact source dimensions.
         result = result.crop((0, 0, original_size[0], original_size[1]))
+        manager.phase("写入结果")
         result.convert("RGB").save(output_path, format="PNG", optimize=True)
     return {"provider": "lama", "model": "big-lama", "warnings": []}
 
@@ -775,11 +925,15 @@ def run_realesrgan(input_path: Path, output_path: Path, scale: int) -> dict[str,
     for tile in (512, 256):
         try:
             upsampler = manager.get_realesrgan(scale, tile)
+            manager.phase("图片处理")
             output, _ = upsampler.enhance(image, outscale=scale)
+            manager.phase("写入结果")
             encoded_ok, encoded_output = cv2.imencode(".png", output)
             if not encoded_ok:
                 raise WorkerFailure("OUTPUT_WRITE_FAILED", "无法写入增强结果")
             encoded_output.tofile(str(output_path))
+            upsampler.img = None
+            upsampler.output = None
             if tile == 256:
                 warnings.append("显存不足，已自动使用较小切片完成处理")
             return {
@@ -789,7 +943,10 @@ def run_realesrgan(input_path: Path, output_path: Path, scale: int) -> dict[str,
             }
         except RuntimeError as exc:
             if "out of memory" not in str(exc).lower() or tile == 256:
+                if is_cuda_oom(exc):
+                    raise
                 raise WorkerFailure("REALESRGAN_FAILED", safe_error(exc)) from exc
+            upsampler = None
             manager.unload_gpu()
     raise WorkerFailure("REALESRGAN_FAILED", "Real-ESRGAN 推理失败")
 
@@ -798,13 +955,15 @@ def run_background_removal(input_path: Path, output_path: Path, deployment_usage
     warnings: list[str] = []
     if deployment_usage == "internal-noncommercial":
         try:
-            run_bria(input_path, output_path)
+            manager.execute(lambda: run_bria(input_path, output_path))
             return {"provider": "bria-rmbg-2.0", "model": "RMBG-2.0", "warnings": warnings}
         except Exception as exc:
+            if is_cuda_oom(exc) or (isinstance(exc, WorkerFailure) and exc.code.startswith("IMAGE_AI_GPU")):
+                raise
             warnings.append(f"BRIA 不可用，已回退 BiRefNet：{safe_error(exc)}")
             manager.unload_gpu()
 
-    if run_birefnet(input_path, output_path):
+    if manager.execute(lambda: run_birefnet(input_path, output_path)):
         warnings.append("图片尺寸较大，已使用低内存抠图模式，输出尺寸保持不变")
     return {"provider": "birefnet-general", "model": "BiRefNet-general", "warnings": warnings}
 
@@ -815,12 +974,14 @@ def run_bria(input_path: Path, output_path: Path) -> None:
         image = source.convert("RGB")
         original_size = image.size
         tensor = transform(image).unsqueeze(0).to(manager.device())
-        with torch.no_grad():
+        manager.phase("图片处理")
+        with torch.inference_mode():
             prediction = model(tensor)[-1].sigmoid().cpu()[0].squeeze()
         mask = Image.fromarray((prediction.numpy() * 255).astype("uint8")).resize(
             original_size, Image.Resampling.LANCZOS
         )
         image.putalpha(mask)
+        manager.phase("写入结果")
         image.save(output_path, format="PNG", optimize=True)
 
 
@@ -835,6 +996,7 @@ def run_birefnet(input_path: Path, output_path: Path) -> bool:
         # Keep full-resolution output while avoiding those allocations for large inputs.
         low_memory = source.width * source.height > 4_000_000
         image = source.convert("RGB")
+        manager.phase("图片处理")
         try:
             result = remove(image, session=session, alpha_matting=not low_memory)
         except MemoryError:
@@ -842,6 +1004,7 @@ def run_birefnet(input_path: Path, output_path: Path) -> bool:
                 raise
             low_memory = True
             result = remove(image, session=session, alpha_matting=False)
+        manager.phase("写入结果")
         result.save(output_path, format="PNG", optimize=True)
         return low_memory
 
@@ -884,7 +1047,9 @@ def model_health(
     weight_files: list[Path] | None = None,
     sha256_override: str | None = None,
 ) -> dict[str, Any]:
-    package_available = importlib.util.find_spec(package) is not None
+    required = [package] + (["timm", "kornia", "torchvision", "safetensors"] if provider == "bria-rmbg-2.0" else [])
+    missing = [name for name in required if importlib.util.find_spec(name) is None]
+    package_available = not missing
     weights = weight_files or []
     weights_available = all(path.exists() for path in weights)
     available = allowed and package_available and weights_available
@@ -892,7 +1057,7 @@ def model_health(
     if not allowed:
         reason = "当前部署模式禁止使用非商用模型"
     elif not package_available:
-        reason = f"缺少 Python 包：{package}"
+        reason = "缺少 Python 包：" + ", ".join(missing)
     elif not weights_available:
         reason = "缺少本地模型权重"
     return {
@@ -938,6 +1103,36 @@ def combined_sha256(paths: list[Path]) -> str | None:
     return result
 
 
+_BRIA_VERIFIED: dict[str, tuple[Any, ...]] = {}
+
+
+def verify_bria_assets(directory: Path) -> None:
+    # Pin both executable custom code and weights; never download code during inference.
+    manifest_path = Path(__file__).with_name("image-ai-bria-assets.json")
+    if not manifest_path.is_file():
+        raise WorkerFailure("BRIA_PROVENANCE_MISSING", "缺少 BRIA 模型版本清单，请更新图片能力包")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for name, expected in manifest["files"].items():
+        file = directory / name
+        if not file.is_file():
+            raise WorkerFailure("BRIA_WEIGHTS_MISSING", f"BRIA 模型缺少文件：{name}")
+        stat = file.stat()
+        stamp = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, expected)
+        if _BRIA_VERIFIED.get(str(file)) == stamp:
+            continue
+        with file.open("rb") as handle:
+            digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if digest != expected:
+            raise WorkerFailure("BRIA_MODEL_MISMATCH", f"BRIA 模型文件与固定版本不符：{name}，请重新准备对应版本")
+        _BRIA_VERIFIED[str(file)] = stamp
+
+
+def is_cuda_oom(error: Exception) -> bool:
+    cause = error.__cause__ or error
+    message = str(cause).lower()
+    return type(cause).__name__ == "OutOfMemoryError" or "out of memory" in message or "cudaerrormemoryallocation" in message
+
+
 def safe_error(error: Exception) -> str:
     message = str(error).strip().replace(str(ROOT), "<project>")
     for storage_root in TRUSTED_STORAGE_ROOTS:
@@ -954,7 +1149,7 @@ def main() -> None:
     if args.host not in {"127.0.0.1", "localhost", "::1"}:
         raise SystemExit("The image AI worker must only listen on loopback")
     if args.check:
-        required_packages = ("torch", "realesrgan", "rembg", "paddleocr", "onnxruntime", "uvicorn")
+        required_packages = ("torch", "realesrgan", "rembg", "paddleocr", "onnxruntime", "uvicorn", "timm", "kornia", "transformers", "safetensors")
         missing_packages = [name for name in required_packages if importlib.util.find_spec(name) is None]
         model_root = MODELS_ROOT
         required_models = [

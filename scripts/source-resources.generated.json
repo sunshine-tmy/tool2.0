@@ -48,6 +48,21 @@
       ]
     },
     {
+      "id": "video-interpolation",
+      "displayName": "智能补帧（RIFE）",
+      "version": "1.0.0-rife46-20221029",
+      "required": true,
+      "manifestSha256": "cbaf1847d5363442dff55c8e19092220a07e84ea9087955664cfa75a9eeba201",
+      "archives": [
+        {
+          "filename": "video-interpolation-1.0.0-rife46-20221029.tar.gz",
+          "bytes": 12283527,
+          "sha256": "61a88e119676dc6ad4431106410b9b0addee5648dd8f139be4c677fad4da4451",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-interpolation-1.0.0-rife46-20221029.tar.gz"
+        }
+      ]
+    },
+    {
       "id": "edge-tts",
       "displayName": "在线自然配音（Edge-TTS）",
       "version": "7.3.1-py312-1",
@@ -65,15 +80,15 @@
     {
       "id": "image-ai",
       "displayName": "AI 图片处理（CPU）",
-      "version": "1.0.0-py312-cpu1",
+      "version": "1.1.0-py312-cpu1",
       "required": true,
-      "manifestSha256": "e276a859f11f0efd6c4d6773bfabc10a6b3e3927739a0ef65d710b7ae8ea673f",
+      "manifestSha256": "33b987d63cdf4680c8fbcdaeb7c869b22b6860adc628dd4cecef4d570d56df34",
       "archives": [
         {
-          "filename": "image-ai-1.0.0-py312-cpu1.tar.gz",
-          "bytes": 1806180251,
-          "sha256": "b87cc998805e5dde0db7831ccf7fb735a9957369758f994473ab972ffb485f1e",
-          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.0.0-py312-cpu1.tar.gz"
+          "filename": "image-ai-1.1.0-py312-cpu1.tar.gz",
+          "bytes": 1809000280,
+          "sha256": "e44c3391e35baaa20f744b48e2127540b4e16f79a02fc70e621f70f9c42cf2b5",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.1.0-py312-cpu1.tar.gz"
         }
       ]
     },
@@ -242,6 +257,39 @@
           "bytes": 6097876,
           "sha256": "4350957a4485b6de6a481839e41ec49f7682cddcaabaf222098e5d5ac3faed69",
           "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/video-ai-cuda-1.1.0-py312-cu1241-cuda-torchvision.tar.gz"
+        }
+      ]
+    },
+    {
+      "id": "image-ai-cuda",
+      "displayName": "AI 图片 GPU 加速",
+      "version": "1.0.0-py312-cu1241",
+      "required": false,
+      "manifestSha256": "2607f64b54635811a0081a12274bae2951f86b3b9d3d8309e4ee341e39fba0b3",
+      "archives": [
+        {
+          "filename": "image-ai-cuda-1.0.0-py312-cu1241.tar.gz",
+          "bytes": 718294440,
+          "sha256": "daeb91fff013a55b660a8430c79df022a4ca883f2ef0faec86b9e26b5c58c606",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241.tar.gz"
+        },
+        {
+          "filename": "image-ai-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "bytes": 1498292694,
+          "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz"
+        },
+        {
+          "filename": "image-ai-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "bytes": 1028311500,
+          "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz"
+        },
+        {
+          "filename": "image-ai-cuda-1.0.0-py312-cu1241-cuda-torchvision.tar.gz",
+          "bytes": 6097876,
+          "sha256": "4350957a4485b6de6a481839e41ec49f7682cddcaabaf222098e5d5ac3faed69",
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241-cuda-torchvision.tar.gz"
         }
       ]
     }

@@ -150,7 +150,9 @@ export async function prepareImageAiComponent({
   lockFilePath = LOCK_SOURCE,
   assetCacheDirectory = DEFAULT_ASSET_CACHE,
   runCommand = execFileSync,
-  assets = IMAGE_AI_MODEL_ASSETS
+  assets = IMAGE_AI_MODEL_ASSETS,
+  runtime = "cpu",
+  findLinks = []
 }) {
   if (!(
     (process.platform === "win32" && process.arch === "x64") ||
@@ -175,7 +177,8 @@ export async function prepareImageAiComponent({
   if (await pathExists(stage)) throw new Error("图片 AI 暂存目录已存在，拒绝覆盖");
 
   const lockText = await fs.readFile(lockFilePath, "utf8");
-  validateImageAiCpuLock(lockText);
+  if (runtime === "cpu") validateImageAiCpuLock(lockText);
+  else if (runtime !== "cuda") throw new Error("未知图片推理运行时");
   const { downloadLockText, sourceDistributions } = omitImageAiSourceDistributions(lockText);
   await ensureImageAiAssets({ assetCacheDirectory, assets, runCommand });
   const verifiedAssets = await verifyImageAiAssets(assetCacheDirectory, assets);
@@ -202,6 +205,10 @@ export async function prepareImageAiComponent({
     await Promise.all([fs.mkdir(wheelhouse), fs.mkdir(scripts)]);
     await Promise.all([
       fs.copyFile(SCRIPT_SOURCE, path.join(scripts, "image-ai-worker.py")),
+      fs.copyFile(
+        path.join(REPOSITORY_ROOT, "scripts/image-ai-bria-assets.json"),
+        path.join(scripts, "image-ai-bria-assets.json")
+      ),
       fs.writeFile(path.join(stage, "requirements.lock"), lockText, { flag: "wx" }),
       fs.writeFile(downloadLock, downloadLockText, { flag: "wx" })
     ]);
@@ -211,31 +218,60 @@ export async function prepareImageAiComponent({
       await fs.copyFile(asset.sourcePath, destination, fsConstants.COPYFILE_EXCL);
     }
 
-    runCommand(
-      python,
-      [
-        "-m",
-        "pip",
-        "--isolated",
-        "--no-cache-dir",
-        "--disable-pip-version-check",
-        "download",
-        "--no-deps",
-        "--require-hashes",
-        "--extra-index-url",
-        PYTORCH_CPU_INDEX,
-        "--dest",
-        wheelhouse,
-        "-r",
-        downloadLock
-      ],
-      {
-        stdio: "inherit",
-        windowsHide: true,
-        timeout: 90 * 60 * 1000,
-        env: cleanPythonEnvironment()
+    // Reuse only exact, hash-verified wheels. pip otherwise prefers index candidates
+    // over equivalent --find-links files and redownloads the 2.5 GB CUDA wheel.
+    const blocks = downloadLockText.split(/(?=^[A-Za-z0-9][A-Za-z0-9_.+-]*==)/m);
+    const pending = [];
+    for (const block of blocks) {
+      const pin = /^([A-Za-z0-9_.+-]+)==([^\s\\]+)/.exec(block);
+      let reused = false;
+      if (pin) {
+        const prefix = `${pin[1].replaceAll("-", "_")}-${pin[2]}-`.toLowerCase();
+        for (const directory of findLinks) {
+          const names = await fs.readdir(directory).catch(() => []);
+          for (const name of names) {
+            if (!name.toLowerCase().startsWith(prefix) || !name.endsWith(".whl")) continue;
+            const source = path.join(directory, name);
+            if (!(await fs.lstat(source)).isFile() || !block.includes(`--hash=sha256:${await sha256File(source)}`))
+              continue;
+            assertWorkerWheelPython(name);
+            await fs.copyFile(source, path.join(wheelhouse, name), fsConstants.COPYFILE_EXCL);
+            reused = true;
+            break;
+          }
+          if (reused) break;
+        }
       }
-    );
+      if (!reused) pending.push(block);
+    }
+    await fs.writeFile(downloadLock, pending.join(""));
+    if (pending.some((block) => /^[A-Za-z0-9][A-Za-z0-9_.+-]*==/m.test(block)))
+      runCommand(
+        python,
+        [
+          "-m",
+          "pip",
+          "--isolated",
+          "--no-cache-dir",
+          "--disable-pip-version-check",
+          "download",
+          "--no-deps",
+          "--require-hashes",
+          "--extra-index-url",
+          runtime === "cuda" ? "https://download.pytorch.org/whl/cu124" : PYTORCH_CPU_INDEX,
+          ...findLinks.flatMap((directory) => ["--find-links", path.resolve(directory)]),
+          "--dest",
+          wheelhouse,
+          "-r",
+          downloadLock
+        ],
+        {
+          stdio: "inherit",
+          windowsHide: true,
+          timeout: 90 * 60 * 1000,
+          env: cleanPythonEnvironment()
+        }
+      );
     await fs.rm(downloadLock);
     for (const sourceDistribution of sourceDistributions) {
       const sourceDestination = path.join(wheelhouse, sourceDistribution.fileName);

@@ -2,7 +2,13 @@
  * 中文模块说明：AI 图片处理领域，负责 Worker 任务、输入校验和结果文件
  */
 import fs from "node:fs/promises";
-import type { ImageAiHistory, ImageAiHistoryQuery, ImageAiOperation, ProductImageRecipe } from "@toolbox/shared";
+import type {
+  ImageAiDevice,
+  ImageAiHistory,
+  ImageAiHistoryQuery,
+  ImageAiOperation,
+  ProductImageRecipe
+} from "@toolbox/shared";
 import type { AppConfig } from "../../config";
 import type { ToolboxDatabase } from "../../database/toolbox-database";
 import type { FileMetadataRepository } from "../../database/file-metadata";
@@ -138,6 +144,7 @@ export function createImageAiTaskManager(
     files: StoredInput[];
     maskPath?: string;
     scale?: 2 | 4;
+    device?: ImageAiDevice;
     recipe?: ProductImageRecipe;
     assets?: ProductImageAssets;
     source?: { taskId: string; resultId: string };
@@ -152,6 +159,7 @@ export function createImageAiTaskManager(
       progress: 0,
       queuePosition: queue.length + 1,
       scale: input.scale,
+      device: input.device ?? "auto",
       results: [],
       warnings: [],
       createdAt: now.toISOString(),

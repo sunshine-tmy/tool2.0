@@ -2295,7 +2295,7 @@ export const packagedComponentCatalog = {
       "moduleId": "image-ai",
       "groupId": "image",
       "displayName": "AI 图片处理（CPU）",
-      "purpose": "使用本地 CPU 模型进行水印修复、图片增强、背景移除和文字识别；首次安装需要下载固定版本的运行时与模型。",
+      "purpose": "本地图片去水印、增强、抠图和 OCR；补齐 BRIA RMBG 2.0 依赖，支持独立 GPU 扩展。",
       "dependencyIds": [
         "python-312"
       ],
@@ -2304,14 +2304,15 @@ export const packagedComponentCatalog = {
       ],
       "installConditions": [
         "安装过程建议预留约 7 GB 可用磁盘空间，安装后约占 4.9 GB；建议至少 8 GB 内存。此版本使用 CPU，不要求 CUDA。",
-        "水印智能提示使用固定版本 PP-OCRv5 中文检测与识别模型；所有模型均随能力包离线安装，不在处理过程中下载。"
+        "水印智能提示使用固定版本 PP-OCRv5 中文检测与识别模型；所有模型均随能力包离线安装，不在处理过程中下载。",
+        "BRIA 模型由已获授权的用户单独下载，复用本地模型目录；本包不包含 BRIA 权重。"
       ],
-      "version": "1.0.0-py312-cpu1",
+      "version": "1.1.0-py312-cpu1",
       "platform": "win32-x64",
       "archive": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.0.0-py312-cpu1.tar.gz",
-        "bytes": 1806180251,
-        "sha256": "b87cc998805e5dde0db7831ccf7fb735a9957369758f994473ab972ffb485f1e",
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.1.0-py312-cpu1.tar.gz",
+        "bytes": 1809000280,
+        "sha256": "e44c3391e35baaa20f744b48e2127540b4e16f79a02fc70e621f70f9c42cf2b5",
         "format": "tar.gz"
       },
       "installedBytes": 5200000000,
@@ -2368,13 +2369,18 @@ export const packagedComponentCatalog = {
         },
         {
           "path": "requirements.lock",
-          "bytes": 286155,
-          "sha256": "080bff46e678bf9e9f41ce2adceb18ad87b951ed5c8610b4ab7efb2e796dab18"
+          "bytes": 291736,
+          "sha256": "64a7a348607aed6d91128acf9870213b5feb891f6a0e9cd87ccc6358da85a524"
+        },
+        {
+          "path": "scripts/image-ai-bria-assets.json",
+          "bytes": 484,
+          "sha256": "e593cec09852aa3864879d37e8469be1c36fc5d92acfb11d9adec12d84aa46c7"
         },
         {
           "path": "scripts/image-ai-worker.py",
-          "bytes": 36906,
-          "sha256": "9fe77c3edeca9558ad573964fba91130b135db8484d5648f0f87ff7364176c31"
+          "bytes": 50412,
+          "sha256": "4ec554c00b6251bc6811a5657c99a1783237a3d0c2e33391ae2e3b74abc99bae"
         },
         {
           "path": "wheelhouse/absl_py-2.5.0-py3-none-any.whl",
@@ -2572,9 +2578,9 @@ export const packagedComponentCatalog = {
           "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
         },
         {
-          "path": "wheelhouse/huggingface_hub-1.31.0-py3-none-any.whl",
-          "bytes": 798313,
-          "sha256": "9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667"
+          "path": "wheelhouse/huggingface_hub-0.36.2-py3-none-any.whl",
+          "bytes": 566395,
+          "sha256": "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270"
         },
         {
           "path": "wheelhouse/idna-3.19-py3-none-any.whl",
@@ -2612,6 +2618,16 @@ export const packagedComponentCatalog = {
           "sha256": "06a6917674de9e0fe3f66f5430787f59a9f2ddb64af9b714eaec547e29ef5c19"
         },
         {
+          "path": "wheelhouse/kornia_rs-0.2.0-cp312-cp312-win_amd64.whl",
+          "bytes": 4341139,
+          "sha256": "1a222a68555d1b974f0a96694ed2d3965d0e084860da1ba2d7fcffc541bd9b36"
+        },
+        {
+          "path": "wheelhouse/kornia-0.8.2-py2.py3-none-any.whl",
+          "bytes": 1095012,
+          "sha256": "32dfe77c9c74a87a2de49395aa3c2c376a1b63c27611a298b394d02d13905819"
+        },
+        {
           "path": "wheelhouse/lazy_loader-0.5-py3-none-any.whl",
           "bytes": 8044,
           "sha256": "ab0ea149e9c554d4ffeeb21105ac60bed7f3b4fd69b1d2360a4add51b170b005"
@@ -2627,11 +2643,6 @@ export const packagedComponentCatalog = {
           "sha256": "131ea41c72e387715141cbf240648337f59b717c0a01655f6fd78315fea60afe"
         },
         {
-          "path": "wheelhouse/markdown_it_py-4.2.0-py3-none-any.whl",
-          "bytes": 91687,
-          "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a"
-        },
-        {
           "path": "wheelhouse/markdown-3.10.3-py3-none-any.whl",
           "bytes": 110757,
           "sha256": "fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea"
@@ -2645,11 +2656,6 @@ export const packagedComponentCatalog = {
           "path": "wheelhouse/matplotlib-3.10.9-cp312-cp312-win_amd64.whl",
           "bytes": 8217462,
           "sha256": "d091f9d758b34aaaaa6331d13574bf01891d903b3dec59bfff458ef7551de5d6"
-        },
-        {
-          "path": "wheelhouse/mdurl-0.1.2-py3-none-any.whl",
-          "bytes": 9979,
-          "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8"
         },
         {
           "path": "wheelhouse/modelscope_hub-0.4.2-py3-none-any.whl",
@@ -2802,11 +2808,6 @@ export const packagedComponentCatalog = {
           "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73"
         },
         {
-          "path": "wheelhouse/pygments-2.21.0-py3-none-any.whl",
-          "bytes": 1250147,
-          "sha256": "2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9"
-        },
-        {
           "path": "wheelhouse/pymatting-1.1.16-py3-none-any.whl",
           "bytes": 56257,
           "sha256": "6ad3f787f90d7720b60e9734c33588cb30f98a66abf7bd772fa499d3a32b466a"
@@ -2867,11 +2868,6 @@ export const packagedComponentCatalog = {
           "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
         },
         {
-          "path": "wheelhouse/rich-15.0.0-py3-none-any.whl",
-          "bytes": 310654,
-          "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb"
-        },
-        {
           "path": "wheelhouse/rpds_py-2026.6.3-cp312-cp312-win_amd64.whl",
           "bytes": 220394,
           "sha256": "2c958bf94822e9290a40aaf2a822d4bc5c88099093e3948ad6c571eca9272e5f"
@@ -2907,11 +2903,6 @@ export const packagedComponentCatalog = {
           "sha256": "743044b4cfb34f9a67205cee9279feaf60ba7d02e69febc2afc609047cb49179"
         },
         {
-          "path": "wheelhouse/shellingham-1.5.4-py2.py3-none-any.whl",
-          "bytes": 9755,
-          "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686"
-        },
-        {
           "path": "wheelhouse/six-1.17.0-py2.py3-none-any.whl",
           "bytes": 11050,
           "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
@@ -2942,9 +2933,14 @@ export const packagedComponentCatalog = {
           "sha256": "e8be15c94273113d31ecb7aa3a39822189dd11c4967e3cc88c178f1ad2fd1170"
         },
         {
-          "path": "wheelhouse/tokenizers-0.23.2-cp310-abi3-win_amd64.whl",
-          "bytes": 2863236,
-          "sha256": "2e96f5699d5249c9c64aa8412e044f727aae3a4098cf830f9901ec1afc361cde"
+          "path": "wheelhouse/timm-1.0.15-py3-none-any.whl",
+          "bytes": 2361373,
+          "sha256": "5a3dc460c24e322ecc7fd1f3e3eb112423ddee320cb059cc1956fbc9731748ef"
+        },
+        {
+          "path": "wheelhouse/tokenizers-0.21.4-cp39-abi3-win_amd64.whl",
+          "bytes": 2507568,
+          "sha256": "475d807a5c3eb72c59ad9b5fcdb254f6e17f53dfcbb9903233b0dfa9c943b597"
         },
         {
           "path": "wheelhouse/torch-2.6.0+cpu-cp312-cp312-win_amd64.whl",
@@ -2962,14 +2958,9 @@ export const packagedComponentCatalog = {
           "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"
         },
         {
-          "path": "wheelhouse/transformers-5.17.0-py3-none-any.whl",
-          "bytes": 12295140,
-          "sha256": "78ec1ce21579b38dfb83950a0658cd119f87212a2fcfdff478096ce9d6c03801"
-        },
-        {
-          "path": "wheelhouse/typer-0.27.2-py3-none-any.whl",
-          "bytes": 123130,
-          "sha256": "b3a5fc4342d5fc8fda8fc3010b1cf117e9249aab7fae800c2eff62fd3842d97d"
+          "path": "wheelhouse/transformers-4.48.3-py3-none-any.whl",
+          "bytes": 9669412,
+          "sha256": "78697f990f5ef350c23b46bf86d5081ce96b49479ab180b2de7687267de8fd36"
         },
         {
           "path": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
@@ -3027,15 +3018,901 @@ export const packagedComponentCatalog = {
         "pythonExecutablePath": "python/python.exe",
         "wheelhousePath": "wheelhouse",
         "requirementsLockPath": "requirements.lock",
-        "requirementsLockSha256": "080bff46e678bf9e9f41ce2adceb18ad87b951ed5c8610b4ab7efb2e796dab18",
+        "requirementsLockSha256": "64a7a348607aed6d91128acf9870213b5feb891f6a0e9cd87ccc6358da85a524",
         "expectedPythonVersion": "3.12"
       },
       "sbom": {
-        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.0.0-py312-cpu1.spdx.json",
-        "sha256": "d5681e8678c79114c390ae58fb07f078a05fbd2d42ee21506a75c5b2ed859513"
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-1.1.0-py312-cpu1.spdx.json",
+        "sha256": "fac532aa350ce6b1e9cb3595c312e069e953cfb93042d1e39da2dce3533f9c55"
       },
       "keyId": "ed25519-f372f170675a31f5015c6a38",
-      "signature": "HLo/s27GPDraN5YjdxPqNXDS8EzxUJkseOaQuFOCaVDSDOZOtzHI/YcSowVd5SNRUzgwo3ld7QGR+52SEklEAw=="
+      "signature": "SFgsK6hyf++deGaELfWaJJwRdnIQ/brcBBAwtJlOB1mlsg1DVOw+f0la349KHfOl2qka4vN05Xe8QQAuhEsfDg=="
+    },
+    {
+      "protocolVersion": 1,
+      "id": "image-ai-cuda",
+      "moduleId": "image-ai-cuda",
+      "groupId": "image",
+      "displayName": "AI 图片 GPU 加速",
+      "purpose": "为 LaMa 去水印、Real-ESRGAN 变清晰、BRIA RMBG 2.0 与 BiRefNet 抠图提供 NVIDIA CUDA 加速；复用基础包模型。",
+      "dependencyIds": [
+        "image-ai",
+        "python-312"
+      ],
+      "taskToolIds": [
+        "image-ai"
+      ],
+      "installConditions": [
+        "需要 Windows x64、兼容 CUDA 12.4 的 NVIDIA 驱动；建议 8 GB 显存。不会安装或修改显卡驱动。",
+        "独立 Python 3.12 GPU 环境，不覆盖 CPU 环境；OCR 保持 CPU。",
+        "复用基础包模型与用户已授权的 BRIA RMBG 2.0 目录，推理不联网下载模型。",
+        "包体与安装空间以生成清单为准，安装前检查本机磁盘空间。"
+      ],
+      "version": "1.0.0-py312-cu1241",
+      "platform": "win32-x64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241.tar.gz",
+        "bytes": 718294440,
+        "sha256": "daeb91fff013a55b660a8430c79df022a4ca883f2ef0faec86b9e26b5c58c606",
+        "format": "tar.gz",
+        "filePaths": [
+          "requirements.lock",
+          "scripts/image-ai-bria-assets.json",
+          "scripts/image-ai-worker.py",
+          "wheelhouse/absl_py-2.5.0-py3-none-any.whl",
+          "wheelhouse/addict-2.4.0-py3-none-any.whl",
+          "wheelhouse/aiohappyeyeballs-2.7.1-py3-none-any.whl",
+          "wheelhouse/aiohttp-3.14.3-cp312-cp312-win_amd64.whl",
+          "wheelhouse/aiosignal-1.4.0-py3-none-any.whl",
+          "wheelhouse/aistudio_sdk-0.3.9-py3-none-any.whl",
+          "wheelhouse/annotated_doc-0.0.5-py3-none-any.whl",
+          "wheelhouse/annotated_types-0.8.0-py3-none-any.whl",
+          "wheelhouse/anyio-4.15.1-py3-none-any.whl",
+          "wheelhouse/attrs-26.1.0-py3-none-any.whl",
+          "wheelhouse/basicsr-1.4.2.tar.gz",
+          "wheelhouse/bce_python_sdk-0.9.79-py3-none-any.whl",
+          "wheelhouse/certifi-2026.7.22-py3-none-any.whl",
+          "wheelhouse/cffi-2.1.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/chardet-7.6.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/charset_normalizer-3.5.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/click-8.5.0-py3-none-any.whl",
+          "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+          "wheelhouse/coloredlogs-15.0.1-py2.py3-none-any.whl",
+          "wheelhouse/colorlog-6.12.0-py3-none-any.whl",
+          "wheelhouse/contourpy-1.3.2-cp312-cp312-win_amd64.whl",
+          "wheelhouse/crc32c-2.9.post0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/cryptography-50.0.1-cp311-abi3-win_amd64.whl",
+          "wheelhouse/cycler-0.12.1-py3-none-any.whl",
+          "wheelhouse/cython-3.1.3-cp312-cp312-win_amd64.whl",
+          "wheelhouse/facexlib-0.3.0-py3-none-any.whl",
+          "wheelhouse/fastapi-0.141.1-py3-none-any.whl",
+          "wheelhouse/filelock-3.32.6-py3-none-any.whl",
+          "wheelhouse/filterpy-1.4.5.zip",
+          "wheelhouse/flatbuffers-25.12.19-py2.py3-none-any.whl",
+          "wheelhouse/fonttools-4.65.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/frozenlist-1.8.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/fsspec-2026.7.0-py3-none-any.whl",
+          "wheelhouse/future-1.0.0-py3-none-any.whl",
+          "wheelhouse/gfpgan-1.3.8-py3-none-any.whl",
+          "wheelhouse/grpcio-1.83.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/h11-0.16.0-py3-none-any.whl",
+          "wheelhouse/hf_xet-1.6.0-cp38-abi3-win_amd64.whl",
+          "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+          "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+          "wheelhouse/huggingface_hub-0.36.2-py3-none-any.whl",
+          "wheelhouse/humanfriendly-10.0-py2.py3-none-any.whl",
+          "wheelhouse/idna-3.19-py3-none-any.whl",
+          "wheelhouse/imageio-2.37.4-py3-none-any.whl",
+          "wheelhouse/imagesize-2.0.1-py3-none-any.whl",
+          "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "wheelhouse/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "wheelhouse/jsonschema-4.26.0-py3-none-any.whl",
+          "wheelhouse/kiwisolver-1.5.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/kornia_rs-0.2.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/kornia-0.8.2-py2.py3-none-any.whl",
+          "wheelhouse/lazy_loader-0.5-py3-none-any.whl",
+          "wheelhouse/llvmlite-0.49.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/lmdb-2.3.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/markdown-3.10.3-py3-none-any.whl",
+          "wheelhouse/markupsafe-3.0.3-cp312-cp312-win_amd64.whl",
+          "wheelhouse/matplotlib-3.10.9-cp312-cp312-win_amd64.whl",
+          "wheelhouse/modelscope_hub-0.4.2-py3-none-any.whl",
+          "wheelhouse/modelscope-1.40.0-py3-none-any.whl",
+          "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "wheelhouse/multidict-6.8.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/networkx-3.6.1-py3-none-any.whl",
+          "wheelhouse/numba-0.67.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/numpy-2.3.5-cp312-cp312-win_amd64.whl",
+          "wheelhouse/onnxruntime_gpu-1.20.2-cp312-cp312-win_amd64.whl",
+          "wheelhouse/opencv_contrib_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+          "wheelhouse/opencv_python_headless-4.11.0.86-cp37-abi3-win_amd64.whl",
+          "wheelhouse/opencv_python-4.11.0.86-cp37-abi3-win_amd64.whl",
+          "wheelhouse/opt_einsum-3.3.0-py3-none-any.whl",
+          "wheelhouse/packaging-24.2-py3-none-any.whl",
+          "wheelhouse/paddleocr-3.7.0-py3-none-any.whl",
+          "wheelhouse/paddlepaddle-3.3.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/paddlex-3.7.2-py3-none-any.whl",
+          "wheelhouse/pandas-2.2.3-cp312-cp312-win_amd64.whl",
+          "wheelhouse/pillow-12.3.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/platformdirs-4.11.8-py3-none-any.whl",
+          "wheelhouse/pooch-1.9.0-py3-none-any.whl",
+          "wheelhouse/prettytable-3.18.0-py3-none-any.whl",
+          "wheelhouse/propcache-0.5.2-cp312-cp312-win_amd64.whl",
+          "wheelhouse/protobuf-7.36.1-cp310-abi3-win_amd64.whl",
+          "wheelhouse/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+          "wheelhouse/py_cpuinfo-9.0.0-py3-none-any.whl",
+          "wheelhouse/pyclipper-1.4.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/pycparser-3.0-py3-none-any.whl",
+          "wheelhouse/pycryptodome-3.23.0-cp37-abi3-win_amd64.whl",
+          "wheelhouse/pydantic_core-2.46.5-cp312-cp312-win_amd64.whl",
+          "wheelhouse/pydantic-2.13.5-py3-none-any.whl",
+          "wheelhouse/pymatting-1.1.16-py3-none-any.whl",
+          "wheelhouse/pyparsing-3.3.2-py3-none-any.whl",
+          "wheelhouse/pypdfium2-5.13.0-py3-none-win_amd64.whl",
+          "wheelhouse/pyreadline3-3.5.6-py3-none-any.whl",
+          "wheelhouse/python_bidi-0.6.11-cp312-cp312-win_amd64.whl",
+          "wheelhouse/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "wheelhouse/pytz-2026.3.post1-py2.py3-none-any.whl",
+          "wheelhouse/PyYAML-6.0.2-cp312-cp312-win_amd64.whl",
+          "wheelhouse/realesrgan-0.3.0-py3-none-any.whl",
+          "wheelhouse/referencing-0.37.0-py3-none-any.whl",
+          "wheelhouse/regex-2026.9.10-cp312-cp312-win_amd64.whl",
+          "wheelhouse/rembg-2.0.84-py3-none-any.whl",
+          "wheelhouse/requests-2.34.2-py3-none-any.whl",
+          "wheelhouse/rpds_py-2026.6.3-cp312-cp312-win_amd64.whl",
+          "wheelhouse/ruamel_yaml-0.19.1-py3-none-any.whl",
+          "wheelhouse/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "wheelhouse/scikit_image-0.26.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/scipy-1.17.1-cp312-cp312-win_amd64.whl",
+          "wheelhouse/setuptools-80.9.0-py3-none-any.whl",
+          "wheelhouse/shapely-2.1.2-cp312-cp312-win_amd64.whl",
+          "wheelhouse/six-1.17.0-py2.py3-none-any.whl",
+          "wheelhouse/starlette-1.6.0-py3-none-any.whl",
+          "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "wheelhouse/tb_nightly-2.21.0a20251023-py3-none-any.whl",
+          "wheelhouse/tensorboard_data_server-0.7.2-py3-none-any.whl",
+          "wheelhouse/tifffile-2026.3.3-py3-none-any.whl",
+          "wheelhouse/timm-1.0.15-py3-none-any.whl",
+          "wheelhouse/tokenizers-0.21.4-cp39-abi3-win_amd64.whl",
+          "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+          "wheelhouse/transformers-4.48.3-py3-none-any.whl",
+          "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "wheelhouse/typing_inspection-0.4.4-py3-none-any.whl",
+          "wheelhouse/tzdata-2026.4-py2.py3-none-any.whl",
+          "wheelhouse/ujson-6.0.0-cp312-cp312-win_amd64.whl",
+          "wheelhouse/urllib3-2.7.0-py3-none-any.whl",
+          "wheelhouse/uvicorn-0.52.4-py3-none-any.whl",
+          "wheelhouse/wcwidth-0.8.3-py3-none-any.whl",
+          "wheelhouse/werkzeug-3.1.8-py3-none-any.whl",
+          "wheelhouse/yapf-0.43.0-py3-none-any.whl",
+          "wheelhouse/yarl-1.24.5-cp312-cp312-win_amd64.whl"
+        ]
+      },
+      "additionalArchives": [
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241-cuda-torch-part-0001.tar.gz",
+          "bytes": 1498292694,
+          "sha256": "dbb92fe0985fcc6e9d849a8f11b0f166d5307733cfff073288e8f5c0b0d9fd0f",
+          "format": "tar.gz",
+          "filePaths": [
+            "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0001"
+          ]
+        },
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241-cuda-torch-part-0002.tar.gz",
+          "bytes": 1028311500,
+          "sha256": "d1334fdaf3fab7c87183f5579ff9e937c9e041a0cb39908e02a406d9a9abdab4",
+          "format": "tar.gz",
+          "filePaths": [
+            "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0002"
+          ]
+        },
+        {
+          "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241-cuda-torchvision.tar.gz",
+          "bytes": 6097876,
+          "sha256": "4350957a4485b6de6a481839e41ec49f7682cddcaabaf222098e5d5ac3faed69",
+          "format": "tar.gz",
+          "filePaths": [
+            "wheelhouse/torchvision-0.21.0+cu124-cp312-cp312-win_amd64.whl"
+          ]
+        }
+      ],
+      "assembledFiles": [
+        {
+          "path": "wheelhouse/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl",
+          "bytes": 2532302369,
+          "sha256": "3313061c1fec4c7310cf47944e84513dcd27b6173b72a349bb7ca68d0ee6e9c0",
+          "parts": [
+            {
+              "path": "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0001",
+              "bytes": 1500000000,
+              "sha256": "d954b96bae050157121adf4822cd7c7f0f0a74aff11a5a0df4ee09559002c8e6"
+            },
+            {
+              "path": "wheelhouse/.parts/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl.part-0002",
+              "bytes": 1032302369,
+              "sha256": "3e146a4c99522a7f9cc6c9e0e8f72b453f928642437b8491a6b0f30b49e74bae"
+            }
+          ]
+        }
+      ],
+      "installedBytes": 12000000000,
+      "files": [
+        {
+          "path": "requirements.lock",
+          "bytes": 290793,
+          "sha256": "b460fdbf83e6bf55347d2c9f4af4004b512d14b76635d9eb822f03ac61e0a160"
+        },
+        {
+          "path": "scripts/image-ai-bria-assets.json",
+          "bytes": 484,
+          "sha256": "e593cec09852aa3864879d37e8469be1c36fc5d92acfb11d9adec12d84aa46c7"
+        },
+        {
+          "path": "scripts/image-ai-worker.py",
+          "bytes": 50412,
+          "sha256": "4ec554c00b6251bc6811a5657c99a1783237a3d0c2e33391ae2e3b74abc99bae"
+        },
+        {
+          "path": "wheelhouse/absl_py-2.5.0-py3-none-any.whl",
+          "bytes": 137410,
+          "sha256": "0f17b89f2a4eaaedc4f28c622998aa690564b3012a396a4ffad0821007fe03ba"
+        },
+        {
+          "path": "wheelhouse/addict-2.4.0-py3-none-any.whl",
+          "bytes": 3832,
+          "sha256": "249bb56bbfd3cdc2a004ea0ff4c2b6ddc84d53bc2194761636eb314d5cfa5dfc"
+        },
+        {
+          "path": "wheelhouse/aiohappyeyeballs-2.7.1-py3-none-any.whl",
+          "bytes": 15038,
+          "sha256": "9243213661e29250eb41368e5daa826fc017156c3b8a11440826b2e3ed376472"
+        },
+        {
+          "path": "wheelhouse/aiohttp-3.14.3-cp312-cp312-win_amd64.whl",
+          "bytes": 476845,
+          "sha256": "33a2d7c28d33797a2e99923dffa63f83d908a19b6bf26cfe80fa790aa5e1a75a"
+        },
+        {
+          "path": "wheelhouse/aiosignal-1.4.0-py3-none-any.whl",
+          "bytes": 7490,
+          "sha256": "053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e"
+        },
+        {
+          "path": "wheelhouse/aistudio_sdk-0.3.9-py3-none-any.whl",
+          "bytes": 67186,
+          "sha256": "41621d052ddb7a58643438a7ca541f58ef0ab94a2acdfff0a71db81bf68dc027"
+        },
+        {
+          "path": "wheelhouse/annotated_doc-0.0.5-py3-none-any.whl",
+          "bytes": 5302,
+          "sha256": "117bac03a25ede5df5440e855b32d556049ca169ead221505badf432fed4b101"
+        },
+        {
+          "path": "wheelhouse/annotated_types-0.8.0-py3-none-any.whl",
+          "bytes": 13427,
+          "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0"
+        },
+        {
+          "path": "wheelhouse/anyio-4.15.1-py3-none-any.whl",
+          "bytes": 132079,
+          "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101"
+        },
+        {
+          "path": "wheelhouse/attrs-26.1.0-py3-none-any.whl",
+          "bytes": 67548,
+          "sha256": "c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309"
+        },
+        {
+          "path": "wheelhouse/basicsr-1.4.2.tar.gz",
+          "bytes": 172524,
+          "sha256": "b89b595a87ef964cda9913b4d99380ddb6554c965577c0c10cb7b78e31301e87"
+        },
+        {
+          "path": "wheelhouse/bce_python_sdk-0.9.79-py3-none-any.whl",
+          "bytes": 440268,
+          "sha256": "71799ac8740505e0759d30873f6f1a478fa8f83aedf425d511f1419a5f30082e"
+        },
+        {
+          "path": "wheelhouse/certifi-2026.7.22-py3-none-any.whl",
+          "bytes": 136983,
+          "sha256": "62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775"
+        },
+        {
+          "path": "wheelhouse/cffi-2.1.1-cp312-cp312-win_amd64.whl",
+          "bytes": 185919,
+          "sha256": "f53e442b08449d42821fa4a4fba000095af9f62742a500f978a9f557ec44339a"
+        },
+        {
+          "path": "wheelhouse/chardet-7.6.0-cp312-cp312-win_amd64.whl",
+          "bytes": 1160778,
+          "sha256": "406936df1328a3284fef366eaa2bfd1cccd0ef1b10cb99781dd5b022ea644b84"
+        },
+        {
+          "path": "wheelhouse/charset_normalizer-3.5.1-cp312-cp312-win_amd64.whl",
+          "bytes": 200551,
+          "sha256": "3617ac3cfd8b9888f145ad89dd6e692285834b0201c6074a5eeaad3fd4d668c2"
+        },
+        {
+          "path": "wheelhouse/click-8.5.0-py3-none-any.whl",
+          "bytes": 125251,
+          "sha256": "255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360"
+        },
+        {
+          "path": "wheelhouse/colorama-0.4.6-py2.py3-none-any.whl",
+          "bytes": 25335,
+          "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6"
+        },
+        {
+          "path": "wheelhouse/coloredlogs-15.0.1-py2.py3-none-any.whl",
+          "bytes": 46018,
+          "sha256": "612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934"
+        },
+        {
+          "path": "wheelhouse/colorlog-6.12.0-py3-none-any.whl",
+          "bytes": 12239,
+          "sha256": "30d392604e9110045a2c2aeefc27d7a017abbab63f3a8aee594eac0801df784e"
+        },
+        {
+          "path": "wheelhouse/contourpy-1.3.2-cp312-cp312-win_amd64.whl",
+          "bytes": 223042,
+          "sha256": "8c942a01d9163e2e5cfb05cb66110121b8d07ad438a17f9e766317bcb62abf73"
+        },
+        {
+          "path": "wheelhouse/crc32c-2.9.post0-cp312-cp312-win_amd64.whl",
+          "bytes": 65911,
+          "sha256": "0284bc548f361d9c66f6e844f2ec6e7a92b86f39ff0fd292a45878c160391230"
+        },
+        {
+          "path": "wheelhouse/cryptography-50.0.1-cp311-abi3-win_amd64.whl",
+          "bytes": 3842826,
+          "sha256": "aed8db4f6d71c51efb89530e12d9464e7bf2923d46c3205dc794a2a93f8c0648"
+        },
+        {
+          "path": "wheelhouse/cycler-0.12.1-py3-none-any.whl",
+          "bytes": 8321,
+          "sha256": "85cef7cff222d8644161529808465972e51340599459b8ac3ccbac5a854e0d30"
+        },
+        {
+          "path": "wheelhouse/cython-3.1.3-cp312-cp312-win_amd64.whl",
+          "bytes": 2704002,
+          "sha256": "dc4ca0f4dec55124cd79ddcfc555be1cbe0092cc99bcf1403621d17b9c6218bb"
+        },
+        {
+          "path": "wheelhouse/facexlib-0.3.0-py3-none-any.whl",
+          "bytes": 59624,
+          "sha256": "245d58861537b820c616e8b3ef618ccfad2a24724a2d74be2b0542643c01a878"
+        },
+        {
+          "path": "wheelhouse/fastapi-0.141.1-py3-none-any.whl",
+          "bytes": 131954,
+          "sha256": "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3"
+        },
+        {
+          "path": "wheelhouse/filelock-3.32.6-py3-none-any.whl",
+          "bytes": 100189,
+          "sha256": "3f16ecd0117feae0dfc147e8c62eb5daeccd8bd800378c3ddf416de9b4feb6b1"
+        },
+        {
+          "path": "wheelhouse/filterpy-1.4.5.zip",
+          "bytes": 177985,
+          "sha256": "4f2a4d39e4ea601b9ab42b2db08b5918a9538c168cff1c6895ae26646f3d73b1"
+        },
+        {
+          "path": "wheelhouse/flatbuffers-25.12.19-py2.py3-none-any.whl",
+          "bytes": 26661,
+          "sha256": "7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4"
+        },
+        {
+          "path": "wheelhouse/fonttools-4.65.0-cp312-cp312-win_amd64.whl",
+          "bytes": 2483475,
+          "sha256": "3b5d9ba89edf778b376e669b879ae33a198bf45cf5a23c3f6514f935cf9d0d9d"
+        },
+        {
+          "path": "wheelhouse/frozenlist-1.8.0-cp312-cp312-win_amd64.whl",
+          "bytes": 44591,
+          "sha256": "34187385b08f866104f0c0617404c8eb08165ab1272e884abc89c112e9c00746"
+        },
+        {
+          "path": "wheelhouse/fsspec-2026.7.0-py3-none-any.whl",
+          "bytes": 206583,
+          "sha256": "b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279"
+        },
+        {
+          "path": "wheelhouse/future-1.0.0-py3-none-any.whl",
+          "bytes": 491326,
+          "sha256": "929292d34f5872e70396626ef385ec22355a1fae8ad29e1a734c3e43f9fbc216"
+        },
+        {
+          "path": "wheelhouse/gfpgan-1.3.8-py3-none-any.whl",
+          "bytes": 52176,
+          "sha256": "3d8386df6320aa9dfb0dd4cd09d9f8ed12ae0bbd9b2df257c3d21aefac5d8b85"
+        },
+        {
+          "path": "wheelhouse/grpcio-1.83.1-cp312-cp312-win_amd64.whl",
+          "bytes": 5161512,
+          "sha256": "583bf2e8255040a4a312f9572dfe62a05271437b149550e1a536d5c47d2d1e8a"
+        },
+        {
+          "path": "wheelhouse/h11-0.16.0-py3-none-any.whl",
+          "bytes": 37515,
+          "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"
+        },
+        {
+          "path": "wheelhouse/hf_xet-1.6.0-cp38-abi3-win_amd64.whl",
+          "bytes": 4033128,
+          "sha256": "fb4fadde1b2b70bf4c0c14a6dccbe7194b1c28947fefd5bbe3fed9d940676c3b"
+        },
+        {
+          "path": "wheelhouse/httpcore-1.0.9-py3-none-any.whl",
+          "bytes": 78784,
+          "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"
+        },
+        {
+          "path": "wheelhouse/httpx-0.28.1-py3-none-any.whl",
+          "bytes": 73517,
+          "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"
+        },
+        {
+          "path": "wheelhouse/huggingface_hub-0.36.2-py3-none-any.whl",
+          "bytes": 566395,
+          "sha256": "48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270"
+        },
+        {
+          "path": "wheelhouse/humanfriendly-10.0-py2.py3-none-any.whl",
+          "bytes": 86794,
+          "sha256": "1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477"
+        },
+        {
+          "path": "wheelhouse/idna-3.19-py3-none-any.whl",
+          "bytes": 68550,
+          "sha256": "815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4"
+        },
+        {
+          "path": "wheelhouse/imageio-2.37.4-py3-none-any.whl",
+          "bytes": 318000,
+          "sha256": "1ab2e22c8debf700f24c3ac43e8f95f3b3a8110c83b93411e97b4b0b2cd1c7e6"
+        },
+        {
+          "path": "wheelhouse/imagesize-2.0.1-py3-none-any.whl",
+          "bytes": 14794,
+          "sha256": "ea0c9a0384df69ed86a943a15cde37d0360b82491b3910dc2215e202e62b5b02"
+        },
+        {
+          "path": "wheelhouse/jinja2-3.1.6-py3-none-any.whl",
+          "bytes": 134899,
+          "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67"
+        },
+        {
+          "path": "wheelhouse/jsonschema_specifications-2025.9.1-py3-none-any.whl",
+          "bytes": 18437,
+          "sha256": "98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe"
+        },
+        {
+          "path": "wheelhouse/jsonschema-4.26.0-py3-none-any.whl",
+          "bytes": 90630,
+          "sha256": "d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce"
+        },
+        {
+          "path": "wheelhouse/kiwisolver-1.5.1-cp312-cp312-win_amd64.whl",
+          "bytes": 70748,
+          "sha256": "06a6917674de9e0fe3f66f5430787f59a9f2ddb64af9b714eaec547e29ef5c19"
+        },
+        {
+          "path": "wheelhouse/kornia_rs-0.2.0-cp312-cp312-win_amd64.whl",
+          "bytes": 4341139,
+          "sha256": "1a222a68555d1b974f0a96694ed2d3965d0e084860da1ba2d7fcffc541bd9b36"
+        },
+        {
+          "path": "wheelhouse/kornia-0.8.2-py2.py3-none-any.whl",
+          "bytes": 1095012,
+          "sha256": "32dfe77c9c74a87a2de49395aa3c2c376a1b63c27611a298b394d02d13905819"
+        },
+        {
+          "path": "wheelhouse/lazy_loader-0.5-py3-none-any.whl",
+          "bytes": 8044,
+          "sha256": "ab0ea149e9c554d4ffeeb21105ac60bed7f3b4fd69b1d2360a4add51b170b005"
+        },
+        {
+          "path": "wheelhouse/llvmlite-0.49.0-cp312-cp312-win_amd64.whl",
+          "bytes": 41865543,
+          "sha256": "3a9c9e3af4e214acfefa4f73ebe7bc3fb35854a62b654edb3953f5ae33c08ba3"
+        },
+        {
+          "path": "wheelhouse/lmdb-2.3.0-cp312-cp312-win_amd64.whl",
+          "bytes": 115188,
+          "sha256": "131ea41c72e387715141cbf240648337f59b717c0a01655f6fd78315fea60afe"
+        },
+        {
+          "path": "wheelhouse/markdown-3.10.3-py3-none-any.whl",
+          "bytes": 110757,
+          "sha256": "fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea"
+        },
+        {
+          "path": "wheelhouse/markupsafe-3.0.3-cp312-cp312-win_amd64.whl",
+          "bytes": 15105,
+          "sha256": "26a5784ded40c9e318cfc2bdb30fe164bdb8665ded9cd64d500a34fb42067b1c"
+        },
+        {
+          "path": "wheelhouse/matplotlib-3.10.9-cp312-cp312-win_amd64.whl",
+          "bytes": 8217462,
+          "sha256": "d091f9d758b34aaaaa6331d13574bf01891d903b3dec59bfff458ef7551de5d6"
+        },
+        {
+          "path": "wheelhouse/modelscope_hub-0.4.2-py3-none-any.whl",
+          "bytes": 201255,
+          "sha256": "ddf47b859ae812738850f53c3cc7a935df5cf5ee58c4678cf4fbeefe3d203f43"
+        },
+        {
+          "path": "wheelhouse/modelscope-1.40.0-py3-none-any.whl",
+          "bytes": 6038122,
+          "sha256": "2b1d7076bc7eac19f8ac32d4467d021649e374c968f3a42cc36c699da5aae075"
+        },
+        {
+          "path": "wheelhouse/mpmath-1.3.0-py3-none-any.whl",
+          "bytes": 536198,
+          "sha256": "a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c"
+        },
+        {
+          "path": "wheelhouse/multidict-6.8.0-cp312-cp312-win_amd64.whl",
+          "bytes": 51723,
+          "sha256": "7d26dc8f070c0ec5579e987fa615ffd6883086106eefdff9e10d160fc5630630"
+        },
+        {
+          "path": "wheelhouse/networkx-3.6.1-py3-none-any.whl",
+          "bytes": 2068504,
+          "sha256": "d47fbf302e7d9cbbb9e2555a0d267983d2aa476bac30e90dfbe5669bd57f3762"
+        },
+        {
+          "path": "wheelhouse/numba-0.67.0-cp312-cp312-win_amd64.whl",
+          "bytes": 2815645,
+          "sha256": "50e2b72406c18cda5dd7431b0082cb85ea94e06c64c33607248fc8bef92cfb81"
+        },
+        {
+          "path": "wheelhouse/numpy-2.3.5-cp312-cp312-win_amd64.whl",
+          "bytes": 12782922,
+          "sha256": "86945f2ee6d10cdfd67bcb4069c1662dd711f7e2a4343db5cecec06b87cf31aa"
+        },
+        {
+          "path": "wheelhouse/onnxruntime_gpu-1.20.2-cp312-cp312-win_amd64.whl",
+          "bytes": 279699596,
+          "sha256": "564a6a1187b208012f57c3bb3723ba65f6bc5cddff6e6b917ac96865768b39f5"
+        },
+        {
+          "path": "wheelhouse/opencv_contrib_python-4.10.0.84-cp37-abi3-win_amd64.whl",
+          "bytes": 45541421,
+          "sha256": "47ec3160dae75f70e099b286d1a2e086d20dac8b06e759f60eaf867e6bdecba7"
+        },
+        {
+          "path": "wheelhouse/opencv_python_headless-4.11.0.86-cp37-abi3-win_amd64.whl",
+          "bytes": 39402386,
+          "sha256": "6c304df9caa7a6a5710b91709dd4786bf20a74d57672b3c31f7033cc638174ca"
+        },
+        {
+          "path": "wheelhouse/opencv_python-4.11.0.86-cp37-abi3-win_amd64.whl",
+          "bytes": 39488044,
+          "sha256": "085ad9b77c18853ea66283e98affefe2de8cc4c1f43eda4c100cf9b2721142ec"
+        },
+        {
+          "path": "wheelhouse/opt_einsum-3.3.0-py3-none-any.whl",
+          "bytes": 65486,
+          "sha256": "2455e59e3947d3c275477df7f5205b30635e266fe6dc300e3d9f9646bfcea147"
+        },
+        {
+          "path": "wheelhouse/packaging-24.2-py3-none-any.whl",
+          "bytes": 65451,
+          "sha256": "09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759"
+        },
+        {
+          "path": "wheelhouse/paddleocr-3.7.0-py3-none-any.whl",
+          "bytes": 146750,
+          "sha256": "c0f0a81ad4112727f30c6fcf986ac0ef6a120d31ee0991a01fae0357ee32d338"
+        },
+        {
+          "path": "wheelhouse/paddlepaddle-3.3.1-cp312-cp312-win_amd64.whl",
+          "bytes": 104794793,
+          "sha256": "324b5122cf3887dfbd15db17f36e2421ef923fd4569d26111bf1a21fe84d442b"
+        },
+        {
+          "path": "wheelhouse/paddlex-3.7.2-py3-none-any.whl",
+          "bytes": 2239708,
+          "sha256": "f1678bf650bbaccfd8f0d4e49d0ae631b4685c829fdae6e802ccd90d4fcb9a7f"
+        },
+        {
+          "path": "wheelhouse/pandas-2.2.3-cp312-cp312-win_amd64.whl",
+          "bytes": 11504248,
+          "sha256": "59ef3764d0fe818125a5097d2ae867ca3fa64df032331b7e0917cf5d7bf66b13"
+        },
+        {
+          "path": "wheelhouse/pillow-12.3.0-cp312-cp312-win_amd64.whl",
+          "bytes": 7227137,
+          "sha256": "a2b55dd6b2a4c4b7d87ffa56bdb33fdc5fdb9a462173861a7bc097f17d91cb09"
+        },
+        {
+          "path": "wheelhouse/platformdirs-4.11.8-py3-none-any.whl",
+          "bytes": 24027,
+          "sha256": "52f2f181bbfde907966932cc8312d967d02976422d66d537ea16092b8e291081"
+        },
+        {
+          "path": "wheelhouse/pooch-1.9.0-py3-none-any.whl",
+          "bytes": 67175,
+          "sha256": "f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b"
+        },
+        {
+          "path": "wheelhouse/prettytable-3.18.0-py3-none-any.whl",
+          "bytes": 37357,
+          "sha256": "b3346e0e6f79180833aebaac088ae926340586cf6d7d991b9eb125b65f72313a"
+        },
+        {
+          "path": "wheelhouse/propcache-0.5.2-cp312-cp312-win_amd64.whl",
+          "bytes": 42322,
+          "sha256": "d9ee8826a7d47863a08ac44e1a5f611a462eefc3a194b492da242128bec75b42"
+        },
+        {
+          "path": "wheelhouse/protobuf-7.36.1-cp310-abi3-win_amd64.whl",
+          "bytes": 456518,
+          "sha256": "51139351435d9b43d88a55eaa49fb6f737fbb478fb0cbf2cf694d1a04a9d3363"
+        },
+        {
+          "path": "wheelhouse/psutil-7.2.2-cp37-abi3-win_amd64.whl",
+          "bytes": 137737,
+          "sha256": "eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988"
+        },
+        {
+          "path": "wheelhouse/py_cpuinfo-9.0.0-py3-none-any.whl",
+          "bytes": 22335,
+          "sha256": "859625bc251f64e21f077d099d4162689c762b5d6a4c3c97553d56241c9674d5"
+        },
+        {
+          "path": "wheelhouse/pyclipper-1.4.0-cp312-cp312-win_amd64.whl",
+          "bytes": 104619,
+          "sha256": "d1e5498d883b706a4ce636247f0d830c6eb34a25b843a1b78e2c969754ca9037"
+        },
+        {
+          "path": "wheelhouse/pycparser-3.0-py3-none-any.whl",
+          "bytes": 48172,
+          "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992"
+        },
+        {
+          "path": "wheelhouse/pycryptodome-3.23.0-cp37-abi3-win_amd64.whl",
+          "bytes": 1799636,
+          "sha256": "c75b52aacc6c0c260f204cbdd834f76edc9fb0d8e0da9fbf8352ef58202564e2"
+        },
+        {
+          "path": "wheelhouse/pydantic_core-2.46.5-cp312-cp312-win_amd64.whl",
+          "bytes": 2043140,
+          "sha256": "5e81740c09e310f5aa5cbd3e434a01c154d4bef93241c7877b39f211d2b78ba8"
+        },
+        {
+          "path": "wheelhouse/pydantic-2.13.5-py3-none-any.whl",
+          "bytes": 472589,
+          "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73"
+        },
+        {
+          "path": "wheelhouse/pymatting-1.1.16-py3-none-any.whl",
+          "bytes": 56257,
+          "sha256": "6ad3f787f90d7720b60e9734c33588cb30f98a66abf7bd772fa499d3a32b466a"
+        },
+        {
+          "path": "wheelhouse/pyparsing-3.3.2-py3-none-any.whl",
+          "bytes": 122781,
+          "sha256": "850ba148bd908d7e2411587e247a1e4f0327839c40e2e5e6d05a007ecc69911d"
+        },
+        {
+          "path": "wheelhouse/pypdfium2-5.13.0-py3-none-win_amd64.whl",
+          "bytes": 3885553,
+          "sha256": "47dcca2a8d507b5fd24f94c3c9d48fb379430f097bc20f01beff6c963ffbcedb"
+        },
+        {
+          "path": "wheelhouse/pyreadline3-3.5.6-py3-none-any.whl",
+          "bytes": 85243,
+          "sha256": "8449b734232e42a5dcd74048e39b60db2839a4c38cf3ae2bf7707d58b5389c0d"
+        },
+        {
+          "path": "wheelhouse/python_bidi-0.6.11-cp312-cp312-win_amd64.whl",
+          "bytes": 161243,
+          "sha256": "0608bddcc1c53dfa5293499de13ca9935b31aa46d1c722c404a88c703d1a4e47"
+        },
+        {
+          "path": "wheelhouse/python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+          "bytes": 229892,
+          "sha256": "a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"
+        },
+        {
+          "path": "wheelhouse/pytz-2026.3.post1-py2.py3-none-any.whl",
+          "bytes": 508283,
+          "sha256": "dd95840dd199baea12d9cc096a1d452caa6596a1c1e4b5f3dbd1541855d5e815"
+        },
+        {
+          "path": "wheelhouse/PyYAML-6.0.2-cp312-cp312-win_amd64.whl",
+          "bytes": 156338,
+          "sha256": "7e7401d0de89a9a855c839bc697c079a4af81cf878373abd7dc625847d25cbd8"
+        },
+        {
+          "path": "wheelhouse/realesrgan-0.3.0-py3-none-any.whl",
+          "bytes": 26012,
+          "sha256": "59336c16c30dd5130eff350dd27424acb9b7281d18a6810130e265606c9a6088"
+        },
+        {
+          "path": "wheelhouse/referencing-0.37.0-py3-none-any.whl",
+          "bytes": 26766,
+          "sha256": "381329a9f99628c9069361716891d34ad94af76e461dcb0335825aecc7692231"
+        },
+        {
+          "path": "wheelhouse/regex-2026.9.10-cp312-cp312-win_amd64.whl",
+          "bytes": 277933,
+          "sha256": "4db7d00c4afbfbb55b8e17b1e371da11418ea9389b030acec63c1fa4c7ad4b86"
+        },
+        {
+          "path": "wheelhouse/rembg-2.0.84-py3-none-any.whl",
+          "bytes": 62458,
+          "sha256": "3f27854a35b2e65aa74cc144040423f701a1a7bf8031359e2fb7a5e00ec355fe"
+        },
+        {
+          "path": "wheelhouse/requests-2.34.2-py3-none-any.whl",
+          "bytes": 73075,
+          "sha256": "2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0"
+        },
+        {
+          "path": "wheelhouse/rpds_py-2026.6.3-cp312-cp312-win_amd64.whl",
+          "bytes": 220394,
+          "sha256": "2c958bf94822e9290a40aaf2a822d4bc5c88099093e3948ad6c571eca9272e5f"
+        },
+        {
+          "path": "wheelhouse/ruamel_yaml-0.19.1-py3-none-any.whl",
+          "bytes": 118102,
+          "sha256": "27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93"
+        },
+        {
+          "path": "wheelhouse/safetensors-0.8.0-cp310-abi3-win_amd64.whl",
+          "bytes": 355540,
+          "sha256": "096ec1a98435df7beb08853bb5aa9081a84f23d0adc67ed1a0a10550f608373f"
+        },
+        {
+          "path": "wheelhouse/scikit_image-0.26.0-cp312-cp312-win_amd64.whl",
+          "bytes": 11911059,
+          "sha256": "abed017474593cd3056ae0fe948d07d0747b27a085e92df5474f4955dd65aec0"
+        },
+        {
+          "path": "wheelhouse/scipy-1.17.1-cp312-cp312-win_amd64.whl",
+          "bytes": 36549682,
+          "sha256": "41b71f4a3a4cab9d366cd9065b288efc4d4f3c0b37a91a8e0947fb5bd7f31d87"
+        },
+        {
+          "path": "wheelhouse/setuptools-80.9.0-py3-none-any.whl",
+          "bytes": 1201486,
+          "sha256": "062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922"
+        },
+        {
+          "path": "wheelhouse/shapely-2.1.2-cp312-cp312-win_amd64.whl",
+          "bytes": 1722861,
+          "sha256": "743044b4cfb34f9a67205cee9279feaf60ba7d02e69febc2afc609047cb49179"
+        },
+        {
+          "path": "wheelhouse/six-1.17.0-py2.py3-none-any.whl",
+          "bytes": 11050,
+          "sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"
+        },
+        {
+          "path": "wheelhouse/starlette-1.6.0-py3-none-any.whl",
+          "bytes": 75969,
+          "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c"
+        },
+        {
+          "path": "wheelhouse/sympy-1.13.1-py3-none-any.whl",
+          "bytes": 6189177,
+          "sha256": "db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8"
+        },
+        {
+          "path": "wheelhouse/tb_nightly-2.21.0a20251023-py3-none-any.whl",
+          "bytes": 5525812,
+          "sha256": "369f8f7c160b87d15515a35b49f49ac3212ef0547ed20e4dee37cf0ea7079d28"
+        },
+        {
+          "path": "wheelhouse/tensorboard_data_server-0.7.2-py3-none-any.whl",
+          "bytes": 2356,
+          "sha256": "7e0610d205889588983836ec05dc098e80f97b7e7bbff7e994ebb78f578d0ddb"
+        },
+        {
+          "path": "wheelhouse/tifffile-2026.3.3-py3-none-any.whl",
+          "bytes": 243960,
+          "sha256": "e8be15c94273113d31ecb7aa3a39822189dd11c4967e3cc88c178f1ad2fd1170"
+        },
+        {
+          "path": "wheelhouse/timm-1.0.15-py3-none-any.whl",
+          "bytes": 2361373,
+          "sha256": "5a3dc460c24e322ecc7fd1f3e3eb112423ddee320cb059cc1956fbc9731748ef"
+        },
+        {
+          "path": "wheelhouse/tokenizers-0.21.4-cp39-abi3-win_amd64.whl",
+          "bytes": 2507568,
+          "sha256": "475d807a5c3eb72c59ad9b5fcdb254f6e17f53dfcbb9903233b0dfa9c943b597"
+        },
+        {
+          "path": "wheelhouse/torch-2.6.0+cu124-cp312-cp312-win_amd64.whl",
+          "bytes": 2532302369,
+          "sha256": "3313061c1fec4c7310cf47944e84513dcd27b6173b72a349bb7ca68d0ee6e9c0"
+        },
+        {
+          "path": "wheelhouse/torchvision-0.21.0+cu124-cp312-cp312-win_amd64.whl",
+          "bytes": 6140979,
+          "sha256": "ec63c2ee792757492da40590e34b14f2fceda29050558c215f0c1f3b08149c0f"
+        },
+        {
+          "path": "wheelhouse/tqdm-4.70.1-py3-none-any.whl",
+          "bytes": 80199,
+          "sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73"
+        },
+        {
+          "path": "wheelhouse/transformers-4.48.3-py3-none-any.whl",
+          "bytes": 9669412,
+          "sha256": "78697f990f5ef350c23b46bf86d5081ce96b49479ab180b2de7687267de8fd36"
+        },
+        {
+          "path": "wheelhouse/typing_extensions-4.16.0-py3-none-any.whl",
+          "bytes": 45571,
+          "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8"
+        },
+        {
+          "path": "wheelhouse/typing_inspection-0.4.4-py3-none-any.whl",
+          "bytes": 14750,
+          "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147"
+        },
+        {
+          "path": "wheelhouse/tzdata-2026.4-py2.py3-none-any.whl",
+          "bytes": 347494,
+          "sha256": "c2169a8b0a7a5e9674da5a135ccdfb2b3e671b333ed9fed17b41f73c34476e81"
+        },
+        {
+          "path": "wheelhouse/ujson-6.0.0-cp312-cp312-win_amd64.whl",
+          "bytes": 227516,
+          "sha256": "8cd9f7203c0b2aaed66809edf7e66aa3ab0fe3402e87b69a43b9dfd8d33125ab"
+        },
+        {
+          "path": "wheelhouse/urllib3-2.7.0-py3-none-any.whl",
+          "bytes": 131087,
+          "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897"
+        },
+        {
+          "path": "wheelhouse/uvicorn-0.52.4-py3-none-any.whl",
+          "bytes": 79871,
+          "sha256": "f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1"
+        },
+        {
+          "path": "wheelhouse/wcwidth-0.8.3-py3-none-any.whl",
+          "bytes": 331669,
+          "sha256": "d5b73dba6158a595ec9370350e7f2637bcac8d6c5e4fde34f30fcffb6103a5e4"
+        },
+        {
+          "path": "wheelhouse/werkzeug-3.1.8-py3-none-any.whl",
+          "bytes": 226459,
+          "sha256": "63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50"
+        },
+        {
+          "path": "wheelhouse/yapf-0.43.0-py3-none-any.whl",
+          "bytes": 256158,
+          "sha256": "224faffbc39c428cb095818cf6ef5511fdab6f7430a10783fdfb292ccf2852ca"
+        },
+        {
+          "path": "wheelhouse/yarl-1.24.5-cp312-cp312-win_amd64.whl",
+          "bytes": 97618,
+          "sha256": "a929d878fec099030c292803b31e5d5540a7b6a31e6a3cc76cb4685fc2a2f51b"
+        }
+      ],
+      "pythonEnvironment": {
+        "pythonComponentId": "python-312",
+        "pythonExecutablePath": "python/python.exe",
+        "wheelhousePath": "wheelhouse",
+        "requirementsLockPath": "requirements.lock",
+        "requirementsLockSha256": "b460fdbf83e6bf55347d2c9f4af4004b512d14b76635d9eb822f03ac61e0a160",
+        "expectedPythonVersion": "3.12"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/components-v1/image-ai-cuda-1.0.0-py312-cu1241.spdx.json",
+        "sha256": "3f1cda19c187d5df901a266d52ebc17aefcf03d42cb0f9a662d0db5f7f4d04b6"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "QZMz/NmkOFxVshikkjIxyw6NsNrCPRk6hItCHT5NikzlYRK/4yiLERdjdTBTc4+705pYDL5XfTOjHmAJRSMjAw=="
     },
     {
       "protocolVersion": 1,
