@@ -25,7 +25,21 @@ describe("embedded component catalog signatures", () => {
         "licenses/LICENSE"
       ])
     );
-    expect(macCatalog.manifests.some((entry) => entry.id === "video-interpolation")).toBe(false);
+  });
+  it("includes signed native RIFE assets and the FFmpeg dependency on Apple Silicon", () => {
+    const manifest = (macCatalog as ComponentCatalog).manifests.find((entry) => entry.id === "video-interpolation");
+    expect(manifest?.platform).toBe("darwin-arm64");
+    expect(manifest?.dependencyIds).toEqual(["ffmpeg"]);
+    expect(manifest?.pythonEnvironment).toBeUndefined();
+    expect(manifest?.files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        "bin/rife-ncnn-vulkan",
+        "models/rife-v4.6/flownet.param",
+        "models/rife-v4.6/flownet.bin",
+        "licenses/LICENSE"
+      ])
+    );
+    expect(manifest?.files.find((file) => file.path === "bin/rife-ncnn-vulkan")?.executable).toBe(true);
   });
   it("uses only Python 3.12 for new Windows installations", () => {
     expect(

@@ -93,7 +93,13 @@ describe("buildComponentPackage", () => {
     assert.match(video.license.name, /S-Lab-1\.0/u);
     assert.match(video.license.name, /non-commercial/u);
     assert.equal(assertCompleteMacCatalog({ manifests: MACOS_COMPONENT_IDS.map((id) => ({ id })) }), undefined);
-    assert.throws(() => assertCompleteMacCatalog({ manifests: [{ id: "python-311" }] }), /必须恰好包含十项/u);
+    assert.equal(
+      assertCompleteMacCatalog({
+        manifests: [...MACOS_COMPONENT_IDS, "video-interpolation"].map((id) => ({ id }))
+      }),
+      undefined
+    );
+    assert.throws(() => assertCompleteMacCatalog({ manifests: [{ id: "python-311" }] }), /必须包含十项基础能力/u);
   });
 
   it("keeps Windows asset names unchanged and isolates Mac asset names", () => {
@@ -514,7 +520,7 @@ describe("buildComponentPackage", () => {
     if (IS_MACOS) {
       await assert.rejects(
         writeGeneratedCatalog(options.outputDirectory, path.join(root, "incomplete-macos-catalog.ts"), HOST_PLATFORM),
-        /必须恰好包含十项/u
+        /必须包含十项基础能力/u
       );
     }
 

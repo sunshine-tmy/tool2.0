@@ -13529,6 +13529,72 @@ export const packagedComponentCatalog = {
     },
     {
       "protocolVersion": 1,
+      "id": "video-interpolation",
+      "moduleId": "video-interpolation",
+      "groupId": "media",
+      "displayName": "智能补帧（RIFE）",
+      "purpose": "为归档视频编辑提供 RIFE 中间帧生成、慢动作平滑与最高 120 FPS 输出。",
+      "dependencyIds": [
+        "ffmpeg"
+      ],
+      "taskToolIds": [
+        "media-archive-audio-edit"
+      ],
+      "installConditions": [
+        "程序与 rife-v4.6 模型来自固定上游版本，处理时离线运行，不自动下载模型。",
+        "GPU 推理使用 Vulkan；设备资源不足时重试低占用 CPU 模式。无需 CUDA 或 PyTorch 环境。",
+        "未安装此能力时仍可使用 FFmpeg 兼容补帧；是否允许 AI 失败后使用兼容引擎由用户设置。"
+      ],
+      "version": "1.0.0-rife46-20221029-darwin-arm64.1",
+      "platform": "darwin-arm64",
+      "archive": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/mac-ability-pack-2026-11-12-01/video-interpolation-1.0.0-rife46-20221029-darwin-arm64.1-darwin-arm64.tar.gz",
+        "bytes": 18499675,
+        "sha256": "a0338818293cacb7ab6cd95bd23ce06bcfba9ee61ca345728c5a4616133a4dc6",
+        "format": "tar.gz"
+      },
+      "installedBytes": 150000000,
+      "files": [
+        {
+          "path": "bin/rife-ncnn-vulkan",
+          "bytes": 26003696,
+          "sha256": "d5f5310d509e93ba62aeeebffbb1c9c7a3ea9db0f2c3a66fbc0eb406f51c47bd",
+          "executable": true
+        },
+        {
+          "path": "licenses/LICENSE",
+          "bytes": 1072,
+          "sha256": "a73beab18143600af0b10c6050a953ec233775ce31c2bf3373a794db535329fd"
+        },
+        {
+          "path": "models/rife-v4.6/flownet.bin",
+          "bytes": 10614320,
+          "sha256": "f334ed2260149ce0188a6dcf049844e8b0cdd912e01cbcfb63553157d2508958"
+        },
+        {
+          "path": "models/rife-v4.6/flownet.param",
+          "bytes": 16532,
+          "sha256": "724569596bcd1e7b9fa50455c604777ebed99746d2ef40aa86e31b5725f1053c"
+        },
+        {
+          "path": "upstream.json",
+          "bytes": 90,
+          "sha256": "0b91e7d47652db6c25febe53430faa70435b914080dbd034ad518c9eb42ab2fb"
+        }
+      ],
+      "license": {
+        "name": "MIT",
+        "url": "https://github.com/nihui/rife-ncnn-vulkan/blob/master/LICENSE"
+      },
+      "sbom": {
+        "url": "https://github.com/sunshine-tmy/tool2.0/releases/download/mac-ability-pack-2026-11-12-01/video-interpolation-1.0.0-rife46-20221029-darwin-arm64.1-darwin-arm64.spdx.json",
+        "sha256": "169ed36716756e58c2783c7879960ecf0d947fbacd7b439ebc39f1dbb956dcfa"
+      },
+      "keyId": "ed25519-f372f170675a31f5015c6a38",
+      "signature": "k4Gver1nNuW/PdsDs7rwg8qbjPXyrofOAuwTzTjAUyrhwnzdbQeWHJk07AvxkL0KsWJnvbY0LaOstpQFV8OZAQ=="
+    },
+    {
+      "protocolVersion": 1,
       "id": "xhs-archive",
       "moduleId": "xhs-archive",
       "groupId": "archive",

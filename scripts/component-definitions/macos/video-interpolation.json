@@ -1,0 +1,20 @@
+{
+  "id": "video-interpolation",
+  "groupId": "media",
+  "displayName": "智能补帧（RIFE）",
+  "purpose": "为归档视频编辑提供 RIFE 中间帧生成、慢动作平滑与最高 120 FPS 输出。",
+  "dependencyIds": ["ffmpeg"],
+  "taskToolIds": ["media-archive-audio-edit"],
+  "installConditions": [
+    "程序与 rife-v4.6 模型来自固定上游版本，处理时离线运行，不自动下载模型。",
+    "GPU 推理使用 Vulkan；设备资源不足时重试低占用 CPU 模式。无需 CUDA 或 PyTorch 环境。",
+    "未安装此能力时仍可使用 FFmpeg 兼容补帧；是否允许 AI 失败后使用兼容引擎由用户设置。"
+  ],
+  "version": "1.0.0-rife46-20221029-darwin-arm64.1",
+  "installedBytes": 150000000,
+  "license": {
+    "name": "MIT",
+    "url": "https://github.com/nihui/rife-ncnn-vulkan/blob/master/LICENSE"
+  },
+  "platform": "darwin-arm64"
+}

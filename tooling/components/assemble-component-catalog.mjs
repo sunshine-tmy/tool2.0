@@ -188,11 +188,11 @@ export async function writeGeneratedCatalog(
 export function assertCompleteMacCatalog(catalog) {
   const actual = catalog.manifests.map((manifest) => manifest.id).sort();
   const expected = [...MACOS_COMPONENT_IDS].sort();
-  if (actual.length !== expected.length || actual.some((id, index) => id !== expected[index])) {
-    const missing = expected.filter((id) => !actual.includes(id));
-    const unsupported = actual.filter((id) => !expected.includes(id));
+  const missing = expected.filter((id) => !actual.includes(id));
+  const unsupported = actual.filter((id) => !expected.includes(id) && id !== "video-interpolation");
+  if (missing.length || unsupported.length || new Set(actual).size !== actual.length) {
     throw new Error(
-      `Mac 能力目录必须恰好包含十项；缺少：${missing.join(", ") || "无"}；不支持：${unsupported.join(", ") || "无"}`
+      `Mac 能力目录必须包含十项基础能力，可额外包含智能补帧；缺少：${missing.join(", ") || "无"}；不支持：${unsupported.join(", ") || "无"}`
     );
   }
 }

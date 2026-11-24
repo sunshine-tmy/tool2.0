@@ -28,7 +28,7 @@ AI 引擎使用固定上游 RIFE ncnn Vulkan 20221029 / rife-v4.6。两秒窗口
 
 桌面端只通过 ComponentManager 的签名清单解析 `video-interpolation`，不读取开发环境 RIFE 地址。未安装时仍可使用兼容补帧。安装后可在编辑器点击“重新检测能力”。能力使用中禁止卸载；安装自检通过受管 FFmpeg 和 CPU 推理实际生成一张中间帧，不需要 Python/CUDA 环境。
 
-候选资产定义：`scripts/component-definitions/video-interpolation.json`。Windows 发行压缩包和必需文件摘要锁定在 `tooling/components/video-interpolation-sources.json`，准备脚本逐文件校验摘要，不下载、不安装、不签名。
+资产定义：Windows 使用 `scripts/component-definitions/video-interpolation.json`，Apple Silicon Mac 使用 `scripts/component-definitions/macos/video-interpolation.json`。两平台固定发行归档和必需文件摘要锁定在 `tooling/components/video-interpolation-sources.json`，准备脚本逐文件校验摘要；Mac 暂存后的可执行文件还会验证或补齐 ad-hoc 原生代码签名。
 
 ```powershell
 node scripts/prepare-video-interpolation-component.mjs --source <已解压的固定上游发行目录> --stage <新的暂存目录>
@@ -36,7 +36,7 @@ node scripts/prepare-video-interpolation-component.mjs --source <已解压的固
 
 2026-11-22 已按现有组件流程生成 Windows x64 正式 Ed25519 签名包、SPDX SBOM 及带 FFmpeg 依赖的完整离线包，并加入源码内置目录。使用现有受信任密钥，既有 12 项能力和信任公钥均保持不变。产物经过生产安装器的离线导入、原生 CPU 中间帧自检以及完整离线包的第二次隔离导入验证。
 
-用户已上传至 `components-v1` Release；2026-11-22 使用生产下载器完整下载归档、SBOM、签名清单，大小及 SHA-256 均与本地签名产物一致。包含新目录和补帧代码的客户端可在线安装。**尚未制作桌面安装器，旧客户端必须更新后才能识别新能力。** 当前可交付材料和校验记录见[补帧能力包交接说明](../../video-interpolation-release-handover.md)。Mac 原生发行锁与硬件验收须在对应平台完成，当前仅制作并验证 Windows x64。
+Windows 产物已由用户上传至 `components-v1` Release，2026-11-22 远端下载摘要验证通过。2026-11-24 已完成 Mac arm64 正式签名包、包含 FFmpeg 的完整离线包及隔离安装自检，Mac 三项产物已上传至 `mac-ability-pack-2026-11-12-01` Release，生产 HTTPS 下载及摘要、签名验证通过。**旧客户端必须更新后才能识别新增能力。** 当前可交付材料和验证范围见[补帧能力包交接说明](../../video-interpolation-release-handover.md)。
 
 源码调试可显式设置 `TOOLBOX_RIFE_PATH` 和 `TOOLBOX_RIFE_MODEL_DIR`；桌面管理模式忽略这些环境变量。真实引擎测试使用 `TEST_RIFE_PATH` 和 `TEST_RIFE_MODEL_DIR`，不安装到能力目录。
 

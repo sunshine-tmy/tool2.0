@@ -52,8 +52,8 @@ test("generated Mac catalog parser and inventory match the current signed Apple 
   );
   const catalog = parseMacCatalogSource(source);
   const inventory = macArchiveInventory(catalog);
-  assert.equal(catalog.manifests.length, 10);
-  assert.equal(inventory.length, 12);
+  assert.equal(catalog.manifests.length, 11);
+  assert.equal(inventory.length, 13);
   assert.ok(inventory.every((item) => item.url.startsWith("https://") && item.filename.endsWith(".tar.gz")));
   assert.throws(() => parseMacCatalogSource("export const packagedComponentCatalog = {};"), /generated JSON object/);
 });
