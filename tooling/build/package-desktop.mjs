@@ -105,7 +105,7 @@ export async function run({
           }),
       ignore: [
         /(^|[\\/])(\.electron-cache|\.stage|node_modules|out|src|test-results)([\\/]|$)/,
-        /(^|[\\/])\.desktop-(package\.lock|version-.*\.tmp)$/
+        /(^|[\\/])\.desktop-(package\.lock(?:\.lock)?|version-.*\.tmp)$/
       ]
     });
 

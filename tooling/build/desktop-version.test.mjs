@@ -3,6 +3,8 @@ import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { withDesktopVersion } from "./desktop-version.mjs";
 import { run } from "./package-desktop.mjs";
 
@@ -119,6 +121,45 @@ test("simultaneous package operations fail before touching another build's outpu
     assert.equal(lock.pid, process.pid);
   });
   assert.equal((await f.read()).version, "0.1.10");
+});
+
+test("a terminated packaging owner is recovered without changing the version on a failed retry", async (t) => {
+  const f = await fixture(t);
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore", windowsHide: true });
+  await once(child, "exit");
+  await writeFile(
+    path.join(f.desktopRoot, ".desktop-package.lock"),
+    JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() })
+  );
+  await assert.rejects(
+    f.build([], async () => {
+      throw new Error("retry failed");
+    }),
+    /retry failed/
+  );
+  assert.equal((await f.read()).version, "0.1.9");
+  assert.deepEqual(await readdir(f.desktopRoot), ["package.json"]);
+});
+
+test("an unreadable owner is not treated as an exited process", async (t) => {
+  const f = await fixture(t);
+  const lockPath = path.join(f.desktopRoot, ".desktop-package.lock");
+  await writeFile(lockPath, "{unfinished");
+  await assert.rejects(
+    f.build([], async () => assert.fail("unknown owner must remain protected")),
+    /无法确认打包锁/
+  );
+  assert.equal(await readFile(lockPath, "utf8"), "{unfinished");
+});
+
+test("cleanup does not delete a lock replaced by another owner", async (t) => {
+  const f = await fixture(t);
+  const lockPath = path.join(f.desktopRoot, ".desktop-package.lock");
+  const replacement = { pid: process.pid, token: "replacement-owner" };
+  await f.build(["--keep-version"], async () => {
+    await writeFile(lockPath, JSON.stringify(replacement));
+  });
+  assert.deepEqual(JSON.parse(await readFile(lockPath, "utf8")), replacement);
 });
 
 test("version persistence preserves unrelated edits and refuses to overwrite a manually changed version", async (t) => {

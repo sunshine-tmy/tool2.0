@@ -6,6 +6,7 @@ apps/desktop/.electron-cache/
 apps/desktop/.electron-builder-cache/
 apps/desktop/.electron-builder-cache-local/
 apps/desktop/.desktop-package.lock
+apps/desktop/.desktop-package.lock.lock/
 apps/desktop/.desktop-version-*.tmp
 .env
 .env.local

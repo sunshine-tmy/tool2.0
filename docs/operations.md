@@ -115,6 +115,8 @@ Windows 安装版的应用管理持久数据根默认是用户在安装向导选
 
 ## 8. Windows 签名安装器与自动更新
 
+本地 Windows/Apple Silicon 打包共用 `.desktop-package.lock`：新打包会检测记录的 PID，仅在确认原进程已退出时恢复残留锁；存活、权限不足、跨主机或损坏的锁仍会阻止并发打包。锁接管使用短时互斥目录 `.desktop-package.lock.lock/`，强制结束恰好发生在锁元数据更新期间时，等待 30 秒再重试。打包失败不会递增产品版本；不要在另一个打包任务运行时手动删除锁。
+
 正式 Windows 桌面版本只能通过 `v<major>.<minor>.<patch>` tag 触发 `.github/workflows/desktop-release.yml`。工作流需要 repository secrets `WINDOWS_SIGNING_CERTIFICATE_BASE64`、`WINDOWS_SIGNING_CERTIFICATE_PASSWORD`，以及 repository variable `WINDOWS_SIGNING_SUBJECT`；任一项未配置都会失败，不会发布未签名安装器。
 
 发布后，GitHub Release 必须同时含有 `EcommerceToolboxSetup.exe`、`EcommerceToolboxSetup.exe.blockmap`、`latest.yml` 及其 `.sha256` 文件。安装版将其更新源固定为当前仓库的 `releases/latest/download`；`electron-updater` 会读取 `latest.yml`、校验其中记录的 SHA-512 后下载 NSIS 安装器。不要手工替换同名资产、修改 `latest.yml` 或省略 `.blockmap`，否则已有用户的更新检查会失败。

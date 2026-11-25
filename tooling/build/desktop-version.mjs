@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { open, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
+import { acquireDesktopPackageLock } from "./desktop-package-lock.mjs";
 
 function stableVersion(value, label) {
   if (typeof value !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)) {
@@ -69,19 +70,8 @@ export async function withDesktopVersion({ desktopRoot, args = [], env = process
   const option = versionOptions(args);
   const manifestPath = path.join(desktopRoot, "package.json");
   const lockPath = path.join(desktopRoot, ".desktop-package.lock");
-  let lock;
+  const releaseLock = await acquireDesktopPackageLock(lockPath);
   try {
-    lock = await open(lockPath, "wx");
-  } catch (error) {
-    if (error.code === "EEXIST") {
-      throw new Error(
-        `Another desktop package operation owns ${lockPath}. If a previous build was forcibly stopped, confirm it has exited before removing this lock.`
-      );
-    }
-    throw error;
-  }
-  try {
-    await lock.writeFile(`${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`);
     const current = JSON.parse(await readFile(manifestPath, "utf8")).version;
     const version = nextVersion(current, option, env);
     console.log(`Desktop version: ${current} -> ${version}${env.DESKTOP_RELEASE === "1" ? " (release)" : ""}`);
@@ -112,7 +102,6 @@ export async function withDesktopVersion({ desktopRoot, args = [], env = process
     }
     return result;
   } finally {
-    await lock.close();
-    await rm(lockPath, { force: true });
+    await releaseLock();
   }
 }
