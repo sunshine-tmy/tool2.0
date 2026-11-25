@@ -34,7 +34,11 @@ export async function createBusinessWindow(context: BusinessWindowOptions) {
   });
   context.onCreated(mainWindow);
   context.closeStartupMigration();
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  const allowFullscreen = (permission: string) => permission === "fullscreen" || permission === "automatic-fullscreen";
+  mainWindow.webContents.session.setPermissionCheckHandler((_contents, permission) => allowFullscreen(permission));
+  mainWindow.webContents.session.setPermissionRequestHandler((_contents, permission, callback) =>
+    callback(allowFullscreen(permission))
+  );
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
     return { action: "deny" };

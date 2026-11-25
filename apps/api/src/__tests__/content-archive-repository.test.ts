@@ -33,6 +33,42 @@ function fixture(id = "archive_123456", platform: ContentArchiveItem["platform"]
 }
 
 describe("content archive repository", () => {
+  it("repairs numeric editor-cover cache versions on read without changing stored payloads", () => {
+    const repository = environment();
+    const source = fixture();
+    const base = `/api/v1/tools/media-archive/items/${source.id}/media/cover_123456`;
+    const checksum = "1".repeat(64);
+    source.coverMediaId = "cover_123456";
+    source.media = [
+      {
+        id: source.coverMediaId,
+        index: 0,
+        kind: "cover",
+        fileName: "editor-cover-example.jpg",
+        mimeType: "image/jpeg",
+        size: 128,
+        checksum,
+        previewUrl: `${base}?v=2`,
+        downloadUrl: `${base}?v=2&download=1`
+      }
+    ];
+    source.totalBytes = 128;
+    database.upsert({
+      id: source.id,
+      kind: "xhs-archive",
+      payload: source,
+      status: source.status,
+      createdAt: source.fetchedAt,
+      updatedAt: source.updatedAt
+    });
+    expect(repository.get(source.id)?.media[0]).toMatchObject({
+      previewUrl: `${base}?v=${checksum}`,
+      downloadUrl: `${base}?v=${checksum}&download=1`
+    });
+    expect(repository.list().items[0].coverUrl).toBe(`${base}?v=${checksum}`);
+    expect(database.get("xhs-archive", source.id)?.payload).toEqual(source);
+  });
+
   it("keeps equal remote IDs on different platforms separate and rejects same-platform duplicates", () => {
     const repository = environment();
     repository.save(fixture());

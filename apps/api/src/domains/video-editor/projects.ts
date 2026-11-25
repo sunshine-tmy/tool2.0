@@ -441,7 +441,8 @@ export class VideoEditorProjects {
           const data = await fs.readFile(coverPath),
             oldCover = archiveItem.media.find((m) => m.id === archiveItem.coverMediaId && m.kind === "cover"),
             coverId = oldCover?.id ?? nanoid(16);
-          const url = `/api/v1/tools/media-archive/items/${link.itemId}/media/${coverId}?v=${revision}`;
+          const checksum = createHash("sha256").update(data).digest("hex");
+          const url = `/api/v1/tools/media-archive/items/${link.itemId}/media/${coverId}?v=${checksum}`;
           cover = {
             id: coverId,
             index: oldCover?.index ?? Math.max(...archiveItem.media.map((m) => m.index)) + 1,
@@ -449,7 +450,7 @@ export class VideoEditorProjects {
             fileName: name,
             mimeType: "image/jpeg",
             size: data.length,
-            checksum: createHash("sha256").update(data).digest("hex"),
+            checksum,
             previewUrl: url,
             downloadUrl: url + "&download=1"
           };

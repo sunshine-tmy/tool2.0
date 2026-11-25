@@ -12,6 +12,7 @@ export type InferenceResourceCoordinatorOptions = {
   enabled: boolean;
   workers: Record<InferenceResourceKind, InferenceWorkerControl>;
   unloadTimeoutMs?: number;
+  idleUnloadMs?: Partial<Record<InferenceResourceKind, number>>;
 };
 
 export type InferenceResourceLease = { release: () => Promise<void> };
@@ -41,8 +42,8 @@ export class InferenceResourceError extends Error {
 
 /**
  * A single API-process queue shared by image, speech, video and model deep checks.
- * It never unloads the active worker. The previous idle worker is unloaded only
- * when the next request needs a different model class.
+ * It never unloads the active worker. Idle workers are unloaded on model-class
+ * switches or after their configured warm-cache window.
  */
 export function createInferenceResourceCoordinator(options: InferenceResourceCoordinatorOptions) {
   const queue: Waiter[] = [];
@@ -56,6 +57,28 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
   let closed = false;
   let resumePending = false;
   let retryTimer: NodeJS.Timeout | undefined;
+  let idleTimer: NodeJS.Timeout | undefined;
+  let idlePending: InferenceResourceKind | undefined;
+
+  function clearIdle() {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = undefined;
+    idlePending = undefined;
+  }
+
+  function scheduleIdle() {
+    clearIdle();
+    if (closed || active || pumping || queue.length || resumePending || deadResource || !lastResource) return;
+    const kind = lastResource;
+    const delay = options.idleUnloadMs?.[kind];
+    if (!delay || delay < 0) return;
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined;
+      idlePending = kind;
+      void pump();
+    }, delay);
+    idleTimer.unref();
+  }
 
   function acquire(
     kind: InferenceResourceKind,
@@ -67,6 +90,7 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
     if (closed)
       return Promise.reject(new InferenceResourceError("RESOURCE_COORDINATOR_CLOSED", "推理资源协调器已关闭"));
     if (options.signal?.aborted) return Promise.reject(cancelledError());
+    clearIdle();
 
     return new Promise<InferenceResourceLease>((resolve, reject) => {
       const waiter: Waiter = {
@@ -122,6 +146,7 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
   /** Called by the desktop host on Electron's native powerMonitor resume event. */
   function notifyResume() {
     if (!coordinatorEnabled || closed) return Promise.resolve();
+    clearIdle();
     resumePending = true;
     pump();
     return Promise.resolve();
@@ -130,6 +155,7 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
   async function close() {
     if (!coordinatorEnabled || closed) return;
     closed = true;
+    clearIdle();
     if (retryTimer) clearTimeout(retryTimer);
     const pending = queue.splice(0);
     for (const waiter of pending) {
@@ -160,11 +186,16 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
   const coordinatorEnabled = options.enabled;
 
   async function pump() {
-    if (!coordinatorEnabled || closed || active || pumping || (!queue.length && !resumePending && !deadResource))
+    if (!coordinatorEnabled || closed || active || pumping) return;
+    if (!queue.length && !resumePending && !deadResource && !idlePending) {
+      // The last lease (or queued cancellation) can leave no work to pump.
+      // This path must still arm cleanup instead of retaining the model forever.
+      scheduleIdle();
       return;
+    }
     pumping = true;
     try {
-      while (!closed && !active && (queue.length || resumePending || deadResource)) {
+      while (!closed && !active && (queue.length || resumePending || deadResource || idlePending)) {
         if (!queue.length) {
           if (resumePending) {
             try {
@@ -181,6 +212,20 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
             } catch {
               scheduleRetry();
               break;
+            }
+          }
+          if (idlePending) {
+            const kind = idlePending;
+            idlePending = undefined;
+            try {
+              if (lastResource === kind && workers[kind].configured()) {
+                assertWorkerIdle(kind, await workers[kind].health());
+                await unloadOrRecover(kind);
+                lastResource = undefined;
+              }
+            } catch {
+              // Keep ownership on uncertain unloads; retry after another idle window.
+              // A queued request still follows the normal guarded model-switch path.
             }
           }
           break;
@@ -262,6 +307,8 @@ export function createInferenceResourceCoordinator(options: InferenceResourceCoo
     } finally {
       pumping = false;
       if (!closed && !active && queue.length && (resumePending || deadResource)) scheduleRetry();
+      else if (!closed && !active && queue.length) void pump();
+      else scheduleIdle();
     }
   }
 

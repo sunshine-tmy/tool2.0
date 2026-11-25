@@ -7,7 +7,10 @@ const mock = vi.hoisted(() => ({
     EventEmitter & {
       options: Record<string, unknown>;
       webContents: {
-        session: { setPermissionRequestHandler: ReturnType<typeof vi.fn> };
+        session: {
+          setPermissionRequestHandler: ReturnType<typeof vi.fn>;
+          setPermissionCheckHandler: ReturnType<typeof vi.fn>;
+        };
         setWindowOpenHandler: ReturnType<typeof vi.fn>;
       };
       show: ReturnType<typeof vi.fn>;
@@ -23,7 +26,7 @@ vi.mock("electron", () => ({
   shell: { openExternal: mock.external },
   BrowserWindow: class extends EventEmitter {
     webContents = {
-      session: { setPermissionRequestHandler: vi.fn() },
+      session: { setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn() },
       setWindowOpenHandler: vi.fn(),
       on: (...args: unknown[]) => this.on(String(args[0]), args[1] as (...args: unknown[]) => void)
     };
@@ -107,16 +110,41 @@ describe("business window boundary", () => {
     window.emit("ready-to-show");
     expect(window.show).toHaveBeenCalledOnce();
   });
-  it("denies permissions/new windows and only opens safe HTTPS links outside the app", async () => {
+  it("allows fullscreen without origin or frame restrictions while denying other permissions", async () => {
     const { window } = await setup(),
       permission = window.webContents.session.setPermissionRequestHandler.mock.calls[0][0] as (
         _a: unknown,
         _b: string,
-        callback: (allowed: boolean) => void
+        callback: (allowed: boolean) => void,
+        details: { requestingUrl: string; isMainFrame: boolean }
       ) => void;
     const allowed = vi.fn();
-    permission({}, "camera", allowed);
-    expect(allowed).toHaveBeenCalledWith(false);
+    const trusted = { requestingUrl: "http://127.0.0.1:43210/tools/video-editor", isMainFrame: true };
+    const check = window.webContents.session.setPermissionCheckHandler.mock.calls[0][0];
+    for (const entry of [
+      { contents: window.webContents, name: "fullscreen", details: trusted, expected: true },
+      { contents: window.webContents, name: "camera", details: trusted, expected: false },
+      { contents: {}, name: "fullscreen", details: trusted, expected: true },
+      { contents: window.webContents, name: "automatic-fullscreen", details: trusted, expected: true },
+      {
+        contents: window.webContents,
+        name: "fullscreen",
+        details: { ...trusted, isMainFrame: false },
+        expected: true
+      },
+      {
+        contents: window.webContents,
+        name: "fullscreen",
+        details: { ...trusted, requestingUrl: "https://example.test" },
+        expected: true
+      }
+    ]) {
+      permission(entry.contents, entry.name, allowed, entry.details);
+      expect(allowed).toHaveBeenLastCalledWith(entry.expected);
+      expect(check(entry.contents, entry.name, new URL(entry.details.requestingUrl).origin, entry.details)).toBe(
+        entry.expected
+      );
+    }
     const open = window.webContents.setWindowOpenHandler.mock.calls[0][0] as (value: { url: string }) => unknown;
     for (const url of ["file:///private", "javascript:alert(1)", "http://external.test"]) {
       expect(open({ url })).toEqual({ action: "deny" });

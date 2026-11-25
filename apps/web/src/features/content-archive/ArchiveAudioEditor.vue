@@ -822,6 +822,7 @@ const virtualPreview = computed(() => ({
 // 黑色画布以成片画幅为坐标系，面板只决定显示倍率，不改变画布比例。
 const previewViewport = ref<HTMLElement>();
 const previewBounds = reactive({ width: 0, height: 0 });
+const previewFullscreen = ref(false);
 watch(
   previewViewport,
   (element, _previous, cleanup) => {
@@ -839,6 +840,12 @@ watch(
 );
 const previewBackgroundSize = computed(() => {
   const ratio = virtualPreview.value.width / virtualPreview.value.height;
+  if (previewFullscreen.value) {
+    // Fullscreen uses the entire viewport left above the transport controls,
+    // including upscaling small sources, while retaining the export aspect ratio.
+    const width = Math.min(Math.max(1, previewBounds.width), Math.max(1, previewBounds.height) * ratio);
+    return { width, height: width / ratio };
+  }
   const width = Math.min(
     960,
     720 * ratio,
@@ -863,7 +870,7 @@ const previewBackgroundStyle = computed(() => ({
 const previewCanvasStyle = computed(() => {
   const { width, height } = virtualPreview.value,
     bounds = previewBackgroundSize.value;
-  const scale = Math.min(1, bounds.width / width, bounds.height / height);
+  const scale = Math.min(previewFullscreen.value ? Infinity : 1, bounds.width / width, bounds.height / height);
   return {
     width: `${width * scale}px`,
     height: `${height * scale}px`,
@@ -892,6 +899,10 @@ function addMaterialVideo(source?: ArchiveStudioSource) {
   else roughCut.appendOriginal();
 }
 const fullscreenHost = ref<HTMLElement>();
+function syncPreviewFullscreen() {
+  previewFullscreen.value = document.fullscreenElement === fullscreenHost.value;
+}
+document.addEventListener("fullscreenchange", syncPreviewFullscreen);
 const playbackTime = ref(0),
   nativePlaying = ref(false);
 const previewPlaying = computed(() =>
@@ -958,6 +969,7 @@ function previewHotkey(event: KeyboardEvent) {
 window.addEventListener("keydown", previewHotkey);
 onScopeDispose(() => {
   window.removeEventListener("keydown", previewHotkey);
+  document.removeEventListener("fullscreenchange", syncPreviewFullscreen);
   if (document.fullscreenElement === fullscreenHost.value) void document.exitFullscreen().catch(() => {});
 });
 const previewAspectOptions = [
@@ -1746,9 +1758,18 @@ small {
   height: 10px;
   cursor: row-resize;
 }
-.editor-preview:fullscreen {
+.editor-preview:fullscreen,
+.is-workbench .editor-preview:fullscreen {
   background: #101418;
-  padding: 12px 24px;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0;
+  gap: 0;
   color: white;
   display: flex;
   flex-direction: column;
@@ -1760,6 +1781,7 @@ small {
   height: auto;
 }
 .editor-preview:fullscreen .editor-actions,
+.editor-preview:fullscreen .preview-heading,
 .editor-preview:fullscreen > p,
 .editor-preview:fullscreen > button {
   display: none;
@@ -1769,6 +1791,7 @@ small {
 }
 .editor-preview:fullscreen .preview-transport {
   color: white;
+  padding: 4px 12px;
 }
 .editor-preview:fullscreen .aspect-badge {
   color: inherit;

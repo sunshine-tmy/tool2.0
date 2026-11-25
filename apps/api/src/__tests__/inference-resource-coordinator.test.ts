@@ -7,7 +7,8 @@ import {
 
 function fixture(
   overrides: Partial<Record<InferenceResourceKind, Partial<InferenceWorkerControl>>> = {},
-  unloadTimeoutMs = 15_000
+  unloadTimeoutMs = 15_000,
+  idleUnloadMs?: Partial<Record<InferenceResourceKind, number>>
 ) {
   const events: string[] = [];
   const workers = Object.fromEntries(
@@ -30,7 +31,7 @@ function fixture(
       }
     ])
   ) as Record<InferenceResourceKind, InferenceWorkerControl>;
-  const coordinator = createInferenceResourceCoordinator({ enabled: true, workers, unloadTimeoutMs });
+  const coordinator = createInferenceResourceCoordinator({ enabled: true, workers, unloadTimeoutMs, idleUnloadMs });
   return { coordinator, events, workers };
 }
 
@@ -47,6 +48,67 @@ async function until(predicate: () => boolean) {
 }
 
 describe("Mac inference resource coordinator", () => {
+  it("releases idle image models and cancels the warm-cache timer on shutdown", async () => {
+    vi.useFakeTimers();
+    const { coordinator, workers } = fixture({}, 15_000, { "image-ai": 30_000 });
+    try {
+      await coordinator.run("image-ai", async () => undefined);
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(workers["image-ai"].unload).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(workers["image-ai"].unload).toHaveBeenCalledOnce();
+      expect(coordinator.snapshot().lastResource).toBeNull();
+      await coordinator.run("image-ai", async () => undefined);
+      await coordinator.close();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(workers["image-ai"].unload).toHaveBeenCalledOnce();
+    } finally {
+      await coordinator.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps models during consecutive images and never unloads an active lease", async () => {
+    vi.useFakeTimers();
+    const { coordinator, workers } = fixture({}, 15_000, { "image-ai": 30_000 });
+    try {
+      await coordinator.run("image-ai", async () => undefined);
+      await vi.advanceTimersByTimeAsync(20_000);
+      const next = await coordinator.acquire("image-ai");
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(workers["image-ai"].unload).not.toHaveBeenCalled();
+      await next.release();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(workers["image-ai"].unload).toHaveBeenCalledOnce();
+    } finally {
+      await coordinator.close();
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits for idle cleanup to finish before granting a newly queued request", async () => {
+    vi.useFakeTimers();
+    let finishUnload!: () => void;
+    const { coordinator } = fixture(
+      { "image-ai": { unload: () => new Promise<void>((resolve) => (finishUnload = resolve)) } },
+      15_000,
+      { "image-ai": 30_000 }
+    );
+    try {
+      await coordinator.run("image-ai", async () => undefined);
+      await vi.advanceTimersByTimeAsync(30_000);
+      const next = coordinator.acquire("image-ai");
+      expect(coordinator.snapshot().active).toBeNull();
+      finishUnload();
+      const lease = await next;
+      expect(coordinator.snapshot().active).toBe("image-ai");
+      await lease.release();
+    } finally {
+      await coordinator.close();
+      vi.useRealTimers();
+    }
+  });
+
   it("grants requests in FIFO order and unloads each previous model class before switching", async () => {
     const { coordinator, events } = fixture();
     const first = await coordinator.acquire("image-ai");

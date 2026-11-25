@@ -23,6 +23,7 @@ import os
 import sys
 import tempfile
 import types
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -357,6 +358,16 @@ class ModelManager:
         self.status_guard = threading.Lock()
         self.current_phase = ""
         self.precision = "fp32"
+        self.last_model_use = time.monotonic()
+
+    @asynccontextmanager
+    async def use_models(self):
+        async with self.lock:
+            try:
+                yield
+            finally:
+                # Health/progress polling does not extend the model's idle lifetime.
+                self.last_model_use = time.monotonic()
 
     def unload_gpu(self) -> None:
         self.gpu_key = None
@@ -617,7 +628,43 @@ class ModelManager:
 
 
 manager = ModelManager()
-app = FastAPI(title="Toolbox Image AI Worker", docs_url=None, redoc_url=None)
+
+
+async def release_idle_models(stopped: asyncio.Event) -> None:
+    while not stopped.is_set():
+        try:
+            await asyncio.wait_for(stopped.wait(), timeout=5)
+            return
+        except asyncio.TimeoutError:
+            pass
+        if manager.lock.locked():
+            continue
+        async with manager.lock:
+            if time.monotonic() - manager.last_model_use < 30:
+                continue
+            if manager.gpu_model is None and manager.ocr is None:
+                continue
+            try:
+                await asyncio.to_thread(manager.unload)
+            except Exception as error:
+                # Retry later without terminating the Worker or interrupting the next task.
+                manager.last_model_use = time.monotonic()
+                print(f"[image-ai] idle model unload failed: {error}", file=sys.stderr)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    stopped = asyncio.Event()
+    cleanup = asyncio.create_task(release_idle_models(stopped))
+    try:
+        yield
+    finally:
+        stopped.set()
+        # Do not cancel to_thread while unloading: the model lock must remain held.
+        await cleanup
+
+
+app = FastAPI(title="Toolbox Image AI Worker", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -777,7 +824,7 @@ async def diagnostics_light() -> dict[str, Any]:
 async def diagnostics_deep() -> dict[str, Any]:
     if manager.lock.locked():
         return {"protocolVersion": 1, "available": False, "code": "WORKER_BUSY"}
-    async with manager.lock:
+    async with manager.use_models():
         try:
             # 已加载模型不切换；否则仅加载本地 LaMa，不下载、不卸载其他模型。
             if manager.gpu_model is None:
@@ -801,7 +848,7 @@ async def unload() -> dict[str, Any]:
 @app.post("/watermark/suggestions")
 async def watermark_suggestions(payload: SuggestionRequest) -> dict[str, Any]:
     input_path = trusted_path(payload.input_path, must_exist=True)
-    async with manager.lock:
+    async with manager.use_models():
         result = await asyncio.to_thread(run_ocr, input_path)
     return {"success": True, "data": result}
 
@@ -818,7 +865,7 @@ async def process(payload: ProcessRequest) -> dict[str, Any]:
     output_path = trusted_path(payload.output_path, must_exist=False)
     mask_path = trusted_path(payload.mask_path, must_exist=True) if payload.mask_path else None
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    async with manager.lock:
+    async with manager.use_models():
         with manager.status_guard:
             manager.status = {"requestId": (payload.request_id or "")[:128], "phase": "准备推理环境"}
             manager.current_phase = ""
@@ -851,7 +898,7 @@ async def process(payload: ProcessRequest) -> dict[str, Any]:
         finally:
             with manager.status_guard:
                 manager.status = {}
-            # Keep one warm model; intermediate tensors live only inside the finished call.
+            # Keep the model briefly for consecutive images; the idle reaper releases it later.
 
 
 

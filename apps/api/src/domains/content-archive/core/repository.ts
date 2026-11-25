@@ -66,13 +66,12 @@ export class ContentArchiveRepository {
             ? !published.has(item.id)
             : true
       )
-      .filter(
-        (item) =>
-          selectedGroups
-            ? selectedGroups.has(memberships.get(item.id) ?? "ungrouped")
-            : !options.groupId ||
-              options.groupId === "all" ||
-              (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
+      .filter((item) =>
+        selectedGroups
+          ? selectedGroups.has(memberships.get(item.id) ?? "ungrouped")
+          : !options.groupId ||
+            options.groupId === "all" ||
+            (options.groupId === "ungrouped" ? !memberships.has(item.id) : memberships.get(item.id) === options.groupId)
       )
       .filter(
         (item) =>
@@ -155,5 +154,18 @@ export function decodeContentArchivePayload(value: unknown): ContentArchiveItem 
     ...(legacy && payload.warnings === undefined ? { warnings: [] } : {})
   };
   if (!isContentArchiveItem(item)) throw new Error("ARCHIVE_PAYLOAD_INVALID");
-  return item;
+  // Older editor syncs used a numeric revision where the media endpoint requires
+  // a SHA-256. Repair only those local generated-cover URLs at read time; keep
+  // the stored payload and media bytes intact.
+  return {
+    ...item,
+    media: item.media.map((media) => {
+      if (media.kind !== "cover" || !media.fileName.startsWith("editor-cover-")) return media;
+      const repair = (url: string) =>
+        /^\/api\/v1\/tools\/(?:media|xhs)-archive\/items\/[A-Za-z0-9_-]+\/media\/[A-Za-z0-9_-]+\?/.test(url)
+          ? url.replace(/([?&]v=)\d+(?=&|$)/, (_match, prefix: string) => prefix + media.checksum)
+          : url;
+      return { ...media, previewUrl: repair(media.previewUrl), downloadUrl: repair(media.downloadUrl) };
+    })
+  };
 }

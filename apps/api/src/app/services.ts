@@ -103,6 +103,7 @@ export async function createAppServices(config: AppConfig, remoteAddressResolver
   const chatterboxWorker = createChatterboxWorkerClient(config);
   const inferenceResources = createInferenceResourceCoordinator({
     enabled: config.desktopManagedCapabilities && (process.platform === "darwin" || process.platform === "win32"),
+    idleUnloadMs: { "image-ai": 30_000 },
     workers: {
       "image-ai": {
         configured: () => config.imageAiCapabilityReady,
