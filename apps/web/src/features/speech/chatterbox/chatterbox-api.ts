@@ -47,9 +47,9 @@ type ChatterboxCreateBatchInput = Omit<ChatterboxCreateTaskInput, "text" | "file
 };
 
 export const chatterboxApi = {
-  health() {
+  health(signal?: AbortSignal) {
     return withApiError(
-      () => httpClient.get("/tools/edge-tts/chatterbox/health", ChatterboxHealthSchema),
+      () => httpClient.get("/tools/edge-tts/chatterbox/health", ChatterboxHealthSchema, { signal, timeout: 20_000 }),
       "无法读取声音克隆服务状态"
     );
   },
@@ -107,10 +107,20 @@ export const chatterboxApi = {
   },
 
   defaultVoices() {
-    return withApiError(() => httpClient.get("/tools/edge-tts/chatterbox/default-voices", ChatterboxDefaultVoicesSchema), "读取默认音色失败");
+    return withApiError(
+      () => httpClient.get("/tools/edge-tts/chatterbox/default-voices", ChatterboxDefaultVoicesSchema),
+      "读取默认音色失败"
+    );
   },
   setDefaultVoice(language: ChatterboxLanguage, voiceId: string | null) {
-    return withApiError(() => httpClient.put("/tools/edge-tts/chatterbox/default-voices", ChatterboxDefaultVoicesSchema, { language, voiceId }), "保存默认音色失败");
+    return withApiError(
+      () =>
+        httpClient.put("/tools/edge-tts/chatterbox/default-voices", ChatterboxDefaultVoicesSchema, {
+          language,
+          voiceId
+        }),
+      "保存默认音色失败"
+    );
   },
 
   saveVoice(input: {

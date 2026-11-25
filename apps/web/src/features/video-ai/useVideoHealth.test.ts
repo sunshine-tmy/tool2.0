@@ -20,7 +20,7 @@ function setup() {
   scopes.push(scope);
   return { scope, state: scope.run(() => useVideoHealth())! };
 }
-it("waits for a starting worker, enables it automatically and stops polling once ready", async () => {
+it("waits for startup and keeps checking availability after the worker is ready", async () => {
   mocks.health
     .mockRejectedValueOnce(Object.assign(new Error("正在启动"), { code: "WORKER_PREPARING" }))
     .mockResolvedValue(ready);
@@ -29,12 +29,16 @@ it("waits for a starting worker, enables it automatically and stops polling once
   expect(state.healthRecovering.value).toBe(true);
   expect(state.capabilityError.value).toContain("无需手动刷新");
   expect(state.capabilityError.value).not.toContain("安装");
-  await vi.advanceTimersByTimeAsync(2000);
+  await vi.advanceTimersByTimeAsync(5000);
   expect(state.health.value).toEqual(ready);
   expect(state.healthRecovering.value).toBe(false);
   expect(state.capabilityError.value).toBe("");
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(mocks.health).toHaveBeenCalledTimes(2);
+  expect(mocks.health).toHaveBeenCalledTimes(6);
+  mocks.health.mockRejectedValue(new Error("worker stopped"));
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect(state.health.value).toBeUndefined();
+  expect(state.healthRecovering.value).toBe(true);
 });
 it("deduplicates checks and never overlaps an automatic retry with a pending request", async () => {
   let finish!: (value: unknown) => void;
@@ -53,26 +57,31 @@ it("deduplicates checks and never overlaps an automatic retry with a pending req
   await Promise.all([first, second]);
   expect(state.healthLoading.value).toBe(false);
 });
-it("does not automatically retry a confirmed missing package or protocol mismatch", async () => {
+it("checks confirmed missing packages and protocol mismatches at a lower frequency", async () => {
   for (const code of ["COMPONENT_NOT_INSTALLED", "WORKER_PROTOCOL_MISMATCH"]) {
-    mocks.health.mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+    mocks.health.mockRejectedValue(Object.assign(new Error(code), { code }));
     const { scope, state } = setup();
     await state.refreshHealth();
     expect(state.healthRecovering.value).toBe(false);
     expect(state.capabilityError.value).toBe(code);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
+    const checks = mocks.health.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(mocks.health).toHaveBeenCalledTimes(checks);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mocks.health).toHaveBeenCalledTimes(checks + 1);
     scope.stop();
   }
 });
-it("bounds unsuccessful retries and can restart checks when the app regains focus", async () => {
+it("continues checking past five minutes and immediately refreshes on focus", async () => {
   mocks.health.mockResolvedValue({ available: false, engines: [] });
   const { state } = setup();
   await state.refreshHealth();
   await vi.advanceTimersByTimeAsync(5 * 60_000);
-  expect(state.healthRecovering.value).toBe(false);
-  expect(state.capabilityError.value).toContain("自动检查已暂停");
-  expect(vi.getTimerCount()).toBe(0);
-  expect(mocks.health.mock.calls.length).toBeLessThan(40);
+  expect(state.healthRecovering.value).toBe(true);
+  expect(state.capabilityError.value).toContain("将自动检查");
+  expect(vi.getTimerCount()).toBe(1);
+  expect(mocks.health).toHaveBeenCalledTimes(61);
   mocks.health.mockResolvedValue(ready);
   window.dispatchEvent(new Event("focus"));
   await vi.advanceTimersByTimeAsync(0);

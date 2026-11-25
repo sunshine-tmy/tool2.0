@@ -161,10 +161,10 @@
 
 <script setup lang="ts">
 import DiagnosticErrorLink from "../../shared/ui/DiagnosticErrorLink.vue";
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from "vue";
 import { useMessage } from "naive-ui";
 import { Eraser, History, Info, Scan, Sparkles } from "lucide-vue-next";
-import type { ImageAiDevice, ImageAiHealth, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
+import type { ImageAiDevice, ImageAiOperation, ImageAiTask, WatermarkSuggestion } from "@toolbox/shared";
 
 import ToolLayout from "../../shell/ToolLayout.vue";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
@@ -178,6 +178,7 @@ import { useConfirmDialog } from "../../shared/composables/useConfirmDialog";
 import { useTaskEvents } from "../../shared/composables/useTaskEvents";
 import { formatApiError, isApiErrorCancelled } from "../../shared/http/http";
 import { imageAiApi } from "./api";
+import { useImageAiHealth } from "./useImageAiHealth";
 import { absoluteImageAiUrl, resultDownloadUrl, triggerImageAiDownload } from "./media-links";
 
 const message = useMessage();
@@ -195,7 +196,9 @@ const imageTools: Array<{ id: ImageTool; label: string; icon: typeof Eraser }> =
   { id: "history", label: "处理记录", icon: History }
 ];
 const historyVersion = ref(0);
-const health = ref<ImageAiHealth>();
+const { health, loadingHealth, loadHealth } = useImageAiHealth((error) => {
+  if (!isApiErrorCancelled(error)) message.warning(formatApiError(error, "本地推理服务未启动"));
+});
 // Older Mac workers do not report runtime metadata. Unknown platforms keep the original UI.
 const showDeviceControls = computed(() => health.value?.runtime?.platform === "Windows");
 const processingDevice = ref<ImageAiDevice>("auto");
@@ -220,7 +223,6 @@ watch(processingDevice, (value) => {
     /* Keep the in-memory preference. */
   }
 });
-const loadingHealth = ref(false);
 const watermarkFile = ref<File>();
 const watermarkPreviewUrl = ref("");
 const watermarkResultUrl = ref("");
@@ -438,8 +440,6 @@ function setWatermarkDimensions(value: { width: number; height: number }) {
   watermarkDimensions.value = value;
 }
 
-// 页面进入时只读取一次 Worker 健康状态；任务进度由 useTaskEvents 负责订阅。
-onMounted(loadHealth);
 onBeforeUnmount(() => {
   // 页面卸载必须释放本地预览 URL，避免反复选择大图后累积 Blob 内存。
   revokeWatermarkUrl();
@@ -474,19 +474,6 @@ for (const [files, operation] of [
       activeTaskFiles.value = [];
     }
   });
-}
-
-async function loadHealth() {
-  loadingHealth.value = true;
-  try {
-    // 健康接口失败只影响能力提示，不阻止页面其它静态功能渲染。
-    health.value = await imageAiApi.health();
-  } catch (error) {
-    health.value = undefined;
-    if (!isApiErrorCancelled(error)) message.warning(formatApiError(error, "本地推理服务未启动"));
-  } finally {
-    loadingHealth.value = false;
-  }
 }
 
 function selectWatermark(event: Event) {

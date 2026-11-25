@@ -46,8 +46,11 @@ class ImageAiApi {
     );
   }
 
-  async health() {
-    return withApiError(() => httpClient.get("/tools/image-ai/health", ImageAiHealthSchema), "无法读取 AI 模型状态");
+  async health(signal?: AbortSignal) {
+    return withApiError(
+      () => httpClient.get("/tools/image-ai/health", ImageAiHealthSchema, { signal, timeout: 20_000 }),
+      "无法读取 AI 模型状态"
+    );
   }
 
   async suggestions(file: File) {

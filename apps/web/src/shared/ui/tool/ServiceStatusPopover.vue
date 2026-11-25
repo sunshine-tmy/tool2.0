@@ -50,17 +50,13 @@ const opened = ref(false);
 .is-available {
   --service-dot-color: var(--color-success);
 }
-.is-partial {
+.is-partial,
+.is-loading,
+.is-unknown {
   --service-dot-color: var(--color-warning);
 }
 .is-unavailable {
   --service-dot-color: var(--color-error);
-}
-.is-loading {
-  --service-dot-color: var(--color-primary-600);
-}
-.is-unknown {
-  --service-dot-color: var(--color-text-tertiary);
 }
 .service-status-trigger {
   width: 36px;

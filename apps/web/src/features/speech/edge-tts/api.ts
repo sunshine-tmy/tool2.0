@@ -48,8 +48,11 @@ export const edgeTtsApi = {
   removeBatchItem(id: string, itemId: string) {
     return withApiError(() => httpClient.delete(`/tools/edge-tts/batches/${id}/items/${itemId}`, EdgeTtsBatchSchema));
   },
-  health() {
-    return withApiError(() => httpClient.get("/tools/edge-tts/health", EdgeTtsHealthSchema), "无法读取语音服务状态");
+  health(signal?: AbortSignal) {
+    return withApiError(
+      () => httpClient.get("/tools/edge-tts/health", EdgeTtsHealthSchema, { signal, timeout: 20_000 }),
+      "无法读取语音服务状态"
+    );
   },
 
   voices(language?: string) {

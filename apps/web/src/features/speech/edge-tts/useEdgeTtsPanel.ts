@@ -16,6 +16,7 @@ import { useOrderedSpeechEditor } from "../shared/useOrderedSpeechEditor";
 import { edgeTtsApi as api } from "./api";
 import { useSpeechBatchSelection } from "../shared/useSpeechBatchSelection";
 import { formatBatchTitle } from "../shared/speech-batch-display";
+import { useHealthPolling } from "../../../shared/composables/useHealthPolling";
 
 export const onlineLanguages: Array<{ value: EdgeTtsLanguage; title: string; description: string }> = [
   { value: "ms-MY", title: "Bahasa Melayu", description: "马来西亚马来语" },
@@ -92,6 +93,27 @@ export function useEdgeTtsPanel() {
     listRequest = 0,
     voiceRequest = 0,
     pollTimer: ReturnType<typeof setTimeout> | undefined;
+  let healthError = "";
+  const { refresh: loadHealth } = useHealthPolling(
+    async (signal, automatic) => {
+      try {
+        const result = await api.health(signal);
+        if (disposed || signal.aborted) return;
+        health.value = result;
+        if (healthError && error.value === healthError) error.value = "";
+        healthError = "";
+      } catch (caught) {
+        if (disposed || signal.aborted) return;
+        // A failed health request must also disable creation instead of keeping stale availability.
+        health.value = undefined;
+        if (!automatic) {
+          healthError = formatApiError(caught);
+          error.value = healthError;
+        }
+      }
+    },
+    () => (health.value?.available ? 15_000 : 5_000)
+  );
   onMounted(async () => {
     await Promise.all([loadHealth(), loadVoices(), loadBatches(), loadLegacy()]);
     if (!disposed) pollTimer = setTimeout(poll, 2500);
@@ -103,14 +125,6 @@ export function useEdgeTtsPanel() {
     if (pollTimer) clearTimeout(pollTimer);
   });
   watch(language, () => void loadVoices());
-  async function loadHealth() {
-    try {
-      const result = await api.health();
-      if (!disposed) health.value = result;
-    } catch (e) {
-      if (!disposed) error.value = formatApiError(e);
-    }
-  }
   async function loadVoices() {
     const request = ++voiceRequest;
     loadingVoices.value = true;

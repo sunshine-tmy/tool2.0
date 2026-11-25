@@ -10,6 +10,7 @@ import type {
 } from "@toolbox/shared";
 import { formatApiError, isApiErrorCancelled } from "../../../shared/http/http";
 import { chatterboxApi } from "./chatterbox-api";
+import { useHealthPolling } from "../../../shared/composables/useHealthPolling";
 
 type VoiceMessage = {
   success: (message: string) => void;
@@ -59,17 +60,38 @@ export function useChatterboxVoices(state: VoiceState) {
   }
   function preferredVoiceId() {
     const preferred = defaultVoices.value[state.language.value];
-    return state.languageSavedVoices.value.find((voice) => voice.id === preferred)?.id || state.languageSavedVoices.value[0]?.id || "";
+    return (
+      state.languageSavedVoices.value.find((voice) => voice.id === preferred)?.id ||
+      state.languageSavedVoices.value[0]?.id ||
+      ""
+    );
   }
-  let healthRefreshTimer: ReturnType<typeof setTimeout> | undefined;
-  let healthRequestInProgress = false;
   let disposed = false;
+  let healthError = "";
+  const { refresh: loadHealth } = useHealthPolling(
+    async (signal, automatic) => {
+      try {
+        const health = await chatterboxApi.health(signal);
+        if (disposed || signal.aborted) return;
+        state.health.value = health;
+        if (healthError && state.errorMessage.value === healthError) state.errorMessage.value = "";
+        healthError = "";
+      } catch (error) {
+        if (disposed || signal.aborted) return;
+        state.health.value = undefined;
+        if (!automatic && !isApiErrorCancelled(error)) {
+          healthError = formatApiError(error, "无法读取声音克隆服务状态");
+          state.errorMessage.value = healthError;
+        }
+      }
+    },
+    () => (state.health.value?.available ? HEALTH_REFRESH_INTERVAL_MS : HEALTH_RETRY_INTERVAL_MS)
+  );
 
   // 进入面板时并行恢复健康状态和永久音色；切换语言时自动修正不再适用的音色选择。
   onMounted(() => void Promise.all([loadHealth(), loadSavedVoices()]));
   onBeforeUnmount(() => {
     disposed = true;
-    if (healthRefreshTimer) clearTimeout(healthRefreshTimer);
   });
   watch(state.language, () => {
     if (state.referenceSource.value !== "saved") return;
@@ -142,27 +164,14 @@ export function useChatterboxVoices(state: VoiceState) {
     }
   }
 
-  async function loadHealth() {
-    if (healthRequestInProgress) return;
-    healthRequestInProgress = true;
-    try {
-      const health = await chatterboxApi.health();
-      if (!disposed) state.health.value = health;
-    } catch (error) {
-      if (!disposed) {
-        state.health.value = undefined;
-        if (!isApiErrorCancelled(error)) state.errorMessage.value = formatApiError(error, "无法读取声音克隆服务状态");
-      }
-    } finally {
-      healthRequestInProgress = false;
-      if (healthRefreshTimer) clearTimeout(healthRefreshTimer);
-      healthRefreshTimer = undefined;
-      if (!disposed) {
-        const interval = state.health.value?.available ? HEALTH_REFRESH_INTERVAL_MS : HEALTH_RETRY_INTERVAL_MS;
-        healthRefreshTimer = setTimeout(() => void loadHealth(), interval);
-      }
-    }
-  }
-
-  return { defaultVoices, defaultVoicesLoading, savingDefaultVoice, setDefaultVoice, loadHealth, loadSavedVoices, saveCurrentVoice, removeSavedVoice };
+  return {
+    defaultVoices,
+    defaultVoicesLoading,
+    savingDefaultVoice,
+    setDefaultVoice,
+    loadHealth,
+    loadSavedVoices,
+    saveCurrentVoice,
+    removeSavedVoice
+  };
 }
