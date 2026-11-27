@@ -1,10 +1,10 @@
 <template>
-  <div class="online-tts-panel">
+  <div class="online-tts-panel" data-tour="speech-online">
     <section class="edge-tts-workbench">
-      <div class="edge-tts-editor">
+      <div class="edge-tts-editor" data-tour="online-text">
         <OrderedSpeechEditor :submitting="panel.creating" :language-label="panel.languageLabel(panel.language)" />
       </div>
-      <aside class="edge-tts-controls">
+      <aside class="edge-tts-controls" data-tour="online-settings">
         <h3 class="speech-settings-title">配音配置</h3>
         <div class="control-section">
           <label>语言与口音</label>
@@ -21,23 +21,40 @@
             </button>
           </div>
         </div>
-        <div class="control-section">
+        <div class="control-section edge-tts-voice-section">
           <div class="control-label-row">
-            <label>音色</label><span>{{ panel.loadingVoices ? "更新中…" : `${panel.voices.length} 个可用` }}</span>
+            <span id="online-voice-label" class="voice-selection-label">音色</span
+            ><span>{{ panel.loadingVoices ? "更新中…" : `${panel.voices.length} 个可用` }}</span>
           </div>
-          <div class="edge-tts-voices">
+          <div
+            class="edge-tts-voices"
+            data-tour="online-voices"
+            role="group"
+            aria-labelledby="online-voice-label"
+            :aria-busy="panel.loadingVoices"
+          >
             <button
               v-for="item in panel.voices"
               :key="item.shortName"
               type="button"
               :class="{ active: panel.voice === item.shortName }"
+              :aria-pressed="panel.voice === item.shortName"
+              :title="item.shortName"
               @click="panel.voice = item.shortName"
             >
-              <span class="voice-avatar"><UserRound :size="16" /></span
-              ><span
+              <span class="voice-avatar" aria-hidden="true"
+                ><component
+                  :is="item.gender === 'Female' ? Venus : item.gender === 'Male' ? Mars : UserRound"
+                  :size="18" /></span
+              ><span class="voice-details"
                 ><strong>{{ item.shortName.replace(/^.+?-/, "").replace(/Neural$/, "") }}</strong
                 ><small>{{ { Female: "女声", Male: "男声", Neutral: "中性" }[item.gender] }}</small></span
-              ><Check v-if="panel.voice === item.shortName" :size="17" />
+              ><Check
+                class="voice-selected-mark"
+                :class="{ 'is-visible': panel.voice === item.shortName }"
+                :size="16"
+                aria-hidden="true"
+              />
             </button>
           </div>
         </div>
@@ -103,6 +120,7 @@
           :loading="panel.creating"
           :disabled="!panel.canCreate"
           @click="panel.createBatch"
+          data-tour="online-submit"
           >{{ panel.creating ? "正在加入队列…" : `添加 ${panel.editor.segments.length} 个音频到生成队列` }}</n-button
         >
         <p class="chatterbox-hint">
@@ -159,7 +177,7 @@
         >
       </div>
     </section>
-    <section class="edge-tts-history">
+    <section class="edge-tts-history" data-tour="online-history">
       <div class="panel-heading">
         <div>
           <h3>在线配音批次</h3>
@@ -309,7 +327,19 @@ import { vSliderLabel } from "../../../shared/ui/slider-label";
 import DiagnosticErrorLink from "../../../shared/ui/DiagnosticErrorLink.vue";
 import { provide, reactive, watch } from "vue";
 import { NButton, NCheckbox, NSelect, NSlider, NEmpty, NPagination } from "naive-ui";
-import { AudioLines, UserRound, Check, ListTree, Layers3, RefreshCw, Trash2, X, RotateCcw } from "lucide-vue-next";
+import {
+  AudioLines,
+  UserRound,
+  Venus,
+  Mars,
+  Check,
+  ListTree,
+  Layers3,
+  RefreshCw,
+  Trash2,
+  X,
+  RotateCcw
+} from "lucide-vue-next";
 import type { EdgeTtsHealth } from "@toolbox/shared";
 import { useEdgeTtsPanel, onlineLanguages, onlinePresets, batchRunning } from "./useEdgeTtsPanel";
 import { edgeTtsPanelKey } from "./edge-tts-panel-context";

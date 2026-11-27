@@ -1,11 +1,18 @@
 <template>
-  <n-button size="small" type="primary" secondary title="通过 Excel / CSV 批量获取作品，每批最多 100 条" @click="model.show"
+  <n-button
+    size="small"
+    type="primary"
+    secondary
+    title="通过 Excel / CSV 批量获取作品，每批最多 100 条"
+    @click="model.show"
     ><template #icon><FileSpreadsheet :size="16" /></template>表格批量归档</n-button
   >
   <n-modal
     v-model:show="open"
     preset="card"
     title="表格批量归档"
+    data-tour="archive-table-dialog"
+    v-bind="guideDialogBinding('archive-table', open)"
     class="archive-import-dialog"
     style="width: min(1320px, calc(100vw - 32px))"
   >
@@ -13,7 +20,7 @@
       >支持 .xlsx / .csv，最大 2 MiB、每批 100 条。Excel
       读取第一张可见工作表；必填列“作品链接”，可选列“平台”。后台逐条获取，关闭此窗口仍会继续；重启后需手动重试中断项。</n-alert
     >
-    <div class="archive-import-toolbar">
+    <div class="archive-import-toolbar" data-tour="archive-table-files">
       <input
         ref="fileInput"
         class="archive-import-file"
@@ -27,7 +34,7 @@
       <n-button tag="a" :href="archiveImportTemplateUrl()">下载 CSV 模板</n-button>
       <n-button :disabled="busy" @click="model.refresh">刷新批次列表</n-button>
     </div>
-    <details v-if="history.length" class="archive-import-history" open>
+    <details v-if="history.length" class="archive-import-history" data-tour="archive-table-history" open>
       <summary>批次列表（{{ history.length }}）<span>点击批次查看结果，可收起列表</span></summary>
       <n-input
         v-model:value="historySearch"
@@ -56,7 +63,7 @@
         <n-empty v-if="!filteredHistory.length" description="没有匹配的批次" />
       </div>
     </details>
-    <div v-if="preview" class="archive-import-options">
+    <div v-if="preview" class="archive-import-options" data-tour="archive-table-options">
       <strong>{{ preview.sourceName }}{{ preview.sheetName ? ` · ${preview.sheetName}` : "" }}</strong>
       <label>已归档作品</label>
       <n-select
@@ -68,7 +75,11 @@
       />
       <label>成功结果分组</label>
       <n-cascader
-        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups" filterable
+        :to="true"
+        :menu-props="groupMenuProps"
+        :filter-menu-props="groupMenuProps"
+        :filter="filterArchiveGroups"
+        filterable
         v-model:value="groupId"
         :disabled="busy"
         clearable
@@ -79,7 +90,12 @@
       />
       <small>仅本批次获取或刷新成功的作品移入目标组；已跳过的作品保持原分组。</small>
       <span>可执行 {{ counts.eligible }} 条；无效和表内重复行将跳过</span>
-      <n-button type="primary" :loading="busy" :disabled="!counts.eligible || busy" @click="model.start"
+      <n-button
+        type="primary"
+        :loading="busy"
+        :disabled="!counts.eligible || busy"
+        @click="model.start"
+        data-tour="archive-table-confirm"
         >确认并开始归档</n-button
       >
     </div>
@@ -113,7 +129,7 @@
           groups?.find((group) => group.id === batch?.groupId)?.name || "目标分组已删除（后续结果保持原分组）"
         }}</span
       >
-      <span role="status" class="archive-import-summary"
+      <span role="status" class="archive-import-summary" data-tour="archive-table-progress"
         >共 {{ counts.total }} 条 · 成功 {{ counts.success }} · 失败 {{ counts.failed }} · 跳过/取消
         {{ counts.skipped }} · 待完成 {{ counts.pending }}</span
       >
@@ -138,7 +154,7 @@
       <small v-if="batch.status === 'stopping'">当前正在处理的作品会按正常规则完成，后续项目不再执行。</small>
     </div>
     <n-spin :show="loading">
-      <div v-if="rows.length" class="archive-import-table-wrap">
+      <div v-if="rows.length" class="archive-import-table-wrap" data-tour="archive-table-preview">
         <table class="archive-import-table">
           <colgroup>
             <col class="archive-import-col-number" />
@@ -193,6 +209,7 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { guideDialogBinding, useGuideDialog } from "../../shared/onboarding/contexts";
 import { NCascader } from "naive-ui";
 import { archiveGroupTree, groupMenuProps, filterArchiveGroups } from "./archive-group-tree";
 import { computed, ref, watch } from "vue";
@@ -286,6 +303,12 @@ function viewArchive(id: string) {
   open.value = false;
   emit("openArchive", id);
 }
+
+useGuideDialog("archive-table", open, () =>
+  busy.value || loading.value || (batch.value && importBatchActive(batch.value))
+    ? "批次仍在处理，请稍后学习表格导入。"
+    : ""
+);
 </script>
 <style scoped>
 .archive-import-toolbar,

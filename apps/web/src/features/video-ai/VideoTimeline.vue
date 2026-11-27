@@ -1,6 +1,6 @@
 <template>
-  <section class="video-timeline" aria-label="字幕区间时间线">
-    <div class="timeline-toolbar">
+  <section class="video-timeline" aria-label="字幕区间时间线" data-tour="subtitle-timeline">
+    <div class="timeline-toolbar" data-tour="subtitle-timeline-toolbar">
       <strong>字幕时间线</strong><span>{{ currentTime.toFixed(2) }} / {{ duration.toFixed(2) }} 秒</span>
       <label><input v-model="snapping" type="checkbox" /> 自动吸附</label>
       <div class="timeline-zoom" role="group" aria-label="时间线缩放">
@@ -42,6 +42,7 @@
       <div
         ref="track"
         class="timeline-track"
+        data-tour="subtitle-timeline-track"
         :class="{ 'is-moving': clipMove }"
         tabindex="-1"
         aria-description="在空白处拖动框选区间，按 Delete 或 Backspace 删除选中区间"
@@ -63,6 +64,7 @@
           v-for="(range, index) in ranges"
           :key="index"
           class="timeline-clip"
+          data-tour="subtitle-range-clip"
           tabindex="0"
           role="group"
           :aria-label="`字幕区间 ${index + 1}`"
@@ -80,16 +82,13 @@
         >
           <button
             class="trim-handle start"
+            data-tour="subtitle-range-start"
             :aria-label="`调整区间 ${index + 1} 开始`"
             @pointerdown.stop="begin($event, 'start', index)"
             @keydown.left.prevent="nudge(index, 'start', -0.01)"
             @keydown.right.prevent="nudge(index, 'start', 0.01)"
           ></button>
-          <button
-            class="clip-label"
-            :aria-label="`选择区间 ${index + 1}`"
-            @click="keyboardSelect($event, index)"
-          >
+          <button class="clip-label" :aria-label="`选择区间 ${index + 1}`" @click="keyboardSelect($event, index)">
             区间 {{ index + 1 }} · {{ range.rects.length }} 框
           </button>
           <button
@@ -585,10 +584,7 @@ p {
   outline: none;
 }
 .timeline-playhead:has(> button:focus-visible)::before {
-  background: linear-gradient(
-    color-mix(in srgb, var(--color-error) 72%, black) 12px,
-    var(--color-error) 12px
-  );
+  background: linear-gradient(color-mix(in srgb, var(--color-error) 72%, black) 12px, var(--color-error) 12px);
 }
 .timeline-empty {
   padding: var(--space-3);

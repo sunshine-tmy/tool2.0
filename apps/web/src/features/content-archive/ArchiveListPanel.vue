@@ -1,8 +1,8 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
-  <section class="workspace-panel archive-panel">
+  <section class="workspace-panel archive-panel" data-tour="archive-list">
     <div v-if="$slots.groups" class="archive-groups-row"><slot name="groups" /></div>
-    <div class="archive-toolbar" role="search" aria-label="搜索归档内容">
+    <div class="archive-toolbar" data-tour="archive-search" role="search" aria-label="搜索归档内容">
       <n-input
         v-model:value="keyword"
         clearable

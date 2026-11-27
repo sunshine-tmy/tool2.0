@@ -1,7 +1,7 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
   <ToolLayout>
-    <section class="main-column xhs-main v2-tool-page">
+    <section class="main-column xhs-main v2-tool-page" data-tour="archive-page">
       <ToolPageHeader
         title="多媒体内容归档"
         description="归档小红书、抖音、TikTok 内容或批量上传本地视频，支持预览、下载、配乐、水印与视频截帧。"
@@ -128,6 +128,9 @@
       </ArchiveListPanel>
       <ArchiveImageBatchEditor
         ref="imageBatchEditor"
+        :tutorial-items="
+          archives.items.filter((entry) => entry.type === 'image' && selectedArchiveIds.includes(entry.id))
+        "
         @updated="collection.updateItem"
         @finished="loadArchives"
         @open-archive="openDetail"
@@ -156,7 +159,12 @@
         @set-publication="setPublication"
         @refresh-publication="loadDetailPublication"
       />
-      <TranslationEditModal v-model:show="editOpen" :item="editTarget" @save="saveTranslation" />
+      <TranslationEditModal
+        ref="translationEditor"
+        v-model:show="editOpen"
+        :item="editTarget"
+        @save="saveTranslation"
+      />
     </section>
   </ToolLayout>
 </template>
@@ -178,6 +186,7 @@ import {
   type XhsTranslationRuntimeStatus
 } from "@toolbox/shared";
 import ToolLayout from "../../shell/ToolLayout.vue";
+import { registerGuideContext } from "../../shared/onboarding/contexts";
 import ToolPageHeader from "../../shared/ui/tool/ToolPageHeader.vue";
 import ArchiveListPanel from "./ArchiveListPanel.vue";
 import ArchiveTaskPanel from "./ArchiveTaskPanel.vue";
@@ -320,6 +329,53 @@ const refreshing = ref(false);
 const authWaiting = ref(false);
 const editOpen = ref(false);
 const editTarget = ref<ContentArchiveItem>();
+const translationEditor = ref<InstanceType<typeof TranslationEditModal>>();
+const guideDetailId = () =>
+  (drawerOpen.value ? detail.value?.id : undefined) ??
+  archives.value.items.find((entry) => selectedArchiveIds.value.includes(entry.id))?.id ??
+  archives.value.items[0]?.id;
+registerGuideContext("archive-detail", {
+  available: () => (guideDetailId() ? "" : "请先归档至少一条作品，再学习详情操作。"),
+  enter: async (signal) => {
+    const previous = { open: drawerOpen.value, detail: detail.value };
+    const target =
+      drawerOpen.value && detail.value ? detail.value : await contentArchiveApi.detail(guideDetailId()!, signal);
+    if (signal.aborted) return () => undefined;
+    detail.value = target;
+    drawerOpen.value = true;
+    return () => {
+      drawerOpen.value = previous.open;
+      detail.value = previous.detail;
+    };
+  }
+});
+const guideTranslationId = () => {
+  if (editOpen.value && editTarget.value && canEditTranslation(editTarget.value)) return editTarget.value.id;
+  if (detail.value && canEditTranslation(detail.value)) return detail.value.id;
+  const candidates = archives.value.items.filter(
+    (entry) => entry.translation && ["ready", "stale"].includes(entry.translation.status)
+  );
+  return candidates.find((entry) => selectedArchiveIds.value.includes(entry.id))?.id ?? candidates[0]?.id;
+};
+registerGuideContext("archive-translation", {
+  available: () => (guideTranslationId() ? "" : "需要至少一条已有可编辑英文译文的归档；教程不会生成翻译。"),
+  enter: async (signal) => {
+    const previous = { open: editOpen.value, target: editTarget.value };
+    const id = guideTranslationId()!;
+    const target =
+      editOpen.value && editTarget.value?.id === id ? editTarget.value : await contentArchiveApi.detail(id, signal);
+    if (signal.aborted) return () => undefined;
+    if (!canEditTranslation(target)) throw new Error("该作品的英文译文尚不可编辑");
+    const restoreDraft = translationEditor.value?.captureGuideDraft();
+    editTarget.value = target;
+    editOpen.value = true;
+    return () => {
+      editOpen.value = previous.open;
+      editTarget.value = previous.target;
+      restoreDraft?.();
+    };
+  }
+});
 // CSS 自行响应窗口变化，避免非响应式 innerWidth 把移动端的 100% 宽度永久保留到桌面窗口。
 const detailWidth = "min(1040px, calc(100vw - 32px))";
 let disposed = false;

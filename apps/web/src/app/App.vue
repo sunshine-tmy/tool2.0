@@ -5,6 +5,7 @@
       <n-dialog-provider>
         <AudioLibraryPlayback />
         <DiagnosticPlaybackGuard />
+        <GuideCenter />
         <UiErrorBoundary>
           <router-view v-slot="{ Component }">
             <Suspense>
@@ -21,6 +22,7 @@
 </template>
 
 <script setup lang="ts">
+import { defineAsyncComponent } from "vue";
 import { NConfigProvider, NDialogProvider, NMessageProvider } from "naive-ui";
 import { createTheme } from "./theme";
 import UiErrorBoundary from "../shared/ui/UiErrorBoundary.vue";
@@ -28,6 +30,8 @@ import RouteLoading from "../shared/ui/RouteLoading.vue";
 import { AudioLibraryPlayback } from "../features/audio-library/integrations/playback";
 import DiagnosticPlaybackGuard from "./DiagnosticPlaybackGuard.vue";
 import { diagnosticConnection } from "../shared/http/diagnostic-connection";
+
+const GuideCenter = defineAsyncComponent(() => import("../shared/onboarding/GuideCenter.vue"));
 
 const themeOverrides = createTheme(getComputedStyle(document.documentElement));
 </script>

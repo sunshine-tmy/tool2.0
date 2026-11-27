@@ -2,7 +2,12 @@
 <template>
   <section class="edge-tts-workbench chatterbox-workbench">
     <div class="edge-tts-editor chatterbox-editor batch-editor">
-      <details class="speech-reference-picker" :open="referencePickerOpen" @toggle="syncReferencePickerOpen">
+      <details
+        class="speech-reference-picker"
+        data-tour="clone-reference"
+        :open="referencePickerOpen"
+        @toggle="syncReferencePickerOpen"
+      >
         <summary>
           <span class="speech-reference-label">参考音色</span>
           <span class="speech-reference-current">
@@ -130,38 +135,38 @@
                 >
               </div>
               <div class="saved-voice-actions">
-              <n-button
-                class="saved-voice-default"
-                size="small"
-                :disabled="panel.defaultVoicesLoading || panel.savingDefaultVoice"
-                :type="panel.defaultVoices?.[voice.language] === voice.id ? 'primary' : 'default'"
-                :secondary="panel.defaultVoices?.[voice.language] === voice.id"
-                :aria-pressed="panel.defaultVoices?.[voice.language] === voice.id"
-                @click.stop="panel.setDefaultVoice(voice)"
-              >
-                {{ panel.defaultVoices?.[voice.language] === voice.id ? "取消默认" : "设为默认" }}
-              </n-button>
-              <n-button
-                class="saved-voice-select"
-                size="small"
-                :type="panel.selectedVoiceId === voice.id ? 'primary' : 'default'"
-                :secondary="panel.selectedVoiceId !== voice.id"
-                :aria-pressed="panel.selectedVoiceId === voice.id"
-                @click.stop="panel.selectedVoiceId = voice.id"
-              >
-                <Check v-if="panel.selectedVoiceId === voice.id" :size="16" />
-                {{ panel.selectedVoiceId === voice.id ? "已选择" : "选择音色" }}
-              </n-button>
-              <n-button
-                circle
-                quaternary
-                size="small"
-                type="error"
-                title="永久删除该音色"
-                @click.stop="panel.removeSavedVoice(voice.id)"
-              >
-                <Trash2 :size="16" />
-              </n-button>
+                <n-button
+                  class="saved-voice-default"
+                  size="small"
+                  :disabled="panel.defaultVoicesLoading || panel.savingDefaultVoice"
+                  :type="panel.defaultVoices?.[voice.language] === voice.id ? 'primary' : 'default'"
+                  :secondary="panel.defaultVoices?.[voice.language] === voice.id"
+                  :aria-pressed="panel.defaultVoices?.[voice.language] === voice.id"
+                  @click.stop="panel.setDefaultVoice(voice)"
+                >
+                  {{ panel.defaultVoices?.[voice.language] === voice.id ? "取消默认" : "设为默认" }}
+                </n-button>
+                <n-button
+                  class="saved-voice-select"
+                  size="small"
+                  :type="panel.selectedVoiceId === voice.id ? 'primary' : 'default'"
+                  :secondary="panel.selectedVoiceId !== voice.id"
+                  :aria-pressed="panel.selectedVoiceId === voice.id"
+                  @click.stop="panel.selectedVoiceId = voice.id"
+                >
+                  <Check v-if="panel.selectedVoiceId === voice.id" :size="16" />
+                  {{ panel.selectedVoiceId === voice.id ? "已选择" : "选择音色" }}
+                </n-button>
+                <n-button
+                  circle
+                  quaternary
+                  size="small"
+                  type="error"
+                  title="永久删除该音色"
+                  @click.stop="panel.removeSavedVoice(voice.id)"
+                >
+                  <Trash2 :size="16" />
+                </n-button>
               </div>
               <div class="speech-reference-audio" @click.stop>
                 <span class="speech-reference-audio-label"><Headphones :size="16" />试听音色</span>
@@ -201,7 +206,7 @@
       </div>
 
       <div class="batch-toolbar">
-        <n-button size="small" type="primary" @click="panel.openAutoSegment"
+        <n-button size="small" type="primary" @click="panel.openAutoSegment" data-tour="clone-smart-segments"
           ><WandSparkles :size="16" />智能识别分段</n-button
         >
         <n-button size="small" @click="panel.splitByBlankLines"><SplitSquareVertical :size="16" />按空行拆分</n-button>
@@ -220,7 +225,7 @@
         </n-button>
       </div>
 
-      <div class="segment-editor-list">
+      <div class="segment-editor-list" data-tour="clone-text">
         <article
           v-for="(segment, index) in panel.segments"
           :key="segment.id"
@@ -320,7 +325,7 @@
       </div>
     </div>
 
-    <aside class="edge-tts-controls chatterbox-controls">
+    <aside class="edge-tts-controls chatterbox-controls" data-tour="clone-settings">
       <h3 class="speech-settings-title">配音配置</h3>
       <div class="control-section">
         <label>目标语言</label>
@@ -423,6 +428,7 @@
         :loading="panel.creating"
         :disabled="!panel.canCreate"
         @click="panel.createBatch"
+        data-tour="clone-submit"
       >
         <template #icon><Layers3 :size="18" /></template>
         {{ panel.creating ? "正在加入队列…" : `添加 ${panel.validSegmentCount} 个音频到生成队列` }}
@@ -435,19 +441,29 @@
     </aside>
   </section>
 
-  <n-modal v-model:show="panel.autoSegmentVisible">
-    <n-card class="auto-segment-card" title="智能识别分段" closable @close="panel.autoSegmentVisible = false">
-      <p class="auto-segment-help">
+  <n-modal
+    v-model:show="panel.autoSegmentVisible"
+    v-bind="guideDialogBinding('clone-segments', panel.autoSegmentVisible)"
+  >
+    <n-card
+      class="auto-segment-card"
+      data-tour="clone-segments-dialog"
+      title="智能识别分段"
+      closable
+      @close="panel.autoSegmentVisible = false"
+    >
+      <p class="auto-segment-help" data-tour="clone-segments-help">
         粘贴时自动清理格式标记，保留编号和段落换行。系统会将每个编号识别为一段，并自动区分目标语言原文和中文翻译。
       </p>
       <n-input
         v-model:value="panel.autoSegmentText"
+        data-tour="clone-segments-input"
         type="textarea"
         :autosize="{ minRows: 12, maxRows: 20 }"
         placeholder="例如：&#10;1. Malay / English / Português 原文&#10;   中文翻译&#10;2. 下一段原文&#10;   下一段中文翻译"
         @paste="pasteSpeechText($event, (value) => (panel.autoSegmentText = value))"
       />
-      <div v-if="panel.autoSegmentText.trim()" class="auto-segment-summary">
+      <div v-if="panel.autoSegmentText.trim()" class="auto-segment-summary" data-tour="clone-segments-preview">
         <strong v-if="panel.parsedAutoSegments.length"
           >已识别 {{ panel.parsedAutoSegments.length }} 段 ·
           {{ panel.translatedAutoSegmentCount }} 段包含中文翻译</strong
@@ -464,7 +480,7 @@
         </ol>
       </div>
       <template #footer>
-        <div class="auto-segment-actions">
+        <div class="auto-segment-actions" data-tour="clone-segments-actions">
           <n-button @click="panel.autoSegmentVisible = false">取消</n-button>
           <n-button type="primary" :disabled="!panel.parsedAutoSegments.length" @click="panel.applyAutoSegments">
             识别并填入 {{ panel.parsedAutoSegments.length || "" }} 段
@@ -476,8 +492,9 @@
 </template>
 
 <script setup lang="ts">
+import { guideDialogBinding, useGuideDialog } from "../../../shared/onboarding/contexts";
 import { vSliderLabel } from "../../../shared/ui/slider-label";
-import { computed, ref, watch } from "vue";
+import { computed, ref, toRef, watch } from "vue";
 import DiagnosticErrorLink from "../../../shared/ui/DiagnosticErrorLink.vue";
 import { NButton, NCard, NCheckbox, NEmpty, NInput, NInputNumber, NModal, NSelect, NSlider } from "naive-ui";
 import {
@@ -549,6 +566,10 @@ async function toggleReferencePreview() {
 function syncReferencePickerOpen(event: Event) {
   referencePickerOpen.value = (event.currentTarget as HTMLDetailsElement).open;
 }
+
+useGuideDialog("clone-segments", toRef(panel, "autoSegmentVisible"), () =>
+  panel.creating ? "正在提交批次，请稍后学习智能分段。" : ""
+);
 </script>
 
 <style scoped>

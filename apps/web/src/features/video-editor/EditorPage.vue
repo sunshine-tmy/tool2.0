@@ -1,7 +1,7 @@
 <template>
   <ToolLayout
     ><section class="editor-page v2-tool-page">
-      <div class="project-heading">
+      <div class="project-heading" data-tour="editor-navigation">
         <n-button :disabled="syncing" @click="leave">返回草稿主页</n-button
         ><strong>{{ project?.name || "视频编辑" }}</strong
         ><n-button

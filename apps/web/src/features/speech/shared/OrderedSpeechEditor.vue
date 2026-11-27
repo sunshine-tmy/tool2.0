@@ -21,7 +21,7 @@
       >
     </div>
     <div class="batch-toolbar">
-      <n-button size="small" type="primary" @click="editor.autoVisible = true"
+      <n-button size="small" type="primary" @click="editor.autoVisible = true" data-tour="online-smart-segments"
         ><WandSparkles :size="16" />智能识别分段</n-button
       >
       <n-button size="small" @click="editor.split"><SplitSquareVertical :size="16" />按空行拆分</n-button>
@@ -126,28 +126,39 @@
         </div>
       </article>
     </div>
-    <n-modal v-model:show="editor.autoVisible"
-      ><n-card class="auto-segment-card" title="智能识别分段" closable @close="editor.autoVisible = false">
-        <p>粘贴带编号或空行分段的双语文案，自动清理格式标记并区分外语与中文，保留编号和段落换行。</p>
+    <n-modal v-model:show="editor.autoVisible" v-bind="guideDialogBinding('online-segments', editor.autoVisible)"
+      ><n-card
+        class="auto-segment-card"
+        data-tour="online-segments-dialog"
+        title="智能识别分段"
+        closable
+        @close="editor.autoVisible = false"
+      >
+        <p data-tour="online-segments-help">
+          粘贴带编号或空行分段的双语文案，自动清理格式标记并区分外语与中文，保留编号和段落换行。
+        </p>
         <n-input
           v-model:value="editor.autoText"
+          data-tour="online-segments-input"
           type="textarea"
           :autosize="{ minRows: 10, maxRows: 20 }"
           placeholder="1. Hello there.&#10;你好。&#10;&#10;2. Thank you.&#10;谢谢。"
           @paste="pasteSpeechText($event, (value) => (editor.autoText = value))"
         />
-        <p>已识别 {{ editor.parsed.length }} 段</p>
-        <ol class="auto-segment-preview">
-          <li v-for="(item, index) in editor.parsed" :key="index">
-            <strong class="auto-segment-index">{{ index + 1 }}.</strong>
-            <div>
-              <span>{{ item.text }}</span>
-              <small>{{ item.referenceTranslation || "未填写中文" }}</small>
-            </div>
-          </li>
-        </ol>
+        <div data-tour="online-segments-preview">
+          <p>已识别 {{ editor.parsed.length }} 段</p>
+          <ol class="auto-segment-preview">
+            <li v-for="(item, index) in editor.parsed" :key="index">
+              <strong class="auto-segment-index">{{ index + 1 }}.</strong>
+              <div>
+                <span>{{ item.text }}</span>
+                <small>{{ item.referenceTranslation || "未填写中文" }}</small>
+              </div>
+            </li>
+          </ol>
+        </div>
         <template #footer
-          ><div class="auto-segment-actions">
+          ><div class="auto-segment-actions" data-tour="online-segments-actions">
             <n-button @click="editor.autoVisible = false">取消</n-button
             ><n-button type="primary" :disabled="!editor.parsed.length" @click="editor.apply">识别并填入</n-button>
           </div></template
@@ -157,7 +168,8 @@
   </div>
 </template>
 <script setup lang="ts">
-import { inject } from "vue";
+import { guideDialogBinding, useGuideDialog } from "../../../shared/onboarding/contexts";
+import { inject, toRef } from "vue";
 import { NButton, NInput, NModal, NCard } from "naive-ui";
 import {
   ArrowUp,
@@ -176,7 +188,11 @@ import {
 } from "@toolbox/shared";
 import { orderedSpeechEditorKey } from "./useOrderedSpeechEditor";
 import { pasteSpeechText } from "./paste-speech-text";
-defineProps<{ submitting: boolean; languageLabel: string }>();
+const props = defineProps<{ submitting: boolean; languageLabel: string }>();
 const editor = inject(orderedSpeechEditorKey);
 if (!editor) throw new Error("Ordered speech editor context is missing");
+
+useGuideDialog("online-segments", toRef(editor, "autoVisible"), () =>
+  props.submitting ? "正在提交批次，请稍后学习智能分段。" : ""
+);
 </script>

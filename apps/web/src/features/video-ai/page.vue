@@ -1,6 +1,6 @@
 <template>
   <ToolLayout>
-    <section class="video-ai-page v2-tool-page">
+    <section class="video-ai-page v2-tool-page" data-tour="subtitle-page">
       <ToolPageHeader
         title="视频去字幕"
         kicker="VIDEO / SUBTITLE"
@@ -9,6 +9,7 @@
       >
         <template #actions>
           <ServiceStatusPopover
+            tour-target="subtitle-health"
             :status="healthIndicator"
             :title="healthTitle"
             :summary="healthSummary"
@@ -34,8 +35,8 @@
           <n-button v-if="activeTaskId" text @click="returnToActiveTask">返回当前任务</n-button>
         </div>
         <div class="editor-grid">
-          <section class="workspace-panel video-preview-panel">
-            <div class="file-toolbar">
+          <section class="workspace-panel video-preview-panel" data-tour="subtitle-preview">
+            <div class="file-toolbar" data-tour="subtitle-upload">
               <n-button type="primary" size="large" :disabled="busy" @click="fileInput?.click()"
                 ><template #icon><Upload :size="18" /></template>上传视频</n-button
               >
@@ -410,11 +411,14 @@ function onFileChange(event: Event) {
   resetSelection();
   file.value = selected;
   videoFps.value = undefined;
-  void videoAiApi.metadata(selected, scope.signal).then((metadata) => {
-    if (file.value === selected && !scope.aborted) videoFps.value = metadata.fps;
-  }).catch(() => {
-    if (file.value === selected && !scope.aborted) actionError.value = "无法读取视频帧率，暂时无法逐帧移动指针";
-  });
+  void videoAiApi
+    .metadata(selected, scope.signal)
+    .then((metadata) => {
+      if (file.value === selected && !scope.aborted) videoFps.value = metadata.fps;
+    })
+    .catch(() => {
+      if (file.value === selected && !scope.aborted) actionError.value = "无法读取视频帧率，暂时无法逐帧移动指针";
+    });
   previewUrl.value = URL.createObjectURL(selected);
   sourceKind.value = "original";
 }

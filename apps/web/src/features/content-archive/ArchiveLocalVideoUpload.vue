@@ -1,20 +1,27 @@
 <template>
-  <n-button size="small" type="primary" secondary title="将本机视频批量加入归档，继续配乐、添加水印或下载" @click="opened = true"
+  <n-button
+    size="small"
+    type="primary"
+    secondary
+    title="将本机视频批量加入归档，继续配乐、添加水印或下载"
+    @click="opened = true"
     >批量上传视频</n-button
   >
   <n-modal
     :show="opened"
     preset="card"
     title="批量上传视频归档"
+    data-tour="archive-upload-dialog"
+    v-bind="guideDialogBinding('archive-upload', opened)"
     style="width: min(1000px, 96vw)"
     :mask-closable="false"
     @update:show="close"
   >
-    <n-alert type="info"
+    <n-alert data-tour="archive-upload-requirements" type="info"
       >每批最多 {{ LOCAL_ARCHIVE_UPLOAD_MAX_FILES }} 个视频；MP4 / MOV / WebM，单个最大 500 MiB、最长 2
       小时，受主机配额限制。原文件不重新编码；部分编码的浏览器播放支持取决于设备。上传需 FFmpeg 媒体运行时。</n-alert
     >
-    <div class="local-upload-surface">
+    <div class="local-upload-surface" data-tour="archive-upload-files">
       <label
         class="file-upload-area"
         data-upload-area
@@ -37,7 +44,7 @@
         />
       </label>
     </div>
-    <div class="upload-actions">
+    <div class="upload-actions" data-tour="archive-upload-actions">
       <n-button :disabled="running || rows.length >= LOCAL_ARCHIVE_UPLOAD_MAX_FILES" @click="fileInput?.click()"
         >选择多个视频</n-button
       >
@@ -53,10 +60,13 @@
         >清空上传列表</n-button
       >
     </div>
-    <div class="upload-group">
+    <div class="upload-group" data-tour="archive-upload-group">
       <label>归档分组</label>
       <n-cascader
-        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups"
+        :to="true"
+        :menu-props="groupMenuProps"
+        :filter-menu-props="groupMenuProps"
+        :filter="filterArchiveGroups"
         v-model:value="groupId"
         :options="groupOptions"
         :disabled="running"
@@ -80,7 +90,7 @@
       </p>
       <p>相同内容自动复用已有归档；失败项可单独重试。请保持页面打开，关闭或离开时会提示停止未完成上传。</p>
     </div>
-    <div class="local-upload-table">
+    <div class="local-upload-table" data-tour="archive-upload-queue">
       <table>
         <thead>
           <tr>
@@ -139,6 +149,7 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { guideDialogBinding, useGuideDialog } from "../../shared/onboarding/contexts";
 import { NCascader } from "naive-ui";
 import { archiveGroupTree, groupMenuProps, filterArchiveGroups } from "./archive-group-tree";
 import { UploadCloud } from "lucide-vue-next";
@@ -427,6 +438,8 @@ onScopeDispose(() => {
   window.removeEventListener("beforeunload", beforeUnload);
 });
 onBeforeRouteLeave(canLeave);
+
+useGuideDialog("archive-upload", opened, () => (running.value ? "上传仍在执行，请等待或停止后再学习本章。" : ""));
 </script>
 <style scoped>
 .local-upload-surface {

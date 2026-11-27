@@ -1,9 +1,9 @@
 <template>
   <ToolLayout
-    ><section class="editor-home v2-tool-page">
+    ><section class="editor-home v2-tool-page" data-tour="editor-home">
       <ToolPageHeader title="视频编辑" description="创建视频作品，或继续编辑本地草稿。" />
       <n-alert v-if="error" type="error" closable @close="error = ''">{{ error }}</n-alert>
-      <section class="creation-banner" aria-labelledby="creation-title">
+      <section class="creation-banner" data-tour="editor-create" aria-labelledby="creation-title">
         <div class="creation-copy">
           <div class="creation-title">
             <span class="creation-icon"><Clapperboard :size="24" aria-hidden="true" /></span>
@@ -40,10 +40,10 @@
           @change="upload"
         />
       </section>
-      <section class="draft-panel" aria-labelledby="draft-title">
+      <section class="draft-panel" data-tour="editor-drafts" aria-labelledby="draft-title">
         <div class="draft-heading">
           <h2 id="draft-title">本地草稿</h2>
-          <div class="draft-tools">
+          <div class="draft-tools" data-tour="editor-draft-search">
             <n-input v-model:value="keyword" placeholder="搜索草稿名称" clearable aria-label="搜索草稿"
               ><template #prefix><Search :size="16" aria-hidden="true" /></template
             ></n-input>

@@ -3,7 +3,7 @@
   <section ref="panel" class="workspace-panel fetch-panel">
     <div class="archive-acquire-grid">
       <div class="archive-link-acquire">
-        <div class="input-row">
+        <div class="input-row" data-tour="archive-link">
           <n-input
             ref="urlInput"
             v-model:value="inputUrl"
@@ -23,7 +23,7 @@
             获取并存档
           </n-button>
         </div>
-        <div class="platform-row">
+        <div class="platform-row" data-tour="archive-source">
           <span>来源平台</span>
           <n-select
             v-model:value="platform"
@@ -33,7 +33,10 @@
           />
           <span>归档分组</span>
           <n-cascader
-        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups"
+            :to="true"
+            :menu-props="groupMenuProps"
+            :filter-menu-props="groupMenuProps"
+            :filter="filterArchiveGroups"
             v-model:value="groupId"
             :options="groupOptions"
             placeholder="不指定分组"
@@ -55,7 +58,7 @@
           </span>
         </div>
       </div>
-      <div v-if="$slots.imports" class="archive-import-options">
+      <div v-if="$slots.imports" class="archive-import-options" data-tour="archive-import">
         <span class="module-field-label">批量导入</span><slot name="imports" />
       </div>
     </div>
@@ -471,7 +474,9 @@ function stageClass(stage: XhsArchiveTaskStage) {
   border: 1px solid var(--color-primary-200);
   border-radius: 8px;
   box-shadow: none;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
 .archive-import-options :deep(.archive-entry-toolbar > .n-button:not([disabled]):hover) {
   background: var(--color-primary-100);

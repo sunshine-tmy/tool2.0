@@ -2,6 +2,7 @@
   <div
     ref="element"
     class="subtitle-rect manual saved"
+    data-tour="subtitle-region"
     :class="{ selected, editable }"
     :style="style"
     :tabindex="editable ? 0 : undefined"

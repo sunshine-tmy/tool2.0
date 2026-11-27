@@ -3,6 +3,7 @@
     <template #trigger>
       <n-button
         class="service-status-trigger"
+        :data-tour="tourTarget"
         :class="`is-${status}`"
         circle
         quaternary
@@ -41,6 +42,7 @@ defineProps<{
   title: string;
   summary: string;
   loading?: boolean;
+  tourTarget?: string;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
 const opened = ref(false);

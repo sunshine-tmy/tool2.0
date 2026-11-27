@@ -1,5 +1,10 @@
 <template>
-  <section class="studio-panel" :class="{ 'external-tabs': activeTab }" aria-label="视频素材与轨道设置">
+  <section
+    class="studio-panel"
+    data-tour="editor-materials"
+    :class="{ 'external-tabs': activeTab }"
+    aria-label="视频素材与轨道设置"
+  >
     <n-tabs v-model:value="tab" type="line" animated>
       <n-tab-pane name="sources" tab="视频素材">
         <div class="studio-form">

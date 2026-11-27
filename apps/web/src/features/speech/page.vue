@@ -9,6 +9,7 @@
       >
         <template #actions>
           <ServiceStatusPopover
+            tour-target="speech-health"
             :status="serviceStatus"
             :title="engine === 'edge' ? '在线配音服务' : '参考音色克隆服务'"
             :summary="serviceSummary"
@@ -19,7 +20,7 @@
           </ServiceStatusPopover>
         </template>
       </ToolPageHeader>
-      <div v-if="engine === 'edge'" class="edge-tts-privacy">
+      <div v-if="engine === 'edge'" class="edge-tts-privacy" data-tour="speech-privacy">
         <Cloud :size="18" /><span
           >此功能需要联网，外语文案会发送到微软在线语音服务；中文译文仅用于本地字幕与归档，生成文件默认保留 3 天。</span
         >
@@ -408,32 +409,54 @@ async function refreshService() {
 }
 .speech-page :deep(.chatterbox-language-grid) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+}
+.speech-page :deep(:is(.edge-tts-language-grid, .edge-tts-voices, .chatterbox-device-options)) {
+  gap: 12px;
+}
+.speech-page :deep(:is(.edge-tts-language-grid button, .edge-tts-voices button, .chatterbox-device-option)) {
+  min-width: 0;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: var(--radius-control);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
 }
 .speech-page :deep(.edge-tts-language-grid button) {
-  min-width: 0;
-  padding: 10px;
+  align-content: center;
+  gap: 2px;
   border-color: var(--color-border);
-  border-radius: 8px;
   background: var(--color-surface-subtle);
+  color: var(--color-text);
 }
 .speech-page :deep(.edge-tts-language-grid button.active) {
   border-color: var(--color-primary-500);
   background: var(--color-primary-50);
   color: var(--color-primary-700);
+  box-shadow: none;
 }
-.speech-page :deep(.edge-tts-language-grid strong) {
+.speech-page :deep(:is(.edge-tts-language-grid, .edge-tts-voices, .chatterbox-device-option-copy) strong) {
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 600;
+  color: inherit;
+}
+.speech-page :deep(:is(.edge-tts-language-grid span, .voice-details small, .chatterbox-device-option-copy small)) {
   font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.speech-page :deep(.edge-tts-language-grid span) {
-  font-size: 11px;
+  line-height: 18px;
+  font-weight: 400;
   color: var(--color-text-secondary);
 }
+.speech-page :deep(.edge-tts-language-grid strong) {
+  overflow-wrap: anywhere;
+}
+.speech-page :deep(:is(.voice-details, .chatterbox-device-option-copy)) {
+  gap: 2px;
+}
 .speech-page :deep(.chatterbox-device-option) {
-  gap: 8px;
-  min-height: 48px;
-  padding: 10px;
+  gap: 12px;
   border-color: var(--color-border);
   background: var(--color-surface-subtle);
 }
@@ -442,6 +465,10 @@ async function refreshService() {
   background: var(--color-primary-50);
   color: var(--color-primary-700);
   box-shadow: none;
+}
+.speech-page :deep(.chatterbox-device-option:focus-within) {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 3px;
 }
 .speech-page :deep(.chatterbox-device-option input) {
   position: static;
@@ -453,15 +480,21 @@ async function refreshService() {
   flex-shrink: 0;
 }
 .speech-page :deep(.control-section) {
-  gap: 10px;
+  gap: 8px;
 }
 .speech-page :deep(.control-section + .control-section) {
   padding-top: 16px;
   border-top: 1px solid var(--color-border);
 }
-.speech-page :deep(.control-section > label),
-.speech-page :deep(.control-label-row label) {
+.speech-page :deep(.control-label-row) {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+.speech-page :deep(:is(.control-section > label, .control-label-row label, .voice-selection-label)) {
   color: var(--color-text);
+  font-size: 14px;
+  line-height: 22px;
   font-weight: 600;
 }
 .speech-page :deep(.range-control > span) {
@@ -486,8 +519,8 @@ async function refreshService() {
 .speech-page :deep(.chatterbox-device-hint) {
   margin: 0;
   color: var(--color-text-secondary);
-  font-size: 11px;
-  line-height: 1.7;
+  font-size: 13px;
+  line-height: 20px;
 }
 .speech-page :deep(.edge-tts-controls > .n-button--primary-type) {
   min-height: 46px;
@@ -604,6 +637,9 @@ async function refreshService() {
 .speech-page :deep(.voice-avatar) {
   background: var(--color-primary-50);
   color: var(--color-primary-600);
+}
+.speech-page :deep(.edge-tts-voices button.active .voice-avatar) {
+  background: var(--color-primary-100);
 }
 .speech-page :deep(.batch-history-meta) {
   flex-wrap: wrap;

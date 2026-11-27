@@ -1,6 +1,11 @@
 <template>
-  <section class="video-workspace" aria-label="视频预览与字幕区域">
-    <div ref="stageEl" class="video-stage" :class="{ empty: !src }">
+  <section
+    class="video-workspace"
+    aria-label="视频预览与字幕区域"
+    data-tour="subtitle-edit-ready"
+    :data-tour-ready="editable && (duration || 0) > 0 ? 'true' : 'false'"
+  >
+    <div ref="stageEl" class="video-stage" :class="{ empty: !src }" data-tour="subtitle-surface">
       <div v-if="src" class="video-surface" :style="surfaceStyle">
         <video
           ref="videoEl"
@@ -20,6 +25,7 @@
         <div
           v-if="manualMode && drawingTimeAllowed"
           class="overlay"
+          data-tour="subtitle-draw-overlay"
           role="presentation"
           @pointerdown="onPointerDown"
           @pointermove="onPointerMove"
@@ -61,12 +67,13 @@
     </div>
 
     <div v-if="editable && (duration || 0) > 0" class="range-editor">
-      <div class="range-actions">
+      <div class="range-actions" data-tour="subtitle-range-tools">
         <strong>字幕区间</strong>
         <n-button
           size="small"
           :disabled="!undoHistory.length"
           title="撤回上一步（Ctrl+Z / Command+Z）"
+          data-tour="subtitle-undo"
           @click="undoEdit"
           >撤回</n-button
         >
@@ -76,6 +83,7 @@
           :disabled="currentTime >= (duration || 0)"
           title="从指针位置添加 2 秒区间，视频结尾不足 2 秒时自动缩短"
           @click="addRange"
+          data-tour="subtitle-add-range"
           >添加区间</n-button
         >
         <span v-for="action in rangeActions" :key="action.label" class="range-icon-action" :title="action.tooltip">
@@ -86,6 +94,7 @@
             :type="action.danger ? 'error' : 'default'"
             :disabled="action.disabled"
             :aria-label="action.label"
+            :data-tour="action.tour"
             @click="action.run"
           >
             <template #icon><component :is="action.icon" :size="16" aria-hidden="true" /></template>
@@ -121,7 +130,9 @@
         处理结果
       </button>
     </div>
-    <p v-if="manualMode && selectedRange && !drawingTimeAllowed" class="workspace-tip">指针不在当前区间内，请移回区间内再框选。</p>
+    <p v-if="manualMode && selectedRange && !drawingTimeAllowed" class="workspace-tip">
+      指针不在当前区间内，请移回区间内再框选。
+    </p>
   </section>
 </template>
 
@@ -233,11 +244,18 @@ function selectBoxedRanges(indices: number[]) {
   activeRange.value = indices[0] ?? -1;
   boxedRanges.value = indices.length > 1 ? indices : [];
 }
-const selectedRange = computed(() => boxedRanges.value.length > 1 ? undefined : props.manualRanges?.[activeRange.value]);
-const canTrimRange = computed(() => Boolean(
-  props.editable && selectedRange.value && Number.isFinite(currentTime.value) &&
-  currentTime.value > selectedRange.value.start && currentTime.value < selectedRange.value.end
-));
+const selectedRange = computed(() =>
+  boxedRanges.value.length > 1 ? undefined : props.manualRanges?.[activeRange.value]
+);
+const canTrimRange = computed(() =>
+  Boolean(
+    props.editable &&
+    selectedRange.value &&
+    Number.isFinite(currentTime.value) &&
+    currentTime.value > selectedRange.value.start &&
+    currentTime.value < selectedRange.value.end
+  )
+);
 const splitDisabledReason = computed(() => {
   if (!props.editable || !selectedRange.value) return "请先选中需要拆分的区间";
   const time = currentTime.value;
@@ -246,6 +264,7 @@ const splitDisabledReason = computed(() => {
   return "";
 });
 type RangeAction = {
+  tour?: string;
   label: string;
   tooltip: string;
   icon: typeof Trash2;
@@ -258,6 +277,7 @@ const rangeActions = computed<RangeAction[]>(() => {
   const actions: RangeAction[] = [
     {
       label: "按指针拆分",
+      tour: "subtitle-range-split",
       tooltip: `按指针拆分（Ctrl+B / ⌘B）· ${splitDisabledReason.value || "将选中区间一分为二，两段均保留字幕框"}`,
       icon: TableColumnsSplit,
       run: splitRange,
@@ -268,6 +288,7 @@ const rangeActions = computed<RangeAction[]>(() => {
     const count = boxedRanges.value.length;
     actions.push({
       label: `删除选中区间（${count}）`,
+      tour: "subtitle-range-remove",
       tooltip: `删除 ${count} 个选中区间`,
       icon: Trash2,
       run: removeSelectedRanges,
@@ -294,7 +315,14 @@ const rangeActions = computed<RangeAction[]>(() => {
       run: () => trimRange("right"),
       disabled: !canTrimRange.value
     },
-    { label: "删除区间", tooltip: "删除当前区间及其字幕框", icon: Trash2, run: () => removeRange(), danger: true }
+    {
+      label: "删除区间",
+      tour: "subtitle-range-remove",
+      tooltip: "删除当前区间及其字幕框",
+      icon: Trash2,
+      run: () => removeRange(),
+      danger: true
+    }
   );
   range.rects.forEach((_, index) => {
     actions.push({
@@ -394,9 +422,11 @@ function trimRange(side: "left" | "right") {
   videoEl.value?.pause();
   cancelDrag();
   const time = currentTime.value;
-  commitRanges((props.manualRanges || []).map((range, index) =>
-    index === activeRange.value ? { ...range, ...(side === "left" ? { start: time } : { end: time }) } : range
-  ));
+  commitRanges(
+    (props.manualRanges || []).map((range, index) =>
+      index === activeRange.value ? { ...range, ...(side === "left" ? { start: time } : { end: time }) } : range
+    )
+  );
 }
 function revealRange(index: number) {
   selectActiveRange(index);
@@ -589,9 +619,13 @@ function onRangeShortcut(event: KeyboardEvent) {
   if (event.defaultPrevented || event.repeat || event.isComposing || event.altKey || event.shiftKey) return;
   if (!props.src || !props.editable || editGesture || scrubbing.value) return;
   if (document.querySelector('.n-modal[aria-modal="true"], .n-drawer[aria-modal="true"]')) return;
-  if (event.target instanceof Element && event.target.closest(
-    'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'
-  )) return;
+  if (
+    event.target instanceof Element &&
+    event.target.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"], [role="combobox"]'
+    )
+  )
+    return;
   const key = event.key.toLowerCase();
   const split = key === "b" && event.ctrlKey !== event.metaKey;
   const trim = !event.ctrlKey && !event.metaKey && (key === "q" || key === "w");

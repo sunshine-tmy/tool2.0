@@ -1,0 +1,90 @@
+/* Keep the vendor engine, styling only its documented popover class. */
+.driver-overlay {
+  z-index: var(--toolbox-tour-layer, 3100) !important;
+}
+.driver-popover.toolbox-tour {
+  z-index: calc(var(--toolbox-tour-layer, 3100) + 1) !important;
+  box-sizing: border-box;
+  width: min(340px, calc(100vw - 32px));
+  min-width: 0;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - var(--shell-overlay-top, 0px) - 24px);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel, 16px);
+  padding: 20px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-overlay);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
+    sans-serif;
+}
+.toolbox-tour .driver-popover-title {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+.toolbox-tour .driver-popover-description {
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-text-secondary);
+}
+.toolbox-tour .driver-popover-footer {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.toolbox-tour .driver-popover-footer button {
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  text-shadow: none;
+  font-size: 13px;
+}
+.toolbox-tour .driver-popover-footer .driver-popover-next-btn {
+  background: var(--color-primary-600);
+  border-color: var(--color-primary-600);
+  color: white;
+}
+.toolbox-tour .driver-popover-footer .toolbox-tour-end {
+  position: static;
+  width: auto;
+  height: auto;
+  border: 0;
+  padding-left: 0;
+}
+.toolbox-tour button:focus-visible {
+  outline: 2px solid var(--color-primary-600);
+  outline-offset: 3px;
+}
+.toolbox-tour .driver-popover-progress-text {
+  color: var(--color-text-secondary);
+}
+.toolbox-tour .driver-popover-close-btn {
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-secondary);
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .toolbox-tour .driver-popover-footer button {
+    min-height: 44px;
+  }
+  .toolbox-tour .driver-popover-close-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .driver-overlay,
+  .driver-popover.toolbox-tour {
+    transition: none !important;
+    animation: none !important;
+  }
+}

@@ -1,6 +1,6 @@
 <!-- 中文模块说明：小红书归档前端模块，负责列表、详情、媒体和翻译交互 -->
 <template>
-  <div class="media-gallery" :class="{ 'is-compact': compact }">
+  <div class="media-gallery" :class="{ 'is-compact': compact }" data-tour="archive-detail-gallery">
     <div v-if="media" class="media-stage">
       <n-image
         v-if="media.kind === 'image' || media.kind === 'cover'"
@@ -53,7 +53,7 @@
     <div v-else class="media-empty">没有可预览媒体</div>
 
     <template v-if="media">
-      <div class="media-thumbs">
+      <div class="media-thumbs" data-tour="archive-detail-thumbnails">
         <button
           v-for="(entry, index) in visualMedia"
           :key="thumbnailKey(entry)"
@@ -102,7 +102,7 @@
           </span>
         </button>
       </div>
-      <div class="media-actions">
+      <div class="media-actions" data-tour="archive-detail-media-actions">
         <div v-if="isVideoMedia(media)" class="frame-capture-actions">
           <n-button
             size="small"
@@ -140,7 +140,13 @@
       }}</small>
       <small v-else-if="frameMessage" class="frame-feedback" role="status">{{ frameMessage }}</small>
     </template>
-    <section v-for="audio in soundtracks" :key="audio.id" class="archive-soundtrack" aria-label="原作品配乐">
+    <section
+      v-for="audio in soundtracks"
+      :key="audio.id"
+      class="archive-soundtrack"
+      aria-label="原作品配乐"
+      data-tour="archive-detail-soundtrack"
+    >
       <div class="soundtrack-heading">
         <span class="soundtrack-icon"><Music2 :size="17" aria-hidden="true" /></span>
         <div class="soundtrack-title">

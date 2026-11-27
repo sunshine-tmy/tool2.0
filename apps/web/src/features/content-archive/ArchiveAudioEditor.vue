@@ -7,6 +7,8 @@
     <n-card
       :title="isImage ? '图集生成配乐视频' : '视频编辑'"
       class="audio-editor"
+      data-tour="editor-workspace"
+      :data-tour-ready="!isImage && roughCut.loaded.value ? 'true' : 'false'"
       :class="{ 'is-embedded': embedded, 'is-workbench': !isImage }"
       :style="workspace.style.value"
       :closable="!embedded"
@@ -63,7 +65,7 @@
           @pointerdown="workspace.resize($event, 'left')"
           @keydown="workspace.nudge($event, 'left')"
         ></div>
-        <section ref="fullscreenHost" class="editor-preview">
+        <section ref="fullscreenHost" class="editor-preview" data-tour="editor-preview">
           <div v-if="!isImage" class="preview-heading">视频预览</div>
           <div ref="previewViewport" class="preview-canvas-bounds">
             <div class="preview-black-frame" :style="!isImage ? previewBackgroundStyle : undefined">
@@ -222,7 +224,7 @@
           @pointerdown="workspace.resize($event, 'right')"
           @keydown="workspace.nudge($event, 'right')"
         ></div>
-        <section class="editor-controls">
+        <section class="editor-controls" data-tour="editor-inspector">
           <p v-if="panel === 'cut' && !roughCut.selected.value.length" class="inspector-empty">
             选择时间线中的视频、文本、音频或水印，查看对应属性。
           </p>
@@ -583,6 +585,7 @@
               (roughCut.loaded.value && !roughCut.clips.value.length)
             "
             @click="isImage ? submit('save') : requestOutput('save')"
+            data-tour="editor-save"
             >{{ isImage ? "生成视频并归档" : saveLabel || "保存为最新版本" }}</n-button
           >
         </div>

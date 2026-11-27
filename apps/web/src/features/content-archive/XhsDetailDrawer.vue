@@ -4,6 +4,8 @@
     :show="props.open"
     preset="card"
     title="存档详情"
+    data-tour="archive-detail-dialog"
+    v-bind="guideDialogBinding('archive-detail', props.open)"
     class="archive-detail-modal"
     :style="{
       width: typeof props.width === 'number' ? `${props.width}px` : props.width,
@@ -25,13 +27,13 @@
         @edit-audio="emit('editAudio', $event)"
         @edit-cut="emit('editCut', $event)"
       />
-      <div class="detail-meta">
+      <div class="detail-meta" data-tour="archive-detail-text">
         <ArchiveFacts :item="props.detail" :format-date="props.formatDate" />
         <BilingualContent :item="props.detail" compact @copy="(text, label) => emit('copy', text, label)" />
       </div>
     </template>
     <template #footer>
-      <div class="detail-actions">
+      <div class="detail-actions" data-tour="archive-detail-actions">
         <n-button
           v-if="props.detail"
           :type="props.publishedElsewhere ? 'default' : 'primary'"
@@ -73,6 +75,7 @@
 </template>
 
 <script setup lang="ts">
+import { guideDialogBinding } from "../../shared/onboarding/contexts";
 import { NButton, NModal } from "naive-ui";
 import { computed } from "vue";
 import { BadgeCheck, Languages, Trash2 } from "lucide-vue-next";

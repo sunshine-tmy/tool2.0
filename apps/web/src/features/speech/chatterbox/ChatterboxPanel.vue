@@ -1,6 +1,6 @@
 <!-- 中文模块说明：配音前端模块，负责 Edge-TTS 与 Chatterbox 的编辑、任务和音色交互 -->
 <template>
-  <div class="chatterbox-panel">
+  <div class="chatterbox-panel" data-tour="speech-clone">
     <ChatterboxEditorForm />
     <DiagnosticErrorLink
       v-if="panel.health && !panel.health.available"

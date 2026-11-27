@@ -16,7 +16,9 @@
   "dependencies": {
     "@sinclair/typebox": "^0.34.52",
     "@toolbox/shared": "workspace:*",
+    "@vueuse/core": "15.1.0",
     "axios": "^1.20.0",
+    "driver.js": "1.14.0",
     "lucide-vue-next": "^0.555.0",
     "naive-ui": "^2.45.3",
     "qrcode": "^1.5.4",

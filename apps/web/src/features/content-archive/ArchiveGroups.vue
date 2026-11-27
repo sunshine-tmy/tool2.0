@@ -1,9 +1,12 @@
 <template>
-  <section class="archive-groups" aria-label="归档作品分组">
-    <div class="archive-group-filter">
+  <section class="archive-groups" data-tour="archive-group-root" aria-label="归档作品分组">
+    <div class="archive-group-filter" data-tour="archive-group-filter">
       <span class="archive-group-label"><FolderOpen :size="17" />作品分组</span>
       <n-cascader
-        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups"
+        :to="true"
+        :menu-props="groupMenuProps"
+        :filter-menu-props="groupMenuProps"
+        :filter="filterArchiveGroups"
         :value="selectedFilterValues"
         multiple
         :cascade="false"
@@ -26,25 +29,49 @@
             <template #icon><Settings2 :size="15" /></template>管理分组
           </n-button>
         </template>
-        <div class="archive-group-menu" role="group" aria-label="分组管理操作">
+        <div
+          class="archive-group-menu"
+          data-tour="archive-group-management"
+          data-guide-context="archive-group-management"
+          role="group"
+          aria-label="分组管理操作"
+        >
           <n-button size="small" quaternary :disabled="busy || !current" @click="edit(current)">重命名分组</n-button>
           <n-button size="small" quaternary :disabled="busy || !current" @click="remove">删除分组</n-button>
           <n-button size="small" quaternary :disabled="busy" @click="refreshGroups">刷新分组</n-button>
         </div>
       </n-popover>
     </div>
-    <n-button v-if="selectedIds.length" class="archive-group-move" size="small" type="primary" secondary :disabled="busy" @click="openMove">
+    <n-button
+      v-if="selectedIds.length"
+      class="archive-group-move"
+      size="small"
+      type="primary"
+      secondary
+      :disabled="busy"
+      @click="openMove"
+    >
       <template #icon><FolderInput :size="15" /></template>移动所选 {{ selectedIds.length }}
     </n-button>
-    <n-modal v-model:show="moving" preset="card" title="移动到分组" style="width: min(420px, calc(100vw - 32px))">
+    <n-modal
+      v-model:show="moving"
+      preset="card"
+      title="移动到分组"
+      v-bind="guideDialogBinding('archive-group-move', moving)"
+      style="width: min(420px, calc(100vw - 32px))"
+    >
       <p class="archive-move-description">将选中的 {{ selectedIds.length }} 条作品移入：</p>
       <n-cascader
-        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups"
+        :to="true"
+        :menu-props="groupMenuProps"
+        :filter-menu-props="groupMenuProps"
+        :filter="filterArchiveGroups"
         v-model:value="target"
         :options="moveOptions"
         filterable
         placeholder="选择目标分组"
         aria-label="移入目标分组"
+        data-tour="archive-group-move-target"
       />
       <template #footer>
         <div class="archive-group-dialog-actions">
@@ -55,18 +82,35 @@
         </div>
       </template>
     </n-modal>
-    <n-modal v-model:show="editing" preset="card" :title="editingId ? '编辑分组' : '新建分组'" style="width: min(420px, calc(100vw - 32px))">
+    <n-modal
+      v-model:show="editing"
+      preset="card"
+      :title="editingId ? '编辑分组' : '新建分组'"
+      v-bind="guideDialogBinding('archive-group-edit', editing)"
+      style="width: min(420px, calc(100vw - 32px))"
+    >
       <n-input
         v-model:value="name"
         maxlength="80"
+        data-tour="archive-group-name"
         show-count
         placeholder="请输入分组名称"
         :input-props="{ 'aria-label': '分组名称' }"
         @keyup.enter="save"
       />
-      <div class="archive-parent-field">
+      <div class="archive-parent-field" data-tour="archive-group-parent">
         <label>上级分组（最多三级）</label>
-        <n-cascader :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups" v-model:value="parent" :options="parentOptions" filterable placeholder="顶级分组" clearable />
+        <n-cascader
+          :to="true"
+          :menu-props="groupMenuProps"
+          :filter-menu-props="groupMenuProps"
+          :filter="filterArchiveGroups"
+          v-model:value="parent"
+          :options="parentOptions"
+          filterable
+          placeholder="顶级分组"
+          clearable
+        />
       </div>
       <template #footer
         ><n-button type="primary" :loading="busy" :disabled="busy || !name.trim()" @click="save"
@@ -77,6 +121,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { guideDialogBinding, registerGuideContext, useGuideDialog } from "../../shared/onboarding/contexts";
 import { computed, onMounted, ref, watch } from "vue";
 import { FolderOpen, FolderInput, Plus, Settings2 } from "lucide-vue-next";
 import { NButton, NCascader, NInput, NModal, NPopover, useMessage } from "naive-ui";
@@ -106,15 +151,18 @@ let generation = 0;
 const activeGroupId = ref<string>();
 const current = computed(() => {
   const selected = groupId.value.split(",");
-  const id = activeGroupId.value && selected.includes(activeGroupId.value)
-    ? activeGroupId.value
-    : selected.length === 1 ? selected[0] : undefined;
+  const id =
+    activeGroupId.value && selected.includes(activeGroupId.value)
+      ? activeGroupId.value
+      : selected.length === 1
+        ? selected[0]
+        : undefined;
   return groups.value.find((group) => group.id === id);
 });
 const allFilterIds = computed(() => ["ungrouped", ...groups.value.map((group) => group.id)]);
-const selectedFilterValues = computed(() => groupId.value === "all"
-  ? ["all", ...allFilterIds.value]
-  : groupId.value === "-" ? [] : groupId.value.split(","));
+const selectedFilterValues = computed(() =>
+  groupId.value === "all" ? ["all", ...allFilterIds.value] : groupId.value === "-" ? [] : groupId.value.split(",")
+);
 function updateFilter(next: string[]) {
   const before = new Set(selectedFilterValues.value);
   const after = new Set(next);
@@ -130,7 +178,10 @@ function updateFilter(next: string[]) {
   after.delete("all");
   const changed = [...new Set([...before, ...after])].filter((id) => id !== "all" && before.has(id) !== after.has(id));
   for (const id of changed) {
-    if (id === "ungrouped") { activeGroupId.value = undefined; continue; }
+    if (id === "ungrouped") {
+      activeGroupId.value = undefined;
+      continue;
+    }
     activeGroupId.value = after.has(id) ? id : undefined;
     const descendants = [id];
     for (let i = 0; i < descendants.length; i++) {
@@ -144,14 +195,17 @@ function updateFilter(next: string[]) {
 const moveOptions = computed(() => [{ label: "未分组", value: "ungrouped" }, ...archiveGroupTree(groups.value)]);
 const filterOptions = computed(() => [{ label: "全部分组", value: "all" }, ...moveOptions.value]);
 const parentOptions = computed(() => {
-  const height = (id: string): number => 1 + Math.max(0, ...groups.value.filter((group) => group.parentId === id).map((group) => height(group.id)));
+  const height = (id: string): number =>
+    1 + Math.max(0, ...groups.value.filter((group) => group.parentId === id).map((group) => height(group.id)));
   const maxParentDepth = 3 - (editingId.value ? height(editingId.value) : 1);
   const prune = (options: ArchiveGroupOption[], depth: number): ArchiveGroupOption[] => {
     if (depth > maxParentDepth) return [];
-    return options.filter((option) => option.value !== editingId.value).map((option) => {
-      const children = prune(option.children ?? [], depth + 1);
-      return { label: option.label, value: option.value, ...(children.length ? { children } : {}) };
-    });
+    return options
+      .filter((option) => option.value !== editingId.value)
+      .map((option) => {
+        const children = prune(option.children ?? [], depth + 1);
+        return { label: option.label, value: option.value, ...(children.length ? { children } : {}) };
+      });
   };
   return prune(archiveGroupTree(groups.value), 1);
 });
@@ -265,7 +319,9 @@ async function remove() {
     let previousSize = 0;
     while (previousSize !== removed.size) {
       previousSize = removed.size;
-      groups.value.forEach((entry) => { if (entry.parentId && removed.has(entry.parentId)) removed.add(entry.id); });
+      groups.value.forEach((entry) => {
+        if (entry.parentId && removed.has(entry.parentId)) removed.add(entry.id);
+      });
     }
     applyGroups(groups.value.filter((entry) => !removed.has(entry.id)));
     await load();
@@ -277,6 +333,13 @@ async function remove() {
   }
 }
 onMounted(load);
+
+registerGuideContext("archive-groups-overview", { enter: () => () => undefined });
+useGuideDialog("archive-group-edit", editing, () => (busy.value ? "分组正在更新，请稍后学习。" : ""));
+useGuideDialog("archive-group-management", managementOpen, () => (busy.value ? "分组正在更新，请稍后学习。" : ""));
+useGuideDialog("archive-group-move", moving, () =>
+  busy.value ? "分组正在更新，请稍后学习。" : !props.selectedIds.length ? "请先在列表选中要移动的作品。" : ""
+);
 </script>
 <style scoped>
 .archive-groups {
@@ -304,19 +367,39 @@ onMounted(load);
   font-size: 13px;
   font-weight: 600;
 }
-.archive-group-label svg { color: var(--color-primary-600); }
-.archive-group-actions { padding-left: 12px; border-left: 1px solid var(--color-border); }
-.archive-group-actions :deep(.n-button) { height: 32px; border-radius: 7px; }
-.archive-group-select :deep(.n-base-selection) { background: var(--color-surface-subtle); }
-.archive-group-move { margin-left: auto; }
+.archive-group-label svg {
+  color: var(--color-primary-600);
+}
+.archive-group-actions {
+  padding-left: 12px;
+  border-left: 1px solid var(--color-border);
+}
+.archive-group-actions :deep(.n-button) {
+  height: 32px;
+  border-radius: 7px;
+}
+.archive-group-select :deep(.n-base-selection) {
+  background: var(--color-surface-subtle);
+}
+.archive-group-move {
+  margin-left: auto;
+}
 .archive-group-select {
   width: 240px;
   max-width: 100%;
 }
 @container tool-content (max-width: 600px) {
-  .archive-group-filter { width: 100%; }
-  .archive-group-select { flex: 1; width: auto; }
-  .archive-group-actions { padding-left: 0; border-left: 0; }
+  .archive-group-filter {
+    width: 100%;
+  }
+  .archive-group-select {
+    flex: 1;
+    width: auto;
+  }
+  .archive-group-actions {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 .archive-group-menu {
   display: grid;
@@ -329,7 +412,11 @@ onMounted(load);
 .archive-move-description {
   margin: 0 0 12px;
 }
-.archive-parent-field { display: grid; gap: 8px; margin-top: 16px; }
+.archive-parent-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
 @container tool-content (max-width: 640px) {
   .archive-group-filter {
     flex: 1 1 100%;

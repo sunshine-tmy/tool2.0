@@ -1,6 +1,7 @@
 <template>
   <section
     ref="timelineRoot"
+    data-tour="editor-timeline"
     class="cut-timeline"
     :style="{ '--timeline-min-height': `${minimumHeight}px` }"
     aria-label="视频自由编排时间线"

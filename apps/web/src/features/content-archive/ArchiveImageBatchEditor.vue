@@ -6,9 +6,17 @@
     v-model:show="opened"
     preset="card"
     :title="kind === 'watermark' ? '图文批量加水印' : '图文批量配乐'"
+    data-tour="archive-image-dialog"
+    v-bind="guideDialogBinding('archive-images-watermark', opened, ['archive-images-audio'])"
     style="width: min(960px, 96vw)"
     :mask-closable="false"
   >
+    <template #header-extra>
+      <n-button v-if="!imageTeaching" size="small" quaternary @click="requestGuideDirectory(`archive-images-${kind}`)">
+        <template #icon><CircleHelp :size="16" aria-hidden="true" /></template>
+        新手引导
+      </n-button>
+    </template>
     <n-alert type="info" :bordered="false">
       每条图文按原图顺序生成一个附加视频，原图保留。已有相同原图生成的视频时，更新最新一条。
       {{
@@ -21,7 +29,7 @@
       逐条排队，失败不影响其他作品；请保持页面打开。关闭窗口继续处理，离开页面将停止后续提交，已提交任务仍在后台完成。
     </n-alert>
     <n-alert v-if="error" type="error">{{ error }}</n-alert>
-    <div class="image-batch-layout">
+    <div class="image-batch-layout" data-tour="archive-image-settings">
       <section>
         <div class="image-batch-fields">
           <label
@@ -46,7 +54,7 @@
           :height="virtualSize.height"
           :settings="watermarkSettings"
           :asset="asset"
-          @time="watermarkTime = $event"
+          @time="!imageTeaching && (watermarkTime = $event)"
           @move="moveWatermark"
         />
         <ArchiveWatermarkControls
@@ -106,7 +114,8 @@
           <n-checkbox v-model:checked="loop" :disabled="locked">音乐不足时循环到视频结束</n-checkbox>
           <ArchiveMusicRange
             v-if="music"
-            v-model:start="musicStart"
+            :start="musicStart"
+            @update:start="!imageTeaching && (musicStart = $event)"
             :url="resolveBackendUrl(music.audioUrl)"
             :title="music.title"
             :music-duration="music.duration"
@@ -125,7 +134,7 @@
         </small>
         <small>右侧可逐条生成完整效果预览，预览不会保存或替换归档。修改参数后需重新预览。</small>
       </section>
-      <section class="image-batch-results" aria-label="图文批量处理结果">
+      <section class="image-batch-results" aria-label="图文批量处理结果" data-tour="archive-image-queue">
         <p role="status">
           共 {{ batch.rows.value.length }} 条 · 成功 {{ successCount }} · 失败
           {{ failedCount }}
@@ -154,7 +163,7 @@
         </article>
       </section>
     </div>
-    <div class="image-batch-actions">
+    <div class="image-batch-actions" data-tour="archive-image-actions">
       <n-button type="primary" :disabled="locked || loading || !readyToStart" @click="start"
         >开始批量保存 {{ batch.rows.value.length }} 条</n-button
       >
@@ -228,7 +237,9 @@
 </template>
 <script setup lang="ts">
 import { vSliderLabel } from "../../shared/ui/slider-label";
-import { computed, onScopeDispose, ref, watch } from "vue";
+import { computed, nextTick, onScopeDispose, ref, watch } from "vue";
+import { guideDialogBinding, registerGuideContext, requestGuideDirectory } from "../../shared/onboarding/contexts";
+import { CircleHelp } from "lucide-vue-next";
 import { onBeforeRouteLeave } from "vue-router";
 import {
   NAlert,
@@ -267,6 +278,8 @@ import ArchiveWatermarkSandbox from "./ArchiveWatermarkSandbox.vue";
 import { moveArchiveWatermarkPoint } from "./useArchiveWatermark";
 
 const emit = defineEmits<{ updated: [item: ContentArchiveItem]; finished: []; openArchive: [id: string] }>();
+const props = defineProps<{ tutorialItems?: ContentArchiveListItem[] }>();
+const imageTeaching = ref(false);
 const scope = useRequestScope(),
   confirm = useConfirmDialog();
 const batch = useArchiveImageBatch(
@@ -385,10 +398,13 @@ watch(
       watermarkLibrary.value?.id,
       watermarkLibrary.value?.revision
     ]),
-  () => batch.invalidatePreviews()
+  () => {
+    if (!imageTeaching.value) batch.invalidatePreviews();
+  }
 );
 watch([previewOpened, previewId], () => previewVideo.value?.pause(), { flush: "sync" });
 watch(referenceDuration, (duration) => {
+  if (imageTeaching.value) return;
   const row = batch.rows.value.find((entry) => entry.id === reference.value?.id);
   if (row && !started.value) row.durationSeconds = duration;
 });
@@ -624,6 +640,59 @@ onScopeDispose(() => {
   window.removeEventListener("beforeunload", beforeUnload);
 });
 defineExpose({ show });
+for (const mode of ["watermark", "audio"] as const) {
+  registerGuideContext(`archive-images-${mode}`, {
+    available: () =>
+      loading.value || batch.running.value || batch.paused.value || previewBusy.value
+        ? "图文队列仍在处理或等待核对，请稍后学习。"
+        : !opened.value && !props.tutorialItems?.length
+          ? "请先在列表选择适用图文；教程不会替你选择作品。"
+          : "",
+    enter: async (signal) => {
+      const previous = {
+        opened: opened.value,
+        kind: kind.value,
+        reference: reference.value,
+        rows: batch.rows.value,
+        started: started.value
+      };
+      const items = props.tutorialItems ?? [];
+      const target =
+        opened.value && reference.value
+          ? reference.value
+          : items[0]
+            ? await contentArchiveApi.detail(items[0].id, signal)
+            : undefined;
+      if (signal.aborted) return () => undefined;
+      if (!target && !batch.rows.value.length) throw new Error("请先选择适用图文");
+      if (target) imageBatchTarget(target);
+      imageTeaching.value = true;
+      if (!previous.opened) {
+        started.value = false;
+        batch.rows.value = items.map((entry) => ({
+          id: entry.id,
+          title: archiveDisplayTitle(entry),
+          status: "pending",
+          progress: 0,
+          message: "等待开始"
+        }));
+      }
+      reference.value = target;
+      kind.value = mode;
+      opened.value = true;
+      return () => {
+        opened.value = previous.opened;
+        kind.value = previous.kind;
+        reference.value = previous.reference;
+        batch.rows.value = previous.rows;
+        started.value = previous.started;
+        void nextTick(() => {
+          imageTeaching.value = false;
+        });
+      };
+    }
+  });
+}
 </script>
 <style scoped>
 .image-batch-layout {

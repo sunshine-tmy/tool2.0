@@ -5,25 +5,31 @@
     class="translation-edit-modal"
     preset="card"
     title="编辑英文翻译"
+    data-tour="archive-translation-dialog"
+    v-bind="guideDialogBinding('archive-translation', show)"
     content-scrollable
     style="width: min(680px, calc(100vw - 32px))"
     @update:show="onShowChange"
   >
     <n-form label-placement="top">
-      <n-form-item label="English 标题"><n-input v-model:value="title" maxlength="2000" /></n-form-item>
-      <n-form-item label="English 正文"
+      <n-form-item label="English 标题" data-tour="archive-translation-title"
+        ><n-input v-model:value="title" maxlength="2000"
+      /></n-form-item>
+      <n-form-item label="English 正文" data-tour="archive-translation-body"
         ><n-input
           v-model:value="description"
           type="textarea"
           :autosize="{ minRows: 5, maxRows: 14 }"
           maxlength="100000"
       /></n-form-item>
-      <n-form-item v-for="topic in topicFields" :key="topic.topicId" :label="`话题 #${topic.source}`">
-        <n-input v-model:value="topic.edited" maxlength="200" />
-      </n-form-item>
+      <div v-if="topicFields.length" data-tour="archive-translation-topics">
+        <n-form-item v-for="topic in topicFields" :key="topic.topicId" :label="`话题 #${topic.source}`">
+          <n-input v-model:value="topic.edited" maxlength="200" />
+        </n-form-item>
+      </div>
     </n-form>
     <template #footer>
-      <div class="modal-actions">
+      <div class="modal-actions" data-tour="archive-translation-actions">
         <n-button @click="emit('update:show', false)">取消</n-button
         ><n-button type="primary" @click="save">保存英文</n-button>
       </div>
@@ -32,6 +38,7 @@
 </template>
 
 <script setup lang="ts">
+import { guideDialogBinding } from "../../shared/onboarding/contexts";
 import { ref, watch } from "vue";
 import { NButton, NForm, NFormItem, NInput, NModal } from "naive-ui";
 import type { ContentArchiveItem, ContentTranslationEditInput } from "@toolbox/shared";
@@ -65,6 +72,21 @@ watch(
 function onShowChange(value: boolean) {
   emit("update:show", value);
 }
+function captureGuideDraft() {
+  const previous = {
+    title: title.value,
+    description: description.value,
+    sourceHash: sourceHash.value,
+    topics: topicFields.value.map((topic) => ({ ...topic }))
+  };
+  return () => {
+    title.value = previous.title;
+    description.value = previous.description;
+    sourceHash.value = previous.sourceHash;
+    topicFields.value = previous.topics;
+  };
+}
+defineExpose({ captureGuideDraft });
 function save() {
   if (!props.item?.translation) return;
   emit("save", {

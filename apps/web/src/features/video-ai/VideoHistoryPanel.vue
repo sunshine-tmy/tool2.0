@@ -1,5 +1,5 @@
 <template>
-  <section class="workspace-panel history-panel">
+  <section class="workspace-panel history-panel" data-tour="subtitle-history">
     <div class="history-header">
       <div>
         <h2>处理记录</h2>

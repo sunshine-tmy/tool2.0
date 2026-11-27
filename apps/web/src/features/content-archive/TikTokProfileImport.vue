@@ -2,8 +2,15 @@
   <n-button size="small" type="primary" secondary title="从 TikTok 用户主页发现公开作品，再确认批量归档" @click="show()"
     >TikTok 主页批量归档</n-button
   >
-  <n-modal v-model:show="open" preset="card" title="TikTok 主页批量归档" style="width: min(1320px, calc(100vw - 32px))">
-    <n-alert type="info" :bordered="false"
+  <n-modal
+    v-model:show="open"
+    preset="card"
+    title="TikTok 主页批量归档"
+    data-tour="archive-profile-dialog"
+    v-bind="guideDialogBinding('archive-profile', open, ['archive-profile-collector'])"
+    style="width: min(1320px, calc(100vw - 32px))"
+  >
+    <n-alert data-tour="archive-profile-help" type="info" :bordered="false"
       >读取时会打开运行服务电脑上的独立 TikTok
       浏览器；需要正常登录或验证时请在那里完成。关闭此弹窗不会停止后台任务。仅归档可访问的公开作品，每批最多 100
       条。主页任务历史长期保留，不自动清除；删除记录只影响选中的主页任务，批次和归档作品保留。</n-alert
@@ -15,6 +22,7 @@
         placeholder="https://www.tiktok.com/@用户名"
         :input-props="{ 'aria-label': 'TikTok 用户主页链接' }"
         class="profile-url"
+        data-tour="archive-profile-input"
         @keyup.enter="create"
       />
       <n-button type="primary" :disabled="busy || isActive || !url.trim()" @click="create">读取主页作品</n-button>
@@ -25,11 +33,12 @@
         placeholder="查看主页任务历史"
         aria-label="TikTok 主页任务历史"
         class="profile-select"
+        data-tour="archive-profile-history"
         @update:value="select"
       />
       <n-button :disabled="busy" @click="refreshHistory">刷新历史</n-button>
     </div>
-    <details class="profile-browser-help">
+    <details ref="collectorHelp" class="profile-browser-help" data-tour="archive-profile-collector">
       <summary>自动窗口仍然出错？使用普通浏览器采集</summary>
       <ol>
         <li>首次使用时，下载并打开助手 HTML，把“采集 TikTok 作品”拖到普通浏览器的书签栏。</li>
@@ -87,7 +96,12 @@
           {{ job.pendingCount }}<span v-if="job.batchCount >= 900"> · 已创建 {{ job.batchCount }}/1000 批</span>
         </div>
       </n-alert>
-      <div class="profile-toolbar profile-task-actions" role="group" aria-label="主页任务操作">
+      <div
+        class="profile-toolbar profile-task-actions"
+        data-tour="archive-profile-actions"
+        role="group"
+        aria-label="主页任务操作"
+      >
         <strong>主页任务</strong>
         <n-button
           v-if="isActive"
@@ -141,7 +155,11 @@
               <label
                 >成功结果分组（可选）
                 <n-cascader
-        :to="true" :menu-props="groupMenuProps" :filter-menu-props="groupMenuProps" :filter="filterArchiveGroups" filterable
+                  :to="true"
+                  :menu-props="groupMenuProps"
+                  :filter-menu-props="groupMenuProps"
+                  :filter="filterArchiveGroups"
+                  filterable
                   v-model:value="groupId"
                   :disabled="busy"
                   clearable
@@ -190,7 +208,7 @@
       </section>
       <p>失败作品可逐条重试；点击作品标题可填入主页面“获取并存档”，成功后自动同步结果。</p>
       <n-spin :show="loading"
-        ><div v-if="works.items.length" class="profile-table">
+        ><div v-if="works.items.length" class="profile-table" data-tour="archive-profile-works">
           <table>
             <colgroup>
               <col class="profile-col-selection" />
@@ -287,6 +305,8 @@
   </n-modal>
 </template>
 <script setup lang="ts">
+import { guideDialogBinding, registerGuideContext, useGuideDialog } from "../../shared/onboarding/contexts";
+import { nextTick } from "vue";
 import { NCascader } from "naive-ui";
 import { archiveGroupTree, groupMenuProps, filterArchiveGroups } from "./archive-group-tree";
 import { computed, onScopeDispose, ref, watch } from "vue";
@@ -679,6 +699,27 @@ watch(open, (value) => {
 onScopeDispose(() => {
   invalidate();
   if (collectorDownloadUrl) URL.revokeObjectURL(collectorDownloadUrl);
+});
+
+const collectorHelp = ref<HTMLDetailsElement>();
+const profileGuideAvailable = () =>
+  busy.value || loading.value || isActive.value || supplementRunning.value
+    ? "主页任务仍在执行，请等待或停止后再学习本章。"
+    : "";
+useGuideDialog("archive-profile", open, profileGuideAvailable);
+registerGuideContext("archive-profile-collector", {
+  available: profileGuideAvailable,
+  enter: async (signal) => {
+    const previous = open.value;
+    const expanded = collectorHelp.value?.open ?? false;
+    open.value = true;
+    await nextTick();
+    if (!signal.aborted && collectorHelp.value) collectorHelp.value.open = true;
+    return () => {
+      if (collectorHelp.value) collectorHelp.value.open = expanded;
+      open.value = previous;
+    };
+  }
 });
 </script>
 <style scoped>

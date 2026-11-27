@@ -1,6 +1,6 @@
 <!-- 中文模块说明：配音前端模块，负责 Edge-TTS 与 Chatterbox 的编辑、任务和音色交互 -->
 <template>
-  <section class="edge-tts-history">
+  <section class="edge-tts-history" data-tour="clone-history">
     <div class="panel-heading">
       <div>
         <h3>声音克隆批次</h3>

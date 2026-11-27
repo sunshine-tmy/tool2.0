@@ -1,5 +1,5 @@
 <template>
-  <aside class="processing-panel" aria-label="视频处理设置">
+  <aside class="processing-panel" data-tour="subtitle-settings" aria-label="视频处理设置">
     <section>
       <div class="section-heading">
         <div>
@@ -44,14 +44,19 @@
           <p>{{ regionSummary }}</p>
         </div>
       </div>
-      <div class="region-actions">
-        <n-button :disabled="!hasFile || busy || checking" :loading="detecting" @click="$emit('detect')"
+      <div class="region-actions" data-tour="subtitle-region-tools">
+        <n-button
+          :disabled="!hasFile || busy || checking"
+          :loading="detecting"
+          @click="$emit('detect')"
+          data-tour="subtitle-detect"
           ><template #icon><ScanText :size="16" /></template>自动检测字幕</n-button
         >
         <n-button
           :disabled="!hasFile || busy"
           :type="manualMode ? 'primary' : 'default'"
           @click="$emit('toggle-manual')"
+          data-tour="subtitle-manual-mode"
         >
           <template #icon><Scan :size="16" /></template>{{ manualMode ? "完成框选" : "手动框选" }}
         </n-button>
@@ -94,7 +99,7 @@
       </n-button>
     </div>
 
-    <div class="primary-actions">
+    <div class="primary-actions" data-tour="subtitle-start">
       <n-button type="primary" size="large" block :disabled="!canSubmit" :loading="submitting" @click="$emit('submit')">
         <template #icon><Play :size="18" fill="currentColor" /></template>开始处理
       </n-button>
